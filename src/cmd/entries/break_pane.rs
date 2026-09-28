@@ -110,8 +110,8 @@ unsafe fn cmd_break_pane_float(
     layout_remove_tile(w, lc);
     layout_set_size(lc, (*fg).sx, (*fg).sy, (*fg).xoff, (*fg).yoff);
     (*lc).flags |= LAYOUT_CELL_FLOATING;
-    window_pane_z_remove(w, wp);
-    window_pane_z_insert_front(w, wp);
+    window_pane_z_remove(&mut *w, &*wp);
+    window_pane_z_insert_front(&mut *w, &*wp);
     if args_has(args, 'd' as i32 as u_char) == 0 {
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
@@ -205,8 +205,8 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         server_client_remove_pane(wp);
         // Select a replacement while the departing pane still has neighbors.
         window_lost_pane(w, wp);
-        window_pane_list_remove(w, wp);
-        window_pane_z_remove(w, wp);
+        window_pane_list_remove(&mut *w, &*wp);
+        window_pane_z_remove(&mut *w, &*wp);
         layout_close_pane(wp);
         let window = window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel);
         (*wp).window = window.as_ptr();
@@ -214,8 +214,8 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         // window_create supplied the temporary reference released after attach.
         options_set_parent(options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options));
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-        window_pane_list_insert_front(w, wp);
-        window_pane_z_insert_front(w, wp);
+        window_pane_list_insert_front(&mut *w, &*wp);
+        window_pane_z_insert_front(&mut *w, &*wp);
         (*w).active = wp;
         (*w).latest = tc.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         if name.is_null() {

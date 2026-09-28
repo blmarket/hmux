@@ -1518,8 +1518,8 @@ pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut windo
             break;
         }
         if window_pane_is_floating(&*wp) != 0 {
-            window_pane_z_remove(w, wp);
-            window_pane_z_insert_front(w, wp);
+            window_pane_z_remove(&mut *w, &*wp);
+            window_pane_z_insert_front(&mut *w, &*wp);
             (*wp).flags |= PANE_REDRAW;
             redraw_invalidate_scene(w);
         }
@@ -1733,8 +1733,8 @@ pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -
         cursor = window_pane_next(Some(&*wp1));
     }
     if (*(*wp).saved_layout_cell).flags & LAYOUT_CELL_FLOATING != 0 {
-        window_pane_z_remove(w, wp);
-        window_pane_z_insert_back(w, wp);
+        window_pane_z_remove(&mut *w, &*wp);
+        window_pane_z_insert_back(&mut *w, &*wp);
     }
     (*w).flags |= WINDOW_ZOOMED;
     events_fire_window(
@@ -1800,9 +1800,9 @@ unsafe fn window_unzoom_internal(
     }
     if let Some(zoomed_owner) = zoomed_owner.filter(|owner| window_pane_is_floating(&*owner.get()) != 0) {
         let zoomed = zoomed_owner.get();
-        window_pane_z_remove(w, zoomed);
+        window_pane_z_remove(&mut *w, &*zoomed);
         if zoomed == (*w).active {
-            window_pane_z_insert_front(w, zoomed);
+            window_pane_z_insert_front(&mut *w, &*zoomed);
         } else {
             let mut before = window_pane_z_first(w.as_ref());
             while let Some(owner) = before.as_ref() {
@@ -1812,9 +1812,9 @@ unsafe fn window_unzoom_internal(
                 before = window_pane_z_next(Some(&*owner.get()));
             }
             if let Some(before) = before {
-                window_pane_z_insert_before(w, before.get(), zoomed);
+                window_pane_z_insert_before(&mut *w, &*before.get(), &*zoomed);
             } else {
-                window_pane_z_insert_back(w, zoomed);
+                window_pane_z_insert_back(&mut *w, &*zoomed);
             }
         }
     }
@@ -1924,7 +1924,7 @@ pub unsafe fn window_add_pane(
             "window_add_pane",
             ((*w).id) as u32
         ));
-        window_pane_list_insert_front(w, wp);
+        window_pane_list_insert_front(&mut *w, &*wp);
     } else if flags & SPAWN_BEFORE != 0 {
         log_debug(format_args!(
             "{}: @{} before %{}",
@@ -1933,9 +1933,9 @@ pub unsafe fn window_add_pane(
             ((*wp).id) as u32
         ));
         if flags & SPAWN_FULLSIZE != 0 {
-            window_pane_list_insert_front(w, wp);
+            window_pane_list_insert_front(&mut *w, &*wp);
         } else {
-            window_pane_list_insert_before(w, other, wp);
+            window_pane_list_insert_before(&mut *w, &*other, &*wp);
         }
     } else {
         log_debug(format_args!(
@@ -1945,17 +1945,17 @@ pub unsafe fn window_add_pane(
             ((*wp).id) as u32
         ));
         if flags & (SPAWN_FULLSIZE | SPAWN_FLOATING) != 0 {
-            window_pane_list_insert_back(w, wp);
+            window_pane_list_insert_back(&mut *w, &*wp);
         } else {
-            window_pane_list_insert_after(w, other, wp);
+            window_pane_list_insert_after(&mut *w, &*other, &*wp);
         }
     }
     if flags & SPAWN_FLOATING == 0 {
-        window_pane_z_insert_back(w, wp);
+        window_pane_z_insert_back(&mut *w, &*wp);
     } else if let Some(modal) = (*w).modal.upgrade() {
-        window_pane_z_insert_after(w, modal.get(), wp);
+        window_pane_z_insert_after(&mut *w, &*modal.get(), &*wp);
     } else {
-        window_pane_z_insert_front(w, wp);
+        window_pane_z_insert_front(&mut *w, &*wp);
     }
     redraw_invalidate_scene(w);
     return wp;
@@ -2007,8 +2007,8 @@ pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
 pub unsafe fn window_remove_pane(mut w: *mut window, pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     window_lost_pane(w, wp);
-    window_pane_list_remove(w, wp);
-    window_pane_z_remove(w, wp);
+    window_pane_list_remove(&mut *w, &*wp);
+    window_pane_z_remove(&mut *w, &*wp);
     redraw_invalidate_scene(w);
     window_pane_destroy(pane_owner);
 }
@@ -2091,8 +2091,8 @@ pub unsafe fn window_destroy_panes(w: *mut window) {
     }
     while let Some(owner) = window_pane_first(w.as_ref()) {
         let wp = owner.get();
-        window_pane_list_remove(w, wp);
-        window_pane_z_remove(w, wp);
+        window_pane_list_remove(&mut *w, &*wp);
+        window_pane_z_remove(&mut *w, &*wp);
         window_pane_destroy(&owner);
     }
 }
@@ -2268,117 +2268,114 @@ pub fn window_pane_stack_next(
     w?.last_panes.next(&wp.observer)
 }
 
-pub unsafe fn window_pane_list_remove(w: *mut window, wp: *mut window_pane) {
-    assert!(!w.is_null() && !wp.is_null());
-    assert!((*w).panes.remove(&(*wp).observer), "pane is not in its window order");
+pub fn window_pane_list_remove(w: &mut window, wp: &window_pane) {
+    assert!(w.panes.remove(&wp.observer), "pane is not in its window order");
 }
 
-pub unsafe fn window_pane_z_remove(w: *mut window, wp: *mut window_pane) {
-    assert!(!w.is_null() && !wp.is_null());
-    assert!(
-        (*w).z_index.remove(&(*wp).observer),
-        "pane is not in its stacking order"
-    );
+pub fn window_pane_list_insert_front(w: &mut window, wp: &window_pane) {
+    w.panes.push_front(wp.observer.clone());
 }
 
-pub unsafe fn window_pane_list_insert_front(w: *mut window, wp: *mut window_pane) {
-    (*w).panes.push_front(window_pane_weak(wp));
+pub fn window_pane_list_insert_back(w: &mut window, wp: &window_pane) {
+    w.panes.push_back(wp.observer.clone());
 }
 
-pub unsafe fn window_pane_list_insert_back(w: *mut window, wp: *mut window_pane) {
-    (*w).panes.push_back(window_pane_weak(wp));
-}
-
-pub unsafe fn window_pane_list_insert_before(
-    w: *mut window,
-    before: *mut window_pane,
-    wp: *mut window_pane,
+pub fn window_pane_list_insert_before(
+    w: &mut window,
+    before: &window_pane,
+    wp: &window_pane,
 ) {
-    (*w).panes.insert_before(&(*before).observer, window_pane_weak(wp));
+    w.panes.insert_before(&before.observer, wp.observer.clone());
 }
 
-pub unsafe fn window_pane_list_insert_after(
-    w: *mut window,
-    after: *mut window_pane,
-    wp: *mut window_pane,
+pub fn window_pane_list_insert_after(
+    w: &mut window,
+    after: &window_pane,
+    wp: &window_pane,
 ) {
-    (*w).panes.insert_after(&(*after).observer, window_pane_weak(wp));
+    w.panes.insert_after(&after.observer, wp.observer.clone());
 }
 
-pub unsafe fn window_pane_z_insert_front(w: *mut window, wp: *mut window_pane) {
-    (*w).z_index.push_front(window_pane_weak(wp));
+pub fn window_pane_z_remove(w: &mut window, wp: &window_pane) {
+    assert!(w.z_index.remove(&wp.observer), "pane is not in its stacking order");
 }
 
-pub unsafe fn window_pane_z_insert_back(w: *mut window, wp: *mut window_pane) {
-    (*w).z_index.push_back(window_pane_weak(wp));
+pub fn window_pane_z_insert_front(w: &mut window, wp: &window_pane) {
+    w.z_index.push_front(wp.observer.clone());
 }
 
-pub unsafe fn window_pane_z_insert_before(
-    w: *mut window,
-    before: *mut window_pane,
-    wp: *mut window_pane,
+pub fn window_pane_z_insert_back(w: &mut window, wp: &window_pane) {
+    w.z_index.push_back(wp.observer.clone());
+}
+
+pub fn window_pane_z_insert_before(
+    w: &mut window,
+    before: &window_pane,
+    wp: &window_pane,
 ) {
-    (*w).z_index.insert_before(&(*before).observer, window_pane_weak(wp));
+    w.z_index.insert_before(&before.observer, wp.observer.clone());
 }
 
-pub unsafe fn window_pane_z_insert_after(
-    w: *mut window,
-    after: *mut window_pane,
-    wp: *mut window_pane,
+pub fn window_pane_z_insert_after(
+    w: &mut window,
+    after: &window_pane,
+    wp: &window_pane,
 ) {
-    (*w).z_index.insert_after(&(*after).observer, window_pane_weak(wp));
+    w.z_index.insert_after(&after.observer, wp.observer.clone());
 }
 
-pub unsafe fn window_pane_swap_order(
-    first_window: *mut window,
-    first: *mut window_pane,
-    second_window: *mut window,
-    second: *mut window_pane,
+/// Swap within the first window when `second_window` is absent.
+pub fn window_pane_swap_order(
+    first_window: &mut window,
+    first: &window_pane,
+    second_window: Option<&mut window>,
+    second: &window_pane,
 ) {
-    if first_window == second_window {
-        (*first_window).panes.swap(&(*first).observer, &(*second).observer);
+    let Some(second_window) = second_window else {
+        first_window.panes.swap(&first.observer, &second.observer);
         return;
-    }
-    let first_position = (*first_window)
+    };
+    let first_position = first_window
         .panes
-        .position(&(*first).observer)
+        .position(&first.observer)
         .expect("first pane is not in order");
-    let second_position = (*second_window)
+    let second_position = second_window
         .panes
-        .position(&(*second).observer)
+        .position(&second.observer)
         .expect("second pane is not in order");
-    let first_weak = (*first_window).panes.remove_at(&(*first).observer);
-    let second_weak = (*second_window).panes.remove_at(&(*second).observer);
-    (*first_window).panes.insert_at(first_position, second_weak);
-    (*second_window)
+    let first_weak = first_window.panes.remove_at(&first.observer);
+    let second_weak = second_window.panes.remove_at(&second.observer);
+    first_window.panes.insert_at(first_position, second_weak);
+    second_window
         .panes
         .insert_at(second_position, first_weak);
 }
 
-pub unsafe fn window_pane_z_swap_order(
-    first_window: *mut window,
-    first: *mut window_pane,
-    second_window: *mut window,
-    second: *mut window_pane,
+/// Swap within the first window when `second_window` is absent.
+pub fn window_pane_z_swap_order(
+    first_window: &mut window,
+    first: &window_pane,
+    second_window: Option<&mut window>,
+    second: &window_pane,
 ) {
-    if first_window == second_window {
-        (*first_window).z_index.swap(&(*first).observer, &(*second).observer);
+    let Some(second_window) = second_window else {
+        first_window.z_index.swap(&first.observer, &second.observer);
         return;
-    }
-    let first_position = (*first_window)
+    };
+    let first_position = first_window
         .z_index
-        .position(&(*first).observer)
+        .position(&first.observer)
         .expect("first pane is not in stacking order");
-    let second_position = (*second_window)
+    let second_position = second_window
         .z_index
-        .position(&(*second).observer)
+        .position(&second.observer)
         .expect("second pane is not in stacking order");
-    let first_weak = (*first_window).z_index.remove_at(&(*first).observer);
-    let second_weak = (*second_window).z_index.remove_at(&(*second).observer);
-    (*first_window)
+    let first_weak = first_window.z_index.remove_at(&first.observer);
+    let second_weak = second_window.z_index.remove_at(&second.observer);
+    first_window
         .z_index
         .insert_at(first_position, second_weak);
-    (*second_window)
+    second_window
         .z_index
         .insert_at(second_position, first_weak);
 }

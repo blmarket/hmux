@@ -62,8 +62,8 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     );
     if args_has(args, 'D' as i32 as u_char) != 0 {
         wp = window_pane_last(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pane_list_remove(w, wp);
-        window_pane_list_insert_front(w, wp);
+        window_pane_list_remove(&mut *w, &*wp);
+        window_pane_list_insert_front(&mut *w, &*wp);
         lc = (*wp).layout_cell as *mut layout_cell;
         xoff = (*wp).xoff as u_int;
         yoff = (*wp).yoff as u_int;
@@ -97,8 +97,8 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         }
     } else {
         wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pane_list_remove(w, wp);
-        window_pane_list_insert_back(w, wp);
+        window_pane_list_remove(&mut *w, &*wp);
+        window_pane_list_insert_back(&mut *w, &*wp);
         lc = (*wp).layout_cell as *mut layout_cell;
         xoff = (*wp).xoff as u_int;
         yoff = (*wp).yoff as u_int;

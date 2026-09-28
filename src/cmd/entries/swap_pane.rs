@@ -137,8 +137,18 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if !(src_wp == dst_wp) {
         server_client_remove_pane(src_wp);
         server_client_remove_pane(dst_wp);
-        window_pane_swap_order(dst_w, dst_wp, src_w, src_wp);
-        window_pane_z_swap_order(dst_w, dst_wp, src_w, src_wp);
+        window_pane_swap_order(
+            &mut *dst_w,
+            &*dst_wp,
+            if src_w == dst_w { None } else { Some(&mut *src_w) },
+            &*src_wp,
+        );
+        window_pane_z_swap_order(
+            &mut *dst_w,
+            &*dst_wp,
+            if src_w == dst_w { None } else { Some(&mut *src_w) },
+            &*src_wp,
+        );
         src_lc = (*src_wp).layout_cell as *mut layout_cell;
         dst_lc = (*dst_wp).layout_cell as *mut layout_cell;
         (*src_lc).wp = (*dst_wp).observer.clone();

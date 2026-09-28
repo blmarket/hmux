@@ -258,14 +258,14 @@ unsafe fn cmd_join_pane_place(
         b"front\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        window_pane_z_remove(w, wp);
-        window_pane_z_insert_front(w, wp);
+        window_pane_z_remove(&mut *w, &*wp);
+        window_pane_z_insert_front(&mut *w, &*wp);
     } else if strcmp(
         position,
         b"back\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        window_pane_z_remove(w, wp);
+        window_pane_z_remove(&mut *w, &*wp);
         owp = window_pane_z_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !owp.is_null() {
             if window_pane_is_floating(&*owp) == 0 {
@@ -274,9 +274,9 @@ unsafe fn cmd_join_pane_place(
             owp = window_pane_z_next(owp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if !owp.is_null() {
-            window_pane_z_insert_before(w, owp, wp);
+            window_pane_z_insert_before(&mut *w, &*owp, &*wp);
         } else {
-            window_pane_z_insert_back(w, wp);
+            window_pane_z_insert_back(&mut *w, &*wp);
         }
     } else if strcmp(
         position,
@@ -285,8 +285,8 @@ unsafe fn cmd_join_pane_place(
     {
         owp = window_pane_z_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !owp.is_null() {
-            window_pane_z_remove(w, wp);
-            window_pane_z_insert_before(w, owp, wp);
+            window_pane_z_remove(&mut *w, &*wp);
+            window_pane_z_insert_before(&mut *w, &*owp, &*wp);
         }
     } else if strcmp(
         position,
@@ -295,8 +295,8 @@ unsafe fn cmd_join_pane_place(
     {
         owp = window_pane_z_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !owp.is_null() && window_pane_is_floating(&*owp) != 0 {
-            window_pane_z_remove(w, wp);
-            window_pane_z_insert_after(w, owp, wp);
+            window_pane_z_remove(&mut *w, &*wp);
+            window_pane_z_insert_after(&mut *w, &*owp, &*wp);
         }
     } else if strcmp(
         position,
@@ -304,9 +304,9 @@ unsafe fn cmd_join_pane_place(
     ) == 0 as ::core::ffi::c_int
     {
         owp = window_pane_z_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        window_pane_z_remove(w, wp);
+        window_pane_z_remove(&mut *w, &*wp);
         if !owp.is_null() {
-            window_pane_z_insert_before(w, owp, wp);
+            window_pane_z_insert_before(&mut *w, &*owp, &*wp);
         } else {
             owp = window_pane_z_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !owp.is_null() {
@@ -316,9 +316,9 @@ unsafe fn cmd_join_pane_place(
                 owp = window_pane_z_next(owp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
             if !owp.is_null() {
-                window_pane_z_insert_before(w, owp, wp);
+                window_pane_z_insert_before(&mut *w, &*owp, &*wp);
             } else {
-                window_pane_z_insert_back(w, wp);
+                window_pane_z_insert_back(&mut *w, &*wp);
             }
         }
     } else if strcmp(
@@ -328,11 +328,11 @@ unsafe fn cmd_join_pane_place(
     {
         owp = window_pane_z_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !owp.is_null() && window_pane_is_floating(&*owp) != 0 {
-            window_pane_z_remove(w, wp);
-            window_pane_z_insert_after(w, owp, wp);
+            window_pane_z_remove(&mut *w, &*wp);
+            window_pane_z_insert_after(&mut *w, &*owp, &*wp);
         } else {
-            window_pane_z_remove(w, wp);
-            window_pane_z_insert_front(w, wp);
+            window_pane_z_remove(&mut *w, &*wp);
+            window_pane_z_insert_front(&mut *w, &*wp);
         }
     } else {
         cmdq_error(item, |out| {
@@ -570,7 +570,7 @@ unsafe fn cmd_join_pane_zindex(
         });
         return CMD_RETURN_ERROR;
     }
-    window_pane_z_remove(w, wp);
+    window_pane_z_remove(&mut *w, &*wp);
     n = 0 as u_int;
     owp = window_pane_z_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !owp.is_null() {
@@ -584,9 +584,9 @@ unsafe fn cmd_join_pane_zindex(
         owp = window_pane_z_next(owp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if !owp.is_null() {
-        window_pane_z_insert_before(w, owp, wp);
+        window_pane_z_insert_before(&mut *w, &*owp, &*wp);
     } else {
-        window_pane_z_insert_back(w, wp);
+        window_pane_z_insert_back(&mut *w, &*wp);
     }
     redraw_invalidate_scene(w);
     events_fire_window(
@@ -622,8 +622,8 @@ unsafe fn cmd_join_pane_tile(
         return CMD_RETURN_ERROR;
     }
     (*lc).flags &= !LAYOUT_CELL_FLOATING;
-    window_pane_z_remove(w, wp);
-    window_pane_z_insert_back(w, wp);
+    window_pane_z_remove(&mut *w, &*wp);
+    window_pane_z_insert_back(&mut *w, &*wp);
     if args_has(args, 'd' as i32 as u_char) == 0 {
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
     }
@@ -727,17 +727,17 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     layout_close_pane(src_wp);
     server_client_remove_pane(src_wp);
     window_lost_pane(src_w, src_wp);
-    window_pane_list_remove(src_w, src_wp);
-    window_pane_z_remove(src_w, src_wp);
+    window_pane_list_remove(&mut *src_w, &*src_wp);
+    window_pane_z_remove(&mut *src_w, &*src_wp);
     (*src_wp).window = dst_w as *mut window;
     options_set_parent(options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*dst_w).options).map_or(std::ptr::null_mut(), |options| options));
     (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     if flags & SPAWN_BEFORE != 0 {
-        window_pane_list_insert_before(dst_w, dst_wp, src_wp);
-        window_pane_z_insert_before(dst_w, dst_wp, src_wp);
+        window_pane_list_insert_before(&mut *dst_w, &*dst_wp, &*src_wp);
+        window_pane_z_insert_before(&mut *dst_w, &*dst_wp, &*src_wp);
     } else {
-        window_pane_list_insert_after(dst_w, dst_wp, src_wp);
-        window_pane_z_insert_after(dst_w, dst_wp, src_wp);
+        window_pane_list_insert_after(&mut *dst_w, &*dst_wp, &*src_wp);
+        window_pane_z_insert_after(&mut *dst_w, &*dst_wp, &*src_wp);
     }
     layout_assign_pane(lc, src_wp, 0 as ::core::ffi::c_int);
     colour_palette_from_option(Some(&mut (*src_wp).palette), options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options));

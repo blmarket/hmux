@@ -969,7 +969,7 @@ unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse
     for pane_owner in (*w).z_index.snapshot() {
         wp = pane_owner.get();
         if window_pane_is_floating(&*wp) != 0 {
-            window_pane_z_remove(w, wp);
+            window_pane_z_remove(&mut *w, &*wp);
         }
     }
     (*pctx)
@@ -979,7 +979,7 @@ unsafe fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse
         let Some(pane_owner) = (*cctx.lc).wp.upgrade() else { continue; };
         wp = pane_owner.get();
         if window_pane_is_floating(&*wp) != 0 {
-            window_pane_z_insert_front(w, wp);
+            window_pane_z_insert_front(&mut *w, &*wp);
         }
     }
     for cctx in &(*pctx).cctxs {

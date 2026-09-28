@@ -1746,3 +1746,17 @@ Legacy layout and ordering-mutation boundaries still use raw projections.
 
 `cargo test --workspace` and `git diff --check` passed. Raw model relationships and
 remaining zoom/unzoom window APIs are still pending.
+
+## Implemented borrowed pane-order mutation APIs
+
+All twelve insertion, removal and swap helpers for pane order and stacking order
+now use safe Rust with mutable window borrows and shared pane borrows. The
+collections clone or transfer weak pane identities only; these operations neither
+retain nor release pane ownership. Same-window swaps explicitly omit the second
+window borrow, avoiding aliased mutable window references. All production callers
+have migrated to the borrowed interfaces.
+
+`cargo test --workspace` and `git diff --check` passed. A regression test covers
+same-window and cross-window swaps in both orderings and verifies pane strong
+counts remain unchanged. Raw model relationships and raw projections in calling
+commands/layout routines remain pending.

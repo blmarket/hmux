@@ -309,12 +309,12 @@ pub unsafe fn spawn_window(
         (*sc).wp0 = window_pane_first(w.as_ref());
         let source_pane_owner = (*sc).wp0.clone().expect("respawn window has a pane");
         let source_pane = source_pane_owner.get();
-        window_pane_list_remove(w, source_pane);
-        window_pane_z_remove(w, source_pane);
+        window_pane_list_remove(&mut *w, &*source_pane);
+        window_pane_z_remove(&mut *w, &*source_pane);
         layout_free(w);
         window_destroy_panes(w);
-        window_pane_list_insert_front(w, source_pane);
-        window_pane_z_insert_back(w, source_pane);
+        window_pane_list_insert_front(&mut *w, &*source_pane);
+        window_pane_z_insert_back(&mut *w, &*source_pane);
         window_pane_resize(source_pane, (*w).sx, (*w).sy);
         layout_init(w, source_pane);
         (*w).active = ::core::ptr::null_mut::<window_pane>();
