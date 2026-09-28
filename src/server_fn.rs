@@ -469,8 +469,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
         (*wp).fd = -(1 as ::core::ffi::c_int);
     }
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        bufferevent_free((*wp).pipe_event);
-        (*wp).pipe_event = ::core::ptr::null_mut::<bufferevent>();
+        (*wp).pipe_event.free();
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     }

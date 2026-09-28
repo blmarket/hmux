@@ -2421,3 +2421,13 @@ synchronous operation. Stop frees separate streams in the original order; in
 shared-stream mode it clears the write alias and frees the reader once. The
 cleanup regression checks callback order and handle expiration. The field
 inventory now counts 61 remaining in-scope raw fields.
+
+## Implemented weak pane pipe stream
+
+`window_pane.pipe_event` now holds a `StreamHandle` observing the runtime-owned
+pipe stream. Pipe reads copy input before forwarding it to the main pane stream,
+then recheck the pipe handle before draining. Output checks, writes and enable
+operations borrow the live stream slot for their synchronous work. Close,
+error and pane teardown free the stream through the handle; a regression
+checks forwarded bytes and expiration of a stale clone. The field inventory
+now counts 60 remaining in-scope raw fields.

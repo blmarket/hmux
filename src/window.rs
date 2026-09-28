@@ -1139,7 +1139,9 @@ unsafe fn window_destroy(mut w: *mut window) {
 pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     let mut n: ::core::ffi::c_int = 0;
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int)
-        && evbuffer_get_length(&*((*(*wp).pipe_event).output)) != 0 as size_t
+        && (*wp).pipe_event.with_ptr(|event| unsafe {
+            evbuffer_get_length(&*(*event).output) != 0 as size_t
+        }).unwrap_or(false)
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -2725,8 +2727,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
         input_free(ictx);
     }
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        bufferevent_free((*wp).pipe_event);
-        (*wp).pipe_event = ::core::ptr::null_mut::<bufferevent>();
+        (*wp).pipe_event.free();
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     }
@@ -2779,11 +2780,9 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
         new_size = data.len();
         new_data = data.as_ptr().cast_mut().cast();
         if new_size > 0 as size_t {
-            bufferevent_write(
-                (*wp).pipe_event,
-                new_data as *const ::core::ffi::c_void,
-                new_size,
-            );
+            let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
+                bufferevent_write(event, new_data as *const ::core::ffi::c_void, new_size);
+            });
             window_pane_update_used_data(wp, wpo, new_size);
         }
     }

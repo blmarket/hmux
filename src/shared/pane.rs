@@ -199,7 +199,8 @@ pub struct window_pane {
     pub border_status_line: style_line_entry,
     pub pipe_fd: ::core::ffi::c_int,
     pub pipe_pid: pid_t,
-    pub pipe_event: *mut bufferevent,
+    /// Observes the runtime-owned pipe stream; pipe_fd controls its lifetime.
+    pub pipe_event: crate::src::reactor::StreamHandle,
     pub pipe_offset: window_pane_offset,
     pub screen: *mut screen,
     pub base: screen,
