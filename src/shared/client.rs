@@ -182,7 +182,8 @@ pub struct client {
     /// Previous session observer; this link never keeps a session alive.
     pub last_session: std::rc::Weak<UnsafeCell<session>>,
     pub theme_colours: [::core::ffi::c_int; 10],
-    pub pan_window: *mut ::core::ffi::c_void,
+    /// Window whose manual pan offsets are active; this does not retain it.
+    pub pan_window: std::rc::Weak<UnsafeCell<super::window::window>>,
     pub pan_ox: u_int,
     pub pan_oy: u_int,
     pub overlay_generation: u64,
@@ -198,6 +199,15 @@ pub struct client {
 }
 
 impl client {
+    pub fn pan_window_is(&self, window: &super::window::window) -> bool {
+        self.pan_window.strong_count() != 0
+            && std::rc::Weak::ptr_eq(&self.pan_window, &window.observer)
+    }
+
+    pub fn set_pan_window(&mut self, window: &super::window::window) {
+        self.pan_window = window.observer.clone();
+    }
+
     pub fn empty() -> Self {
         Self {
             observer: std::rc::Weak::new(),
@@ -386,6 +396,30 @@ pub fn client_rc_ptr(owner: &Option<Rc<UnsafeCell<client>>>) -> *mut client {
 mod retained_client_tests {
     use super::*;
     use crate::src::{reactor, shared::rc};
+
+    #[test]
+    fn pan_window_observes_identity_without_retaining_the_window() {
+        let mut client = client::empty();
+        let first = super::super::window::window::new();
+        let first_observer = Rc::downgrade(&first);
+        unsafe {
+            let first_window = &*first.get();
+            assert!(!client.pan_window_is(first_window));
+            client.set_pan_window(first_window);
+            assert!(client.pan_window_is(first_window));
+        }
+        assert_eq!(Rc::strong_count(&first), 1);
+        drop(first);
+        assert!(first_observer.upgrade().is_none());
+
+        let second = super::super::window::window::new();
+        unsafe {
+            assert!(!client.pan_window_is(&*second.get()));
+            client.set_pan_window(&*second.get());
+            assert!(client.pan_window_is(&*second.get()));
+        }
+        assert_eq!(Rc::strong_count(&second), 1);
+    }
 
     #[test]
     fn owner_release_defers_cleanup_until_dispatch_or_cancellation() {

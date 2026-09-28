@@ -1305,7 +1305,7 @@ unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
     let wp = (*w).active;
     let lines = status_line_size(c);
     if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
-        c.pan_window = NULL;
+        c.pan_window = std::rc::Weak::new();
         return tty_window_view {
             bigger: false,
             ox: 0,
@@ -1321,7 +1321,7 @@ unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
         sx: c.tty.sx,
         sy: c.tty.sy.wrapping_sub(lines),
     };
-    if c.pan_window == w.cast() {
+    if c.pan_window_is(&*w) {
         if view.sx >= (*w).sx {
             c.pan_ox = 0;
         } else if c.pan_ox.wrapping_add(view.sx) > (*w).sx {
@@ -1354,7 +1354,7 @@ unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
             cy.wrapping_sub(view.sy).wrapping_add(1)
         };
     }
-    c.pan_window = NULL;
+    c.pan_window = std::rc::Weak::new();
     view
 }
 pub unsafe fn tty_update_window_offset(mut w: *mut window) {

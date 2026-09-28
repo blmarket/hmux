@@ -267,11 +267,11 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             }
         }
         if args_has(args, 'c' as i32 as u_char) != 0 {
-            (*tc).pan_window = NULL;
+            (*tc).pan_window = std::rc::Weak::new();
         } else {
             w = (*(*(*tc).session).curw).window_ptr();
-            if (*tc).pan_window != w as *mut ::core::ffi::c_void {
-                (*tc).pan_window = w as *mut ::core::ffi::c_void;
+            if !(*tc).pan_window_is(&*w) {
+                (*tc).set_pan_window(&*w);
                 (*tc).pan_ox = (*tty).oox;
                 (*tc).pan_oy = (*tty).ooy;
             }
