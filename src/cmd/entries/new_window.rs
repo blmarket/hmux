@@ -81,7 +81,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         s: None,
         wl: refbox::Weak::new(),
         tc: None,
-        wp0: None,
+        wp0: std::rc::Weak::new(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: None,
         argv: Vec::new(),

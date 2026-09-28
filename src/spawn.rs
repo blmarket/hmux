@@ -132,7 +132,8 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
     let session_owner = (*sc).s.clone().expect("spawn context session");
     let s = session_owner.get();
     let mut wl: *mut winlink = (*sc).wl_ptr();
-    let wp0 = (*sc).wp0.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp0_owner = (*sc).wp0.upgrade();
+    let wp0 = wp0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let name = (*sc).name.as_deref().unwrap_or(c"none");
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
     log_debug(format_args!(
@@ -306,8 +307,8 @@ pub unsafe fn spawn_window(
                 return ::core::ptr::null_mut::<winlink>();
             }
         }
-        (*sc).wp0 = window_pane_first(w.as_ref());
-        let source_pane_owner = (*sc).wp0.clone().expect("respawn window has a pane");
+        let source_pane_owner = window_pane_first(w.as_ref()).expect("respawn window has a pane");
+        (*sc).wp0 = std::rc::Rc::downgrade(&source_pane_owner);
         let source_pane = source_pane_owner.get();
         window_pane_list_remove(&mut *w, &*source_pane);
         window_pane_z_remove(&mut *w, &*source_pane);
@@ -434,7 +435,7 @@ pub unsafe fn spawn_pane(
     mut sc: *mut spawn_context,
     cause: *mut Option<CString>,
 ) -> *mut window_pane {
-    let source_pane_owner = (*sc).wp0.clone();
+    let source_pane_owner = (*sc).wp0.upgrade();
     let source_pane = source_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let item_owner = (*sc).item.upgrade();
     let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -1085,7 +1086,7 @@ pub(crate) unsafe fn spawn_editor(
         s: None,
         wl: refbox::Weak::new(),
         tc: None,
-        wp0: None,
+        wp0: std::rc::Weak::new(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: None,
         argv: Vec::new(),
@@ -1165,7 +1166,7 @@ pub(crate) unsafe fn spawn_editor(
     sc.s = Some(session_owner.clone());
     sc.set_wl(wl);
     sc.tc = Some(client_owner.clone());
-    sc.wp0 = (*w).active.upgrade();
+    sc.wp0 = (*w).active.clone();
     sc.lc = lc;
     sc.argv = vec![cmd];
     sc.environ = Some(environ_create());
@@ -1262,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn spawn_context_retains_models_until_context_is_dropped() {
+    fn spawn_context_observes_source_pane_without_retaining_it() {
         unsafe {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
@@ -1273,7 +1274,7 @@ mod tests {
             let mut context = spawn_context {
                 item: std::rc::Weak::new(), s: Some(session_owner.clone()),
                 wl: refbox::Weak::new(), tc: Some(owner.clone()),
-                wp0: Some(pane_owner.clone()), lc: std::ptr::null_mut(),
+                wp0: std::rc::Rc::downgrade(&pane_owner), lc: std::ptr::null_mut(),
                 name: None, argv: Vec::new(), environ: None,
                 idx: 0, cwd: None, flags: 0,
             };
@@ -1287,7 +1288,8 @@ mod tests {
             drop(pane_owner);
             drop(session_owner);
             assert!(session_observer.upgrade().is_some());
-            assert!(pane_observer.upgrade().is_some());
+            assert!(pane_observer.upgrade().is_none());
+            assert!(context.wp0.upgrade().is_none());
             assert!(observer.upgrade().is_some());
             assert!(std::rc::Rc::ptr_eq(&observer.upgrade().unwrap(), context.tc.as_ref().unwrap()));
             drop(context);

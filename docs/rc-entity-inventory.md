@@ -780,17 +780,17 @@ retains its target after the external owner is dropped and releases it when the
 context ends. Spawn session/source-pane fields and legacy model projections remain
 pending.
 
-## Implemented spawn-context source-pane owner
+## Implemented spawn-context source-pane observer
 
-`spawn_context.wp0` now owns an optional pane `Rc`. Split/respawn/editor contexts
-capture a live owner. Window respawn retains its selected source pane while
+`spawn_context.wp0` now stores a pane `Weak`. Split/respawn/editor contexts
+observe the source pane. Window respawn retains its selected source pane while
 removing it from ordering, rebuilding the layout and reinserting it; pane spawning
-keeps a local owner throughout reset, callback and creation work.
+keeps a local upgraded owner throughout reset, callback and creation work.
 
-`cargo test --workspace` passed. The context-lifetime regression now verifies both
-client and source-pane retention after external owners are dropped and release
-when the context ends. Spawn session storage, layout/winlink views and legacy raw
-projections remain pending.
+`cargo test --workspace` passed. The context-lifetime regression verifies that
+the source pane expires when its independent owner drops, while the context
+continues to retain its client. Spawn session/client ownership, layout views and
+legacy raw projections remain pending.
 
 ## Implemented spawn-context session owner
 
@@ -798,10 +798,10 @@ projections remain pending.
 Command/editor contexts retain their session, and window/pane spawning keeps a
 local owner throughout access. Context destruction releases this temporary owner.
 
-`cargo test --workspace` passed. The context-lifetime regression now verifies
-session, client and source-pane retention after external owners are dropped and
-release when the context ends. All three Rc model fields in spawn contexts now
-use owning handles. Layout/winlink views and legacy raw projections remain pending.
+`cargo test --workspace` passed. The context-lifetime regression verifies
+session and client retention after external owners drop. The source pane is a
+weak observer. Session/client ownership, layout views and legacy raw projections
+remain under review.
 
 ## Implemented mode source-pane observer
 

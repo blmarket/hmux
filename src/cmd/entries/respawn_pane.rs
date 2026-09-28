@@ -54,7 +54,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         s: None,
         wl: refbox::Weak::new(),
         tc: None,
-        wp0: None,
+        wp0: std::rc::Weak::new(),
         lc: ::core::ptr::null_mut::<layout_cell>(),
         name: None,
         argv: Vec::new(),
@@ -71,7 +71,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     sc.item = (*item).observer.clone();
     sc.s = (*s).observer.upgrade();
     sc.set_wl(wl);
-    sc.wp0 = (*wp).observer.upgrade();
+    sc.wp0 = (*wp).observer.clone();
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());

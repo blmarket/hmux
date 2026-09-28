@@ -89,7 +89,7 @@ pub struct spawn_context {
     pub wl: refbox::Weak<winlink>,
     /// Retain the target client for the duration of this spawn operation.
     pub tc: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    pub wp0: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    pub wp0: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub lc: *mut layout_cell,
     pub name: Option<std::ffi::CString>,
     pub argv: Vec<std::ffi::CString>,
