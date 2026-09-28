@@ -17,7 +17,7 @@ pub struct control_state {
     pub subs: Option<MonitorOwner>,
     pub guard_depth: ::core::ffi::c_int,
     pub(crate) deferred: VecDeque<std::ffi::CString>,
-    pub(crate) all_blocks: VecDeque<Box<control_block>>,
+    pub(crate) all_blocks: VecDeque<refbox::RefBox<control_block>>,
     pub(crate) pending_panes: VecDeque<u_int>,
 }
 
@@ -56,7 +56,7 @@ pub struct control_pane {
     pub flags: ::core::ffi::c_int,
     pub pending_flag: ::core::ffi::c_int,
     /// Ordered non-owning handles into the state-owned block collection.
-    pub blocks: VecDeque<*mut control_block>,
+    pub blocks: VecDeque<refbox::Weak<control_block>>,
 }
 
 #[repr(C)]

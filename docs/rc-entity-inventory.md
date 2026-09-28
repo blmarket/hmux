@@ -2361,3 +2361,12 @@ resolve the current slot only when its ID matches; completion compares the
 detached editor before clearing mode state. The stale-handle regression covers
 editor replacement and pane expiration. The field inventory now counts 69
 remaining in-scope raw fields.
+
+## Implemented weak control block queue
+
+The control state owns output and reply blocks through `RefBox`; each pane queue
+stores ordered weak handles to its blocks. A block's handle expires when the
+state removes it. Creation returns the weak handle directly, and release keeps
+reply-byte accounting and pane queue order. Local legacy pointer projections
+still rely on the state retaining the block for each operation. The field
+inventory now counts 68 remaining in-scope raw fields.

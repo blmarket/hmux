@@ -69,8 +69,8 @@ pub const CONTROL_IGNORE_FLAGS: ::core::ffi::c_int =
     CLIENT_CONTROL_NOOUTPUT | CLIENT_UNATTACHEDFLAGS;
 
 impl control_block {
-    fn new(line: Option<CString>, size: size_t) -> Box<Self> {
-        Box::new(control_block {
+    fn new(line: Option<CString>, size: size_t) -> refbox::RefBox<Self> {
+        refbox::RefBox::new(control_block {
             size: size,
             line: line,
             t: 0,
@@ -88,8 +88,8 @@ impl control_state {
         }
     }
 
-    fn add_block(&mut self, owner: Box<control_block>) -> *mut control_block {
-        let block = &*owner as *const control_block as *mut control_block;
+    fn add_block(&mut self, owner: refbox::RefBox<control_block>) -> *mut control_block {
+        let block = owner.as_ptr().cast_mut();
         self.all_blocks.push_back(owner);
         block
     }
@@ -97,9 +97,7 @@ impl control_state {
     fn block(&self, index: usize) -> *mut control_block {
         self.all_blocks
             .get(index)
-            .map_or(std::ptr::null_mut(), |owner| {
-                &**owner as *const control_block as *mut control_block
-            })
+            .map_or(std::ptr::null_mut(), |owner| owner.as_ptr().cast_mut())
     }
 
     fn pending_snapshot(&self) -> Vec<u_int> {
@@ -119,20 +117,39 @@ fn control_first_block(cs: &control_state) -> *mut control_block {
 }
 
 fn control_first_pane_block(cp: &control_pane) -> *mut control_block {
-    cp.blocks.front().copied().unwrap_or(std::ptr::null_mut())
+    cp.blocks.front().map_or(std::ptr::null_mut(), control_block_ptr)
+}
+
+fn control_block_ptr(block: &refbox::Weak<control_block>) -> *mut control_block {
+    assert!(
+        block.is_alive(),
+        "pane block must be owned by its control state"
+    );
+    block.as_ptr().cast_mut()
 }
 
 fn control_remove_pane_block(cp: &mut control_pane, block: *mut control_block) {
     let index = cp
         .blocks
         .iter()
-        .position(|candidate| *candidate == block)
+        .position(|candidate| std::ptr::eq(candidate.as_ptr(), block))
         .expect("control pane block must be queued on its pane");
     cp.blocks.remove(index).expect("located pane block");
 }
 
-fn control_add_block(cs: &mut control_state, owner: Box<control_block>) -> *mut control_block {
+fn control_add_block(
+    cs: &mut control_state,
+    owner: refbox::RefBox<control_block>,
+) -> *mut control_block {
     cs.add_block(owner)
+}
+
+fn control_add_block_with_weak(
+    cs: &mut control_state,
+    owner: refbox::RefBox<control_block>,
+) -> (*mut control_block, refbox::Weak<control_block>) {
+    let observer = owner.downgrade();
+    (control_add_block(cs, owner), observer)
 }
 
 #[cfg(test)]
@@ -192,21 +209,23 @@ mod control_queue_tests {
         unsafe {
             let mut owner = control_state::new();
             let cs = &mut owner;
-            let first = control_add_block(cs, control_block::new(None, 12));
-            let middle = control_add_block(cs, control_block::new(None, 23));
-            let last = control_add_block(cs, control_block::new(None, 34));
+            let (first, first_weak) = control_add_block_with_weak(cs, control_block::new(None, 12));
+            let (middle, middle_weak) =
+                control_add_block_with_weak(cs, control_block::new(None, 23));
+            let (last, last_weak) = control_add_block_with_weak(cs, control_block::new(None, 34));
             let mut pane = control_pane {
                 pane: 7,
                 offset: window_pane_offset { used: 0 },
                 queued: window_pane_offset { used: 0 },
                 flags: 0,
                 pending_flag: 0,
-                blocks: VecDeque::from([first, middle, last]),
+                blocks: VecDeque::from([first_weak, middle_weak.clone(), last_weak]),
             };
 
             assert_eq!(control_first_pane_block(&pane), first);
             control_remove_pane_block(&mut pane, middle);
             control_free_block(cs, middle);
+            assert!(!middle_weak.is_alive());
             assert_eq!(control_first_pane_block(&pane), first);
             assert_eq!((*last).size, 34);
             assert_eq!(cs.block(0), first);
@@ -276,7 +295,7 @@ mod control_queue_tests {
             for id in [4, 9] {
                 wp.id = id;
                 wp.offset.used = 123;
-                let block = control_add_block(owner, control_block::new(None, 10));
+                let (_, block) = control_add_block_with_weak(owner, control_block::new(None, 10));
                 let pane = control_add_pane(&mut owner.panes, &wp);
                 pane.blocks.push_back(block);
                 pane.pending_flag = 1;
@@ -405,7 +424,7 @@ mod control_queue_tests {
                     cs,
                     control_block::new(Some(CString::new("reply").unwrap()), 0),
                 );
-                let output = control_add_block(cs, control_block::new(None, 10));
+                let (_, output) = control_add_block_with_weak(cs, control_block::new(None, 10));
                 let wp = window_pane::empty();
                 let pane = control_add_pane(&mut cs.panes, &wp);
                 pane.blocks.push_back(output);
@@ -500,7 +519,7 @@ unsafe fn control_free_block(cs: &mut control_state, cb: *mut control_block) {
 }
 
 unsafe fn control_release_block(
-    blocks: &mut VecDeque<Box<control_block>>,
+    blocks: &mut VecDeque<refbox::RefBox<control_block>>,
     queued_reply_bytes: &mut size_t,
     cb: *mut control_block,
 ) {
@@ -520,7 +539,7 @@ unsafe fn control_release_block(
     }
     let index = blocks
         .iter()
-        .position(|owner| std::ptr::eq(&**owner, cb))
+        .position(|owner| std::ptr::eq(owner.as_ptr(), cb))
         .expect("control block must be owned by its state");
     drop(blocks.remove(index).expect("located control block"));
 }
@@ -579,7 +598,11 @@ unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
         return;
     };
     while let Some(block) = cp.blocks.pop_front() {
-        control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, block);
+        control_release_block(
+            &mut cs.all_blocks,
+            &mut cs.queued_reply_bytes,
+            control_block_ptr(&block),
+        );
     }
 }
 
@@ -611,7 +634,7 @@ pub unsafe fn control_reset_offsets(c: *mut client) {
     if let Some(panes) = cs.panes.storage.take() {
         for (_, mut pane) in *panes {
             while let Some(block) = pane.blocks.pop_front() {
-                control_free_block(cs, block);
+                control_free_block(cs, control_block_ptr(&block));
             }
         }
     }
@@ -972,10 +995,12 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                 return;
             }
             window_pane_update_used_data(wp, &raw mut cp.queued, new_size);
-            cb = control_add_block(cs, control_block::new(None, new_size));
+            let (new_block, block) =
+                control_add_block_with_weak(cs, control_block::new(None, new_size));
+            cb = new_block;
             (*cb).t = get_timer();
             let cp = cs.panes.get_mut(pane).expect("indexed control pane");
-            cp.blocks.push_back(cb);
+            cp.blocks.push_back(block);
             log_debug(format_args!(
                 "{}: {}: new output block of {} for %{}",
                 "control_write_output",
@@ -1626,7 +1651,11 @@ pub unsafe fn control_discard(c: &mut client) {
     if let Some(panes) = cs.panes.storage.as_mut() {
         for cp in panes.values_mut() {
             while let Some(block) = cp.blocks.pop_front() {
-                control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, block);
+                control_release_block(
+                    &mut cs.all_blocks,
+                    &mut cs.queued_reply_bytes,
+                    control_block_ptr(&block),
+                );
             }
         }
     }
