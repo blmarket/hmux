@@ -520,16 +520,11 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                         {
                                             (*tc).tty.mouse_last_pane =
                                                 (*new_wp).id as ::core::ffi::c_int;
-                                            let drag_client = std::ptr::NonNull::new(tc)
-                                                .expect("live drag client");
-                                            (*tc).tty.mouse_drag_update =
-                                                Some(Box::new(move |m| unsafe {
-                                                    cmd_split_window_mouse_resize(
-                                                        drag_client.as_ptr(),
-                                                        m as *mut mouse_event,
-                                                    )
-                                                }));
-                                            cmd_split_window_mouse_resize(tc, &raw mut (*event).m);
+                                            (*tc).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
+                                                tc_owner.as_ref().expect("live drag client"),
+                                                cmd_split_window_mouse_resize,
+                                            )));
+                                            cmd_split_window_mouse_resize(tc_owner.as_ref().expect("live drag client"), &raw mut (*event).m);
                                         }
                                         if args_has(args, 'P' as i32 as u_char) != 0 {
                                             template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -581,7 +576,8 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     drop(sc.environ.take());
     return CMD_RETURN_ERROR;
 }
-unsafe fn cmd_split_window_mouse_resize(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn cmd_split_window_mouse_resize(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
+    let c = client_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();

@@ -27,6 +27,7 @@ use crate::src::server_fn::server_redraw_client;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED,
     CLIENT_TERMINAL, CLIENT_UTF8,
@@ -396,6 +397,18 @@ pub(crate) fn tty_client_callback(
     move |_, _| {
         if let Some(owner) = observer.upgrade() {
             unsafe { callback(&owner) };
+        }
+    }
+}
+
+pub(crate) fn tty_mouse_client_callback(
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    callback: unsafe fn(&std::rc::Rc<std::cell::UnsafeCell<client>>, *mut mouse_event),
+) -> impl FnMut(&mut mouse_event) {
+    let observer = std::rc::Rc::downgrade(owner);
+    move |mouse| {
+        if let Some(owner) = observer.upgrade() {
+            unsafe { callback(&owner, mouse) };
         }
     }
 }
@@ -3438,6 +3451,27 @@ mod initialization_owner_tests {
     use super::*;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     use std::rc::Rc;
+
+    #[test]
+    fn mouse_callbacks_retain_live_clients_and_skip_expired_clients() {
+        unsafe fn update(owner: &Rc<std::cell::UnsafeCell<client>>, mouse: *mut mouse_event) {
+            assert_eq!(Rc::strong_count(owner), 2);
+            (*mouse).valid += 1;
+        }
+        unsafe {
+            let owner = client::new();
+            let observer = Rc::downgrade(&owner);
+            let mut callback = tty_mouse_client_callback(&owner, update);
+            assert_eq!(Rc::strong_count(&owner), 1);
+            let mut mouse = mouse_event::default();
+            callback(&mut mouse);
+            assert_eq!(mouse.valid, 1);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            callback(&mut mouse);
+            assert_eq!(mouse.valid, 1);
+        }
+    }
 
     #[test]
     fn terminal_event_callbacks_skip_expired_clients() {

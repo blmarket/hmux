@@ -497,14 +497,15 @@ unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     w = (*wl).window_ptr();
     window_redraw_active_switch(w, wp);
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-    let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
-    (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
-        cmd_join_pane_mouse_move(drag_client.as_ptr(), m as *mut mouse_event)
-    }));
-    cmd_join_pane_mouse_move(c, &raw mut (*event).m);
+    (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
+        c_owner.as_ref().expect("live drag client"),
+        cmd_join_pane_mouse_move,
+    )));
+    cmd_join_pane_mouse_move(c_owner.as_ref().expect("live drag client"), &raw mut (*event).m);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_join_pane_mouse_move(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
+    let c = client_owner.get();
     let mouse_pane_owner;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();

@@ -287,23 +287,24 @@ unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
         return CMD_RETURN_NORMAL;
     }
     if window_pane_is_floating(&*wp) == 0 {
-        let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
-        (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
-            cmd_resize_pane_mouse_resize_tiled(drag_client.as_ptr(), m as *mut mouse_event)
-        }));
-        cmd_resize_pane_mouse_resize_tiled(c, &raw mut (*event).m);
+        (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
+            c_owner.as_ref().expect("live drag client"),
+            cmd_resize_pane_mouse_resize_tiled,
+        )));
+        cmd_resize_pane_mouse_resize_tiled(c_owner.as_ref().expect("live drag client"), &raw mut (*event).m);
         return CMD_RETURN_NORMAL;
     }
     window_redraw_active_switch(w, wp);
     window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-    let drag_client = std::ptr::NonNull::new(c).expect("live drag client");
-    (*c).tty.mouse_drag_update = Some(Box::new(move |m| unsafe {
-        cmd_resize_pane_mouse_resize_move_floating(drag_client.as_ptr(), m as *mut mouse_event)
-    }));
-    cmd_resize_pane_mouse_resize_move_floating(c, &raw mut (*event).m);
+    (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
+        c_owner.as_ref().expect("live drag client"),
+        cmd_resize_pane_mouse_resize_move_floating,
+    )));
+    cmd_resize_pane_mouse_resize_move_floating(c_owner.as_ref().expect("live drag client"), &raw mut (*event).m);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_resize_pane_mouse_resize_move_floating(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
+    let c = client_owner.get();
     let mouse_pane_owner;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -446,7 +447,8 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(mut c: *mut client, mut m: 
         server_redraw_window_borders(w);
     }
 }
-unsafe fn cmd_resize_pane_mouse_resize_tiled(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
+    let c = client_owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut y: u_int = 0;

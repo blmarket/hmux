@@ -1135,3 +1135,17 @@ These callback captures are observers, avoiding a client/terminal callback cycle
 regression verifies the callbacks do not retain the client and can be invoked
 after it expires. Raw client captures in pane resize/move commands and internal
 model pointer projections remain pending.
+
+## Implemented weak clients for pane resize and move callbacks
+
+Tiled resize, floating resize/move, join-pane move, and split-window resize
+callbacks now capture Weak clients through `tty_mouse_client_callback`. The
+helper upgrades for each invocation and holds the Rc through the handler; expired
+clients skip the callback. The four handlers and immediate invocations borrow
+retained clients already available in their command contexts. These are observer
+captures, not owners of the terminal's client.
+
+`cargo test --workspace` and `git diff --check` passed. A regression checks that
+callback storage adds no strong owner, invocation temporarily retains the client,
+and expiration prevents further invocation. Raw pane/window/session projections
+inside the handlers and other model APIs remain pending.
