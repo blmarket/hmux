@@ -3643,6 +3643,7 @@ unsafe fn window_customize_start_edit(
     item: &window_customize_itemdata,
     client_owner: Option<&Rc<UnsafeCell<client>>>,
 ) {
+    let Some(client_owner) = client_owner else { return; };
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -3738,7 +3739,7 @@ unsafe fn window_customize_start_edit(
     let bytes = value.to_bytes();
     let bytes = if bytes.is_empty() { b"\n" } else { bytes };
     let editor = spawn_editor(
-        client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()),
+        client_owner,
         |stream| spawn_editor_write(stream, bytes),
         Some(Box::new(move |editor, buf| unsafe {
             window_customize_edit_close_cb(editor, buf, ed)

@@ -1280,3 +1280,16 @@ spawn API boundary.
 `cargo test --workspace` and `git diff --check` passed, including existing
 customize prompt payload/cleanup tests. Customize model-data pointers, internal
 client projections and editor spawning APIs remain pending.
+
+## Implemented retained clients and sessions for editor spawning
+
+Editor spawning borrows the client Rc and retains its session before invoking the
+file writer, then clones both handles into the spawn context. Buffer and customize
+editor callers pass their existing client owners. A client without a live session
+returns without creating an editor or invoking its callbacks; supplied callback
+captures are released on that return.
+
+`cargo test --workspace` and `git diff --check` passed. A regression covers the
+no-session return, suppressed file/completion callbacks and capture release.
+Client session storage, window/winlink access and internal raw projections remain
+pending.

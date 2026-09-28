@@ -1073,10 +1073,14 @@ pub(crate) fn spawn_editor_write(stream: &CFile, bytes: &[u8]) -> bool {
 }
 
 pub(crate) unsafe fn spawn_editor(
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     write: impl FnOnce(&CFile) -> bool,
     mut cb: spawn_finish_edit_cb,
 ) -> *mut spawn_editor_state {
+    let Some(session_owner) = (*client_owner.get()).session.as_ref()
+        .and_then(|session| session.observer.upgrade()) else {
+        return std::ptr::null_mut();
+    };
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
@@ -1092,7 +1096,7 @@ pub(crate) unsafe fn spawn_editor(
         cwd: ::core::ptr::null::<::core::ffi::c_char>(),
         flags: 0,
     };
-    let mut s: *mut session = (*c).session;
+    let s = session_owner.get();
     let mut wl: *mut winlink = (*s).curw;
     let mut w: *mut window = (*wl).window_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1160,9 +1164,9 @@ pub(crate) unsafe fn spawn_editor(
         .concat(),
     )
     .expect("editor command components contain no NUL");
-    sc.s = (*s).observer.upgrade();
+    sc.s = Some(session_owner.clone());
     sc.wl = wl;
-    sc.tc = c.as_ref().and_then(|client| client.observer.upgrade());
+    sc.tc = Some(client_owner.clone());
     sc.wp0 = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
     sc.lc = lc;
     sc.argv = vec![cmd];
@@ -1195,6 +1199,26 @@ mod tests {
     use std::process::{Command, Stdio};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn editor_without_a_session_releases_callbacks_without_starting() {
+        unsafe {
+            let client = client::new();
+            let callback_payload = std::rc::Rc::new(());
+            let observed = std::rc::Rc::downgrade(&callback_payload);
+            let editor = spawn_editor(
+                &client,
+                |_| panic!("detached client must not write an editor file"),
+                Some(Box::new(move |_, _| {
+                    drop(callback_payload);
+                    panic!("detached client must not complete an editor");
+                })),
+            );
+            assert!(editor.is_null());
+            assert!(observed.upgrade().is_none());
+            assert_eq!(std::rc::Rc::strong_count(&client), 1);
+        }
+    }
 
     #[test]
     fn spawn_context_retains_models_until_context_is_dropped() {

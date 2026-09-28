@@ -750,7 +750,7 @@ unsafe fn window_buffer_edit_close_cb(
 unsafe fn window_buffer_start_edit(
     mut data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
-    mut c: *mut client,
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
 ) {
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
@@ -771,7 +771,7 @@ unsafe fn window_buffer_start_edit(
         pb: pb.clone(),
     });
     let editor = spawn_editor(
-        c,
+        client_owner,
         |stream| spawn_editor_write(stream, paste_buffer_data(&pb.borrow()).unwrap_or_default()),
         Some(Box::new(move |editor, buf| unsafe {
             window_buffer_edit_close_cb(editor, buf, ed)
@@ -819,7 +819,7 @@ unsafe fn window_buffer_key(
             101 => {
                 let item_owner = mode_tree_get_current(&*mtd);
                 if let Some(item) = item_owner.as_buffer() {
-                    window_buffer_start_edit(data, &item, c);
+                    window_buffer_start_edit(data, &item, client_owner);
                 }
             }
             100 => {
