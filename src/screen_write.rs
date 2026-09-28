@@ -1112,8 +1112,7 @@ pub unsafe fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mut mode: ::co
         ));
     }
 }
-unsafe fn screen_write_sync_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut wp: *mut window_pane = arg as *mut window_pane;
+unsafe fn screen_write_sync_callback(wp: *mut window_pane) {
     log_debug(format_args!(
         "{}: %{} sync timer expired",
         "screen_write_sync_callback",
@@ -1139,7 +1138,7 @@ pub unsafe fn screen_write_start_sync(mut wp: *mut window_pane) {
             &raw mut (*wp).sync_timer,
             -(1 as ::core::ffi::c_int),
             0 as ::core::ffi::c_short,
-            move |_, _| unsafe { screen_write_sync_callback(wp as *mut ::core::ffi::c_void) },
+            move |_, _| unsafe { screen_write_sync_callback(wp) },
         );
     }
     event_add(&raw mut (*wp).sync_timer, &raw mut tv);

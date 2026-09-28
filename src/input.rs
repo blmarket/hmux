@@ -2247,8 +2247,7 @@ unsafe fn input_fire_pane_title_changed(
         ep,
     );
 }
-unsafe fn input_ground_timer_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut ictx: *mut input_ctx = arg as *mut input_ctx;
+unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
     log_debug(format_args!(
         "{}: {} expired",
         "input_ground_timer_callback",
@@ -2328,13 +2327,13 @@ pub unsafe fn input_init(
         &raw mut (*ictx).ground_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { input_ground_timer_callback(ictx as *mut ::core::ffi::c_void) },
+        move |_, _| unsafe { input_ground_timer_callback(ictx) },
     );
     event_set(
         &raw mut (*ictx).request_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { input_request_timer_callback(ictx as *mut ::core::ffi::c_void) },
+        move |_, _| unsafe { input_request_timer_callback(ictx) },
     );
     input_reset(ictx, 0 as ::core::ffi::c_int);
     owner
@@ -5874,8 +5873,7 @@ pub unsafe fn input_set_buffer_size(mut buffer_size: size_t) {
     ));
     input_buffer_size = buffer_size;
 }
-unsafe fn input_request_timer_callback(mut arg: *mut ::core::ffi::c_void) {
-    let mut ictx: *mut input_ctx = arg as *mut input_ctx;
+unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
     let mut t: uint64_t = get_timer();
     for ir in input_ctx_request_handles(ictx) {
         // Sending a queued reply can reenter input processing. Confirm that
