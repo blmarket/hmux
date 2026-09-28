@@ -2022,3 +2022,17 @@ remain unchanged.
 `cargo test --workspace` and `git diff --check` passed. These operations still use
 UnsafeCell at borrow acquisition; other file operations and the broader model
 relationships remain to be migrated.
+
+## Implemented file borrows for buffered I/O
+
+Output push/retry, buffered read/write callbacks, write-data and write-close
+handlers now access retained files through shared or mutable borrows. Retry
+eligibility and write-data forwarding need only shared file access. Write
+completion reacquires a file borrow after callback delivery to retire the stream;
+handlers end field access before invoking other file operations. Retry events
+continue to own their file, and buffered event callbacks continue to hold Weak
+observers that upgrade for dispatch.
+
+`cargo test --workspace` and `git diff --check` passed. Raw client locals in
+printing, file index insertion projections, and broader model relationships still
+require migration; UnsafeCell borrow acquisition remains an unsafe boundary.

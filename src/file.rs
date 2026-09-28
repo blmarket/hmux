@@ -702,8 +702,8 @@ pub unsafe fn file_cancel(cf: &mut client_file) {
     );
 }
 unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = owner.get();
-    if (*cf).c.as_ref().is_none_or(|owner| {
+    let cf = &*owner.get();
+    if cf.c.as_ref().is_none_or(|owner| {
         let client = &*owner.get();
         client.flags & CLIENT_DEAD as uint64_t == 0
     }) {
@@ -711,13 +711,13 @@ unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
     }
 }
 pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = file_owner.get();
+    let cf = &mut *file_owner.get();
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_write_data>();
     let mut sent: size_t = 0;
     let mut left: size_t = 0;
     let mut close_0: msg_write_close = msg_write_close { stream: 0 };
-    left = evbuffer_get_length(&*((*cf).buffer));
+    left = evbuffer_get_length(&*(cf.buffer));
     while left != 0 as size_t {
         sent = left;
         if sent
@@ -733,7 +733,7 @@ pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         let msglen = header_len + sent;
         msg.resize(msglen, 0);
         let header = msg_write_data {
-            stream: (*cf).stream,
+            stream: cf.stream,
         };
         memcpy(
             msg.as_mut_ptr().cast(),
@@ -742,12 +742,12 @@ pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         );
         memcpy(
             msg.as_mut_ptr().add(header_len).cast(),
-            evbuffer_pullup(&mut *(*cf).buffer, sent as ssize_t)
+            evbuffer_pullup(&mut *cf.buffer, sent as ssize_t)
                 .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *const ::core::ffi::c_void,
             sent,
         );
         if proc_send(
-            (*cf).peer,
+            cf.peer,
             MSG_WRITE,
             -(1 as ::core::ffi::c_int),
             msg.as_ptr().cast(),
@@ -756,11 +756,11 @@ pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         {
             break;
         }
-        evbuffer_drain(&mut *(*cf).buffer, sent);
-        left = evbuffer_get_length(&*((*cf).buffer));
+        evbuffer_drain(&mut *cf.buffer, sent);
+        left = evbuffer_get_length(&*(cf.buffer));
         log_debug(format_args!(
             "file {} sent {}, left {}",
-            ((*cf).stream) as i32,
+            (cf.stream) as i32,
             (sent) as usize,
             (left) as usize
         ));
@@ -768,16 +768,16 @@ pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     if left != 0 as size_t {
         let owner = file_owner.clone();
         event_once(move |_, _| unsafe { file_push_cb(&owner) });
-    } else if (*cf).stream > 2 as ::core::ffi::c_int {
-        close_0.stream = (*cf).stream;
+    } else if cf.stream > 2 as ::core::ffi::c_int {
+        close_0.stream = cf.stream;
         proc_send(
-            (*cf).peer,
+            cf.peer,
             MSG_WRITE_CLOSE,
             -(1 as ::core::ffi::c_int),
             &raw mut close_0 as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_close>() as size_t,
         );
-        if (*cf).c.as_ref().is_none_or(|owner| {
+        if cf.c.as_ref().is_none_or(|owner| {
             let client = &*owner.get();
             client.flags & CLIENT_WRITE_ACK as uint64_t == 0
         }) {
@@ -791,13 +791,13 @@ pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     let mut next = client_files_minmax(files);
     while let Some(file) = next {
         let cf = &*file.get();
-        if !(*cf).event.is_null() {
-            left = evbuffer_get_length(&*((*(*cf).event).output));
+        if !cf.event.is_null() {
+            left = evbuffer_get_length(&*((*cf.event).output));
             if left != 0 as size_t {
                 waiting += 1;
                 log_debug(format_args!(
                     "file {} {} bytes left",
-                    ((*cf).stream) as u32,
+                    (cf.stream) as u32,
                     (left) as usize
                 ));
             }
@@ -807,31 +807,31 @@ pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     return (waiting != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
 unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = owner.get();
+    let cf = &mut *owner.get();
     let mut msg: msg_write_done = msg_write_done {
         stream: 0,
         error: 0,
     };
-    if !(*cf).event.is_null() {
-        bufferevent_free((*cf).event);
-        (*cf).event = ::core::ptr::null_mut::<bufferevent>();
+    if !cf.event.is_null() {
+        bufferevent_free(cf.event);
+        cf.event = ::core::ptr::null_mut::<bufferevent>();
     }
-    if (*cf).fd != -(1 as ::core::ffi::c_int) {
-        if close((*cf).fd) != 0 as ::core::ffi::c_int && (*cf).error == 0 as ::core::ffi::c_int {
-            (*cf).error = *__errno_location();
+    if cf.fd != -(1 as ::core::ffi::c_int) {
+        if close(cf.fd) != 0 as ::core::ffi::c_int && cf.error == 0 as ::core::ffi::c_int {
+            cf.error = *__errno_location();
         }
-        (*cf).fd = -(1 as ::core::ffi::c_int);
+        cf.fd = -(1 as ::core::ffi::c_int);
     }
-    msg.stream = (*cf).stream;
-    msg.error = (*cf).error;
+    msg.stream = cf.stream;
+    msg.error = cf.error;
     proc_send(
-        (*cf).peer,
+        cf.peer,
         MSG_WRITE_DONE,
         -(1 as ::core::ffi::c_int),
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_write_done>() as size_t,
     );
-    if let Some(callback) = (*cf).cb.as_mut() {
+    if let Some(callback) = cf.cb.as_mut() {
         callback(client_file_event {
             client: None,
             path: None,
@@ -840,13 +840,13 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
             buffer: None,
         });
     }
-    client_files_remove(&mut *cf);
+    client_files_remove(&mut *owner.get());
 }
 unsafe fn file_write_error_callback(
     mut what: ::core::ffi::c_short,
     owner: &Rc<UnsafeCell<client_file>>,
 ) {
-    let cf = owner.get();
+    let cf = &mut *owner.get();
     let mut error: ::core::ffi::c_int = 0;
     if what as ::core::ffi::c_int & EVBUFFER_ERROR != 0 {
         error = *__errno_location();
@@ -856,15 +856,15 @@ unsafe fn file_write_error_callback(
     if error == 0 as ::core::ffi::c_int {
         error = EIO;
     }
-    log_debug(format_args!("write error file {}", ((*cf).stream) as i32));
-    (*cf).error = error;
-    bufferevent_free((*cf).event);
-    (*cf).event = ::core::ptr::null_mut::<bufferevent>();
-    close((*cf).fd);
-    (*cf).fd = -(1 as ::core::ffi::c_int);
-    if (*cf).closed != 0 {
+    log_debug(format_args!("write error file {}", (cf.stream) as i32));
+    cf.error = error;
+    bufferevent_free(cf.event);
+    cf.event = ::core::ptr::null_mut::<bufferevent>();
+    close(cf.fd);
+    cf.fd = -(1 as ::core::ffi::c_int);
+    if cf.closed != 0 {
         file_write_finished(owner);
-    } else if let Some(callback) = (*cf).cb.as_mut() {
+    } else if let Some(callback) = cf.cb.as_mut() {
         callback(client_file_event {
             client: None,
             path: None,
@@ -875,11 +875,11 @@ unsafe fn file_write_error_callback(
     }
 }
 unsafe fn file_write_callback(owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = owner.get();
-    log_debug(format_args!("write check file {}", ((*cf).stream) as i32));
-    if (*cf).closed != 0 && evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
+    let cf = &mut *owner.get();
+    log_debug(format_args!("write check file {}", (cf.stream) as i32));
+    if cf.closed != 0 && evbuffer_get_length(&*((*cf.event).output)) == 0 as size_t {
         file_write_finished(owner);
-    } else if let Some(callback) = (*cf).cb.as_mut() {
+    } else if let Some(callback) = cf.cb.as_mut() {
         callback(client_file_event {
             client: None,
             path: None,
@@ -928,29 +928,29 @@ pub unsafe fn file_write_open(
     } else {
         transfer_owner = file_create_with_peer(peer, files, msg.stream, cb);
         let cf = &mut *transfer_owner.get();
-        if (*cf).closed != 0 {
+        if cf.closed != 0 {
             error = EBADF;
         } else {
-            (*cf).fd = -(1 as ::core::ffi::c_int);
+            cf.fd = -(1 as ::core::ffi::c_int);
             if msg.fd == -(1 as ::core::ffi::c_int) {
-                (*cf).fd = open(path, msg.flags | flags, 0o644 as ::core::ffi::c_int);
+                cf.fd = open(path, msg.flags | flags, 0o644 as ::core::ffi::c_int);
             } else {
                 if msg.fd != STDOUT_FILENO && msg.fd != STDERR_FILENO {
                     *__errno_location() = EBADF;
                 } else {
-                    (*cf).fd = dup(msg.fd);
+                    cf.fd = dup(msg.fd);
                     if close_received != 0 {
                         close(msg.fd);
                     }
                 }
             }
-            if (*cf).fd == -(1 as ::core::ffi::c_int) {
+            if cf.fd == -(1 as ::core::ffi::c_int) {
                 error = *__errno_location();
             } else {
                 let data_observer = Rc::downgrade(&transfer_owner);
                 let error_observer = data_observer.clone();
-                (*cf).event = bufferevent_new(
-                    (*cf).fd,
+                cf.event = bufferevent_new(
+                    cf.fd,
                     None,
                     bufferevent_data_callback(move |_| unsafe {
                         if let Some(owner) = data_observer.upgrade() { file_write_callback(&owner); }
@@ -959,10 +959,10 @@ pub unsafe fn file_write_open(
                         if let Some(owner) = error_observer.upgrade() { file_write_error_callback(flags, &owner); }
                     }),
                 );
-                if (*cf).event.is_null() {
+                if cf.event.is_null() {
                     fatalx(|out| out.write_all(b"out of memory"));
                 }
-                bufferevent_enable((*cf).event, EV_WRITE as ::core::ffi::c_short);
+                bufferevent_enable(cf.event, EV_WRITE as ::core::ffi::c_short);
             }
         }
     }
@@ -988,15 +988,15 @@ pub unsafe fn file_write_data(files: &client_files, imsg: &imsg) {
     let Some(file_owner) = client_files_find(files, &find) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
-    let cf = file_owner.get();
+    let cf = &*file_owner.get();
     log_debug(format_args!(
         "write {} to file {}",
         (size) as usize,
-        ((*cf).stream) as i32
+        (cf.stream) as i32
     ));
-    if !(*cf).event.is_null() {
+    if !cf.event.is_null() {
         bufferevent_write(
-            (*cf).event,
+            cf.event,
             imsg.data[::core::mem::size_of::<msg_write_data>()..]
                 .as_ptr()
                 .cast::<::core::ffi::c_void>(),
@@ -1015,10 +1015,10 @@ pub unsafe fn file_write_close(files: &client_files, imsg: &imsg) {
     let Some(file_owner) = client_files_find(files, &find) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
     };
-    let cf = file_owner.get();
-    log_debug(format_args!("close file {}", ((*cf).stream) as i32));
-    (*cf).closed = 1 as ::core::ffi::c_int;
-    if (*cf).event.is_null() || evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
+    let cf = &mut *file_owner.get();
+    log_debug(format_args!("close file {}", (cf.stream) as i32));
+    cf.closed = 1 as ::core::ffi::c_int;
+    if cf.event.is_null() || evbuffer_get_length(&*((*cf.event).output)) == 0 as size_t {
         file_write_finished(&file_owner);
     }
 }
@@ -1026,37 +1026,37 @@ unsafe fn file_read_error_callback(
     mut what: ::core::ffi::c_short,
     owner: &Rc<UnsafeCell<client_file>>,
 ) {
-    let cf = owner.get();
+    let cf = &mut *owner.get();
     let mut msg: msg_read_done = msg_read_done {
         stream: 0,
         error: 0,
     };
-    log_debug(format_args!("read error file {}", ((*cf).stream) as i32));
-    msg.stream = (*cf).stream;
+    log_debug(format_args!("read error file {}", (cf.stream) as i32));
+    msg.stream = cf.stream;
     msg.error = if what as ::core::ffi::c_int & EVBUFFER_ERROR != 0 {
         EIO
     } else {
         0 as ::core::ffi::c_int
     };
     proc_send(
-        (*cf).peer,
+        cf.peer,
         MSG_READ_DONE,
         -(1 as ::core::ffi::c_int),
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
-    bufferevent_free((*cf).event);
-    close((*cf).fd);
+    bufferevent_free(cf.event);
+    close(cf.fd);
     client_files_remove(&mut *cf);
 }
 unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = owner.get();
+    let cf = &mut *owner.get();
     let mut bdata: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut bsize: size_t = 0;
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_read_data>();
     loop {
-        bsize = evbuffer_get_length(&*((*(*cf).event).input));
+        bsize = evbuffer_get_length(&*((*cf.event).input));
         if bsize == 0 as size_t {
             break;
         }
@@ -1070,17 +1070,17 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
                 .wrapping_sub(::core::mem::size_of::<msg_read_data>() as usize)
                 as size_t;
         }
-        bdata = evbuffer_pullup(&mut *(*(*cf).event).input, bsize as ssize_t)
+        bdata = evbuffer_pullup(&mut *(*cf.event).input, bsize as ssize_t)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
         log_debug(format_args!(
             "read {} from file {}",
             (bsize) as usize,
-            ((*cf).stream) as i32
+            (cf.stream) as i32
         ));
         let msglen = header_len + bsize;
         msg.resize(msglen, 0);
         let header = msg_read_data {
-            stream: (*cf).stream,
+            stream: cf.stream,
         };
         memcpy(
             msg.as_mut_ptr().cast(),
@@ -1089,13 +1089,13 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
         );
         memcpy(msg.as_mut_ptr().add(header_len).cast(), bdata, bsize);
         proc_send(
-            (*cf).peer,
+            cf.peer,
             MSG_READ,
             -(1 as ::core::ffi::c_int),
             msg.as_ptr().cast(),
             msglen,
         );
-        evbuffer_drain(&mut *(*(*cf).event).input, bsize);
+        evbuffer_drain(&mut *(*cf.event).input, bsize);
     }
 }
 pub unsafe fn file_read_open(
