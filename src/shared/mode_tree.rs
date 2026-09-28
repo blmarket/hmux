@@ -234,7 +234,12 @@ impl ModeTreeItemData {
 /// A row identity. Only its containing list owns the allocation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ModeTreeItemRef(refbox::Weak<mode_tree_item>);
-pub type ModeTreeItemWeak = Option<ModeTreeItemRef>;
+
+impl Default for ModeTreeItemRef {
+    fn default() -> Self {
+        Self(refbox::Weak::new())
+    }
+}
 
 impl ModeTreeItemRef {
     pub(crate) fn observe(owner: &refbox::RefBox<mode_tree_item>) -> Self {
@@ -243,6 +248,10 @@ impl ModeTreeItemRef {
 
     pub fn is_alive(&self) -> bool {
         self.0.is_alive()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn try_borrow(&self) -> Option<refbox::Borrow<'_, mode_tree_item>> {
@@ -271,7 +280,7 @@ pub struct mode_tree_line {
 }
 
 pub struct mode_tree_item {
-    pub parent: ModeTreeItemWeak,
+    pub parent: ModeTreeItemRef,
     pub itemdata: ModeTreeItemData,
     pub line: u_int,
     pub key: key_code,

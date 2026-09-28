@@ -207,7 +207,7 @@ fn mode_tree_sibling(
             list.previous(item)
         }
     };
-    if let Some(parent) = parent {
+    if !parent.is_empty() {
         sibling(&parent.borrow().children)
     } else {
         sibling(&mtd.children)
@@ -758,7 +758,7 @@ pub fn mode_tree_add(
         ));
     }
     let mut row = mode_tree_item {
-        parent: parent.cloned(),
+        parent: parent.cloned().unwrap_or_default(),
         itemdata,
         tag,
         name: name.to_owned(),
@@ -797,7 +797,7 @@ pub fn mode_tree_align(item: &ModeTreeItemRef) {
 }
 pub fn mode_tree_remove(mtd: &mut mode_tree_data, item: &ModeTreeItemRef) {
     let parent = item.borrow().parent.clone();
-    if let Some(parent) = parent {
+    if !parent.is_empty() {
         let mut parent = parent.borrow_mut();
         let position = parent.children.position(item);
         parent.children.items.remove(position);
@@ -1057,10 +1057,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                     b"mode_tree_branch\0" as *const u8 as *const ::core::ffi::c_char,
                     |out| out.write_all(b"1"),
                 );
-                if mti
-                    .parent
-                    .clone()
-                    .is_some_and(|parent| (&(*mtd).lines)[parent.borrow().line as usize].last != 0)
+                if !mti.parent.is_empty()
+                    && (&(*mtd).lines)[mti.parent.borrow().line as usize].last != 0
                 {
                     format_add(
                         ft,
@@ -1265,11 +1263,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
             let line = (&(*mtd).lines)[(*mtd).current as usize].clone();
             let mut owner = line.item.clone();
             if owner.borrow().draw_as_parent != 0 {
-                let parent = owner
-                    .borrow()
-                    .parent
-                    .clone()
-                    .expect("preview row has a parent");
+                let parent = owner.borrow().parent.clone();
+                assert!(!parent.is_empty(), "preview row has a parent");
                 owner = parent;
             }
             let mti = owner.borrow();
@@ -1559,9 +1554,9 @@ fn mode_tree_search_next(mtd: &mode_tree_data, item: &ModeTreeItemRef) -> Option
             return Some(next);
         }
         let parent = current.borrow().parent.clone();
-        let Some(parent) = parent else {
+        if parent.is_empty() {
             return mtd.children.first();
-        };
+        }
         current = parent;
     }
 }
@@ -1570,9 +1565,10 @@ fn mode_tree_search_previous(
     mtd: &mode_tree_data,
     item: &ModeTreeItemRef,
 ) -> Option<ModeTreeItemRef> {
+    let parent = item.borrow().parent.clone();
     let mut previous = if let Some(previous) = mode_tree_sibling(mtd, item, false) {
         previous
-    } else if let Some(parent) = item.borrow().parent.clone() {
+    } else if !parent.is_empty() {
         return Some(parent);
     } else {
         mtd.children.last()?
@@ -1646,7 +1642,8 @@ unsafe fn mode_tree_search_set(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     };
     let tag = item.borrow().tag;
     let mut parent = item.borrow().parent.clone();
-    while let Some(owner) = parent {
+    while !parent.is_empty() {
+        let owner = parent;
         let mut row = owner.borrow_mut();
         row.expanded = 1;
         parent = row.parent.clone();
@@ -2259,7 +2256,8 @@ pub unsafe fn mode_tree_key(
             if row.no_tag == 0 {
                 if row.tagged == 0 {
                     let mut parent = row.parent.clone();
-                    while let Some(owner) = parent {
+                    while !parent.is_empty() {
+                        let owner = parent;
                         let mut row = owner.borrow_mut();
                         row.tagged = 0;
                         parent = row.parent.clone();
@@ -2283,8 +2281,8 @@ pub unsafe fn mode_tree_key(
         35184372088948 => {
             for line in &(*mtd).lines {
                 let mut row = line.item.borrow_mut();
-                row.tagged = if let Some(parent) = row.parent.clone() {
-                    (parent.borrow().no_tag != 0) as i32
+                row.tagged = if !row.parent.is_empty() {
+                    (row.parent.borrow().no_tag != 0) as i32
                 } else {
                     (row.no_tag == 0) as i32
                 };
@@ -2302,9 +2300,9 @@ pub unsafe fn mode_tree_key(
             let target = if line.flat != 0 || current.borrow().expanded == 0 {
                 current.borrow().parent.clone()
             } else {
-                Some(current.clone())
+                current.clone()
             };
-            if let Some(target) = target {
+            if !target.is_empty() {
                 let mut row = target.borrow_mut();
                 row.expanded = 0;
                 (*mtd).current = row.line;
@@ -3110,7 +3108,7 @@ mod row_owner_tests {
             mode_tree_free(tree_owner);
             assert!(observer.upgrade().is_none());
             assert!(!parent_observer.is_alive());
-            assert!(!borrowed.parent.as_ref().unwrap().is_alive());
+            assert!(!borrowed.parent.is_alive());
             assert_eq!(borrowed.text.as_deref(), Some(c"description"));
             assert!(!child_observer.is_alive());
             drop(borrowed);
