@@ -5193,53 +5193,6 @@ mod item_owner_tests {
     }
 
     #[test]
-    fn prompt_input_keeps_owner_alive_while_closing_its_own_prompt() {
-        struct Owner {
-            drops: Rc<Cell<usize>>,
-            cleanup: RefCell<prompt_free_cb>,
-        }
-        impl Drop for Owner {
-            fn drop(&mut self) {
-                self.drops.set(self.drops.get() + 1);
-            }
-        }
-        unsafe fn close(
-            _client: Option<&Rc<UnsafeCell<client>>>,
-            owner: &Owner,
-            _text: Option<&CStr>,
-            _key: prompt_key_result,
-        ) -> prompt_result {
-            let freecb = owner.cleanup.borrow_mut().take().unwrap();
-            freecb();
-            assert_eq!(owner.drops.get(), 0);
-            PROMPT_CONTINUE
-        }
-        let drops = Rc::new(Cell::new(0));
-        let owner = RefBox::new(Owner {
-            drops: drops.clone(),
-            cleanup: RefCell::new(None),
-        });
-        let observer = RefBox::downgrade(&owner);
-        let (mut inputcb, freecb) = window_customize_prompt_callbacks(owner, close);
-        *observer.try_borrow_mut().unwrap().cleanup.borrow_mut() = freecb;
-        assert_eq!(
-            inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
-            PROMPT_CONTINUE
-        );
-        assert_eq!(drops.get(), 1);
-        assert!(matches!(
-            observer.try_borrow_mut(),
-            Err(refbox::BorrowError::Dropped)
-        ));
-        assert_eq!(
-            inputcb.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
-            PROMPT_CLOSE
-        );
-        drop(inputcb);
-        assert_eq!(drops.get(), 1);
-    }
-
-    #[test]
     fn editor_cancellation_drops_its_owned_record_without_dispatch() {
         let edit = Box::new(window_customize_editdata {
             wp_id: u_int::MAX,

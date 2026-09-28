@@ -642,7 +642,7 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
+        w = window_owner.get();
         window_cursor = windows_next(&*w);
         let mut pane_cursor = window_pane_first(w.as_ref());
         while let Some(pane_owner) = pane_cursor {
@@ -662,6 +662,7 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 pane_cursor = window_pane_next(wp.as_ref());
             }
         }
+        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
     }
     job_check_died(pid, status);
 }
@@ -675,7 +676,7 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     }
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
+        w = window_owner.get();
         wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).pid == pid {
@@ -686,6 +687,7 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
             wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         window_cursor = windows_next(&*w);
+        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
     }
     job_check_died(pid, status);
 }

@@ -91,7 +91,7 @@ impl HooksEvents {
 pub struct hooks_data<'a> {
     pub name: &'a CStr,
     pub fs: cmd_find_state,
-    pub formats: crate::src::shared::format::FormatTreeOwner,
+    pub formats: Box<format_tree>,
     pub oo: *mut options,
     pub client: Weak<UnsafeCell<client>>,
     pub expand: ::core::ffi::c_int,
@@ -100,7 +100,7 @@ pub struct hooks_data<'a> {
 pub struct hooks_monitor {
     // options_entry.monitor_data owns the boxed record; callbacks only borrow it.
     pub oo: *mut options,
-    pub set: Option<crate::src::shared::monitor::MonitorOwner>,
+    pub set: Option<Box<crate::src::shared::monitor::monitor_set>>,
     pub sink: EventSinkId,
     pub fs: cmd_find_state,
     pub type_0: monitor_type,
@@ -146,7 +146,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
         fs.wl_ptr(),
         fs.wp_ptr(),
     );
-    format_merge(ft, (*hd).formats.as_ptr());
+    format_merge(ft, &raw mut *(*hd).formats);
     let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft);
     let pr = cmd_parse_from_string(
@@ -219,7 +219,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     } else {
         state = cmdq_new_state(&raw mut fs, &mut cmdq_get_event(item), CMDQ_STATE_NOHOOKS);
     }
-    cmdq_add_formats(&state, (*hd).formats.as_ptr());
+    cmdq_add_formats(&state, &raw mut *(*hd).formats);
     if *(*hd).name.as_ptr() as ::core::ffi::c_int == '@' as i32 {
         value = options_get_string(oo, (*hd).name.as_ptr());
         pr = hooks_parse(hd, &fs, CStr::from_ptr(value));
@@ -282,7 +282,7 @@ unsafe fn hooks_insert_event(
     }
     let c = event_payload_get_client(ep);
     let mut formats = format_create_owned(c, item, FORMAT_NONE, FORMAT_NOJOBS);
-    let ft = formats.as_ptr();
+    let ft = &raw mut *formats;
     event_payload_add_formats(ep, ft, c"hook_".as_ptr());
     format_add(ft, c"hook".as_ptr(), |out| write_cstr(out, name));
     format_log_debug(ft, c"hooks_insert_event".as_ptr());
@@ -296,6 +296,7 @@ unsafe fn hooks_insert_event(
     };
     event_payload_get_target(ep, &mut hd.fs);
     hooks_insert(item, &raw mut hd);
+    format_free(Box::into_raw(hd.formats));
 }
 unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     let name = name.as_ptr();
@@ -378,15 +379,18 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) 
         expand: 0,
     };
     cmd_find_copy_state(&raw mut hd.fs, target);
-    format_add(hd.formats.as_ptr(), c"hook".as_ptr(), |out| write_cstr(out, name));
-    format_log_debug(hd.formats.as_ptr(), c"hooks_run".as_ptr());
+    format_add(&raw mut *hd.formats, c"hook".as_ptr(), |out| write_cstr(out, name));
+    format_log_debug(&raw mut *hd.formats, c"hooks_run".as_ptr());
     hooks_insert(item, &raw mut hd);
+    format_free(Box::into_raw(hd.formats));
 }
 impl Drop for hooks_monitor {
     fn drop(&mut self) {
         unsafe {
             events_remove_sink(self.sink);
-            drop(self.set.take());
+            if let Some(set) = self.set.take() {
+                crate::src::monitor::monitor_destroy(Box::into_raw(set));
+            }
         }
     }
 }
@@ -561,7 +565,7 @@ pub unsafe fn hooks_monitor_add(
         events_callback(move |name, payload| unsafe { hooks_monitor_hook_cb(name, payload, hm) }),
     );
     options_set_monitor_data(o, Some(owner));
-    monitor_add((*hm).set.as_mut().expect("hook monitor").as_ptr(), name, type_0, id, format, flags);
+    monitor_add((&raw mut **(*hm).set.as_mut().expect("hook monitor")), name, type_0, id, format, flags);
 }
 pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {
     let mut bytes = options_name(&*o).to_bytes().to_vec();
@@ -602,14 +606,14 @@ pub unsafe fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as u_int;
     };
-    return monitor_get_fire_count(hm.set.as_mut().expect("hook monitor").as_ptr(), name);
+    return monitor_get_fire_count((&raw mut **hm.set.as_mut().expect("hook monitor")), name);
 }
 pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
     let name = (*o).name.as_ptr();
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as time_t;
     };
-    return monitor_get_fire_time(hm.set.as_mut().expect("hook monitor").as_ptr(), name);
+    return monitor_get_fire_time((&raw mut **hm.set.as_mut().expect("hook monitor")), name);
 }
 
 #[cfg(test)]

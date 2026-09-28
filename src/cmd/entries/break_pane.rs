@@ -209,7 +209,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         window_pane_z_remove(&mut *w, &*wp);
         layout_close_pane(wp);
         let window = window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel);
-        (*wp).window = (*window.as_ptr()).observer.clone();
+        (*wp).window = (*window.get()).observer.clone();
         w = (*wp).window_ptr();
         // window_create supplied the temporary reference released after attach.
         options_set_parent(options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options));
@@ -242,13 +242,14 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             Ok(wl) => wl,
             Err(error) => {
                 cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+                crate::src::window::window_remove_ref(window.get(), c"cmd_break_pane_exec".as_ptr(), || window);
                 return CMD_RETURN_ERROR;
             }
         };
         layout_init(w, wp);
         (*wp).flags |= PANE_CHANGED;
         colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
-        drop(window);
+        crate::src::window::window_remove_ref(window.get(), c"cmd_break_pane_exec".as_ptr(), || window);
         events_fire_window(
             b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
             w,

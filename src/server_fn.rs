@@ -181,7 +181,7 @@ pub unsafe fn server_redraw_window(window: &window) {
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
                 &window.observer,
-                &std::rc::Rc::downgrade(current.as_rc()),
+                &std::rc::Rc::downgrade(current),
             ));
         if matches {
             server_redraw_client(client);
@@ -196,7 +196,7 @@ pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::Un
         let matches = client.session_ptr().as_ref()
             .and_then(|session| session.curw_ptr().as_ref())
             .and_then(|link| link.window_owner.as_ref())
-            .is_some_and(|current| std::rc::Rc::ptr_eq(current.as_rc(), window_owner));
+            .is_some_and(|current| std::rc::Rc::ptr_eq(current, window_owner));
         if matches {
             client.flags |= CLIENT_REDRAWMENU as uint64_t;
         }
@@ -212,7 +212,7 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
                 &window.observer,
-                &std::rc::Rc::downgrade(current.as_rc()),
+                &std::rc::Rc::downgrade(current),
             ));
         if matches {
             client.flags |= CLIENT_REDRAWBORDERS as uint64_t;
@@ -333,10 +333,7 @@ pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     recalculate_sizes();
-    window_remove_ref(
-        owner,
-        b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    window_remove_ref(owner.get(), b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char, || owner);
 }
 pub unsafe fn server_renumber_session(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();

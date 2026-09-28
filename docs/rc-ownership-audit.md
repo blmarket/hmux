@@ -36,7 +36,11 @@ types remain explicit `Rc`s; `KeyTableOwner` has been removed.
 Client references use ordinary `Rc<UnsafeCell<client>>` values. Cleanup explicitly
 passes retained references to `server_client_unref_owned` for deferred release.
 Optional record fields support absent clients and taking references at teardown.
-`WindowOwner` remains a drop-policy guard for live window-close callbacks.
+Window holders now store `Rc<UnsafeCell<window>>` directly and perform explicit releases.
+Lookup and traversal callers call `window_remove_ref` on completion and early exits.
+Winlink release calls `window_remove_ref`, which notifies while the field is
+published, then takes and drops its reference so callbacks can still inspect the
+link. Normal unlinking releases that reference before dropping the winlink.
 
 ## Verification
 

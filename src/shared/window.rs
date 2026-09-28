@@ -53,7 +53,7 @@ pub struct winlink {
     pub(crate) observer: refbox::Weak<winlink>,
     pub idx: ::core::ffi::c_int,
     pub session: std::rc::Weak<std::cell::UnsafeCell<session>>,
-    pub window_owner: Option<WindowOwner>,
+    pub window_owner: Option<std::rc::Rc<std::cell::UnsafeCell<window>>>,
     pub flags: ::core::ffi::c_int,
     pub entry: winlink_entry,
 }
@@ -288,44 +288,8 @@ impl window {
     }
 }
 
-/// One existing window reference, including its last-close notification policy.
-pub struct WindowOwner(pub(crate) Option<std::rc::Rc<std::cell::UnsafeCell<window>>>);
-
-impl WindowOwner {
-    /// Adopt an existing reference with the window's pre-release notification policy.
-    pub fn adopt(owner: std::rc::Rc<std::cell::UnsafeCell<window>>) -> Self {
-        Self(Some(owner))
-    }
-
-    /// # Safety
-    /// The pointer must name a live Rc-owned window.
-    pub unsafe fn retain(ptr: *mut window, from: &std::ffi::CStr) -> Self {
-        Self(Some(crate::src::window::window_add_ref(ptr, from.as_ptr())))
-    }
-
-    pub fn as_ptr(&self) -> *mut window {
-        super::rc::as_ptr(self.0.as_ref().expect("live window owner"))
-    }
-
-    pub fn as_rc(&self) -> &std::rc::Rc<std::cell::UnsafeCell<window>> {
-        self.0.as_ref().expect("live window owner")
-    }
-}
-
-impl Drop for WindowOwner {
-    fn drop(&mut self) {
-        if let Some(owner) = self.0.take() {
-            unsafe {
-                crate::src::window::window_remove_ref(
-                    owner, c"WindowOwner::drop".as_ptr(),
-                );
-            }
-        }
-    }
-}
-
 impl winlink {
     pub fn window_ptr(&self) -> *mut window {
-        self.window_owner.as_ref().map_or(std::ptr::null_mut(), WindowOwner::as_ptr)
+        self.window_owner.as_ref().map_or(std::ptr::null_mut(), super::rc::as_ptr)
     }
 }

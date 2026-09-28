@@ -34,7 +34,7 @@ use crate::src::shared::mouse::{
 use crate::src::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::*;
-use crate::src::shared::window::{window, WindowOwner};
+use crate::src::shared::window::{window};
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
 use std::cell::UnsafeCell;
@@ -616,15 +616,15 @@ pub unsafe fn menu_display(
     fs: *mut cmd_find_state,
     cb: menu_choice_cb,
 ) {
-    let setup_window = WindowOwner::adopt(if fs.is_null() {
+    let setup_window = if fs.is_null() {
         let client = &*client_owner.expect("menu without a target requires a client").get();
         let link = &*(*client.session_ptr()).curw_ptr();
-        link.window_owner.as_ref().expect("current link has a window").as_rc().clone()
+        link.window_owner.as_ref().expect("current link has a window").clone()
     } else {
         (*fs).w.upgrade().expect("live menu target window")
-    });
-    let window = Rc::downgrade(setup_window.as_rc());
-    let w = &mut *setup_window.as_rc().get();
+    };
+    let window = Rc::downgrade(&setup_window);
+    let w = &mut *setup_window.get();
     let sx = menu.width.wrapping_add(4);
     let sy = menu.count.wrapping_add(2);
     if sx >= w.sx {
@@ -665,7 +665,7 @@ pub unsafe fn menu_display(
         let mut md = owner.try_borrow_mut().expect("live unborrowed menu");
         if !fs.is_null() {
             cmd_find_copy_state(&mut md.fs, fs);
-        } else if cmd_find_from_window(&mut md.fs, setup_window.as_ptr(), 0) != 0 {
+        } else if cmd_find_from_window(&mut md.fs, setup_window.get(), 0) != 0 {
             cmd_find_clear_state(&mut md.fs, 0);
         }
         screen_init(&mut md.s, sx, sy, 0);
@@ -674,7 +674,7 @@ pub unsafe fn menu_display(
         }
         md.s.mode &= !MODE_CURSOR;
     }
-    drop(setup_window);
+    crate::src::window::window_remove_ref(setup_window.get(), c"menu_display".as_ptr(), || setup_window);
     menu_close(&window, None);
     let replaced = {
         let Some(retained) = window.upgrade() else {

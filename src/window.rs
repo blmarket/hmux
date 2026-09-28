@@ -171,21 +171,20 @@ static mut next_active_point: u_int = 0;
 pub fn windows_find(
     head: &windows,
     elm: &window,
-) -> Option<crate::src::shared::window::WindowOwner> {
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let owner = head.storage.as_ref()?;
     let map = owner
         .try_borrow_mut()
         .expect("window index already borrowed");
     map.get(&elm.id)?
         .upgrade()
-        .map(crate::src::shared::window::WindowOwner::adopt)
 }
 
 /// Register an observer, without adding a strong reference to the window.
 pub unsafe fn windows_insert(
     head: *mut windows,
     window: &Rc<std::cell::UnsafeCell<window>>,
-) -> Option<crate::src::shared::window::WindowOwner> {
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let elm = window.get();
     let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
@@ -193,7 +192,7 @@ pub unsafe fn windows_insert(
         .try_borrow_mut()
         .expect("window index already borrowed");
     if let Some(existing) = map.get(&(*elm).id).and_then(std::rc::Weak::upgrade) {
-        return Some(crate::src::shared::window::WindowOwner::adopt(existing));
+        return Some(existing);
     }
     map.insert((*elm).id, Rc::downgrade(window));
     (*elm).entry.owner = observer;
@@ -229,17 +228,16 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
     elm
 }
 
-pub fn windows_minmax(head: &windows) -> Option<crate::src::shared::window::WindowOwner> {
+pub fn windows_minmax(head: &windows) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let owner = head.storage.as_ref()?;
     let map = owner
         .try_borrow_mut()
         .expect("window index already borrowed");
     map.values()
         .find_map(std::rc::Weak::upgrade)
-        .map(crate::src::shared::window::WindowOwner::adopt)
 }
 
-pub fn windows_next(elm: &window) -> Option<crate::src::shared::window::WindowOwner> {
+pub fn windows_next(elm: &window) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
@@ -251,7 +249,6 @@ pub fn windows_next(elm: &window) -> Option<crate::src::shared::window::WindowOw
         std::ops::Bound::Unbounded,
     ))
     .find_map(|(_, weak)| weak.upgrade())
-    .map(crate::src::shared::window::WindowOwner::adopt)
 }
 
 pub fn winlinks_find(head: &winlinks, elm: &winlink) -> *mut winlink {
@@ -769,9 +766,9 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
 // then drop the consumed Rc without firing the notification twice.
 unsafe fn winlink_release_window(wl: *mut winlink, from: &CStr) {
     let w = (*wl).window_ptr();
-    window_before_release(w, from.as_ptr());
-    let mut owner = (*wl).window_owner.take().expect("winlink window owner");
-    drop(owner.0.take());
+    window_remove_ref(w, from.as_ptr(), || {
+        (*wl).window_owner.take().expect("winlink window reference")
+    });
 }
 
 pub unsafe fn winlink_set_window(wl: *mut winlink, w: *mut window) {
@@ -779,9 +776,7 @@ pub unsafe fn winlink_set_window(wl: *mut winlink, w: *mut window) {
         window_winlinks_remove((*wl).window_ptr(), wl);
         winlink_release_window(wl, c"winlink_set_window");
     }
-    (*wl).window_owner = Some(crate::src::shared::window::WindowOwner::retain(
-        w, c"winlink_set_window",
-    ));
+    (*wl).window_owner = Some(window_add_ref(w, c"winlink_set_window".as_ptr()));
     window_winlinks_append(w, wl);
 }
 pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
@@ -997,7 +992,7 @@ pub fn winlink_stack_next(stack: &winlink_stack, wl: *mut winlink) -> *mut winli
         .next()
         .unwrap_or(std::ptr::null_mut())
 }
-pub unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option<crate::src::shared::window::WindowOwner> {
+pub unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut id: u_int = 0;
     if *s as ::core::ffi::c_int != '@' as i32 {
@@ -1014,7 +1009,7 @@ pub unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option
     }
     return window_find_by_id(id);
 }
-pub unsafe fn window_find_by_id(id: u_int) -> Option<crate::src::shared::window::WindowOwner> {
+pub unsafe fn window_find_by_id(id: u_int) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let mut w = window::default();
     w.id = id;
     return windows_find(&*std::ptr::addr_of!(windows), &w);
@@ -1042,7 +1037,7 @@ pub unsafe fn window_create(
     mut sy: u_int,
     mut xpixel: u_int,
     mut ypixel: u_int,
-) -> crate::src::shared::window::WindowOwner {
+) -> std::rc::Rc<std::cell::UnsafeCell<window>> {
     if xpixel == 0 as u_int {
         xpixel = DEFAULT_XPIXEL as u_int;
     }
@@ -1092,7 +1087,7 @@ pub unsafe fn window_create(
         ((*w).xpixel) as u32,
         ((*w).ypixel) as u32
     ));
-    crate::src::shared::window::WindowOwner::adopt(owner)
+    owner
 }
 thread_local! {
     static TEARING_DOWN_WINDOW: std::cell::Cell<Option<std::ptr::NonNull<window>>> =
@@ -1189,8 +1184,18 @@ pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) -
     ));
     owner
 }
-unsafe fn window_before_release(w: *mut window, from: *const ::core::ffi::c_char) {
-    // Notify while a strong reference still exists: callbacks may retain w.
+/// Release a window reference after notifying while that reference is still held.
+/// `take_reference` runs after notification so a winlink can keep its field
+/// visible to callbacks until the release actually consumes it.
+///
+/// # Safety
+/// `w` must remain live through notification. `take_reference` must return the
+/// caller's existing strong reference to that same window without cloning it.
+pub unsafe fn window_remove_ref(
+    w: *mut window,
+    from: *const ::core::ffi::c_char,
+    take_reference: impl FnOnce() -> Rc<std::cell::UnsafeCell<window>>,
+) {
     if (*w).observer.strong_count() == 1 {
         events_fire_window(c"window-closed".as_ptr(), w);
     }
@@ -1199,10 +1204,9 @@ unsafe fn window_before_release(w: *mut window, from: *const ::core::ffi::c_char
         ((*w).id) as u32,
         log_cstr((from) as *const _)
     ));
-}
-pub unsafe fn window_remove_ref(owner: Rc<std::cell::UnsafeCell<window>>, from: *const ::core::ffi::c_char) {
-    window_before_release(crate::src::shared::rc::as_ptr(&owner), from);
-    drop(owner);
+    let reference = take_reference();
+    assert_eq!(reference.get(), w, "release must consume the notified window reference");
+    drop(reference);
 }
 pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) -> std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
     let owner = (*wp).observer.upgrade().expect("live Rc pane");
@@ -4965,7 +4969,7 @@ mod zoom_teardown_tests {
                 if typed {
                     drop(w_owner);
                 } else {
-                    window_remove_ref(w_owner, c"test final notifying owner".as_ptr());
+                    window_remove_ref(w_owner.get(), c"test final notifying owner".as_ptr(), || w_owner);
                 }
                 assert_eq!(resized.get(), 0);
                 assert_eq!(closed.get(), usize::from(!typed));
@@ -4997,7 +5001,7 @@ mod zoom_teardown_tests {
             assert_eq!(window_unzoom(w, 1), 0);
             assert_eq!(((*pane).sx, (*pane).sy), (40, 24));
             assert!((*w).saved_layout_root.is_none());
-            window_remove_ref(w_owner, c"test live close".as_ptr());
+            window_remove_ref(w_owner.get(), c"test live close".as_ptr(), || w_owner);
             assert_eq!(
                 *notifications.borrow(),
                 [c"pane-resized", c"window-unzoomed", c"window-closed"]

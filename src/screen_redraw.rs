@@ -1020,9 +1020,10 @@ pub unsafe fn redraw_invalidate_all_scenes() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
+        w = window_owner.get();
         redraw_invalidate_scene(w);
         window_cursor = windows_next(&*w);
+        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
     }
 }
 unsafe fn redraw_get_scene(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Option<Box<redraw_scene>> {

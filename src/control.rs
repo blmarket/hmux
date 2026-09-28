@@ -1750,7 +1750,9 @@ pub unsafe fn control_stop(c: *mut client) {
     };
     let subs = cs.subs.take();
     // Keep the owner published until callbacks and external resources are gone.
-    drop(subs);
+    if let Some(subs) = subs {
+        crate::src::monitor::monitor_destroy(Box::into_raw(subs));
+    }
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t == 0 {
         cs.write_event.free();
     } else {
@@ -1783,7 +1785,7 @@ pub unsafe fn control_add_sub(
         .control_state
         .as_deref_mut()
         .expect("control client state")
-        .subs.as_mut().expect("control subscriptions").as_ptr();
+        .subs.as_deref_mut().expect("control subscriptions") as *mut _;
     monitor_add(subs, name, type_0, id, format, MONITOR_NOTIFY_INITIAL);
 }
 pub unsafe fn control_remove_sub(mut c: *mut client, mut name: *const ::core::ffi::c_char) {
@@ -1791,7 +1793,7 @@ pub unsafe fn control_remove_sub(mut c: *mut client, mut name: *const ::core::ff
         .control_state
         .as_deref_mut()
         .expect("control client state")
-        .subs.as_mut().expect("control subscriptions").as_ptr();
+        .subs.as_deref_mut().expect("control subscriptions") as *mut _;
     monitor_remove(subs, name);
 }
 

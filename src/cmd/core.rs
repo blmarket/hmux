@@ -634,12 +634,15 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut sessio
         let window_owner = window_find_by_id((*m).w as u_int);
         w = window_owner.as_ref().map_or(
             std::ptr::null_mut(),
-            crate::src::shared::window::WindowOwner::as_ptr,
+            crate::src::shared::rc::as_ptr,
         );
         if w.is_null() {
             return ::core::ptr::null_mut::<winlink>();
         }
         wl = winlink_find_by_window(&raw mut (*s).windows, w);
+        if let Some(window) = window_owner {
+            crate::src::window::window_remove_ref(window.get(), c"cmd_mouse_window".as_ptr(), || window);
+        }
     }
     if !sp.is_null() {
         *sp = s;

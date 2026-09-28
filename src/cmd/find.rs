@@ -404,14 +404,20 @@ unsafe fn cmd_find_get_window(
     ));
     if *window as ::core::ffi::c_int == '@' as i32 {
         let window_owner = window_find_by_id_str(window);
-        (*fs).set_w(window_owner.as_ref().map_or(
-            std::ptr::null_mut(),
-            crate::src::shared::window::WindowOwner::as_ptr,
-        ));
-        if (*fs).w_ptr().is_null() {
-            return -(1 as ::core::ffi::c_int);
+        let result = (|| {
+            (*fs).set_w(window_owner.as_ref().map_or(
+                std::ptr::null_mut(),
+                crate::src::shared::rc::as_ptr,
+            ));
+            if (*fs).w_ptr().is_null() {
+                return -(1 as ::core::ffi::c_int);
+            }
+            return cmd_find_best_session_with_window(fs);
+        })();
+        if let Some(window) = window_owner {
+            crate::src::window::window_remove_ref(window.get(), c"cmd_find_get_window".as_ptr(), || window);
         }
-        return cmd_find_best_session_with_window(fs);
+        return result;
     }
     (*fs).s = current.s.clone();
     if cmd_find_get_window_with_session(fs, window) == 0 as ::core::ffi::c_int {
@@ -447,14 +453,20 @@ unsafe fn cmd_find_get_window_with_session(
     (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
     if *window as ::core::ffi::c_int == '@' as i32 {
         let window_owner = window_find_by_id_str(window);
-        (*fs).set_w(window_owner.as_ref().map_or(
-            std::ptr::null_mut(),
-            crate::src::shared::window::WindowOwner::as_ptr,
-        ));
-        if (*fs).w_ptr().is_null() || session_has(&*(*fs).s_ptr(), &*(*fs).w_ptr()) == 0 {
-            return -(1 as ::core::ffi::c_int);
+        let result = (|| {
+            (*fs).set_w(window_owner.as_ref().map_or(
+                std::ptr::null_mut(),
+                crate::src::shared::rc::as_ptr,
+            ));
+            if (*fs).w_ptr().is_null() || session_has(&*(*fs).s_ptr(), &*(*fs).w_ptr()) == 0 {
+                return -(1 as ::core::ffi::c_int);
+            }
+            return cmd_find_best_winlink_with_window(fs);
+        })();
+        if let Some(window) = window_owner {
+            crate::src::window::window_remove_ref(window.get(), c"cmd_find_get_window_with_session".as_ptr(), || window);
         }
-        return cmd_find_best_winlink_with_window(fs);
+        return result;
     }
     if exact == 0
         && (*window.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '+' as i32

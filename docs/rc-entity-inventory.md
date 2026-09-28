@@ -4,6 +4,21 @@ Reviewed 2026-09-27. This is the tracking list for migrating model pointer holde
 It distinguishes the allocated entity from each individual holder: the same
 entity can have owning, weak, and borrowed holders simultaneously.
 
+## Owner wrapper removal
+
+The later wrapper cleanup follows the SessionOwner migration: direct Rc fields
+and locals release explicitly, with no WindowOwner type. Window creation, lookup,
+and traversal return Rc<UnsafeCell<window>>; callers consume their references
+through window_remove_ref. For winlinks, that function notifies while the field
+is still installed, then takes and drops its reference. Normal unlinking releases
+the window reference before dropping the winlink.
+
+Monitor and format holders store Boxes or optional Boxes and invoke monitor_destroy or
+format_free after taking them, preserving cleanup order and reentrant callbacks.
+Popup overlays directly store RefBox<PopupState>. The ncurses reading operation
+calls del_curterm explicitly. The historical implementation notes below describe
+the wrappers as they existed before this cleanup.
+
 ## Classification rules
 
 - **Owning:** a stored strong reference needs a matching model-reference increase
@@ -35,7 +50,7 @@ entity can have owning, weak, and borrowed holders simultaneously.
 | Entity | Owning holders and release evidence | Weak holders / borrowed views | Tracking status |
 | --- | --- | --- | --- |
 | `session` | Session index; event targets/payloads; monitor session; run-shell data. `session_remove_ref` consumes an `Rc` and defers release. | Self observer, find state, monitor changes, mode selections; group membership; client session/last-session, winlink session, format and spawn contexts are weak. The current winlink field is a weak RefBox observer. | Owners typed; raw relationships and traversal projections remain. |
-| `window` | Creation returns `WindowOwner`; winlinks own `WindowOwner`; alerts and event payloads retain `Rc`. `window_remove_ref` performs live close notification before release. | Self observer, find state, menus, monitor changes; pane parent and format/redraw context. Global index is weak. | **Migrated:** index entries, index traversal, ID lookup and all their callers retain `WindowOwner` while accessing the window. |
+| `window` | Creation returns `Rc<UnsafeCell<window>>`; winlinks retain `Rc<UnsafeCell<window>>`; alerts and event payloads retain `Rc`. `window_remove_ref` performs live close notification before release. | Self observer, find state, menus, monitor changes; pane parent and format/redraw context. Global index is weak. | **Migrated:** index entries, index traversal, ID lookup and all their callers retain `Rc<UnsafeCell<window>>` while accessing the window. |
 | `window_pane` | Pane index; retained event targets/payloads. `window_pane_remove_ref` consumes an `Rc`; logical destruction removes the index owner. | Pane lists/history, find state, mode tree, prompts and monitor changes; window active/modal/zoom panes use weak handles; raw layout cells, input and render contexts remain. | Owners and many observers typed; remaining raw relationships and short-lived upgrade projections need migration. |
 | `client` | Client registry; queue items; prepared commands; format trees; popups; asynchronous command data; file records; queued key events and event payloads. `server_client_unref_owned` defers a consumed owner. | Self observer, target-client/find state, monitor, prompt and key-event observers, window latest-client identity; raw tty parent, input/render/format contexts. | Owners typed; borrowed constructor migration in progress. Preserve deferred release. |
 | `client_file` | Client file index plus completion/retry captures. Completion unlinks index ownership even on cancellation; ordinary `Rc` drop frees the record. The record itself owns its client reference. | Self observer and command wait-file observer; callback pointers borrow a retained record. | Typed retention already present; avoid reintroducing file/client cycles. |
@@ -84,7 +99,7 @@ object reference-counted. Track those contained holders under the entity above.
 
 `WindowIndex` is now `BTreeMap<u_int, Weak<UnsafeCell<window>>>`.
 Insertion borrows an existing `Rc` and downgrades it. Lookup and traversal upgrade
-into `WindowOwner`, preserving last-release notification even if callbacks remove
+into `Rc<UnsafeCell<window>>`, explicitly released through `window_remove_ref` to preserve last-release notification even if callbacks remove
 the previous owner. All 14 global traversal loops retain current owners, and child
 exit traversal retains the next owner before callbacks can remove it. Five ID
 lookup consumers also keep the returned owner for their operation.

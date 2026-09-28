@@ -158,7 +158,7 @@ unsafe fn window_panes_get_source(
     let window_owner = window_find_by_id((*data).source_window);
     w = window_owner.as_ref().map_or(
         std::ptr::null_mut(),
-        crate::src::shared::window::WindowOwner::as_ptr,
+        crate::src::shared::rc::as_ptr,
     );
     if w.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -188,6 +188,9 @@ unsafe fn window_panes_get_source(
     }
     if !wp.is_null() {
         *wp = w;
+    }
+    if let Some(window) = window_owner {
+        crate::src::window::window_remove_ref(window.get(), c"window_panes_get_source".as_ptr(), || window);
     }
     return 1 as ::core::ffi::c_int;
 }

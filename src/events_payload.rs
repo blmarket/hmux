@@ -59,10 +59,7 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
         );
     }
     if let Some(window) = ep.target_window.take() {
-        window_remove_ref(
-            window,
-            b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        window_remove_ref(window.get(), b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char, || window);
     }
     if let Some(pane) = ep.target_pane.take() {
         window_pane_remove_ref(
@@ -86,7 +83,7 @@ impl Drop for event_payload_item {
                     session_remove_ref(session, c"event_payload_free_value")
                 }
                 EventPayloadValue::Window(window) => {
-                    window_remove_ref(window, c"event_payload_free_value".as_ptr())
+                    window_remove_ref(window.get(), c"event_payload_free_value".as_ptr(), || window)
                 }
                 EventPayloadValue::Pane(pane) => {
                     window_pane_remove_ref(pane, c"event_payload_free_value".as_ptr())
@@ -155,7 +152,7 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
             target.s = ep.target_session.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
         }
         if ep.target_window.is_none() {
-            ep.target_window = link.window_owner.as_ref().and_then(|owner| owner.0.clone());
+            ep.target_window = link.window_owner.clone();
             target.w = ep.target_window.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
         }
     } else {
@@ -616,8 +613,8 @@ mod tests {
             };
             event_payload_set_window(&mut payload, c"alpha".as_ptr(), first);
             event_payload_set_window(&mut payload, c"beta".as_ptr(), second);
-            window_remove_ref(first_owner, c"test initial owner".as_ptr());
-            window_remove_ref(second_owner, c"test initial owner".as_ptr());
+            window_remove_ref(first_owner.get(), c"test initial owner".as_ptr(), || first_owner);
+            window_remove_ref(second_owner.get(), c"test initial owner".as_ptr(), || second_owner);
             event_payload_set_int(&mut payload, c"alpha".as_ptr(), 7);
             assert!(first_observer.upgrade().is_none());
             assert!(second_observer.upgrade().is_some());
@@ -716,9 +713,9 @@ mod tests {
             event_payload_set_target(&mut payload, &fs);
             event_payload_set_window(&mut payload, c"beta".as_ptr(), first);
             event_payload_set_window(&mut payload, c"alpha".as_ptr(), second);
-            window_remove_ref(first_owner, c"test initial owner".as_ptr());
-            window_remove_ref(second_owner, c"test initial owner".as_ptr());
-            window_remove_ref(target_owner, c"test initial owner".as_ptr());
+            window_remove_ref(first_owner.get(), c"test initial owner".as_ptr(), || first_owner);
+            window_remove_ref(second_owner.get(), c"test initial owner".as_ptr(), || second_owner);
+            window_remove_ref(target_owner.get(), c"test initial owner".as_ptr(), || target_owner);
             drop(payload);
 
             assert_eq!(*closed.borrow(), [22, 11, 33]);
@@ -759,7 +756,7 @@ mod tests {
             }
             let mut payload = event_payload_create();
             event_payload_set_window(&mut payload, c"window".as_ptr(), window);
-            window_remove_ref(window_owner, c"test initial owner".as_ptr());
+            window_remove_ref(window_owner.get(), c"test initial owner".as_ptr(), || window_owner);
             events_fire(c"payload-owner-test".as_ptr(), payload);
 
             assert_eq!(*observed.borrow(), [44, 44]);

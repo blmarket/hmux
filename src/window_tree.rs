@@ -2000,16 +2000,12 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
         WINDOW_TREE_WINDOW => {
             // Release the winlink borrow before destruction can unlink it.
             let window_owner = match target.winlink.try_borrow_mut() {
-                Ok(link) => link.window_owner.as_ref().map(|owner| {
-                    crate::src::shared::window::WindowOwner::adopt(
-                        owner.as_rc().clone(),
-                    )
-                }),
+                Ok(link) => link.window_owner.clone(),
                 Err(refbox::BorrowError::Dropped) => None,
                 Err(refbox::BorrowError::Borrowed) => panic!("tree target winlink already borrowed"),
             };
             if let Some(window_owner) = window_owner {
-                server_kill_window(window_owner.as_rc().clone(), 0);
+                server_kill_window(window_owner, 0);
             }
         }
         WINDOW_TREE_PANE => {

@@ -154,7 +154,3 @@ pub struct monitor_pane_entry {
     /// Weak traversal handle into the monitor pane index.
     pub owner: refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>>,
 }
-
-/// Sole monitor-set owner. Detach the allocation before destroying callbacks,
-/// which can reenter the enclosing client or option.
-pub struct MonitorOwner(pub(crate) Option<Box<monitor_set>>);

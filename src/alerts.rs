@@ -72,10 +72,7 @@ unsafe fn alerts_callback() {
         ));
         (*w).alerts_queued = 0 as ::core::ffi::c_int;
         (*w).flags &= !WINDOW_ALERTFLAGS;
-        window_remove_ref(
-            owner,
-            b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        window_remove_ref(owner.get(), b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char, || owner);
         if !has_next {
             break;
         }
@@ -150,9 +147,10 @@ pub unsafe fn alerts_reset_all() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
+        w = window_owner.get();
         alerts_reset(w);
         window_cursor = windows_next(&*w);
+        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
     }
 }
 unsafe fn alerts_reset(mut w: *mut window) {

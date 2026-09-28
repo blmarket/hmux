@@ -613,8 +613,9 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     }
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
+        w = window_owner.get();
         recalculate_size(w, now);
         window_cursor = windows_next(&*w);
+        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
     }
 }

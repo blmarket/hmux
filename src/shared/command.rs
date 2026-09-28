@@ -385,7 +385,7 @@ pub struct cmd_entry {
 /// Queue items and callers share ownership through ordinary Rc handles.
 pub struct cmdq_state {
     pub flags: ::core::ffi::c_int,
-    pub formats: std::cell::RefCell<Option<super::format::FormatTreeOwner>>,
+    pub formats: std::cell::RefCell<Option<Box<super::format::format_tree>>>,
     pub event: key_event,
     pub current: std::cell::RefCell<cmd_find_state>,
 }
@@ -447,6 +447,14 @@ impl cmd_parse_result {
             status: CMD_PARSE_ERROR,
             cmdlist: None,
             error: None,
+        }
+    }
+}
+
+impl Drop for cmdq_state {
+    fn drop(&mut self) {
+        if let Some(formats) = self.formats.get_mut().take() {
+            unsafe { crate::src::format::format_free(Box::into_raw(formats)) };
         }
     }
 }

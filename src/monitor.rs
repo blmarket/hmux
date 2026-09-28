@@ -383,7 +383,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
     let window_owner = window_find_by_id((*me).id);
     w = window_owner.as_ref().map_or(
         std::ptr::null_mut(),
-        crate::src::shared::window::WindowOwner::as_ptr,
+        crate::src::shared::rc::as_ptr,
     );
     if w.is_null() {
         drop(session_owner);
@@ -418,6 +418,9 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
             );
         }
         wl = window_winlinks_next(w, wl);
+    }
+    if let Some(window) = window_owner {
+        crate::src::window::window_remove_ref(window.get(), c"monitor_check_window".as_ptr(), || window);
     }
     drop(session_owner);
     if let Some(client) = client_owner {
@@ -775,32 +778,17 @@ pub unsafe fn monitor_destroy(ms: *mut monitor_set) {
     }
 }
 
-impl crate::src::shared::monitor::MonitorOwner {
-    pub fn as_ptr(&mut self) -> *mut monitor_set {
-        &raw mut **self.0.as_mut().expect("live monitor owner")
-    }
-}
-impl Drop for crate::src::shared::monitor::MonitorOwner {
-    fn drop(&mut self) {
-        if let Some(mut owner) = self.0.take() {
-            unsafe {
-                monitor_clear(&raw mut *owner);
-            }
-            drop(owner);
-        }
-    }
-}
 pub unsafe fn monitor_create_client_owned(
     c: *mut client,
     cb: monitor_cb,
-) -> crate::src::shared::monitor::MonitorOwner {
-    crate::src::shared::monitor::MonitorOwner(Some(Box::from_raw(monitor_create_client(c, cb))))
+) -> Box<monitor_set> {
+    Box::from_raw(monitor_create_client(c, cb))
 }
 pub unsafe fn monitor_create_session_owned(
     s: *mut session,
     cb: monitor_cb,
-) -> crate::src::shared::monitor::MonitorOwner {
-    crate::src::shared::monitor::MonitorOwner(Some(Box::from_raw(monitor_create_session(s, cb))))
+) -> Box<monitor_set> {
+    Box::from_raw(monitor_create_session(s, cb))
 }
 pub struct ParsedMonitor {
     pub name: CString,

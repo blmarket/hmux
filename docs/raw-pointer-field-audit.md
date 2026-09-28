@@ -12,8 +12,8 @@ supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
 fields and their lifecycle decisions. The current scanner finds **32 raw fields in
-scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-199 explicitly record a migration and seventeen record
+scope** and **71 excluded external ABI/resource fields**. Of the original rows,
+199 explicitly record a migration and eighteen record
 removal. The remaining 32 are retained raw under their current contracts.
 
 The remaining 32 fields have audit dispositions.
@@ -80,12 +80,12 @@ are now recorded individually in the TSV.
 | `monitor_change.name/value/last` | Borrowed C strings, with optional previous value. Name is already cloned and previous value moved into local storage before dispatch. These owners survive callbacks that remove the monitor item/set; model identities in the same record remain raw. |
 | `tty.term` | `Option<Box<tty_term>>`. Creation returns the validated Box; failed construction and Drop unlink the same stable allocation from the intrusive registry. Read accessors use const raw projections; tests install actual owners. |
 | `window_mode_entry.mode` | Static reference to one of nine now-immutable mode descriptors; pointer identity comparisons are retained with `ptr::eq`. |
-| `hooks_data.name/formats`, `cmdq_state.formats` | Bounded name reference and `FormatTreeOwner` (optional in queue state). The owner takes its Box before draining entries, so callback capture cleanup may add entries without a whole-tree mutable borrow spanning that reentry. |
+| `hooks_data.name/formats`, `cmdq_state.formats` | Bounded name reference and `Box<format_tree>` (inside `RefCell<Option<_>>` in queue state). The holder takes its Box and calls `format_free` before draining entries, so callback capture cleanup may add entries without a whole-tree mutable borrow spanning that reentry. |
 | `window_pane.editor` | `Option<Box<spawn_editor_state>>`. Completion takes ownership before invoking the callback. Drop unlinks the temporary file on completion or creation failure (cancellation keeps the owner until completion); mode editor fields use weak observers. |
 | Nine `options_table_entry` pointer fields | Optional static C strings, static choice slices, and optional static default-array slices. All backing data is immutable, including strings in runtime-built test descriptors. The startup initializer was removed; array iteration is bounded. |
 | Three monitor indexes and their three weak traversal fields | Index values own Boxes; weak fields name the typed index. Successful insertion consumes ownership, duplicates keep the caller's allocation, and removal returns the detached owner through the legacy raw API. No map borrow spans callbacks or node destruction. |
 | `StreamState.stream` | `RefCell<Option<Box<bufferevent>>>`. Free unregisters/cancels first, then takes and drops the Box outside the slot borrow. A surviving task-state Rc cannot defer physical stream cleanup. |
-| `options_entry.monitor_data`, `hooks_monitor.set`, `control_state.subs` | Box-owned hook record and takeable `MonitorOwner` wrappers. Cleanup preserves sink-before-monitor and monitor-before-control-stream order. The monitor owner detaches its Box before draining timers/items/session references/callbacks. |
+| `options_entry.monitor_data`, `hooks_monitor.set`, `control_state.subs` | Box-owned hook record and `Option<Box<monitor_set>>` holders. Cleanup preserves sink-before-monitor and monitor-before-control-stream order. The holder takes its Box and calls `monitor_destroy` before draining timers/items/session references/callbacks. |
 | `input_key_tree.entries` | Map values distinguish immutable static entries from generated boxed entries. Removed the generated-owner vector plus raw index; stable addresses and duplicate behavior are preserved. |
 | `OptionCommand.0`, `cmd_parse_result.cmdlist`, `cmdq_item.cmdlist/state` | Optional existing `Rc<UnsafeCell<_>>` owners. Retain counts and explicit cleanup points are preserved. Parse results now drop their list automatically unless ownership is transferred; queue items retain their independent references. |
 | `key_tables.storage`, `key_table_entry.owner`, `client.keytable` | Registry and client fields now hold their existing `Rc<UnsafeCell<key_table>>` references. Weak traversal indexes follow the typed registry. Removal transfers the registry reference back to the legacy caller; client switch/cleanup takes its owner at the former unref point. |
@@ -114,7 +114,7 @@ are now recorded individually in the TSV.
 | `control_state.read_event/write_event` | Weak `StreamHandle` values observe the runtime stream or streams. Read, write, and enable/disable operations borrow live slots only for synchronous work. Stop frees a separate writer before the reader; when both fields alias one stream it clears the write handle and frees the read stream once. The cleanup regression checks order, expiration, and repeated stop. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
-| `winlink.window` (now `window_owner`) | Optional `WindowOwner` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |
+| `winlink.window` (now `window_owner`) | `Option<Rc<UnsafeCell<window>>>` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |
 
 Prompt option setup now takes a mutable session borrow because style application
 updates the option cache. It previously hid that mutation behind a shared session

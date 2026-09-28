@@ -1,5 +1,4 @@
 use crate::src::server_client::server_client_unref_owned;
-use crate::src::shared::format::FormatTreeOwner;
 use crate::src::log::log_cstr;
 use crate::src::shared::format::FormatEntryState;
 // Private tree-storage implementation.  It owns the format-entry tree and
@@ -168,12 +167,8 @@ pub unsafe fn format_create_owned(
     item: *mut cmdq_item,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
-) -> FormatTreeOwner {
-    FormatTreeOwner {
-        tree: Some(format_create_box(
-            crate::src::shared::client::client_retain(c), item, tag, flags,
-        )),
-    }
+) -> Box<format_tree> {
+    format_create_box(crate::src::shared::client::client_retain(c), item, tag, flags)
 }
 
 unsafe fn format_clear(ft: *mut format_tree) {
@@ -192,22 +187,8 @@ pub unsafe fn format_free(ft: *mut format_tree) {
     drop(Box::from_raw(ft));
 }
 
-impl FormatTreeOwner {
-    pub fn as_ptr(&mut self) -> *mut format_tree {
-        &raw mut **self.tree.as_mut().expect("live format owner")
-    }
-}
-
-impl Drop for FormatTreeOwner {
-    fn drop(&mut self) {
-        if let Some(mut tree) = self.tree.take() {
-            unsafe { format_clear(&raw mut *tree) };
-        }
-    }
-}
-
-pub fn format_owner_ptr(owner: &mut Option<FormatTreeOwner>) -> *mut format_tree {
-    owner.as_mut().map_or(std::ptr::null_mut(), FormatTreeOwner::as_ptr)
+pub fn format_owner_ptr(owner: &mut Option<Box<format_tree>>) -> *mut format_tree {
+    owner.as_mut().map_or(std::ptr::null_mut(), |tree| &raw mut **tree)
 }
 
 pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::core::ffi::c_char) {
@@ -575,7 +556,7 @@ mod tests {
                 });
                 let ft = owner
                     .as_mut()
-                    .map_or_else(|| tree(), FormatTreeOwner::as_ptr);
+                    .map_or_else(|| tree(), |tree| &raw mut **tree);
                 let calls = Rc::new(Cell::new(0));
                 for replace in [true, false] {
                     let capture = Reenter {
@@ -593,7 +574,7 @@ mod tests {
                     }
                 }
                 if owned {
-                    drop(owner);
+                    format_free(Box::into_raw(owner.take().unwrap()));
                 } else {
                     format_free(ft);
                 }

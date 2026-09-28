@@ -94,7 +94,7 @@ unsafe fn cmd_kill_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_window_all(item, filter);
     }
-    server_kill_window((*wl).window_owner.as_ref().expect("winlink window").as_rc().clone(), 1 as ::core::ffi::c_int);
+    server_kill_window((*wl).window_owner.as_ref().expect("winlink window").clone(), 1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_window_all(
@@ -117,7 +117,7 @@ unsafe fn cmd_kill_window_all(
             if (*loop_0).window_ptr() != (*wl).window_ptr()
                 && cmd_kill_window_filter(item, s, loop_0, filter) != 0
             {
-                server_kill_window((*loop_0).window_owner.as_ref().expect("winlink window").as_rc().clone(), 0 as ::core::ffi::c_int);
+                server_kill_window((*loop_0).window_owner.as_ref().expect("winlink window").clone(), 0 as ::core::ffi::c_int);
                 found = found.wrapping_add(1);
                 break;
             } else {
@@ -141,7 +141,7 @@ unsafe fn cmd_kill_window_all(
         loop_0 = winlinks_next(&*loop_0);
     }
     if kill_current != 0 && found > 1 as u_int {
-        server_kill_window((*wl).window_owner.as_ref().expect("winlink window").as_rc().clone(), 0 as ::core::ffi::c_int);
+        server_kill_window((*wl).window_owner.as_ref().expect("winlink window").clone(), 0 as ::core::ffi::c_int);
     }
     server_renumber_all();
     return CMD_RETURN_NORMAL;

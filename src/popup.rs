@@ -140,10 +140,6 @@ impl popup_data {
 
 // The overlay solely owns popup state. Dispatch borrows through weak handles;
 // removing the owner invalidates observers while an active borrow defers Drop.
-struct PopupOwner {
-    state: refbox::RefBox<PopupState>,
-}
-
 struct PopupState {
     data: UnsafeCell<Box<popup_data>>,
 }
@@ -154,20 +150,6 @@ struct PopupHandle(refbox::Weak<PopupState>);
 struct PopupGuard<'a> {
     state: refbox::Borrow<'a, PopupState>,
     handle: &'a PopupHandle,
-}
-
-impl PopupOwner {
-    fn new(data: Box<popup_data>) -> Self {
-        Self {
-            state: refbox::RefBox::new(PopupState {
-                data: UnsafeCell::new(data),
-            }),
-        }
-    }
-
-    fn handle(&self) -> PopupHandle {
-        PopupHandle(self.state.downgrade())
-    }
 }
 
 impl PopupHandle {
@@ -198,8 +180,8 @@ impl PopupGuard<'_> {
         self.handle.0.is_alive()
             && c.overlay_data
                 .as_ref()
-                .and_then(|data| data.downcast_ref::<PopupOwner>())
-                .is_some_and(|owner| self.handle.0.is(&owner.state))
+                .and_then(|data| data.downcast_ref::<refbox::RefBox<PopupState>>())
+                .is_some_and(|owner| self.handle.0.is(owner))
     }
 }
 
@@ -898,7 +880,7 @@ pub unsafe fn popup_present(mut c: *mut client) -> ::core::ffi::c_int {
     return (*c)
         .overlay_data
         .as_ref()
-        .is_some_and(|data| data.is::<PopupOwner>()) as ::core::ffi::c_int;
+        .is_some_and(|data| data.is::<refbox::RefBox<PopupState>>()) as ::core::ffi::c_int;
 }
 pub unsafe fn popup_modify(
     mut c: *mut client,
@@ -911,8 +893,8 @@ pub unsafe fn popup_modify(
     let Some(handle) = (*c)
         .overlay_data
         .as_ref()
-        .and_then(|data| data.downcast_ref::<PopupOwner>())
-        .map(PopupOwner::handle)
+        .and_then(|data| data.downcast_ref::<refbox::RefBox<PopupState>>())
+        .map(|owner| PopupHandle(owner.downgrade()))
     else {
         return -1;
     };
@@ -1099,8 +1081,8 @@ pub unsafe fn popup_display(
     data.style = popup_optional_string((!style.is_null()).then(|| CStr::from_ptr(style)));
     data.border_style =
         popup_optional_string((!border_style.is_null()).then(|| CStr::from_ptr(border_style)));
-    let owner = PopupOwner::new(data);
-    let handle = owner.handle();
+    let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
+    let handle = PopupHandle(owner.downgrade());
     let popup = handle.upgrade().expect("new popup");
     let pd = popup.as_ptr();
     (*pd).item = if item.is_null() { Weak::new() } else { (*item).observer.clone() };
@@ -1175,8 +1157,8 @@ pub unsafe fn popup_display(
     (*pd).ppy = py;
     (*pd).psx = sx;
     (*pd).psy = sy;
-    let update = owner.handle();
-    let complete = owner.handle();
+    let update = PopupHandle(owner.downgrade());
+    let complete = PopupHandle(owner.downgrade());
     (*pd).job = job_run(
         (!shellcmd.is_null()).then(|| CStr::from_ptr(shellcmd)),
         argv,
@@ -1208,24 +1190,24 @@ pub unsafe fn popup_display(
         (*pd).c.as_ref(),
     ));
     (*pd).published = true;
-    let check_cb = popup_check_callback(owner.handle());
-    let mode = owner.handle();
+    let check_cb = popup_check_callback(PopupHandle(owner.downgrade()));
+    let mode = PopupHandle(owner.downgrade());
     let mode_cb: overlay_mode_cb = Some(Box::new(move |_| {
         mode.upgrade()
             .and_then(|popup| unsafe { popup_mode(&popup) })
     }));
-    let draw = owner.handle();
+    let draw = PopupHandle(owner.downgrade());
     let draw_cb: overlay_draw_cb = Some(Box::new(move |c| unsafe {
         if let Some(popup) = draw.upgrade() {
             popup_draw(c as *mut client, &popup);
         }
     }));
-    let key = owner.handle();
+    let key = PopupHandle(owner.downgrade());
     let key_cb: overlay_key_cb = Some(Box::new(move |c, event| unsafe {
         key.upgrade().map_or(0, |popup| popup_key(c, &popup, event))
     }));
     let free_cb: overlay_free_cb = None;
-    let resize = owner.handle();
+    let resize = PopupHandle(owner.downgrade());
     let resize_cb: overlay_resize_cb = Some(Box::new(move |c| unsafe {
         if let Some(popup) = resize.upgrade() {
             popup_resize(c as *mut client, &popup);
@@ -1255,10 +1237,10 @@ mod tests {
     use crate::src::shared::command::CMDQ_WAITING;
     use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
 
-    fn owner() -> PopupOwner {
+    fn owner() -> refbox::RefBox<PopupState> {
         let mut data = Box::new(popup_data::empty());
         data.title = Some(c"active popup".to_owned());
-        PopupOwner::new(data)
+        refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) })
     }
 
     #[test]
@@ -1270,8 +1252,8 @@ mod tests {
             data.item = (*item).observer.clone();
             data.published = true;
             let original = Box::as_mut_ptr(&mut data);
-            let owner = PopupOwner::new(data);
-            let handle = owner.handle();
+            let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
+            let handle = PopupHandle(owner.downgrade());
             let guard = handle.upgrade().unwrap();
             assert_eq!(guard.as_ptr(), original);
             drop(owner);
@@ -1292,8 +1274,8 @@ mod tests {
         unsafe { (*item).flags = CMDQ_WAITING };
         let mut data = Box::new(popup_data::empty());
         data.item = unsafe { (*item).observer.clone() };
-        let owner = PopupOwner::new(data);
-        let handle = owner.handle();
+        let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
+        let handle = PopupHandle(owner.downgrade());
         drop(owner);
         assert_eq!(unsafe { (*item).flags & CMDQ_WAITING }, CMDQ_WAITING);
         assert!(!handle.0.is_alive());
@@ -1308,7 +1290,7 @@ mod tests {
             let mut data = Box::new(popup_data::empty());
             data.item = observer.clone();
             data.published = true;
-            let owner = PopupOwner::new(data);
+            let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
             cmdq_free_detached(item);
             assert!(observer.upgrade().is_none());
             drop(owner);
@@ -1319,7 +1301,7 @@ mod tests {
     fn terminal_contexts_own_palette_snapshots_without_retaining_the_popup() {
         unsafe {
             let owner = owner();
-            let handle = owner.handle();
+            let handle = PopupHandle(owner.downgrade());
             let guard = handle.upgrade().unwrap();
             let source = &(*guard.as_ptr()).palette;
             source.try_borrow_mut().unwrap().fg = 3;
@@ -1373,7 +1355,7 @@ mod tests {
             for kind in 0..5 {
                 let mut client = Box::new(client::empty());
                 let owner = owner();
-                let handle = owner.handle();
+                let handle = PopupHandle(owner.downgrade());
                 let observer = handle.clone();
                 client.overlay_data = Some(Box::new(owner));
                 client.overlay_draw = Some(Box::new(|_| {}));
@@ -1440,8 +1422,8 @@ mod tests {
             data.item = (*item).observer.clone();
             data.flags = POPUP_CLOSEEXIT;
             data.published = true;
-            let owner = PopupOwner::new(data);
-            let handle = owner.handle();
+            let owner = refbox::RefBox::new(PopupState { data: UnsafeCell::new(data) });
+            let handle = PopupHandle(owner.downgrade());
             (*c).overlay_data = Some(Box::new(owner));
             (*c).overlay_draw = Some(Box::new(|_| {}));
 

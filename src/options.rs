@@ -1642,13 +1642,14 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
-            w = window_owner.as_ptr();
+            w = window_owner.get();
             if !(*w).active_ptr().is_null() {
                 if options_get_number(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), name) != 0 {
                     (*(*w).active_ptr()).flags |= PANE_CHANGED;
                 }
             }
             window_cursor = windows_next(&*w);
+            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
         }
     }
     if strcmp(
@@ -1684,9 +1685,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
-            w = window_owner.as_ptr();
+            w = window_owner.get();
             window_set_fill_cells(w);
             window_cursor = windows_next(&*w);
+            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
         }
     }
     if strcmp(
@@ -1824,7 +1826,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     {
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
-            w = window_owner.as_ptr();
+            w = window_owner.get();
             (*w).sb = options_get_number(
                 options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
                 b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1835,6 +1837,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             ) as ::core::ffi::c_int;
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
             window_cursor = windows_next(&*w);
+            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
         }
     }
     if strcmp(
@@ -1864,9 +1867,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         }
         let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
         while let Some(window_owner) = window_cursor.take() {
-            w = window_owner.as_ptr();
+            w = window_owner.get();
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
             window_cursor = windows_next(&*w);
+            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
         }
     }
     if strcmp(
