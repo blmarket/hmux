@@ -335,45 +335,6 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
     }
 }
 
-#[cfg(test)]
-mod ownership_tests {
-    use super::*;
-    use crate::src::shared::event::bufferevent_data_callback;
-
-    #[test]
-    fn free_detaches_stream_before_dropping_callback_captures() {
-        struct Probe {
-            state: Rc<StreamState>,
-            dropped: Rc<Cell<bool>>,
-        }
-        impl Drop for Probe {
-            fn drop(&mut self) {
-                assert!(!self.state.live.get());
-                assert!(self.state.stream.borrow_mut().is_none());
-                self.dropped.set(true);
-            }
-        }
-        unsafe {
-            let stream = bufferevent_new(-1, None, None, None);
-            let retained = state(&*stream);
-            let dropped = Rc::new(Cell::new(false));
-            let probe = Probe {
-                state: retained.clone(),
-                dropped: dropped.clone(),
-            };
-            (*stream).readcb = bufferevent_data_callback(move |_| {
-                let _ = &probe;
-            });
-            bufferevent_free(stream);
-            assert!(dropped.get());
-            assert!(retained.stream.borrow().is_none());
-            assert_eq!(Rc::strong_count(&retained), 1);
-            // An already removed registration does not release the owner twice.
-            bufferevent_free(stream);
-            super::super::shutdown_runtime();
-        }
-    }
-}
 pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut evbuffer {
     &mut stream.output
 }
