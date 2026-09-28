@@ -2286,3 +2286,16 @@ updated; no new Rc-managed type is introduced.
 
 `cargo test --workspace` and `git diff --check` passed. Winlink/window acquisition
 and remaining session APIs, including linked-session queries, remain pending.
+
+## Implemented weak session activity timer captures
+
+Activity updates borrow their session and accept an optional copied timestamp,
+removing raw session inputs and timestamp aliasing during creation. Lock timers
+capture the existing session Weak observer, upgrade for dispatch, and check
+registry liveness and attachment before locking. The callback retains its session
+through locking and resize recalculation without creating a self-owning timer
+cycle. Lock timeout lookup uses borrowed options. No new Rc-managed type is added.
+
+`cargo test --workspace` and `git diff --check` passed. The server lock API still
+requires a raw session at its boundary; broader session/client relationships
+remain pending.

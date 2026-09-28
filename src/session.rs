@@ -357,7 +357,8 @@ pub unsafe fn session_create(
     if gettimeofday(&raw mut (*s).creation_time, NULL) != 0 as ::core::ffi::c_int {
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
-    session_update_activity(s, &raw mut (*s).creation_time);
+    let created = (*s).creation_time;
+    session_update_activity(&mut *s, Some(created));
     owner
 }
 pub unsafe fn session_add_ref(s: *mut session, from: *const ::core::ffi::c_char) -> Rc<UnsafeCell<session>> {
@@ -433,59 +434,56 @@ pub unsafe fn session_destroy(
     session_set_cwd(&mut *s, None);
     session_remove_ref(owner, c"session_destroy");
 }
-unsafe fn session_lock_timer(mut arg: *mut ::core::ffi::c_void) {
-    let mut s: *mut session = arg as *mut session;
-    if (*s).attached == 0 as u_int {
+unsafe fn session_lock_timer(owner: &Rc<UnsafeCell<session>>) {
+    let session = &*owner.get();
+    if session_alive(Some(session)) == 0 || session.attached == 0 {
         return;
     }
     log_debug(format_args!(
         "session {} locked, activity time {}",
-        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
-        (*s).activity_time.tv_sec as ::core::ffi::c_longlong
+        log_cstr(session.name.as_ptr()),
+        session.activity_time.tv_sec as ::core::ffi::c_longlong
     ));
-    server_lock_session(s);
+    server_lock_session(owner.get());
     recalculate_sizes();
 }
-pub unsafe fn session_update_activity(mut s: *mut session, mut from: *mut timeval) {
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    if from.is_null() {
-        gettimeofday(&raw mut (*s).activity_time, NULL);
+pub unsafe fn session_update_activity(session: &mut session, from: Option<timeval>) {
+    if let Some(from) = from {
+        session.activity_time = from;
     } else {
-        memcpy(
-            &raw mut (*s).activity_time as *mut ::core::ffi::c_void,
-            from as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<timeval>() as size_t,
-        );
+        gettimeofday(&raw mut session.activity_time, NULL);
     }
     log_debug(format_args!(
         "session ${} {} activity {}.{:06}",
-        ((*s).id) as u32,
-        log_cstr((((*s).name).as_ptr().cast_mut()) as *const _),
-        (*s).activity_time.tv_sec as ::core::ffi::c_longlong,
-        (*s).activity_time.tv_usec as ::core::ffi::c_int
+        session.id,
+        log_cstr(session.name.as_ptr()),
+        session.activity_time.tv_sec as ::core::ffi::c_longlong,
+        session.activity_time.tv_usec as ::core::ffi::c_int
     ));
-    if event_initialized(&(*s).lock_timer) != 0 {
-        event_del(&raw mut (*s).lock_timer);
+    if event_initialized(&session.lock_timer) != 0 {
+        event_del(&raw mut session.lock_timer);
     } else {
+        let observer = session.observer.clone();
         event_set(
-            &raw mut (*s).lock_timer,
-            -(1 as ::core::ffi::c_int),
-            0 as ::core::ffi::c_short,
-            move |_, _| unsafe { session_lock_timer(s as *mut ::core::ffi::c_void) },
+            &raw mut session.lock_timer,
+            -1,
+            0,
+            move |_, _| unsafe {
+                if let Some(owner) = observer.upgrade() {
+                    session_lock_timer(&owner);
+                }
+            },
         );
     }
-    if (*s).attached != 0 as u_int {
-        tv.tv_usec = 0 as __suseconds_t;
-        tv.tv_sec = tv.tv_usec as __time_t;
-        tv.tv_sec = options_get_number(
-            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-            b"lock-after-time\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as __time_t;
-        if tv.tv_sec != 0 as __time_t {
-            event_add(&raw mut (*s).lock_timer, &raw mut tv);
+    if session.attached != 0 {
+        let mut timeout = timeval {
+            tv_sec: crate::src::options::options_get_number_ref(
+                session.options.as_deref().expect("session options"), c"lock-after-time",
+            ) as __time_t,
+            tv_usec: 0,
+        };
+        if timeout.tv_sec != 0 {
+            event_add(&raw mut session.lock_timer, &raw mut timeout);
         }
     }
 }

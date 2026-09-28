@@ -1486,7 +1486,7 @@ pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session)
         (*(*(*s).curw).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         recalculate_sizes();
         window_update_focus((*(*s).curw).window_ptr());
-        session_update_activity(s, ::core::ptr::null_mut::<timeval>());
+        session_update_activity(&mut *s, None);
         session_theme_changed(s.as_ref());
         gettimeofday(&raw mut (*s).last_attached_time, NULL);
         (*(*s).curw).flags &= !WINLINK_ALERTFLAGS;
@@ -2792,7 +2792,7 @@ unsafe fn server_client_key_callback(
         if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
             fatal(|out| out.write_all(b"gettimeofday failed"));
         }
-        session_update_activity(s, &raw mut (*c).activity_time);
+        session_update_activity(&mut *s, Some((*c).activity_time));
         (*m).valid = 0 as ::core::ffi::c_int;
         if key == KEYC_MOUSE as ::core::ffi::c_ulong as key_code
             || key == KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code
@@ -4590,7 +4590,7 @@ unsafe fn server_client_dispatch(
                     server_redraw_client(&mut *(c));
                     recalculate_sizes();
                     if !s.is_null() {
-                        session_update_activity(s, &raw mut (*c).activity_time);
+                        session_update_activity(&mut *s, Some((*c).activity_time));
                     }
                     current_block = 14945149239039849694;
                 }
