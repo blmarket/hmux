@@ -220,16 +220,6 @@ impl CustomizeEnvironmentBorrow {
     }
 }
 
-impl Drop for CustomizeEnvironmentBorrow {
-    fn drop(&mut self) {
-        if let Self::Session(owner) = self {
-            // Transfer the guard's retained lifetime to the deferred release:
-            // the field drops its original Rc after this clone is scheduled.
-            crate::src::shared::rc::release_later(Rc::clone(owner));
-        }
-    }
-}
-
 // Detached prompt and editor copies own their strings independently of the rows.
 fn window_customize_set_table(item: &mut window_customize_itemdata, value: Option<&CStr>) {
     item.table = value.map(CStr::to_owned);
@@ -5311,8 +5301,7 @@ mod environment_lifetime_tests {
             assert!(target.resolve().is_some());
             let lifetime = (*session).observer.clone();
             drop(guard);
-            assert!(lifetime.upgrade().is_some());
-            crate::src::reactor::event_loop();
+            assert!(lifetime.upgrade().is_none());
             assert!(target.resolve().is_none());
             crate::src::reactor::shutdown_runtime();
             assert!(detached.environ.as_ref().unwrap().resolve().is_none());
@@ -5340,7 +5329,7 @@ mod environment_lifetime_tests {
             let lifetime = (*session).observer.clone();
             drop(guard);
             drop(owner);
-            assert!(lifetime.upgrade().is_some());
+            assert!(lifetime.upgrade().is_none());
             crate::src::reactor::shutdown_runtime();
             assert!(target.resolve().is_none());
         }

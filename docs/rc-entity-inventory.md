@@ -2763,3 +2763,9 @@ assertion, preserving the cleanup invariant.
 waiting command. File dispatch still distinguishes that case from an expired
 explicit client, cancelling the latter. Each successful upgrade remains alive
 through the callback, as before.
+
+`CustomizeEnvironmentBorrow::Session` now releases its scoped session upgrade
+when the environment operation ends. The previous `Drop` cloned that guard into
+deferred release even though the original environment row held no session
+reference. Detached rows remain weak observers, and their lifetime regressions
+verify expiry after the final independent owner and guard drop.
