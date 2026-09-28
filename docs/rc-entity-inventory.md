@@ -869,3 +869,14 @@ regression covers successful and repeated initialization, stable weak-reference
 counts, preservation on invalid-descriptor failure and client expiration after
 detaching the terminal. Other dispatch branches, terminal APIs and internal raw
 model projections remain pending.
+
+## Implemented typed client arguments for remaining dispatch helpers
+
+Command-message dispatch now borrows the peer callback's retained Rc client
+through parsing and queue construction. Shell-message dispatch takes a shared
+client borrow for its read-only peer access. Both remove raw client arguments;
+identification already receives the same retained owner.
+
+`cargo test --workspace` and `git diff --check` passed. Stored `client.session`,
+`window.active` and `window_pane.window` pointers, downstream queue APIs and local
+raw projections remain pending.

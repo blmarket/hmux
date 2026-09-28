@@ -4480,7 +4480,7 @@ unsafe fn server_client_dispatch(
             }
         }
         MSG_COMMAND => {
-            if server_client_dispatch_command(c, imsg) != 0 as ::core::ffi::c_int {
+            if server_client_dispatch_command(owner, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
@@ -4554,7 +4554,7 @@ unsafe fn server_client_dispatch(
         MSG_SHELL => {
             if datalen != 0 as ssize_t {
                 current_block = 13639960948656484833;
-            } else if server_client_dispatch_shell(c) != 0 as ::core::ffi::c_int {
+            } else if server_client_dispatch_shell(&*owner.get()) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
@@ -4641,9 +4641,10 @@ unsafe fn server_client_command_done(mut item: *mut cmdq_item) -> cmd_retval {
     return CMD_RETURN_NORMAL;
 }
 unsafe fn server_client_dispatch_command(
-    mut c: *mut client,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     imsg: &mut imsg,
 ) -> ::core::ffi::c_int {
+    let c = owner.get();
     let mut current_block: u64;
     let mut data: msg_command = msg_command { argc: 0 };
     let mut len: size_t = 0;
@@ -5001,7 +5002,7 @@ unsafe fn server_client_dispatch_identify(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn server_client_dispatch_shell(mut c: *mut client) -> ::core::ffi::c_int {
+unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     shell = options_get_string(
         global_s_options,
@@ -5011,13 +5012,13 @@ unsafe fn server_client_dispatch_shell(mut c: *mut client) -> ::core::ffi::c_int
         shell = _PATH_BSHELL.as_ptr();
     }
     proc_send(
-        (*c).peer,
+        c.peer,
         MSG_SHELL,
         -(1 as ::core::ffi::c_int),
         shell as *const ::core::ffi::c_void,
         strlen(shell).wrapping_add(1 as size_t),
     );
-    proc_kill_peer((*c).peer);
+    proc_kill_peer(c.peer);
     return 0 as ::core::ffi::c_int;
 }
 /// Copy the selected directory while any observed startup client is retained.
