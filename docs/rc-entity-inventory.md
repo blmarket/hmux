@@ -2636,3 +2636,10 @@ before freeing the old payload. The raw-field count is 35.
 Clock callbacks resolve a typed pointer from that owner, and mode cleanup
 releases the box after cancelling its timer and freeing its screen. Other mode
 payloads still use `window_mode_entry.data`, so the raw-field count remains 35.
+
+## Switch mode payload ownership
+
+`window_switch_modedata` now lives in the mode entry's typed boxed slot. Its
+callbacks access the stable Box allocation through a checked typed lookup;
+mode cleanup releases the Box after prompt and screen teardown. The shared
+raw payload field remains for other modes, so the raw-field count is 35.

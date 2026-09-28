@@ -291,11 +291,17 @@ unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut c
             .wrapping_add(1 as u_int);
     }
 }
+unsafe fn window_switch_data(wme: *mut window_mode_entry) -> *mut window_switch_modedata {
+    (*wme)
+        .boxed_data_ptr::<window_switch_modedata>()
+        .expect("switch mode payload")
+}
+
 unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
+    let mut data: *mut window_switch_modedata = window_switch_data(wme);
     let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -479,7 +485,7 @@ unsafe fn window_switch_init(
     } else {
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    data = Box::into_raw(Box::new(window_switch_modedata {
+    let owner = Box::new(std::cell::UnsafeCell::new(window_switch_modedata {
         screen: screen::empty(),
         zoomed: 0,
         format: CStr::from_ptr(format).to_owned(),
@@ -493,7 +499,8 @@ unsafe fn window_switch_init(
         current: 0,
         offset: 0,
     }));
-    (*wme).data = data as *mut ::core::ffi::c_void;
+    data = owner.get();
+    (*wme).boxed_data = Some(owner);
     if args_has(args, 'w' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     } else {
@@ -538,14 +545,14 @@ unsafe fn window_switch_init(
     return s;
 }
 unsafe fn window_switch_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let data = (*wme).data.cast::<window_switch_modedata>();
-    if data.is_null() { std::ptr::null_mut() } else { &raw mut (*data).screen }
+    let data = (*wme).boxed_data_ptr::<window_switch_modedata>();
+    data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
 unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
+    let mut data: *mut window_switch_modedata = window_switch_data(wme);
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window((*mode_pane).window as *mut window);
     }
@@ -555,10 +562,10 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
         prompt_free(&prompt.downgrade());
     }
     screen_free(&mut (*data).screen);
-    drop(Box::from_raw(data));
+    drop((*wme).boxed_data.take());
 }
 unsafe fn window_switch_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
+    let mut data: *mut window_switch_modedata = window_switch_data(wme);
     let mut s: *mut screen = &raw mut (*data).screen;
     screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     window_switch_build(data);
@@ -687,7 +694,7 @@ unsafe fn window_switch_key(
     let mode_pane = mode_pane_owner.get();
     let mut current_block: u64;
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
+    let mut data: *mut window_switch_modedata = window_switch_data(wme);
     let mut visible: u_int = 0;
     let mut current: u_int = (*data).current;
     let mut x: u_int = 0;
