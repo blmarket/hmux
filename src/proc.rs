@@ -58,8 +58,7 @@ unsafe fn proc_dispatch(peer: *mut tmuxpeer, message: PeerMessage<'_>) -> bool {
         false
     }
 }
-unsafe fn proc_event_cb(mut events: ::core::ffi::c_short, mut arg: *mut ::core::ffi::c_void) {
-    let mut peer: *mut tmuxpeer = arg as *mut tmuxpeer;
+unsafe fn proc_event_cb(events: ::core::ffi::c_short, peer: *mut tmuxpeer) {
     if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
         if !matches!(imsgbuf_read(&mut (*peer).ibuf), Ok(1)) {
             proc_dispatch(peer, PeerMessage::Disconnected);
@@ -101,8 +100,7 @@ unsafe fn proc_event_cb(mut events: ::core::ffi::c_short, mut arg: *mut ::core::
     }
     proc_update_event(peer);
 }
-unsafe fn proc_signal_cb(mut signo: ::core::ffi::c_int, mut arg: *mut ::core::ffi::c_void) {
-    let mut tp: *mut tmuxproc = arg as *mut tmuxproc;
+unsafe fn proc_signal_cb(signo: ::core::ffi::c_int, tp: *mut tmuxproc) {
     (*tp)
         .signalcb
         .as_mut()
@@ -147,7 +145,7 @@ unsafe fn proc_update_event(mut peer: *mut tmuxpeer) {
         &raw mut (*peer).event,
         (*peer).ibuf.fd,
         events | EV_PERSIST as ::core::ffi::c_short,
-        move |_, flags| unsafe { proc_event_cb(flags, peer as *mut ::core::ffi::c_void) },
+        move |_, flags| unsafe { proc_event_cb(flags, peer) },
     );
     event_add(&raw mut (*peer).event, ::core::ptr::null::<timeval>());
 }
@@ -310,56 +308,56 @@ pub unsafe fn proc_set_signals(
         &raw mut (*tp).ev_sigint,
         2 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sigint, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sighup,
         1 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sighup, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigchld,
         17 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sigchld, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigcont,
         18 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sigcont, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigterm,
         15 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sigterm, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigusr1,
         10 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sigusr1, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigusr2,
         12 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sigusr2, ::core::ptr::null::<timeval>());
     event_set(
         &raw mut (*tp).ev_sigwinch,
         28 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp as *mut ::core::ffi::c_void) },
+        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
     event_add(&raw mut (*tp).ev_sigwinch, ::core::ptr::null::<timeval>());
 }
@@ -418,7 +416,7 @@ pub unsafe fn proc_add_peer(
         &raw mut (*peer).event,
         fd,
         EV_READ as ::core::ffi::c_short,
-        move |_, flags| unsafe { proc_event_cb(flags, peer as *mut ::core::ffi::c_void) },
+        move |_, flags| unsafe { proc_event_cb(flags, peer) },
     );
     if getpeereid(fd, &raw mut (*peer).uid, &raw mut (*peer).gid) != 0 as ::core::ffi::c_int {
         (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
