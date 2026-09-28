@@ -2343,3 +2343,11 @@ snapshot the requested name while their argument storage is live. Spawn logging
 borrows the name, and window creation clones it into the window. An absent name
 continues to select the default. The field inventory now counts 83 remaining
 in-scope raw fields.
+
+## Implemented owned spawn working directories
+
+`spawn_context.cwd` now stores `Option<CString>`. New, split, respawn, and editor
+paths copy the requested directory into the context; spawn formatting borrows the
+owned value and keeps the existing absent-directory behavior. Failed spawns
+release the snapshot through ordinary Drop. The field inventory now counts 82
+remaining in-scope raw fields.

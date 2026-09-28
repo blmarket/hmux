@@ -45,6 +45,6 @@ pub struct spawn_context {
     pub argv: Vec<std::ffi::CString>,
     pub environ: Option<Box<environ>>,
     pub idx: ::core::ffi::c_int,
-    pub cwd: *const ::core::ffi::c_char,
+    pub cwd: Option<std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
 }

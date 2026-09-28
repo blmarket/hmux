@@ -496,18 +496,18 @@ pub unsafe fn spawn_pane(
             return ::core::ptr::null_mut::<window_pane>();
         }
     }
-    if !(*sc).cwd.is_null() {
+    if let Some(requested_cwd) = (*sc).cwd.as_ref() {
         if !item.is_null() {
             cwd = Some(format_single_cstring(
                 item,
-                (*sc).cwd,
+                requested_cwd.as_ptr(),
                 c,
                 ts,
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),
             ));
         } else {
-            cwd = Some(CStr::from_ptr((*sc).cwd).to_owned());
+            cwd = Some(requested_cwd.clone());
         }
         let value = cwd.as_ref().expect("spawn cwd was just set");
         if !value.as_bytes().starts_with(b"/") {
@@ -1090,7 +1090,7 @@ pub(crate) unsafe fn spawn_editor(
         argv: Vec::new(),
         environ: None,
         idx: 0,
-        cwd: ::core::ptr::null::<::core::ffi::c_char>(),
+        cwd: None,
         flags: 0,
     };
     let s = session_owner.get();
@@ -1169,7 +1169,7 @@ pub(crate) unsafe fn spawn_editor(
     sc.argv = vec![cmd];
     sc.environ = Some(environ_create());
     sc.idx = -(1 as ::core::ffi::c_int);
-    sc.cwd = _PATH_TMP.as_ptr();
+    sc.cwd = Some(c"/tmp/".to_owned());
     sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;
     wp = spawn_pane(&raw mut sc, &raw mut cause);
     if wp.is_null() {
@@ -1231,7 +1231,7 @@ mod tests {
                 wl: std::ptr::null_mut(), tc: Some(owner.clone()),
                 wp0: Some(pane_owner.clone()), lc: std::ptr::null_mut(),
                 name: None, argv: Vec::new(), environ: None,
-                idx: 0, cwd: std::ptr::null(), flags: 0,
+                idx: 0, cwd: None, flags: 0,
             };
             drop(owner);
             drop(pane_owner);

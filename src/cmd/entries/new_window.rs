@@ -87,7 +87,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         argv: Vec::new(),
         environ: None,
         idx: 0,
-        cwd: ::core::ptr::null::<::core::ffi::c_char>(),
+        cwd: None,
         flags: 0,
     };
     let mut argv_owner = Vec::new();
@@ -215,7 +215,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         );
     }
     sc.idx = idx;
-    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned);
     sc.flags = 0 as ::core::ffi::c_int;
     if args_has(args, 'E' as i32 as u_char) != 0
         || count == 1 as ::core::ffi::c_int

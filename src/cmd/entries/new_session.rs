@@ -168,7 +168,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         argv: Vec::new(),
         environ: None,
         idx: 0,
-        cwd: ::core::ptr::null::<::core::ffi::c_char>(),
+        cwd: None,
         flags: 0,
     };
     let mut argv_owner = Vec::new();
@@ -573,8 +573,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                         argv_owner = args_to_vector(&*args);
                                                         sc.argv = argv_owner;
                                                         sc.idx = -(1 as ::core::ffi::c_int);
-                                                        sc.cwd =
-                                                            args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+                                                        sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned);
                                                         sc.flags = 0 as ::core::ffi::c_int;
                                                         if spawn_window(&raw mut sc, &raw mut cause)
                                                             .is_null()
