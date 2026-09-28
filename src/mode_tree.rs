@@ -1743,23 +1743,24 @@ fn mode_tree_menu_callback(
         let MenuSelection::Selected { key, .. } = selection else {
             return;
         };
-        let mtd = crate::src::shared::rc::as_ptr(&tree);
-        if (*mtd).dead != 0 || key == KEYC_NONE || line >= mode_tree_line_count(&*mtd) {
+        let mtd = &mut *tree.get();
+        if mtd.dead != 0 || key == KEYC_NONE || line >= mode_tree_line_count(&*mtd) {
             return;
         }
         let Some(client) = client.upgrade() else {
             return;
         };
-        if (*crate::src::shared::rc::as_ptr(&client)).flags & CLIENT_DEAD as uint64_t != 0 {
+        if (&*client.get()).flags & CLIENT_DEAD as uint64_t != 0 {
             return;
         }
-        (*mtd).current = line;
-        let callback = (*mtd).menucb.take();
+        mtd.current = line;
+        let callback = mtd.menucb.take();
         if let Some(mut callback) = callback {
             callback(&client, key);
             // The handler may close the mode or install another callback.
-            if (*mtd).dead == 0 && (*mtd).menucb.is_none() {
-                (*mtd).menucb = Some(callback);
+            let mtd = &mut *tree.get();
+            if mtd.dead == 0 && mtd.menucb.is_none() {
+                mtd.menucb = Some(callback);
             }
         }
     }))
@@ -1773,31 +1774,29 @@ unsafe fn mode_tree_display_menu(
     mut outside: ::core::ffi::c_int,
 ) {
     let Some(client_owner) = client_owner else { return; };
-    let c = client_owner.get();
-    let mtd = tree.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let mtd = &*tree.get();
+    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let items: &[menu_item<'_>];
     let mut line: u_int = 0;
-    if (*mtd).offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
-        line = (*mtd).current;
+    if mtd.offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
+        line = mtd.current;
     } else {
-        line = (*mtd).offset.wrapping_add(y);
+        line = mtd.offset.wrapping_add(y);
     }
 
     let title = if outside == 0 {
-        items = (*mtd).menu;
+        items = mtd.menu;
         let mut bytes = b"#[align=centre]".to_vec();
-        bytes.extend_from_slice((&(*mtd).lines)[line as usize].item.borrow().name.to_bytes());
+        bytes.extend_from_slice((&mtd.lines)[line as usize].item.borrow().name.to_bytes());
         CString::new(bytes).expect("mode tree item names contain no NUL")
     } else {
         items = &mode_tree_menu_items;
         c"".to_owned()
     };
     let mut menu = menu_create(&title);
-    menu_add_items(&mut menu, items, c);
+    menu_add_items(&mut menu, items, client_owner.get());
     drop(title);
     let client = Rc::downgrade(client_owner);
     if x >= (*menu)
@@ -1814,8 +1813,9 @@ unsafe fn mode_tree_display_menu(
     } else {
         x = 0 as u_int;
     }
-    x = x.wrapping_add((*mode_pane).xoff as u_int);
-    y = y.wrapping_add((*mode_pane).yoff as u_int);
+    let pane = &*mode_pane_owner.get();
+    x = x.wrapping_add(pane.xoff as u_int);
+    y = y.wrapping_add(pane.yoff as u_int);
     menu_display(
         menu,
         0 as ::core::ffi::c_int,
@@ -1823,7 +1823,7 @@ unsafe fn mode_tree_display_menu(
         None,
         x,
         y,
-        c,
+        client_owner.get(),
         BOX_LINES_DEFAULT,
         None,
         None,

@@ -2132,3 +2132,16 @@ can logically destroy the tree without a subsequent rebuild or ownership cycle.
 `cargo test --workspace` and `git diff --check` passed. Rendering, menus and other
 raw model access remain pending. The reverted test-helper migration remains
 reverted.
+
+## Implemented tree and pane borrows for mode menus
+
+Menu action dispatch borrows the retained tree for validation and callback
+extraction, then reacquires a borrow after the action before restoring the
+callback. Client liveness uses a shared borrow. Display setup borrows tree state
+and pane offsets without retaining raw model locals. Existing menu APIs still
+require raw client pointers at their call boundaries; those APIs remain pending.
+No new Rc-managed type is introduced.
+
+`cargo test --workspace` and `git diff --check` passed, including menu callback
+replacement, mode destruction, expired-client and cancellation coverage. Rendering
+and remaining raw model APIs still require migration.
