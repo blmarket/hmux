@@ -1,6 +1,6 @@
 use crate::src::server_client::server_client_unref_owned;
 use std::cell::UnsafeCell;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use crate::src::shared::client::{client_retain, client_rc_ptr};
 use crate::src::arguments::{
     args_count, args_has, args_make_commands, args_make_commands_now, args_make_commands_prepare,
@@ -37,7 +37,8 @@ pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,
     pub cmd_else: Option<Box<args_command_state>>,
     pub client: Option<Rc<UnsafeCell<client>>>,
-    pub item: *mut cmdq_item,
+    pub item: Weak<UnsafeCell<cmdq_item>>,
+    pub wait: bool,
 }
 pub static cmd_if_shell_entry: cmd_entry = {
     cmd_entry {
@@ -108,7 +109,8 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
         cmd_if: None,
         cmd_else: None,
         client: None,
-        item: ::core::ptr::null_mut(),
+        item: Weak::new(),
+        wait: wait != 0,
     });
     cdata.cmd_if = Some(args_make_commands_prepare(
         self_0,
@@ -130,7 +132,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     if wait != 0 {
         cdata.client = cmdq_get_client(item);
-        cdata.item = item;
+        cdata.item = (*item).observer.clone();
     } else {
         cdata.client = client_retain(tc);
     }
@@ -166,8 +168,12 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_shell_data) {
+    let item_owner = cdata.item.upgrade();
+    if cdata.wait && item_owner.is_none() {
+        return;
+    }
     let mut c: *mut client = client_rc_ptr(&cdata.client);
-    let mut item: *mut cmdq_item = cdata.item;
+    let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let state = if completion.status == JobExitStatus::Exited(0) {
         cdata.cmd_if.as_deref_mut()
@@ -177,13 +183,13 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
     if let Some(state) = state {
         match args_make_commands(state, &Vec::new()) {
             Err(mut error) => {
-                if cdata.item.is_null() {
+                if !cdata.wait {
                     cmd_parse_error_uppercase_first(&mut error);
                 }
                 let error_ptr = error
                     .as_ref()
                     .map_or(::core::ptr::null(), |cause| cause.as_ptr());
-                if cdata.item.is_null() {
+                if !cdata.wait {
                     status_message_set(
                         c,
                         -(1 as ::core::ffi::c_int),
@@ -193,10 +199,10 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                         |out| write_cstr(out, error_ptr),
                     );
                 } else {
-                    cmdq_error(cdata.item, |out| write_cstr(out, error_ptr));
+                    cmdq_error(item, |out| write_cstr(out, error_ptr));
                 }
             }
-            Ok(commands) if item.is_null() => {
+            Ok(commands) if !cdata.wait => {
                 new_item =
                     cmdq_get_command(&commands, None);
                 cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
@@ -209,8 +215,8 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
             }
         }
     }
-    if !cdata.item.is_null() {
-        cmdq_continue(cdata.item);
+    if cdata.wait {
+        cmdq_continue(item);
     }
 }
 impl Drop for cmd_if_shell_data {
@@ -221,6 +227,28 @@ impl Drop for cmd_if_shell_data {
             }
             drop(self.cmd_else.take());
             drop(self.cmd_if.take());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expired_wait_skips_job_completion() {
+        let mut data = cmd_if_shell_data {
+            cmd_if: None,
+            cmd_else: None,
+            client: None,
+            item: Weak::new(),
+            wait: true,
+        };
+        unsafe {
+            cmd_if_shell_callback(
+                JobCompletion { status: JobExitStatus::Exited(0), output: Vec::new() },
+                &mut data,
+            );
         }
     }
 }

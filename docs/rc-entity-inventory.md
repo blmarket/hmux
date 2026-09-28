@@ -2515,3 +2515,11 @@ file wait cancels its callback before queue removal. Completion retains an
 upgrade through error reporting and continuation, and an expired callback
 skips those queue operations. A regression covers expired error completion.
 The raw-field count is 51.
+
+## Implemented weak if-shell wait item
+
+`cmd_if_shell_data.item` now observes its waiting queue item weakly. Completion
+retains an upgrade through command insertion, error reporting and continuation.
+An expired wait stops before those operations. A separate wait flag preserves
+the distinct background job path, which appends commands and reports errors to
+the client. The raw-field count is 50.
