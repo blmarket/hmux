@@ -3223,11 +3223,12 @@ unsafe fn server_client_handle_menu_key(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_client_handle_key0(
-    mut c: *mut client,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut owned: Box<key_event>,
     mut after: *mut cmdq_item,
     mut next: *mut *mut cmdq_item,
 ) -> ::core::ffi::c_int {
+    let c = owner.get();
     let event: *mut key_event = &raw mut *owned;
     let mut s: *mut session = (*c).session;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
@@ -3338,9 +3339,8 @@ unsafe fn server_client_handle_key0(
     let client_owner = if after.is_null() {
         None
     } else {
-        let owner = (*c).observer.upgrade().expect("live Rc client");
-        (*event).client = Some(std::rc::Rc::downgrade(&owner));
-        Some(owner)
+        (*event).client = Some(std::rc::Rc::downgrade(owner));
+        Some(owner.clone())
     };
     let queued_event = QueuedKeyEvent(owned, client_owner);
     item = cmdq_get_callback_owned(
@@ -3356,27 +3356,27 @@ unsafe fn server_client_handle_key0(
         }
         return 1 as ::core::ffi::c_int;
     }
-    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
+    cmdq_append(Some(owner), item);
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn server_client_handle_key(
-    mut c: *mut client,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     event: Box<key_event>,
 ) -> ::core::ffi::c_int {
     return server_client_handle_key0(
-        c,
+        owner,
         event,
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<*mut cmdq_item>(),
     );
 }
 pub unsafe fn server_client_handle_key_after(
-    mut c: *mut client,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     event: Box<key_event>,
     mut after: *mut cmdq_item,
     mut next: *mut *mut cmdq_item,
 ) -> ::core::ffi::c_int {
-    return server_client_handle_key0(c, event, after, next);
+    return server_client_handle_key0(owner, event, after, next);
 }
 pub unsafe fn server_client_loop() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -4020,7 +4020,7 @@ unsafe fn server_client_click_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<cl
             (*c).click_event,
             None,
         );
-        server_client_handle_key(c, event);
+        server_client_handle_key(owner, event);
     }
     (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }
@@ -5473,19 +5473,18 @@ mod key_event_owner_tests {
     fn early_return_and_cancellation_release_owned_events() {
         unsafe {
             let owner = client::new();
-            let pointer = crate::src::shared::rc::as_ptr(&owner);
             let mouse = Default::default();
             assert_eq!(
-                server_client_handle_key(pointer, key_event::new(1, mouse, Some(vec![1]))),
+                server_client_handle_key(&owner, key_event::new(1, mouse, Some(vec![1]))),
                 0
             );
 
             let mut queued = key_event::new(2, mouse, Some(vec![2]));
             queued.client = Some(std::rc::Rc::downgrade(&owner));
             drop(QueuedKeyEvent(queued, Some(owner.clone())));
-            assert_eq!((*pointer).observer.strong_count(), 2);
+            assert_eq!(std::rc::Rc::strong_count(&owner), 2);
             crate::src::reactor::event_loop();
-            assert_eq!((*pointer).observer.strong_count(), 1);
+            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
         }
     }
 }

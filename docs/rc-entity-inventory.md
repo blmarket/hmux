@@ -975,3 +975,15 @@ directly from it, eliminating the raw terminal argument and owner reconstruction
 
 `cargo test --workspace` and `git diff --check` passed. Other terminal APIs and
 internal raw model projections remain pending.
+
+## Implemented retained client arguments for key dispatch
+
+`server_client_handle_key`, its insertion variant and their shared implementation
+now borrow an Rc client. Terminal parsing, click timers and send-keys pass their
+existing retained owners. Queued key events clone that owner directly when needed,
+and ordinary queue append receives it without recovering ownership from a pointer.
+
+`cargo test --workspace` and `git diff --check` passed. Existing key-event early
+return and deferred-cancellation coverage uses the typed API and direct Rc counts.
+Downstream key handlers, session/pane associations and local raw projections remain
+pending.

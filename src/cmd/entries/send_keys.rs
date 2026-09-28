@@ -107,10 +107,10 @@ unsafe fn cmd_send_keys_inject_key(
             None,
         );
         if after.is_null() {
-            if server_client_handle_key(tc, event) != 0 as ::core::ffi::c_int {
+            if server_client_handle_key(tc_owner.as_ref().expect("key target client"), event) != 0 as ::core::ffi::c_int {
                 return item;
             }
-        } else if server_client_handle_key_after(tc, event, after, &raw mut new_after)
+        } else if server_client_handle_key_after(tc_owner.as_ref().expect("key target client"), event, after, &raw mut new_after)
             != 0 as ::core::ffi::c_int
         {
             return new_after;

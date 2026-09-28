@@ -2126,7 +2126,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         ::core::slice::from_raw_parts(buf.cast::<u8>(), size).to_vec()
                     };
                     let event = key_event::new(key, m, Some(bytes));
-                    server_client_handle_key(c, event);
+                    server_client_handle_key(&terminal_client_owner, event);
                 }
                 evbuffer_drain((*tty).in_0.as_deref_mut().expect("open TTY buffer"), size);
                 return 1 as ::core::ffi::c_int;
