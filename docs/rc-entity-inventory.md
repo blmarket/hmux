@@ -2311,3 +2311,19 @@ before. No new Rc-managed type or persistent owner is introduced.
 `cargo test --workspace` and `git diff --check` passed. Client-lock internals still
 project a raw client for terminal operations and session option lookup; those
 accesses and broader model relationships remain pending.
+
+## Implemented weak pan-window identity
+
+`client.pan_window` now stores the existing window's weak observer. Terminal offset
+calculation and `refresh-client` compare allocation identities only while the
+window is live; clearing stores an empty weak handle. The field adds no window
+reference and can no longer retain a dangling address after the window dies. A
+focused test covers identity, expiration and unchanged strong count.
+
+The nested mode-tree rebuild test also replaced its raw callback-state tree
+pointer with a weak capture that is upgraded for each build. Its rebuild flag is
+shared independently, and the callback owns its captures without manual raw-Box
+cleanup. The control-stop cleanup test also replaced its raw client address with
+a weak client observer; its Drop assertion upgrades while the caller retains the
+client. All three focused tests pass. The restored raw-field TSV now reconciles
+with the current scanner; 85 in-scope raw fields remain.
