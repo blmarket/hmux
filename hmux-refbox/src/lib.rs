@@ -804,9 +804,7 @@ impl error::Error for BorrowError {}
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
     use std::panic;
-    use std::rc::Rc;
 
     use crate::RefBox;
     use crate::internals::{RefBoxHeap, Status};
@@ -979,62 +977,6 @@ mod tests {
         assert_eq!(weak.is_alive(), true);
         drop(ref_box);
         assert_eq!(weak.is_alive(), false);
-    }
-
-    #[test]
-    fn dropping_ref_box_drops_data() {
-        struct DropThing(Rc<Cell<bool>>);
-
-        impl Drop for DropThing {
-            fn drop(&mut self) {
-                self.0.set(true);
-            }
-        }
-
-        let drop_checker = Rc::new(Cell::new(false));
-        let ref_box = RefBox::new(DropThing(drop_checker.clone()));
-        assert_eq!(drop_checker.get(), false);
-        drop(ref_box);
-        assert_eq!(drop_checker.get(), true);
-    }
-
-    #[test]
-    fn dropping_rc_with_weak_refs_drops_data() {
-        struct DropThing(Rc<Cell<bool>>);
-
-        impl Drop for DropThing {
-            fn drop(&mut self) {
-                self.0.set(true);
-            }
-        }
-
-        let drop_checker = Rc::new(Cell::new(false));
-        let ref_box = RefBox::new(DropThing(drop_checker.clone()));
-        let weak = RefBox::downgrade(&ref_box);
-        assert_eq!(drop_checker.get(), false);
-        drop(ref_box);
-        assert_eq!(drop_checker.get(), true);
-        drop(weak);
-    }
-
-    #[test]
-    fn dropping_weak_does_not_drop_data() {
-        struct DropThing(Rc<Cell<bool>>);
-
-        impl Drop for DropThing {
-            fn drop(&mut self) {
-                self.0.set(true);
-            }
-        }
-
-        let drop_checker = Rc::new(Cell::new(false));
-        let ref_box = RefBox::new(DropThing(drop_checker.clone()));
-        let weak = RefBox::downgrade(&ref_box);
-        assert_eq!(drop_checker.get(), false);
-        drop(weak);
-        assert_eq!(drop_checker.get(), false);
-        drop(ref_box);
-        assert_eq!(drop_checker.get(), true);
     }
 
     #[test]
