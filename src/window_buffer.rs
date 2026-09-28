@@ -271,7 +271,7 @@ unsafe fn window_buffer_build(
                 _ => {
                     let text = format_expand_cstring(ft, (*data).format.as_ptr());
                     mode_tree_add(
-                        (*data).data_ptr(),
+                        &mut *(*data).data_ptr(),
                         None,
                         ModeTreeItemData::Buffer(item_handle.clone()),
                         item.order as uint64_t,
@@ -561,9 +561,9 @@ unsafe fn window_buffer_do_delete(
 ) {
     if mode_tree_get_current(&*(*data).data_ptr())
         .is_buffer(item)
-        && mode_tree_down((*data).data_ptr(), 0 as ::core::ffi::c_int) == 0
+        && mode_tree_down(&mut *(*data).data_ptr(), 0 as ::core::ffi::c_int) == 0
     {
-        mode_tree_up((*data).data_ptr(), 0 as ::core::ffi::c_int);
+        mode_tree_up(&mut *(*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     if let Some(pb) = paste_get_name(&item.name) {
         paste_free(&pb);

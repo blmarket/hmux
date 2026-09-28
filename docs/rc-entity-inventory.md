@@ -1293,3 +1293,17 @@ captures are released on that return.
 no-session return, suppressed file/completion callbacks and capture release.
 Client session storage, window/winlink access and internal raw projections remain
 pending.
+
+## Implemented safe borrows for mode-tree row operations
+
+Row insertion/removal, up/down navigation and selection now take mutable tree
+borrows; tag counting and line counting take shared borrows. These operations do
+not invoke application callbacks and do not acquire ownership. Their bodies no
+longer dereference raw tree pointers, and their APIs are safe. Insertion retains a
+small unsafe block for the existing global logger. All mode callers and row tests
+use the borrowed interfaces.
+
+`cargo test --workspace` and `git diff --check` passed, including row invalidation,
+selection restoration and callback-time removal coverage. Legacy callers still
+project borrows from retained UnsafeCell models; internal tree traversal and
+other model APIs remain pending.

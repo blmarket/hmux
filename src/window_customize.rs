@@ -1040,7 +1040,7 @@ unsafe fn window_customize_build_array(
             );
             let text = format_expand_cstring(ft, (*data).format.as_ptr());
             mode_tree_add(
-                (*data).data_ptr(),
+                &mut *(*data).data_ptr(),
                 Some(top),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_get_tag(o, ai, oe),
@@ -1214,7 +1214,7 @@ unsafe fn window_customize_build_option(
     );
     let text = (array == 0).then(|| format_expand_cstring(ft, (*data).format.as_ptr()));
     let top = mode_tree_add(
-        (*data).data_ptr(),
+        &mut *(*data).data_ptr(),
         Some(top),
         ModeTreeItemData::Customize(item_owner.clone()),
         window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
@@ -1262,7 +1262,7 @@ unsafe fn window_customize_build_options(
     let mut count: u_int = 0 as u_int;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     let top = mode_tree_add(
-        (*data).data_ptr(),
+        &mut *(*data).data_ptr(),
         None,
         ModeTreeItemData::None,
         window_customize_top_tag(group),
@@ -1330,7 +1330,7 @@ unsafe fn window_customize_build_options(
         }
     }
     if (*data).hide_default != 0 && count == 0 as u_int {
-        mode_tree_remove((*data).data_ptr(), &top);
+        mode_tree_remove(&mut *(*data).data_ptr(), &top);
     }
 }
 fn window_customize_key_detail(value: &[u8]) -> CString {
@@ -1351,7 +1351,7 @@ unsafe fn window_customize_build_keys(
     title_bytes.extend_from_slice(kt.name.as_bytes());
     let title = CString::new(title_bytes).expect("key table name contains no NUL");
     let top = mode_tree_add(
-        (*data).data_ptr(),
+        &mut *(*data).data_ptr(),
         None,
         ModeTreeItemData::None,
         (1_u64 << 62) | kt.identity,
@@ -1424,7 +1424,7 @@ unsafe fn window_customize_build_keys(
             );
             let expanded = format_expand_cstring(ft, (*data).format.as_ptr());
             let child = mode_tree_add(
-                (*data).data_ptr(),
+                &mut *(*data).data_ptr(),
                 Some(&top),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 0),
@@ -1435,7 +1435,7 @@ unsafe fn window_customize_build_keys(
             let tmp = cmd_list_print_cstring(&bd.cmdlist().borrow(), 0);
             let text = window_customize_key_detail(tmp.as_bytes());
             let mti = mode_tree_add(
-                (*data).data_ptr(),
+                &mut *(*data).data_ptr(),
                 Some(&child),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 1),
@@ -1459,7 +1459,7 @@ unsafe fn window_customize_build_keys(
                 CString::new(Vec::new()).expect("empty key note")
             };
             let mti = mode_tree_add(
-                (*data).data_ptr(),
+                &mut *(*data).data_ptr(),
                 Some(&child),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 2),
@@ -1477,7 +1477,7 @@ unsafe fn window_customize_build_keys(
             };
             let text = window_customize_key_detail(flag);
             let mti = mode_tree_add(
-                (*data).data_ptr(),
+                &mut *(*data).data_ptr(),
                 Some(&child),
                 ModeTreeItemData::Customize(item_owner.clone()),
                 window_customize_key_tag(std::ptr::from_ref(bd).cast(), 3),
@@ -1493,7 +1493,7 @@ unsafe fn window_customize_build_keys(
     }
     format_free(ft);
     if (*data).hide_default != 0 && count == 0 as u_int {
-        mode_tree_remove((*data).data_ptr(), &top);
+        mode_tree_remove(&mut *(*data).data_ptr(), &top);
     }
 }
 unsafe fn window_customize_build_environment(
@@ -1518,7 +1518,7 @@ unsafe fn window_customize_build_environment(
         return;
     }
     let top = mode_tree_add(
-        (*data).data_ptr(),
+        &mut *(*data).data_ptr(),
         None,
         ModeTreeItemData::None,
         window_customize_top_tag(group),
@@ -1638,7 +1638,7 @@ unsafe fn window_customize_build_environment(
             Cow::Borrowed((*envent).name.as_c_str())
         };
         mode_tree_add(
-            (*data).data_ptr(),
+            &mut *(*data).data_ptr(),
             Some(&top),
             ModeTreeItemData::Customize(item_owner.clone()),
             (2_u64 << 62) | std::ptr::from_ref(envent) as uint64_t,
@@ -4087,7 +4087,7 @@ unsafe fn window_customize_unset_environment(
     if mode_tree_get_current(&*(*data).data_ptr())
         .is_customize(item)
     {
-        mode_tree_up((*data).data_ptr(), 0 as ::core::ffi::c_int);
+        mode_tree_up(&mut *(*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     environ_unset(
         env,
@@ -4117,7 +4117,7 @@ unsafe fn window_customize_unset_option(
         && mode_tree_get_current(&*(*data).data_ptr())
             .is_customize(item)
     {
-        mode_tree_up((*data).data_ptr(), 0 as ::core::ffi::c_int);
+        mode_tree_up(&mut *(*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     options_remove_or_default(
         o,
@@ -4470,7 +4470,7 @@ unsafe fn window_customize_unset_key(
     if mode_tree_get_current(&*(*data).data_ptr())
         .is_customize(item)
     {
-        mode_tree_up((*data).data_ptr(), 0);
+        mode_tree_up(&mut *(*data).data_ptr(), 0);
     }
     key_bindings_remove(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
 }
@@ -4494,7 +4494,7 @@ unsafe fn window_customize_reset_key(
         && mode_tree_get_current(&*(*data).data_ptr())
             .is_customize(item)
     {
-        mode_tree_up((*data).data_ptr(), 0);
+        mode_tree_up(&mut *(*data).data_ptr(), 0);
     }
     key_bindings_reset(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
 }
@@ -4963,7 +4963,7 @@ unsafe fn window_customize_key(
                 }
             }
             68 => {
-                tagged = mode_tree_count_tagged((*data).data_ptr());
+                tagged = mode_tree_count_tagged(&*(*data).data_ptr());
                 if !(tagged == 0 as u_int) {
                     let reset_prompt = CString::new(format!("Reset {tagged} tagged to default? "))
                         .expect("formatted number has no NUL");
@@ -5036,7 +5036,7 @@ unsafe fn window_customize_key(
                 }
             }
             85 => {
-                tagged = mode_tree_count_tagged((*data).data_ptr());
+                tagged = mode_tree_count_tagged(&*(*data).data_ptr());
                 if !(tagged == 0 as u_int) {
                     let prompt = CString::new(format!("Unset {tagged} tagged? ")).unwrap();
                     let owner = (*data).observer

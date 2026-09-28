@@ -398,7 +398,7 @@ unsafe fn window_client_build(
                     ::core::ptr::null_mut::<window_pane>(),
                 );
                 mode_tree_add(
-                    (*data).data_ptr(),
+                    &mut *(*data).data_ptr(),
                     None,
                     ModeTreeItemData::Client(item_handle.clone()),
                     c as uint64_t,
@@ -844,7 +844,7 @@ unsafe fn window_client_do_detach(
     if mode_tree_get_current(&*(*data).data_ptr())
         .is_client(item)
     {
-        mode_tree_down((*data).data_ptr(), 0 as ::core::ffi::c_int);
+        mode_tree_down(&mut *(*data).data_ptr(), 0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
         server_client_detach(crate::src::shared::rc::as_ptr(item.client()), MSG_DETACH);
