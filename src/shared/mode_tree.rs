@@ -52,7 +52,7 @@ pub struct mode_tree_data {
     pub current: u_int,
     pub screen: screen,
     pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
-    pub prompt_data: ModeTreePromptWeak,
+    pub prompt_data: refbox::Weak<crate::src::shared::mode_tree::mode_tree_prompt>,
     pub prompt_cx: u_int,
     pub prompt_top: ::core::ffi::c_int,
     pub preview: ::core::ffi::c_int,
@@ -115,8 +115,6 @@ impl Default for mode_tree_data {
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
-pub type ModeTreePromptOwner = refbox::RefBox<mode_tree_prompt>;
-pub type ModeTreePromptWeak = refbox::Weak<mode_tree_prompt>;
 
 pub struct mode_tree_prompt {
     /// Taken at logical cleanup before dropping the callback record.

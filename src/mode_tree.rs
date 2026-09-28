@@ -47,7 +47,6 @@ use crate::src::shared::mode_tree::{
     mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
     mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
     mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
-    ModeTreePromptOwner,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -1453,7 +1452,7 @@ fn mode_tree_prompt_input_callback(
     }
     result
 }
-unsafe fn mode_tree_prompt_free_callback(data: &ModeTreePromptOwner) {
+unsafe fn mode_tree_prompt_free_callback(data: &refbox::RefBox<crate::src::shared::mode_tree::mode_tree_prompt>) {
     let (mtd, callback, inputcb) = {
         let mut state = data.try_borrow_mut().expect("prompt cleanup record");
         (state.mtd.take(), state.freecb.take(), state.inputcb.take())
@@ -2703,7 +2702,7 @@ mod mode_prompt_data_tests {
     use crate::src::shared::rc;
     use std::cell::{Cell, UnsafeCell};
 
-    fn data(tree: &Rc<UnsafeCell<mode_tree_data>>) -> ModeTreePromptOwner {
+    fn data(tree: &Rc<UnsafeCell<mode_tree_data>>) -> refbox::RefBox<crate::src::shared::mode_tree::mode_tree_prompt> {
         refbox::RefBox::new(mode_tree_prompt {
             mtd: Some(tree.clone()),
             c: Weak::new(),
