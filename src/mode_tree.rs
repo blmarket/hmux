@@ -2531,17 +2531,13 @@ mod mode_tree_tests {
         }
     }
 
-    struct NestedBuildState {
-        mtd: *mut mode_tree_data,
-        empty: bool,
-    }
-
-    unsafe fn nested_build(state: &mut NestedBuildState) {
-        if state.empty {
+    unsafe fn nested_build(tree: &Rc<UnsafeCell<mode_tree_data>>, empty: bool) {
+        if empty {
             return;
         }
+        let mtd = &mut *tree.get();
         let parent = mode_tree_add(
-            &mut *state.mtd,
+            mtd,
             None,
             ModeTreeItemData::None,
             1,
@@ -2551,7 +2547,7 @@ mod mode_tree_tests {
         );
         for id in 0..64 {
             mode_tree_add(
-                &mut *state.mtd,
+                mtd,
                 Some(&parent),
                 ModeTreeItemData::None,
                 id as u64 + 2,
@@ -2568,9 +2564,12 @@ mod mode_tree_tests {
             let mtd_owner = mode_tree_alloc_data();
             let mtd = crate::src::shared::rc::as_ptr(&mtd_owner);
             (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
-            let state = Box::into_raw(Box::new(NestedBuildState { mtd, empty: false }));
+            let empty = Rc::new(std::cell::Cell::new(false));
+            let callback_empty = empty.clone();
+            let callback_tree = Rc::downgrade(&mtd_owner);
             (*mtd).buildcb = Some(Box::new(move |_, _, _| {
-                nested_build(&mut *state);
+                let tree = callback_tree.upgrade().expect("live mode tree during build");
+                nested_build(&tree, callback_empty.get());
                 None
             }));
             (*mtd).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
@@ -2585,13 +2584,12 @@ mod mode_tree_tests {
             assert_eq!(mode_tree_set_current(&mut *mtd, 65), 1);
             assert_eq!((*mtd).current, 64);
 
-            (*state).empty = true;
+            empty.set(true);
             mode_tree_build(&mtd_owner);
             assert!((*mtd).lines.is_empty());
             mode_tree_free_items(&mut (*mtd).children);
             drop((*mtd).screen.grid.take());
             drop(mtd_owner);
-            drop(Box::from_raw(state));
         }
     }
 
