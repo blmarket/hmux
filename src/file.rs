@@ -10,7 +10,7 @@ use crate::src::ffi::libc::{
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
 use crate::src::reactor::{
-    bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_add,
+    bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_once,
 };
 use crate::src::server_client::server_client_get_cwd;
@@ -787,8 +787,10 @@ pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     let mut next = client_files_minmax(files);
     while let Some(file) = next {
         let cf = &*file.get();
-        if !cf.event.is_null() {
-            left = evbuffer_get_length(&*((*cf.event).output));
+        if let Some(remaining) = cf.event.with_ptr(|stream| unsafe {
+            evbuffer_get_length(&*(*stream).output)
+        }) {
+            left = remaining;
             if left != 0 as size_t {
                 waiting += 1;
                 log_debug(format_args!(
@@ -808,10 +810,7 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
         stream: 0,
         error: 0,
     };
-    if !cf.event.is_null() {
-        bufferevent_free(cf.event);
-        cf.event = ::core::ptr::null_mut::<bufferevent>();
-    }
+    cf.event.free();
     if cf.fd != -(1 as ::core::ffi::c_int) {
         if close(cf.fd) != 0 as ::core::ffi::c_int && cf.error == 0 as ::core::ffi::c_int {
             cf.error = *__errno_location();
@@ -854,8 +853,7 @@ unsafe fn file_write_error_callback(
     }
     log_debug(format_args!("write error file {}", (cf.stream) as i32));
     cf.error = error;
-    bufferevent_free(cf.event);
-    cf.event = ::core::ptr::null_mut::<bufferevent>();
+    cf.event.free();
     close(cf.fd);
     cf.fd = -(1 as ::core::ffi::c_int);
     if cf.closed != 0 {
@@ -873,7 +871,10 @@ unsafe fn file_write_error_callback(
 unsafe fn file_write_callback(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *owner.get();
     log_debug(format_args!("write check file {}", (cf.stream) as i32));
-    if cf.closed != 0 && evbuffer_get_length(&*((*cf.event).output)) == 0 as size_t {
+    let remaining = cf.event.with_ptr(|stream| unsafe {
+        evbuffer_get_length(&*(*stream).output)
+    }).unwrap_or(0);
+    if cf.closed != 0 && remaining == 0 as size_t {
         file_write_finished(owner);
     } else if let Some(callback) = cf.cb.as_mut() {
         callback(client_file_event {
@@ -945,7 +946,7 @@ pub unsafe fn file_write_open(
             } else {
                 let data_observer = Rc::downgrade(&transfer_owner);
                 let error_observer = data_observer.clone();
-                cf.event = bufferevent_new(
+                let stream = bufferevent_new(
                     cf.fd,
                     None,
                     bufferevent_data_callback(move |_| unsafe {
@@ -955,10 +956,11 @@ pub unsafe fn file_write_open(
                         if let Some(owner) = error_observer.upgrade() { file_write_error_callback(flags, &owner); }
                     }),
                 );
-                if cf.event.is_null() {
+                if stream.is_null() {
                     fatalx(|out| out.write_all(b"out of memory"));
                 }
-                bufferevent_enable(cf.event, EV_WRITE as ::core::ffi::c_short);
+                cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short);
             }
         }
     }
@@ -990,15 +992,15 @@ pub unsafe fn file_write_data(files: &client_files, imsg: &imsg) {
         (size) as usize,
         (cf.stream) as i32
     ));
-    if !cf.event.is_null() {
+    let _ = cf.event.with_ptr(|stream| unsafe {
         bufferevent_write(
-            cf.event,
+            stream,
             imsg.data[::core::mem::size_of::<msg_write_data>()..]
                 .as_ptr()
                 .cast::<::core::ffi::c_void>(),
             size,
-        );
-    }
+        )
+    });
 }
 pub unsafe fn file_write_close(files: &client_files, imsg: &imsg) {
     let msglen = imsg.data.len();
@@ -1014,7 +1016,10 @@ pub unsafe fn file_write_close(files: &client_files, imsg: &imsg) {
     let cf = &mut *file_owner.get();
     log_debug(format_args!("close file {}", (cf.stream) as i32));
     cf.closed = 1 as ::core::ffi::c_int;
-    if cf.event.is_null() || evbuffer_get_length(&*((*cf.event).output)) == 0 as size_t {
+    let remaining = cf.event.with_ptr(|stream| unsafe {
+        evbuffer_get_length(&*(*stream).output)
+    }).unwrap_or(0);
+    if remaining == 0 as size_t {
         file_write_finished(&file_owner);
     }
 }
@@ -1041,33 +1046,27 @@ unsafe fn file_read_error_callback(
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
-    bufferevent_free(cf.event);
+    cf.event.free();
     close(cf.fd);
     client_files_remove(&mut *cf);
 }
 unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *owner.get();
-    let mut bdata: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    let mut bsize: size_t = 0;
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_read_data>();
     loop {
-        bsize = evbuffer_get_length(&*((*cf.event).input));
-        if bsize == 0 as size_t {
-            break;
-        }
-        if bsize
-            > (MAX_IMSGSIZE as usize)
-                .wrapping_sub(IMSG_HEADER_SIZE)
-                .wrapping_sub(::core::mem::size_of::<msg_read_data>() as usize)
-        {
-            bsize = (MAX_IMSGSIZE as usize)
-                .wrapping_sub(IMSG_HEADER_SIZE)
-                .wrapping_sub(::core::mem::size_of::<msg_read_data>() as usize)
-                as size_t;
-        }
-        bdata = evbuffer_pullup(&mut *(*cf.event).input, bsize as ssize_t)
-            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
+        let Some(chunk) = cf.event.with_ptr(|stream| unsafe {
+            let input = &mut *(*stream).input;
+            let bsize = evbuffer_get_length(input).min(
+                (MAX_IMSGSIZE as usize)
+                    .wrapping_sub(IMSG_HEADER_SIZE)
+                    .wrapping_sub(header_len),
+            );
+            evbuffer_pullup(input, bsize as ssize_t)
+                .map_or_else(Vec::new, |bytes| bytes[..bsize].to_vec())
+        }) else { break };
+        let bsize = chunk.len();
+        if bsize == 0 { break; }
         log_debug(format_args!(
             "read {} from file {}",
             (bsize) as usize,
@@ -1083,7 +1082,7 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
             (&raw const header).cast(),
             header_len,
         );
-        memcpy(msg.as_mut_ptr().add(header_len).cast(), bdata, bsize);
+        msg[header_len..].copy_from_slice(&chunk);
         proc_send(
             cf.peer,
             MSG_READ,
@@ -1091,7 +1090,9 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
             msg.as_ptr().cast(),
             msglen,
         );
-        evbuffer_drain(&mut *(*cf.event).input, bsize);
+        let _ = cf.event.with_ptr(|stream| unsafe {
+            evbuffer_drain(&mut *(*stream).input, bsize)
+        });
     }
 }
 pub unsafe fn file_read_open(
@@ -1154,7 +1155,7 @@ pub unsafe fn file_read_open(
             } else {
                 let data_observer = Rc::downgrade(&transfer_owner);
                 let error_observer = data_observer.clone();
-                (*cf).event = bufferevent_new(
+                let stream = bufferevent_new(
                     (*cf).fd,
                     bufferevent_data_callback(move |_| unsafe {
                         if let Some(owner) = data_observer.upgrade() { file_read_callback(&owner); }
@@ -1164,10 +1165,11 @@ pub unsafe fn file_read_open(
                         if let Some(owner) = error_observer.upgrade() { file_read_error_callback(flags, &owner); }
                     }),
                 );
-                if (*cf).event.is_null() {
+                if stream.is_null() {
                     fatalx(|out| out.write_all(b"out of memory"));
                 }
-                bufferevent_enable((*cf).event, EV_READ as ::core::ffi::c_short);
+                (*cf).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                bufferevent_enable(stream, EV_READ as ::core::ffi::c_short);
                 return;
             }
         }
@@ -1374,6 +1376,25 @@ impl Drop for client_file {
 mod file_index_ownership_tests {
     use super::*;
     use crate::src::reactor::{event_loop, shutdown_runtime};
+
+    #[test]
+    fn pending_write_check_skips_a_freed_stream() {
+        unsafe {
+            let mut files = client_files::default();
+            let owner = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
+            let stream = bufferevent_new(-1, None, None, None);
+            (*owner.get()).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            assert_eq!(file_write_left(&files), 0);
+            bufferevent_write(stream, b"pending".as_ptr().cast(), 7);
+            assert_eq!(file_write_left(&files), 1);
+            (*owner.get()).event.free();
+            assert_eq!(file_write_left(&files), 0);
+            client_files_remove(&mut *owner.get());
+            drop(owner);
+            drop(files);
+            shutdown_runtime();
+        }
+    }
 
     #[test]
     fn terminal_completion_unlinks_before_lookup_guards_release_the_allocation() {

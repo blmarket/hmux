@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **64 raw fields in
+fields and their lifecycle decisions. The current scanner finds **63 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-171 explicitly record a migration and thirteen record
-removal. The remaining 64 comprise 16 needing an access or teardown
+172 explicitly record a migration and thirteen record
+removal. The remaining 63 comprise 15 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 64 fields have audit dispositions. Design entries
+The remaining 63 fields have audit dispositions. Design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -107,6 +107,7 @@ are now recorded individually in the TSV.
 | `cmd_find_state.current` | Removed the raw link to another find state. Target lookup selects a local snapshot of the marked, queue, or client context and passes a borrow to window/pane helpers. The result record carries only resolved target observers; success and error exits release the local context without explicit clearing. |
 | `input_ctx.event` | `StreamHandle` observes the runtime's `StreamState` weakly. Reply operations check logical liveness and borrow the takeable stream slot for the entire write. A freed stream makes the operation a no-op even when callback task state still holds its Rc. Null input creates an empty handle. |
 | `job.event` | `StreamHandle` observes the runtime's stream. Completion and callbacks use scoped slot borrows, and job teardown frees the stream through the handle before closing the file descriptor. `job_get_event` still returns a checked raw view for legacy callers. A regression covers completion output and expiration. |
+| `client_file.event` | `StreamHandle` observes each file transfer's runtime stream. Write checks and writes use scoped slot borrows; existing completion and error paths free through the handle. Read callbacks copy each chunk before `proc_send` and recheck the stream before draining, so no buffer borrow crosses dispatch. A regression covers pending bytes and expiration. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
 | `winlink.window` (now `window_owner`) | Optional `WindowOwner` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |

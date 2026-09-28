@@ -2404,3 +2404,11 @@ existing point before closing the file descriptor. The legacy event accessor
 still projects a checked raw view. A focused regression verifies output
 collection and expiration after free. The field inventory now counts 64
 remaining in-scope raw fields.
+
+## Implemented weak file transfer stream
+
+`client_file.event` now observes its runtime stream through `StreamHandle`.
+Write operations borrow the live slot, and completion/error paths free it at
+the existing point. Read callbacks copy a chunk before sending it and recheck
+the stream before draining input. The pending-write regression covers stream
+expiration. The field inventory now counts 63 remaining in-scope raw fields.

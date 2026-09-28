@@ -319,7 +319,7 @@ pub struct client_file {
     pub stream: ::core::ffi::c_int,
     pub path: Option<std::ffi::CString>,
     pub buffer: Box<evbuffer>,
-    pub event: *mut bufferevent,
+    pub event: crate::src::reactor::StreamHandle,
     pub fd: ::core::ffi::c_int,
     pub error: ::core::ffi::c_int,
     pub closed: ::core::ffi::c_int,
