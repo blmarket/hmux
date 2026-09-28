@@ -1015,51 +1015,42 @@ pub unsafe fn session_renumber_windows(mut s: *mut session) {
         wl = wl1;
     }
 }
-pub unsafe fn session_theme_changed(mut s: *mut session) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    if !s.is_null() {
-        wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-        while !wl.is_null() {
-            wp = window_pane_first(((*wl).window_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            while !wp.is_null() {
-                (*wp).flags |= PANE_THEMECHANGED;
-                wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            }
-            wl = winlinks_next(&*wl);
+pub unsafe fn session_theme_changed(session: Option<&session>) {
+    let Some(session) = session else { return; };
+    let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
+    while let Some(wl) = link.as_ref() {
+        let mut next = window_pane_first(wl.window_ptr().as_ref());
+        while let Some(owner) = next {
+            let pane = &mut *owner.get();
+            pane.flags |= PANE_THEMECHANGED;
+            next = window_pane_next(Some(pane));
         }
+        link = winlinks_next(wl);
     }
 }
-pub unsafe fn session_update_history(mut s: *mut session) {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut gd: *mut grid = ::core::ptr::null_mut::<grid>();
-    let mut limit: u_int = 0;
-    let mut osize: u_int = 0;
-    limit = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
+pub unsafe fn session_update_history(session: &session) {
+    let limit = crate::src::options::options_get_number_ref(
+        session.options.as_deref().expect("session options"), c"history-limit",
     ) as u_int;
-    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-    while !wl.is_null() {
-        wp = window_pane_first(((*wl).window_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            gd = (*wp).base.grid_mut();
-            osize = (*gd).hsize;
-            (*gd).hlimit = limit;
-            grid_collect_history(&mut *gd, 1 as ::core::ffi::c_int);
-            if (*gd).hsize != osize {
+    let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
+    while let Some(wl) = link.as_ref() {
+        let mut next = window_pane_first(wl.window_ptr().as_ref());
+        while let Some(owner) = next {
+            let pane = &mut *owner.get();
+            let id = pane.id;
+            let grid = pane.base.grid_mut();
+            let old_size = grid.hsize;
+            grid.hlimit = limit;
+            grid_collect_history(grid, 1);
+            if grid.hsize != old_size {
                 log_debug(format_args!(
-                    "{}: %{} {} -> {}",
-                    "session_update_history",
-                    ((*wp).id) as u32,
-                    (osize) as u32,
-                    ((*gd).hsize) as u32
+                    "session_update_history: %{} {} -> {}",
+                    id, old_size, grid.hsize,
                 ));
             }
-            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            next = window_pane_next(Some(pane));
         }
-        wl = winlinks_next(&*wl);
+        link = winlinks_next(wl);
     }
 }
 

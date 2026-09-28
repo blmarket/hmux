@@ -1796,7 +1796,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                     if (*tty).bg != bg {
                                                         server_client_update_theme_colours(c);
                                                     }
-                                                    session_theme_changed((*c).session);
+                                                    session_theme_changed(((*c).session).as_ref());
                                                     current_block = 5025795842197473417;
                                                 }
                                                 -1 => {
@@ -1806,7 +1806,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                     if (*tty).bg != bg {
                                                         server_client_update_theme_colours(c);
                                                     }
-                                                    session_theme_changed((*c).session);
+                                                    session_theme_changed(((*c).session).as_ref());
                                                     current_block = 16977559109335092698;
                                                 }
                                                 _ => {

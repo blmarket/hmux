@@ -2274,3 +2274,15 @@ or persistent owner is introduced.
 
 `cargo test --workspace` and `git diff --check` passed. Raw session acquisition at
 legacy callers and broader model relationships remain pending.
+
+## Implemented retained pane traversal for session maintenance
+
+Session theme propagation accepts an optional session borrow, preserving the
+missing-session no-op. History-limit updates borrow their session and options.
+Both retain each pane cursor while updating fields, replacing immediately
+projected raw pane traversal pointers. History trimming borrows the grid directly
+and preserves its existing collection and logging behavior. All callers are
+updated; no new Rc-managed type is introduced.
+
+`cargo test --workspace` and `git diff --check` passed. Winlink/window acquisition
+and remaining session APIs, including linked-session queries, remain pending.

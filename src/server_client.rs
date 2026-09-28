@@ -1487,7 +1487,7 @@ pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session)
         recalculate_sizes();
         window_update_focus((*(*s).curw).window_ptr());
         session_update_activity(s, ::core::ptr::null_mut::<timeval>());
-        session_theme_changed(s);
+        session_theme_changed(s.as_ref());
         gettimeofday(&raw mut (*s).last_attached_time, NULL);
         (*(*s).curw).flags &= !WINLINK_ALERTFLAGS;
         alerts_check_session(s);

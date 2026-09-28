@@ -1891,7 +1891,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         while !s.is_null() {
-            session_update_history(s);
+            session_update_history(&*s);
             s_owner = sessions_next(&*s);
             s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         }
