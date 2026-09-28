@@ -214,11 +214,11 @@ fn mode_tree_sibling(
     }
 }
 
-unsafe fn mode_tree_check_selected(mut mtd: *mut mode_tree_data) {
-    if (*mtd).current > (*mtd).height.wrapping_sub(1 as u_int) {
-        (*mtd).offset = (*mtd)
+fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
+    if mtd.current > mtd.height.wrapping_sub(1 as u_int) {
+        mtd.offset = mtd
             .current
-            .wrapping_sub((*mtd).height)
+            .wrapping_sub(mtd.height)
             .wrapping_add(1 as u_int);
     }
 }
@@ -234,13 +234,11 @@ fn mode_tree_line_count(mtd: &mode_tree_data) -> u_int {
     mtd.lines.len() as u_int
 }
 
-unsafe fn mode_tree_clear_lines(mut mtd: *mut mode_tree_data) {
-    (*mtd).lines = Vec::new();
+fn mode_tree_clear_lines(mtd: &mut mode_tree_data) {
+    mtd.lines = Vec::new();
 }
-unsafe fn mode_tree_build_lines(mtd: *mut mode_tree_data, items: &[ModeTreeItemRef], depth: u_int) {
-    let _tree = (*mtd).observer
-        .upgrade()
-        .expect("live mode tree");
+unsafe fn mode_tree_build_lines(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, items: &[ModeTreeItemRef], depth: u_int) {
+    let mtd = tree_owner.get();
     (*mtd).depth = depth;
     (*mtd).maxdepth = (*mtd).maxdepth.max(depth);
     let mut flat = 1;
@@ -263,7 +261,7 @@ unsafe fn mode_tree_build_lines(mtd: *mut mode_tree_data, items: &[ModeTreeItemR
             (row.children.snapshot(), row.expanded)
         };
         if expanded != 0 {
-            mode_tree_build_lines(mtd, &children, depth.wrapping_add(1));
+            mode_tree_build_lines(tree_owner, &children, depth.wrapping_add(1));
         }
         if (*mtd).dead != 0 { return; }
         let Some(data) = item.try_borrow().map(|row| row.itemdata.clone()) else { continue; };
@@ -622,9 +620,9 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         return;
     }
     mode_tree_free_items(&mut (*mtd).saved);
-    mode_tree_clear_lines(mtd);
+    mode_tree_clear_lines(&mut *mtd);
     (*mtd).maxdepth = 0 as u_int;
-    mode_tree_build_lines(mtd, &(*mtd).children.snapshot(), 0);
+    mode_tree_build_lines(tree_owner, &(*mtd).children.snapshot(), 0);
     if (*mtd).dead != 0 {
         return;
     }
@@ -638,7 +636,7 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     } else {
         (*mtd).height = (*s).grid().sy;
     }
-    mode_tree_check_selected(mtd);
+    mode_tree_check_selected(&mut *mtd);
 }
 
 pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>) {
@@ -653,7 +651,7 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_
     }
     mode_tree_clear_prompt(&owner);
     mode_tree_free_items(&mut (*mtd).children);
-    mode_tree_clear_lines(mtd);
+    mode_tree_clear_lines(&mut *mtd);
     screen_free(&mut (*mtd).screen);
     (*mtd).search = None;
     (*mtd).filter = None;
@@ -1475,11 +1473,11 @@ pub unsafe fn mode_tree_set_prompt(
         cmdq_append(client_owner, item);
     }
 }
-unsafe fn mode_tree_search_backward(mtd: *mut mode_tree_data) -> Option<ModeTreeItemRef> {
-    mode_tree_search(mtd, false)
+unsafe fn mode_tree_search_backward(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) -> Option<ModeTreeItemRef> {
+    mode_tree_search(tree_owner, false)
 }
-unsafe fn mode_tree_search_forward(mtd: *mut mode_tree_data) -> Option<ModeTreeItemRef> {
-    mode_tree_search(mtd, true)
+unsafe fn mode_tree_search_forward(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) -> Option<ModeTreeItemRef> {
+    mode_tree_search(tree_owner, true)
 }
 
 fn mode_tree_search_next(mtd: &mode_tree_data, item: &ModeTreeItemRef) -> Option<ModeTreeItemRef> {
@@ -1519,10 +1517,8 @@ fn mode_tree_search_previous(
     }
 }
 
-unsafe fn mode_tree_search(mtd: *mut mode_tree_data, forward: bool) -> Option<ModeTreeItemRef> {
-    let _tree = (*mtd).observer
-        .upgrade()
-        .expect("live mode tree");
+unsafe fn mode_tree_search(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, forward: bool) -> Option<ModeTreeItemRef> {
+    let mtd = tree_owner.get();
     let search = (*mtd).search.clone()?;
     let icase = (*mtd).search_icase != 0;
     let last = (&(*mtd).lines)[(*mtd).current as usize].item.clone();
@@ -1562,9 +1558,9 @@ unsafe fn mode_tree_search_set(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let found = if (*mtd).search_dir == MODE_TREE_SEARCH_FORWARD {
-        mode_tree_search_forward(mtd)
+        mode_tree_search_forward(tree_owner)
     } else {
-        mode_tree_search_backward(mtd)
+        mode_tree_search_backward(tree_owner)
     };
     let Some(item) = found else {
         return;
@@ -2310,7 +2306,7 @@ pub unsafe fn mode_tree_key(
             }
             mode_tree_build(&tree);
             if (*mtd).preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
-                mode_tree_check_selected(mtd);
+                mode_tree_check_selected(&mut *mtd);
             }
         }
         _ => {}
@@ -2380,17 +2376,17 @@ mod mode_tree_tests {
                 add(None, tag, c"other");
             }
             branch.borrow_mut().expanded = 0;
-            mode_tree_build_lines(mtd, &(*mtd).children.snapshot(), 0);
+            mode_tree_build_lines(&mtd_owner, &(*mtd).children.snapshot(), 0);
             (*mtd).search = Some(c"match".to_owned());
             (*mtd).current = first.borrow().line;
-            assert!(mode_tree_search_forward(mtd).unwrap() == child);
-            assert!(mode_tree_search_backward(mtd).unwrap() == tail);
+            assert!(mode_tree_search_forward(&mtd_owner).unwrap() == child);
+            assert!(mode_tree_search_backward(&mtd_owner).unwrap() == tail);
             (*mtd).current = tail.borrow().line;
-            assert!(mode_tree_search_backward(mtd).unwrap() == child);
-            assert!(mode_tree_search_forward(mtd).unwrap() == first);
+            assert!(mode_tree_search_backward(&mtd_owner).unwrap() == child);
+            assert!(mode_tree_search_forward(&mtd_owner).unwrap() == first);
             (*mtd).search = Some(c"missing".to_owned());
-            assert!(mode_tree_search_forward(mtd).is_none());
-            assert!(mode_tree_search_backward(mtd).is_none());
+            assert!(mode_tree_search_forward(&mtd_owner).is_none());
+            assert!(mode_tree_search_backward(&mtd_owner).is_none());
 
             mode_tree_remove(&mut *mtd, &child);
             assert!(branch.borrow().children.items.is_empty());
@@ -2401,8 +2397,8 @@ mod mode_tree_tests {
             mode_tree_remove(&mut *mtd, &last);
             assert!((*mtd).children.first().unwrap() == tail);
             assert!(mode_tree_find_item(&(*mtd).children, 100).is_none());
-            mode_tree_clear_lines(mtd);
-            mode_tree_build_lines(mtd, &(*mtd).children.snapshot(), 0);
+            mode_tree_clear_lines(&mut *mtd);
+            mode_tree_build_lines(&mtd_owner, &(*mtd).children.snapshot(), 0);
             assert_eq!((*mtd).lines.len(), 95);
             assert_eq!((*mtd).lines.last().unwrap().last, 1);
             drop(mtd_owner);
@@ -2424,8 +2420,8 @@ mod mode_tree_tests {
                 (b'y' as key_code, Some(b"y".as_slice())),
             ] {
                 key = next;
-                mode_tree_clear_lines(mtd);
-                mode_tree_build_lines(mtd, &(*mtd).children.snapshot(), 0);
+                mode_tree_clear_lines(&mut *mtd);
+                mode_tree_build_lines(&mtd_owner, &(*mtd).children.snapshot(), 0);
                 match expected {
                     Some(expected) => {
                         assert_eq!(
@@ -2446,7 +2442,7 @@ mod mode_tree_tests {
                 }
             }
             mode_tree_free_items(&mut (*mtd).children);
-            mode_tree_clear_lines(mtd);
+            mode_tree_clear_lines(&mut *mtd);
             drop(mtd_owner);
         }
     }
@@ -2947,7 +2943,7 @@ mod row_owner_tests {
             drop(text);
             let parent_observer = parent.clone();
             let child_observer = child.clone();
-            mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);
+            mode_tree_build_lines(&tree_owner, &(*tree).children.snapshot(), 0);
             (*tree).current = 1;
             let selected = (&(*tree).lines)[1].clone();
             let name = mode_tree_get_current_name(&*tree);
@@ -2985,7 +2981,7 @@ mod row_owner_tests {
                 }
                 b'x' as key_code
             }));
-            mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);
+            mode_tree_build_lines(&owner, &(*tree).children.snapshot(), 0);
             assert!(!first.is_alive());
             assert_eq!((*tree).lines.len(), 1);
             assert!((&(*tree).lines)[0].item == second);
@@ -3000,7 +2996,7 @@ mod row_owner_tests {
             let tree = rc::as_ptr(&owner);
             mode_tree_add(&mut *tree, None, ModeTreeItemData::None, 1, c"first", None, 1);
             let second = mode_tree_add(&mut *tree, None, ModeTreeItemData::None, 2, c"second", None, 1);
-            mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);
+            mode_tree_build_lines(&owner, &(*tree).children.snapshot(), 0);
             (*tree).search = Some(c"query".to_owned());
             let removed = second.clone();
             (*tree).searchcb = Some(Box::new(move |_, query, _| {
@@ -3009,7 +3005,7 @@ mod row_owner_tests {
                 assert_eq!(query, c"query");
                 true
             }));
-            assert!(mode_tree_search_forward(tree).is_none());
+            assert!(mode_tree_search_forward(&owner).is_none());
             assert!(!second.is_alive());
         }
     }
@@ -3023,7 +3019,7 @@ mod row_owner_tests {
             let observer = (*tree).observer.clone();
             let first = mode_tree_add(&mut *tree, None, ModeTreeItemData::None, 1, c"first", None, 1);
             first.borrow_mut().tagged = 1;
-            mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);
+            mode_tree_build_lines(&tree_owner, &(*tree).children.snapshot(), 0);
             let mut calls = 0;
             let mut tree_owner = Some(tree_owner);
             mode_tree_each_tagged(
@@ -3075,7 +3071,7 @@ mod row_owner_tests {
                 second.borrow_mut().tagged = tagged as i32;
                 let first_observer = first.clone();
                 let second_observer = second.clone();
-                mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);
+                mode_tree_build_lines(&owner, &(*tree).children.snapshot(), 0);
                 drop(first);
                 drop(second);
                 let mut calls = 0;
@@ -3085,7 +3081,7 @@ mod row_owner_tests {
                         calls += 1;
                         row.borrow_mut().tagged = 0;
                         let name = row.borrow().name.clone();
-                        mode_tree_clear_lines(tree);
+                        mode_tree_clear_lines(&mut *tree);
                         mode_tree_free_items(&mut (*tree).children);
                         assert!(!first_observer.is_alive());
                         assert!(!second_observer.is_alive());
@@ -3126,7 +3122,7 @@ mod payload_owner_tests {
             let original = ModeTreeItemData::Buffer(owner.downgrade());
             let row = mode_tree_add(&mut *tree, None, original.clone(), 1, c"row", None, 1);
             mode_tree_add(&mut *tree, Some(&row), original.clone(), 2, c"detail", None, 1);
-            mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);
+            mode_tree_build_lines(&tree_owner, &(*tree).children.snapshot(), 0);
             let selected = mode_tree_get_current(&*tree);
             (*tree).current = 1;
             let detail = mode_tree_get_current(&*tree);
@@ -3138,7 +3134,7 @@ mod payload_owner_tests {
             drop(owner);
             assert!(selected.as_buffer().is_none());
             assert!(detail.as_buffer().is_none());
-            mode_tree_clear_lines(tree);
+            mode_tree_clear_lines(&mut *tree);
             mode_tree_free_items(&mut (*tree).children);
             let owner = payload(c"replacement");
             let replacement = ModeTreeItemData::Buffer(owner.downgrade());
@@ -3168,7 +3164,7 @@ mod payload_owner_tests {
                 assert_eq!(snapshot.name.as_c_str(), c"callback snapshot");
                 b'x' as key_code
             }));
-            mode_tree_build_lines(tree, &(*tree).children.snapshot(), 0);
+            mode_tree_build_lines(&tree_owner, &(*tree).children.snapshot(), 0);
             assert_eq!(row.borrow().key, b'x' as key_code);
             assert!(matches!(
                 mode_tree_get_current(&*tree),

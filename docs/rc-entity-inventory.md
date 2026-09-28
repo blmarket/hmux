@@ -1307,3 +1307,15 @@ use the borrowed interfaces.
 selection restoration and callback-time removal coverage. Legacy callers still
 project borrows from retained UnsafeCell models; internal tree traversal and
 other model APIs remain pending.
+
+## Implemented retained trees for traversal and search
+
+Recursive line building and forward/backward search now borrow retained tree
+handles from their callers, carrying the handle through recursion and callback
+dispatch instead of recovering ownership from a raw address. Selection-offset
+adjustment and line clearing invoke no callbacks and now use safe mutable borrows.
+Production callers and traversal tests use the typed interfaces.
+
+`cargo test --workspace` and `git diff --check` passed, including key/search
+callbacks that remove rows and tests for nested traversal and selection. Internal
+raw projections, drawing helpers and other refcounted model APIs remain pending.
