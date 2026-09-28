@@ -549,7 +549,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                             return CMD_RETURN_WAIT;
                                         }
                                         if args_has(args, 'W' as i32 as u_char) != 0 {
-                                            (*new_wp).wait_item = item;
+                                            (*new_wp).wait_item = (*item).observer.clone();
                                             return CMD_RETURN_WAIT;
                                         }
                                         return CMD_RETURN_NORMAL;

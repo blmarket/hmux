@@ -2545,3 +2545,10 @@ tests now use production detached queue item owners. The raw-field count is 48.
 pane spawn retains an upgrade throughout item access. New window, session,
 split and respawn callers copy the item's self-observer; editor spawns use an
 empty handle. The raw-field count is 47.
+
+## Implemented weak pane wait item
+
+`window_pane.wait_item` now observes the split-window command weakly. Destroy
+readiness checks that the owner survives; wait completion takes and upgrades
+the observer before reporting status and continuing the queue. The raw-field
+count is 46.

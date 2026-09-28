@@ -174,7 +174,7 @@ pub struct window_pane {
     pub tty: [::core::ffi::c_char; 32],
     pub status: ::core::ffi::c_int,
     pub dead_time: timeval,
-    pub wait_item: *mut cmdq_item,
+    pub wait_item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub editor: Option<Box<spawn_editor_state>>,
     pub output_generation: uint64_t,
     pub last_output_time: time_t,

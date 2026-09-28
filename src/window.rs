@@ -1153,7 +1153,7 @@ pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi
     if !(*wp).flags & PANE_EXITED != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if !(*wp).wait_item.is_null() && !(*wp).flags & PANE_STATUSREADY != 0 {
+    if (*wp).wait_item.strong_count() != 0 && !(*wp).flags & PANE_STATUSREADY != 0 {
         return 0 as ::core::ffi::c_int;
     }
     if (*wp).editor.is_some() && !(*wp).flags & PANE_STATUSREADY != 0 {
@@ -2635,13 +2635,11 @@ unsafe fn window_pane_create(
     return wp;
 }
 pub unsafe fn window_pane_wait_finish(mut wp: *mut window_pane) {
-    let mut item: *mut cmdq_item = (*wp).wait_item;
+    let item_owner = std::mem::take(&mut (*wp).wait_item).upgrade();
+    let Some(item_owner) = item_owner else { return };
+    let item = item_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut retval: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if item.is_null() {
-        return;
-    }
-    (*wp).wait_item = ::core::ptr::null_mut::<cmdq_item>();
     if (*wp).flags & PANE_STATUSREADY != 0 {
         if (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
             retval = ((*wp).status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int;
