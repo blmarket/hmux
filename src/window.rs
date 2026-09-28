@@ -4658,7 +4658,7 @@ mod pane_input_owner_tests {
         let file = rc::as_ptr(&owner);
         (*file).wait_item = (*item).observer.clone();
         (*file).wait_active = true;
-        (*file).wait_client = Some(Rc::downgrade(client));
+        (*file).wait_client = Rc::downgrade(client);
         data.file = (*file).observer.clone();
         (*file).cb = data.into_callback();
         (*item).wait_file = (*file).observer.clone();

@@ -2756,3 +2756,8 @@ expired pane closes the prompt instead of switching to the status line.
 cancellation clears the matching allocation identity before removing the queue
 item. An expired but uncleared file identity still fails the queue-removal
 assertion, preserving the cleanup invariant.
+
+`client_file.wait_client` now uses an empty `Weak` for no client supplied by its
+waiting command. File dispatch still distinguishes that case from an expired
+explicit client, cancelling the latter. Each successful upgrade remains alive
+through the callback, as before.

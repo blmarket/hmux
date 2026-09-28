@@ -327,7 +327,7 @@ pub struct client_file {
     pub entry: client_file_entry,
     pub(crate) wait_item: std::rc::Weak<std::cell::UnsafeCell<super::command::cmdq_item>>,
     pub(crate) wait_active: bool,
-    pub(crate) wait_client: Option<std::rc::Weak<std::cell::UnsafeCell<client>>>,
+    pub(crate) wait_client: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(crate) terminal_scheduled: bool,
 }

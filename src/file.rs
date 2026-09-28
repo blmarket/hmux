@@ -120,8 +120,7 @@ unsafe fn file_set_cmdq_wait(
     assert!(!owner.wait_active);
     owner.wait_item = (*item).observer.clone();
     owner.wait_active = true;
-    owner.wait_client = (!Weak::ptr_eq(&(*item).client, &Weak::new()))
-        .then(|| (*item).client.clone());
+    owner.wait_client = (*item).client.clone();
     owner.cancel_data = cancel_cb;
     cmdq_set_wait_file(&mut *item, file_owner);
 }
@@ -137,7 +136,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_fil
     if let Some(item) = std::mem::take(&mut owner.wait_item).upgrade() {
         cmdq_clear_wait_file(&mut *item.get(), &owner.observer);
     }
-    owner.wait_client = None;
+    owner.wait_client = Weak::new();
     owner.cb = None;
     let cancel_cb = owner.cancel_data.take();
     if let Some(cancel_cb) = cancel_cb {
@@ -204,8 +203,11 @@ unsafe fn file_destroy(cf: &mut client_file) {
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let (client_owner, wait_client, expired_wait) = {
         let file = &*owner.get();
-        (file.c.clone(), file.wait_client.as_ref().map(Weak::upgrade),
-            file.wait_active && file.wait_item.upgrade().is_none())
+        (
+            file.c.clone(),
+            (!Weak::ptr_eq(&file.wait_client, &Weak::new())).then(|| file.wait_client.upgrade()),
+            file.wait_active && file.wait_item.upgrade().is_none(),
+        )
     };
     let dead = expired_wait || client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
@@ -220,7 +222,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
             if let Some(item) = std::mem::take(&mut owner.wait_item).upgrade() {
                 cmdq_clear_wait_file(&mut *item.get(), &owner.observer);
             }
-            owner.wait_client = None;
+            owner.wait_client = Weak::new();
             owner.cancel_data = None;
         }
     }
@@ -267,7 +269,8 @@ pub unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
 pub unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *file_owner.get();
     let client_owner = cf.c.clone();
-    let wait_client = cf.wait_client.as_ref().map(Weak::upgrade);
+    let wait_client =
+        (!Weak::ptr_eq(&cf.wait_client, &Weak::new())).then(|| cf.wait_client.upgrade());
     let dead = client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
             (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
@@ -1468,14 +1471,15 @@ mod completion_cancellation_tests {
             let file = client_file::new();
             let item = cmdq_get_callback_owned(c"file wait test".as_ptr(), None);
             file_set_cmdq_wait(&file, item, None);
-            assert!((&*file.get()).wait_client.is_none());
+            assert!(Weak::ptr_eq(&(&*file.get()).wait_client, &Weak::new()));
             file_cancel_cmdq_wait(&file);
 
             let client = client::new();
             (*item).client = Rc::downgrade(&client);
             drop(client);
             file_set_cmdq_wait(&file, item, None);
-            assert!((&*file.get()).wait_client.as_ref().unwrap().upgrade().is_none());
+            assert!(!Weak::ptr_eq(&(&*file.get()).wait_client, &Weak::new()));
+            assert!((&*file.get()).wait_client.upgrade().is_none());
             file_cancel_cmdq_wait(&file);
             cmdq_free_detached(item);
         }
