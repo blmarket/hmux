@@ -1469,7 +1469,7 @@ pub unsafe fn mode_tree_set_prompt(
             c"mode_tree_prompt_accept".as_ptr(),
             mode_tree_prompt_accept(tree),
         );
-        cmdq_append(c, item);
+        cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
     }
 }
 unsafe fn mode_tree_search_backward(mtd: *mut mode_tree_data) -> Option<ModeTreeItemRef> {

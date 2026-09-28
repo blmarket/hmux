@@ -734,7 +734,7 @@ pub unsafe fn status_prompt_set(
     prompt_incremental_start(&prompt);
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 {
         cmdq_append(
-            c,
+            c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
             cmdq_get_callback_owned(
                 b"status_prompt_accept\0" as *const u8 as *const ::core::ffi::c_char,
                 Some(Box::new(move |_| unsafe { status_prompt_accept(c) })),

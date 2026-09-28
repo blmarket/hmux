@@ -1065,7 +1065,7 @@ unsafe fn control_read_callback(c: *mut client) {
                             control_error(item.as_ptr(), error)
                         })),
                     );
-                    cmdq_append(c, error_item);
+                    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), error_item);
                 }
                 Ok(_) => {}
             }

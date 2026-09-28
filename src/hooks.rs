@@ -133,7 +133,7 @@ unsafe fn hooks_insert_one(
     if !item.is_null() {
         return cmdq_insert_after(item, new_item);
     }
-    return cmdq_append(::core::ptr::null_mut::<client>(), new_item);
+    return cmdq_append(None, new_item);
 }
 unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) -> cmd_parse_result {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();

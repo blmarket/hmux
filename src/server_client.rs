@@ -3355,7 +3355,7 @@ unsafe fn server_client_handle_key0(
         }
         return 1 as ::core::ffi::c_int;
     }
-    cmdq_append(c, item);
+    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn server_client_handle_key(
@@ -4713,9 +4713,9 @@ unsafe fn server_client_dispatch_command(
         match current_block {
             12680788052841528405 => {}
             _ => {
-                cmdq_append(c, new_item);
+                cmdq_append(Some(owner), new_item);
                 cmdq_append(
-                    c,
+                    Some(owner),
                     cmdq_get_callback_owned(
                         b"server_client_command_done\0" as *const u8 as *const ::core::ffi::c_char,
                         Some(Box::new(|item| unsafe {
@@ -4730,7 +4730,7 @@ unsafe fn server_client_dispatch_command(
         cause = Some(CString::new("command too long").unwrap());
     }
     cmdq_append(
-        c,
+        Some(owner),
         cmdq_get_error(
             cause
                 .as_ref()

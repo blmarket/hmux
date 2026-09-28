@@ -830,14 +830,14 @@ pub unsafe fn key_bindings_init() {
             });
         }
         cmdq_append(
-            ::core::ptr::null_mut::<client>(),
+            None,
             cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None),
         );
         drop(pr.cmdlist.take());
         i = i.wrapping_add(1);
     }
     cmdq_append(
-        ::core::ptr::null_mut::<client>(),
+        None,
         cmdq_get_callback_owned(
             b"key_bindings_init_done\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| unsafe { key_bindings_init_done() })),
@@ -882,7 +882,7 @@ pub unsafe fn key_bindings_dispatch(
     if !item.is_null() {
         new_item = cmdq_insert_after(item, new_item);
     } else {
-        new_item = cmdq_append(c, new_item);
+        new_item = cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
     }
     return new_item;
 }

@@ -1915,7 +1915,7 @@ unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tre
         c"window_tree_command_done".as_ptr(),
         window_tree_command_done(mode),
     );
-    cmdq_append(c, item);
+    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
 }
 unsafe fn window_tree_command_callback(
     mut c: *mut client,

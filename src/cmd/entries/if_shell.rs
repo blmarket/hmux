@@ -199,7 +199,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
             Ok(commands) if item.is_null() => {
                 new_item =
                     cmdq_get_command(&commands, None);
-                cmdq_append(c, new_item);
+                cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
                 drop(commands);
             }
             Ok(commands) => {

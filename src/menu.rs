@@ -567,7 +567,7 @@ pub unsafe fn menu_key(c: *mut client, owner: &MenuWeak, event: &key_event) -> :
         c, Some(&state),
     ) {
         cmdq_append(
-            c,
+            c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
             cmdq_get_error(
                 error
                     .as_ref()

@@ -84,7 +84,7 @@ pub unsafe fn start_cfg() {
             b"cfg_client_done\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| unsafe { cfg_client_done() })),
         );
-        cmdq_append(c, cfg_item);
+        cmdq_append(registry_c_owner.as_ref(), cfg_item);
     }
     if cfg_quiet != 0 {
         flags = CMD_PARSE_QUIET;
@@ -93,7 +93,7 @@ pub unsafe fn start_cfg() {
         load_cfg(path.as_ptr(), registry_c_owner.as_ref(), flags);
     }
     cmdq_append(
-        ::core::ptr::null_mut::<client>(),
+        None,
         cmdq_get_callback_owned(
             b"cfg_done\0" as *const u8 as *const ::core::ffi::c_char,
             Some(Box::new(|_| unsafe { cfg_done() })),
@@ -181,7 +181,7 @@ pub unsafe fn load_cfg(
     );
     new_item0 = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
 
-    new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
+    new_item0 = cmdq_append(None, new_item0);
 
     drop(pr.cmdlist.take());
 
@@ -263,7 +263,7 @@ pub unsafe fn load_cfg_from_buffer(
     if !item.is_null() {
         new_item0 = cmdq_insert_after(item, new_item0);
     } else {
-        new_item0 = cmdq_append(::core::ptr::null_mut::<client>(), new_item0);
+        new_item0 = cmdq_append(None, new_item0);
     }
     drop(pr.cmdlist.take());
 

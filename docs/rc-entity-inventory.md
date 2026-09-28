@@ -880,3 +880,16 @@ identification already receives the same retained owner.
 `cargo test --workspace` and `git diff --check` passed. Stored `client.session`,
 `window.active` and `window_pane.window` pointers, downstream queue APIs and local
 raw projections remain pending.
+
+## Implemented retained client argument for queue append
+
+`cmdq_append` now accepts an optional borrowed Rc client. Each appended item clones
+that owner and stores its weak execution-context association directly. `None`
+selects the global queue. Dispatch and startup configuration pass existing owners;
+legacy raw callers upgrade their client before invoking the typed API. Existing
+queue-item release behavior remains in place.
+
+`cargo test --workspace` and `git diff --check` passed. A chained-append regression
+checks per-item ownership, weak execution-context identity, retained lifetime after
+the external owner is dropped and release when detached items are dropped. Other
+queue APIs and raw caller projections remain pending.

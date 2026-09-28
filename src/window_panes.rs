@@ -1783,7 +1783,7 @@ unsafe fn window_panes_run_command(
     ) {
         Err(error) => {
             cmdq_append(
-                c,
+                c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
                 cmdq_get_error(
                     error
                         .as_ref()
@@ -1795,7 +1795,7 @@ unsafe fn window_panes_run_command(
             let cmdlist = commands;
             new_item =
                 cmdq_get_command(&cmdlist, None);
-            cmdq_append(c, new_item);
+            cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
             drop(cmdlist);
         }
     }

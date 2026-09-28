@@ -153,7 +153,7 @@ unsafe fn cmd_confirm_before_callback(
                     new_item = cmdq_get_command(
                         &cdata.cmdlist, None,
                     );
-                    cmdq_append(c, new_item);
+                    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
                 } else {
                     new_item = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
                     cmdq_insert_after(item, new_item);

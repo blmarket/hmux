@@ -497,7 +497,7 @@ pub unsafe fn cmd_parse_and_append(
         return Err(pr.error.take());
     }
     item = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
-    cmdq_append(c, item);
+    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
     drop(pr.cmdlist.take());
     Ok(pr.status)
 }

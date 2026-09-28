@@ -301,18 +301,18 @@ pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_t
         format_merge(ft, format_owner_ptr(&mut formats));
     }
 }
-pub unsafe fn cmdq_append(mut c: *mut client, mut item: *mut cmdq_item) -> *mut cmdq_item {
+pub unsafe fn cmdq_append(
+    owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    mut item: *mut cmdq_item,
+) -> *mut cmdq_item {
+    let c = owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut queue: *mut cmdq_list = cmdq_get(c);
     let mut next: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     loop {
         next = (*item).next;
         (*item).next = ::core::ptr::null_mut::<cmdq_item>();
-        (*item).client_owner = if c.is_null() {
-            None
-        } else {
-            Some((*c).observer.upgrade().expect("live Rc client"))
-        };
-        (*item).client = c.as_ref().map_or_else(std::rc::Weak::new, |c| c.observer.clone());
+        (*item).client_owner = owner.cloned();
+        (*item).client = owner.map(std::rc::Rc::downgrade).unwrap_or_default();
         (*item).queue = queue;
         // Enqueue consumes the detached allocation without moving the item.
         (*queue).list.push_back(Box::from_raw(item));
@@ -1077,6 +1077,36 @@ mod client_observer_tests {
             drop(target);
             assert!(cmdq_get_client(&mut item).is_none());
             assert!(cmdq_get_target_client(&mut item).is_none());
+        }
+    }
+
+    #[test]
+    fn append_retains_client_for_every_item_in_a_chain() {
+        unsafe {
+            let owner = client::new();
+            (*owner.get()).queue = Some(cmdq_new());
+            let observer = Rc::downgrade(&owner);
+            let first = cmdq_get_callback_owned(c"first".as_ptr(), None);
+            let second = cmdq_get_callback_owned(c"second".as_ptr(), None);
+            (*first).next = second;
+            assert_eq!(cmdq_append(Some(&owner), first), second);
+            assert_eq!(Rc::strong_count(&owner), 3);
+            assert!(Rc::ptr_eq(&cmdq_get_client(first).unwrap(), &owner));
+            assert!(Rc::ptr_eq(&cmdq_get_client(second).unwrap(), &owner));
+            assert!((*first).next.is_null());
+            drop(owner);
+            let retained = observer.upgrade().expect("queued items retain their client");
+            let queue = (*retained.get()).queue.as_deref_mut().unwrap();
+            assert_eq!(queue.list.len(), 2);
+            // Detach the items so their ordinary owners can be released here.
+            let first = queue.list.pop_front().unwrap();
+            let second = queue.list.pop_front().unwrap();
+            drop(first);
+            assert_eq!(Rc::strong_count(&retained), 2);
+            drop(second);
+            assert_eq!(Rc::strong_count(&retained), 1);
+            drop(retained);
+            assert!(observer.upgrade().is_none());
         }
     }
 

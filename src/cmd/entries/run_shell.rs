@@ -354,7 +354,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
         Ok(commands) if item.is_null() => {
             new_item =
                 cmdq_get_command(&commands, None);
-            cmdq_append(c, new_item);
+            cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item);
             drop(commands);
         }
         Ok(commands) => {
