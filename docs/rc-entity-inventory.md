@@ -1982,3 +1982,15 @@ callers forward existing client handles through the output path.
 `cargo test --workspace` and `git diff --check` passed. Transfer and display
 internals still project retained models through UnsafeCell; raw model relationship
 fields and other APIs remain pending.
+
+## Implemented client borrows for file-transfer routing
+
+File path resolution accepts an optional shared client borrow. Read/write startup
+checks client flags through short borrows from the supplied Rc, without keeping
+raw client locals across initialization callbacks. Retry and write acknowledgement
+checks likewise borrow from the file's owning client handle, removing all
+client_rc_ptr conversions from file.rs. Missing-client, attached-client,
+control-client, dead-client and acknowledgement behavior is preserved.
+
+`cargo test --workspace` and `git diff --check` passed. Internal file projections,
+other client access paths and raw model relationship fields remain pending.

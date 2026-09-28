@@ -18,7 +18,6 @@ use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{
     client, client_file, client_file_cb, client_file_entry, client_file_event, client_files,
-    client_rc_ptr,
 };
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
 use crate::src::shared::command::cmdq_item;
@@ -145,7 +144,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_fil
     }
 }
 
-unsafe fn file_get_path(c: *mut client, file: &CStr) -> CString {
+unsafe fn file_get_path(c: Option<&client>, file: &CStr) -> CString {
     let file = file.to_bytes();
     let path = if file.starts_with(b"~/") {
         let home = find_home_cstr().map_or(&[][..], CStr::to_bytes);
@@ -156,7 +155,7 @@ unsafe fn file_get_path(c: *mut client, file: &CStr) -> CString {
     let full_path = if path.first() == Some(&b'/') {
         path
     } else {
-        let cwd = server_client_get_cwd(c.as_ref(), None).expect("client working directory");
+        let cwd = server_client_get_cwd(c, None).expect("client working directory");
         [cwd.as_bytes(), b"/", path.as_slice()].concat()
     };
     CString::new(full_path).expect("C string path fragments contain no NUL")
@@ -420,7 +419,6 @@ unsafe fn file_write_impl(
     mut cb: client_file_cb,
     wait: Option<(*mut cmdq_item, Option<Box<dyn FnOnce()>>)>,
 ) {
-    let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let transfer_owner;
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -439,10 +437,10 @@ unsafe fn file_write_impl(
         }
         file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
-        if c.is_null()
-            || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
-            || (*c).flags & CLIENT_CONTROL as uint64_t != 0
-        {
+        if client_owner.is_none_or(|owner| {
+            let client = &*owner.get();
+            client.flags & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0
+        }) {
             (*cf).error = EBADF;
             current_block = 4636144702248558238;
         } else {
@@ -454,8 +452,14 @@ unsafe fn file_write_impl(
         if let Some((item, cancel_cb)) = wait {
             file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
         }
-        file_set_path(&mut *cf, file_get_path(c, CStr::from_ptr(path)));
-        if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
+        file_set_path(
+            &mut *cf,
+            file_get_path(client_owner.map(|owner| &*owner.get()), CStr::from_ptr(path)),
+        );
+        if client_owner.is_none_or(|owner| {
+            let client = &*owner.get();
+            client.flags & CLIENT_ATTACHED as uint64_t != 0
+        }) {
             if flags & O_APPEND != 0 {
                 mode = b"ab\0" as *const u8 as *const ::core::ffi::c_char;
             } else {
@@ -555,7 +559,6 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     item: *mut cmdq_item,
     cancel_cb: Option<Box<dyn FnOnce()>>,
 ) {
-    let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut current_block: u64;
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let fresh1 = file_next_stream;
@@ -572,18 +575,24 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(&mut *cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
-        if c.is_null()
-            || (*c).flags & CLIENT_ATTACHED as uint64_t != 0
-            || (*c).flags & CLIENT_CONTROL as uint64_t != 0
-        {
+        if client_owner.is_none_or(|owner| {
+            let client = &*owner.get();
+            client.flags & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0
+        }) {
             (*cf).error = EBADF;
             current_block = 17369485759464587280;
         } else {
             current_block = 17710118112003399050;
         }
     } else {
-        file_set_path(&mut *cf, file_get_path(c, CStr::from_ptr(path)));
-        if c.is_null() || (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
+        file_set_path(
+            &mut *cf,
+            file_get_path(client_owner.map(|owner| &*owner.get()), CStr::from_ptr(path)),
+        );
+        if client_owner.is_none_or(|owner| {
+            let client = &*owner.get();
+            client.flags & CLIENT_ATTACHED as uint64_t != 0
+        }) {
             f = fopen(
                 ((*cf).path)
                     .as_ref()
@@ -699,9 +708,10 @@ pub unsafe fn file_cancel(cf: &mut client_file) {
 }
 unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = owner.get();
-    if client_rc_ptr(&(*cf).c).is_null()
-        || !(*client_rc_ptr(&(*cf).c)).flags & CLIENT_DEAD as uint64_t != 0
-    {
+    if (*cf).c.as_ref().is_none_or(|owner| {
+        let client = &*owner.get();
+        client.flags & CLIENT_DEAD as uint64_t == 0
+    }) {
         file_push(owner);
     }
 }
@@ -772,9 +782,10 @@ pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
             &raw mut close_0 as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_close>() as size_t,
         );
-        if client_rc_ptr(&(*cf).c).is_null()
-            || !(*client_rc_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
-        {
+        if (*cf).c.as_ref().is_none_or(|owner| {
+            let client = &*owner.get();
+            client.flags & CLIENT_WRITE_ACK as uint64_t == 0
+        }) {
             file_fire_done(file_owner);
         }
     }
@@ -1227,9 +1238,10 @@ pub unsafe fn file_write_done(files: &client_files, imsg: &imsg) -> ::core::ffi:
         return 0 as ::core::ffi::c_int;
     };
     let cf = file_owner.get();
-    if client_rc_ptr(&(*cf).c).is_null()
-        || !(*client_rc_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
-    {
+    if (*cf).c.as_ref().is_none_or(|owner| {
+        let client = &*owner.get();
+        client.flags & CLIENT_WRITE_ACK as uint64_t == 0
+    }) {
         return 0 as ::core::ffi::c_int;
     }
     log_debug(format_args!("file {} write done", ((*cf).stream) as i32));
