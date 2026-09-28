@@ -292,6 +292,14 @@ pub struct window_pane_modes {
 }
 
 impl window_pane_modes {
+    /// Observe the current entry without retaining the pane-owned allocation.
+    pub fn active_weak(&self) -> refbox::Weak<window_mode_entry> {
+        self.storage
+            .as_ref()
+            .and_then(|storage| storage.entries.first())
+            .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
+    }
+
     /// A borrowed compatibility pointer valid until the mode stack changes.
     pub fn active_ptr(&self) -> *mut window_mode_entry {
         self.storage

@@ -2557,12 +2557,14 @@ mod window_mode_collection_tests {
             let pane_owner = window_pane::new();
             let wp = pane_owner.get();
             (*wp).modes = window_pane_modes::default();
+            assert!(!(*wp).modes.active_weak().is_alive());
 
             let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp)).as_ptr().cast_mut();
             let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp)).as_ptr().cast_mut();
             let c_observer = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
             let c = c_observer.as_ptr().cast_mut();
             assert_eq!((*wp).modes.active_ptr(), c);
+            assert_eq!((*wp).modes.active_weak().as_ptr().cast_mut(), c);
             assert_eq!(window_pane_mode_next(c), b);
             assert_eq!(window_pane_mode_next(b), a);
             assert!(window_pane_mode_next(a).is_null());
@@ -2570,6 +2572,7 @@ mod window_mode_collection_tests {
             window_pane_mode_promote(wp, a);
             assert!(c_observer.is_alive());
             assert_eq!((*wp).modes.active_ptr(), a);
+            assert_eq!((*wp).modes.active_weak().as_ptr().cast_mut(), a);
             assert_eq!(window_pane_mode_next(a), c);
             assert_eq!(window_pane_mode_next(c), b);
 
@@ -2592,6 +2595,7 @@ mod window_mode_collection_tests {
                 drop(window_pane_mode_remove(wp, top).expect("mode was present"));
             }
             assert!((*wp).modes.storage.is_none());
+            assert!(!(*wp).modes.active_weak().is_alive());
 
             let detached = boxed_mode(wp);
             drop(pane_owner);
@@ -2708,7 +2712,7 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         (*wp).screen_source = if next.is_null() {
             PaneScreenSource::Base
         } else {
-            PaneScreenSource::Mode(window_pane_mode_weak(next))
+            PaneScreenSource::Mode((*wp).modes.active_weak())
         };
         (*(*wme).mode).free.expect("non-null function pointer")(wme);
         drop(entry);
@@ -3031,7 +3035,7 @@ pub unsafe fn window_pane_set_mode(
         0 as ::core::ffi::c_int
     };
     assert!(!mode_screen.is_null(), "active mode has a screen");
-    (*wp).screen_source = PaneScreenSource::Mode(window_pane_mode_weak(wme));
+    (*wp).screen_source = PaneScreenSource::Mode((*wp).modes.active_weak());
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     server_redraw_window_borders(&*((*wp).window_ptr()));
@@ -3071,7 +3075,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     (*wp).screen_source = if next.is_null() {
         PaneScreenSource::Base
     } else {
-        PaneScreenSource::Mode(window_pane_mode_weak(next))
+        PaneScreenSource::Mode((*wp).modes.active_weak())
     };
     (*(*wme).mode).free.expect("non-null function pointer")(wme);
     drop(entry);
@@ -3079,7 +3083,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     (*wp).screen_source = if next.is_null() {
         PaneScreenSource::Base
     } else {
-        PaneScreenSource::Mode(window_pane_mode_weak(next))
+        PaneScreenSource::Mode((*wp).modes.active_weak())
     };
     if next.is_null() {
         (*wp).flags &= !PANE_UNSEENCHANGES;
