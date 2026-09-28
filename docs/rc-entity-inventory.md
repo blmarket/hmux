@@ -942,3 +942,15 @@ regression verifies nonownership, live error dispatch, stopped-state handling an
 safe invocation after client expiration. Existing shared/separate stream cleanup
 ordering tests now use real Rc clients and pass. Other control APIs and local raw
 model projections remain pending.
+
+## Implemented weak client captures for terminal events
+
+Terminal read, write, clipboard-query, startup and output-throttling events now
+capture weak client handles instead of raw terminal addresses. Dispatch upgrades
+and retains the client; callbacks accept that owner and derive its terminal.
+Expired clients are skipped before terminal memory is accessed.
+
+`cargo test --workspace` and `git diff --check` passed. The callback regression
+checks nonownership, live clipboard-query flag clearing and invocation of all five
+callbacks after client expiration. Terminal key timers, other terminal APIs and
+internal model projections remain pending.

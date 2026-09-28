@@ -237,11 +237,9 @@ pub unsafe fn tty_set_size(
     (*tty).xpixel = xpixel;
     (*tty).ypixel = ypixel;
 }
-unsafe fn tty_read_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut tty: *mut tty = data as *mut tty;
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
-    let mut c: *mut client = terminal_client;
+unsafe fn tty_read_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = owner.get();
+    let tty = &raw mut (*c).tty;
     let mut name: *const ::core::ffi::c_char = ((*c).name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
@@ -266,7 +264,7 @@ unsafe fn tty_read_callback(mut data: *mut ::core::ffi::c_void) {
             ));
         }
         event_del(&raw mut (*tty).event_in);
-        server_client_lost(terminal_client);
+        server_client_lost(c);
         return;
     }
     log_debug(format_args!(
@@ -277,11 +275,9 @@ unsafe fn tty_read_callback(mut data: *mut ::core::ffi::c_void) {
     ));
     while tty_keys_next(tty) != 0 {}
 }
-unsafe fn tty_timer_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut tty: *mut tty = data as *mut tty;
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
-    let mut c: *mut client = terminal_client;
+unsafe fn tty_timer_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = owner.get();
+    let tty = &raw mut (*c).tty;
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: TTY_BLOCK_INTERVAL as __suseconds_t,
@@ -349,11 +345,9 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
     event_add(&raw mut (*tty).timer, &raw mut tv);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn tty_write_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut tty: *mut tty = data as *mut tty;
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
-    let mut c: *mut client = terminal_client;
+unsafe fn tty_write_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = owner.get();
+    let tty = &raw mut (*c).tty;
     let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     let mut nwrite: ::core::ffi::c_int = 0;
     nwrite = evbuffer_write((*tty).out.as_deref_mut().expect("open TTY buffer"), (*c).fd);
@@ -394,6 +388,18 @@ unsafe fn tty_write_callback(mut data: *mut ::core::ffi::c_void) {
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }
+fn tty_client_callback(
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    callback: unsafe fn(&std::rc::Rc<std::cell::UnsafeCell<client>>),
+) -> impl FnMut(::core::ffi::c_int, ::core::ffi::c_short) {
+    let observer = std::rc::Rc::downgrade(owner);
+    move |_, _| {
+        if let Some(owner) = observer.upgrade() {
+            unsafe { callback(&owner) };
+        }
+    }
+}
+
 pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
     let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
@@ -424,43 +430,41 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
         &raw mut (*tty).event_in,
         (*c).fd,
         (EV_PERSIST | EV_READ) as ::core::ffi::c_short,
-        move |_, _| unsafe { tty_read_callback(tty as *mut ::core::ffi::c_void) },
+        tty_client_callback(&terminal_client_owner, tty_read_callback),
     );
     (*tty).in_0 = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).event_out,
         (*c).fd,
         EV_WRITE as ::core::ffi::c_short,
-        move |_, _| unsafe { tty_write_callback(tty as *mut ::core::ffi::c_void) },
+        tty_client_callback(&terminal_client_owner, tty_write_callback),
     );
     (*tty).out = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).clipboard_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { tty_clipboard_query_callback(tty as *mut ::core::ffi::c_void) },
+        tty_client_callback(&terminal_client_owner, tty_clipboard_query_callback),
     );
     event_set(
         &raw mut (*tty).start_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { tty_start_timer_callback(tty as *mut ::core::ffi::c_void) },
+        tty_client_callback(&terminal_client_owner, tty_start_timer_callback),
     );
     event_set(
         &raw mut (*tty).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { tty_timer_callback(tty as *mut ::core::ffi::c_void) },
+        tty_client_callback(&terminal_client_owner, tty_timer_callback),
     );
     tty_start_tty(tty);
     tty_keys_build(tty);
     Ok(())
 }
-unsafe fn tty_start_timer_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut tty: *mut tty = data as *mut tty;
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
-    let mut c: *mut client = terminal_client;
+unsafe fn tty_start_timer_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = owner.get();
+    let tty = &raw mut (*c).tty;
     log_debug(format_args!(
         "{}: start timer fired",
         log_cstr(
@@ -3349,8 +3353,9 @@ pub unsafe fn tty_default_attributes(tty: *mut tty, bg: u_int, style_ctx: Option
     gc.bg = bg as i32;
     tty_attributes(tty, &gc, style_ctx);
 }
-unsafe fn tty_clipboard_query_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut tty: *mut tty = data as *mut tty;
+unsafe fn tty_clipboard_query_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = owner.get();
+    let tty = &raw mut (*c).tty;
     (*tty).flags &= !TTY_OSC52QUERY;
 }
 pub unsafe fn tty_clipboard_query(mut tty: *mut tty) {
@@ -3434,6 +3439,29 @@ mod initialization_owner_tests {
     use super::*;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     use std::rc::Rc;
+
+    #[test]
+    fn terminal_event_callbacks_skip_expired_clients() {
+        unsafe {
+            let owner = client::new();
+            let observer = Rc::downgrade(&owner);
+            let callbacks: [unsafe fn(&Rc<std::cell::UnsafeCell<client>>); 5] = [
+                tty_read_callback, tty_write_callback, tty_timer_callback,
+                tty_start_timer_callback, tty_clipboard_query_callback,
+            ];
+            let mut callbacks: Vec<_> = callbacks.into_iter()
+                .map(|callback| tty_client_callback(&owner, callback)).collect();
+            assert_eq!(Rc::strong_count(&owner), 1);
+            (*owner.get()).tty.flags |= TTY_OSC52QUERY;
+            callbacks[4](-1, 0);
+            assert_eq!((*owner.get()).tty.flags & TTY_OSC52QUERY, 0);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            for callback in &mut callbacks {
+                callback(-1, 0);
+            }
+        }
+    }
 
     #[test]
     fn initialization_resets_terminal_and_replaces_weak_client_without_leaking() {
