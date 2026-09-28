@@ -2493,3 +2493,10 @@ raw-field count to 55.
 Append and insert resolve it before moving the next item's sole owner into
 the queue. An expired next link returns no item; a regression frees a detached
 successor and verifies the link expires. The raw-field count is now 54.
+
+## Implemented weak format queue item
+
+`format_tree.item` now observes its queue item weakly. Verbose logging and
+nested format loops retain an upgrade through item access; format creation
+still borrows the item only while copying its state. A regression confirms a
+tree does not keep a detached queue item alive. The raw-field count is 53.

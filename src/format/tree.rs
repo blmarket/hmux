@@ -125,7 +125,11 @@ unsafe fn format_create_box(
     let mut owner = Box::new(format_tree::default());
     let ft = &raw mut *owner;
     (*ft).client = c;
-    (*ft).item = item;
+    (*ft).item = if item.is_null() {
+        std::rc::Weak::new()
+    } else {
+        (*item).observer.clone()
+    };
     (*ft).tag = tag as u_int;
     (*ft).flags = flags;
     if !item.is_null() {
@@ -295,11 +299,24 @@ pub unsafe fn format_add_owned_cb(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     unsafe fn tree() -> *mut format_tree {
         format_create(std::ptr::null_mut(), std::ptr::null_mut(), 0, 0)
+    }
+
+    #[test]
+    fn format_tree_does_not_retain_a_detached_queue_item() {
+        unsafe {
+            let item = cmdq_get_callback_owned(c"format item".as_ptr(), None);
+            let ft = format_create(std::ptr::null_mut(), item, 0, 0);
+            assert_eq!((*ft).item.strong_count(), 1);
+            cmdq_free_detached(item);
+            assert!((*ft).item.upgrade().is_none());
+            format_free(ft);
+        }
     }
 
     #[test]

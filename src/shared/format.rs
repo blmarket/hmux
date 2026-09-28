@@ -125,7 +125,8 @@ pub struct format_tree {
     pub w: std::rc::Weak<UnsafeCell<window>>,
     pub wp: std::rc::Weak<UnsafeCell<window_pane>>,
     pub pb: Option<PasteBufferRef>,
-    pub item: *mut cmdq_item,
+    /// Queue item used for verbose output, observed without retaining it.
+    pub item: std::rc::Weak<UnsafeCell<cmdq_item>>,
     pub client: Option<Rc<UnsafeCell<client>>>,
     pub flags: ::core::ffi::c_int,
     pub tag: u_int,

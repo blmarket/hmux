@@ -320,8 +320,8 @@ unsafe fn format_log1(
         log_cstr((from) as *const _),
         log_cstr((s.as_ptr()) as *const _)
     ));
-    if !(*ft).item.is_null() && (*ft).flags & FORMAT_VERBOSE != 0 {
-        cmdq_print((*ft).item, |out| {
+    if let Some(item) = (*ft).item.upgrade().filter(|_| (*ft).flags & FORMAT_VERBOSE != 0) {
+        cmdq_print(item.get(), |out| {
             out.write_all(b"#")?;
             write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
             write_cstr(out, s.as_ptr())
