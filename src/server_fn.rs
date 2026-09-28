@@ -225,16 +225,14 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
         }
     }
 }
-pub unsafe fn server_status_window(mut w: *mut window) {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
-    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
-        if session_has(&*s, &*w) != 0 {
-            server_status_session(&*(s));
+pub unsafe fn server_status_window(window: &window) {
+    let mut next = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    while let Some(session_owner) = next {
+        let session = &*session_owner.get();
+        if session_has(session, window) != 0 {
+            server_status_session(session);
         }
-        s_owner = sessions_next(&*s);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        next = sessions_next(session);
     }
 }
 pub unsafe fn server_lock() {

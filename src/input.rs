@@ -4023,7 +4023,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                         if !wp.is_null() {
                             input_fire_pane_title_changed(wp, (*(*sctx).s).title.as_ptr());
                             server_redraw_window_borders(&*(w));
-                            server_status_window(w);
+                            server_status_window(&*(w));
                         }
                     }
                     _ => {}
@@ -4732,7 +4732,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             {
                 input_fire_pane_title_changed(wp, p as *const ::core::ffi::c_char);
                 server_redraw_window_borders(&*((*wp).window));
-                server_status_window((*wp).window as *mut window);
+                server_status_window(&*((*wp).window));
             }
         }
         4 => {
@@ -4741,7 +4741,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
         7 => {
             if !wp.is_null() && screen_set_path(&mut *(*sctx).s, CStr::from_ptr(p.cast())) != 0 {
                 server_redraw_window_borders(&*((*wp).window));
-                server_status_window((*wp).window as *mut window);
+                server_status_window(&*((*wp).window));
             }
         }
         8 => {
@@ -4818,7 +4818,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
     {
         input_fire_pane_title_changed(wp, (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char);
         server_redraw_window_borders(&*((*wp).window));
-        server_status_window((*wp).window as *mut window);
+        server_status_window(&*((*wp).window));
     }
 }
 unsafe fn input_enter_rename(mut ictx: *mut input_ctx) {
@@ -4890,7 +4890,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
         );
     }
     server_redraw_window_borders(&*(w));
-    server_status_window(w);
+    server_status_window(&*(w));
 }
 unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -5137,7 +5137,7 @@ unsafe fn input_set_progress_bar(
     screen_set_progress_bar(&mut *(*ictx).ctx.s, state, p);
     if !input_pane.is_null() {
         server_redraw_window_borders(&*((*input_pane).window));
-        server_status_window((*input_pane).window as *mut window);
+        server_status_window(&*((*input_pane).window));
     }
 }
 unsafe fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {

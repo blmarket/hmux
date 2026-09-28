@@ -2981,7 +2981,7 @@ pub unsafe fn window_pane_set_mode(
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     server_redraw_window_borders(&*((*wp).window));
-    server_status_window((*wp).window as *mut window);
+    server_status_window(&*((*wp).window));
     window_fire_pane_mode_changed(
         b"pane-mode-entered\0" as *const u8 as *const ::core::ffi::c_char,
         wp,
@@ -3039,7 +3039,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
     server_redraw_window_borders(&*((*wp).window));
-    server_status_window((*wp).window as *mut window);
+    server_status_window(&*((*wp).window));
     window_fire_pane_mode_changed(
         b"pane-mode-exited\0" as *const u8 as *const ::core::ffi::c_char,
         wp,

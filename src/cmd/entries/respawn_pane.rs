@@ -106,7 +106,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     }
     (*wp).flags |= PANE_REDRAW;
     server_redraw_window_borders(&*((*wp).window));
-    server_status_window((*wp).window as *mut window);
+    server_status_window(&*((*wp).window));
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

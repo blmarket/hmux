@@ -58,6 +58,6 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         0 as ::core::ffi::c_longlong,
     );
     server_redraw_window_borders(&*((*wl).window_ptr()));
-    server_status_window((*wl).window_ptr());
+    server_status_window(&*((*wl).window_ptr()));
     return CMD_RETURN_NORMAL;
 }

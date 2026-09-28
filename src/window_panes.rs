@@ -1752,7 +1752,7 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     }
     server_redraw_window(w);
     server_redraw_window_borders(&*(w));
-    server_status_window(w);
+    server_status_window(&*(w));
     drop((*data).state.take());
     window_panes_free_areas(data);
     if let Some(mut preview) = (*data).preview.take() {

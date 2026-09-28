@@ -2219,3 +2219,14 @@ adapted at the call boundary. No new Rc-managed type or persistent owner is adde
 
 `cargo test --workspace` and `git diff --check` passed. Client session fields,
 group/window status traversal and other redraw APIs still require migration.
+
+## Implemented borrowed windows for status updates
+
+Window status updates accept a shared window borrow and traverse retained session
+registry handles. Membership checks and session status marking borrow each
+retained session, eliminating the raw session cursor. All callers pass window
+borrows at the existing access boundary. No new Rc-managed type or persistent
+owner is introduced.
+
+`cargo test --workspace` and `git diff --check` passed. Raw window relationships at
+callers and remaining redraw/group traversal APIs are still pending.
