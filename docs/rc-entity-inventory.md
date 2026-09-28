@@ -1931,3 +1931,15 @@ also borrow the index and inspect files through scoped borrows from owning curso
 
 `cargo test --workspace` and `git diff --check` passed. File-open/read-transfer
 entry points and remaining model/transport projections remain pending.
+
+## Implemented borrowed file-open initialization
+
+Peer-file creation and read/write-open handlers take mutable file-index borrows.
+They initialize the created client_file through a scoped mutable borrow from its
+Rc owner, removing nullable raw file locals. I/O callbacks derive weak handles
+directly from that owner and upgrade them on invocation. The index owns the file;
+callbacks observe it without creating a reference cycle.
+
+`cargo test --workspace` and `git diff --check` passed. Raw peer descriptors are
+outside the refcounted model migration; client-backed transfer creation and other
+internal model projections remain pending.

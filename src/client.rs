@@ -933,7 +933,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         MSG_READ_OPEN => {
             file_read_open(
-                &raw mut client_files,
+                &mut *std::ptr::addr_of_mut!(client_files),
                 client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
@@ -945,7 +945,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         MSG_WRITE_OPEN => {
             file_write_open(
-                &raw mut client_files,
+                &mut *std::ptr::addr_of_mut!(client_files),
                 client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,

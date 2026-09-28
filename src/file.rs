@@ -163,18 +163,17 @@ unsafe fn file_get_path(c: *mut client, file: &CStr) -> CString {
 }
 pub unsafe fn file_create_with_peer(
     mut peer: *mut tmuxpeer,
-    mut files: *mut client_files,
+    files: &mut client_files,
     mut stream: ::core::ffi::c_int,
     mut cb: client_file_cb,
 ) -> Rc<UnsafeCell<client_file>> {
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let owner = client_file::new();
-    cf = rc::as_ptr(&owner);
+    let cf = &mut *owner.get();
     (*cf).c = None;
     (*cf).stream = stream;
     (*cf).cb = cb;
     (*cf).peer = peer;
-    client_files_insert(&mut *files, owner.clone());
+    client_files_insert(files, owner.clone());
     return owner;
 }
 unsafe fn file_create_with_client(
@@ -894,7 +893,7 @@ unsafe fn file_write_callback(owner: &Rc<UnsafeCell<client_file>>) {
     }
 }
 pub unsafe fn file_write_open(
-    mut files: *mut client_files,
+    files: &mut client_files,
     mut peer: *mut tmuxpeer,
     imsg: &imsg,
     mut close_received: ::core::ffi::c_int,
@@ -912,7 +911,6 @@ pub unsafe fn file_write_open(
         error: 0,
     };
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_WRONLY | O_CREAT;
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if msglen == ::core::mem::size_of::<msg_write_open>() as usize {
@@ -928,11 +926,11 @@ pub unsafe fn file_write_open(
         log_cstr((path) as *const _)
     ));
     find.stream = msg.stream;
-    if client_files_find(&*files, &find).is_some() {
+    if client_files_find(files, &find).is_some() {
         error = EBADF;
     } else {
         transfer_owner = file_create_with_peer(peer, files, msg.stream, cb);
-        cf = rc::as_ptr(&transfer_owner);
+        let cf = &mut *transfer_owner.get();
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
@@ -952,8 +950,8 @@ pub unsafe fn file_write_open(
             if (*cf).fd == -(1 as ::core::ffi::c_int) {
                 error = *__errno_location();
             } else {
-                let data_observer = (*cf).observer.clone();
-                let error_observer = (*cf).observer.clone();
+                let data_observer = Rc::downgrade(&transfer_owner);
+                let error_observer = data_observer.clone();
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     None,
@@ -1104,7 +1102,7 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
     }
 }
 pub unsafe fn file_read_open(
-    mut files: *mut client_files,
+    files: &mut client_files,
     mut peer: *mut tmuxpeer,
     imsg: &imsg,
     mut close_received: ::core::ffi::c_int,
@@ -1122,7 +1120,6 @@ pub unsafe fn file_read_open(
         error: 0,
     };
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let flags: ::core::ffi::c_int = O_NONBLOCK | O_RDONLY;
     let mut error: ::core::ffi::c_int = 0;
     if msglen == ::core::mem::size_of::<msg_read_open>() as usize {
@@ -1138,11 +1135,11 @@ pub unsafe fn file_read_open(
         log_cstr((path) as *const _)
     ));
     find.stream = msg.stream;
-    if client_files_find(&*files, &find).is_some() {
+    if client_files_find(files, &find).is_some() {
         error = EBADF;
     } else {
         transfer_owner = file_create_with_peer(peer, files, msg.stream, cb);
-        cf = rc::as_ptr(&transfer_owner);
+        let cf = &mut *transfer_owner.get();
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
@@ -1162,8 +1159,8 @@ pub unsafe fn file_read_open(
             if (*cf).fd == -(1 as ::core::ffi::c_int) {
                 error = *__errno_location();
             } else {
-                let data_observer = (*cf).observer.clone();
-                let error_observer = (*cf).observer.clone();
+                let data_observer = Rc::downgrade(&transfer_owner);
+                let error_observer = data_observer.clone();
                 (*cf).event = bufferevent_new(
                     (*cf).fd,
                     bufferevent_data_callback(move |_| unsafe {
