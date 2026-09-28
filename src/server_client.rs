@@ -1926,9 +1926,8 @@ unsafe fn server_client_check_mouse_in_pane(
 }
 unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut event: *mut key_event) -> key_code {
     let c = client_owner.get();
-    let mut hit_pane_owner = None;
-    let lookup_fwp_owner;
-    let lookup_lwp_owner;
+    let mut selected_pane = None;
+    let mut last_pane = None;
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
@@ -1942,8 +1941,6 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
     let w = window_owner.as_ptr();
     let mut fwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut fwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut px: u_int = 0;
@@ -1978,9 +1975,8 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         ((*c).tty.mouse_drag_flag) as i32
     ));
     if (*c).tty.mouse_last_pane != -(1 as ::core::ffi::c_int) {
-        lookup_lwp_owner = window_pane_find_by_id((*c).tty.mouse_last_pane as u_int);
-        lwp = lookup_lwp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if !lwp.is_null() {
+        last_pane = window_pane_find_by_id((*c).tty.mouse_last_pane as u_int);
+        if let Some(pane) = last_pane.as_ref() {
             log_debug(format_args!(
                 "{} mouse last pane %{}",
                 log_cstr(
@@ -1989,7 +1985,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                         as *const _
                 ),
-                ((*lwp).id) as u32
+                ((*pane.get()).id) as u32
             ));
         }
     }
@@ -2131,9 +2127,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     loc = KEYC_MOUSE_LOCATION_STATUS_RIGHT;
                 }
                 3 => {
-                    lookup_fwp_owner = window_pane_find_by_id((*sr).argument);
-                    fwp = lookup_fwp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-                    if fwp.is_null() {
+                    if window_pane_find_by_id((*sr).argument).is_none() {
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
                     (*m).wp = (*sr).argument as ::core::ffi::c_int;
@@ -2179,10 +2173,10 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
         && (*c).tty.mouse_scrolling_flag != 0
     {
-        if !lwp.is_null() {
+        if let Some(pane) = last_pane.as_ref() {
             loc = KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
-            (*m).wp = (*lwp).id as ::core::ffi::c_int;
-            (*m).w = (*(*lwp).window).id as ::core::ffi::c_int;
+            (*m).wp = (*pane.get()).id as ::core::ffi::c_int;
+            (*m).w = (*(*pane.get()).window).id as ::core::ffi::c_int;
         }
     } else if loc as ::core::ffi::c_uint
         == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2220,7 +2214,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         py = py.wrapping_add((*m).oy);
         let modal_owner = (*w).modal.upgrade();
         if let Some(modal) = modal_owner.filter(|owner| window_pane_contains(owner, px, py) == 0) {
-            if modal.get() == lwp
+            if last_pane.as_ref().is_some_and(|last| std::rc::Rc::ptr_eq(&modal, last))
                 && (*c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int
                 && (type_0 as ::core::ffi::c_uint
                     == KEYC_TYPE_MOUSEDRAG as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2228,7 +2222,8 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                         == KEYC_TYPE_MOUSEUP as ::core::ffi::c_int as ::core::ffi::c_uint)
             {
                 modal_drag = 1 as ::core::ffi::c_int;
-                wp = lwp;
+                selected_pane = last_pane.clone();
+                wp = selected_pane.as_ref().expect("drag pane").get();
                 loc = KEYC_MOUSE_LOCATION_PANE;
                 (*m).wp = (*wp).id as ::core::ffi::c_int;
                 (*m).w = (*(*wp).window).id as ::core::ffi::c_int;
@@ -2267,13 +2262,14 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         if !(modal_drag != 0) {
             if type_0 as ::core::ffi::c_uint
                 == KEYC_TYPE_MOUSEDRAG as ::core::ffi::c_int as ::core::ffi::c_uint
-                && !lwp.is_null()
+                && last_pane.is_some()
             {
-                wp = lwp;
+                selected_pane = last_pane.clone();
+                wp = selected_pane.as_ref().expect("drag pane").get();
             } else {
                 let hit_window_owner = window_owner.as_rc();
-                hit_pane_owner = window_get_active_at(hit_window_owner, px, py);
-                wp = hit_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                selected_pane = window_get_active_at(hit_window_owner, px, py);
+                wp = selected_pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if wp.is_null() {
@@ -2286,9 +2282,9 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
             ));
         } else {
             if modal_drag == 0 {
-                let pane_owner = (*wp).observer.upgrade().expect("mouse target pane");
+                let pane_owner = selected_pane.as_ref().expect("mouse target pane");
                 loc = server_client_check_mouse_in_pane(
-                    &pane_owner,
+                    pane_owner,
                     px as ::core::ffi::c_int,
                     py as ::core::ffi::c_int,
                     &mut sl_mpos,
@@ -2436,11 +2432,11 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         }
         (*c).tty.mouse_drag_flag =
             (b & MOUSE_MASK_BUTTONS as u_int).wrapping_add(1 as u_int) as ::core::ffi::c_int;
-        if lwp.is_null() {
+        if last_pane.is_none() {
             let hit_window_owner = window_owner.as_rc();
-            hit_pane_owner = window_get_active_at(hit_window_owner, px, py);
-            wp = hit_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            lwp = wp;
+            selected_pane = window_get_active_at(hit_window_owner, px, py);
+            wp = selected_pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            last_pane = selected_pane.clone();
             if !wp.is_null() {
                 (*c).tty.mouse_last_pane = (*wp).id as ::core::ffi::c_int;
             }

@@ -1667,3 +1667,14 @@ without accessing a missing session.
 `cargo test --workspace` and `git diff --check` passed. Client session links,
 pane selection locals, winlink access and other internal raw projections remain
 pending; retained allocation lifetime does not replace logical liveness checks.
+
+## Implemented owning mouse pane selection state
+
+Mouse dispatch stores its previous drag pane and selected pane as optional owning
+handles. Modal identity compares Rc handles; drag selection clones the previous
+owner and hit testing borrows the selected owner directly. Status-range pane
+validation tests the lookup result without extracting a raw pointer.
+
+`cargo test --workspace` and `git diff --check` passed. Selected-pane projections
+for legacy status-range and active-pane APIs, raw window relationships and other
+mouse internals remain pending.
