@@ -1358,3 +1358,16 @@ and its owned callback-bearing tree.
 coverage now verifies observer identity, temporary ownership and rejection after
 logical destruction or final release. Nested customize helpers and remaining
 internal raw model projections still require migration.
+
+## Implemented typed mode ownership for tree prompts
+
+Tree-mode command and kill prompts use a callback factory: cleanup owns the mode
+Rc, while cached input closures observe it weakly and retain upgrades only during
+live invocation. Prompt handlers and per-item command execution borrow the mode
+owner. Completion queueing clones that owner directly. This replaces raw mode
+captures while preserving cleanup-before-final-release ordering.
+
+`cargo test --workspace` and `git diff --check` passed. Lifetime tests cover live
+input retention, rejection of closed modes, cleanup release, and cached input
+invocation after mode expiration. Preview helpers, key-dispatch model access and
+other internal raw projections remain pending.

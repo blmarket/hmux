@@ -1885,10 +1885,11 @@ unsafe fn window_tree_get_target(
     target
 }
 unsafe fn window_tree_command_each(
-    mut data: *mut window_tree_modedata,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     item: &window_tree_itemdata,
     client_owner: Option<&Rc<UnsafeCell<client>>>,
 ) {
+    let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -1922,20 +1923,32 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
         CMD_RETURN_NORMAL
     }))
 }
-unsafe fn window_tree_enqueue_command_done(client_owner: Option<&Rc<UnsafeCell<client>>>, data: *mut window_tree_modedata) {
-    let Some(mode) = (*data).observer.upgrade() else { return; };
+unsafe fn window_tree_enqueue_command_done(client_owner: Option<&Rc<UnsafeCell<client>>>, mode: &Rc<UnsafeCell<window_tree_modedata>>) {
     let item = cmdq_get_callback_owned(
         c"window_tree_command_done".as_ptr(),
-        window_tree_command_done(mode),
+        window_tree_command_done(mode.clone()),
     );
     cmdq_append(client_owner, item);
 }
+fn window_tree_prompt_callbacks(
+    mode: Rc<UnsafeCell<window_tree_modedata>>,
+    callback: unsafe fn(Option<&Rc<UnsafeCell<client>>>, &Rc<UnsafeCell<window_tree_modedata>>, Option<&CStr>, prompt_key_result) -> prompt_result,
+) -> (crate::src::shared::mode_tree::mode_tree_prompt_input_cb, crate::src::shared::prompt::prompt_free_cb) {
+    let observer = Rc::downgrade(&mode);
+    let input: crate::src::shared::mode_tree::mode_tree_prompt_input_cb = Some(Box::new(move |client, text, key| unsafe {
+        let Some(owner) = window_tree_live_mode(&observer) else { return PROMPT_CLOSE; };
+        callback(client, &owner, text, key)
+    }));
+    (input, Some(Box::new(move || drop(mode))))
+}
+
 unsafe fn window_tree_command_callback(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
-    mut data: *mut window_tree_modedata,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let data = mode_owner.get();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
     };
@@ -1947,13 +1960,13 @@ unsafe fn window_tree_command_callback(
         (*data).data.clone().as_ref().expect("live mode tree"),
         |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
-            window_tree_command_each(data, &itemdata.as_tree().expect("tree row payload"), client_owner)
+            window_tree_command_each(mode_owner, &itemdata.as_tree().expect("tree row payload"), client_owner)
         },
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
     );
     (*data).entered = None;
-    window_tree_enqueue_command_done(client_owner, data);
+    window_tree_enqueue_command_done(client_owner, mode_owner);
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
@@ -1988,10 +2001,11 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
 }
 unsafe fn window_tree_kill_current_callback(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
-    mut data: *mut window_tree_modedata,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let data = mode_owner.get();
     let mut mtd: *mut mode_tree_data = (*data).data_ptr();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
@@ -2032,15 +2046,16 @@ unsafe fn window_tree_kill_current_callback(
         window_tree_kill_each(&item);
     }
     server_renumber_all();
-    window_tree_enqueue_command_done(client_owner, data);
+    window_tree_enqueue_command_done(client_owner, mode_owner);
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_kill_tagged_callback(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
-    mut data: *mut window_tree_modedata,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
+    let data = mode_owner.get();
     let mut mtd: *mut mode_tree_data = (*data).data_ptr();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
@@ -2086,7 +2101,7 @@ unsafe fn window_tree_kill_tagged_callback(
         1 as ::core::ffi::c_int,
     );
     server_renumber_all();
-    window_tree_enqueue_command_done(client_owner, data);
+    window_tree_enqueue_command_done(client_owner, mode_owner);
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_mouse(
@@ -2299,6 +2314,7 @@ unsafe fn window_tree_key(
             };
             if let Some(prompt) = prompt {
                 let mode = (*data).observer.upgrade().expect("live tree mode");
+                let (inputcb, freecb) = window_tree_prompt_callbacks(mode, window_tree_kill_current_callback);
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
                     Some(client_owner),
@@ -2306,15 +2322,8 @@ unsafe fn window_tree_key(
                     Some(c""),
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                    Some(Box::new(move |c, s, key| unsafe {
-                        window_tree_kill_current_callback(
-                            c,
-                            data,
-                            s,
-                            key,
-                        )
-                    })),
-                    Some(Box::new(move || drop(mode))),
+                    inputcb,
+                    freecb,
                 );
             }
         }
@@ -2323,6 +2332,7 @@ unsafe fn window_tree_key(
             if !(tagged == 0 as u_int) {
                 let prompt = CString::new(format!("Kill {tagged} tagged? ")).unwrap();
                 let mode = (*data).observer.upgrade().expect("live tree mode");
+                let (inputcb, freecb) = window_tree_prompt_callbacks(mode, window_tree_kill_tagged_callback);
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
                     Some(client_owner),
@@ -2330,15 +2340,8 @@ unsafe fn window_tree_key(
                     Some(c""),
                     PROMPT_TYPE_COMMAND,
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
-                    Some(Box::new(move |c, s, key| unsafe {
-                        window_tree_kill_tagged_callback(
-                            c,
-                            data,
-                            s,
-                            key,
-                        )
-                    })),
-                    Some(Box::new(move || drop(mode))),
+                    inputcb,
+                    freecb,
                 );
             }
         }
@@ -2350,6 +2353,7 @@ unsafe fn window_tree_key(
                 CString::new("(current) ").unwrap()
             };
             let mode = (*data).observer.upgrade().expect("live tree mode");
+            let (inputcb, freecb) = window_tree_prompt_callbacks(mode, window_tree_command_callback);
             mode_tree_set_prompt(
                 (*data).data.as_ref().expect("mode tree owner").clone(),
                 Some(client_owner),
@@ -2357,15 +2361,8 @@ unsafe fn window_tree_key(
                 Some(c""),
                 PROMPT_TYPE_COMMAND,
                 PROMPT_NOFORMAT,
-                Some(Box::new(move |c, s, key| unsafe {
-                    window_tree_command_callback(
-                        c,
-                        data,
-                        s,
-                        key,
-                    )
-                })),
-                Some(Box::new(move || drop(mode))),
+                inputcb,
+                freecb,
             );
         }
         13 => {
@@ -2396,6 +2393,16 @@ mod queued_refresh_tests {
 
     #[test]
     fn queued_refresh_releases_closed_or_orphaned_mode_when_fired_or_cancelled() {
+        unsafe fn read_mode(
+            _: Option<&Rc<UnsafeCell<client>>>,
+            mode: &Rc<UnsafeCell<window_tree_modedata>>,
+            _: Option<&CStr>,
+            _: prompt_key_result,
+        ) -> prompt_result {
+            assert_eq!((*mode.get()).dead, 0);
+            assert_eq!(Rc::strong_count(mode), 3);
+            PROMPT_CONTINUE
+        }
         for (fire, dead) in [(false, 0), (true, 0), (false, 1), (true, 1)] {
             unsafe {
                 let mode = Rc::new_cyclic(|observer| UnsafeCell::new(window_tree_modedata {
@@ -2435,6 +2442,14 @@ mod queued_refresh_tests {
                 }
                 drop(live);
                 assert_eq!(Rc::strong_count(&mode), 1);
+                let (mut input, cleanup) = window_tree_prompt_callbacks(mode.clone(), read_mode);
+                assert_eq!(Rc::strong_count(&mode), 2);
+                assert_eq!(
+                    input.as_mut().unwrap()(None, None, PROMPT_KEY_HANDLED),
+                    if dead == 0 { PROMPT_CONTINUE } else { PROMPT_CLOSE },
+                );
+                cleanup.unwrap()();
+                assert_eq!(Rc::strong_count(&mode), 1);
                 let selected_observer = (&(*mode.get()).item_list)[0].downgrade();
                 let selected = ModeTreeItemData::Tree(selected_observer.clone()).as_tree().unwrap();
                 let item = cmdq_get_callback_owned(
@@ -2453,6 +2468,7 @@ mod queued_refresh_tests {
                 cmdq_free_detached(item);
                 assert!(observed.upgrade().is_none());
                 assert!(window_tree_live_mode(&observed).is_none());
+                assert_eq!(input.as_mut().unwrap()(None, None, PROMPT_KEY_HANDLED), PROMPT_CLOSE);
                 assert_eq!(selected.type_0, WINDOW_TREE_NONE);
                 assert_eq!(
                     (selected.session, selected.winlink, selected.pane),
