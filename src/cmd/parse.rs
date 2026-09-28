@@ -699,11 +699,14 @@ mod parser_collection_tests {
             assert_eq!(result.status, CMD_PARSE_SUCCESS);
             let observer = Rc::downgrade(result.cmdlist.as_ref().unwrap());
             let item = cmdq_get_command(result.cmdlist.as_ref().expect("successful command parse"), None);
+            let command_observer = (*item).cmd.clone();
             drop(result);
             assert!(observer.upgrade().is_some());
-            assert_eq!((*(*item).cmd).entry.name, c"display-message");
+            assert!(command_observer.is_alive());
+            assert_eq!((*(*item).cmd_ptr()).entry.name, c"display-message");
             crate::src::cmd::queue::cmdq_free_detached(item);
             assert!(observer.upgrade().is_none());
+            assert!(!command_observer.is_alive());
         }
     }
 

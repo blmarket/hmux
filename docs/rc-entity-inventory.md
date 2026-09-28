@@ -2370,3 +2370,12 @@ state removes it. Creation returns the weak handle directly, and release keeps
 reply-byte accounting and pane queue order. Local legacy pointer projections
 still rely on the state retaining the block for each operation. The field
 inventory now counts 68 remaining in-scope raw fields.
+
+## Implemented weak queued command identity
+
+Commands are allocated as `RefBox<cmd>` at parse and copy time. The command
+list remains their sole owner, and queue items retain their existing list
+reference while storing a weak command handle. Moving a command between lists
+keeps its address and weak identity; dropping its final list owner expires the
+handle. `cmd_ptr` still projects a legacy raw view for queue execution. The
+field inventory now counts 67 remaining in-scope raw fields.

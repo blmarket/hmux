@@ -49,7 +49,7 @@ fn argument_printer_preserves_zero_and_non_utf8_flag_bytes() {
     }
 }
 
-unsafe fn display_message_command() -> Box<cmd> {
+unsafe fn display_message_command() -> refbox::RefBox<cmd> {
     let value = ArgumentValue::borrowed_string(c"display-message");
     cmd_parse(std::slice::from_ref(&value), None, 0, 0).expect("command parse reported an error")
 }
@@ -58,7 +58,7 @@ unsafe fn display_message_command() -> Box<cmd> {
 fn command_printer_keeps_exported_c_buffer_and_empty_arguments() {
     unsafe {
         let command = display_message_command();
-        let printed = cmd_print(&*command);
+        let printed = cmd_print(&command.try_borrow_mut().unwrap());
         assert_eq!(printed.as_bytes(), b"display-message");
         drop(command);
     }
@@ -77,7 +77,8 @@ fn list_printer_preserves_empty_and_group_separator_bytes() {
         }
         let mut list_borrow = list.borrow_mut();
         let commands = &mut list_borrow.list;
-        commands[2].group = commands[1].group.wrapping_add(1);
+        let next_group = commands[1].try_borrow_mut().unwrap().group.wrapping_add(1);
+        commands[2].try_borrow_mut().unwrap().group = next_group;
         drop(list_borrow);
 
         let name = b"display-message";
@@ -132,17 +133,17 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
     fn addresses(list: &hmux2::src::shared::command::cmd_list) -> Vec<usize> {
         list.list
             .iter()
-            .map(|command| command.as_ref() as *const cmd as usize)
+            .map(|command| command.as_ptr() as usize)
             .collect()
     }
     unsafe {
         let destination = cmd_list_new();
         let first = display_message_command();
-        let first_address = first.as_ref() as *const cmd as usize;
+        let first_address = first.as_ptr() as usize;
         cmd_list_append(&destination, first);
         let source = cmd_list_new();
         let second = display_message_command();
-        let second_address = second.as_ref() as *const cmd as usize;
+        let second_address = second.as_ptr() as usize;
         cmd_list_append(&source, second);
         cmd_list_append_all(&destination, &source);
         assert!(source.borrow_mut().list.is_empty());
@@ -150,7 +151,7 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
 
         let tail = cmd_list_new();
         let third = display_message_command();
-        let third_address = third.as_ref() as *const cmd as usize;
+        let third_address = third.as_ptr() as usize;
         cmd_list_append(&tail, third);
         cmd_list_move(&destination, &tail);
         assert!(tail.borrow_mut().list.is_empty());
@@ -183,6 +184,26 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
 }
 
 #[test]
+fn queued_command_observer_follows_list_transfer_and_expires_with_owner() {
+    unsafe {
+        let source = cmd_list_new();
+        cmd_list_append(&source, display_message_command());
+        let item = hmux2::src::cmd::queue::cmdq_get_command(&source, None);
+        let command = (*item).cmd.clone();
+        let address = (*item).cmd_ptr();
+        let destination = cmd_list_new();
+        cmd_list_append_all(&destination, &source);
+        drop(source);
+        assert!(command.is_alive());
+        assert_eq!((*item).cmd_ptr(), address);
+        drop(destination);
+        assert!(!command.is_alive());
+        assert!((*item).cmd_ptr().is_null());
+        hmux2::src::cmd::queue::cmdq_free_detached(item);
+    }
+}
+
+#[test]
 fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
     use hmux2::src::cmd::queue::{cmdq_free_detached, cmdq_get_command};
         unsafe {
@@ -195,7 +216,7 @@ fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
             args_value::commands(nested),
         ];
         let command = cmd_parse(&values, None, 0, 0).unwrap();
-        let address = command.as_ref() as *const cmd as usize;
+        let address = command.as_ptr() as usize;
         drop(values);
         assert_eq!(nested_observer.strong_count(), 1);
         let list = cmd_list_new();
@@ -206,13 +227,13 @@ fn queued_commands_keep_boxed_records_and_nested_arguments_alive() {
             cmd_list_append(&list, display_message_command());
         }
         let mut item = cmdq_get_command(&list, None);
-        assert_eq!((*item).cmd as usize, address);
+        assert_eq!((*item).cmd_ptr() as usize, address);
         drop(list);
         let mut count = 0;
         while !item.is_null() {
             let next = (*item).next;
             assert!(nested_observer.upgrade().is_some());
-            assert!(!cmd_print(&*(*item).cmd).as_bytes().is_empty());
+            assert!(!cmd_print(&*(*item).cmd_ptr()).as_bytes().is_empty());
             cmdq_free_detached(item);
             item = next;
             count += 1;

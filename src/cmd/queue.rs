@@ -191,7 +191,7 @@ pub fn cmdq_get_name(item: &cmdq_item) -> Option<&std::ffi::CStr> {
     item.name.as_deref()
 }
 pub unsafe fn cmdq_get_cmd(mut item: *mut cmdq_item) -> *mut cmd {
-    return (*item).cmd;
+    return (*item).cmd_ptr();
 }
 pub unsafe fn cmdq_get_client(item: *mut cmdq_item) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
     item.as_ref().and_then(|item| item.client.upgrade())
@@ -287,8 +287,8 @@ pub unsafe fn cmdq_add_formats(state: &cmdq_state, mut ft: *mut format_tree) {
     format_merge(format_owner_ptr(&mut *formats), ft);
 }
 pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, mut ft: *mut format_tree) {
-    if !(*item).cmd.is_null() {
-        let entry = cmd_get_entry(&*(*item).cmd);
+    if !(*item).cmd_ptr().is_null() {
+        let entry = cmd_get_entry(&*(*item).cmd_ptr());
         format_add(
             ft,
             b"command\0" as *const u8 as *const ::core::ffi::c_char,
@@ -382,7 +382,7 @@ pub unsafe fn cmdq_insert_hook(
     mut current: *mut cmd_find_state,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut cmd: *mut cmd = (*item).cmd;
+    let mut cmd: *mut cmd = (*item).cmd_ptr();
     let mut args_0: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
@@ -499,13 +499,13 @@ pub unsafe fn cmdq_get_command(
         std::ptr::null_mut(), std::ptr::null_mut(), 0,
     ));
     for command in &mut cmdlist.list {
-        let cmd = &mut **command as *mut cmd;
+        let cmd = command.as_ptr().cast_mut();
         let entry = cmd_get_entry(&*cmd);
         item = cmdq_new_named_item(Some(entry.name));
         (*item).type_0 = CMDQ_COMMAND;
         (*item).group = cmd_get_group(cmd);
         (*item).state = Some(state.clone());
-        (*item).cmd = cmd;
+        (*item).cmd = command.downgrade();
         (*item).cmdlist = Some(commands.clone());
         log_debug(format_args!(
             "{}: {} group {}",
@@ -540,7 +540,7 @@ unsafe fn cmdq_find_flag(
         cmd_find_from_client(fs, target_client_ptr, 0 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
-    value = args_get(&*(cmd_get_args_mut(&mut *(*item).cmd).map_or(std::ptr::null_mut(), |args| args)), flag.flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    value = args_get(&*(cmd_get_args_mut(&mut *(*item).cmd_ptr()).map_or(std::ptr::null_mut(), |args| args)), flag.flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if cmd_find_target(fs, item, value, flag.type_0, flag.flags) != 0 as ::core::ffi::c_int {
         cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
         return CMD_RETURN_ERROR;
@@ -553,7 +553,7 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    let tmp = cmd_print_cstring(&*(*item).cmd);
+    let tmp = cmd_print_cstring(&*(*item).cmd_ptr());
     if !c.is_null() {
         uid = proc_get_peer_uid((*c).peer);
         let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
@@ -614,7 +614,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let saved_client_ptr = saved_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let name = cmdq_name(saved_client.as_ref().map(|owner| &*owner.get()));
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
-    let mut cmd: *mut cmd = (*item).cmd;
+    let mut cmd: *mut cmd = (*item).cmd_ptr();
     let mut args: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
     let entry = cmd_get_entry(&*cmd);
     let mut tc = None;
@@ -967,7 +967,7 @@ pub unsafe fn cmdq_error(
 ) {
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut cmd: *mut cmd = (*item).cmd;
+    let mut cmd: *mut cmd = (*item).cmd_ptr();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: u_int = 0;
     let mut msg = format_message_with(write);

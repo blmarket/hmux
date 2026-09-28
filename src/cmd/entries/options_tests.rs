@@ -80,7 +80,7 @@ unsafe fn run_option_command(command: &str) -> (cmd_retval, Vec<Vec<u8>>) {
     assert!(!item.is_null(), "command={command:?}");
     drop(command_list);
 
-    let cmd = (*item).cmd;
+    let cmd = (*item).cmd_ptr();
     let exec = (*cmd)
         .entry
         .exec

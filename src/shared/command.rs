@@ -153,7 +153,7 @@ pub struct cmdq_item {
     pub source: cmd_find_state,
     pub target: cmd_find_state,
     pub cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
-    pub cmd: *mut cmd,
+    pub cmd: refbox::Weak<cmd>,
     pub cb: cmdq_cb,
     pub data: *mut ::core::ffi::c_void,
     pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
@@ -161,6 +161,15 @@ pub struct cmdq_item {
 }
 
 impl cmdq_item {
+    /// Project a legacy command pointer while its list owner remains live.
+    pub fn cmd_ptr(&self) -> *mut cmd {
+        if self.cmd.is_alive() {
+            self.cmd.as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
@@ -315,8 +324,8 @@ impl cmd_find_state {
 #[derive(Default)]
 pub struct cmd_list {
     pub group: u_int,
-    /// Box-owned commands, released with the final command-list reference.
-    pub list: Vec<Box<cmd>>,
+    /// Sole command owners, released with the final command-list reference.
+    pub list: Vec<refbox::RefBox<cmd>>,
 }
 
 #[repr(C)]

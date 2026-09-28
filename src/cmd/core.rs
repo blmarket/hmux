@@ -364,8 +364,8 @@ pub fn cmd_find(name: &CStr) -> Result<&'static cmd_entry, CString> {
     })
 }
 
-fn cmd_new_owned(entry: &'static cmd_entry, file: Option<&CStr>) -> Box<cmd> {
-    Box::new(cmd {
+fn cmd_new_owned(entry: &'static cmd_entry, file: Option<&CStr>) -> refbox::RefBox<cmd> {
+    refbox::RefBox::new(cmd {
         file: file.map(CStr::to_owned),
         ..cmd::new(entry)
     })
@@ -376,7 +376,7 @@ pub unsafe fn cmd_parse(
     file: Option<&CStr>,
     line: u_int,
     parse_flags: ::core::ffi::c_int,
-) -> Result<Box<cmd>, CString> {
+) -> Result<refbox::RefBox<cmd>, CString> {
     let Some(command) = values.first().filter(|value| value.type_0() == ARGS_STRING) else {
         return Err(CString::new("no command").unwrap());
     };
@@ -398,19 +398,25 @@ pub unsafe fn cmd_parse(
             return Err(CString::new(error).expect("command diagnostic contains no NUL"));
         }
     };
-    let mut cmd = cmd_new_owned(entry, file);
-    cmd.args = Some(args);
-    cmd.parse_flags = parse_flags;
-    cmd.line = line;
+    let cmd = cmd_new_owned(entry, file);
+    {
+        let mut command = cmd.try_borrow_mut().expect("new command is not borrowed");
+        command.args = Some(args);
+        command.parse_flags = parse_flags;
+        command.line = line;
+    }
     return Ok(cmd);
 }
-pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> Box<cmd> {
-    let mut new_cmd = cmd_new_owned(cmd.entry, cmd.file.as_deref());
-    new_cmd.args = Some(args_copy(
-        cmd.args.as_deref().expect("parsed command arguments"),
-        argv,
-    ));
-    new_cmd.line = cmd.line;
+pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
+    let new_cmd = cmd_new_owned(cmd.entry, cmd.file.as_deref());
+    {
+        let mut copy = new_cmd.try_borrow_mut().expect("new command is not borrowed");
+        copy.args = Some(args_copy(
+            cmd.args.as_deref().expect("parsed command arguments"),
+            argv,
+        ));
+        copy.line = cmd.line;
+    }
     return new_cmd;
 }
 pub unsafe fn cmd_print(cmd: &cmd) -> CString {
@@ -444,9 +450,15 @@ pub unsafe fn cmd_list_new() -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
         ..cmd_list::default()
     }))
 }
-pub fn cmd_list_append(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, mut command: Box<cmd>) {
+pub fn cmd_list_append(
+    cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
+    command: refbox::RefBox<cmd>,
+) {
     let mut cmdlist = cmdlist.borrow_mut();
-    command.group = cmdlist.group;
+    command
+        .try_borrow_mut()
+        .expect("command is not borrowed")
+        .group = cmdlist.group;
     cmdlist.list.push(command);
 }
 pub fn cmd_list_append_all(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, from: &std::rc::Rc<std::cell::RefCell<cmd_list>>) {
@@ -454,7 +466,12 @@ pub fn cmd_list_append_all(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, 
     let mut cmdlist = cmdlist.borrow_mut();
     let mut from = from.borrow_mut();
     let group = cmdlist.group;
-    for command in &mut from.list { command.group = group; }
+    for command in &mut from.list {
+        command
+            .try_borrow_mut()
+            .expect("command is not borrowed")
+            .group = group;
+    }
     cmdlist.list.append(&mut from.list);
 }
 pub unsafe fn cmd_list_move(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, from: &std::rc::Rc<std::cell::RefCell<cmd_list>>) {
@@ -476,14 +493,15 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> std::rc:
     ));
     let owner = cmd_list_new();
 
-    for cmd in &cmdlist.list {
-        if (*cmd).group != group {
+    for command in &cmdlist.list {
+        let cmd = command.try_borrow_mut().expect("command is not borrowed");
+        if cmd.group != group {
             let fresh7 = cmd_list_next_group;
             cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
             owner.borrow_mut().group = fresh7;
-            group = (*cmd).group;
+            group = cmd.group;
         }
-        let new_cmd = cmd_copy(cmd, argv);
+        let new_cmd = cmd_copy(&cmd, argv);
         cmd_list_append(&owner, new_cmd);
     }
     let s = cmd_list_print_cstring(&owner.borrow(), 0);
@@ -497,12 +515,14 @@ pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> std::rc:
 pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> CString {
     let mut buf = Vec::new();
     let commands = &cmdlist.list;
-    for (index, cmd) in commands.iter().enumerate() {
-        let this = cmd_print_cstring(&*cmd);
+    for (index, owner) in commands.iter().enumerate() {
+        let cmd = owner.try_borrow_mut().expect("command is not borrowed");
+        let this = cmd_print_cstring(&cmd);
         buf.extend_from_slice(this.as_bytes());
 
         if let Some(next) = commands.get(index + 1) {
-            let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && (*cmd).group != (*next).group;
+            let next = next.try_borrow_mut().expect("command is not borrowed");
+            let grouped = flags & CMD_LIST_PRINT_NO_GROUPS == 0 && cmd.group != next.group;
             let separator: &[u8] = match (flags & CMD_LIST_PRINT_ESCAPED != 0, grouped) {
                 (false, false) => b" ; ",
                 (false, true) => b" ;; ",
@@ -519,13 +539,17 @@ pub(crate) unsafe fn cmd_list_print_cstring(cmdlist: &cmd_list, flags: i32) -> C
 pub unsafe fn cmd_list_print(cmdlist: &cmd_list, flags: ::core::ffi::c_int) -> CString {
     cmd_list_print_cstring(cmdlist, flags)
 }
-pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<&cmd> {
-    cmdlist.list.first().map(Box::as_ref)
+pub fn cmd_list_first(cmdlist: &cmd_list) -> Option<refbox::Borrow<'_, cmd>> {
+    cmdlist
+        .list
+        .first()
+        .map(|owner| owner.try_borrow_mut().expect("command is not borrowed"))
 }
 pub unsafe fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_READONLY;
-    for cmd in &cmdlist.list {
-        if !(*cmd).entry.flags & flag != 0 {
+    for owner in &cmdlist.list {
+        let cmd = owner.try_borrow_mut().expect("command is not borrowed");
+        if !cmd.entry.flags & flag != 0 {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -533,8 +557,9 @@ pub unsafe fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
 }
 pub unsafe fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
-    for cmd in &cmdlist.list {
-        if (*cmd).entry.flags & flag != 0 {
+    for owner in &cmdlist.list {
+        let cmd = owner.try_borrow_mut().expect("command is not borrowed");
+        if cmd.entry.flags & flag != 0 {
             return 1 as ::core::ffi::c_int;
         }
     }
