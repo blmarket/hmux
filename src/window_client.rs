@@ -76,17 +76,29 @@ impl window_client_modedata {
     }
 }
 
-#[derive(Clone)]
 pub struct window_client_itemdata {
     // Present until Drop transfers the last item-owned reference to the reactor.
     c: Option<Rc<UnsafeCell<client>>>,
+    retained_client_reference: bool,
     pub ttyname: CString,
+}
+
+impl Clone for window_client_itemdata {
+    fn clone(&self) -> Self {
+        Self {
+            // Action snapshots guard access but do not own another tmux client reference.
+            c: self.c.clone(),
+            retained_client_reference: false,
+            ttyname: self.ttyname.clone(),
+        }
+    }
 }
 
 impl window_client_itemdata {
     fn new(c: &Rc<UnsafeCell<client>>, ttyname: &CStr) -> Self {
         Self {
             c: Some(Rc::clone(c)),
+            retained_client_reference: true,
             ttyname: ttyname.to_owned(),
         }
     }
@@ -99,7 +111,11 @@ impl window_client_itemdata {
 impl Drop for window_client_itemdata {
     fn drop(&mut self) {
         if let Some(client) = self.c.take() {
-            server_client_unref_owned(client);
+            if self.retained_client_reference {
+                server_client_unref_owned(client);
+            } else {
+                drop(client);
+            }
         }
     }
 }
@@ -300,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_client_payload_defers_client_release_until_its_last_owner() {
+    fn client_row_defers_its_reference_but_action_snapshot_releases_immediately() {
         use crate::src::{reactor, shared::rc};
         for cancel in [false, true] {
             unsafe {
@@ -323,6 +339,7 @@ mod tests {
                 let item_observer = data.items[0].downgrade();
                 let selected = ModeTreeItemData::Client(item_observer.clone());
                 let snapshot = selected.as_client().unwrap();
+                assert_eq!(Rc::strong_count(&client_owner), 3);
                 data.items.clear();
                 drop(client_owner);
                 assert!(client_observer.upgrade().is_some());
@@ -335,7 +352,7 @@ mod tests {
                 reactor::event_loop();
                 assert!(client_observer.upgrade().is_some(), "action snapshot retains its client");
                 drop(snapshot);
-                assert!(client_observer.upgrade().is_some());
+                assert!(client_observer.upgrade().is_none());
                 if cancel {
                     reactor::shutdown_runtime();
                 } else {
