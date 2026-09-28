@@ -1021,3 +1021,15 @@ command runners rather than upgrading a raw view again.
 mode registrations and call sites against the typed callback interface. Mode
 command callbacks, session arguments and internal raw model projections remain
 pending.
+
+## Implemented borrowed client owners in mode command callbacks
+
+`window_mode.command` accepts an optional borrowed Rc client from send-keys.
+Copy/view-mode callbacks pass that borrow into `window_copy_cmd_state`, whose
+client field is now lifetime-bound instead of a raw pointer. Command handlers
+and drag-state checks read through this retained client association. The command
+state does not independently own the client; its caller retains it throughout.
+
+`cargo test --workspace` and `git diff --check` passed. Callback registrations and
+all state consumers compile against the typed client field. Session callback
+arguments, downstream client APIs and local raw projections remain pending.

@@ -261,7 +261,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         if (*m).valid == 0 {
             m = ::core::ptr::null_mut::<mouse_event>();
         }
-        (*(*wme).mode).command.expect("non-null function pointer")(wme, tc, s, wl, args, m);
+        (*(*wme).mode).command.expect("non-null function pointer")(wme, tc_owner.as_ref(), s, wl, args, m);
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {

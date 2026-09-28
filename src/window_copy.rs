@@ -278,7 +278,7 @@ pub struct window_copy_cmd_state<'a> {
     pub args: *mut args,
     pub wargs: Option<Box<args>>,
     pub m: *mut mouse_event,
-    pub c: *mut client,
+    pub c: Option<&'a std::rc::Rc<std::cell::UnsafeCell<client>>>,
     pub s: Option<&'a std::cell::UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
 }
@@ -368,7 +368,7 @@ pub static window_copy_mode: window_mode = {
             window_copy_command
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut client,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
                     *mut session,
                     *mut winlink,
                     *mut args,
@@ -410,7 +410,7 @@ pub static window_view_mode: window_mode = {
             window_copy_command
                 as unsafe fn(
                     *mut window_mode_entry,
-                    *mut client,
+                    Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
                     *mut session,
                     *mut winlink,
                     *mut args,
@@ -1541,7 +1541,7 @@ unsafe fn window_copy_cmd_begin_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut c: *mut client = (*cs).c;
+    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut m: *mut mouse_event = (*cs).m;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     if !m.is_null() {
@@ -1591,7 +1591,7 @@ unsafe fn window_copy_do_copy_end_of_line(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut c: *mut client = (*cs).c;
+    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = mode_pane;
@@ -1711,7 +1711,7 @@ unsafe fn window_copy_do_copy_line(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut c: *mut client = (*cs).c;
+    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = mode_pane;
@@ -1829,7 +1829,7 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut c: *mut client = (*cs).c;
+    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = mode_pane;
@@ -1979,7 +1979,7 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut c: *mut client = (*cs).c;
+    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut m: *mut mouse_event = (*cs).m;
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
     let tty_oy = tty_window_offset(&(*c).tty).oy;
@@ -2855,7 +2855,7 @@ unsafe fn window_copy_cmd_scroll_down(
         }
         return WINDOW_COPY_CMD_NOTHING;
     }
-    dragging = (!(*cs).c.is_null() && (*(*cs).c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int)
+    dragging = (*cs).c.is_some_and(|owner| (*owner.get()).tty.mouse_drag_flag != 0)
         as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
@@ -2879,7 +2879,7 @@ unsafe fn window_copy_cmd_scroll_down_and_cancel(
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut np: u_int = (*wme).prefix;
     let mut dragging: ::core::ffi::c_int = 0;
-    dragging = (!(*cs).c.is_null() && (*(*cs).c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int)
+    dragging = (*cs).c.is_some_and(|owner| (*owner.get()).tty.mouse_drag_flag != 0)
         as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
@@ -2904,7 +2904,7 @@ unsafe fn window_copy_cmd_scroll_up(mut cs: *mut window_copy_cmd_state) -> windo
     if (*data).oy == (*data).backing().grid().hsize {
         return WINDOW_COPY_CMD_NOTHING;
     }
-    dragging = (!(*cs).c.is_null() && (*(*cs).c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int)
+    dragging = (*cs).c.is_some_and(|owner| (*owner.get()).tty.mouse_drag_flag != 0)
         as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
@@ -3087,7 +3087,7 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut c: *mut client = (*cs).c;
+    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = mode_pane;
@@ -3153,7 +3153,7 @@ unsafe fn window_copy_cmd_pipe_no_clear(
     let mut wme: *mut window_mode_entry = (*cs).wme;
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut c: *mut client = (*cs).c;
+    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
     let mut wp: *mut window_pane = mode_pane;
@@ -5118,14 +5118,14 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
 pub const WINDOW_COPY_CMD_FLAG_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 unsafe fn window_copy_command(
     wme: *mut window_mode_entry,
-    c: *mut client,
+    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     s: *mut session,
     wl: *mut winlink,
     args: *mut args,
     m: *mut mouse_event,
 ) {
     let session_owner = s.as_ref().and_then(|s| s.observer.upgrade());
-    window_copy_command_with_session(wme, c, session_owner.as_deref(), wl, args, m);
+    window_copy_command_with_session(wme, client_owner, session_owner.as_deref(), wl, args, m);
     if let Some(owner) = session_owner {
         crate::src::session::session_remove_ref(owner, c"window_copy_command");
     }
@@ -5133,12 +5133,13 @@ unsafe fn window_copy_command(
 
 unsafe fn window_copy_command_with_session(
     wme: *mut window_mode_entry,
-    c: *mut client,
+    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     s: Option<&std::cell::UnsafeCell<session>>,
     wl: *mut winlink,
     args: *mut args,
     m: *mut mouse_event,
 ) {
+    let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
@@ -5148,7 +5149,7 @@ unsafe fn window_copy_command_with_session(
         args: ::core::ptr::null_mut::<args>(),
         wargs: None,
         m: ::core::ptr::null_mut::<mouse_event>(),
-        c: ::core::ptr::null_mut::<client>(),
+        c: None,
         s: None,
         wl: refbox::Weak::new(),
     };
@@ -5174,7 +5175,7 @@ unsafe fn window_copy_command_with_session(
     cs.args = args;
     cs.wargs = None;
     cs.m = m;
-    cs.c = c;
+    cs.c = client_owner;
     cs.s = s;
     cs.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
     action = WINDOW_COPY_CMD_MOVE;
