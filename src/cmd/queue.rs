@@ -324,7 +324,9 @@ pub unsafe fn cmdq_append(
         log_debug(format_args!(
             "{} {}: {}",
             "cmdq_append",
-            log_cstr(cmdq_name(owner.map(|owner| &*owner.get())).as_ptr()),
+            crate::src::log::log_bytes(
+                cmdq_name(owner.map(|owner| &*owner.get())).as_bytes()
+            ),
             log_cstr(
                 (((*item).name)
                     .as_ref()
@@ -360,7 +362,9 @@ pub unsafe fn cmdq_insert_after(
         log_debug(format_args!(
             "{} {}: {} after {}",
             "cmdq_insert_after",
-            log_cstr(cmdq_name(c_owner.as_ref().map(|owner| &*owner.get())).as_ptr()),
+            crate::src::log::log_bytes(
+                cmdq_name(c_owner.as_ref().map(|owner| &*owner.get())).as_bytes()
+            ),
             log_cstr(
                 (((*item).name)
                     .as_ref()
@@ -645,9 +649,9 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
         log_debug(format_args!(
             "{} {}: ({}) {}",
             "cmdq_fire_command",
-            log_cstr(name.as_ptr()),
+            crate::src::log::log_bytes(name.as_bytes()),
             ((*item).group) as u32,
-            log_cstr((tmp.as_ptr()) as *const _)
+            crate::src::log::log_bytes(tmp.as_bytes())
         ));
     }
     flags = (state.flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
@@ -836,7 +840,7 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
         log_debug(format_args!(
             "{} {}: empty",
             "cmdq_next",
-            log_cstr(name.as_ptr())
+            crate::src::log::log_bytes(name.as_bytes())
         ));
         return 0 as u_int;
     }
@@ -844,14 +848,14 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
         log_debug(format_args!(
             "{} {}: waiting",
             "cmdq_next",
-            log_cstr(name.as_ptr())
+            crate::src::log::log_bytes(name.as_bytes())
         ));
         return 0 as u_int;
     }
     log_debug(format_args!(
         "{} {}: enter",
         "cmdq_next",
-        log_cstr(name.as_ptr())
+        crate::src::log::log_bytes(name.as_bytes())
     ));
     loop {
         item = (*queue).first_ptr();
@@ -867,7 +871,7 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
         log_debug(format_args!(
             "{} {}: {} ({}), flags {:x}",
             "cmdq_next",
-            log_cstr(name.as_ptr()),
+            crate::src::log::log_bytes(name.as_bytes()),
             log_cstr(
                 (((*item).name)
                     .as_ref()
@@ -915,7 +919,7 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
             log_debug(format_args!(
                 "{} {}: exit (wait)",
                 "cmdq_next",
-                log_cstr(name.as_ptr())
+                crate::src::log::log_bytes(name.as_bytes())
             ));
             return items;
         }
@@ -924,7 +928,7 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
             log_debug(format_args!(
                 "{} {}: exit (empty)",
                 "cmdq_next",
-                log_cstr(name.as_ptr())
+                crate::src::log::log_bytes(name.as_bytes())
             ));
             return items;
         }
@@ -979,7 +983,7 @@ pub unsafe fn cmdq_error(
     log_debug(format_args!(
         "{}: {}",
         "cmdq_error",
-        log_cstr((msg.as_ptr()) as *const _)
+        crate::src::log::log_bytes(msg.as_bytes())
     ));
     if c.is_null() {
         let (source, source_line) = cmd_get_source(&*cmd);

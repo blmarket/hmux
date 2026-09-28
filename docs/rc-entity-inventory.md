@@ -2730,3 +2730,7 @@ Key binding command strings and formatted key names, parsed format styles, and
 temporary terminal color names now also borrow their `CString` bytes during
 logging. In particular, color names no longer give the deferred formatter an
 address extracted from a temporary owner.
+
+Command queue diagnostics now borrow the `CString` bytes of queue labels,
+printed commands, and errors. The generated queue labels are temporary owners;
+their borrowed bytes remain live through the synchronous log call.
