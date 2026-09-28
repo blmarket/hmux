@@ -1331,3 +1331,17 @@ state. The detached callback is restored only when the live tree still needs it.
 `cargo test --workspace` and `git diff --check` passed. Regressions cover a height
 callback that destroys its tree and one that replaces itself. Drawing bodies and
 other model implementations still contain raw projections and remain pending.
+
+## Implemented weak tree-mode callback captures
+
+Tree mode's build, draw, menu and key-label closures now observe the refcounted
+mode through Weak handles instead of capturing NonNull addresses. Each callback
+retains a live upgrade and skips closed/expired modes. Their entry points and the
+nested session/window/pane builders borrow the mode Rc, removing erased mode-data
+arguments and casts along that chain. These captures must remain weak because the
+mode owns the callback-bearing tree.
+
+`cargo test --workspace` and `git diff --check` passed. Existing mode lifetime tests
+now verify live observer upgrades, temporary retention, and rejection of closed
+or expired modes. Preview helpers, prompt captures and other internal raw model
+projections remain pending.
