@@ -3330,10 +3330,12 @@ unsafe fn window_pane_copy_paste(
         loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
-unsafe fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key_code) {
-    let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    loop_0 = window_pane_first((*wp).window).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
+unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, key: key_code) {
+    let wp = owner.get();
+    let window_owner = (*(*wp).window).observer.upgrade().expect("pane window");
+    let mut cursor = window_pane_first(window_owner.get());
+    while let Some(pane_owner) = cursor {
+        let loop_0 = pane_owner.get();
         if loop_0 != wp
             && (*loop_0).modes.active.is_null()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
@@ -3344,9 +3346,9 @@ unsafe fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key_code) {
                 b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
             ) != 0
         {
-            input_key_pane(loop_0, key, ::core::ptr::null_mut::<mouse_event>());
+            input_key_pane(&pane_owner, key, ::core::ptr::null_mut::<mouse_event>());
         }
-        loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(loop_0);
     }
 }
 pub unsafe fn window_pane_paste(
@@ -3424,7 +3426,7 @@ pub unsafe fn window_pane_key(
     if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if input_key_pane(wp, key, m) != 0 as ::core::ffi::c_int {
+    if input_key_pane(pane_owner, key, m) != 0 as ::core::ffi::c_int {
         return -(1 as ::core::ffi::c_int);
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -3443,7 +3445,7 @@ pub unsafe fn window_pane_key(
         b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        window_pane_copy_key(wp, key);
+        window_pane_copy_key(pane_owner, key);
     }
     return 0 as ::core::ffi::c_int;
 }

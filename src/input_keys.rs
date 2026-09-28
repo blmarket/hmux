@@ -483,10 +483,11 @@ pub unsafe fn input_key_build() {
     }
 }
 pub unsafe fn input_key_pane(
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> ::core::ffi::c_int {
+    let wp = pane_owner.get();
     if log_get_level() != 0 as ::core::ffi::c_int {
         let key_string = key_string_format(key, true);
         log_debug(format_args!(
@@ -506,7 +507,7 @@ pub unsafe fn input_key_pane(
                     << 32 as ::core::ffi::c_int
     {
         if !m.is_null() && (*m).wp != -(1 as ::core::ffi::c_int) && (*m).wp as u_int == (*wp).id {
-            input_key_mouse(wp, m);
+            input_key_mouse(pane_owner, m);
         }
         return 0 as ::core::ffi::c_int;
     }
@@ -999,7 +1000,8 @@ pub unsafe fn input_key_get_mouse(
     }
     Some(len)
 }
-unsafe fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse_event) {
+unsafe fn input_key_mouse(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut m: *mut mouse_event) {
+    let wp = pane_owner.get();
     let mut s: *mut screen = (*wp).screen;
     let mut x: u_int = 0;
     let mut y: u_int = 0;

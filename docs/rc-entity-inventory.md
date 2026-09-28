@@ -1055,3 +1055,13 @@ was removed; mode callbacks receive the borrowed client directly.
 `cargo test --workspace` and `git diff --check` passed. All pane-key callers compile
 against the typed model arguments. Winlink/mouse views, caller pane lookup paths
 and local raw model projections remain pending.
+
+## Implemented retained panes through key encoding and synchronization
+
+`input_key_pane` and mouse encoding borrow retained pane owners from pane key
+dispatch. Synchronized key delivery borrows its source pane, retains the associated
+window and carries each destination owner through input processing and successor
+lookup instead of extracting pointers from temporary owners.
+
+`cargo test --workspace` and `git diff --check` passed. Pane/window association
+storage, paste delivery and local raw projections remain pending.
