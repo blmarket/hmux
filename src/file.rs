@@ -249,13 +249,13 @@ impl Drop for FileCompletion {
     }
 }
 
-pub unsafe fn file_fire_done(cf: *mut client_file) {
+pub unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = owner.get();
     if (*cf).terminal_scheduled {
         return;
     }
     (*cf).terminal_scheduled = true;
-    let owner = (*cf).observer.upgrade().expect("live Rc file");
-    let mut completion = Some(FileCompletion(owner));
+    let mut completion = Some(FileCompletion(owner.clone()));
     event_once(move |_, _| {
         let completion = completion.take().expect("one terminal dispatch");
         file_fire_done_cb(&completion.0);
@@ -325,7 +325,7 @@ pub unsafe fn file_print(
         );
     } else {
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
-        file_push(cf);
+        file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
 pub unsafe fn file_print_buffer(
@@ -364,7 +364,7 @@ pub unsafe fn file_print_buffer(
         );
     } else {
         evbuffer_add(&mut *(*cf).buffer, data, size);
-        file_push(cf);
+        file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
 pub unsafe fn file_error(
@@ -402,7 +402,7 @@ pub unsafe fn file_error(
         );
     } else {
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
-        file_push(cf);
+        file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
 
@@ -540,7 +540,7 @@ unsafe fn file_write_impl(
         }
         _ => {}
     }
-    file_fire_done(cf);
+    file_fire_done(&transfer_owner);
 }
 
 pub(crate) unsafe fn file_read_with_cmdq_wait(
@@ -686,7 +686,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
         _ => {}
     }
     drop(file_owner);
-    file_fire_done(cf);
+    file_fire_done(&transfer_owner);
     return ::core::ptr::null_mut::<client_file>();
 }
 pub unsafe fn file_cancel(mut cf: *mut client_file) {
@@ -710,10 +710,11 @@ unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
     if client_rc_ptr(&(*cf).c).is_null()
         || !(*client_rc_ptr(&(*cf).c)).flags & CLIENT_DEAD as uint64_t != 0
     {
-        file_push(cf);
+        file_push(owner);
     }
 }
-pub unsafe fn file_push(mut cf: *mut client_file) {
+pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = file_owner.get();
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_write_data>();
     let mut sent: size_t = 0;
@@ -768,7 +769,7 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
         ));
     }
     if left != 0 as size_t {
-        let owner = (*cf).observer.upgrade().expect("live Rc file");
+        let owner = file_owner.clone();
         event_once(move |_, _| unsafe { file_push_cb(&owner) });
     } else if (*cf).stream > 2 as ::core::ffi::c_int {
         close_0.stream = (*cf).stream;
@@ -782,7 +783,7 @@ pub unsafe fn file_push(mut cf: *mut client_file) {
         if client_rc_ptr(&(*cf).c).is_null()
             || !(*client_rc_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
         {
-            file_fire_done(cf);
+            file_fire_done(file_owner);
         }
     }
 }
@@ -1226,9 +1227,9 @@ pub unsafe fn file_write_ready(mut files: *mut client_files, imsg: &imsg) -> ::c
     }
     if msg.error != 0 as ::core::ffi::c_int {
         (*cf).error = msg.error;
-        file_fire_done(cf);
+        file_fire_done(file_owner.as_ref().expect("looked-up file"));
     } else {
-        file_push(cf);
+        file_push(file_owner.as_ref().expect("looked-up file"));
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -1253,7 +1254,7 @@ pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::co
     }
     log_debug(format_args!("file {} write done", ((*cf).stream) as i32));
     (*cf).error = msg.error;
-    file_fire_done(cf);
+    file_fire_done(file_owner.as_ref().expect("looked-up file"));
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
@@ -1282,7 +1283,7 @@ pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::cor
     if (*cf).error == 0 as ::core::ffi::c_int && (*cf).closed == 0 {
         if evbuffer_add(&mut *(*cf).buffer, bdata, bsize) != 0 as ::core::ffi::c_int {
             (*cf).error = ENOMEM;
-            file_fire_done(cf);
+            file_fire_done(file_owner.as_ref().expect("looked-up file"));
         } else {
             file_fire_read(cf);
         }
@@ -1305,7 +1306,7 @@ pub unsafe fn file_read_done(mut files: *mut client_files, imsg: &imsg) -> ::cor
     }
     log_debug(format_args!("file {} read done", ((*cf).stream) as i32));
     (*cf).error = msg.error;
-    file_fire_done(cf);
+    file_fire_done(file_owner.as_ref().expect("looked-up file"));
     return 0 as ::core::ffi::c_int;
 }
 
@@ -1404,7 +1405,7 @@ mod file_index_ownership_tests {
             let observed = Rc::downgrade(&file);
             assert_eq!(Rc::strong_count(&file), 2, "caller and index each own the file");
             let guard = client_files_minmax(&files).unwrap();
-            file_fire_done(rc::as_ptr(&file));
+            file_fire_done(&file);
             drop(file);
             event_loop();
 
@@ -1480,7 +1481,7 @@ mod completion_cancellation_tests {
             let client_observer = Rc::downgrade(&client);
             let file = file_create_with_client(rc::as_ptr(&client), 7, None);
             let file_observer = Rc::downgrade(&file);
-            file_fire_done(rc::as_ptr(&file));
+            file_fire_done(&file);
             drop(file);
             drop(client);
             assert!(file_observer.upgrade().is_some());

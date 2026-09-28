@@ -1514,7 +1514,7 @@ pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCel
         let cf = &mut *file.get();
         next_file = client_files_next(&*cf);
         (*cf).error = EINTR;
-        file_fire_done(cf);
+        file_fire_done(&file);
     }
     clients.remove(&(*c).observer);
     log_debug(format_args!(

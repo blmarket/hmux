@@ -1870,3 +1870,16 @@ successor before disconnecting the current client.
 
 `cargo test --workspace` and `git diff --check` passed. Client cleanup internals,
 file-completion scheduling and raw session relationships remain pending.
+
+## Implemented retained file completion and output scheduling
+
+File completion and output pushing require retained client_file handles. All
+callers forward creation, lookup or traversal owners. Terminal completion and
+output-retry closures clone those owners directly instead of upgrading observers
+from raw pointers. Completion's existing scheduled-once guard and FileCompletion
+cleanup policy are unchanged.
+
+`cargo test --workspace` and `git diff --check` passed, including existing duplicate
+completion, cancellation and owner-release coverage updated to the typed inputs.
+File read callbacks, index removal and other internal raw projections remain
+pending.

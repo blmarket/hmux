@@ -4616,8 +4616,8 @@ mod pane_input_owner_tests {
                 assert_ne!((*client.get()).flags & CLIENT_EXIT as u64, 0);
             }
 
-            file_fire_done(file);
-            file_fire_done(file);
+            file_fire_done(&owner);
+            file_fire_done(&owner);
             assert!((*file).cb.is_some());
             drop(owner);
             event_loop();
@@ -4684,8 +4684,8 @@ mod pane_input_owner_tests {
                 let file_observer = (*file).observer.clone();
                 (*file).error = libc::EBADF;
                     drop(client);
-                file_fire_done(file);
-                file_fire_done(file);
+                file_fire_done(&owner);
+                file_fire_done(&owner);
                 drop(owner);
                 event_loop();
                 assert_eq!(item.flags & CMDQ_WAITING != 0, dead);
