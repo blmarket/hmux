@@ -2650,3 +2650,11 @@ raw payload field remains for other modes, so the raw-field count is 35.
 Callbacks resolve its stable allocation through the typed owner, and cleanup
 drops it after cancelling the timer and freeing preview and display screens.
 Other modes still use the raw payload field; the raw-field count remains 35.
+
+## Buffer mode payload ownership
+
+`window_buffer_modedata` now lives in the mode entry's typed boxed slot.
+Mode callbacks resolve the stable allocation through that owner; the menu
+callback checks that its captured payload still belongs to the active mode.
+Cleanup releases the Box after cancelling the editor and freeing the mode tree.
+The raw-field count remains 35.
