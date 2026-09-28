@@ -6,8 +6,6 @@ use refbox::{Borrow, BorrowError, RefBox, Weak};
 /// An observer of a registry-owned buffer. Cloning never retains its contents.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PasteBufferRef(Weak<paste_buffer>);
-/// Editors and format contexts use the same nonowning identity as lookups.
-pub type PasteBufferWeak = PasteBufferRef;
 
 impl PasteBufferRef {
     pub fn observe(owner: &RefBox<paste_buffer>) -> Self {

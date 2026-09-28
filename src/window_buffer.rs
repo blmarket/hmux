@@ -40,7 +40,7 @@ use crate::src::shared::mode_tree::{
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
-use crate::src::shared::paste::PasteBufferWeak;
+use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -88,7 +88,7 @@ pub struct window_buffer_itemdata {
 pub struct window_buffer_editdata {
     pub wp_id: u_int,
     pub name: Option<::std::ffi::CString>,
-    pub pb: PasteBufferWeak,
+    pub pb: PasteBufferRef,
 }
 
 pub const WINDOW_BUFFER_DEFAULT_COMMAND: [::core::ffi::c_char; 24] = unsafe {
