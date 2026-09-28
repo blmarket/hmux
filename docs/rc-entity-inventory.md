@@ -2725,3 +2725,8 @@ Input and window mode names, hook names, terminal feature and capability names,
 terminal names, process names, and window names now pass typed `CStr` or
 `CString` bytes to the deferred formatter. These calls retain their owners
 through the synchronous log invocation. Other raw logger callers remain.
+
+Key binding command strings and formatted key names, parsed format styles, and
+temporary terminal color names now also borrow their `CString` bytes during
+logging. In particular, color names no longer give the deferred formatter an
+address extracted from a temporary owner.

@@ -1245,7 +1245,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_co
             "replacing key {}: 0x{:x} ({})",
             log_cstr((s) as *const _),
             (key) as u64,
-            log_cstr((key_string.as_ptr()) as *const _)
+            crate::src::log::log_bytes(key_string.as_bytes())
         ));
         tk.key = key;
     } else {
@@ -1253,7 +1253,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_co
             "new key {}: 0x{:x} ({})",
             log_cstr((s) as *const _),
             (key) as u64,
-            log_cstr((key_string.as_ptr()) as *const _)
+            crate::src::log::log_bytes(key_string.as_bytes())
         ));
         tty_keys_add1(&mut (*tty).key_tree, bytes, key);
     }
@@ -2384,7 +2384,7 @@ unsafe fn tty_keys_extended_key(
             ),
             log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int),
             (nkey) as u64,
-            log_cstr((key_string.as_ptr()) as *const _)
+            crate::src::log::log_bytes(key_string.as_bytes())
         ));
     }
     *key = nkey;
@@ -3325,12 +3325,12 @@ pub unsafe fn tty_keys_colours(
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                         as *const _
                 ),
-                log_cstr((colour_format(n).as_ptr()) as *const _)
+                crate::src::log::log_bytes(colour_format(n).as_bytes())
             ));
         } else {
             log_debug(format_args!(
                 "fg is {}",
-                log_cstr((colour_format(n).as_ptr()) as *const _)
+                crate::src::log::log_bytes(colour_format(n).as_bytes())
             ));
         }
         *fg = n;
@@ -3345,12 +3345,12 @@ pub unsafe fn tty_keys_colours(
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                         as *const _
                 ),
-                log_cstr((colour_format(n).as_ptr()) as *const _)
+                crate::src::log::log_bytes(colour_format(n).as_bytes())
             ));
         } else {
             log_debug(format_args!(
                 "bg is {}",
-                log_cstr((colour_format(n).as_ptr()) as *const _)
+                crate::src::log::log_bytes(colour_format(n).as_bytes())
             ));
         }
         *bg = n;

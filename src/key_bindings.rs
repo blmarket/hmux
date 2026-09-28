@@ -105,8 +105,8 @@ pub unsafe fn key_bindings_add(
     log_debug(format_args!(
         "key_bindings_add: {} {} = {}",
         log_hex(key),
-        log_cstr(key_string.as_ptr()),
-        log_cstr(s.as_ptr())
+        crate::src::log::log_bytes(key_string.as_bytes()),
+        crate::src::log::log_bytes(s.as_bytes())
     ));
 }
 
@@ -120,7 +120,7 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
     log_debug(format_args!(
         "key_bindings_remove: {} {}",
         log_hex(bd.key),
-        log_cstr(key_string.as_ptr())
+        crate::src::log::log_bytes(key_string.as_bytes())
     ));
     drop(bd);
     if table.key_bindings.storage.is_none() && table.default_key_bindings.storage.is_none() {

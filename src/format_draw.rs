@@ -1217,7 +1217,7 @@ pub unsafe fn format_draw(
                     log_debug(format_args!(
                         "{}: invalid style '{}'",
                         "format_draw",
-                        log_cstr((style_text.as_ptr()) as *const _)
+                        crate::src::log::log_bytes(style_text.as_bytes())
                     ));
                     drop(style_text);
                     cp = end.offset(1 as ::core::ffi::c_int as isize);
@@ -1225,7 +1225,7 @@ pub unsafe fn format_draw(
                     log_debug(format_args!(
                         "{}: style '{}' -> '{}'",
                         "format_draw",
-                        log_cstr((style_text.as_ptr()) as *const _),
+                        crate::src::log::log_bytes(style_text.as_bytes()),
                         log_cstr((style_tostring(&raw mut sy)) as *const _)
                     ));
                     drop(style_text);
