@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **75 raw fields in
+fields and their lifecycle decisions. The current scanner finds **74 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-161 explicitly record a migration and twelve record
-removal. The remaining 75 comprise 4 candidates, 23 needing an access or teardown
+162 explicitly record a migration and twelve record
+removal. The remaining 74 comprise 3 candidates, 23 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 75 fields have audit dispositions. Candidate and design entries
+The remaining 74 fields have audit dispositions. Candidate and design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -96,6 +96,7 @@ are now recorded individually in the TSV.
 | `WindowPaneModesStorage.entries` | The pane owns stable `RefBox<window_mode_entry>` entries. Insertion returns a weak handle; stack promotion transfers the sole owner, and removal detaches it before mode-specific free callbacks. A weak observer expires when that detached owner is dropped. Legacy callback views remain raw. |
 | `window_pane_modes.active` | Removed the stored raw alias. `active_ptr` projects the first owned entry for bounded legacy calls, so insertion, promotion and removal cannot leave a separate active field stale. |
 | `spawn_context.wl` | `refbox::Weak<winlink>` observes the session index owner for one spawn operation. Creation and caller setup clone the link's self observer; the compatibility projection checks liveness before use. Removal expires the field without extending winlink ownership. |
+| `format_tree.wl` | `refbox::Weak<winlink>` observes the session index owner. Format callbacks and nested trees project a pointer only for a live entry; the index callback returns no value after removal. Session activity and silence callbacks read the session link they selected. |
 | `window_copy_cmd_state.wme` | A weak mode-entry observer replaces the raw command-state field. Command dispatch finds the pane-owned RefBox, and callbacks check that it is live before projecting a legacy pointer. Dispatch also stops before using saved mode data if a callback removed the entry. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |

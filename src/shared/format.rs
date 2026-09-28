@@ -121,7 +121,7 @@ pub struct format_tree {
     pub type_0: format_type,
     pub c: std::rc::Weak<UnsafeCell<client>>,
     pub s: std::rc::Weak<UnsafeCell<session>>,
-    pub wl: *mut winlink,
+    pub wl: refbox::Weak<winlink>,
     pub w: std::rc::Weak<UnsafeCell<window>>,
     pub wp: std::rc::Weak<UnsafeCell<window_pane>>,
     pub pb: Option<PasteBufferRef>,
@@ -131,6 +131,17 @@ pub struct format_tree {
     pub tag: u_int,
     pub m: mouse_event,
     pub tree: format_entry_tree,
+}
+
+impl format_tree {
+    /// Borrow the current link only while its session index still owns it.
+    pub fn wl_ptr(&self) -> *mut winlink {
+        if self.wl.is_alive() {
+            self.wl.as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        }
+    }
 }
 
 /// Sole owner of a format tree. Cleanup can reenter the tree through legacy

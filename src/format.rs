@@ -487,7 +487,7 @@ unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: *mut winlink
     if (*ft).w.upgrade().is_none() {
         format_defaults_window(ft, (*wl).window_ptr());
     }
-    (*ft).wl = wl;
+    (*ft).wl = (*wl).observer.clone();
 }
 pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, mut wp: *mut window_pane) {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();

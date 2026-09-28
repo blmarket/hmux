@@ -1300,7 +1300,7 @@ pub(super) unsafe fn format_loop_panes(
                 )
             },
         );
-        format_defaults(nft, format_client, format_session, (*ft).wl, wp);
+        format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), wp);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1449,7 +1449,7 @@ pub(super) unsafe fn format_loop_add_option(
         b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (i) as u32),
     );
-    format_defaults(nft, format_client, format_session, (*ft).wl, format_pane);
+    format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), format_pane);
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -1609,7 +1609,7 @@ pub(super) unsafe fn format_loop_add_array_item(
         b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (i) as u32),
     );
-    format_defaults(nft, format_client, format_session, (*ft).wl, format_pane);
+    format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), format_pane);
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -1847,7 +1847,7 @@ pub(super) unsafe fn format_loop_environ(
             b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (i) as u32),
         );
-        format_defaults(nft, format_client, format_session, (*ft).wl, format_pane);
+        format_defaults(nft, format_client, format_session, (*ft).wl_ptr(), format_pane);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -1929,7 +1929,7 @@ pub(super) unsafe fn format_loop_clients(
                 )
             },
         );
-        format_defaults(nft, c, format_session, (*ft).wl, format_pane);
+        format_defaults(nft, c, format_session, (*ft).wl_ptr(), format_pane);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
