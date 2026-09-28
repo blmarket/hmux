@@ -983,12 +983,13 @@ unsafe fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> :
     (cmd.as_bytes() != default_cmd.as_bytes()) as ::core::ffi::c_int
 }
 unsafe fn window_customize_build_array(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     top: &ModeTreeItemRef,
     mut scope: window_customize_scope,
     mut o: *mut options_entry,
     mut ft: *mut format_tree,
 ) -> u_int {
+    let data = mode_owner.get();
     let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut oo: *mut options = options_owner(o);
     let mut ai: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
@@ -1056,7 +1057,7 @@ unsafe fn window_customize_build_array(
     return count;
 }
 unsafe fn window_customize_build_option(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     top: &ModeTreeItemRef,
     mut scope: window_customize_scope,
     mut o: *mut options_entry,
@@ -1065,6 +1066,7 @@ unsafe fn window_customize_build_option(
     mut fs: *mut cmd_find_state,
     mut type_0: window_customize_option_type,
 ) -> u_int {
+    let data = mode_owner.get();
     let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
     let mut oo: *mut options = options_owner(o);
     let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
@@ -1225,7 +1227,7 @@ unsafe fn window_customize_build_option(
     if array == 0 {
         return 1 as u_int;
     }
-    return (1 as u_int).wrapping_add(window_customize_build_array(data, &top, scope, o, ft));
+    return (1 as u_int).wrapping_add(window_customize_build_array(mode_owner, &top, scope, o, ft));
 }
 unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CString>) {
     let o_root = oo;
@@ -1241,7 +1243,7 @@ unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CS
     }
 }
 unsafe fn window_customize_build_options(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     mut title: *const ::core::ffi::c_char,
     group: u_int,
     mut scope0: window_customize_scope,
@@ -1255,6 +1257,7 @@ unsafe fn window_customize_build_options(
     mut fs: *mut cmd_find_state,
     mut type_0: window_customize_option_type,
 ) {
+    let data = mode_owner.get();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut loop_0: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut list = Vec::<CString>::new();
@@ -1297,7 +1300,7 @@ unsafe fn window_customize_build_options(
             scope = scope0;
         }
         count = count.wrapping_add(window_customize_build_option(
-            data, &top, scope, o, ft, filter, fs, type_0,
+            mode_owner, &top, scope, o, ft, filter, fs, type_0,
         ));
     }
     drop(list);
@@ -1324,7 +1327,7 @@ unsafe fn window_customize_build_options(
                 scope = scope0;
             }
             count = count.wrapping_add(window_customize_build_option(
-                data, &top, scope, o, ft, filter, fs, type_0,
+                mode_owner, &top, scope, o, ft, filter, fs, type_0,
             ));
             loop_0 = loop_0_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *loop_0_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         }
@@ -1340,12 +1343,13 @@ fn window_customize_key_detail(value: &[u8]) -> CString {
 }
 
 unsafe fn window_customize_build_keys(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     kt: &key_table,
     mut ft: *mut format_tree,
     mut filter: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
 ) {
+    let data = mode_owner.get();
     let mut count: u_int = 0 as u_int;
     let mut title_bytes = b"Key Table - ".to_vec();
     title_bytes.extend_from_slice(kt.name.as_bytes());
@@ -1497,7 +1501,7 @@ unsafe fn window_customize_build_keys(
     }
 }
 unsafe fn window_customize_build_environment(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     mut title: *const ::core::ffi::c_char,
     group: u_int,
     mut scope: window_customize_scope,
@@ -1506,6 +1510,7 @@ unsafe fn window_customize_build_environment(
     mut filter: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
 ) {
+    let data = mode_owner.get();
     let Some(environment) = target.resolve() else {
         return;
     };
@@ -1702,7 +1707,7 @@ unsafe fn window_customize_build(
         |out| out.write_all(b"0"),
     );
     window_customize_build_options(
-        data,
+        mode_owner,
         b"Server Options\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SERVER_OPTIONS,
         WINDOW_CUSTOMIZE_SERVER,
@@ -1717,7 +1722,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_OPTIONS,
     );
     window_customize_build_options(
-        data,
+        mode_owner,
         b"Session Options\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_OPTIONS,
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
@@ -1732,7 +1737,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_OPTIONS,
     );
     window_customize_build_options(
-        data,
+        mode_owner,
         b"Window & Pane Options\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_WINDOW_OPTIONS,
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
@@ -1747,7 +1752,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_OPTIONS,
     );
     window_customize_build_options(
-        data,
+        mode_owner,
         b"Session Hooks\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_HOOKS,
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
@@ -1762,7 +1767,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_HOOKS,
     );
     window_customize_build_options(
-        data,
+        mode_owner,
         b"Window & Pane Hooks\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_WINDOW_HOOKS,
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
@@ -1777,7 +1782,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_HOOKS,
     );
     window_customize_build_environment(
-        data,
+        mode_owner,
         b"Global Environment\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_GLOBAL_ENVIRONMENT,
         WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT,
@@ -1787,7 +1792,7 @@ unsafe fn window_customize_build(
         &raw mut fs,
     );
     window_customize_build_environment(
-        data,
+        mode_owner,
         b"Session Environment\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_ENVIRONMENT,
         WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
@@ -1810,7 +1815,7 @@ unsafe fn window_customize_build(
     for table_owner in key_bindings_tables() {
         let kt = table_owner.borrow();
         if kt.key_bindings.storage.is_some() {
-            window_customize_build_keys(data, &kt, ft, filter, &raw mut fs);
+            window_customize_build_keys(mode_owner, &kt, ft, filter, &raw mut fs);
         }
     }
     format_free(ft);
@@ -1944,12 +1949,13 @@ unsafe fn window_customize_draw_key(
     }
 }
 unsafe fn window_customize_draw_option(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let data = mode_owner.get();
     let mut current_block: u64;
     let mut s: *mut screen = (*ctx).s;
     let mut cx: u_int = (*s).cx;
@@ -2694,12 +2700,13 @@ write_cstr(out, unit)
     format_free(ft);
 }
 unsafe fn window_customize_draw_environment(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
+    let data = mode_owner.get();
     let Some(mut environment) = item
         .environ
         .as_ref()
@@ -2870,7 +2877,6 @@ unsafe fn window_customize_draw(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let data = mode_owner.get();
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -2878,9 +2884,9 @@ unsafe fn window_customize_draw(
     } else if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        window_customize_draw_environment(data, item, ctx, sx, sy);
+        window_customize_draw_environment(mode_owner, item, ctx, sx, sy);
     } else {
-        window_customize_draw_option(data, item, ctx, sx, sy);
+        window_customize_draw_option(mode_owner, item, ctx, sx, sy);
     };
 }
 unsafe fn window_customize_menu(

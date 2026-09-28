@@ -1408,3 +1408,15 @@ when mouse expansion closes the mode.
 
 `cargo test --workspace` and `git diff --check` passed. Internal UnsafeCell
 projections, session winlink traversal, and pointer-valued row tags remain pending.
+
+## Implemented retained customization builders and previews
+
+The option-array, option, option-group, key-table, and environment builders now
+borrow the retained customization-mode Rc from their parent builder. Option and
+environment preview helpers likewise borrow the draw callback's retained owner.
+These seven helper arguments replace raw mode pointers without adding persistent
+strong references or changing row ownership.
+
+`cargo test --workspace` and `git diff --check` passed. Internal UnsafeCell
+projections, customization action helpers, and raw model access through find-state
+compatibility methods remain pending.
