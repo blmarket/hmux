@@ -30,7 +30,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::time::{timespec, tm, CLOCK_REALTIME};
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply;
-use crate::src::window::window_pane_reset_mode;
+use crate::src::window::{window_pane_mode_weak, window_pane_reset_mode};
 
 #[repr(C)]
 pub struct window_clock_mode_data {
@@ -683,11 +683,18 @@ unsafe fn window_clock_init(
     data = owner.get();
     (*wme).boxed_data = Some(owner);
     (*data).tim = time(::core::ptr::null_mut::<time_t>());
+    let mode_observer = window_pane_mode_weak(wme);
     event_set(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_clock_timer_callback(wme) },
+        move |_, _| unsafe {
+            match mode_observer.try_borrow_mut() {
+                Ok(mut mode) => window_clock_timer_callback(&mut *mode),
+                Err(refbox::BorrowError::Dropped) => {}
+                Err(refbox::BorrowError::Borrowed) => panic!("clock mode already borrowed"),
+            }
+        },
     );
     window_clock_start_timer(wme);
     s = &raw mut (*data).screen;
