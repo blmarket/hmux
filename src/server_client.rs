@@ -888,7 +888,7 @@ pub unsafe fn server_client_set_overlay(
         (*c).tty.flags |= TTY_NOCURSOR;
     }
     window_update_focus((*(*(*c).session).curw).window_ptr());
-    server_redraw_client(c);
+    server_redraw_client(&mut *(c));
 }
 pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
     if (*c).overlay_data.is_none() {
@@ -923,7 +923,7 @@ pub unsafe fn server_client_clear_overlay(mut c: *mut client) {
     if !(*c).session.is_null() {
         window_update_focus((*(*(*c).session).curw).window_ptr());
     }
-    server_redraw_client(c);
+    server_redraw_client(&mut *(c));
 }
 // A callback may clear or replace its overlay. Restore only the generation
 // that was borrowed, and discard results pointing into a retired owner.
@@ -1494,7 +1494,7 @@ pub unsafe fn server_client_set_session(mut c: *mut client, mut s: *mut session)
         tty_update_client_offset(c);
         status_timer_start(c);
         server_client_fire_session_changed(c, old);
-        server_redraw_client(c);
+        server_redraw_client(&mut *(c));
     }
     server_check_unattached();
     server_update_socket();
@@ -2939,7 +2939,7 @@ unsafe fn server_client_key_callback(
                                     c,
                                     b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
                                 );
-                                server_status_client(c);
+                                server_status_client(&mut *(c));
                                 current_block = 1578459965781631232;
                                 break;
                             } else {
@@ -2994,7 +2994,7 @@ unsafe fn server_client_key_callback(
                                             table_owner = (*c).keytable.clone();
                                         table = table_owner.as_ref().expect("key table").clone();
                                             first = table.clone();
-                                            server_status_client(c);
+                                            server_status_client(&mut *(c));
                                             continue '_table_changed;
                                         }
                                     }
@@ -3091,7 +3091,7 @@ unsafe fn server_client_key_callback(
                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                             );
                                         }
-                                        server_status_client(c);
+                                        server_status_client(&mut *(c));
                                         key_bindings_dispatch(bd, item, c, event, &raw mut fs);
                                         current_block = 1578459965781631232;
                                         break;
@@ -3108,7 +3108,7 @@ unsafe fn server_client_key_callback(
                                             first = table.clone();
                                         }
                                         (*c).flags &= !CLIENT_REPEAT as uint64_t;
-                                        server_status_client(c);
+                                        server_status_client(&mut *(c));
                                     }
                                     _ => {
                                         log_debug(format_args!(
@@ -3125,7 +3125,7 @@ unsafe fn server_client_key_callback(
                                         table = table_owner.as_ref().expect("key table").clone();
                                         first = table.clone();
                                         (*c).flags &= !CLIENT_REPEAT as uint64_t;
-                                        server_status_client(c);
+                                        server_status_client(&mut *(c));
                                     }
                                 }
                             }
@@ -3138,7 +3138,7 @@ unsafe fn server_client_key_callback(
                                     c,
                                     ::core::ptr::null::<::core::ffi::c_char>(),
                                 );
-                                server_status_client(c);
+                                server_status_client(&mut *(c));
                                 current_block = 1578459965781631232;
                             }
                         }
@@ -4038,7 +4038,7 @@ unsafe fn server_client_repeat_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<c
     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
         server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
         (*c).flags &= !CLIENT_REPEAT as uint64_t;
-        server_status_client(c);
+        server_status_client(&mut *(c));
     }
 }
 unsafe fn server_client_click_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -4548,7 +4548,7 @@ unsafe fn server_client_dispatch(
                 } else {
                     server_client_overlay_resize(c);
                 }
-                server_redraw_client(c);
+                server_redraw_client(&mut *(c));
                 if !(*c).session.is_null() {
                     server_client_fire_resized(c, old_sx, old_sy);
                 }
@@ -4587,7 +4587,7 @@ unsafe fn server_client_dispatch(
                         fatal(|out| out.write_all(b"gettimeofday failed"));
                     }
                     tty_start_tty(&raw mut (*c).tty);
-                    server_redraw_client(c);
+                    server_redraw_client(&mut *(c));
                     recalculate_sizes();
                     if !s.is_null() {
                         session_update_activity(s, &raw mut (*c).activity_time);
@@ -5453,7 +5453,7 @@ unsafe fn server_client_report_theme(mut c: *mut client, mut theme: client_theme
         if (*c).tty.flags & TTY_OPENED != 0 {
             tty_invalidate(&raw mut (*c).tty);
         }
-        server_redraw_client(c);
+        server_redraw_client(&mut *(c));
     }
     tty_repeat_requests(&raw mut (*c).tty, 1 as ::core::ffi::c_int);
 }

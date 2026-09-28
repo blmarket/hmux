@@ -849,7 +849,7 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
         tty_puts(tty, c"\x1B[?7727h");
     }
-    server_redraw_client(c);
+    server_redraw_client(&mut *(c));
     tty_invalidate(tty);
 }
 pub unsafe fn tty_raw(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {

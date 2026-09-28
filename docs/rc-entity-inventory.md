@@ -2230,3 +2230,14 @@ owner is introduced.
 
 `cargo test --workspace` and `git diff --check` passed. Raw window relationships at
 callers and remaining redraw/group traversal APIs are still pending.
+
+## Implemented safe borrowed client redraw flag setters
+
+Client full-redraw and status-redraw setters are safe functions taking mutable
+client borrows. All callers now pass short borrows, including format-job paths
+with existing retained client handles. The setters only update flags and require
+no ownership changes. No new Rc-managed type or persistent owner is introduced.
+
+`cargo test --workspace` and `git diff --check` passed. Raw client acquisition at
+legacy callers, session/window redraw traversal and other model relationships
+remain pending.

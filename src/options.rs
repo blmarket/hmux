@@ -1630,7 +1630,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             if (*loop_0).tty.flags & TTY_OPENED != 0 {
                 tty_invalidate(&raw mut (*loop_0).tty);
             }
-            server_redraw_client(loop_0);
+            server_redraw_client(&mut *(loop_0));
             registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
             loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
@@ -1908,7 +1908,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !(*loop_0).session.is_null() {
-            server_redraw_client(loop_0);
+            server_redraw_client(&mut *(loop_0));
         }
         registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

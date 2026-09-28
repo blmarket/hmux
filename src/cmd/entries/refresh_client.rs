@@ -300,7 +300,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
             }
         }
         tty_update_client_offset(tc);
-        server_redraw_client(tc);
+        server_redraw_client(&mut *(tc));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'l' as i32 as u_char) != 0 {
@@ -337,10 +337,10 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     } else {
         if args_has(args, 'S' as i32 as u_char) != 0 {
             (*tc).flags |= CLIENT_STATUSFORCE as uint64_t;
-            server_status_client(tc);
+            server_status_client(&mut *(tc));
         } else {
             (*tc).flags |= CLIENT_STATUSFORCE as uint64_t;
-            server_redraw_client(tc);
+            server_redraw_client(&mut *(tc));
         }
         return CMD_RETURN_NORMAL;
     }

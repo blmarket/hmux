@@ -673,7 +673,7 @@ unsafe fn popup_handle_drag(mut c: *mut client, popup: &PopupGuard, mut m: *mut 
         (*pd).dy = (*m).y.wrapping_sub((*pd).py);
         (*pd).ppx = px;
         (*pd).ppy = py;
-        server_redraw_client(c);
+        server_redraw_client(&mut *(c));
     } else if (*pd).dragging as ::core::ffi::c_uint
         == SIZE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -716,7 +716,7 @@ unsafe fn popup_handle_drag(mut c: *mut client, popup: &PopupGuard, mut m: *mut 
                 );
             }
         }
-        server_redraw_client(c);
+        server_redraw_client(&mut *(c));
     }
 }
 unsafe fn popup_key(c: *mut client, popup: &PopupGuard, event: *mut key_event) -> i32 {
@@ -1012,7 +1012,7 @@ pub unsafe fn popup_modify(
     if flags != -(1 as ::core::ffi::c_int) {
         (*pd).flags = flags;
     }
-    server_redraw_client(c);
+    server_redraw_client(&mut *(c));
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn popup_display(

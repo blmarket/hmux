@@ -125,11 +125,11 @@ unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *m
     );
     events_fire(name, ep);
 }
-pub unsafe fn server_redraw_client(mut c: *mut client) {
-    (*c).flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
+pub fn server_redraw_client(c: &mut client) {
+    c.flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
 }
-pub unsafe fn server_status_client(mut c: *mut client) {
-    (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
+pub fn server_status_client(c: &mut client) {
+    c.flags |= CLIENT_REDRAWSTATUS as uint64_t;
 }
 pub unsafe fn server_redraw_session(mut s: *mut session) {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -137,7 +137,7 @@ pub unsafe fn server_redraw_session(mut s: *mut session) {
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if (*c).session == s {
-            server_redraw_client(c);
+            server_redraw_client(&mut *(c));
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -188,7 +188,7 @@ pub unsafe fn server_redraw_window(mut w: *mut window) {
             && !(*(*c).session).curw.is_null()
             && (*(*(*c).session).curw).window_ptr() == w
         {
-            server_redraw_client(c);
+            server_redraw_client(&mut *(c));
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

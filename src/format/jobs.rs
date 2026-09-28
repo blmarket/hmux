@@ -69,7 +69,7 @@ pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
     t = time(::core::ptr::null_mut::<time_t>());
     if (*fj).status != 0 && (*fj).last != t {
         if let Some(client) = (*fj).client.upgrade() {
-            server_status_client(client.get());
+            server_status_client(&mut *(client.get()));
         }
         (*fj).last = t;
     }
@@ -111,7 +111,7 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
     }
     if (*fj).status != 0 {
         if let Some(client) = (*fj).client.upgrade() {
-            server_status_client(client.get());
+            server_status_client(&mut *(client.get()));
         }
         (*fj).status = 0 as ::core::ffi::c_int;
     }
