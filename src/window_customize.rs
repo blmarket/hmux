@@ -2886,7 +2886,7 @@ unsafe fn window_customize_menu(
     let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active_ptr();
-    if wme.is_null() || (*wme).data != data.cast() {
+    if wme.is_null() || (*wme).shared_data_ptr::<window_customize_modedata>() != Some(data) {
         return;
     }
     window_customize_key(
@@ -2954,7 +2954,6 @@ unsafe fn window_customize_init(
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
     (*wme).data_owner = Some(owner);
-    (*wme).data = data as *mut ::core::ffi::c_void;
     let build_mode = (*data).observer.clone();
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
@@ -2999,10 +2998,9 @@ unsafe fn window_customize_init(
     return s;
 }
 unsafe fn window_customize_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let data = (*wme).data.cast::<window_customize_modedata>();
-    if data.is_null() {
+    let Some(data) = (*wme).shared_data_ptr::<window_customize_modedata>() else {
         return std::ptr::null_mut();
-    }
+    };
     (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
         &raw mut (*tree.get()).screen
     })
@@ -3019,7 +3017,6 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
     drop((*wme).data_owner.take());
-    (*wme).data = std::ptr::null_mut();
 }
 unsafe fn window_customize_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {

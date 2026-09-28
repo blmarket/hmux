@@ -2672,3 +2672,10 @@ Tree mode now resolves its Rc-owned payload directly through the entry's
 typed owner. Its menu callback compares the resolved allocation with the
 active mode, and cleanup no longer clears a mirrored raw address. Other modes
 still use `window_mode_entry.data`, so the raw-field count remains 35.
+
+## Customize mode payload access
+
+Customize mode now resolves its Rc-owned payload directly through the entry's
+typed owner. Its menu callback compares the resolved allocation with the
+active mode, and cleanup no longer clears a mirrored raw address. Other modes
+still use `window_mode_entry.data`; the raw-field count remains 35.
