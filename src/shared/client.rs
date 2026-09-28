@@ -363,7 +363,7 @@ impl client_file {
             error: Default::default(),
             closed: Default::default(),
             cb: Default::default(),
-            entry: client_file_entry { owner: None },
+            entry: client_file_entry { owner: refbox::Weak::new() },
             wait_item: Default::default(),
             wait_active: false,
             wait_client: Default::default(),
@@ -376,7 +376,7 @@ impl client_file {
 #[repr(C)]
 pub struct client_file_entry {
     /// Weak traversal handle into the client file index.
-    pub owner: Option<refbox::Weak<ClientFileIndex>>,
+    pub owner: refbox::Weak<ClientFileIndex>,
 }
 
 pub type client_file_cb = Option<Box<dyn for<'a> FnMut(client_file_event<'a>)>>;

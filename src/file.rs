@@ -1328,7 +1328,7 @@ pub unsafe fn client_files_insert(
     if let Some(existing) = map.get(&key).cloned() {
         return Some(existing);
     }
-    (&mut *file.get()).entry.owner = Some(observer);
+    (&mut *file.get()).entry.owner = observer;
     map.insert(key, file);
     None
 }
@@ -1336,9 +1336,10 @@ pub unsafe fn client_files_insert(
 /// Unlink by identity, including during final Rc Drop when upgrade cannot work.
 /// The head retains its empty index until it is dropped or replaced.
 pub fn client_files_remove(elm: &mut client_file) {
-    let Some(owner) = elm.entry.owner.take() else {
+    let owner = std::mem::take(&mut elm.entry.owner);
+    if owner.is_empty() {
         return;
-    };
+    }
     let mut map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return,
@@ -1364,7 +1365,7 @@ pub fn client_files_minmax(head: &client_files) -> Option<Rc<UnsafeCell<client_f
 }
 
 pub fn client_files_next(elm: &client_file) -> Option<Rc<UnsafeCell<client_file>>> {
-    let owner = elm.entry.owner.as_ref()?;
+    let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return None,
@@ -1419,7 +1420,7 @@ mod file_index_ownership_tests {
 
             assert!(observed.upgrade().is_some());
             assert!(client_files_minmax(&files).is_none());
-            assert!((&*guard.get()).entry.owner.is_none());
+            assert!((&*guard.get()).entry.owner.is_empty());
             drop(guard);
             assert!(observed.upgrade().is_none());
             shutdown_runtime();
