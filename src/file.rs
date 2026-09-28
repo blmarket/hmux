@@ -789,13 +789,12 @@ pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         }
     }
 }
-pub unsafe fn file_write_left(mut files: *mut client_files) -> ::core::ffi::c_int {
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
+pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut next = client_files_minmax(&*files);
+    let mut next = client_files_minmax(files);
     while let Some(file) = next {
-        cf = rc::as_ptr(&file);
+        let cf = &*file.get();
         if !(*cf).event.is_null() {
             left = evbuffer_get_length(&*((*(*cf).event).output));
             if left != 0 as size_t {
@@ -811,7 +810,8 @@ pub unsafe fn file_write_left(mut files: *mut client_files) -> ::core::ffi::c_in
     }
     return (waiting != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
-unsafe fn file_write_finished(mut cf: *mut client_file) {
+unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = owner.get();
     let mut msg: msg_write_done = msg_write_done {
         stream: 0,
         error: 0,
@@ -867,7 +867,7 @@ unsafe fn file_write_error_callback(
     close((*cf).fd);
     (*cf).fd = -(1 as ::core::ffi::c_int);
     if (*cf).closed != 0 {
-        file_write_finished(cf);
+        file_write_finished(owner);
     } else if let Some(callback) = (*cf).cb.as_mut() {
         callback(client_file_event {
             client: None,
@@ -882,7 +882,7 @@ unsafe fn file_write_callback(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = owner.get();
     log_debug(format_args!("write check file {}", ((*cf).stream) as i32));
     if (*cf).closed != 0 && evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
-        file_write_finished(cf);
+        file_write_finished(owner);
     } else if let Some(callback) = (*cf).cb.as_mut() {
         callback(client_file_event {
             client: None,
@@ -981,21 +981,19 @@ pub unsafe fn file_write_open(
         ::core::mem::size_of::<msg_write_ready>() as size_t,
     );
 }
-pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
+pub unsafe fn file_write_data(files: &client_files, imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_write_data>() {
         fatalx(|out| out.write_all(b"bad MSG_WRITE size"));
     }
     let msg = read_imsg_payload::<msg_write_data>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let size = msglen - ::core::mem::size_of::<msg_write_data>();
     find.stream = msg.stream;
-    let file_owner = client_files_find(&*files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
+    let Some(file_owner) = client_files_find(files, &find) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
-    }
+    };
+    let cf = file_owner.get();
     log_debug(format_args!(
         "write {} to file {}",
         (size) as usize,
@@ -1011,24 +1009,22 @@ pub unsafe fn file_write_data(mut files: *mut client_files, imsg: &imsg) {
         );
     }
 }
-pub unsafe fn file_write_close(mut files: *mut client_files, imsg: &imsg) {
+pub unsafe fn file_write_close(files: &client_files, imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_close>() {
         fatalx(|out| out.write_all(b"bad MSG_WRITE_CLOSE size"));
     }
     let msg = read_imsg_payload::<msg_write_close>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
-    let file_owner = client_files_find(&*files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
+    let Some(file_owner) = client_files_find(files, &find) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
-    }
+    };
+    let cf = file_owner.get();
     log_debug(format_args!("close file {}", ((*cf).stream) as i32));
     (*cf).closed = 1 as ::core::ffi::c_int;
     if (*cf).event.is_null() || evbuffer_get_length(&*((*(*cf).event).output)) == 0 as size_t {
-        file_write_finished(cf);
+        file_write_finished(&file_owner);
     }
 }
 unsafe fn file_read_error_callback(
@@ -1196,59 +1192,53 @@ pub unsafe fn file_read_open(
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
 }
-pub unsafe fn file_read_cancel(mut files: *mut client_files, imsg: &imsg) {
+pub unsafe fn file_read_cancel(files: &client_files, imsg: &imsg) {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_read_cancel>() {
         fatalx(|out| out.write_all(b"bad MSG_READ_CANCEL size"));
     }
     let msg = read_imsg_payload::<msg_read_cancel>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
-    let file_owner = client_files_find(&*files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
+    let Some(file_owner) = client_files_find(files, &find) else {
         fatalx(|out| out.write_all(b"unknown stream number"));
-    }
+    };
+    let cf = file_owner.get();
     log_debug(format_args!("cancel file {}", ((*cf).stream) as i32));
-    file_read_error_callback(0, &(*cf).observer.upgrade().expect("live file"));
+    file_read_error_callback(0, &file_owner);
 }
-pub unsafe fn file_write_ready(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_write_ready(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_ready>() {
         return -1;
     }
     let msg = read_imsg_payload::<msg_write_ready>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
-    let file_owner = client_files_find(&*files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
+    let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
-    }
+    };
+    let cf = file_owner.get();
     if msg.error != 0 as ::core::ffi::c_int {
         (*cf).error = msg.error;
-        file_fire_done(file_owner.as_ref().expect("looked-up file"));
+        file_fire_done(&file_owner);
     } else {
-        file_push(file_owner.as_ref().expect("looked-up file"));
+        file_push(&file_owner);
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_write_done(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_done>() {
         return -1;
     }
     let msg = read_imsg_payload::<msg_write_done>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
-    let file_owner = client_files_find(&*files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
+    let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
-    }
+    };
+    let cf = file_owner.get();
     if client_rc_ptr(&(*cf).c).is_null()
         || !(*client_rc_ptr(&(*cf).c)).flags as ::core::ffi::c_ulonglong & CLIENT_WRITE_ACK != 0
     {
@@ -1256,27 +1246,25 @@ pub unsafe fn file_write_done(mut files: *mut client_files, imsg: &imsg) -> ::co
     }
     log_debug(format_args!("file {} write done", ((*cf).stream) as i32));
     (*cf).error = msg.error;
-    file_fire_done(file_owner.as_ref().expect("looked-up file"));
+    file_fire_done(&file_owner);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_read_data(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_read_data>() {
         return -1;
     }
     let msg = read_imsg_payload::<msg_read_data>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let bdata = imsg.data[::core::mem::size_of::<msg_read_data>()..]
         .as_ptr()
         .cast::<::core::ffi::c_void>();
     let bsize = msglen - ::core::mem::size_of::<msg_read_data>();
     find.stream = msg.stream;
-    let file_owner = client_files_find(&*files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
+    let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
-    }
+    };
+    let cf = file_owner.get();
     log_debug(format_args!(
         "file {} read {} bytes",
         ((*cf).stream) as i32,
@@ -1285,30 +1273,28 @@ pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::cor
     if (*cf).error == 0 as ::core::ffi::c_int && (*cf).closed == 0 {
         if evbuffer_add(&mut *(*cf).buffer, bdata, bsize) != 0 as ::core::ffi::c_int {
             (*cf).error = ENOMEM;
-            file_fire_done(file_owner.as_ref().expect("looked-up file"));
+            file_fire_done(&file_owner);
         } else {
-            file_fire_read(file_owner.as_ref().expect("looked-up file"));
+            file_fire_read(&file_owner);
         }
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_read_done(mut files: *mut client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_read_done(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_read_done>() {
         return -1;
     }
     let msg = read_imsg_payload::<msg_read_done>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     find.stream = msg.stream;
-    let file_owner = client_files_find(&*files, &find);
-    cf = file_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    if cf.is_null() {
+    let Some(file_owner) = client_files_find(files, &find) else {
         return 0 as ::core::ffi::c_int;
-    }
+    };
+    let cf = file_owner.get();
     log_debug(format_args!("file {} read done", ((*cf).stream) as i32));
     (*cf).error = msg.error;
-    file_fire_done(file_owner.as_ref().expect("looked-up file"));
+    file_fire_done(&file_owner);
     return 0 as ::core::ffi::c_int;
 }
 

@@ -1919,3 +1919,15 @@ Callers in completion, cancellation, I/O cleanup and tests use the borrowed API.
 `cargo test --workspace` and `git diff --check` passed, including index replacement,
 retained lookup guards and completion cancellation coverage. Internal file/peer
 projections and legacy file-transfer entry points remain pending.
+
+## Implemented retained file message dispatch
+
+Write completion accepts a retained file handle through cleanup, callback dispatch
+and index removal. Write-data/close/ready/done and read-cancel/data/done handlers
+borrow their file index and resolve an owning file handle directly, preserving
+their existing missing-stream behavior. Read cancellation forwards that owner to
+the error callback rather than recovering it from a raw file. Pending-write checks
+also borrow the index and inspect files through scoped borrows from owning cursors.
+
+`cargo test --workspace` and `git diff --check` passed. File-open/read-transfer
+entry points and remaining model/transport projections remain pending.

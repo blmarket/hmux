@@ -4606,28 +4606,28 @@ unsafe fn server_client_dispatch(
             }
         }
         MSG_WRITE_READY => {
-            if file_write_ready(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
+            if file_write_ready(&(*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
         MSG_WRITE_DONE => {
-            if file_write_done(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
+            if file_write_done(&(*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
         MSG_READ => {
-            if file_read_data(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
+            if file_read_data(&(*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;
             }
         }
         MSG_READ_DONE => {
-            if file_read_done(&raw mut (*c).files, imsg) != 0 as ::core::ffi::c_int {
+            if file_read_done(&(*c).files, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
                 current_block = 14945149239039849694;

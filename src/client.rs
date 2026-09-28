@@ -272,7 +272,7 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
     return b"unknown reason\0" as *const u8 as *const ::core::ffi::c_char;
 }
 unsafe fn client_exit() {
-    if file_write_left(&raw mut client_files) == 0 {
+    if file_write_left(&*std::ptr::addr_of!(client_files)) == 0 {
         proc_exit(client_proc);
     }
 }
@@ -941,7 +941,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             );
         }
         MSG_READ_CANCEL => {
-            file_read_cancel(&raw mut client_files, imsg);
+            file_read_cancel(&*std::ptr::addr_of!(client_files), imsg);
         }
         MSG_WRITE_OPEN => {
             file_write_open(
@@ -953,10 +953,10 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             );
         }
         MSG_WRITE => {
-            file_write_data(&raw mut client_files, imsg);
+            file_write_data(&*std::ptr::addr_of!(client_files), imsg);
         }
         MSG_WRITE_CLOSE => {
-            file_write_close(&raw mut client_files, imsg);
+            file_write_close(&*std::ptr::addr_of!(client_files), imsg);
         }
         MSG_STDERR | MSG_STDIN | MSG_STDOUT => {
             fprintf(
