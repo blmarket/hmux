@@ -2467,3 +2467,14 @@ Pane palettes are embedded in Rc panes; popup palettes have a separate
 before a reply, request callback or redraw. A regression checks both sources
 and expiration after each owner is dropped. The inventory now counts 56
 remaining in-scope raw fields.
+
+## Established queue item weak identity
+
+Detached and queued `cmdq_item` allocations now have one
+`Rc<UnsafeCell<cmdq_item>>` owner, transferred through the existing raw
+constructor API without cloning. Each item stores a weak self-observer.
+Queue insertion and removal preserve stable addresses and release the owner
+at the original boundary. A regression verifies that the strong count stays
+one across transfer and weak identities expire after queued or detached free.
+Seventeen raw queue-item observers in the audit are now migration candidates;
+the current raw-field count remains 56.

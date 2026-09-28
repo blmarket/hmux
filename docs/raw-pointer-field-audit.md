@@ -13,10 +13,10 @@ The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** origi
 fields and their lifecycle decisions. The current scanner finds **56 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
 178 explicitly record a migration and fourteen record
-removal. The remaining 56 comprise 8 needing an access or teardown
-design, and 48 retained raw under current ownership.
+removal. The remaining 56 comprise 17 weak queue-item candidates, 8 needing
+an access or teardown design, and 31 retained raw under current ownership.
 
-The remaining 56 fields have audit dispositions. Design entries
+The remaining 56 fields have audit dispositions. Candidate and design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -117,11 +117,10 @@ Prompt option setup now takes a mutable session borrow because style application
 updates the option cache. It previously hid that mutation behind a shared session
 reference and raw option pointer.
 
-## Re-review of the remaining fields
+## Earlier re-review baseline (2026-09-27)
 
-The TSV now distinguishes four pending dispositions, all of which still identify
-raw fields in the source. The external report lists every field under its current
-review category, with a proposed representation, constraints and source evidence.
+The TSV distinguished four pending dispositions at this point. Later migrations
+and the current counts are recorded above and in the field inventory.
 
 - **Candidate (50):** existing Rc or RefBox ownership supports weak observers or
   weak index values. This includes mode-entry pane back-pointers and cached redraw
@@ -132,8 +131,8 @@ review category, with a proposed representation, constraints and source evidence
   snapshots and stable IDs.
 - **Remove (0):** the unused bufferevent slots and reserved pane/winlink slots
   have now been deleted. They had no pointee lifecycle or external ABI users.
-- **Skip (48):** there is no justified direct replacement under current ownership.
-  Most targets are Box-owned queue items, options, layout cells, peers, jobs or
+- **Skip (48):** there was no justified direct replacement under that ownership.
+  Most targets were Box-owned queue items, options, layout cells, peers, jobs or
   intrusive links. Obtaining Weak would require changing that ownership; stable
   IDs need a separate registry design. Inline test fields are called out separately.
 

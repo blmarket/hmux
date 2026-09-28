@@ -136,6 +136,8 @@ mod tests {
 }
 
 pub struct cmdq_item {
+    /// Observe this allocation across detached and queued ownership transfer.
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub name: Option<std::ffi::CString>,
     pub queue: *mut cmdq_list,
     pub next: *mut cmdq_item,
@@ -171,6 +173,7 @@ impl cmdq_item {
 
     pub fn empty() -> Self {
         Self {
+            observer: Default::default(),
             name: Default::default(),
             queue: Default::default(),
             next: Default::default(),
@@ -199,20 +202,18 @@ impl cmdq_item {
 /// the process. The deque owns stable command item allocations.
 pub struct cmdq_list {
     pub item: *mut cmdq_item,
-    pub list: std::collections::VecDeque<Box<cmdq_item>>,
+    pub list: std::collections::VecDeque<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
 }
 
 impl cmdq_list {
     pub fn first_ptr(&self) -> *mut cmdq_item {
-        self.list.front().map_or(std::ptr::null_mut(), |item| {
-            std::ptr::from_ref(&**item).cast_mut()
-        })
+        self.list.front().map_or(std::ptr::null_mut(), |item| item.get())
     }
 
     pub fn position(&self, item: *mut cmdq_item) -> usize {
         self.list
             .iter()
-            .position(|owner| std::ptr::eq(&**owner, item))
+            .position(|owner| std::ptr::eq(owner.get(), item))
             .expect("command item belongs to queue")
     }
 }

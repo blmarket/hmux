@@ -59,13 +59,14 @@ pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
 
 unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
-    let mut owner = Box::new(cmdq_item {
+    let owner = std::rc::Rc::new(std::cell::UnsafeCell::new(cmdq_item {
         name: None,
         cancel_data: None,
         wait_file: None,
         ..cmdq_item::empty()
-    });
-    let item = &raw mut *owner;
+    }));
+    let item = owner.get();
+    (*item).observer = std::rc::Rc::downgrade(&owner);
     let label = label.map_or(b"(null)".as_slice(), CStr::to_bytes);
     let address = format!("{item:p}");
     let mut bytes = Vec::with_capacity(label.len() + address.len() + 3);
@@ -76,8 +77,13 @@ unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     bytes.push(b']');
     (*item).name = Some(CString::new(bytes).expect("queue item label has no NUL"));
 
-    // The caller owns this detached allocation until enqueue or explicit free.
-    Box::into_raw(owner)
+    // Transfer the one owner to the detached caller until enqueue or free.
+    std::rc::Rc::into_raw(owner).cast_mut().cast()
+}
+
+/// Reclaim the sole owner previously transferred through a detached item pointer.
+unsafe fn cmdq_take_detached(item: *mut cmdq_item) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
+    std::rc::Rc::from_raw(item.cast())
 }
 
 /// Register cleanup to run when an unfired callback item is removed.
@@ -140,8 +146,8 @@ pub(crate) unsafe fn cmdq_abort_file_wait(owner: &std::rc::Rc<std::cell::UnsafeC
 
 /// Release an item that has not been linked into a command queue.
 pub unsafe fn cmdq_free_detached(item: *mut cmdq_item) {
-    let mut owner = Box::from_raw(item);
-    cmdq_cancel_unfired_data(&mut *owner);
+    let owner = cmdq_take_detached(item);
+    cmdq_cancel_unfired_data(&mut *item);
     if let Some(client) = (*item).client_owner.take() {
         server_client_unref_owned(client);
     }
@@ -314,7 +320,7 @@ pub unsafe fn cmdq_append(
         (*item).client = owner.map(std::rc::Rc::downgrade).unwrap_or_default();
         (*item).queue = queue;
         // Enqueue consumes the detached allocation without moving the item.
-        (*queue).list.push_back(Box::from_raw(item));
+        (*queue).list.push_back(cmdq_take_detached(item));
         log_debug(format_args!(
             "{} {}: {}",
             "cmdq_append",
@@ -331,7 +337,7 @@ pub unsafe fn cmdq_append(
             break;
         }
     }
-    return std::ptr::from_ref(&**(*queue).list.back().expect("appended command item")).cast_mut();
+    return (*queue).list.back().expect("appended command item").get();
 }
 pub unsafe fn cmdq_insert_after(
     mut after: *mut cmdq_item,
@@ -349,7 +355,7 @@ pub unsafe fn cmdq_insert_after(
         (*item).client = c_owner.as_ref().map(std::rc::Rc::downgrade).unwrap_or_default();
         (*item).queue = queue;
         // Enqueue consumes the detached allocation without moving the item.
-        (*queue).list.insert(position, Box::from_raw(item));
+        (*queue).list.insert(position, cmdq_take_detached(item));
         position += 1;
         log_debug(format_args!(
             "{} {}: {} after {}",
@@ -473,7 +479,7 @@ unsafe fn cmdq_remove_group(mut item: *mut cmdq_item) {
     let queue = (*item).queue;
     let mut position = (*queue).position(item) + 1;
     while let Some(owner) = (*queue).list.get(position) {
-        let this = std::ptr::from_ref(&**owner).cast_mut();
+        let this = owner.get();
         if (*this).group == (*item).group {
             cmdq_remove(this);
         } else {
@@ -1121,7 +1127,7 @@ mod client_observer_tests {
             // Detach the items so their ordinary owners can be released here.
             let first = queue.list.pop_front().unwrap();
             let middle = queue.list.pop_front().unwrap();
-            assert_eq!((&*middle as *const cmdq_item).cast_mut(), inserted);
+            assert_eq!(middle.get(), inserted);
             let second = queue.list.pop_front().unwrap();
             drop(first);
             assert_eq!(Rc::strong_count(&retained), 3);
@@ -1184,7 +1190,7 @@ mod cancellation_tests {
             cmdq_set_cancel_callback(&mut *item, Box::new(move || drop(payload)));
             (*item).queue = address;
             // Detached item transfer remains the next queue ownership boundary.
-            queue.list.push_back(Box::from_raw(item));
+            queue.list.push_back(cmdq_take_detached(item));
             let owner = client::new();
             let client = &mut *owner.get();
             client.queue = Some(queue);
@@ -1207,5 +1213,33 @@ mod cancellation_tests {
             cmdq_free_detached(item);
         }
         assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1);
+    }
+}
+
+#[cfg(test)]
+mod item_owner_tests {
+    use super::*;
+
+    #[test]
+    fn detached_owner_moves_into_queue_and_weak_identity_expires() {
+        unsafe {
+            let item = cmdq_get_callback_owned(c"queued".as_ptr(), None);
+            let observer = (*item).observer.clone();
+            assert_eq!(observer.strong_count(), 1);
+            let mut queue = cmdq_new();
+            (*item).queue = &mut *queue;
+            queue.list.push_back(cmdq_take_detached(item));
+            assert_eq!(observer.strong_count(), 1);
+            let guard = observer.upgrade().expect("queued item owner");
+            assert_eq!(guard.get(), item);
+            drop(guard);
+            drop(queue.list.pop_front());
+            assert!(observer.upgrade().is_none());
+
+            let detached = cmdq_get_callback_owned(c"detached".as_ptr(), None);
+            let stale = (*detached).observer.clone();
+            cmdq_free_detached(detached);
+            assert!(stale.upgrade().is_none());
+        }
     }
 }
