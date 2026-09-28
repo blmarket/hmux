@@ -2409,7 +2409,8 @@ pub fn window_pane_z_swap_order(
 /// Return the next mode in a pane's stack. Entries are boxed individually,
 /// so this derives ordering from the owning collection without putting queue
 /// links into each callback-visible mode entry.
-pub(crate) unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut window_mode_entry {
+#[cfg(test)]
+unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut window_mode_entry {
     if wme.is_null() {
         return ::core::ptr::null_mut();
     }
@@ -3001,14 +3002,14 @@ pub unsafe fn window_pane_set_mode(
     if !(*wp).modes.active_ptr().is_null() {
         oname = (*(*(*wp).modes.active_ptr()).mode).name.as_ptr();
     }
-    wme = (*wp).modes.active_ptr();
-    while !wme.is_null() {
-        if std::ptr::eq((*wme).mode, mode) {
-            break;
-        }
-        wme = window_pane_mode_next(wme);
-    }
-    if !wme.is_null() {
+    let existing = (*wp)
+        .modes
+        .storage
+        .as_ref()
+        .and_then(|storage| storage.entries.iter().find(|entry| std::ptr::eq(entry.get_unchecked().mode, mode)))
+        .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade);
+    if existing.is_alive() {
+        wme = existing.as_ptr().cast_mut();
         window_pane_mode_promote(wp, wme);
         mode_screen = (*(*wme).mode).display_screen.expect("mode display screen getter")(wme);
     } else {
