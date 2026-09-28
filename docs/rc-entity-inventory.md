@@ -1229,3 +1229,15 @@ preserved.
 strong ownership from closure storage, temporary retention during live dispatch,
 and skipped callbacks after destruction or expiration. Prompt client adapters,
 row operations and internal raw model projections remain pending.
+
+## Implemented retained clients for mode-tree key and menu dispatch
+
+Mode-tree key dispatch borrows an optional Rc client from each mode's key handler
+or queued prompt acceptance. Prompt callback records downgrade that handle
+directly. Menu display borrows both the retained tree and client, preserving the
+menu callback's owning tree capture and weak client capture without recovering
+either through raw model pointers. With no client, menu display returns early.
+
+`cargo test --workspace` and `git diff --check` passed, including existing menu
+callback lifetime and expired-parent key-dispatch coverage. Prompt setup and its
+client callback adapters still use raw client projections and remain pending.

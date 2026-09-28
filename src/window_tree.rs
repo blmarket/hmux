@@ -2184,7 +2184,7 @@ unsafe fn window_tree_key(
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mode = (*data).observer.clone();
     let mut selection = mode_tree_get_current(&*(*data).data_ptr());
-    finished = mode_tree_key((*data).data.as_ref().expect("mode tree owner").clone(), c, &raw mut key, m, &raw mut x, &raw mut y);
+    finished = mode_tree_key((*data).data.as_ref().expect("mode tree owner").clone(), Some(client_owner), &raw mut key, m, &raw mut x, &raw mut y);
     let Some(_mode_owner) = mode.upgrade() else {
         return;
     };

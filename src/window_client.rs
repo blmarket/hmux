@@ -873,7 +873,7 @@ unsafe fn window_client_key(
     let mut finished: ::core::ffi::c_int = 0;
     finished = mode_tree_key(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c,
+        Some(client_owner),
         &raw mut key,
         m,
         ::core::ptr::null_mut::<u_int>(),
