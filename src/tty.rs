@@ -400,10 +400,9 @@ pub(crate) fn tty_client_callback(
     }
 }
 
-pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
-    let mut c: *mut client = terminal_client;
+pub unsafe fn tty_open(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Result<(), std::ffi::CString> {
+    let c = owner.get();
+    let tty = &raw mut (*c).tty;
     // The synchronous terminfo constructor borrows these string pointers.
     let mut caps: Vec<_> = (*c)
         .term_caps
@@ -430,33 +429,33 @@ pub unsafe fn tty_open(mut tty: *mut tty) -> Result<(), std::ffi::CString> {
         &raw mut (*tty).event_in,
         (*c).fd,
         (EV_PERSIST | EV_READ) as ::core::ffi::c_short,
-        tty_client_callback(&terminal_client_owner, tty_read_callback),
+        tty_client_callback(owner, tty_read_callback),
     );
     (*tty).in_0 = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).event_out,
         (*c).fd,
         EV_WRITE as ::core::ffi::c_short,
-        tty_client_callback(&terminal_client_owner, tty_write_callback),
+        tty_client_callback(owner, tty_write_callback),
     );
     (*tty).out = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).clipboard_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        tty_client_callback(&terminal_client_owner, tty_clipboard_query_callback),
+        tty_client_callback(owner, tty_clipboard_query_callback),
     );
     event_set(
         &raw mut (*tty).start_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        tty_client_callback(&terminal_client_owner, tty_start_timer_callback),
+        tty_client_callback(owner, tty_start_timer_callback),
     );
     event_set(
         &raw mut (*tty).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        tty_client_callback(&terminal_client_owner, tty_timer_callback),
+        tty_client_callback(owner, tty_timer_callback),
     );
     tty_start_tty(tty);
     tty_keys_build(tty);

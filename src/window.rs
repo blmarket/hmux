@@ -749,7 +749,8 @@ pub unsafe fn winlink_count(mut wwl: *mut winlinks) -> u_int {
 pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -> *mut winlink {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if idx < 0 as ::core::ffi::c_int {
-        idx = winlink_next_index(wwl, -idx - 1 as ::core::ffi::c_int);
+        // Decode -(base_index + 1) without negating INT_MIN first.
+        idx = winlink_next_index(wwl, -(idx + 1));
         if idx == -(1 as ::core::ffi::c_int) {
             return ::core::ptr::null_mut::<winlink>();
         }

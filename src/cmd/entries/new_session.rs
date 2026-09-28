@@ -364,7 +364,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                             5193972633326621385 => {}
                             _ => {
                                 if detached == 0 && already_attached == 0 {
-                                    if let Err(open_error) = server_client_open(c) {
+                                    if let Err(open_error) = server_client_open(c_owner.as_ref().expect("terminal client")) {
                                         cmdq_error(item, |out| {
                                             out.write_all(b"open terminal failed: ")?;
                                             out.write_all(open_error.as_bytes())

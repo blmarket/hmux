@@ -2611,12 +2611,20 @@ unsafe fn screen_write_collect_flush_line(
 }
 unsafe fn screen_write_collect_flush(
     ctx: &mut screen_write_ctx,
-    mut scroll_only: ::core::ffi::c_int,
+    scroll_only: ::core::ffi::c_int,
     from: &str,
+) {
+    screen_write_collect_flush_with_ranges(ctx, scroll_only, from, &mut Vec::new());
+}
+
+unsafe fn screen_write_collect_flush_with_ranges(
+    ctx: &mut screen_write_ctx,
+    scroll_only: ::core::ffi::c_int,
+    from: &str,
+    r: &mut Vec<visible_range>,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut r = Vec::new();
     let mut current_block: u64;
     let mut s: *mut screen = ctx.s;
     let mut wp: *mut window_pane = write_pane;
@@ -2665,7 +2673,7 @@ unsafe fn screen_write_collect_flush(
                     cy = (*s).cy;
                     y = 0 as u_int;
                     while y < (*s).grid().sy {
-                        items = items.wrapping_add(screen_write_collect_flush_line(ctx, y, &mut r));
+                        items = items.wrapping_add(screen_write_collect_flush_line(ctx, y, r));
                         y = y.wrapping_add(1);
                     }
                     (*s).cx = cx;
@@ -3118,7 +3126,11 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
         );
     }
     if (*s).mode & MODE_INSERT != 0 {
-        screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_cell");
+        // tmux's insert path uses the ranges left by the nested flush when
+        // deciding whether to paint this cell. Preserve that observable
+        // behavior explicitly, with caller-owned storage instead of a pane's
+        // shared scratch buffer.
+        screen_write_collect_flush_with_ranges(ctx, 0, "screen_write_cell", &mut r);
         ttyctx.data = tty_command_data::Count(width);
         if screen_write_should_draw_line(ctx, (*s).cy) != 0 {
             tty_write(

@@ -1230,7 +1230,8 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<st
     ));
     owner
 }
-pub unsafe fn server_client_open(mut c: *mut client) -> Result<(), CString> {
+pub unsafe fn server_client_open(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Result<(), CString> {
+    let c = owner.get();
     let mut ttynam: *const ::core::ffi::c_char = _PATH_TTY.as_ptr();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         return Ok(());
@@ -1286,7 +1287,7 @@ pub unsafe fn server_client_open(mut c: *mut client) -> Result<(), CString> {
     if (*c).flags & CLIENT_TERMINAL as uint64_t == 0 {
         return Err(c"not a terminal".to_owned());
     }
-    tty_open(&raw mut (*c).tty)?;
+    tty_open(owner)?;
     server_client_update_theme_colours(c);
     Ok(())
 }

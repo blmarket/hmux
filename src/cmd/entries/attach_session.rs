@@ -180,7 +180,7 @@ pub unsafe fn cmd_attach_session(
             server_client_set_key_table(c, ::core::ptr::null::<::core::ffi::c_char>());
         }
     } else {
-        if let Err(cause) = server_client_open(c) {
+        if let Err(cause) = server_client_open(c_owner.as_ref().expect("terminal client")) {
             cmdq_error(item, |out| {
                 out.write_all(b"open terminal failed: ")?;
                 write_cstr(out, cause.as_ptr())

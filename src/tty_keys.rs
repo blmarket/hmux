@@ -3229,8 +3229,12 @@ pub unsafe fn tty_keys_colours(
     mut fg: *mut ::core::ffi::c_int,
     mut bg: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
+    // Control clients can submit colour reports without an initialized tty.
+    // Its client is used only to label diagnostics, so retain it if present.
+    let terminal_client_owner = (*tty).client.upgrade();
+    let terminal_client = terminal_client_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
