@@ -511,7 +511,9 @@ pub unsafe fn input_key_pane(
         }
         return 0 as ::core::ffi::c_int;
     }
-    return input_key((*wp).screen, (*wp).event, key);
+    return (*wp).event.with_ptr(|event| unsafe {
+        input_key((*wp).screen, event, key)
+    }).unwrap_or(0);
 }
 unsafe fn input_key_write(
     mut from: *const ::core::ffi::c_char,
@@ -1025,12 +1027,14 @@ unsafe fn input_key_mouse(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
         log_cstr_n(buf.as_ptr(), len as ::core::ffi::c_int),
         ((*wp).id) as u32
     ));
-    input_key_write(
-        b"input_key_mouse\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).event,
-        buf.as_ptr(),
-        len,
-    );
+    let _ = (*wp).event.with_ptr(|event| unsafe {
+        input_key_write(
+            b"input_key_mouse\0" as *const u8 as *const ::core::ffi::c_char,
+            event,
+            buf.as_ptr(),
+            len,
+        );
+    });
 }
 
 #[cfg(test)]

@@ -183,7 +183,8 @@ pub struct window_pane {
     pub cmd_end_time: time_t,
     pub cmd_status: ::core::ffi::c_int,
     pub fd: ::core::ffi::c_int,
-    pub event: *mut bufferevent,
+    /// Observes the runtime-owned pane stream, including empty pane buffers.
+    pub event: crate::src::reactor::StreamHandle,
     pub offset: window_pane_offset,
     pub base_offset: size_t,
     pub resize_queue: window_pane_resizes,

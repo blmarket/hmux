@@ -3619,7 +3619,9 @@ unsafe fn server_client_check_pane_buffer(pane_owner: &std::rc::Rc<std::cell::Un
                     if flag == 0 {
                         off = 0 as ::core::ffi::c_int;
                     }
-                    new_size = window_pane_get_new_data(&mut *(*(*wp).event).input, (*wp).base_offset, &*wpo).len();
+                    new_size = (*wp).event.with_ptr(|event| unsafe {
+                        window_pane_get_new_data(&mut *(*event).input, (*wp).base_offset, &*wpo).len()
+                    }).unwrap_or(0);
                     log_debug(format_args!(
                         "{}: {} has {} bytes used and {} left for %{}",
                         log_cstr(
@@ -3650,15 +3652,19 @@ unsafe fn server_client_check_pane_buffer(pane_owner: &std::rc::Rc<std::cell::Un
     }
     minimum = minimum.wrapping_sub((*wp).base_offset);
     if !(minimum == 0 as size_t) {
-        let evb = &mut *(*(*wp).event).input;
+        let buffer_len = (*wp).event.with_ptr(|event| unsafe {
+            evbuffer_get_length(&*(*event).input)
+        }).unwrap_or(0);
         log_debug(format_args!(
             "{}: %{} has {} minimum (of {}) bytes used",
             "server_client_check_pane_buffer",
             ((*wp).id) as u32,
             (minimum) as usize,
-            (evbuffer_get_length(&*(evb))) as usize
+            (buffer_len) as usize
         ));
-        evbuffer_drain(evb, minimum);
+        let _ = (*wp).event.with_ptr(|event| unsafe {
+            evbuffer_drain(&mut *(*event).input, minimum);
+        });
         if (*wp).base_offset > (SIZE_MAX as size_t).wrapping_sub(minimum) {
             log_debug(format_args!(
                 "{}: %{} base offset has wrapped",
@@ -3706,9 +3712,13 @@ unsafe fn server_client_check_pane_buffer(pane_owner: &std::rc::Rc<std::cell::Un
         )
     ));
     if off != 0 {
-        bufferevent_disable((*wp).event, EV_READ as ::core::ffi::c_short);
+        let _ = (*wp).event.with_ptr(|event| unsafe {
+            bufferevent_disable(event, EV_READ as ::core::ffi::c_short);
+        });
     } else {
-        bufferevent_enable((*wp).event, EV_READ as ::core::ffi::c_short);
+        let _ = (*wp).event.with_ptr(|event| unsafe {
+            bufferevent_enable(event, EV_READ as ::core::ffi::c_short);
+        });
     };
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

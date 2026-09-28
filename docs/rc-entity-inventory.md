@@ -2431,3 +2431,13 @@ operations borrow the live stream slot for their synchronous work. Close,
 error and pane teardown free the stream through the handle; a regression
 checks forwarded bytes and expiration of a stale clone. The field inventory
 now counts 60 remaining in-scope raw fields.
+
+## Implemented weak pane input stream
+
+`window_pane.event` now observes the runtime-owned main stream through a
+`StreamHandle`. Input and control readers copy data or measure it within a
+scoped stream borrow. Parser, pipe, key and paste writes borrow the live slot
+only for the synchronous operation, while callbacks run after input borrows
+end. Respawn and pane teardown free the stream through the handle. The
+empty-pane teardown regression checks that callbacks release and a stale
+handle expires. The inventory now counts 59 remaining in-scope raw fields.

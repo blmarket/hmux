@@ -15,7 +15,6 @@ use crate::src::grid::grid_default_cell;
 use crate::src::layout::layout_close_pane;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::proc::proc_send;
-use crate::src::reactor::bufferevent_free;
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_linefeed, screen_write_scrollregion,
@@ -463,8 +462,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         utempter_remove_record((*wp).fd);
         kill(getpid(), SIGCHLD);
-        bufferevent_free((*wp).event);
-        (*wp).event = ::core::ptr::null_mut::<bufferevent>();
+        (*wp).event.free();
         close((*wp).fd);
         (*wp).fd = -(1 as ::core::ffi::c_int);
     }

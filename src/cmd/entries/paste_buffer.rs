@@ -43,7 +43,9 @@ pub static cmd_paste_buffer_entry: cmd_entry = {
 };
 unsafe fn cmd_paste_buffer_paste(wp: &window_pane, buf: &[u8]) {
     let escaped = utf8_stravisx_bytes(buf, VIS_SAFE | VIS_NOSLASH);
-    bufferevent_write(wp.event, escaped.as_ptr().cast(), escaped.len());
+    let _ = wp.event.with_ptr(|event| unsafe {
+        bufferevent_write(event, escaped.as_ptr().cast(), escaped.len());
+    });
 }
 unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
@@ -87,33 +89,37 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         }
         let separator = CStr::from_ptr(sepstr).to_bytes();
         if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {
-            bufferevent_write(
-                (*wp).event,
+            let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
+                event,
                 b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char
                     as *const ::core::ffi::c_void,
                 6 as size_t,
-            );
+            ) });
         }
         let buffer = pb.borrow();
         let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
         for chunk in bufdata.split_inclusive(|&byte| byte == b'\n') {
             let line = chunk.strip_suffix(b"\n").unwrap_or(chunk);
             if args_has(args, 'S' as i32 as u_char) != 0 {
-                bufferevent_write((*wp).event, line.as_ptr().cast(), line.len());
+                let _ = (*wp).event.with_ptr(|event| unsafe {
+                    bufferevent_write(event, line.as_ptr().cast(), line.len());
+                });
             } else {
                 cmd_paste_buffer_paste(&*wp, line);
             }
             if line.len() != chunk.len() {
-                bufferevent_write((*wp).event, separator.as_ptr().cast(), separator.len());
+                let _ = (*wp).event.with_ptr(|event| unsafe {
+                    bufferevent_write(event, separator.as_ptr().cast(), separator.len());
+                });
             }
         }
         if bracket != 0 && (*(*wp).screen).mode & MODE_BRACKETPASTE != 0 {
-            bufferevent_write(
-                (*wp).event,
+            let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
+                event,
                 b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char
                     as *const ::core::ffi::c_void,
                 6 as size_t,
-            );
+            ) });
         }
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {

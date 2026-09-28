@@ -31,7 +31,6 @@ use crate::src::log::{log_close, log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_get_string, options_set_number};
 use crate::src::proc::proc_clear_signals;
-use crate::src::reactor::bufferevent_free;
 use crate::src::resize::default_window_size;
 use crate::src::screen::screen_reinit;
 use crate::src::server::clients;
@@ -551,10 +550,7 @@ pub unsafe fn spawn_pane(
             );
             return ::core::ptr::null_mut::<window_pane>();
         }
-        if !(*source_pane).event.is_null() {
-            bufferevent_free((*source_pane).event);
-            (*source_pane).event = ::core::ptr::null_mut::<bufferevent>();
-        }
+        (*source_pane).event.free();
         if (*source_pane).fd != -(1 as ::core::ffi::c_int) {
             close((*source_pane).fd);
             (*source_pane).fd = -(1 as ::core::ffi::c_int);

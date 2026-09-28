@@ -269,11 +269,9 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::Unsafe
         ((*wp).id) as u32,
         (available) as usize
     ));
-    bufferevent_write(
-        (*wp).event,
-        data.as_ptr().cast(),
-        available,
-    );
+    let _ = (*wp).event.with_ptr(|event| unsafe {
+        bufferevent_write(event, data.as_ptr().cast(), available);
+    });
     let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
         evbuffer_drain(&mut *(*event).input, available);
     });
@@ -312,7 +310,8 @@ mod pipe_stream_tests {
             let wp = rc::as_ptr(&pane_owner);
             (*wp).fd = -1;
             (*wp).pipe_fd = -1;
-            (*wp).event = bufferevent_new(-1, None, None, None);
+            let main = bufferevent_new(-1, None, None, None);
+            (*wp).event = crate::src::reactor::StreamHandle::from_ptr(main);
             let pipe = bufferevent_new(-1, None, None, None);
             (*wp).pipe_event = crate::src::reactor::StreamHandle::from_ptr(pipe);
             let stale = (*wp).pipe_event.clone();
@@ -321,13 +320,14 @@ mod pipe_stream_tests {
 
             cmd_pipe_pane_read_callback(&pane_owner);
 
-            assert_eq!(evbuffer_get_length(&(*(*wp).event).output), bytes.len());
+            assert_eq!((*wp).event.with_ptr(|event| unsafe {
+                evbuffer_get_length(&(*event).output)
+            }), Some(bytes.len()));
             assert_eq!(evbuffer_get_length(&(*pipe).input), 0);
             (*wp).pipe_event.free();
             assert!(!stale.is_alive());
             assert!(!(*wp).pipe_event.is_alive());
-            bufferevent_free((*wp).event);
-            (*wp).event = std::ptr::null_mut();
+            (*wp).event.free();
             drop(pane_owner);
             shutdown_runtime();
         }

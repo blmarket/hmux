@@ -34,7 +34,7 @@ use crate::src::prompt::{
     prompt_set_options, prompt_type_string, prompt_update,
 };
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write,
+    bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write,
     evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
     event_set,
 };
@@ -1388,12 +1388,12 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
                 ((*wp).id) as u32
             ));
             if (*wp).base.mode & MODE_FOCUSON != 0 {
-                bufferevent_write(
-                    (*wp).event,
+                let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
+                    event,
                     b"\x1B[O\0" as *const u8 as *const ::core::ffi::c_char
                         as *const ::core::ffi::c_void,
                     3 as size_t,
-                );
+                ) });
             }
             events_fire_pane(
                 b"pane-focus-out\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1407,12 +1407,12 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
                 ((*wp).id) as u32
             ));
             if (*wp).base.mode & MODE_FOCUSON != 0 {
-                bufferevent_write(
-                    (*wp).event,
+                let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
+                    event,
                     b"\x1B[I\0" as *const u8 as *const ::core::ffi::c_char
                         as *const ::core::ffi::c_void,
                     3 as size_t,
-                );
+                ) });
             }
             events_fire_pane(
                 b"pane-focus-in\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2717,8 +2717,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
         kill(getpid(), SIGCHLD);
     }
     // Empty panes have stream buffers and an input parser without a PTY.
-    bufferevent_free((*wp).event);
-    (*wp).event = ::core::ptr::null_mut::<bufferevent>();
+    (*wp).event.free();
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         close((*wp).fd);
         (*wp).fd = -(1 as ::core::ffi::c_int);
@@ -2771,17 +2770,18 @@ unsafe fn window_pane_free(mut wp: *mut window_pane) {
 unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = owner.get();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
-    let mut size: size_t = evbuffer_get_length(&(*(*wp).event).input);
-    let mut new_data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut new_size: size_t = 0;
+    let size: size_t = (*wp).event.with_ptr(|event| unsafe {
+        evbuffer_get_length(&(*event).input)
+    }).unwrap_or(0);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        let data = window_pane_get_new_data(&mut *(*(*wp).event).input, (*wp).base_offset, &*wpo);
-        new_size = data.len();
-        new_data = data.as_ptr().cast_mut().cast();
+        let data = (*wp).event.with_ptr(|event| unsafe {
+            window_pane_get_new_data(&mut *(*event).input, (*wp).base_offset, &*wpo).to_vec()
+        }).unwrap_or_default();
+        let new_size = data.len();
         if new_size > 0 as size_t {
             let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
-                bufferevent_write(event, new_data as *const ::core::ffi::c_void, new_size);
+                bufferevent_write(event, data.as_ptr().cast(), new_size);
             });
             window_pane_update_used_data(wp, wpo, new_size);
         }
@@ -2801,7 +2801,9 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     input_parse_pane(wp);
-    bufferevent_disable((*wp).event, EV_READ as ::core::ffi::c_short);
+    let _ = (*wp).event.with_ptr(|event| unsafe {
+        bufferevent_disable(event, EV_READ as ::core::ffi::c_short);
+    });
 }
 unsafe fn window_pane_error_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = owner.get();
@@ -2815,7 +2817,7 @@ pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
     let read_observer = (*wp).observer.clone();
     let error_observer = read_observer.clone();
     setblocking((*wp).fd, 0 as ::core::ffi::c_int);
-    (*wp).event = bufferevent_new(
+    let stream = bufferevent_new(
         (*wp).fd,
         bufferevent_data_callback(move |_| unsafe {
             if let Some(owner) = read_observer.upgrade() {
@@ -2829,17 +2831,20 @@ pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
             }
         }),
     );
-    if (*wp).event.is_null() {
+    if stream.is_null() {
         fatalx(|out| out.write_all(b"out of memory"));
     }
+    (*wp).event = crate::src::reactor::StreamHandle::from_ptr(stream);
     let pane_owner = (*wp).observer.upgrade().expect("live pane input owner");
     (*wp).ictx = Some(input_init(
         Some(&pane_owner),
-        (*wp).event,
+        stream,
         &raw mut (*wp).palette,
         None,
     ));
-    bufferevent_enable((*wp).event, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
+    let _ = (*wp).event.with_ptr(|event| unsafe {
+        bufferevent_enable(event, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
+    });
 }
 pub fn window_pane_clear_resizes(
     wp: &mut window_pane,
@@ -3319,7 +3324,9 @@ unsafe fn window_pane_copy_paste(
                 "window_pane_copy_paste",
                 log_cstr_n(bytes.as_ptr().cast(), bytes.len() as ::core::ffi::c_int)
             ));
-            bufferevent_write((*loop_0).event, bytes.as_ptr().cast(), bytes.len());
+            let _ = (*loop_0).event.with_ptr(|event| unsafe {
+                bufferevent_write(event, bytes.as_ptr().cast(), bytes.len());
+            });
         }
         cursor = window_pane_next(loop_0.as_ref());
     }
@@ -3373,7 +3380,9 @@ pub unsafe fn window_pane_paste(
         "window_pane_paste",
         log_cstr_n(bytes.as_ptr().cast(), bytes.len() as ::core::ffi::c_int)
     ));
-    bufferevent_write((*wp).event, bytes.as_ptr().cast(), bytes.len());
+    let _ = (*wp).event.with_ptr(|event| unsafe {
+        bufferevent_write(event, bytes.as_ptr().cast(), bytes.len());
+    });
     if options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3909,9 +3918,12 @@ pub unsafe fn window_pane_update_used_data(
     mut wpo: *mut window_pane_offset,
     mut size: size_t,
 ) {
-    let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
-    if size > evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used) {
-        size = evbuffer_get_length(&*((*(*wp).event).input)).wrapping_sub(used);
+    let used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
+    let Some(available) = (*wp).event.with_ptr(|event| unsafe {
+        evbuffer_get_length(&*(*event).input)
+    }) else { return };
+    if size > available.saturating_sub(used) {
+        size = available.saturating_sub(used);
     }
     (*wpo).used = (*wpo).used.wrapping_add(size);
 }
@@ -4179,12 +4191,12 @@ pub unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCel
                 "window_pane_send_theme_update",
                 ((*wp).id) as u32
             ));
-            bufferevent_write(
-                (*wp).event,
+            let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
+                event,
                 b"\x1B[?997;2n\0" as *const u8 as *const ::core::ffi::c_char
                     as *const ::core::ffi::c_void,
                 9 as size_t,
-            );
+            ) });
         }
         2 => {
             log_debug(format_args!(
@@ -4192,12 +4204,12 @@ pub unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCel
                 "window_pane_send_theme_update",
                 ((*wp).id) as u32
             ));
-            bufferevent_write(
-                (*wp).event,
+            let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
+                event,
                 b"\x1B[?997;1n\0" as *const u8 as *const ::core::ffi::c_char
                     as *const ::core::ffi::c_void,
                 9 as size_t,
-            );
+            ) });
         }
         0 => {
             log_debug(format_args!(
@@ -4744,13 +4756,18 @@ mod pane_stream_lifecycle_tests {
             (*pane).flags = PANE_EMPTY;
             window_pane_set_event(pane);
             assert!((*pane).ictx.is_some());
-            let callback = Rc::downgrade((*(*pane).event).readcb.as_ref().unwrap());
+            let stale_stream = (*pane).event.clone();
+            assert!(stale_stream.is_alive());
+            let callback = (*pane).event.with_ptr(|event| unsafe {
+                Rc::downgrade((*event).readcb.as_ref().unwrap())
+            }).unwrap();
 
             window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), pane_owner);
             window_pane_destroy(&observer.upgrade().expect("registered pane"));
 
             assert!(observer.upgrade().is_none());
             assert!(callback.upgrade().is_none());
+            assert!(!stale_stream.is_alive());
             shutdown_runtime();
         }
     }
