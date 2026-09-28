@@ -117,7 +117,7 @@ impl input_ctx {
     fn new() -> Self {
         Self {
             wp: std::rc::Weak::new(),
-            event: ::core::ptr::null_mut(),
+            event: Default::default(),
             ctx: screen_write_ctx {
                 wp: std::rc::Weak::new(),
                 s: ::core::ptr::null_mut(),
@@ -174,6 +174,21 @@ unsafe fn input_clear_params(ictx: &mut input_ctx) {
 #[cfg(test)]
 mod input_buffer_ownership_tests {
     use super::*;
+    use crate::src::reactor::{bufferevent_free, bufferevent_new};
+
+    #[test]
+    fn input_reply_skips_a_freed_stream() {
+        unsafe {
+            let stream = bufferevent_new(-1, None, None, None);
+            let mut input = input_init(None, stream, std::ptr::null_mut(), None);
+            assert!(input.event.is_alive());
+            bufferevent_free(stream);
+            assert!(!input.event.is_alive());
+            input_send_reply(&mut *input, c"reply".as_ptr());
+            drop(input);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 
     #[test]
     fn dropping_the_input_owner_cancels_registered_timers() {
@@ -2288,7 +2303,7 @@ pub unsafe fn input_init(
     let mut owner = Box::new(input_ctx::new());
     let ictx = &raw mut *owner;
     (*ictx).wp = wp.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    (*ictx).event = bev;
+    (*ictx).event = crate::src::reactor::StreamHandle::from_ptr(bev);
     (*ictx).palette = palette;
     (*ictx).c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     event_set(
@@ -2564,17 +2579,15 @@ unsafe fn input_get(
     return retval;
 }
 unsafe fn input_send_reply(mut ictx: *mut input_ctx, mut reply: *const ::core::ffi::c_char) {
-    if !(*ictx).event.is_null() {
+    if (*ictx).event.is_alive() {
         log_debug(format_args!(
             "{}: {}",
             "input_send_reply",
             log_cstr((reply) as *const _)
         ));
-        bufferevent_write(
-            (*ictx).event,
-            reply as *const ::core::ffi::c_void,
-            strlen(reply),
-        );
+        let _ = (*ictx).event.with_ptr(|event| unsafe {
+            bufferevent_write(event, reply as *const ::core::ffi::c_void, strlen(reply))
+        });
     }
 }
 unsafe fn input_reply(
@@ -5592,7 +5605,6 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     };
 }
 unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_char) {
-    let mut ev: *mut bufferevent = (*ictx).event;
     let mut state: ::core::ffi::c_int = 0;
     state = options_get_number(
         global_options,
@@ -5610,21 +5622,25 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
         if (*ictx).input_end as ::core::ffi::c_uint
             == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            input_reply_clipboard(
-                ev,
-                buf.as_ptr().cast(),
-                buf.len(),
-                b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
-                clip,
-            );
+            let _ = (*ictx).event.with_ptr(|event| unsafe {
+                input_reply_clipboard(
+                    event,
+                    buf.as_ptr().cast(),
+                    buf.len(),
+                    b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
+                    clip,
+                )
+            });
         } else {
-            input_reply_clipboard(
-                ev,
-                buf.as_ptr().cast(),
-                buf.len(),
-                b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-                clip,
-            );
+            let _ = (*ictx).event.with_ptr(|event| unsafe {
+                input_reply_clipboard(
+                    event,
+                    buf.as_ptr().cast(),
+                    buf.len(),
+                    b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
+                    clip,
+                )
+            });
         }
         return;
     }
@@ -6001,7 +6017,6 @@ unsafe fn input_request_clipboard_reply(
     mut data: *mut ::core::ffi::c_void,
 ) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
-    let mut ev: *mut bufferevent = (*ictx).event;
     let cd = &*data.cast::<input_request_clipboard_data>();
     let mut state: ::core::ffi::c_int = 0;
     state = options_get_number(
@@ -6016,21 +6031,25 @@ unsafe fn input_request_clipboard_reply(
         paste_add_owned(None, owned);
     }
     if (*ir).idx == INPUT_END_BEL as ::core::ffi::c_int {
-        input_reply_clipboard(
-            ev,
-            cd.data.as_ptr().cast(),
-            cd.data.len(),
-            b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
-            cd.clip,
-        );
+        let _ = (*ictx).event.with_ptr(|event| unsafe {
+            input_reply_clipboard(
+                event,
+                cd.data.as_ptr().cast(),
+                cd.data.len(),
+                b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
+                cd.clip,
+            )
+        });
     } else {
-        input_reply_clipboard(
-            ev,
-            cd.data.as_ptr().cast(),
-            cd.data.len(),
-            b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
-            cd.clip,
-        );
+        let _ = (*ictx).event.with_ptr(|event| unsafe {
+            input_reply_clipboard(
+                event,
+                cd.data.as_ptr().cast(),
+                cd.data.len(),
+                b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
+                cd.clip,
+            )
+        });
     };
 }
 pub unsafe fn input_request_reply(

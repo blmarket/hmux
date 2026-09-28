@@ -2387,3 +2387,11 @@ lookup selects a local snapshot of the marked, queue, or client context and
 passes a borrowed reference to its window and pane helpers. The resolved state
 stores only target observers, so no stack context pointer survives the lookup.
 The field inventory now counts 66 remaining in-scope raw fields.
+
+## Implemented weak input reply stream
+
+`input_ctx.event` now stores a `StreamHandle` that weakly observes the runtime
+stream state. Each reply borrows the live stream slot while writing, and an
+expired stream makes the reply a no-op. A focused regression frees the stream
+before the input parser sends a reply. The field inventory now counts 65
+remaining in-scope raw fields.

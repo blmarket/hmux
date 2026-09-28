@@ -21,6 +21,39 @@ struct StreamState {
     wake: RefCell<Option<LocalWaker>>,
     task: RefCell<Option<hmux_rt::mio::Task>>,
 }
+
+/// Observe a runtime-owned stream without extending its allocation lifetime.
+#[derive(Clone, Default)]
+pub struct StreamHandle(Weak<StreamState>);
+
+impl StreamHandle {
+    /// The pointer must be null or refer to a stream registered by bufferevent_new.
+    pub unsafe fn from_ptr(stream: *mut bufferevent) -> Self {
+        if stream.is_null() {
+            return Self::default();
+        }
+        STREAMS.with(|streams| {
+            let streams = streams.borrow();
+            let owner = streams.get(&(stream as usize)).expect("registered stream");
+            Self(Rc::downgrade(owner))
+        })
+    }
+
+    /// Keep the stream's allocation slot borrowed for one synchronous operation.
+    pub fn with_ptr<R>(&self, access: impl FnOnce(*mut bufferevent) -> R) -> Option<R> {
+        let owner = self.0.upgrade()?;
+        if !owner.live.get() {
+            return None;
+        }
+        let slot = owner.stream.borrow();
+        let stream = slot.as_ref()?;
+        Some(access((&**stream as *const bufferevent).cast_mut()))
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.with_ptr(|_| ()).is_some()
+    }
+}
 thread_local! {
     static STREAMS: RefCell<HashMap<usize, Rc<StreamState>>> = RefCell::new(HashMap::new());
     static BUFFERS: RefCell<HashMap<usize, Weak<StreamState>>> = RefCell::new(HashMap::new());

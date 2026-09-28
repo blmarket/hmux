@@ -24,7 +24,7 @@ pub type input_request_type = ::core::ffi::c_uint;
 pub struct input_ctx {
     /// Pane lifetime is owned by the pane index and retained event handlers.
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub event: *mut bufferevent,
+    pub event: crate::src::reactor::StreamHandle,
     pub ctx: screen_write_ctx,
     pub palette: *mut colour_palette,
     /// Client observation; request/context ownership does not retain the client.
