@@ -3306,18 +3306,24 @@ unsafe fn server_client_handle_key0(
                 0 | 3 | _ => {}
             }
         }
-        wp = (*(*(*s).curw).window_ptr()).active;
-        if wp.is_null() || window_pane_has_prompt(wp) == 0 {
-            wp = window_pane_first((*(*s).curw).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            while !wp.is_null() {
-                if window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
+        let prompt_window = (*(*s).curw).window_ptr();
+        let mut prompt_pane = (*prompt_window).active.as_ref()
+            .and_then(|pane| pane.observer.upgrade());
+        if !prompt_pane.as_ref().is_some_and(|pane| window_pane_has_prompt(&*pane.get()) != 0) {
+            prompt_pane = window_pane_first(prompt_window);
+            while let Some(pane_owner) = prompt_pane.as_ref() {
+                if window_pane_has_prompt(&*pane_owner.get()) != 0
+                    && window_pane_is_visible(pane_owner.get()) != 0
+                {
                     break;
                 }
-                wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                prompt_pane = window_pane_next(pane_owner.get());
             }
         }
-        if !wp.is_null() && window_pane_has_prompt(wp) != 0 && window_pane_is_visible(wp) != 0 {
-            match window_pane_prompt_key(&(*wp).observer.upgrade().expect("prompt target pane"), Some(owner), (*event).key, &raw mut (*event).m)
+        if let Some(pane_owner) = prompt_pane.filter(|pane| {
+            window_pane_has_prompt(&*pane.get()) != 0 && window_pane_is_visible(pane.get()) != 0
+        }) {
+            match window_pane_prompt_key(&pane_owner, Some(owner), (*event).key, &raw mut (*event).m)
                 as ::core::ffi::c_uint
             {
                 1..=3 => return 0 as ::core::ffi::c_int,
@@ -3718,7 +3724,7 @@ unsafe fn server_client_prompt_cursor(
     let tty = &c.tty;
     let mut px: ::core::ffi::c_int = 0;
     let mut py: ::core::ffi::c_int = 0;
-    if window_pane_has_prompt(wp) == 0 {
+    if window_pane_has_prompt(&*wp) == 0 {
         return None;
     }
     cursor.mode &= !MODE_CURSOR;

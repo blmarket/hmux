@@ -3227,8 +3227,8 @@ pub unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_p
         }
     }
 }
-pub unsafe fn window_pane_has_prompt(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    return (*wp).prompt.is_some() as ::core::ffi::c_int;
+pub fn window_pane_has_prompt(wp: &window_pane) -> ::core::ffi::c_int {
+    wp.prompt.is_some() as ::core::ffi::c_int
 }
 pub unsafe fn window_pane_update_prompt(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,

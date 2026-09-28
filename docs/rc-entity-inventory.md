@@ -1556,3 +1556,15 @@ its owner to destruction without recovering it from a raw pointer.
 `cargo test --workspace` and `git diff --check` passed. Initial active/target-pane
 lookup, prompt selection traversal and other key-handler raw model projections
 remain pending.
+
+## Implemented retained prompt-pane selection
+
+Direct key dispatch carries owning pane handles while searching for a visible
+prompt and passes the selected owner through prompt-key callbacks. Active-pane
+prompt priority and visibility checks are preserved. The prompt-presence query
+is now safe and takes a shared pane borrow; cursor and command callers provide
+scoped borrows at their existing boundaries.
+
+`cargo test --workspace` and `git diff --check` passed. The window active-pane
+relationship, cursor helper arguments, command targets and other raw projections
+remain pending.

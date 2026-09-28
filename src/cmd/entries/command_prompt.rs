@@ -138,7 +138,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
     let mut space: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut pane: ::core::ffi::c_int = args_has(args, 'P' as i32 as u_char);
     if pane != 0 {
-        if wp.is_null() || window_pane_has_prompt(wp) != 0 {
+        if wp.is_null() || window_pane_has_prompt(&*wp) != 0 {
             return CMD_RETURN_NORMAL;
         }
     } else if (*tc).prompt.is_some() {
