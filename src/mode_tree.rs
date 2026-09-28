@@ -598,56 +598,91 @@ unsafe fn mode_tree_set_height(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         mtd.height = mtd.screen.grid().sy;
     }
 }
+unsafe fn mode_tree_call_build(
+    tree_owner: &Rc<UnsafeCell<mode_tree_data>>,
+    tag: Option<uint64_t>,
+    filtered: bool,
+) -> Option<uint64_t> {
+    let (mut callback, mut sort, filter) = {
+        let tree = &mut *tree_owner.get();
+        (
+            tree.buildcb.take().expect("non-null build callback"),
+            tree.sort_crit,
+            if filtered { tree.filter.clone() } else { None },
+        )
+    };
+    let tag = callback(&mut sort, tag, filter.as_deref());
+    let tree = &mut *tree_owner.get();
+    if tree.dead == 0 {
+        tree.sort_crit = sort;
+        if tree.buildcb.is_none() {
+            tree.buildcb = Some(callback);
+        }
+    }
+    tag
+}
+
 pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
-    let mtd = tree_owner.get();
-    let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut tag: Option<uint64_t>;
-    if !(*mtd).lines.is_empty() {
-        tag = Some((&(*mtd).lines)[(*mtd).current as usize].item.borrow().tag);
-    } else {
-        tag = None;
+    let mut tag = {
+        let tree = &mut *tree_owner.get();
+        let tag = if tree.lines.is_empty() {
+            None
+        } else {
+            Some(tree.lines[tree.current as usize].item.borrow().tag)
+        };
+        tree.saved.items.append(&mut tree.children.items);
+        if let Some(sort) = tree.sortcb {
+            sort(&mut tree.sort_crit);
+        }
+        tag
+    };
+    tag = mode_tree_call_build(tree_owner, tag, true);
+    let retry = {
+        let tree = &mut *tree_owner.get();
+        if tree.dead != 0 {
+            return;
+        }
+        tree.no_matches = tree.children.items.is_empty() as i32;
+        tree.no_matches != 0
+    };
+    if retry {
+        tag = mode_tree_call_build(tree_owner, tag, false);
     }
-    (*mtd).saved.items.append(&mut (*mtd).children.items);
-    if (*mtd).sortcb.is_some() {
-        (*mtd).sortcb.expect("non-null sort callback")(&mut (*mtd).sort_crit);
-    }
-    tag = (*mtd).buildcb.as_mut().expect("non-null build callback")(
-        &mut (*mtd).sort_crit,
-        tag,
-        (*mtd).filter.as_deref(),
-    );
-    if (*mtd).dead != 0 {
-        return;
-    }
-    (*mtd).no_matches = (*mtd).children.items.is_empty() as i32;
-    if (*mtd).no_matches != 0 {
-        tag = (*mtd).buildcb.as_mut().expect("non-null build callback")(
-            &mut (*mtd).sort_crit,
-            tag,
-            None,
-        );
-    }
-    if (*mtd).dead != 0 {
-        return;
-    }
-    mode_tree_free_items(&mut (*mtd).saved);
-    mode_tree_clear_lines(&mut *mtd);
-    (*mtd).maxdepth = 0 as u_int;
-    mode_tree_build_lines(tree_owner, &(*mtd).children.snapshot(), 0);
-    if (*mtd).dead != 0 {
-        return;
-    }
-    if !(*mtd).lines.is_empty() && tag.is_none() {
-        tag = Some((&(*mtd).lines)[(*mtd).current as usize].item.borrow().tag);
-    }
-    mode_tree_set_current(&mut *mtd, tag.unwrap_or(UINT64_MAX as uint64_t));
-    (*mtd).width = (*s).grid().sx;
-    if (*mtd).preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
+    let children = {
+        let tree = &mut *tree_owner.get();
+        if tree.dead != 0 {
+            return;
+        }
+        mode_tree_free_items(&mut tree.saved);
+        mode_tree_clear_lines(tree);
+        tree.maxdepth = 0;
+        tree.children.snapshot()
+    };
+    mode_tree_build_lines(tree_owner, &children, 0);
+    let preview = {
+        let tree = &mut *tree_owner.get();
+        if tree.dead != 0 {
+            return;
+        }
+        if !tree.lines.is_empty() && tag.is_none() {
+            tag = Some(tree.lines[tree.current as usize].item.borrow().tag);
+        }
+        mode_tree_set_current(tree, tag.unwrap_or(UINT64_MAX as uint64_t));
+        tree.width = tree.screen.grid().sx;
+        if tree.preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
+            tree.height = tree.screen.grid().sy;
+            false
+        } else {
+            true
+        }
+    };
+    if preview {
         mode_tree_set_height(tree_owner);
-    } else {
-        (*mtd).height = (*s).grid().sy;
     }
-    mode_tree_check_selected(&mut *mtd);
+    let tree = &mut *tree_owner.get();
+    if tree.dead == 0 {
+        mode_tree_check_selected(tree);
+    }
 }
 
 pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>) {
@@ -2521,6 +2556,38 @@ mod mode_tree_tests {
             drop((&mut *mtd_owner.get()).screen.grid.take());
             drop(mtd_owner);
             assert!(observer.upgrade().is_none(), "build callback must not retain its tree");
+        }
+    }
+
+    #[test]
+    fn build_callback_can_replace_itself_and_mutate_filter() {
+        unsafe {
+            let owner = mode_tree_alloc_data();
+            let observer = Rc::downgrade(&owner);
+            let callback_tree = observer.clone();
+            let tree = &mut *owner.get();
+            tree.filter = Some(c"original".to_owned());
+            tree.buildcb = Some(Box::new(move |sort, tag, filter| {
+                assert_eq!(tag, Some(7));
+                assert_eq!(filter, Some(c"original"));
+                let owner = callback_tree.upgrade().unwrap();
+                let tree = &mut *owner.get();
+                assert!(tree.buildcb.is_none());
+                tree.filter = Some(c"replacement".to_owned());
+                tree.buildcb = Some(Box::new(|_, _, filter| {
+                    assert!(filter.is_none());
+                    Some(9)
+                }));
+                sort.reversed = 1;
+                assert_eq!(filter, Some(c"original"));
+                Some(8)
+            }));
+            assert_eq!(mode_tree_call_build(&owner, Some(7), true), Some(8));
+            assert_eq!((&*owner.get()).sort_crit.reversed, 1);
+            assert_eq!((&*owner.get()).filter.as_deref(), Some(c"replacement"));
+            assert_eq!(mode_tree_call_build(&owner, None, false), Some(9));
+            drop(owner);
+            assert!(observer.upgrade().is_none());
         }
     }
 

@@ -2091,3 +2091,18 @@ special allowance for a logically destroyed pane during teardown.
 
 `cargo test --workspace` and `git diff --check` passed. Tree build/draw internals,
 zoom access and broader raw model relationships remain pending.
+
+## Implemented scoped tree borrows during rebuild
+
+Rebuild uses scoped tree borrows between callback and recursive line-building
+operations. Build callbacks are taken out for dispatch, receive local sort
+criteria and an owned filter snapshot, and are restored only when the tree is
+live and no replacement was installed. Sort changes are written back on live
+return. Child rows are snapshotted before recursive traversal. Height callbacks
+are followed by a logical-liveness check before selection adjustment.
+
+A regression test verifies callback replacement, filter mutation without
+invalidating callback input, sort-result preservation and eventual tree release.
+`cargo test --workspace` and `git diff --check` passed, including existing callback
+self-destruction coverage. Raw projections in recursive line building, rendering
+and other model operations remain pending.
