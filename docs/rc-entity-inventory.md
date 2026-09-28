@@ -2119,3 +2119,16 @@ A regression test checks key callback replacement across rebuilds and eventual
 release of both the tree and its rows. `cargo test --workspace` and
 `git diff --check` passed, including existing row-removal callback coverage.
 Rendering, other tree interactions and broader model relationships remain pending.
+
+## Implemented tree borrows for search and filter handling
+
+Search snapshots its query and starting row, borrows the tree for individual
+traversal steps, and takes search callbacks out for dispatch. Callback restoration
+preserves replacements and skips logically destroyed trees; existing row-expiry
+checks remain. Search selection reacquires a tree borrow after rebuilding and
+checks destruction before selecting. Search/filter prompt handlers use local tree
+borrows and retained pane handles rather than raw tree and pane locals.
+
+`cargo test --workspace` and `git diff --check` passed, including search-order and
+callback row-removal coverage. Rendering, swap/menu interactions, remaining tree
+projections and broader raw model relationships remain pending.

@@ -1577,16 +1577,20 @@ fn mode_tree_search_previous(
 }
 
 unsafe fn mode_tree_search(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, forward: bool) -> Option<ModeTreeItemRef> {
-    let mtd = tree_owner.get();
-    let search = (*mtd).search.clone()?;
-    let icase = (*mtd).search_icase != 0;
-    let last = (&(*mtd).lines)[(*mtd).current as usize].item.clone();
+    let (search, icase, last) = {
+        let tree = &*tree_owner.get();
+        (
+            tree.search.clone()?,
+            tree.search_icase != 0,
+            tree.lines[tree.current as usize].item.clone(),
+        )
+    };
     let mut item = last.clone();
     loop {
         item = if forward {
-            mode_tree_search_next(&*mtd, &item)?
+            mode_tree_search_next(&*tree_owner.get(), &item)?
         } else {
-            mode_tree_search_previous(&*mtd, &item)?
+            mode_tree_search_previous(&*tree_owner.get(), &item)?
         };
         if item == last {
             return None;
@@ -1595,14 +1599,21 @@ unsafe fn mode_tree_search(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, forward:
             let row = item.borrow();
             (row.name.clone(), row.itemdata.clone())
         };
-        let matched = if let Some(callback) = (*mtd).searchcb.as_mut() {
-            callback(&itemdata, &search, icase)
+        let callback = (&mut *tree_owner.get()).searchcb.take();
+        let matched = if let Some(mut callback) = callback {
+            let matched = callback(&itemdata, &search, icase);
+            let tree = &mut *tree_owner.get();
+            if tree.dead != 0 { return None; }
+            if tree.searchcb.is_none() {
+                tree.searchcb = Some(callback);
+            }
+            matched
         } else if icase {
             !strcasestr(name.as_ptr(), search.as_ptr()).is_null()
         } else {
             !strstr(name.as_ptr(), search.as_ptr()).is_null()
         };
-        if (*mtd).dead != 0 || !item.is_alive() || !last.is_alive() {
+        if (&*tree_owner.get()).dead != 0 || !item.is_alive() || !last.is_alive() {
             return None;
         }
         if matched {
@@ -1611,12 +1622,11 @@ unsafe fn mode_tree_search(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, forward:
     }
 }
 unsafe fn mode_tree_search_set(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
-    let mtd = tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let mtd = &mut *tree_owner.get();
+    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let found = if (*mtd).search_dir == MODE_TREE_SEARCH_FORWARD {
+    let found = if mtd.search_dir == MODE_TREE_SEARCH_FORWARD {
         mode_tree_search_forward(tree_owner)
     } else {
         mode_tree_search_backward(tree_owner)
@@ -1632,9 +1642,11 @@ unsafe fn mode_tree_search_set(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         parent = row.parent.clone();
     }
     mode_tree_build(tree_owner);
-    mode_tree_set_current(&mut *mtd, tag);
+    let mtd = &mut *tree_owner.get();
+    if mtd.dead != 0 { return; }
+    mode_tree_set_current(mtd, tag);
     mode_tree_draw(tree_owner);
-    (*mode_pane).flags |= PANE_REDRAW;
+    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
 }
 fn mode_tree_observed_prompt_callback(
     tree: &Rc<UnsafeCell<mode_tree_data>>,
@@ -1655,16 +1667,16 @@ unsafe fn mode_tree_search_callback(
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mtd = tree_owner.get();
-    if (*mtd).dead != 0 {
+    let mtd = &mut *tree_owner.get();
+    if mtd.dead != 0 {
         return PROMPT_CLOSE;
     }
     let replacement = s
         .filter(|text| !text.to_bytes().is_empty())
         .map(CStr::to_owned);
-    (*mtd).search = replacement;
-    if let Some(search) = (*mtd).search.as_ref() {
-        (*mtd).search_icase = mode_tree_is_lowercase(search.as_ptr());
+    mtd.search = replacement;
+    if let Some(search) = mtd.search.as_ref() {
+        mtd.search_icase = mode_tree_is_lowercase(search.as_ptr());
         mode_tree_search_set(tree_owner);
     }
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1678,21 +1690,20 @@ unsafe fn mode_tree_filter_callback(
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mtd = tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let mtd = &mut *tree_owner.get();
+    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
         return PROMPT_CLOSE;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    if (*mtd).dead != 0 {
+    if mtd.dead != 0 {
         return PROMPT_CLOSE;
     }
     let replacement = s
         .filter(|text| !text.to_bytes().is_empty())
         .map(CStr::to_owned);
-    (*mtd).filter = replacement;
+    mtd.filter = replacement;
     mode_tree_build(tree_owner);
     mode_tree_draw(tree_owner);
-    (*mode_pane).flags |= PANE_REDRAW;
+    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return PROMPT_CONTINUE;
@@ -1700,15 +1711,14 @@ unsafe fn mode_tree_filter_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn mode_tree_clear_filter(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
-    let mtd = tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let mtd = &mut *tree_owner.get();
+    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    (*mtd).filter = None;
+    mtd.filter = None;
     mode_tree_build(tree_owner);
     mode_tree_draw(tree_owner);
-    (*mode_pane).flags |= PANE_REDRAW;
+    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
 }
 fn mode_tree_menu_callback(
     tree: Rc<UnsafeCell<mode_tree_data>>,
