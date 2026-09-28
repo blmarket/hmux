@@ -313,7 +313,7 @@ pub struct window_copy_cmd_state<'a> {
     pub wme: *mut window_mode_entry,
     pub format_search: bool,
     pub wargs: Option<Box<args>>,
-    pub m: *mut mouse_event,
+    pub m: Option<mouse_event>,
     pub c: Option<&'a std::rc::Rc<std::cell::UnsafeCell<client>>>,
     pub s: Option<&'a std::cell::UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
@@ -1577,10 +1577,9 @@ unsafe fn window_copy_cmd_begin_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut m: *mut mouse_event = (*cs).m;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    if !m.is_null() {
-        window_copy_start_drag((*cs).c, m);
+    if let Some(mut m) = (*cs).m {
+        window_copy_start_drag((*cs).c, &raw mut m);
         return WINDOW_COPY_CMD_MOVE;
     }
     (*data).lineflag = LINE_SEL_NONE;
@@ -2015,10 +2014,10 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut m: *mut mouse_event = (*cs).m;
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
     let tty_oy = tty_window_offset(&(*c).tty).oy;
-    window_copy_scroll(&mode_pane_owner, (*c).tty.mouse_slider_mpos, (*m).y, tty_oy, scroll_exit);
+    let mouse = (*cs).m.expect("scroll-to-mouse requires a mouse event");
+    window_copy_scroll(&mode_pane_owner, (*c).tty.mouse_slider_mpos, mouse.y, tty_oy, scroll_exit);
     return WINDOW_COPY_CMD_MOVE;
 }
 unsafe fn window_copy_cmd_scroll_top(mut cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
@@ -5177,7 +5176,7 @@ unsafe fn window_copy_command_with_session(
         wme: ::core::ptr::null_mut::<window_mode_entry>(),
         format_search: false,
         wargs: None,
-        m: ::core::ptr::null_mut::<mouse_event>(),
+        m: None,
         c: None,
         s: None,
         wl: refbox::Weak::new(),
@@ -5203,7 +5202,7 @@ unsafe fn window_copy_command_with_session(
     cs.wme = wme;
     cs.format_search = args_has(args, 'F' as i32 as u_char) != 0;
     cs.wargs = None;
-    cs.m = m;
+    cs.m = m.as_ref().copied();
     cs.c = client_owner;
     cs.s = s;
     cs.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
