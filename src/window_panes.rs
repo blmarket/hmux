@@ -54,7 +54,7 @@ use crate::src::shared::window::{
 };
 use crate::src::style::style_apply;
 use crate::src::text::utf8::utf8_set;
-use crate::src::window::{window_pane_upgrade, window_pane_weak};
+use crate::src::window::{window_pane_mode_weak, window_pane_upgrade, window_pane_weak};
 use crate::src::window::{
     window_find_by_id, window_get_pane_status, window_pane_at_index, window_pane_find_by_id,
     window_pane_first, window_pane_index, window_pane_is_visible, window_pane_next,
@@ -1730,11 +1730,18 @@ unsafe fn window_panes_init(
             server_redraw_window(&*(w));
         }
     }
+    let mode_observer = window_pane_mode_weak(wme);
     event_set(
         &raw mut (*data).timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_panes_timer_callback(wme) },
+        move |_, _| unsafe {
+            match mode_observer.try_borrow_mut() {
+                Ok(mut mode) => window_panes_timer_callback(&mut *mode),
+                Err(refbox::BorrowError::Dropped) => {}
+                Err(refbox::BorrowError::Borrowed) => panic!("display-panes mode already borrowed"),
+            }
+        },
     );
     if (*data).delay != 0 as u_int {
         tv.tv_sec = (*data).delay.wrapping_div(1000 as u_int) as __time_t;
