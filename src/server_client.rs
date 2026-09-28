@@ -4399,10 +4399,10 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
             b"set-titles\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
         {
-            server_client_set_title(c);
-            server_client_set_path(c);
+            server_client_set_title(client_owner);
+            server_client_set_path(&mut *c);
         }
-        server_client_set_progress_bar(c);
+        server_client_set_progress_bar(&mut *c);
         redraw_screen(client_owner);
     }
     (*tty).flags = (*tty).flags & !TTY_NOCURSOR | tflags & TTY_NOCURSOR;
@@ -4424,16 +4424,20 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
         ((*c).redraw) as usize
     ));
 }
-unsafe fn server_client_set_title(mut c: *mut client) {
-    let mut s: *mut session = (*c).session;
+unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = client_owner.get();
+    let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
+        return;
+    };
+    let s = session_owner.get();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     template = options_get_string(
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"set-titles-string\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    ft = format_create(
-        c,
+    ft = crate::src::format::format_create_with_client(
+        Some(client_owner),
         ::core::ptr::null_mut::<cmdq_item>(),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
@@ -4455,40 +4459,38 @@ unsafe fn server_client_set_title(mut c: *mut client) {
     }
     format_free(ft);
 }
-unsafe fn server_client_set_path(mut c: *mut client) {
-    let mut s: *mut session = (*c).session;
-    if (*s).curw.is_null() || (*(*(*s).curw).window_ptr()).active.is_null() {
+/// Acquire the current active pane for an immediate client operation.
+/// Raw relationship fields are accessed only while resolving the handle.
+unsafe fn server_client_active_pane(c: &client) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    let session = c.session.as_ref()?;
+    let link = session.curw.as_ref()?;
+    let window = &*link.window_owner.as_ref()?.as_rc().get();
+    window.active.as_ref()?.observer.upgrade()
+}
+
+unsafe fn server_client_set_path(c: &mut client) {
+    let Some(active_owner) = server_client_active_pane(c) else {
         return;
-    }
-    let active = (*(*(*s).curw).window_ptr()).active;
-    let path = (*active)
-        .base
-        .path
-        .as_ref()
-        .map_or(c"", |path| path.as_c_str());
-    if (*c).path.as_deref() != Some(path) {
-        server_client_replace_path(&mut *c, Some(path.to_owned()));
-        tty_set_path(&raw mut (*c).tty, path);
+    };
+    let active = &*active_owner.get();
+    let path = active.base.path.as_deref().unwrap_or(c"");
+    if c.path.as_deref() != Some(path) {
+        server_client_replace_path(c, Some(path.to_owned()));
+        tty_set_path(&raw mut c.tty, path);
     }
 }
-unsafe fn server_client_set_progress_bar(mut c: *mut client) {
-    let mut s: *mut session = (*c).session;
-    let mut pane_pb: *mut progress_bar = ::core::ptr::null_mut::<progress_bar>();
-    if (*s).curw.is_null() || (*(*(*s).curw).window_ptr()).active.is_null() {
+unsafe fn server_client_set_progress_bar(c: &mut client) {
+    let Some(active_owner) = server_client_active_pane(c) else {
         return;
-    }
-    pane_pb = &raw mut (*(*(*(*s).curw).window_ptr()).active).base.progress_bar;
-    if (*pane_pb).state as ::core::ffi::c_uint == (*c).progress_bar.state as ::core::ffi::c_uint
-        && (*pane_pb).progress == (*c).progress_bar.progress
+    };
+    let pane_progress = (*active_owner.get()).base.progress_bar;
+    if pane_progress.state == c.progress_bar.state
+        && pane_progress.progress == c.progress_bar.progress
     {
         return;
     }
-    memcpy(
-        &raw mut (*c).progress_bar as *mut ::core::ffi::c_void,
-        pane_pb as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<progress_bar>() as size_t,
-    );
-    tty_set_progress_bar(&raw mut (*c).tty, &raw mut (*c).progress_bar);
+    c.progress_bar = pane_progress;
+    tty_set_progress_bar(&raw mut c.tty, &raw mut c.progress_bar);
 }
 unsafe fn server_client_dispatch(
     owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,

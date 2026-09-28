@@ -1835,3 +1835,15 @@ uses scoped shared pane borrows from its owners.
 `cargo test --workspace` and `git diff --check` passed. Acquiring session/window
 handles still crosses raw relationship fields; title/path/progress helpers and
 other rendering internals remain pending.
+
+## Implemented borrowed terminal metadata updates
+
+Title updates accept the existing client owner, retain its session through format
+expansion, and use the format constructor that accepts a client handle. Path and
+progress updates borrow the client mutably and retain its active pane. Progress
+state is copied as a Rust value rather than through a raw pointer and memcpy.
+A shared-borrow helper resolves the active pane without callbacks, confining the
+remaining raw session/current-window/active-pane relationship reads to acquisition.
+
+`cargo test --workspace` and `git diff --check` passed. Raw relationship fields and
+legacy format-defaults/terminal API projections remain pending.
