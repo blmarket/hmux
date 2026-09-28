@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **67 raw fields in
+fields and their lifecycle decisions. The current scanner finds **66 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-169 explicitly record a migration and twelve record
-removal. The remaining 67 comprise 19 needing an access or teardown
+169 explicitly record a migration and thirteen record
+removal. The remaining 66 comprise 18 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 67 fields have audit dispositions. Design entries
+The remaining 66 fields have audit dispositions. Design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -104,6 +104,7 @@ are now recorded individually in the TSV.
 | `window_buffer_modedata.editor`, `window_customize_modedata.editor` | `Option<EditorHandle>` observes the floating pane's Box-owned editor through a weak pane plus a unique editor ID. Spawn returns the handle after installing the editor. PID and cancellation resolve only a matching live slot; completion compares the detached editor ID before clearing mode state. A regression shows that a stale handle cannot cancel a replacement. |
 | `control_pane.blocks` | `VecDeque<refbox::Weak<control_block>>` observes the state's sole `RefBox` owners. Creation supplies weak handles directly; state removal expires them without shifting pane identities. Release keeps the existing ordering and reply-byte accounting. Legacy local pointer projections still depend on the state owner staying live during each operation. |
 | `cmdq_item.cmd` | `refbox::Weak<cmd>` observes a command allocated as `RefBox` and owned by the retained command list. Parse and copy allocate in the final representation, so list insertion, splice and move preserve addresses. `cmd_ptr` checks liveness before producing a legacy raw view. A regression covers a queued command surviving list transfer and expiring after its final owner drops. |
+| `cmd_find_state.current` | Removed the raw link to another find state. Target lookup selects a local snapshot of the marked, queue, or client context and passes a borrow to window/pane helpers. The result record carries only resolved target observers; success and error exits release the local context without explicit clearing. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
 | `winlink.window` (now `window_owner`) | Optional `WindowOwner` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |

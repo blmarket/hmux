@@ -151,7 +151,6 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

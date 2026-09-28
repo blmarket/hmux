@@ -62,7 +62,6 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             idx: 9,
             ..Default::default()
         };
-        state.current = &raw mut state;
         for flags in [
             0,
             PROMPT_NOFORMAT,
@@ -101,7 +100,6 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").string.as_c_str(), c"label: ");
             assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").state.idx, 9);
             assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").state.flags, 0);
-            assert!(prompt.try_borrow_mut().expect("live unborrowed prompt").state.current.is_null());
             {
                 let state = prompt.try_borrow_mut().unwrap();
             assert_eq!(

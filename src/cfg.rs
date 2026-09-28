@@ -116,7 +116,6 @@ pub unsafe fn load_cfg(
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
-            current: ::core::ptr::null_mut::<cmd_find_state>(),
             s: Default::default(),
             wl: Default::default(),
             w: Default::default(),
@@ -206,7 +205,6 @@ pub unsafe fn load_cfg_from_buffer(
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
-            current: ::core::ptr::null_mut::<cmd_find_state>(),
             s: Default::default(),
             wl: Default::default(),
             w: Default::default(),

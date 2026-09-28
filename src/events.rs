@@ -117,7 +117,6 @@ pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<even
 pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, mut c: *mut client) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -167,7 +166,6 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, mut c: *m
 pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, mut s: *mut session) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -189,7 +187,6 @@ pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, mut s: *
 pub unsafe fn events_fire_window(mut name: *const ::core::ffi::c_char, mut w: *mut window) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -209,7 +206,6 @@ pub unsafe fn events_fire_window(mut name: *const ::core::ffi::c_char, mut w: *m
 pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, mut wp: *mut window_pane) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -234,7 +230,6 @@ pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, mut wp: *mu
 pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: *mut winlink) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

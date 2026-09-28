@@ -623,7 +623,6 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
     let mut fsp: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

@@ -72,7 +72,6 @@ pub unsafe fn cmd_attach_session(
     let current = cmdq_get_state_owned(item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

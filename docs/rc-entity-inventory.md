@@ -2379,3 +2379,11 @@ reference while storing a weak command handle. Moving a command between lists
 keeps its address and weak identity; dropping its final list owner expires the
 handle. `cmd_ptr` still projects a legacy raw view for queue execution. The
 field inventory now counts 67 remaining in-scope raw fields.
+
+## Removed stored current-target alias
+
+`cmd_find_state` no longer stores a pointer to another find state. Each target
+lookup selects a local snapshot of the marked, queue, or client context and
+passes a borrowed reference to its window and pane helpers. The resolved state
+stores only target observers, so no stack context pointer survives the lookup.
+The field inventory now counts 66 remaining in-scope raw fields.

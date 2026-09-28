@@ -566,7 +566,6 @@ unsafe fn window_switch_run_command(
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

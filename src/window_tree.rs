@@ -1904,7 +1904,6 @@ unsafe fn window_tree_command_each(
     let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -2212,7 +2211,6 @@ unsafe fn window_tree_key(
     let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

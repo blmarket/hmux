@@ -452,7 +452,6 @@ pub fn window_pane_tree_next(pane: &window_pane) -> Option<Rc<std::cell::UnsafeC
 unsafe fn window_fire_renamed(mut w: *mut window, mut old_name: *const ::core::ffi::c_char) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),
@@ -489,7 +488,6 @@ unsafe fn window_fire_pane_changed(
 ) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),
@@ -535,7 +533,6 @@ pub unsafe fn window_fire_pane_moved(
 ) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),
@@ -598,7 +595,6 @@ unsafe fn window_fire_pane_mode_changed(
 ) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),
@@ -646,7 +642,6 @@ unsafe fn window_fire_pane_prompt(
 ) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),
@@ -2858,7 +2853,6 @@ pub unsafe fn window_pane_resize(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),

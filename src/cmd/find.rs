@@ -395,6 +395,7 @@ unsafe fn cmd_find_get_window(
     mut fs: *mut cmd_find_state,
     mut window: *const ::core::ffi::c_char,
     mut only: ::core::ffi::c_int,
+    current: &cmd_find_state,
 ) -> ::core::ffi::c_int {
     log_debug(format_args!(
         "{}: {}",
@@ -412,7 +413,7 @@ unsafe fn cmd_find_get_window(
         }
         return cmd_find_best_session_with_window(fs);
     }
-    (*fs).s = (*(*fs).current).s.clone();
+    (*fs).s = current.s.clone();
     if cmd_find_get_window_with_session(fs, window) == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -617,6 +618,7 @@ unsafe fn cmd_find_get_pane(
     mut fs: *mut cmd_find_state,
     mut pane: *const ::core::ffi::c_char,
     mut only: ::core::ffi::c_int,
+    current: &cmd_find_state,
 ) -> ::core::ffi::c_int {
     log_debug(format_args!(
         "{}: {}",
@@ -632,15 +634,16 @@ unsafe fn cmd_find_get_pane(
         (*fs).set_w((*(*fs).wp_ptr()).window as *mut window);
         return cmd_find_best_session_with_window(fs);
     }
-    (*fs).s = (*(*fs).current).s.clone();
-    (*fs).wl = (*(*fs).current).wl.clone();
-    (*fs).idx = (*(*fs).current).idx;
-    (*fs).w = (*(*fs).current).w.clone();
+    (*fs).s = current.s.clone();
+    (*fs).wl = current.wl.clone();
+    (*fs).idx = current.idx;
+    (*fs).w = current.w.clone();
     if cmd_find_get_pane_with_window(fs, pane) == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     if only == 0
-        && cmd_find_get_window(fs, pane, 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int
+        && cmd_find_get_window(fs, pane, 0 as ::core::ffi::c_int, current)
+            == 0 as ::core::ffi::c_int
     {
         (*fs).set_wp((*(*fs).w_ptr()).active_ptr());
         return 0 as ::core::ffi::c_int;
@@ -838,7 +841,7 @@ pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     }
     window_has_pane(&*w, &fs.wp) as ::core::ffi::c_int
 }
-pub unsafe fn cmd_find_copy_state(mut dst: *mut cmd_find_state, mut src: *mut cmd_find_state) {
+pub unsafe fn cmd_find_copy_state(mut dst: *mut cmd_find_state, src: *const cmd_find_state) {
     let source = (*src).clone();
     (*dst).s = source.s;
     (*dst).wl = source.wl;
@@ -1102,7 +1105,6 @@ pub unsafe fn cmd_find_target(
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut current: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -1210,24 +1212,25 @@ pub unsafe fn cmd_find_target(
         log_pointer((item) as *const ::core::ffi::c_void),
         log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
     ));
-    let mut queue_current = cmdq_get_state_owned(item).current_snapshot();
+    let queue_current = cmdq_get_state_owned(item).current_snapshot();
     let mut queue_event = cmdq_get_event(item);
+    let mut current_context: Option<cmd_find_state> = None;
     cmd_find_clear_state(fs, flags);
     if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
-        (*fs).current = &raw mut marked_pane;
+        current_context = Some((&*std::ptr::addr_of!(marked_pane)).clone());
         log_debug(format_args!(
             "{}: current is marked pane",
             "cmd_find_target"
         ));
         current_block = 1836292691772056875;
     } else if cmd_find_valid_state(&queue_current) != 0 {
-        (*fs).current = &mut queue_current;
+        current_context = Some(queue_current);
         log_debug(format_args!("{}: current is from queue", "cmd_find_target"));
         current_block = 1836292691772056875;
     } else if cmd_find_from_client(&raw mut current, queue_client_ptr, flags)
         == 0 as ::core::ffi::c_int
     {
-        (*fs).current = &raw mut current;
+        current_context = Some(current);
         log_debug(format_args!(
             "{}: current is from client",
             "cmd_find_target"
@@ -1241,7 +1244,8 @@ pub unsafe fn cmd_find_target(
     }
     match current_block {
         1836292691772056875 => {
-            if cmd_find_valid_state(&*(*fs).current) == 0 {
+            let current_context = current_context.as_ref().expect("selected current target");
+            if cmd_find_valid_state(current_context) == 0 {
                 fatalx(|out| out.write_all(b"invalid current find state"));
             }
             if target.is_null() || *target as ::core::ffi::c_int == '\0' as i32 {
@@ -1340,7 +1344,7 @@ pub unsafe fn cmd_find_target(
                     }
                     current_block = 5193823237153215208;
                 } else {
-                    cmd_find_copy_state(fs, &raw mut marked_pane);
+                    cmd_find_copy_state(fs, &raw const marked_pane);
                     current_block = 15319680530019787978;
                 }
             } else {
@@ -1532,7 +1536,9 @@ pub unsafe fn cmd_find_target(
                             current_block = 15319680530019787978;
                         }
                     } else if !window.is_null() && !pane.is_null() {
-                        if cmd_find_get_window(fs, window, window_only) != 0 as ::core::ffi::c_int {
+                        if cmd_find_get_window(fs, window, window_only, current_context)
+                            != 0 as ::core::ffi::c_int
+                        {
                             current_block = 2743676411188200708;
                         } else if cmd_find_get_pane_with_window(fs, pane) != 0 as ::core::ffi::c_int
                         {
@@ -1541,7 +1547,9 @@ pub unsafe fn cmd_find_target(
                             current_block = 15319680530019787978;
                         }
                     } else if !window.is_null() && pane.is_null() {
-                        if cmd_find_get_window(fs, window, window_only) != 0 as ::core::ffi::c_int {
+                        if cmd_find_get_window(fs, window, window_only, current_context)
+                            != 0 as ::core::ffi::c_int
+                        {
                             current_block = 2743676411188200708;
                         } else {
                             if !(*fs).wl_ptr().is_null() {
@@ -1550,7 +1558,9 @@ pub unsafe fn cmd_find_target(
                             current_block = 15319680530019787978;
                         }
                     } else if window.is_null() && !pane.is_null() {
-                        if cmd_find_get_pane(fs, pane, pane_only) != 0 as ::core::ffi::c_int {
+                        if cmd_find_get_pane(fs, pane, pane_only, current_context)
+                            != 0 as ::core::ffi::c_int
+                        {
                             current_block = 14917847580669770662;
                         } else {
                             current_block = 15319680530019787978;
@@ -1591,14 +1601,13 @@ pub unsafe fn cmd_find_target(
                 _ => {
                     match current_block {
                         6284300254771030961 => {
-                            cmd_find_copy_state(fs, (*fs).current);
+                            cmd_find_copy_state(fs, std::ptr::from_ref(current_context));
                             if flags & CMD_FIND_WINDOW_INDEX != 0 {
                                 (*fs).idx = -(1 as ::core::ffi::c_int);
                             }
                         }
                         _ => {}
                     }
-                    (*fs).current = ::core::ptr::null_mut::<cmd_find_state>();
                     cmd_find_log_state(
                         b"cmd_find_target\0" as *const u8 as *const ::core::ffi::c_char,
                         fs,
@@ -1610,7 +1619,6 @@ pub unsafe fn cmd_find_target(
         }
         _ => {}
     }
-    (*fs).current = ::core::ptr::null_mut::<cmd_find_state>();
     log_debug(format_args!("{}: error", "cmd_find_target"));
     drop(copy_owned);
     if flags & CMD_FIND_CANFAIL != 0 {
@@ -1629,7 +1637,6 @@ unsafe fn cmd_find_current_client(
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -1848,14 +1855,13 @@ mod target_observer_tests {
             cmd_find_clear_state(&mut state, CMD_FIND_QUIET);
             assert_eq!(state.flags, CMD_FIND_QUIET);
             assert_eq!(state.idx, -1);
-            assert!(state.current.is_null());
             assert_eq!(cmd_find_empty_state(&state), 1);
             assert_eq!(cmd_find_empty_state(&snapshot), 0);
         }
     }
 
     #[test]
-    fn copying_releases_old_handles_and_preserves_search_context() {
+    fn copying_releases_old_handles_and_preserves_flags() {
         unsafe {
             let session = session::new();
             let other = session::new();
@@ -1869,7 +1875,6 @@ mod target_observer_tests {
                 flags: 22,
                 ..Default::default()
             };
-            destination.current = &raw mut source;
             destination.set_s(rc::as_ptr(&other));
             let old_count = Rc::weak_count(&other);
             let new_count = Rc::weak_count(&session);
@@ -1877,7 +1882,6 @@ mod target_observer_tests {
             assert_eq!(Rc::weak_count(&other), old_count - 1);
             assert_eq!(Rc::weak_count(&session), new_count + 1);
             assert_eq!(destination.flags, 22);
-            assert_eq!(destination.current, &raw mut source);
             assert_eq!(destination.idx, 17);
             let ptr = &raw mut destination;
             cmd_find_copy_state(ptr, ptr);

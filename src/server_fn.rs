@@ -72,7 +72,6 @@ use crate::src::shared::window::{window, winlink};
 unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *mut window_pane) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),

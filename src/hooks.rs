@@ -163,7 +163,6 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
 unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -433,7 +432,6 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -557,7 +555,6 @@ pub unsafe fn hooks_monitor_add(
         sink: EventSinkId::default(),
         fs: cmd_find_state {
             flags: 0,
-            current: ::core::ptr::null_mut(),
             s: Default::default(),
             wl: Default::default(),
             w: Default::default(),

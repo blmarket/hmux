@@ -168,7 +168,6 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
 unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut window_pane) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

@@ -1658,7 +1658,6 @@ unsafe fn window_customize_build(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -1982,7 +1981,6 @@ unsafe fn window_customize_draw_option(
     );
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -2711,7 +2709,6 @@ unsafe fn window_customize_draw_environment(
     let mut parent: Option<&environ_entry> = None;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -3255,7 +3252,6 @@ unsafe fn window_customize_set_environment(
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -3784,7 +3780,6 @@ unsafe fn window_customize_set_option(
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -4684,7 +4679,6 @@ unsafe fn window_customize_add_current(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -5119,7 +5113,6 @@ mod item_owner_tests {
                 item_list: Vec::new(),
                 fs: cmd_find_state {
                     flags: 0,
-                    current: std::ptr::null_mut(),
                     s: Default::default(),
                     wl: Default::default(),
                     w: Default::default(),

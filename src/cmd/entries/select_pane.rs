@@ -123,7 +123,6 @@ unsafe fn cmd_select_pane_marked_pane(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),
@@ -234,7 +233,6 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
         s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         w: std::rc::Weak::new(),

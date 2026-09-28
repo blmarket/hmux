@@ -227,7 +227,6 @@ impl cmdq_list {
 #[repr(C)]
 pub struct cmd_find_state {
     pub flags: ::core::ffi::c_int,
-    pub current: *mut cmd_find_state,
     pub s: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
     pub w: std::rc::Weak<std::cell::UnsafeCell<window>>,

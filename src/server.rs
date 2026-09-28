@@ -112,7 +112,6 @@ static mut server_ev_accept: event = event::new();
 static mut server_ev_tidy: event = event::new();
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
-    current: ::core::ptr::null::<cmd_find_state>() as *mut cmd_find_state,
     s: std::rc::Weak::new(),
     wl: refbox::Weak::new(),
     w: std::rc::Weak::new(),

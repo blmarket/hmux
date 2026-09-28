@@ -435,7 +435,6 @@ pub unsafe fn cmd_parse_from_file(
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
-            current: ::core::ptr::null_mut::<cmd_find_state>(),
             s: Default::default(),
             wl: Default::default(),
             w: Default::default(),
@@ -467,7 +466,6 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
-            current: ::core::ptr::null_mut::<cmd_find_state>(),
             s: Default::default(),
             wl: Default::default(),
             w: Default::default(),
@@ -514,7 +512,6 @@ pub unsafe fn cmd_parse_from_buffer(
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
-            current: ::core::ptr::null_mut::<cmd_find_state>(),
             s: Default::default(),
             wl: Default::default(),
             w: Default::default(),
@@ -565,7 +562,6 @@ pub unsafe fn cmd_parse_from_arguments(
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
-            current: ::core::ptr::null_mut::<cmd_find_state>(),
             s: Default::default(),
             wl: Default::default(),
             w: Default::default(),

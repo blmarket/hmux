@@ -1335,7 +1335,6 @@ unsafe fn server_client_attached_lost(mut c: *mut client) {
 unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut session) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -1400,7 +1399,6 @@ unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut s
 unsafe fn server_client_fire_resized(mut c: *mut client, mut old_sx: u_int, mut old_sy: u_int) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -2768,7 +2766,6 @@ unsafe fn server_client_key_callback(
     let mut prefix_delay: uint64_t = 0;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

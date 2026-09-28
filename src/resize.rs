@@ -44,7 +44,6 @@ use crate::src::shared::window::{
 unsafe fn resize_fire_window_resized(mut w: *mut window, mut old_sx: u_int, mut old_sy: u_int) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),

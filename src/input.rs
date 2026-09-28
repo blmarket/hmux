@@ -2185,7 +2185,6 @@ unsafe fn input_fire_pane_title_changed(
 ) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
@@ -5428,7 +5427,6 @@ mod osc_133_exit_status_tests {
 unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::core::ffi::c_char) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
         s: Default::default(),
         wl: Default::default(),
         w: Default::default(),
