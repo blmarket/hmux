@@ -83,7 +83,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
-    if window_pane_exited(wp) != 0 {
+    if window_pane_exited(&*wp) != 0 {
         cmdq_error(item, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }

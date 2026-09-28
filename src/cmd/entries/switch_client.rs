@@ -184,7 +184,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
-                visible = window_pane_is_visible(wp);
+                visible = window_pane_is_visible(&*wp);
             }
             if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
                 server_redraw_window(w);

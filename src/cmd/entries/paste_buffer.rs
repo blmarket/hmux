@@ -53,7 +53,7 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut sepstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);
-    if window_pane_exited(wp) != 0 {
+    if window_pane_exited(&*wp) != 0 {
         cmdq_error(item, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }

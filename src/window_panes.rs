@@ -252,7 +252,7 @@ unsafe fn window_panes_pane_visible(mut wp: *mut window_pane) -> ::core::ffi::c_
     if !(*wp).saved_layout_cell.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    return window_pane_is_visible(wp);
+    return window_pane_is_visible(&*wp);
 }
 unsafe fn window_panes_get_geometry(
     mut wp: *mut window_pane,

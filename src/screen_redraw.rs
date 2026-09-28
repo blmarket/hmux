@@ -740,7 +740,7 @@ unsafe fn redraw_mark_pane(mut bctx: *mut redraw_build_ctx, mut wp: *mut window_
     let mut sb_w: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut sb_left: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut overlay: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if window_pane_is_visible(wp) == 0 {
+    if window_pane_is_visible(&*wp) == 0 {
         return;
     }
     if window_pane_scrollbar_visible(wp) != 0 {
@@ -1876,7 +1876,7 @@ unsafe fn redraw_draw_scene(
         } else {
             for pane_owner in (*w).panes.snapshot() {
                 let loop_0 = pane_owner.get();
-                if !(window_pane_is_visible(loop_0) == 0) {
+                if !(window_pane_is_visible(&*loop_0) == 0) {
                     if (*loop_0).base.mode & MODE_SYNC != 0 {
                         screen_write_stop_sync(loop_0);
                     }
@@ -1898,7 +1898,7 @@ unsafe fn redraw_draw_scene(
         } else {
             for pane_owner in (*w).panes.snapshot() {
                 let loop_0 = pane_owner.get();
-                if window_pane_is_visible(loop_0) != 0 {
+                if window_pane_is_visible(&*loop_0) != 0 {
                     redraw_draw_pane_prompt(&mut dctx, loop_0);
                 }
                 }

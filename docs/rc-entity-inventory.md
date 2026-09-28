@@ -1579,3 +1579,13 @@ been consumed. Screen-write, cursor and test callers use the typed input.
 `cargo test --workspace` and `git diff --check` passed, including clipping,
 occlusion, edge-coordinate and reusable visibility-buffer tests. Raw pane-parent
 window access and lower-level geometry helper arguments remain pending.
+
+## Implemented borrowed pane visibility and exit queries
+
+Pane visibility and exited-state queries take shared pane borrows. All command,
+input, redraw, prompt and traversal callers supply scoped borrows. The exited
+query no longer needs unsafe code; visibility remains unsafe because it still
+reads the raw parent-window relationship.
+
+`cargo test --workspace` and `git diff --check` passed. Caller-local raw
+projections, parent-window links and remaining geometry APIs are still pending.

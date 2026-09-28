@@ -1721,7 +1721,7 @@ unsafe fn server_client_update_scrollbar_hover(
     }
     wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
-        if !(window_pane_is_visible(wp) == 0) {
+        if !(window_pane_is_visible(&*wp) == 0) {
             if server_client_in_scrollbar_area(wp, px, py) != 0 {
                 (*wp).sb_auto_hover = 1 as ::core::ffi::c_int;
                 window_pane_scrollbar_show(wp);
@@ -1855,7 +1855,7 @@ unsafe fn server_client_check_mouse_in_pane(
     } else {
         fwp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !fwp.is_null() {
-            if !(window_pane_is_visible(fwp) == 0) {
+            if !(window_pane_is_visible(&*fwp) == 0) {
                 if !(window_pane_is_floating(&*fwp) != 0
                     && window_pane_get_pane_lines(fwp) as ::core::ffi::c_uint
                         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
@@ -3313,7 +3313,7 @@ unsafe fn server_client_handle_key0(
             prompt_pane = window_pane_first(prompt_window);
             while let Some(pane_owner) = prompt_pane.as_ref() {
                 if window_pane_has_prompt(&*pane_owner.get()) != 0
-                    && window_pane_is_visible(pane_owner.get()) != 0
+                    && window_pane_is_visible(&*pane_owner.get()) != 0
                 {
                     break;
                 }
@@ -3321,7 +3321,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         if let Some(pane_owner) = prompt_pane.filter(|pane| {
-            window_pane_has_prompt(&*pane.get()) != 0 && window_pane_is_visible(pane.get()) != 0
+            window_pane_has_prompt(&*pane.get()) != 0 && window_pane_is_visible(&*pane.get()) != 0
         }) {
             match window_pane_prompt_key(&pane_owner, Some(owner), (*event).key, &raw mut (*event).m)
                 as ::core::ffi::c_uint

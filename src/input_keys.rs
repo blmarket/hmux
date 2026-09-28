@@ -1014,7 +1014,7 @@ unsafe fn input_key_mouse(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
     {
         return;
     }
-    if window_pane_is_visible(wp) == 0 {
+    if window_pane_is_visible(&*wp) == 0 {
         return;
     }
     let Some(len) = input_key_get_mouse(s, m, x, y, &mut buf) else {

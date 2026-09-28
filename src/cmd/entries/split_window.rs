@@ -179,7 +179,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_new_pane_entry) {
         is_floating = (args_has(args, 'L' as i32 as u_char) == 0) as ::core::ffi::c_int;
     } else {
-        if window_pane_is_visible(wp) == 0 {
+        if window_pane_is_visible(&*wp) == 0 {
             restore_zoom = 0 as ::core::ffi::c_int;
         }
         if restore_zoom == 0 {

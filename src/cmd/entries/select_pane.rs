@@ -135,7 +135,7 @@ unsafe fn cmd_select_pane_marked_pane(
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut mwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut s: *mut session = (*target).s_ptr();
-    if args_has(args, 'm' as i32 as u_char) != 0 && window_pane_is_visible(wp) == 0 {
+    if args_has(args, 'm' as i32 as u_char) != 0 && window_pane_is_visible(&*wp) == 0 {
         return CMD_RETURN_NORMAL;
     }
     if server_check_marked() != 0 {
@@ -275,7 +275,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             if (*w).modal.upgrade().is_some() && !lastwp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
-                visible = window_pane_is_visible(lastwp);
+                visible = window_pane_is_visible(&*lastwp);
             }
             if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
                 server_redraw_window(w);
@@ -403,7 +403,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
         visible = 1 as ::core::ffi::c_int;
     } else {
-        visible = window_pane_is_visible(wp);
+        visible = window_pane_is_visible(&*wp);
     }
     if visible == 0 && window_push_zoom(w, 0 as ::core::ffi::c_int, Zflag) != 0 {
         server_redraw_window(w);

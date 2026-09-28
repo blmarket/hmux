@@ -1310,7 +1310,7 @@ pub unsafe fn window_pane_contains(
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    if window_pane_is_visible(wp) == 0 {
+    if window_pane_is_visible(&*wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     window_pane_full_size_offset(wp, &raw mut xoff, &raw mut yoff, &raw mut sx, &raw mut sy);
@@ -1447,7 +1447,7 @@ pub unsafe fn window_set_active_pane(
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
         return 0 as ::core::ffi::c_int;
     }
-    if (*w).flags & WINDOW_ZOOMED != 0 && window_pane_is_visible(wp) == 0 {
+    if (*w).flags & WINDOW_ZOOMED != 0 && window_pane_is_visible(&*wp) == 0 {
         window_unzoom(w, 1 as ::core::ffi::c_int);
     }
     lastwp = (*w).active;
@@ -1550,7 +1550,7 @@ pub unsafe fn window_get_active_at(
     if pane_status == PANE_STATUS_TOP {
         for candidate in (*w).z_index.snapshot() {
             wp = candidate.get();
-            if !(window_pane_is_visible(wp) == 0 || window_pane_is_floating(&*wp) != 0) {
+            if !(window_pane_is_visible(&*wp) == 0 || window_pane_is_floating(&*wp) != 0) {
                 window_pane_full_size_offset(
                     wp,
                     &raw mut xoff,
@@ -1570,7 +1570,7 @@ pub unsafe fn window_get_active_at(
     let mut current_block_15: u64;
     for candidate in (*w).z_index.snapshot() {
         wp = candidate.get();
-        if !(window_pane_is_visible(wp) == 0) {
+        if !(window_pane_is_visible(&*wp) == 0) {
             window_pane_full_size_offset(
                 wp,
                 &raw mut xoff,
@@ -3347,7 +3347,7 @@ unsafe fn window_pane_copy_paste(
             && (*loop_0).modes.active.is_null()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
             && !(*loop_0).flags & PANE_INPUTOFF != 0
-            && window_pane_is_visible(loop_0) != 0
+            && window_pane_is_visible(&*loop_0) != 0
             && options_get_number(
                 options_owner_ptr(&mut (*loop_0).options).map_or(std::ptr::null_mut(), |options| options),
                 b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3373,7 +3373,7 @@ unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_
             && (*loop_0).modes.active.is_null()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
             && !(*loop_0).flags & PANE_INPUTOFF != 0
-            && window_pane_is_visible(loop_0) != 0
+            && window_pane_is_visible(&*loop_0) != 0
             && options_get_number(
                 options_owner_ptr(&mut (*loop_0).options).map_or(std::ptr::null_mut(), |options| options),
                 b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
@@ -3482,15 +3482,14 @@ pub unsafe fn window_pane_key(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn window_pane_is_visible(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    if !(*(*wp).window).flags & WINDOW_ZOOMED != 0 {
+pub unsafe fn window_pane_is_visible(wp: &window_pane) -> ::core::ffi::c_int {
+    if !(*wp.window).flags & WINDOW_ZOOMED != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    return ((*wp).layout_cell != NULL as *mut layout_cell) as ::core::ffi::c_int;
+    return (!wp.layout_cell.is_null()) as ::core::ffi::c_int;
 }
-pub unsafe fn window_pane_exited(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    return ((*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_EXITED != 0)
-        as ::core::ffi::c_int;
+pub fn window_pane_exited(wp: &window_pane) -> ::core::ffi::c_int {
+    (wp.fd == -1 || wp.flags & PANE_EXITED != 0) as ::core::ffi::c_int
 }
 pub unsafe fn window_pane_search(
     mut wp: *mut window_pane,
@@ -4197,7 +4196,7 @@ pub unsafe fn window_pane_get_theme(mut wp: *mut window_pane) -> client_theme {
 }
 pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
     let mut theme: client_theme = THEME_UNKNOWN;
-    if wp.is_null() || window_pane_exited(wp) != 0 {
+    if wp.is_null() || window_pane_exited(&*wp) != 0 {
         return;
     }
     if !(*wp).flags & PANE_THEMECHANGED != 0 {
