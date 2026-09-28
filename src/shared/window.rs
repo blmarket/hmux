@@ -187,6 +187,13 @@ impl window_mode_entry {
             .map(std::cell::UnsafeCell::get)
     }
 
+    pub fn shared_data_ptr<T: std::any::Any>(&self) -> Option<*mut T> {
+        self.data_owner
+            .as_ref()?
+            .downcast_ref::<std::cell::UnsafeCell<T>>()
+            .map(std::cell::UnsafeCell::get)
+    }
+
     /// Retain an Rc-backed payload across callbacks that may remove this entry.
     pub fn retained_data<T: std::any::Any>(&self) -> Option<std::rc::Rc<T>> {
         self.data_owner.as_ref().map(|owner| {

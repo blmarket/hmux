@@ -1543,7 +1543,7 @@ unsafe fn window_tree_menu(
     let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active_ptr();
-    if wme.is_null() || (*wme).data != data.cast() {
+    if wme.is_null() || (*wme).shared_data_ptr::<window_tree_modedata>() != Some(data) {
         return;
     }
     window_tree_key(
@@ -1751,7 +1751,6 @@ unsafe fn window_tree_init(
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
     (*wme).data_owner = Some(owner);
-    (*wme).data = data as *mut ::core::ffi::c_void;
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
     if args_has(args, 's' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_TREE_SESSION;
@@ -1823,10 +1822,9 @@ unsafe fn window_tree_init(
     return s;
 }
 unsafe fn window_tree_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let data = (*wme).data.cast::<window_tree_modedata>();
-    if data.is_null() {
+    let Some(data) = (*wme).shared_data_ptr::<window_tree_modedata>() else {
         return std::ptr::null_mut();
-    }
+    };
     (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
         &raw mut (*tree.get()).screen
     })
@@ -1840,7 +1838,6 @@ unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
     (*data).dead = 1 as ::core::ffi::c_int;
     mode_tree_free((*data).data.take().expect("mode tree owner"));
     drop((*wme).data_owner.take());
-    (*wme).data = std::ptr::null_mut();
 }
 unsafe fn window_tree_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {

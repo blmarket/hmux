@@ -2665,3 +2665,10 @@ The raw-field count remains 35.
 The menu callback checks that its captured allocation belongs to the active
 mode, and cleanup releases the Box after freeing its mode tree. Other mode
 payloads still use the raw field, so the raw-field count remains 35.
+
+## Tree mode payload access
+
+Tree mode now resolves its Rc-owned payload directly through the entry's
+typed owner. Its menu callback compares the resolved allocation with the
+active mode, and cleanup no longer clears a mirrored raw address. Other modes
+still use `window_mode_entry.data`, so the raw-field count remains 35.
