@@ -1189,3 +1189,16 @@ operation. Parent links remain non-owning to avoid pane/mode ownership cycles.
 
 `cargo test --workspace` and `git diff --check` passed. Mode-tree building,
 drawing, callback data and internal raw model projections remain pending.
+
+## Implemented retained mode trees for rebuilding
+
+Mode-tree rebuild, resize, expansion and row swapping now borrow Rc tree handles.
+The four owning modes clone their stored handle across calls; key dispatch reuses
+its existing owner. Legacy search/filter entry points retain the tree before
+rebuilding and keep it through subsequent state updates. Rebuild no longer
+recovers its ownership from a raw pointer.
+
+`cargo test --workspace` and `git diff --check` passed. A new regression destroys
+the tree from its build callback, verifying dispatch stops and the tree is
+released after the rebuild returns. Drawing, prompt adapters and internal raw
+model projections still require migration.

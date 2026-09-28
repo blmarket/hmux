@@ -524,7 +524,7 @@ unsafe fn window_buffer_init(
         &raw mut s,
     ));
     mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
-    mode_tree_build((*data).data_ptr());
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data_ptr());
     return s;
 }
@@ -542,7 +542,7 @@ unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_buffer_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
-    mode_tree_resize((*data).data_ptr(), sx, sy);
+    mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
 unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
@@ -550,7 +550,7 @@ unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    mode_tree_build((*data).data_ptr());
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data_ptr());
     window_buffer_draw_waiting(data);
     (*mode_pane).flags |= PANE_REDRAW;
@@ -740,7 +740,7 @@ unsafe fn window_buffer_edit_close_cb(
         wme = (*wp).modes.active;
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
             data = (*wme).data as *mut window_buffer_modedata;
-            mode_tree_build((*data).data_ptr());
+            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
             mode_tree_draw((*data).data_ptr());
             window_buffer_draw_waiting(data);
         }
@@ -827,7 +827,7 @@ unsafe fn window_buffer_key(
                 if let Some(item) = item_owner.as_buffer() {
                     window_buffer_do_delete(data, &item);
                 }
-                mode_tree_build(mtd);
+                mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
             }
             68 => {
                 mode_tree_each_tagged(
@@ -842,7 +842,7 @@ unsafe fn window_buffer_key(
                     key,
                     0 as ::core::ffi::c_int,
                 );
-                mode_tree_build(mtd);
+                mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
             }
             80 => {
                 mode_tree_each_tagged(

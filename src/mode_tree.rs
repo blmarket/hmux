@@ -346,7 +346,8 @@ pub unsafe fn mode_tree_down(
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn mode_tree_swap(mtd: *mut mode_tree_data, direction: i32) {
+unsafe fn mode_tree_swap(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, direction: i32) {
+    let mtd = tree_owner.get();
     if (*mtd).swapcb.is_none() {
         return;
     }
@@ -382,7 +383,7 @@ unsafe fn mode_tree_swap(mtd: *mut mode_tree_data, direction: i32) {
         .clone();
     if (*mtd).swapcb.as_mut().unwrap()(&current, &other, &mut (*mtd).sort_crit) {
         (*mtd).current = swap_with;
-        mode_tree_build(mtd);
+        mode_tree_build(tree_owner);
     }
 }
 pub fn mode_tree_get_current(mtd: &mode_tree_data) -> ModeTreeItemData {
@@ -400,11 +401,12 @@ pub fn mode_tree_get_current_name(mtd: &mode_tree_data) -> CString {
         .try_borrow()
         .map_or_else(CString::default, |row| row.name.clone())
 }
-pub unsafe fn mode_tree_expand_current(mtd: *mut mode_tree_data) {
+pub unsafe fn mode_tree_expand_current(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
     let item = (&(*mtd).lines)[(*mtd).current as usize].item.clone();
     if item.borrow().expanded == 0 {
         item.borrow_mut().expanded = 1;
-        mode_tree_build(mtd);
+        mode_tree_build(tree_owner);
     }
 }
 fn mode_tree_get_tag(mtd: &mode_tree_data, tag: uint64_t) -> Option<u_int> {
@@ -413,14 +415,15 @@ fn mode_tree_get_tag(mtd: &mode_tree_data, tag: uint64_t) -> Option<u_int> {
         .position(|line| line.item.borrow().tag == tag)
         .map(|index| index as u_int)
 }
-pub unsafe fn mode_tree_expand(mtd: *mut mode_tree_data, tag: uint64_t) {
+pub unsafe fn mode_tree_expand(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, tag: uint64_t) {
+    let mtd = tree_owner.get();
     let Some(index) = mode_tree_get_tag(&*mtd, tag) else {
         return;
     };
     let item = (&(*mtd).lines)[index as usize].item.clone();
     if item.borrow().expanded == 0 {
         item.borrow_mut().expanded = 1;
-        mode_tree_build(mtd);
+        mode_tree_build(tree_owner);
     }
 }
 pub unsafe fn mode_tree_set_current(
@@ -586,10 +589,8 @@ unsafe fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
         (*mtd).height = (*s).grid().sy;
     }
 }
-pub unsafe fn mode_tree_build(mut mtd: *mut mode_tree_data) {
-    let _tree = (*mtd).observer
-        .upgrade()
-        .expect("live mode tree");
+pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let mut tag: Option<uint64_t>;
     if !(*mtd).lines.is_empty() {
@@ -658,14 +659,15 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_
     (*mtd).filter = None;
     (*mtd).dead = 1 as ::core::ffi::c_int;
 }
-pub unsafe fn mode_tree_resize(mut mtd: *mut mode_tree_data, mut sx: u_int, mut sy: u_int) {
+pub unsafe fn mode_tree_resize(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut sx: u_int, mut sy: u_int) {
+    let mtd = tree_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*mtd).screen;
     screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
-    mode_tree_build(mtd);
+    mode_tree_build(tree_owner);
     mode_tree_draw(mtd);
     (*mode_pane).flags |= PANE_REDRAW;
 }
@@ -1552,6 +1554,7 @@ unsafe fn mode_tree_search(mtd: *mut mode_tree_data, forward: bool) -> Option<Mo
     }
 }
 unsafe fn mode_tree_search_set(mtd: *mut mode_tree_data) {
+    let tree_owner = (*mtd).observer.upgrade().expect("live mode tree");
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };
@@ -1571,7 +1574,7 @@ unsafe fn mode_tree_search_set(mtd: *mut mode_tree_data) {
         row.expanded = 1;
         parent = row.parent.clone();
     }
-    mode_tree_build(mtd);
+    mode_tree_build(&tree_owner);
     mode_tree_set_current(mtd, tag);
     mode_tree_draw(mtd);
     (*mode_pane).flags |= PANE_REDRAW;
@@ -1603,6 +1606,7 @@ unsafe fn mode_tree_filter_callback(
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
+    let tree_owner = (*mtd).observer.upgrade().expect("live mode tree");
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return PROMPT_CLOSE;
     };
@@ -1614,7 +1618,7 @@ unsafe fn mode_tree_filter_callback(
         .filter(|text| !text.to_bytes().is_empty())
         .map(CStr::to_owned);
     (*mtd).filter = replacement;
-    mode_tree_build(mtd);
+    mode_tree_build(&tree_owner);
     mode_tree_draw(mtd);
     (*mode_pane).flags |= PANE_REDRAW;
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1624,12 +1628,13 @@ unsafe fn mode_tree_filter_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
+    let tree_owner = (*mtd).observer.upgrade().expect("live mode tree");
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     (*mtd).filter = None;
-    mode_tree_build(mtd);
+    mode_tree_build(&tree_owner);
     mode_tree_draw(mtd);
     (*mode_pane).flags |= PANE_REDRAW;
 }
@@ -2119,10 +2124,10 @@ pub unsafe fn mode_tree_key(
             mode_tree_down(mtd, 1 as ::core::ffi::c_int);
         }
         70377334112283 | 75 => {
-            mode_tree_swap(mtd, -(1 as ::core::ffi::c_int));
+            mode_tree_swap(&tree, -(1 as ::core::ffi::c_int));
         }
         70377334112284 | 74 => {
-            mode_tree_swap(mtd, 1 as ::core::ffi::c_int);
+            mode_tree_swap(&tree, 1 as ::core::ffi::c_int);
         }
         8589934617 | 35184372088930 => {
             i = 0 as u_int;
@@ -2197,11 +2202,11 @@ pub unsafe fn mode_tree_key(
         }
         79 => {
             sort_next_order(&raw mut (*mtd).sort_crit);
-            mode_tree_build(mtd);
+            mode_tree_build(&tree);
         }
         114 => {
             (*mtd).sort_crit.reversed = ((*mtd).sort_crit.reversed == 0) as ::core::ffi::c_int;
-            mode_tree_build(mtd);
+            mode_tree_build(&tree);
         }
         8589934621 | 104 | 45 => {
             let target = if line.flat != 0 || current.borrow().expanded == 0 {
@@ -2214,7 +2219,7 @@ pub unsafe fn mode_tree_key(
                 row.expanded = 0;
                 (*mtd).current = row.line;
                 drop(row);
-                mode_tree_build(mtd);
+                mode_tree_build(&tree);
             } else {
                 mode_tree_up(mtd, 0);
             }
@@ -2224,20 +2229,20 @@ pub unsafe fn mode_tree_key(
                 mode_tree_down(mtd, 0);
             } else {
                 current.borrow_mut().expanded = 1;
-                mode_tree_build(mtd);
+                mode_tree_build(&tree);
             }
         }
         17592186044461 => {
             for item in &(*mtd).children.items {
                 item.try_borrow_mut().expect("unborrowed row").expanded = 0;
             }
-            mode_tree_build(mtd);
+            mode_tree_build(&tree);
         }
         17592186044459 => {
             for item in &(*mtd).children.items {
                 item.try_borrow_mut().expect("unborrowed row").expanded = 1;
             }
-            mode_tree_build(mtd);
+            mode_tree_build(&tree);
         }
         63 | 47 | 35184372088947 => {
             (*mtd).search_dir = MODE_TREE_SEARCH_FORWARD;
@@ -2293,7 +2298,7 @@ pub unsafe fn mode_tree_key(
                 }
                 _ => {}
             }
-            mode_tree_build(mtd);
+            mode_tree_build(&tree);
             if (*mtd).preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
                 mode_tree_check_selected(mtd);
             }
@@ -2480,7 +2485,7 @@ mod mode_tree_tests {
             }));
             (*mtd).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
 
-            mode_tree_build(mtd);
+            mode_tree_build(&mtd_owner);
             assert_eq!((*mtd).lines.len(), 65);
             assert_eq!((&(*mtd).lines)[0].depth, 0);
             for i in 1..65 {
@@ -2491,7 +2496,7 @@ mod mode_tree_tests {
             assert_eq!((*mtd).current, 64);
 
             (*state).empty = true;
-            mode_tree_build(mtd);
+            mode_tree_build(&mtd_owner);
             assert!((*mtd).lines.is_empty());
             mode_tree_free_items(&mut (*mtd).children);
             drop((*mtd).screen.grid.take());
@@ -2945,6 +2950,27 @@ mod row_owner_tests {
             );
             assert_eq!(calls, 1);
             assert!(!first.is_alive());
+            assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn build_callback_can_destroy_its_tree() {
+        unsafe {
+            let owner = mode_tree_alloc_data();
+            let observer = Rc::downgrade(&owner);
+            let tree = owner.get();
+            (*tree).zoomed = 1;
+            let calls = Rc::new(std::cell::Cell::new(0));
+            let callback_calls = calls.clone();
+            let mut callback_owner = Some(owner);
+            (*tree).buildcb = Some(Box::new(move |_, _, _| {
+                callback_calls.set(callback_calls.get() + 1);
+                mode_tree_free(callback_owner.take().expect("first build invocation"));
+                None
+            }));
+            mode_tree_build(&observer.upgrade().expect("tree retained by callback"));
+            assert_eq!(calls.get(), 1);
             assert!(observer.upgrade().is_none());
         }
     }

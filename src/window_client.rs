@@ -809,7 +809,7 @@ unsafe fn window_client_init(
     } else {
         mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"preview"));
     }
-    mode_tree_build((*data).data_ptr());
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data_ptr());
     return s;
 }
@@ -824,7 +824,7 @@ unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_client_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
-    mode_tree_resize((*data).data_ptr(), sx, sy);
+    mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
 unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
@@ -832,7 +832,7 @@ unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    mode_tree_build((*data).data_ptr());
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
 }
@@ -885,7 +885,7 @@ unsafe fn window_client_key(
             if let Some(item) = item_owner.as_client() {
                 window_client_do_detach(data, &item, key);
             }
-            mode_tree_build(mtd);
+            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
         }
         68 | 88 | 90 => {
             mode_tree_each_tagged(
@@ -901,7 +901,7 @@ unsafe fn window_client_key(
                 key,
                 0 as ::core::ffi::c_int,
             );
-            mode_tree_build(mtd);
+            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
         }
         105 => {
             (*data).preview_is_info = ((*data).preview_is_info == 0) as ::core::ffi::c_int;
@@ -910,7 +910,7 @@ unsafe fn window_client_key(
             } else {
                 mode_tree_view_name(&mut *mtd, Some(c"preview"));
             }
-            mode_tree_build(mtd);
+            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
         }
         13 => {
             let item_owner = mode_tree_get_current(&*mtd);

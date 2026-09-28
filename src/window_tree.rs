@@ -1799,7 +1799,7 @@ unsafe fn window_tree_init(
     ));
     mode_tree_zoom((*data).data.clone().as_ref().expect("mode tree owner"), args);
     mode_tree_view_name(&mut *(*data).data_ptr(), Some(c"preview"));
-    mode_tree_build((*data).data_ptr());
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data_ptr());
     (*data).type_0 = WINDOW_TREE_NONE;
     return s;
@@ -1816,7 +1816,7 @@ unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_tree_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
-    mode_tree_resize((*data).data_ptr(), sx, sy);
+    mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
 unsafe fn window_tree_update(mut wme: *mut window_mode_entry) {
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
@@ -1824,7 +1824,7 @@ unsafe fn window_tree_update(mut wme: *mut window_mode_entry) {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    mode_tree_build((*data).data_ptr());
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data_ptr());
     (*mode_pane).flags |= PANE_REDRAW;
 }
@@ -1900,7 +1900,7 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
                 return CMD_RETURN_NORMAL;
             };
             let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-            mode_tree_build((*data).data_ptr());
+            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
             mode_tree_draw((*data).data_ptr());
             (*mode_pane).flags |= PANE_REDRAW;
         }
@@ -2114,7 +2114,7 @@ unsafe fn window_tree_mouse(
         if s.is_null() {
             return KEYC_NONE as ::core::ffi::c_ulong as key_code;
         }
-        mode_tree_expand_current((*data).data_ptr());
+        mode_tree_expand_current((*data).data.clone().as_ref().expect("mode tree owner"));
         loop_0 = 0 as u_int;
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while !wl.is_null() {
@@ -2135,7 +2135,7 @@ unsafe fn window_tree_mouse(
         if wl.is_null() {
             return KEYC_NONE as ::core::ffi::c_ulong as key_code;
         }
-        mode_tree_expand_current((*data).data_ptr());
+        mode_tree_expand_current((*data).data.clone().as_ref().expect("mode tree owner"));
         loop_0 = 0 as u_int;
         wp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
@@ -2224,8 +2224,8 @@ unsafe fn window_tree_key(
             (*data).offset += 1;
         }
         72 => {
-            mode_tree_expand((*data).data_ptr(), (*fsp).s_ptr() as uint64_t);
-            mode_tree_expand((*data).data_ptr(), (*fsp).wl_ptr() as uint64_t);
+            mode_tree_expand((*data).data.clone().as_ref().expect("mode tree owner"), (*fsp).s_ptr() as uint64_t);
+            mode_tree_expand((*data).data.clone().as_ref().expect("mode tree owner"), (*fsp).wl_ptr() as uint64_t);
             if mode_tree_set_current((*data).data_ptr(), mode_pane as uint64_t) == 0 {
                 mode_tree_set_current((*data).data_ptr(), (*fsp).wl_ptr() as uint64_t);
             }
@@ -2234,11 +2234,11 @@ unsafe fn window_tree_key(
             let item = item.as_deref().unwrap();
             let _target_owners_10 = window_tree_pull_item(item, &raw mut ns, &raw mut nwl, &raw mut nwp);
             server_set_marked(ns, nwl, nwp);
-            mode_tree_build((*data).data_ptr());
+            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
         }
         77 => {
             server_clear_marked();
-            mode_tree_build((*data).data_ptr());
+            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
         }
         105 => {
             (*data).preview_is_info = ((*data).preview_is_info == 0) as ::core::ffi::c_int;
