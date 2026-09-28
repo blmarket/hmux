@@ -373,13 +373,13 @@ pub unsafe fn job_run(
                     let stream = bufferevent_new(
                         (*job).fd,
                         bufferevent_data_callback(move |_| unsafe {
-                            job_read_callback(job as *mut ::core::ffi::c_void)
+                            job_read_callback(job)
                         }),
                         bufferevent_data_callback(move |_| unsafe {
-                            job_write_callback(job as *mut ::core::ffi::c_void)
+                            job_write_callback(job)
                         }),
                         bufferevent_event_callback(move |_, _| unsafe {
-                            job_error_callback(job as *mut ::core::ffi::c_void)
+                            job_error_callback(job)
                         }),
                     );
                     if stream.is_null() {
@@ -468,8 +468,7 @@ pub unsafe fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
         fatal(|out| out.write_all(b"ioctl failed"));
     }
 }
-unsafe fn job_read_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut job: *mut job = data as *mut job;
+unsafe fn job_read_callback(job: *mut job) {
     let Some(callback_slot) = (*job).updatecb.as_ref().cloned() else {
         return;
     };
@@ -482,8 +481,7 @@ unsafe fn job_read_callback(mut data: *mut ::core::ffi::c_void) {
         *callback_owner = Some(callback);
     }
 }
-unsafe fn job_write_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut job: *mut job = data as *mut job;
+unsafe fn job_write_callback(job: *mut job) {
     let Some(len) = (*job).event.with_ptr(|stream| unsafe {
         evbuffer_get_length(&*(bufferevent_get_output(&mut *stream)))
     }) else { return };
@@ -506,8 +504,7 @@ unsafe fn job_write_callback(mut data: *mut ::core::ffi::c_void) {
         });
     }
 }
-unsafe fn job_error_callback(mut data: *mut ::core::ffi::c_void) {
-    let mut job: *mut job = data as *mut job;
+unsafe fn job_error_callback(job: *mut job) {
     log_debug(format_args!(
         "job error {}: {}, pid {}",
         log_pointer((job) as *const ::core::ffi::c_void),
