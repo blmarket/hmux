@@ -987,3 +987,14 @@ and ordinary queue append receives it without recovering ownership from a pointe
 return and deferred-cancellation coverage uses the typed API and direct Rc counts.
 Downstream key handlers, session/pane associations and local raw projections remain
 pending.
+
+## Implemented retained client arguments for menu key handling
+
+The server menu-key helper borrows the client owner from key dispatch. `menu_key`
+accepts an optional retained client and passes it directly through command parsing
+and queue append, eliminating the raw client argument and observer re-upgrade.
+Callback-only menus retain their no-client path using `None`.
+
+`cargo test --workspace` and `git diff --check` passed, including menu callback
+reentry, menu destruction during callbacks and expired-menu handling. Session/window
+associations in the outer helper and other raw model APIs remain pending.

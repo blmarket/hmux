@@ -3179,9 +3179,10 @@ impl Drop for QueuedKeyEvent {
 }
 
 unsafe fn server_client_handle_menu_key(
-    mut c: *mut client,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut event: *mut key_event,
 ) -> ::core::ffi::c_int {
+    let c = owner.get();
     let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
     let mut new_event = (*event).metadata_snapshot();
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
@@ -3217,7 +3218,7 @@ unsafe fn server_client_handle_menu_key(
             (*m).y = (*m).y.wrapping_add(oy);
         }
     }
-    if menu_key(c, &menu, &new_event) == 1 {
+    if menu_key(Some(owner), &menu, &new_event) == 1 {
         menu_close(&window, Some(&menu));
     }
     return 1 as ::core::ffi::c_int;
@@ -3293,7 +3294,7 @@ unsafe fn server_client_handle_key0(
                 return 0 as ::core::ffi::c_int;
             }
         }
-        if server_client_handle_menu_key(c, event) != 0 {
+        if server_client_handle_menu_key(owner, event) != 0 {
             return 0 as ::core::ffi::c_int;
         }
         if (*c).prompt.is_some() {

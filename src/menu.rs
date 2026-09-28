@@ -510,7 +510,7 @@ fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
     MenuKeyAction::Redraw
 }
 
-pub unsafe fn menu_key(c: *mut client, owner: &MenuWeak, event: &key_event) -> ::core::ffi::c_int {
+pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>, owner: &MenuWeak, event: &key_event) -> ::core::ffi::c_int {
     let action = {
         let mut md = match owner.try_borrow_mut() {
             Ok(md) => md,
@@ -559,16 +559,15 @@ pub unsafe fn menu_key(c: *mut client, owner: &MenuWeak, event: &key_event) -> :
         std::ptr::null_mut()
     };
     let state = cmdq_new_state(&mut md.fs, event, 0);
-    let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
     if let Err(error) = cmd_parse_and_append(
         md.menu.items[index]
             .command
             .as_deref()
             .expect("menu command row has a command"),
-        parse_client_owner.as_ref(), Some(&state),
+        client_owner, Some(&state),
     ) {
         cmdq_append(
-            parse_client_owner.as_ref(),
+            client_owner,
             cmdq_get_error(
                 error
                     .as_ref()
@@ -877,14 +876,14 @@ mod tests {
         }));
         *slot.borrow_mut() = Some(md);
         assert_eq!(
-            unsafe { menu_key(std::ptr::null_mut(), &weak, &event(b'a' as key_code)) },
+            unsafe { menu_key(None, &weak, &event(b'a' as key_code)) },
             1
         );
         assert!(called.get());
         assert!(slot.borrow().is_none());
         assert!(!weak.is_alive());
         assert_eq!(
-            unsafe { menu_key(std::ptr::null_mut(), &weak, &event(b'a' as key_code)) },
+            unsafe { menu_key(None, &weak, &event(b'a' as key_code)) },
             1
         );
     }
@@ -909,7 +908,7 @@ mod tests {
             assert_eq!(
                 unsafe {
                     menu_key(
-                        std::ptr::null_mut(),
+                        None,
                         &callback_observer,
                         &event(b'a' as key_code),
                     )
