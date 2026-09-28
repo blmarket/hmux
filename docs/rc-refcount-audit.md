@@ -1,6 +1,8 @@
 # Rc model reference audit
 
-This tracks the second item in `../issues.md`. A stored `Rc` is justified by a
+This tracks the second item in `../issues.md`. Commit `5606919f` contains the
+initial C-to-Rust transcription with explicit tmux reference operations and is
+the local baseline for comparing ownership transitions. A stored `Rc` is justified by a
 matching model-reference lifecycle; a local upgrade used only to guard access
 does not make its `Weak` field an owning holder. The full inventory remains in
 `rc-entity-inventory.md`.
@@ -9,17 +11,18 @@ does not make its `Weak` field an owning holder. The full inventory remains in
 
 | Holder | Result | Evidence |
 | --- | --- | --- |
-| `spawn_context.wp0` | `Weak`; the context did not have a matching pane release. | `spawn_window` retains the source pane locally through layout rebuilding; `spawn_pane` and logging retain local upgrades. Regression verifies context drop does not keep the pane alive. |
-| `spawn_context.tc` | `Weak`; the context did not have a matching client unref. | `spawn_window` and `spawn_pane` retain an upgrade while using the client. Regression verifies expiry after the independent owner drops. |
-| `spawn_context.s` | `Weak`; the context did not have a matching session remove-ref. | `spawn_window`, `spawn_pane`, and pane-created payload setup retain local upgrades. Regression verifies expiry after the independent owner drops. |
-| `monitor_set.session` | Retained `Rc` with explicit release. | `monitor_create_session` upgrades once; `monitor_clear` takes that value and calls `session_remove_ref`. |
-| `cmd_run_shell_data.s` | Retained `Rc` with explicit release. | Creation upgrades the session observer; `Drop` takes it and calls `session_remove_ref`. |
-| `format_tree.client` | Retained `Rc` with explicit release. | Constructors retain or clone the client; `format_clear` takes it and calls `server_client_unref_owned`. |
+| `spawn_context.wp0` | `Weak`; the context did not have a matching pane release. | Baseline `src/spawn.rs` stores a raw `wp0` and has no matching pane add-ref. Current `spawn_window` retains the source pane locally through layout rebuilding; `spawn_pane` and logging retain local upgrades. Regression verifies context drop does not keep the pane alive. |
+| `spawn_context.tc` | `Weak`; the context did not have a matching client unref. | Baseline `src/spawn.rs` stores a raw `tc` and has no matching client ref. Current `spawn_window` and `spawn_pane` retain an upgrade while using the client. Regression verifies expiry after the independent owner drops. |
+| `spawn_context.s` | `Weak`; the context did not have a matching session remove-ref. | Baseline `src/spawn.rs` stores a raw `s` and has no matching session add-ref. Current `spawn_window`, `spawn_pane`, and pane-created payload setup retain local upgrades. Regression verifies expiry after the independent owner drops. |
+| `monitor_set.session` | Retained `Rc` with explicit release. | Baseline `src/monitor.rs::monitor_create_session` calls `session_add_ref`; current `monitor_create_session` upgrades once and `monitor_clear` calls `session_remove_ref`. |
+| `cmd_run_shell_data.s` | Retained `Rc` with explicit release. | Baseline `src/cmd_run_shell.rs` calls `session_add_ref`; current creation upgrades the session observer and `Drop` calls `session_remove_ref`. |
+| `format_tree.client` | Retained `Rc` with explicit release. | Baseline `src/format.rs::format_create` increments `client.references` and `format_free` calls `server_client_unref`; current constructors retain or clone the client and `format_clear` calls `server_client_unref_owned`. |
+| `cmdq_item.client_owner` | Retained `Rc` with explicit release. | Baseline `src/cmd_queue.rs::cmdq_append` increments `client.references` for each queued item and `cmdq_remove` calls `server_client_unref`; current append clones the owner and removal calls `server_client_unref_owned`. |
+| `args_command_state.client` | Retained `Rc` with explicit release. | Baseline `src/arguments.rs::args_make_commands_prepare` increments the target client's references and `args_make_commands_free` calls `server_client_unref`; current preparation stores the upgraded client and `Drop` calls `server_client_unref_owned`. |
 | Event payload model values and targets | Retained `Rc` with explicit release. | `events_payload.rs` sets model values/targets and releases each through its model-specific function in item drop or `event_payload_free_target`. |
 
-The release-pair entries establish how the current translation balances those
-stored references. They do not by themselves finish the upstream-equivalence
-review of every creation site.
+These baseline comparisons verify the listed ownership transitions. They do
+not finish the review of every creation site.
 
 ## Remaining audit
 
