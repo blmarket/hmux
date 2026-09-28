@@ -1459,3 +1459,15 @@ Resize/update paths check logical closure; tree update rechecks after rebuilding
 erased entry data pointer to its Rc model type. The erased compatibility field,
 internal UnsafeCell projections, validation helpers and other model raw accesses
 remain pending.
+
+## Implemented borrowed customization validation
+
+Item validation and option-editability checks take shared mode-data borrows for
+synchronous inspection. Validation takes optional borrowed find-state output and
+copies target fields from a local snapshot, preserving the existing output flag
+semantics. Option-tree resolution borrows find state. All callers supply scoped
+borrows backed by their retained mode owners.
+
+`cargo test --workspace` and `git diff --check` passed. No customization helper
+accepts a raw mode-data argument; constructor/internal UnsafeCell projections and
+raw session/window/pane compatibility access remain pending.

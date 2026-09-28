@@ -424,16 +424,16 @@ fn window_customize_key_tag(ptr: *const ::core::ffi::c_void, field: u_int) -> ui
 }
 unsafe fn window_customize_get_tree(
     mut scope: window_customize_scope,
-    mut fs: *mut cmd_find_state,
+    fs: &cmd_find_state,
 ) -> *mut options {
     match scope as ::core::ffi::c_uint {
         0 | 1 => return ::core::ptr::null_mut::<options>(),
         2 => return global_options,
         3 => return global_s_options,
-        4 => return options_owner_ptr(&mut (*(*fs).s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        4 => return options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         5 => return global_w_options,
-        6 => return options_owner_ptr(&mut (*(*fs).w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
-        7 => return options_owner_ptr(&mut (*(*fs).wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        6 => return options_owner_ptr(&mut (*fs.w_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
+        7 => return options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         8 | 9 => return ::core::ptr::null_mut::<options>(),
         _ => {}
     }
@@ -452,41 +452,27 @@ unsafe fn window_customize_get_environment(
     }
 }
 unsafe fn window_customize_check_item(
-    mut data: *mut window_customize_modedata,
+    data: &window_customize_modedata,
     item: &window_customize_itemdata,
-    mut fsp: *mut cmd_find_state,
+    output: Option<&mut cmd_find_state>,
 ) -> ::core::ffi::c_int {
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+    let Some(mode_pane_owner) = window_pane_upgrade(&data.wp) else {
         return 0;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut fs: cmd_find_state = cmd_find_state {
-        flags: 0,
-        current: ::core::ptr::null_mut::<cmd_find_state>(),
-        s: Default::default(),
-        wl: Default::default(),
-        w: Default::default(),
-        wp: Default::default(),
-        idx: 0,
-    };
-    if fsp.is_null() {
-        fsp = &raw mut fs;
-    }
-    if cmd_find_valid_state(&(*data).fs) != 0 {
-        cmd_find_copy_state(fsp, &raw mut (*data).fs);
+    let mut fallback = cmd_find_state::default();
+    let fs = output.unwrap_or(&mut fallback);
+    if cmd_find_valid_state(&data.fs) != 0 {
+        let mut source = data.fs.clone();
+        cmd_find_copy_state(fs, &mut source);
     } else {
-        cmd_find_from_pane(fsp, mode_pane, 0 as ::core::ffi::c_int);
+        cmd_find_from_pane(fs, mode_pane_owner.get(), 0);
     }
-    if item.type_0 as ::core::ffi::c_uint
-        == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return (item
-            .environ
-            .as_ref()
-            .zip(window_customize_get_environment(item.scope, &*fsp).as_ref())
-            .is_some_and(|(a, b)| a.matches(b))) as ::core::ffi::c_int;
+    if item.type_0 == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT {
+        return item.environ.as_ref()
+            .zip(window_customize_get_environment(item.scope, fs).as_ref())
+            .is_some_and(|(a, b)| a.matches(b)) as ::core::ffi::c_int;
     }
-    return (item.oo == window_customize_get_tree(item.scope, fsp)) as ::core::ffi::c_int;
+    (item.oo == window_customize_get_tree(item.scope, fs)) as ::core::ffi::c_int
 }
 unsafe fn window_customize_get_key_table(
     item: &window_customize_itemdata,
@@ -812,14 +798,14 @@ unsafe fn window_customize_set_option_value(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_customize_option_editable(
-    mut data: *mut window_customize_modedata,
+    data: &window_customize_modedata,
     item: &window_customize_itemdata,
 ) -> ::core::ffi::c_int {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     if item.type_0 as ::core::ffi::c_uint
         != WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
-        || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
+        || window_customize_check_item(data, item, None) == 0
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -2010,7 +1996,7 @@ unsafe fn window_customize_draw_option(
     let mut is_monitor: ::core::ffi::c_int = 0;
     let mut is_user_hook: ::core::ffi::c_int = 0;
     let mut is_any_hook: ::core::ffi::c_int = 0;
-    if window_customize_check_item(data, item, &raw mut fs) == 0 {
+    if window_customize_check_item(&*data, item, Some(&mut fs)) == 0 {
         return;
     }
     name = (item.name)
@@ -2735,7 +2721,7 @@ unsafe fn window_customize_draw_environment(
         idx: 0,
     };
     let mut text: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if window_customize_check_item(data, item, &raw mut fs) == 0 {
+    if window_customize_check_item(&*data, item, Some(&mut fs)) == 0 {
         return;
     }
     envent = environ_find(
@@ -3128,7 +3114,7 @@ unsafe fn window_customize_set_option_callback(
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 {
         return PROMPT_CLOSE;
     }
     o = options_get(oo, name);
@@ -3222,7 +3208,7 @@ unsafe fn window_customize_set_environment_callback(
     if s.is_null() || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 {
         return PROMPT_CLOSE;
     }
     flags = item.environ_flags;
@@ -3279,7 +3265,7 @@ unsafe fn window_customize_set_environment(
         idx: 0,
     };
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    if window_customize_check_item(data, item, &raw mut fs) == 0 {
+    if window_customize_check_item(&*data, item, Some(&mut fs)) == 0 {
         return;
     }
     envent = environ_find(
@@ -3366,7 +3352,7 @@ unsafe fn window_customize_add_option_callback(
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 {
         return PROMPT_CLOSE;
     }
     namelen = strcspn(s, b" \t\0" as *const u8 as *const ::core::ffi::c_char) as size_t;
@@ -3505,7 +3491,7 @@ unsafe fn window_customize_add_environment_callback(
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 {
         return PROMPT_CLOSE;
     }
     if *s as ::core::ffi::c_int == '-' as i32 {
@@ -3618,7 +3604,7 @@ unsafe fn window_customize_edit_close_cb(
     let value_ptr = value.as_ptr().cast::<::core::ffi::c_char>();
     match ed.edit_type as ::core::ffi::c_uint {
         0 => {
-            if window_customize_option_editable(data, item) != 0
+            if window_customize_option_editable(&*data, item) != 0
                 && window_customize_set_option_value(item, value_ptr, &raw mut cause)
                     != 0 as ::core::ffi::c_int
             {
@@ -3644,7 +3630,7 @@ unsafe fn window_customize_edit_close_cb(
             }
         }
         3 => {
-            if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>())
+            if window_customize_check_item(&*data, item, None)
                 == 0
             {
                 current_block = 8846462416050848735;
@@ -3688,7 +3674,7 @@ unsafe fn window_customize_start_edit(
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if window_customize_option_editable(data, item) == 0 {
+        if window_customize_option_editable(&*data, item) == 0 {
             return;
         }
         o = options_get(
@@ -3732,7 +3718,7 @@ unsafe fn window_customize_start_edit(
     } else if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+        if window_customize_check_item(&*data, item, None) == 0 {
             return;
         }
         let Some(environment) = item
@@ -3809,7 +3795,7 @@ unsafe fn window_customize_set_option(
         wp: Default::default(),
         idx: 0,
     };
-    if window_customize_check_item(data, item, &raw mut fs) == 0 {
+    if window_customize_check_item(&*data, item, Some(&mut fs)) == 0 {
         return;
     }
     o = options_get(item.oo, name);
@@ -3868,7 +3854,7 @@ unsafe fn window_customize_set_option(
         if scope as ::core::ffi::c_uint == item.scope as ::core::ffi::c_uint {
             oo = item.oo;
         } else {
-            oo = window_customize_get_tree(scope, &raw mut fs);
+            oo = window_customize_get_tree(scope, &fs);
         }
     }
     if !oe.is_null()
@@ -3976,7 +3962,7 @@ unsafe fn window_customize_set_array_key_callback(
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
     if array_key.is_null()
-        || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
+        || window_customize_check_item(&*data, item, None) == 0
     {
         return PROMPT_CLOSE;
     }
@@ -4034,7 +4020,7 @@ unsafe fn window_customize_set_array_key(
 ) {
     let data = mode_owner.get();
     if item.array_key.is_none()
-        || window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0
+        || window_customize_check_item(&*data, item, None) == 0
     {
         return;
     }
@@ -4100,7 +4086,7 @@ unsafe fn window_customize_unset_environment(
         return;
     };
 
-    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 {
         return;
     }
     if environ_find(
@@ -4131,7 +4117,7 @@ unsafe fn window_customize_unset_option(
 ) {
     let data = mode_owner.get();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 {
         return;
     }
     o = options_get(
@@ -4164,7 +4150,7 @@ unsafe fn window_customize_reset_option(
     let data = mode_owner.get();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 {
         return;
     }
     if !item.array_key.is_none() {
