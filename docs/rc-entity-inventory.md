@@ -1471,3 +1471,15 @@ borrows backed by their retained mode owners.
 `cargo test --workspace` and `git diff --check` passed. No customization helper
 accepts a raw mode-data argument; constructor/internal UnsafeCell projections and
 raw session/window/pane compatibility access remain pending.
+
+## Implemented borrowed tree row cleanup
+
+Removing an empty tree group takes explicit mutable borrows of the item-owner
+collection and tree data. The helper is safe Rust and no longer receives or
+projects a raw tree-mode pointer. Its callers retain the tree while supplying
+those borrows. Kill-current selection borrows the stored tree owner after the
+closed-mode check; obsolete raw tree temporaries were removed from kill prompts.
+
+`cargo test --workspace` and `git diff --check` passed. Neither tree nor
+customization helpers now accept raw mode-data arguments. Internal UnsafeCell
+projections, pointer-valued row tags and raw session/window/pane uses remain.

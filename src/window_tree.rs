@@ -333,17 +333,15 @@ fn window_tree_add_item(
     items.push(item);
     handle
 }
-unsafe fn window_tree_remove_last_item(
-    data: *mut window_tree_modedata,
+fn window_tree_remove_last_item(
+    items: &mut Vec<refbox::RefBox<window_tree_itemdata>>,
+    tree: &mut mode_tree_data,
     item: &refbox::Weak<window_tree_itemdata>,
     mti: &ModeTreeItemRef,
 ) {
-    debug_assert!((*data)
-        .item_list
-        .last()
-        .is_some_and(|last| item.is(last)));
-    mode_tree_remove(&mut *(*data).data_ptr(), mti);
-    (*data).item_list.pop();
+    debug_assert!(items.last().is_some_and(|last| item.is(last)));
+    mode_tree_remove(tree, mti);
+    items.pop();
 }
 unsafe fn window_tree_build_pane(
     session_owner: &Rc<UnsafeCell<session>>,
@@ -489,7 +487,10 @@ unsafe fn window_tree_build_window(
         i = i.wrapping_add(1);
     }
     if found == 0 as u_int {
-        window_tree_remove_last_item(data, &item_owner, &mti);
+        let tree_owner = (*data).data.as_ref().expect("mode tree owner").clone();
+        window_tree_remove_last_item(
+            &mut (*data).item_list, &mut *tree_owner.get(), &item_owner, &mti,
+        );
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
@@ -562,7 +563,10 @@ unsafe fn window_tree_build_session(
         i = i.wrapping_add(1);
     }
     if empty == n {
-        window_tree_remove_last_item(data, &item_owner, &mti);
+        let tree_owner = (*data).data.as_ref().expect("mode tree owner").clone();
+        window_tree_remove_last_item(
+            &mut (*data).item_list, &mut *tree_owner.get(), &item_owner, &mti,
+        );
     }
 }
 unsafe fn window_tree_live_mode(
@@ -2019,7 +2023,6 @@ unsafe fn window_tree_kill_current_callback(
     _key: prompt_key_result,
 ) -> prompt_result {
     let data = mode_owner.get();
-    let mut mtd: *mut mode_tree_data = (*data).data_ptr();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
     };
@@ -2054,7 +2057,8 @@ unsafe fn window_tree_kill_current_callback(
     {
         return PROMPT_CLOSE;
     }
-    let item_owner = mode_tree_get_current(&*mtd);
+    let tree_owner = (*data).data.as_ref().expect("mode tree owner");
+    let item_owner = mode_tree_get_current(&*tree_owner.get());
     if let Some(item) = item_owner.as_tree() {
         window_tree_kill_each(&item);
     }
@@ -2069,7 +2073,6 @@ unsafe fn window_tree_kill_tagged_callback(
     _key: prompt_key_result,
 ) -> prompt_result {
     let data = mode_owner.get();
-    let mut mtd: *mut mode_tree_data = (*data).data_ptr();
     let Some(s) = s.filter(|text| !text.to_bytes().is_empty()) else {
         return PROMPT_CLOSE;
     };
