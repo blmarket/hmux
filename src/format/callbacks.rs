@@ -984,7 +984,6 @@ unsafe fn format_cb_mouse_status_line(mut ft: *mut format_tree) -> Option<CStrin
 unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
@@ -1002,11 +1001,8 @@ unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CStri
     } else {
         return None;
     }
-    sr = status_get_range(format_client, x, y);
-    if sr.is_null() {
-        return None;
-    }
-    match (*sr).type_0 as ::core::ffi::c_uint {
+    let sr = status_get_range(&*format_client, x, y)?;
+    match sr.type_0 as ::core::ffi::c_uint {
         0 => return None,
         1 => {
             return Some(c"left".to_owned());
@@ -1025,7 +1021,7 @@ unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CStri
         }
         6 => {
             return Some(
-                CStr::from_ptr(&raw mut (*sr).string as *mut ::core::ffi::c_char).to_owned(),
+                CStr::from_ptr(sr.string.as_ptr()).to_owned(),
             );
         }
         7 => {

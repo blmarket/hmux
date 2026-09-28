@@ -1690,3 +1690,15 @@ Range matching borrows the collection for the lookup only.
 boundaries, wrong-row rejection, and a result surviving range-storage cleanup.
 Client status-range lookup, pane-status options queries and other internal raw
 model projections remain pending.
+
+## Implemented borrowed client status-range snapshots
+
+Client status-range lookup is safe Rust taking a shared client borrow and returning
+an optional copied range. It bounds-checks the status row and searches borrowed
+range storage. Mouse dispatch and formatting consume values rather than raw range
+pointers; mouse session-range validation also avoids a temporary raw session.
+
+`cargo test --workspace` and `git diff --check` passed. New tests cover horizontal
+boundaries, missing/out-of-bounds rows and snapshots surviving storage cleanup and
+client release. Raw client/session relationships and other status APIs remain
+pending.

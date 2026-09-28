@@ -184,18 +184,10 @@ pub unsafe fn status_prompt_line_at(c: &client) -> u_int {
     }
     return line;
 }
-pub unsafe fn status_get_range(mut c: *mut client, mut x: u_int, mut y: u_int) -> *mut style_range {
-    let mut sl: *mut status_line = &raw mut (*c).status;
-    if y as usize
-        >= (::core::mem::size_of::<[style_line_entry; 5]>() as usize)
-            .wrapping_div(::core::mem::size_of::<style_line_entry>() as usize)
-    {
-        return ::core::ptr::null_mut::<style_range>();
-    }
-    return style_ranges_get_range(
-        &raw mut (*(&raw mut (*sl).entries as *mut style_line_entry).offset(y as isize)).ranges,
-        x,
-    );
+pub fn status_get_range(c: &client, x: u_int, y: u_int) -> Option<style_range> {
+    c.status.entries.get(y as usize)?.ranges.as_slice().iter()
+        .find(|range| x >= range.start && x < range.end)
+        .map(|range| **range)
 }
 unsafe fn status_push_screen(mut c: *mut client) {
     let mut sl: *mut status_line = &raw mut (*c).status;

@@ -1934,7 +1934,6 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         return KEYC_UNKNOWN;
     };
     let s = session_owner.get();
-    let mut fs: *mut session = ::core::ptr::null_mut::<session>();
     let window_owner = crate::src::shared::window::WindowOwner::adopt(
         (*(*s).curw).window_owner.as_ref().expect("mouse window").as_rc().clone(),
     );
@@ -1956,7 +1955,6 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         tv_sec: 0,
         tv_usec: 0,
     };
-    let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut type_0: key_code_type = KEYC_TYPE_NOTYPE;
     let mut loc: key_code_mouse_location = KEYC_MOUSE_LOCATION_NOWHERE;
     log_debug(format_args!(
@@ -2112,11 +2110,8 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         && y >= (*m).statusat as u_int
         && y < ((*m).statusat as u_int).wrapping_add((*m).statuslines)
     {
-        sr = status_get_range(c, x, y.wrapping_sub((*m).statusat as u_int));
-        if sr.is_null() {
-            loc = KEYC_MOUSE_LOCATION_STATUS_DEFAULT;
-        } else {
-            match (*sr).type_0 as ::core::ffi::c_uint {
+        if let Some(sr) = status_get_range(&*c, x, y.wrapping_sub((*m).statusat as u_int)) {
+            match sr.type_0 as ::core::ffi::c_uint {
                 0 => return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code,
                 1 => {
                     log_debug(format_args!("mouse range: left"));
@@ -2127,17 +2122,17 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     loc = KEYC_MOUSE_LOCATION_STATUS_RIGHT;
                 }
                 3 => {
-                    if window_pane_find_by_id((*sr).argument).is_none() {
+                    if window_pane_find_by_id(sr.argument).is_none() {
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
-                    (*m).wp = (*sr).argument as ::core::ffi::c_int;
+                    (*m).wp = sr.argument as ::core::ffi::c_int;
                     log_debug(format_args!("mouse range: pane %{}", ((*m).wp) as u32));
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 4 => {
                     fwl = winlink_find_by_index(
                         &raw mut (*s).windows,
-                        (*sr).argument as ::core::ffi::c_int,
+                        sr.argument as ::core::ffi::c_int,
                     );
                     if fwl.is_null() {
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -2147,11 +2142,10 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 5 => {
-                    fs = session_find_by_id((*sr).argument).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-                    if fs.is_null() {
+                    if session_find_by_id(sr.argument).is_none() {
                         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                     }
-                    (*m).s = (*sr).argument as ::core::ffi::c_int;
+                    (*m).s = sr.argument as ::core::ffi::c_int;
                     log_debug(format_args!("mouse range: session ${}", ((*m).s) as u32));
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
@@ -2160,13 +2154,15 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     loc = KEYC_MOUSE_LOCATION_STATUS;
                 }
                 7 => {
-                    n = (*sr).argument;
+                    n = sr.argument;
                     log_debug(format_args!("mouse range: control {}", (n) as u32));
                     loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
                         .wrapping_add(n) as key_code_mouse_location;
                 }
                 _ => {}
             }
+        } else {
+            loc = KEYC_MOUSE_LOCATION_STATUS_DEFAULT;
         }
     }
     if loc as ::core::ffi::c_uint
