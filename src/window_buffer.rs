@@ -46,13 +46,11 @@ use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
-use crate::src::shared::spawn::spawn_editor_state;
+use crate::src::shared::spawn::{spawn_editor_state, EditorHandle};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL, VIS_TAB};
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::sort::sort_get_buffers;
-use crate::src::spawn::{
-    spawn_cancel_editor, spawn_editor, spawn_editor_write, spawn_get_editor_pid,
-};
+use crate::src::spawn::{spawn_editor, spawn_editor_write};
 use crate::src::text::utf8::utf8_strvis;
 use crate::src::window::window_pane_upgrade;
 use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
@@ -66,7 +64,7 @@ pub struct window_buffer_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub fs: cmd_find_state,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
-    pub editor: *mut spawn_editor_state,
+    pub editor: Option<EditorHandle>,
     pub command: CString,
     pub format: CString,
     pub key_format: CString,
@@ -480,7 +478,7 @@ unsafe fn window_buffer_init(
         wp: std::rc::Rc::downgrade(&mode_pane_owner),
         fs: Default::default(),
         data: None,
-        editor: ::core::ptr::null_mut(),
+        editor: None,
         command,
         format,
         key_format,
@@ -533,8 +531,8 @@ unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
     if data.is_null() {
         return;
     }
-    if !(*data).editor.is_null() {
-        spawn_cancel_editor((*data).editor);
+    if let Some(editor) = (*data).editor.as_ref() {
+        editor.cancel();
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
     window_buffer_clear_items(&mut (*data).item_list);
@@ -617,15 +615,15 @@ unsafe fn window_buffer_draw_waiting(mut data: *mut window_buffer_modedata) {
     let mut text_x: u_int = 0;
     let mut textlen: size_t = 0;
     let mut pid: pid_t = 0;
-    if (*data).editor.is_null() {
+    let Some(editor) = (*data).editor.as_ref() else {
         return;
-    }
+    };
     sx = (*s).grid().sx;
     sy = (*s).grid().sy;
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
     }
-    pid = spawn_get_editor_pid((*data).editor);
+    pid = editor.pid();
     if pid == -(1 as ::core::ffi::c_int) {
         xformat(&mut text, format_args!("WAITING FOR EDITOR"));
     } else {
@@ -702,8 +700,8 @@ unsafe fn window_buffer_edit_close_cb(
         wme = (*wp).modes.active_ptr();
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
             data = (*wme).data as *mut window_buffer_modedata;
-            if NonNull::new((*data).editor) == Some(editor) {
-                (*data).editor = ::core::ptr::null_mut::<spawn_editor_state>();
+            if (*data).editor.as_ref().is_some_and(|handle| handle.matches(editor.as_ref())) {
+                (*data).editor = None;
             }
         }
     }
@@ -756,7 +754,7 @@ unsafe fn window_buffer_start_edit(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    if !(*data).editor.is_null() {
+    if (*data).editor.is_some() {
         return;
     }
     let Some(pb) = paste_get_name(&item.name) else {
@@ -777,9 +775,7 @@ unsafe fn window_buffer_start_edit(
             window_buffer_edit_close_cb(editor, buf, ed)
         })),
     );
-    if let Some(editor) = NonNull::new(editor) {
-        (*data).editor = editor.as_ptr();
-    }
+    (*data).editor = editor;
 }
 unsafe fn window_buffer_key(
     mut wme: *mut window_mode_entry,
@@ -797,7 +793,7 @@ unsafe fn window_buffer_key(
     let mut finished: ::core::ffi::c_int = 0;
     if paste_is_empty() != 0 {
         finished = 1 as ::core::ffi::c_int;
-    } else if !(*data).editor.is_null() {
+    } else if (*data).editor.is_some() {
         if key == 'q' as i32 as key_code
             || key == '\u{1b}' as i32 as key_code
             || key == '\u{3}' as i32 as key_code
@@ -882,6 +878,7 @@ unsafe fn window_buffer_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::spawn::spawn_cancel_editor;
 
     #[test]
     fn editor_record_releases_on_completion_cancellation_and_replaced_buffer() {
@@ -907,6 +904,7 @@ mod tests {
                 let capture = (edit, Rc::new(()));
                 let observer = Rc::downgrade(&capture.1);
                 let mut editor = spawn_editor_state {
+                    id: Default::default(),
                     path: c"unused".to_owned(),
                     pid: 0,
                     cb: Some(Box::new(move |editor, bytes| {

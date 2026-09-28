@@ -104,7 +104,13 @@ pub type uintmax_t = ::libc::uintmax_t;
 
 impl spawn_editor_state {
     fn new(path: CString, cb: spawn_finish_edit_cb) -> Box<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_EDITOR_ID: AtomicU64 = AtomicU64::new(1);
+        let id = NEXT_EDITOR_ID
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .expect("editor identity exhausted");
         Box::new(spawn_editor_state {
+            id: crate::src::shared::spawn::EditorId(id),
             path: path,
             pid: 0,
             cb: cb,
@@ -1073,9 +1079,9 @@ pub(crate) unsafe fn spawn_editor(
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     write: impl FnOnce(&CFile) -> bool,
     mut cb: spawn_finish_edit_cb,
-) -> *mut spawn_editor_state {
+) -> Option<crate::src::shared::spawn::EditorHandle> {
     let Some(session_owner) = (*client_owner.get()).session.upgrade() else {
-        return std::ptr::null_mut();
+        return None;
     };
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
@@ -1110,7 +1116,7 @@ pub(crate) unsafe fn spawn_editor(
     let mut editor: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut fd: ::core::ffi::c_int = 0;
     if (*w).modal.upgrade().is_some() {
-        return ::core::ptr::null_mut::<spawn_editor_state>();
+        return None;
     }
     editor = options_get_string(
         global_options,
@@ -1118,19 +1124,19 @@ pub(crate) unsafe fn spawn_editor(
     );
     fd = mkstemp(&raw mut path as *mut ::core::ffi::c_char);
     if fd == -(1 as ::core::ffi::c_int) {
-        return ::core::ptr::null_mut::<spawn_editor_state>();
+        return None;
     }
     let fd_owner = OwnedFd::from_raw_fd(fd);
     f = spawn_editor_fdopen(fd_owner);
     if f.is_null() {
         unlink(&raw mut path as *mut ::core::ffi::c_char);
-        return ::core::ptr::null_mut::<spawn_editor_state>();
+        return None;
     }
     let stream = CFile::from_raw(f).expect("fdopen returned a non-null stream");
     if !write(&stream) {
         drop(stream);
         unlink(&raw mut path as *mut ::core::ffi::c_char);
-        return ::core::ptr::null_mut::<spawn_editor_state>();
+        return None;
     }
     drop(stream);
     let mut owner = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb);
@@ -1149,7 +1155,7 @@ pub(crate) unsafe fn spawn_editor(
     lc = layout_floating_pane(w, ::core::ptr::null_mut::<window_pane>(), &raw mut lg);
     if lc.is_null() {
         window_pop_zoom(w);
-        return ::core::ptr::null_mut::<spawn_editor_state>();
+        return None;
     }
     let cmd = CString::new(
         [
@@ -1173,7 +1179,7 @@ pub(crate) unsafe fn spawn_editor(
     wp = spawn_pane(&raw mut sc, &raw mut cause);
     if wp.is_null() {
         window_pop_zoom(w);
-        return ::core::ptr::null_mut::<spawn_editor_state>();
+        return None;
     }
     window_pop_zoom(w);
     options_set_number(
@@ -1183,18 +1189,61 @@ pub(crate) unsafe fn spawn_editor(
     );
     (*es).pid = (*wp).pid;
     (*wp).editor = Some(owner);
-    return es;
+    let pane_owner = (*wp).observer.upgrade().expect("new editor pane has an owner");
+    Some(crate::src::shared::spawn::EditorHandle::new(
+        &pane_owner,
+        std::ptr::NonNull::new_unchecked(es),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::src::ffi::libc::fclose;
+    use crate::src::shared::spawn::EditorHandle;
     use std::ffi::CStr;
     use std::fs;
     use std::process::{Command, Stdio};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn stale_editor_handle_does_not_cancel_replacement() {
+        let pane = window_pane::new();
+        unsafe {
+            let first = spawn_editor_state::new(
+                c"".to_owned(),
+                Some(Box::new(|_, _| {})),
+            );
+            (*pane.get()).editor = Some(first);
+            let first_ptr = std::ptr::NonNull::from(
+                (*pane.get()).editor.as_mut().unwrap().as_mut(),
+            );
+            let stale = EditorHandle::new(&pane, first_ptr);
+            let previous = (*pane.get()).editor.take();
+            let second = spawn_editor_state::new(
+                c"".to_owned(),
+                Some(Box::new(|_, _| {})),
+            );
+            (*pane.get()).editor = Some(second);
+            let second_ptr = std::ptr::NonNull::from(
+                (*pane.get()).editor.as_mut().unwrap().as_mut(),
+            );
+            let current = EditorHandle::new(&pane, second_ptr);
+
+            assert_eq!(stale.pid(), -1);
+            assert!(!stale.matches(second_ptr.as_ref()));
+            stale.cancel();
+            assert!((*pane.get()).editor.as_ref().unwrap().cb.is_some());
+            assert!(current.matches(second_ptr.as_ref()));
+            current.cancel();
+            assert!((*pane.get()).editor.as_ref().unwrap().cb.is_none());
+            drop(previous);
+            drop(pane);
+            assert_eq!(current.pid(), -1);
+            current.cancel();
+        }
+    }
 
     #[test]
     fn editor_without_a_session_releases_callbacks_without_starting() {
@@ -1210,7 +1259,7 @@ mod tests {
                     panic!("detached client must not complete an editor");
                 })),
             );
-            assert!(editor.is_null());
+            assert!(editor.is_none());
             assert!(observed.upgrade().is_none());
             assert_eq!(std::rc::Rc::strong_count(&client), 1);
         }

@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **71 raw fields in
+fields and their lifecycle decisions. The current scanner finds **69 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-165 explicitly record a migration and twelve record
-removal. The remaining 71 comprise 23 needing an access or teardown
+167 explicitly record a migration and twelve record
+removal. The remaining 69 comprise 21 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 71 fields have audit dispositions. Design entries
+The remaining 69 fields have audit dispositions. Design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -78,7 +78,7 @@ are now recorded individually in the TSV.
 | `tty.term` | `Option<Box<tty_term>>`. Creation returns the validated Box; failed construction and Drop unlink the same stable allocation from the intrusive registry. Read accessors use const raw projections; tests install actual owners. |
 | `window_mode_entry.mode` | Static reference to one of nine now-immutable mode descriptors; pointer identity comparisons are retained with `ptr::eq`. |
 | `hooks_data.name/formats`, `cmdq_state.formats` | Bounded name reference and `FormatTreeOwner` (optional in queue state). The owner takes its Box before draining entries, so callback capture cleanup may add entries without a whole-tree mutable borrow spanning that reentry. |
-| `window_pane.editor` | `Option<Box<spawn_editor_state>>`. Completion takes ownership before invoking the callback. Drop unlinks the temporary file on completion or creation failure (cancellation keeps the owner until completion); mode editor fields remain observers. |
+| `window_pane.editor` | `Option<Box<spawn_editor_state>>`. Completion takes ownership before invoking the callback. Drop unlinks the temporary file on completion or creation failure (cancellation keeps the owner until completion); mode editor fields use weak observers. |
 | Nine `options_table_entry` pointer fields | Optional static C strings, static choice slices, and optional static default-array slices. All backing data is immutable, including strings in runtime-built test descriptors. The startup initializer was removed; array iteration is bounded. |
 | Three monitor indexes and their three weak traversal fields | Index values own Boxes; weak fields name the typed index. Successful insertion consumes ownership, duplicates keep the caller's allocation, and removal returns the detached owner through the legacy raw API. No map borrow spans callbacks or node destruction. |
 | `StreamState.stream` | `RefCell<Option<Box<bufferevent>>>`. Free unregisters/cancels first, then takes and drops the Box outside the slot borrow. A surviving task-state Rc cannot defer physical stream cleanup. |
@@ -101,6 +101,7 @@ are now recorded individually in the TSV.
 | `window.active` | `Weak<UnsafeCell<window_pane>>` observes the pane index owner. Selection and pane loss update the weak identity; retained lookups upgrade directly, while legacy callers use `active_ptr` only under their existing pane-index lifetime contract. That pointer projection is not a borrow guard. Redraw snapshots clone the weak identity. |
 | `client.session` | `Weak<UnsafeCell<session>>` observes the session index owner. Attachment and detachment update the weak identity; retained consumers upgrade it, while legacy `session_ptr` calls depend on their existing indexed-session lifetime. Last-session history clones the weak handle. |
 | `window_copy_cmd_state.wme` | A weak mode-entry observer replaces the raw command-state field. Command dispatch finds the pane-owned RefBox, and callbacks check that it is live before projecting a legacy pointer. Dispatch also stops before using saved mode data if a callback removed the entry. |
+| `window_buffer_modedata.editor`, `window_customize_modedata.editor` | `Option<EditorHandle>` observes the floating pane's Box-owned editor through a weak pane plus a unique editor ID. Spawn returns the handle after installing the editor. PID and cancellation resolve only a matching live slot; completion compares the detached editor ID before clearing mode state. A regression shows that a stale handle cannot cancel a replacement. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
 | `winlink.window` (now `window_owner`) | Optional `WindowOwner` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |

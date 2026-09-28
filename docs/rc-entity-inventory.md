@@ -2351,3 +2351,13 @@ paths copy the requested directory into the context; spawn formatting borrows th
 owned value and keeps the existing absent-directory behavior. Failed spawns
 release the snapshot through ordinary Drop. The field inventory now counts 82
 remaining in-scope raw fields.
+
+## Implemented weak editor identity
+
+The buffer and customize modes store an `EditorHandle` with a weak reference to
+the floating editor pane and a unique editor ID. Spawn returns the handle after
+installing the pane-owned `Box<spawn_editor_state>`. Cancellation and PID reads
+resolve the current slot only when its ID matches; completion compares the
+detached editor before clearing mode state. The stale-handle regression covers
+editor replacement and pane expiration. The field inventory now counts 69
+remaining in-scope raw fields.

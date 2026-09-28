@@ -23,9 +23,59 @@ pub const SPAWN_FLOATOVERZOOM: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int
 pub const SPAWN_NONOTIFY: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 
 pub struct spawn_editor_state {
+    pub id: EditorId,
     pub path: std::ffi::CString,
     pub pid: pid_t,
     pub cb: spawn_finish_edit_cb,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EditorId(pub(crate) u64);
+
+/// Observe one pane-owned editor without keeping its Box alive. The identity
+/// prevents a delayed completion from clearing a replacement editor.
+pub struct EditorHandle {
+    pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    id: EditorId,
+}
+
+impl EditorHandle {
+    /// The editor pointer must be live and installed in this pane.
+    pub unsafe fn new(
+        pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+        editor: std::ptr::NonNull<spawn_editor_state>,
+    ) -> Self {
+        assert_eq!(
+            (*pane.get()).editor.as_ref().map(|state| state.id),
+            Some(editor.as_ref().id),
+            "editor must belong to the pane",
+        );
+        Self {
+            pane: std::rc::Rc::downgrade(pane),
+            id: editor.as_ref().id,
+        }
+    }
+
+    pub fn matches(&self, editor: &spawn_editor_state) -> bool {
+        editor.id == self.id
+    }
+
+    pub fn cancel(&self) {
+        let Some(pane) = self.pane.upgrade() else { return };
+        let pane = unsafe { &mut *pane.get() };
+        if let Some(editor) = pane.editor.as_mut().filter(|editor| editor.id == self.id) {
+            editor.cb = None;
+        }
+    }
+
+    pub fn pid(&self) -> pid_t {
+        let Some(pane) = self.pane.upgrade() else { return -1 };
+        let pane = unsafe { &*pane.get() };
+        pane.editor
+            .as_ref()
+            .filter(|editor| editor.id == self.id)
+            .map_or(-1, |editor| editor.pid)
+    }
 }
 
 /// Rust-only callback so the editor result can move as owned binary bytes.

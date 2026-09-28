@@ -92,11 +92,9 @@ use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::spawn::spawn_editor_state;
+use crate::src::shared::spawn::{spawn_editor_state, EditorHandle};
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
-use crate::src::spawn::{
-    spawn_cancel_editor, spawn_editor, spawn_editor_write, spawn_get_editor_pid,
-};
+use crate::src::spawn::{spawn_editor, spawn_editor_write};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
@@ -119,7 +117,7 @@ pub struct window_customize_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
-    pub editor: *mut spawn_editor_state,
+    pub editor: Option<EditorHandle>,
     pub format: CString,
     pub hide_global: ::core::ffi::c_int,
     pub hide_default: ::core::ffi::c_int,
@@ -670,15 +668,15 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
     let mut text_x: u_int = 0;
     let mut textlen: size_t = 0;
     let mut pid: pid_t = 0;
-    if (*data).editor.is_null() {
+    let Some(editor) = (*data).editor.as_ref() else {
         return;
-    }
+    };
     sx = (*s).grid().sx;
     sy = (*s).grid().sy;
     if sx == 0 as u_int || sy == 0 as u_int {
         return;
     }
-    pid = spawn_get_editor_pid((*data).editor);
+    pid = editor.pid();
     if pid == -(1 as ::core::ffi::c_int) {
         xformat(&mut text, format_args!("WAITING FOR EDITOR"));
     } else {
@@ -2947,7 +2945,7 @@ unsafe fn window_customize_init(
         wp: std::rc::Rc::downgrade(&mode_pane_owner),
         dead: 0,
         data: None,
-        editor: ::core::ptr::null_mut(),
+        editor: None,
         format,
         hide_global: 0,
         hide_default: 0,
@@ -3008,8 +3006,8 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     };
     let data = mode_owner.get();
     (*data).dead = 1 as ::core::ffi::c_int;
-    if !(*data).editor.is_null() {
-        spawn_cancel_editor((*data).editor);
+    if let Some(editor) = (*data).editor.as_ref() {
+        editor.cancel();
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
     drop((*wme).data_owner.take());
@@ -3583,8 +3581,8 @@ unsafe fn window_customize_edit_close_cb(
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_customize_mode) {
             mode_owner = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>();
             if let Some(owner) = mode_owner.as_ref() {
-                if NonNull::new((*owner.get()).editor) == Some(editor) {
-                    (*owner.get()).editor = std::ptr::null_mut();
+                if (*owner.get()).editor.as_ref().is_some_and(|handle| handle.matches(editor.as_ref())) {
+                    (*owner.get()).editor = None;
                 }
             }
         }
@@ -3668,7 +3666,7 @@ unsafe fn window_customize_start_edit(
     let mut envent: Option<&environ_entry> = None;
     let value: Cow<'_, CStr>;
     let mut edit_type: window_customize_edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
-    if !(*data).editor.is_null() {
+    if (*data).editor.is_some() {
         return;
     }
     if item.type_0 as ::core::ffi::c_uint
@@ -3761,9 +3759,7 @@ unsafe fn window_customize_start_edit(
             window_customize_edit_close_cb(editor, buf, ed)
         })),
     );
-    if let Some(editor) = NonNull::new(editor) {
-        (*data).editor = editor.as_ptr();
-    }
+    (*data).editor = editor;
 }
 unsafe fn window_customize_set_option(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
@@ -4792,7 +4788,7 @@ unsafe fn window_customize_key(
     let data = mode_owner.get();
     let mut finished: ::core::ffi::c_int = 0;
     let mut tagged: u_int = 0;
-    if !(*data).editor.is_null() {
+    if (*data).editor.is_some() {
         if key == 'q' as i32 as key_code
             || key == '\u{1b}' as i32 as key_code
             || key == '\u{3}' as i32 as key_code
@@ -5065,6 +5061,7 @@ mod tag_tests {
 #[cfg(test)]
 mod item_owner_tests {
     use super::*;
+    use crate::src::spawn::spawn_cancel_editor;
     use std::cell::Cell;
     use std::cell::RefCell;
 
@@ -5114,7 +5111,7 @@ mod item_owner_tests {
                 wp: Weak::new(),
                 dead: 0,
                 data: None,
-                editor: std::ptr::null_mut(),
+                editor: None,
                 format: CString::new(Vec::new()).unwrap(),
                 hide_global: 0,
                 hide_default: 0,
@@ -5261,6 +5258,7 @@ mod item_owner_tests {
         let capture = (edit, Rc::new(()));
         let observer = Rc::downgrade(&capture.1);
         let mut state = spawn_editor_state {
+            id: Default::default(),
             path: c"unused".to_owned(),
             pid: 0,
             cb: Some(Box::new(move |_, _| {
