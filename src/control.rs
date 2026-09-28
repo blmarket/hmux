@@ -1054,9 +1054,10 @@ unsafe fn control_read_callback(c: *mut client) {
                 ::core::ptr::null_mut::<key_event>(),
                 CMDQ_STATE_CONTROL,
             );
+            let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
             match cmd_parse_and_append(
                 CStr::from_ptr(line.as_ptr().cast::<::core::ffi::c_char>()),
-                c, Some(&state),
+                parse_client_owner.as_ref(), Some(&state),
             ) {
                 Err(error) => {
                     let error_item = cmdq_get_callback_owned(
@@ -1065,7 +1066,7 @@ unsafe fn control_read_callback(c: *mut client) {
                             control_error(item.as_ptr(), error)
                         })),
                     );
-                    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), error_item);
+                    cmdq_append(parse_client_owner.as_ref(), error_item);
                 }
                 Ok(_) => {}
             }

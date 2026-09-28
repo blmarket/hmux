@@ -626,7 +626,8 @@ unsafe fn window_switch_run_command(
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
         );
-        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), c, Some(&state)) {
+        let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
+        if let Err(mut error) = cmd_parse_and_append(command.as_c_str(), parse_client_owner.as_ref(), Some(&state)) {
             if !c.is_null() {
                 cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(

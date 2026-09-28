@@ -2319,8 +2319,9 @@ pub unsafe fn mode_tree_run_command(
         std::ptr::null_mut(),
         0,
     );
+    let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
     if let Err(mut error) =
-        cmd_parse_and_append(&command, c, Some(&state))
+        cmd_parse_and_append(&command, parse_client_owner.as_ref(), Some(&state))
     {
         if !c.is_null() {
             cmd_parse_error_uppercase_first(&mut error);

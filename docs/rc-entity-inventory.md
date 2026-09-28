@@ -918,3 +918,13 @@ append, insertion and queue execution.
 regression now covers insertion between appended items, ordering, execution-context
 identity and per-item retention/release. Other model pointers and queue-item raw
 APIs remain pending.
+
+## Implemented retained client argument for parse-and-append
+
+`cmd_parse_and_append` now borrows an optional Rc client and passes that handle
+directly to queue append. Control input, menu commands, mode-tree commands and
+window-switch commands retain their client through parsing and error handling.
+Error queue items reuse that same owner instead of recovering it from a raw view.
+
+`cargo test --workspace` and `git diff --check` passed. Outer command callbacks,
+control stream callback captures and other model projections remain pending.

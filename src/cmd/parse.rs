@@ -487,7 +487,7 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
 }
 pub unsafe fn cmd_parse_and_append(
     s: &CStr,
-    mut c: *mut client,
+    owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     state: Option<&std::rc::Rc<cmdq_state>>,
 ) -> Result<cmd_parse_status, Option<CString>> {
     let mut pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();
@@ -497,7 +497,7 @@ pub unsafe fn cmd_parse_and_append(
         return Err(pr.error.take());
     }
     item = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
-    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
+    cmdq_append(owner, item);
     drop(pr.cmdlist.take());
     Ok(pr.status)
 }

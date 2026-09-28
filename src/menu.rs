@@ -559,15 +559,16 @@ pub unsafe fn menu_key(c: *mut client, owner: &MenuWeak, event: &key_event) -> :
         std::ptr::null_mut()
     };
     let state = cmdq_new_state(&mut md.fs, event, 0);
+    let parse_client_owner = c.as_ref().map(|client| client.observer.upgrade().expect("command client is live"));
     if let Err(error) = cmd_parse_and_append(
         md.menu.items[index]
             .command
             .as_deref()
             .expect("menu command row has a command"),
-        c, Some(&state),
+        parse_client_owner.as_ref(), Some(&state),
     ) {
         cmdq_append(
-            c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(),
+            parse_client_owner.as_ref(),
             cmdq_get_error(
                 error
                     .as_ref()
