@@ -23,7 +23,7 @@ use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
 pub struct cmd_confirm_before_data {
-    pub item: *mut cmdq_item,
+    pub item: std::rc::Weak<UnsafeCell<cmdq_item>>,
     pub cmdlist: Rc<std::cell::RefCell<cmd_list>>,
     pub confirm_key: u_char,
     pub default_yes: ::core::ffi::c_int,
@@ -73,13 +73,13 @@ unsafe fn cmd_confirm_before_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item
         return CMD_RETURN_ERROR;
     };
     let mut cdata = Box::new(cmd_confirm_before_data {
-        item: ::core::ptr::null_mut(),
+        item: std::rc::Weak::new(),
         cmdlist,
         confirm_key: 0,
         default_yes: 0,
     });
     if wait != 0 {
-        cdata.item = item;
+        cdata.item = (*item).observer.clone();
     }
     cdata.default_yes = args_has(args, 'y' as i32 as u_char);
     confirm_key = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -139,7 +139,8 @@ unsafe fn cmd_confirm_before_callback(
     cdata: &cmd_confirm_before_data,
     s: Option<&CStr>,
 ) -> prompt_result {
-    let mut item: *mut cmdq_item = cdata.item;
+    let item_owner = cdata.item.upgrade();
+    let item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut retcode: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     if !((*c).flags & CLIENT_DEAD as uint64_t != 0) {
@@ -188,6 +189,7 @@ impl cmd_confirm_before_data {
 mod tests {
     use super::*;
     use crate::src::cmd::cmd_list_new;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use crate::src::prompt::{prompt_free, prompt_key};
     use crate::src::shared::rc;
     use crate::src::text::utf8::utf8_fromcstr_vec;
@@ -199,12 +201,12 @@ mod tests {
             for reject in [false, true] {
                 let client = client::new();
                 let pointer = std::ptr::NonNull::new(rc::as_ptr(&client));
-                let mut item = cmdq_item::empty();
-                item.flags = CMDQ_WAITING;
+                let item = cmdq_get_callback_owned(c"confirmation wait".as_ptr(), None);
+                (*item).flags = CMDQ_WAITING;
                 let cmdlist = cmd_list_new();
                 let commands = std::rc::Rc::downgrade(&cmdlist);
                 let data = Box::new(cmd_confirm_before_data {
-                    item: &mut item,
+                    item: (*item).observer.clone(),
                     cmdlist: cmdlist,
                     confirm_key: b'y',
                     default_yes: 0,
@@ -219,7 +221,7 @@ mod tests {
                     Some(Box::new(move |text, key| callback(pointer, text, key)));
                 if reject {
                     assert_eq!(prompt_key(&owner.downgrade(), b'n' as u64, &mut 0), PROMPT_KEY_CLOSE);
-                    assert_eq!(item.flags & CMDQ_WAITING, 0);
+                    assert_eq!((*item).flags & CMDQ_WAITING, 0);
                 }
                 assert!(commands.upgrade().is_some());
                 prompt_free(&owner.downgrade());
@@ -228,10 +230,27 @@ mod tests {
                 if !reject {
                     // Pinned tmux cleanup only frees commands; callback dispatch
                     // is responsible for continuing a waiting confirmation.
-                    assert_ne!(item.flags & CMDQ_WAITING, 0);
+                    assert_ne!((*item).flags & CMDQ_WAITING, 0);
                 }
                 prompt_free(&owner.downgrade());
+                cmdq_free_detached(item);
             }
+        }
+    }
+
+    #[test]
+    fn confirmation_skips_an_expired_wait_item() {
+        unsafe {
+            let client = client::new();
+            let item = cmdq_get_callback_owned(c"expired confirmation".as_ptr(), None);
+            let data = cmd_confirm_before_data {
+                item: (*item).observer.clone(),
+                cmdlist: cmd_list_new(),
+                confirm_key: b'y',
+                default_yes: 0,
+            };
+            cmdq_free_detached(item);
+            assert_eq!(cmd_confirm_before_callback(client.get(), &data, None), PROMPT_CLOSE);
         }
     }
 }

@@ -2500,3 +2500,10 @@ successor and verifies the link expires. The raw-field count is now 54.
 nested format loops retain an upgrade through item access; format creation
 still borrows the item only while copying its state. A regression confirms a
 tree does not keep a detached queue item alive. The raw-field count is 53.
+
+## Implemented weak confirmation wait item
+
+`cmd_confirm_before_data.item` now observes its waiting queue item weakly.
+The prompt callback retains an upgrade through insertion and continuation,
+and skips that path if the item expired. Tests cover both a live production
+item and an expired handle. The raw-field count is 52.
