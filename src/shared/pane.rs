@@ -245,11 +245,11 @@ pub struct window_pane_tree_entry {
     pub owner: Option<refbox::Weak<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>>,
 }
 
-/// Ordered mode stack owned by a pane. Each entry remains boxed so mode
-/// callbacks and pending events can keep stable pointers while the stack moves.
+/// Ordered mode stack owned by a pane. Weak handles observe stable entries
+/// while the stack moves and expire when an entry is removed and freed.
 #[derive(Default)]
 pub struct WindowPaneModesStorage {
-    pub(crate) entries: Vec<Box<window_mode_entry>>,
+    pub(crate) entries: Vec<refbox::RefBox<window_mode_entry>>,
 }
 
 #[repr(C)]

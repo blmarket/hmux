@@ -2394,7 +2394,7 @@ pub(crate) unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut 
         return ::core::ptr::null_mut();
     };
     let Some(index) = storage.entries.iter().position(|entry| {
-        (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
+        entry.as_ptr() == (wme as *const window_mode_entry)
     }) else {
         return ::core::ptr::null_mut();
     };
@@ -2402,31 +2402,32 @@ pub(crate) unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut 
         .entries
         .get(index + 1)
         .map_or(::core::ptr::null_mut(), |entry| {
-            (&**entry) as *const window_mode_entry as *mut window_mode_entry
+            entry.as_ptr().cast_mut()
         })
 }
 
 unsafe fn window_pane_mode_insert_front(
     wp: &mut window_pane,
-    entry: Box<window_mode_entry>,
-) -> *mut window_mode_entry {
+    entry: refbox::RefBox<window_mode_entry>,
+) -> refbox::Weak<window_mode_entry> {
     let modes = &mut wp.modes;
     let storage = modes.storage.get_or_insert_with(Default::default);
-    let wme = (&*entry) as *const window_mode_entry as *mut window_mode_entry;
+    let weak = entry.downgrade();
+    let wme = weak.as_ptr().cast_mut();
     storage.entries.insert(0, entry);
     modes.active = wme;
-    wme
+    weak
 }
 
 unsafe fn window_pane_mode_remove(
     wp: *mut window_pane,
     wme: *mut window_mode_entry,
-) -> Option<Box<window_mode_entry>> {
+) -> Option<refbox::RefBox<window_mode_entry>> {
     let modes = &mut (*wp).modes;
     let (removed, empty) = {
         let storage = modes.storage.as_mut()?;
         let index = storage.entries.iter().position(|entry| {
-            (&**entry as *const window_mode_entry) == (wme as *const window_mode_entry)
+            entry.as_ptr() == (wme as *const window_mode_entry)
         })?;
         let removed = storage.entries.remove(index);
         (removed, storage.entries.is_empty())
@@ -2440,7 +2441,7 @@ unsafe fn window_pane_mode_remove(
             .as_ref()
             .and_then(|storage| storage.entries.first())
             .map_or(::core::ptr::null_mut(), |entry| {
-                (&**entry) as *const window_mode_entry as *mut window_mode_entry
+                entry.as_ptr().cast_mut()
             });
     }
     Some(removed)
@@ -2480,7 +2481,7 @@ mod window_mode_collection_tests {
             (*wp).sx = 0;
             for _ in 0..3 {
                 let mut entry = boxed_mode(wp);
-                entry.mode = &MODE;
+                entry.get_mut_unchecked().mode = &MODE;
                 window_pane_mode_insert_front(&mut *wp, entry);
             }
             window_pane_free_modes(&owner);
@@ -2493,8 +2494,8 @@ mod window_mode_collection_tests {
         }
     }
 
-    unsafe fn boxed_mode(wp: *mut window_pane) -> Box<window_mode_entry> {
-        Box::new(window_mode_entry {
+    unsafe fn boxed_mode(wp: *mut window_pane) -> refbox::RefBox<window_mode_entry> {
+        refbox::RefBox::new(window_mode_entry {
             wp: (*wp).observer.clone(),
             swp: std::rc::Weak::new(),
             mode: &window_copy_mode,
@@ -2513,24 +2514,27 @@ mod window_mode_collection_tests {
             let wp = pane_owner.get();
             (*wp).modes = window_pane_modes::default();
 
-            let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
-            let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
-            let c = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
+            let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp)).as_ptr().cast_mut();
+            let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp)).as_ptr().cast_mut();
+            let c_observer = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
+            let c = c_observer.as_ptr().cast_mut();
             assert_eq!((*wp).modes.active, c);
             assert_eq!(window_pane_mode_next(c), b);
             assert_eq!(window_pane_mode_next(b), a);
             assert!(window_pane_mode_next(a).is_null());
 
             window_pane_mode_promote(wp, a);
+            assert!(c_observer.is_alive());
             assert_eq!((*wp).modes.active, a);
             assert_eq!(window_pane_mode_next(a), c);
             assert_eq!(window_pane_mode_next(c), b);
 
             let removed = window_pane_mode_remove(wp, c).expect("mode was present");
-            assert_eq!((&*removed) as *const window_mode_entry as *mut _, c);
+            assert_eq!(removed.as_ptr().cast_mut(), c);
             assert_eq!((*wp).modes.active, a);
             assert_eq!(window_pane_mode_next(a), b);
             drop(removed);
+            assert!(!c_observer.is_alive());
 
             // Force Vec growth after callbacks already hold `a` and `b`.
             for _ in 0..64 {
@@ -2547,8 +2551,8 @@ mod window_mode_collection_tests {
 
             let detached = boxed_mode(wp);
             drop(pane_owner);
-            assert!(detached.wp.upgrade().is_none());
-            assert!(window_pane_mode_next((&*detached as *const window_mode_entry).cast_mut()).is_null());
+            assert!(detached.get_unchecked().wp.upgrade().is_none());
+            assert!(window_pane_mode_next(detached.as_ptr().cast_mut()).is_null());
         }
     }
 }
@@ -2953,8 +2957,8 @@ pub unsafe fn window_pane_set_mode(
     if !wme.is_null() {
         window_pane_mode_promote(wp, wme);
     } else {
-        // The pane owns a stable Box address for as long as callbacks retain it.
-        let entry = Box::new(window_mode_entry {
+        // The pane owns a stable RefBox address for as long as callbacks retain it.
+        let entry = refbox::RefBox::new(window_mode_entry {
             wp: (*wp).observer.clone(),
             swp: source_owner.map(std::rc::Rc::downgrade).unwrap_or_default(),
             mode,
@@ -2964,7 +2968,7 @@ pub unsafe fn window_pane_set_mode(
             prefix: 1,
             kill: 0,
         });
-        wme = window_pane_mode_insert_front(&mut *wp, entry);
+        wme = window_pane_mode_insert_front(&mut *wp, entry).as_ptr().cast_mut();
         (*wme).screen =
             (*(*wme).mode).init.expect("non-null function pointer")(wme, item, fs, args);
         if (*wme).screen.is_null() {
