@@ -242,14 +242,14 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
             Ok(wl) => wl,
             Err(error) => {
                 cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
-                crate::src::window::window_remove_ref(window.get(), c"cmd_break_pane_exec".as_ptr(), || window);
+                crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec".as_ptr());
                 return CMD_RETURN_ERROR;
             }
         };
         layout_init(w, wp);
         (*wp).flags |= PANE_CHANGED;
         colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
-        crate::src::window::window_remove_ref(window.get(), c"cmd_break_pane_exec".as_ptr(), || window);
+        crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec".as_ptr());
         events_fire_window(
             b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
             w,

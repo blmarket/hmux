@@ -106,7 +106,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
                 );
                 format_defaults(ft, c, s, wl, ::core::ptr::null_mut::<window_pane>());
                 let cp = format_expand_cstring(ft, template);
-                format_free(ft);
+                format_free(Box::from_raw(ft));
                 control_notify_write(c, |out| write_cstr(out, cp.as_ptr()));
             }
         }

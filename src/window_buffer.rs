@@ -256,7 +256,7 @@ unsafe fn window_buffer_build(
             if !filter.is_null() {
                 let cp = format_expand_cstring(ft, filter);
                 if format_true(cp.as_ptr()) == 0 {
-                    format_free(ft);
+                    format_free(Box::from_raw(ft));
                     current_block_32 = 5948590327928692120;
                 } else {
                     current_block_32 = 1608152415753874203;
@@ -277,7 +277,7 @@ unsafe fn window_buffer_build(
                         Some(&text),
                         -(1 as ::core::ffi::c_int),
                     );
-                    format_free(ft);
+                    format_free(Box::from_raw(ft));
                 }
             }
         }
@@ -417,7 +417,7 @@ unsafe fn window_buffer_get_key(
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return key;
 }
 fn window_buffer_sort(sort_crit: &mut sort_criteria) {

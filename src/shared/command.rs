@@ -454,7 +454,7 @@ impl cmd_parse_result {
 impl Drop for cmdq_state {
     fn drop(&mut self) {
         if let Some(formats) = self.formats.get_mut().take() {
-            unsafe { crate::src::format::format_free(Box::into_raw(formats)) };
+            unsafe { crate::src::format::format_free(formats) };
         }
     }
 }

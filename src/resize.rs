@@ -616,6 +616,6 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         w = window_owner.get();
         recalculate_size(w, now);
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }

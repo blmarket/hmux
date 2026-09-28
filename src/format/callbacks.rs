@@ -4153,7 +4153,7 @@ mod owned_callback_tests {
             assert!(super::super::format_get_pane(&*ft).is_none());
             assert!(format_cb_pane_id(ft).is_none());
             assert!(format_cb_pane_width(ft).is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -4174,7 +4174,7 @@ mod owned_callback_tests {
             assert!(observer.upgrade().is_none());
             assert!(format_cb_window_name(ft).is_none());
             assert!(format_cb_window_id(ft).is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -4192,7 +4192,7 @@ mod owned_callback_tests {
             assert!(observer.upgrade().is_none());
             assert!(format_cb_session_name(ft).is_none());
             assert!(format_cb_session_id(ft).is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -4209,7 +4209,7 @@ mod owned_callback_tests {
             crate::src::window::winlink_remove(&raw mut (*session).windows, link);
             assert!((*ft).wl_ptr().is_null());
             assert!(format_cb_window_index(ft).is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -4226,7 +4226,7 @@ mod owned_callback_tests {
             assert!(observer.upgrade().is_none());
             assert!(format_cb_client_name(ft).is_none());
             assert!(format_cb_client_width(ft).is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -4260,7 +4260,7 @@ mod owned_callback_tests {
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"A");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"1");
             (*ft).pb = None;
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -4283,7 +4283,7 @@ mod owned_callback_tests {
             ] {
                 assert!(format_table_get(key).unwrap().get(ft).is_none());
             }
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -4315,7 +4315,7 @@ mod owned_callback_tests {
             drop(pb);
             assert!(!weak.is_alive(), "format tree only observes the buffer");
             assert!(format_cb_buffer_full(ft).is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             assert!(!weak.is_alive());
             assert_eq!(full.as_bytes(), b"A\xff");
             assert!(!sample.as_bytes().is_empty());

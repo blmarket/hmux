@@ -133,7 +133,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     );
     format_defaults(ft, tc, s, wl, wp);
     let cmd = format_expand_time_cstring(ft, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     (*wp).pipe_pid = fork() as pid_t;

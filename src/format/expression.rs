@@ -998,7 +998,7 @@ pub(super) unsafe fn format_loop_sessions(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(next.ft);
+        format_free(Box::from_raw(next.ft));
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1209,7 +1209,7 @@ pub(super) unsafe fn format_loop_windows(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(nft);
+        format_free(Box::from_raw(nft));
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1307,7 +1307,7 @@ pub(super) unsafe fn format_loop_panes(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(nft);
+        format_free(Box::from_raw(nft));
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1457,7 +1457,7 @@ pub(super) unsafe fn format_loop_add_option(
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
-    format_free(nft);
+    format_free(Box::from_raw(nft));
     buffer.extend_from_slice(expanded.as_bytes());
 }
 pub(super) unsafe fn format_loop_add_array_item(
@@ -1618,7 +1618,7 @@ pub(super) unsafe fn format_loop_add_array_item(
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
-    format_free(nft);
+    format_free(Box::from_raw(nft));
     buffer.extend_from_slice(expanded.as_bytes());
 }
 pub(super) unsafe fn format_loop_options(
@@ -1857,7 +1857,7 @@ pub(super) unsafe fn format_loop_environ(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
-        format_free(nft);
+        format_free(Box::from_raw(nft));
         buffer.extend_from_slice(expanded.as_bytes());
         i = i.wrapping_add(1);
     }
@@ -1940,7 +1940,7 @@ pub(super) unsafe fn format_loop_clients(
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
-        format_free(nft);
+        format_free(Box::from_raw(nft));
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -3638,7 +3638,7 @@ pub(crate) unsafe fn format_single_cstring(
 ) -> CString {
     let ft = format_create_defaults(item, c, s, wl, wp);
     let expanded = format_expand_cstring(ft, fmt);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return expanded;
 }
 pub(crate) unsafe fn format_single_from_state_cstring(
@@ -3726,7 +3726,7 @@ mod format_choose_tests {
             let owned = format_expand_cstring(ft, input.as_ptr());
             let timed_owned = format_expand_time_cstring(ft, input.as_ptr());
             drop(input);
-            format_free(ft);
+            format_free(Box::from_raw(ft));
 
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
             assert_eq!(timed_owned.as_bytes(), owned.as_bytes());
@@ -3769,7 +3769,7 @@ mod format_choose_tests {
             assert!(format_expand1_cstring(&raw mut es, too_long.as_ptr())
                 .as_bytes()
                 .is_empty());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -3816,7 +3816,7 @@ mod format_choose_tests {
             }
 
             assert!(format_choose(&raw mut es, c"no delimiter".as_ptr()).is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 }

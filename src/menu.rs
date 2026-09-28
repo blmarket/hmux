@@ -197,7 +197,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
             }
         }
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 
 pub unsafe fn menu_update(md: &mut menu_data) {
@@ -674,7 +674,7 @@ pub unsafe fn menu_display(
         }
         md.s.mode &= !MODE_CURSOR;
     }
-    crate::src::window::window_remove_ref(setup_window.get(), c"menu_display".as_ptr(), || setup_window);
+    crate::src::window::window_remove_ref(setup_window, c"menu_display".as_ptr());
     menu_close(&window, None);
     let replaced = {
         let Some(retained) = window.upgrade() else {

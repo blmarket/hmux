@@ -136,6 +136,6 @@ unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
         cmdq_print(item, |out| write_cstr(out, s.as_ptr()));
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return CMD_RETURN_NORMAL;
 }

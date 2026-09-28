@@ -28,6 +28,6 @@ fn modifier_key_survives_nested_expansion_and_failure_cleanup() {
         let result = format_expand_cstring(tree, expression.as_ptr());
         assert_eq!(result.as_bytes(), b"c");
 
-        format_free(tree);
+        format_free(Box::from_raw(tree));
     }
 }

@@ -395,7 +395,7 @@ unsafe fn cmd_show_options_print(
         );
     }
     let line = format_expand_cstring(ft, template);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
     drop(value);
 }
@@ -520,7 +520,7 @@ unsafe fn cmd_show_hooks_print_monitor(
         );
     }
     let line = format_expand_cstring(ft, template);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
     drop(target);
 }

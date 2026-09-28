@@ -998,7 +998,7 @@ pub unsafe fn style_add(
     (*gc).attr =
         ((*gc).attr as ::core::ffi::c_int | (*sy).gc.attr as ::core::ffi::c_int) as u_short;
     if !ft0.is_null() {
-        format_free(ft0);
+        format_free(Box::from_raw(ft0));
     }
     return sy;
 }

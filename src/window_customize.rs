@@ -1472,7 +1472,7 @@ unsafe fn window_customize_build_keys(
             count = count.wrapping_add(1);
         }
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     if (*data).hide_default != 0 && count == 0 as u_int {
         mode_tree_remove(&mut *(*data).tree_owner().get(), &top);
     }
@@ -1777,7 +1777,7 @@ unsafe fn window_customize_build(
         filter,
         &raw mut fs,
     );
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     ft = format_create_from_state(
         ::core::ptr::null_mut::<cmdq_item>(),
         ::core::ptr::null_mut::<client>(),
@@ -1794,7 +1794,7 @@ unsafe fn window_customize_build(
             window_customize_build_keys(mode_owner, &kt, ft, filter, &raw mut fs);
         }
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn window_customize_draw_key(
     item: &window_customize_itemdata,
@@ -2672,7 +2672,7 @@ write_cstr(out, unit)
         }
     }
     drop(default_value);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn window_customize_draw_environment(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,

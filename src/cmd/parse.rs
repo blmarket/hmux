@@ -160,7 +160,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let ft = format_create_with_client(client_owner.as_ref(), item, FORMAT_NONE, FORMAT_NOJOBS);
             format_defaults(ft, client_ptr, (*fsp).s_ptr(), (*fsp).wl_ptr(), (*fsp).wp_ptr());
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             take_parser_token(expanded)
         }
     }

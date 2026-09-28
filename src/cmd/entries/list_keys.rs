@@ -341,6 +341,6 @@ unsafe fn cmd_list_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             break;
         }
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return CMD_RETURN_NORMAL;
 }

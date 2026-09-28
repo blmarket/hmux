@@ -527,7 +527,7 @@ unsafe fn window_client_draw_info(
         );
         screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn window_client_draw(
     data: *mut window_client_modedata,
@@ -712,7 +712,7 @@ unsafe fn window_client_get_key(
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return key;
 }
 fn window_client_sort(sort_crit: &mut sort_criteria) {

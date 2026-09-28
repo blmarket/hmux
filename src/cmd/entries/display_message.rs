@@ -153,7 +153,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
                 write_cstr(out, value.as_ptr())
             });
         });
-        format_free(ft);
+        format_free(Box::from_raw(ft));
         return CMD_RETURN_NORMAL;
     }
     let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
@@ -172,7 +172,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
                 )
             });
             drop(msg);
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             return CMD_RETURN_ERROR;
         };
         msg = json_to_string(&jn);
@@ -194,6 +194,6 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         });
     }
     drop(msg);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return CMD_RETURN_NORMAL;
 }

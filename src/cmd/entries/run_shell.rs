@@ -229,7 +229,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 i = i.wrapping_add(1);
             }
             cdata.cmd = Some(format_expand_cstring(ft, cmd));
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     } else {
         cdata.state = Some(args_make_commands_prepare(

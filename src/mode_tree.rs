@@ -1251,7 +1251,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         }
         i = i.wrapping_add(1);
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     if !((*mtd).preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int) {
         sy = (*s).grid().sy;
         if !(sy <= 4 as u_int
@@ -1967,7 +1967,7 @@ unsafe fn mode_tree_draw_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut c
         mode_tree_draw_help_line(ctx, &gc, ft, line, item, x, y, w);
         y = y.wrapping_add(1);
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn mode_tree_display_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mtd = tree_owner.get();

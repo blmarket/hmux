@@ -44,7 +44,7 @@ fn environment_loops_support_nested_reads_and_last_entry_flags() {
             assert_eq!(result.to_bytes(), expected.as_bytes(), "{expression:?}");
         }
 
-        format_free(tree);
+        format_free(Box::from_raw(tree));
         global_options = saved_options;
         global_s_options = saved_s_options;
         global_w_options = saved_w_options;

@@ -766,9 +766,8 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
 // then drop the consumed Rc without firing the notification twice.
 unsafe fn winlink_release_window(wl: *mut winlink, from: &CStr) {
     let w = (*wl).window_ptr();
-    window_remove_ref(w, from.as_ptr(), || {
-        (*wl).window_owner.take().expect("winlink window reference")
-    });
+    window_notify_before_release(w, from.as_ptr());
+    drop((*wl).window_owner.take().expect("winlink window reference"));
 }
 
 pub unsafe fn winlink_set_window(wl: *mut winlink, w: *mut window) {
@@ -1184,18 +1183,17 @@ pub unsafe fn window_add_ref(w: *mut window, from: *const ::core::ffi::c_char) -
     ));
     owner
 }
-/// Release a window reference after notifying while that reference is still held.
-/// `take_reference` runs after notification so a winlink can keep its field
-/// visible to callbacks until the release actually consumes it.
-///
-/// # Safety
-/// `w` must remain live through notification. `take_reference` must return the
-/// caller's existing strong reference to that same window without cloning it.
+/// Consume a window reference after notifying while that reference is still held.
 pub unsafe fn window_remove_ref(
-    w: *mut window,
+    owner: Rc<std::cell::UnsafeCell<window>>,
     from: *const ::core::ffi::c_char,
-    take_reference: impl FnOnce() -> Rc<std::cell::UnsafeCell<window>>,
 ) {
+    window_notify_before_release(owner.get(), from);
+    drop(owner);
+}
+
+// The caller keeps its existing reference alive and releases it after notification.
+unsafe fn window_notify_before_release(w: *mut window, from: *const ::core::ffi::c_char) {
     if (*w).observer.strong_count() == 1 {
         events_fire_window(c"window-closed".as_ptr(), w);
     }
@@ -1204,9 +1202,6 @@ pub unsafe fn window_remove_ref(
         ((*w).id) as u32,
         log_cstr((from) as *const _)
     ));
-    let reference = take_reference();
-    assert_eq!(reference.get(), w, "release must consume the notified window reference");
-    drop(reference);
 }
 pub unsafe fn window_pane_add_ref(wp: *mut window_pane, from: *const ::core::ffi::c_char) -> std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
     let owner = (*wp).observer.upgrade().expect("live Rc pane");
@@ -4969,7 +4964,7 @@ mod zoom_teardown_tests {
                 if typed {
                     drop(w_owner);
                 } else {
-                    window_remove_ref(w_owner.get(), c"test final notifying owner".as_ptr(), || w_owner);
+                    window_remove_ref(w_owner, c"test final notifying owner".as_ptr());
                 }
                 assert_eq!(resized.get(), 0);
                 assert_eq!(closed.get(), usize::from(!typed));
@@ -5001,7 +4996,7 @@ mod zoom_teardown_tests {
             assert_eq!(window_unzoom(w, 1), 0);
             assert_eq!(((*pane).sx, (*pane).sy), (40, 24));
             assert!((*w).saved_layout_root.is_none());
-            window_remove_ref(w_owner.get(), c"test live close".as_ptr(), || w_owner);
+            window_remove_ref(w_owner, c"test live close".as_ptr());
             assert_eq!(
                 *notifications.borrow(),
                 [c"pane-resized", c"window-unzoomed", c"window-closed"]

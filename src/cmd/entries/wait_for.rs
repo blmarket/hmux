@@ -326,7 +326,7 @@ unsafe fn cmd_wait_for_event_cb(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         flag = format_true(expanded.as_ptr());
-        format_free(ft);
+        format_free(Box::from_raw(ft));
         if flag == 0 {
             return;
         }

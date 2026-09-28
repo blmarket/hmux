@@ -662,7 +662,7 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 pane_cursor = window_pane_next(wp.as_ref());
             }
         }
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
     job_check_died(pid, status);
 }
@@ -687,7 +687,7 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
             wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
     job_check_died(pid, status);
 }

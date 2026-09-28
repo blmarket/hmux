@@ -44,7 +44,7 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
             assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
 
-        format_free(tree);
+        format_free(Box::from_raw(tree));
         global_options = saved_options;
         global_s_options = saved_s_options;
         global_w_options = saved_w_options;

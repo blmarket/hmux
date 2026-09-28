@@ -173,6 +173,6 @@ unsafe fn cmd_kill_window_filter(
     );
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return flag;
 }

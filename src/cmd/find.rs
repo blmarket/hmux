@@ -415,7 +415,7 @@ unsafe fn cmd_find_get_window(
             return cmd_find_best_session_with_window(fs);
         })();
         if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(window.get(), c"cmd_find_get_window".as_ptr(), || window);
+            crate::src::window::window_remove_ref(window, c"cmd_find_get_window".as_ptr());
         }
         return result;
     }
@@ -464,7 +464,7 @@ unsafe fn cmd_find_get_window_with_session(
             return cmd_find_best_winlink_with_window(fs);
         })();
         if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(window.get(), c"cmd_find_get_window_with_session".as_ptr(), || window);
+            crate::src::window::window_remove_ref(window, c"cmd_find_get_window_with_session".as_ptr());
         }
         return result;
     }

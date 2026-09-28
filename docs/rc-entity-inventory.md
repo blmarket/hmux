@@ -9,12 +9,13 @@ entity can have owning, weak, and borrowed holders simultaneously.
 The later wrapper cleanup follows the SessionOwner migration: direct Rc fields
 and locals release explicitly, with no WindowOwner type. Window creation, lookup,
 and traversal return Rc<UnsafeCell<window>>; callers consume their references
-through window_remove_ref. For winlinks, that function notifies while the field
-is still installed, then takes and drops its reference. Normal unlinking releases
-the window reference before dropping the winlink.
+through window_remove_ref, which consumes the Rc directly. Winlink release uses
+the shared notification helper while its field is still installed, then takes
+and drops its reference. Normal unlinking releases the window reference before
+dropping the winlink.
 
 Monitor and format holders store Boxes or optional Boxes and invoke monitor_destroy or
-format_free after taking them, preserving cleanup order and reentrant callbacks.
+format_free with those Boxes directly, preserving cleanup order and reentrant callbacks.
 Popup overlays directly store RefBox<PopupState>. The ncurses reading operation
 calls del_curterm explicitly. The historical implementation notes below describe
 the wrappers as they existed before this cleanup.

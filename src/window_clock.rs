@@ -786,7 +786,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         b"clock-mode-colour\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     colour = gc.fg;
     style = options_get_number(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),

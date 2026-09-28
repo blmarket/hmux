@@ -112,11 +112,11 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
             }
             Err(cause) => {
                 cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
-                format_free(ft);
+                format_free(Box::from_raw(ft));
                 return CMD_RETURN_ERROR;
             }
         }
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return CMD_RETURN_NORMAL;
 }

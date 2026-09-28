@@ -72,7 +72,7 @@ unsafe fn alerts_callback() {
         ));
         (*w).alerts_queued = 0 as ::core::ffi::c_int;
         (*w).flags &= !WINDOW_ALERTFLAGS;
-        window_remove_ref(owner.get(), b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char, || owner);
+        window_remove_ref(owner, b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char);
         if !has_next {
             break;
         }
@@ -150,7 +150,7 @@ pub unsafe fn alerts_reset_all() {
         w = window_owner.get();
         alerts_reset(w);
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
 unsafe fn alerts_reset(mut w: *mut window) {

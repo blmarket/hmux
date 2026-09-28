@@ -140,6 +140,6 @@ unsafe fn cmd_rotate_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         server_redraw_window(&*(w));
         return CMD_RETURN_NORMAL;
     })();
-    crate::src::window::window_remove_ref(window_owner.get(), c"cmd_rotate_window_exec".as_ptr(), || window_owner);
+    crate::src::window::window_remove_ref(window_owner, c"cmd_rotate_window_exec".as_ptr());
     result
 }

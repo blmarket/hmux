@@ -171,7 +171,7 @@ unsafe fn window_switch_add_session(
     *order = (*order).wrapping_add(1);
     (*item).order = fresh7;
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn window_switch_add_window(
     mut data: *mut window_switch_modedata,
@@ -202,7 +202,7 @@ unsafe fn window_switch_add_window(
     *order = (*order).wrapping_add(1);
     (*item).order = fresh4;
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 fn window_switch_matches(
     items: &mut [Box<window_switch_itemdata>],

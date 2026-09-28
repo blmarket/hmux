@@ -38,9 +38,10 @@ passes retained references to `server_client_unref_owned` for deferred release.
 Optional record fields support absent clients and taking references at teardown.
 Window holders now store `Rc<UnsafeCell<window>>` directly and perform explicit releases.
 Lookup and traversal callers call `window_remove_ref` on completion and early exits.
-Winlink release calls `window_remove_ref`, which notifies while the field is
-published, then takes and drops its reference so callbacks can still inspect the
-link. Normal unlinking releases that reference before dropping the winlink.
+Winlink release shares the notification helper with `window_remove_ref`, then
+takes and drops its field so callbacks can still inspect the link during
+notification. Ordinary callers pass their Rc directly to `window_remove_ref`.
+Normal unlinking releases that reference before dropping the winlink.
 
 ## Verification
 

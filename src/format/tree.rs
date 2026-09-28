@@ -182,9 +182,9 @@ unsafe fn format_clear(ft: *mut format_tree) {
     }
 }
 
-pub unsafe fn format_free(ft: *mut format_tree) {
-    format_clear(ft);
-    drop(Box::from_raw(ft));
+pub unsafe fn format_free(mut owner: Box<format_tree>) {
+    format_clear(&raw mut *owner);
+    drop(owner);
 }
 
 pub fn format_owner_ptr(owner: &mut Option<Box<format_tree>>) -> *mut format_tree {
@@ -296,7 +296,7 @@ mod tests {
             assert_eq!((*ft).item.strong_count(), 1);
             cmdq_free_detached(item);
             assert!((*ft).item.upgrade().is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -312,7 +312,7 @@ mod tests {
                 drop(owner);
                 assert!(observer.upgrade().is_some());
 
-                format_free(ft);
+                format_free(Box::from_raw(ft));
                 assert!(observer.upgrade().is_some());
                 if cancel {
                     crate::src::reactor::shutdown_runtime();
@@ -325,7 +325,7 @@ mod tests {
 
             let ft = format_create_with_client(None, std::ptr::null_mut(), 0, 0);
             assert!((*ft).client.is_none());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -371,7 +371,7 @@ mod tests {
                 Some(FormatValue::Time(123))
             ));
             assert_eq!(calls.get(), 2);
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -399,7 +399,7 @@ mod tests {
                 address
             );
             let entry = (*ft).tree.entries.remove(key.as_bytes()).unwrap();
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             assert_eq!(entry.key, key);
             assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
         }
@@ -453,7 +453,7 @@ mod tests {
                 Some(c"recursive".to_owned())
             });
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recursive");
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -475,7 +475,7 @@ mod tests {
             ));
             format_add_cstr(ft, c"owned", c"recovered");
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recovered");
-            format_free(ft);
+            format_free(Box::from_raw(ft));
         }
     }
 
@@ -501,7 +501,7 @@ mod tests {
                 format_expand_cstring(ft, c"before#{custom_removed_entry}after".as_ptr()).as_c_str(),
                 c"beforeafter"
             );
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             options_free(global_options);
             options_free(global_w_options);
             options_free(global_s_options);
@@ -532,7 +532,7 @@ mod tests {
             assert!(drops.borrow().is_empty());
             format_add_cstr(ft, c"replace", c"literal");
             assert_eq!(*drops.borrow(), [3]);
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             assert_eq!(*drops.borrow(), [3, 1, 2]);
         }
     }
@@ -574,9 +574,9 @@ mod tests {
                     }
                 }
                 if owned {
-                    format_free(Box::into_raw(owner.take().unwrap()));
+                    format_free(owner.take().unwrap());
                 } else {
-                    format_free(ft);
+                    format_free(Box::from_raw(ft));
                 }
                 assert_eq!(calls.get(), 2);
             }
@@ -614,8 +614,8 @@ mod tests {
                 text_value(destination, c"cached").unwrap().as_c_str(),
                 c"value"
             );
-            format_free(source);
-            format_free(destination);
+            format_free(Box::from_raw(source));
+            format_free(Box::from_raw(destination));
         }
     }
 }

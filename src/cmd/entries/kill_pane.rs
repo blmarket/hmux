@@ -108,6 +108,6 @@ unsafe fn cmd_kill_pane_filter(
     format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, pane_owner.get());
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return flag;
 }

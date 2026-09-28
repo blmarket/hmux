@@ -405,7 +405,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         }
     }
     screen_write_stop(&mut ctx);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     log_debug(format_args!(
         "{} exit: force={}, changed={}",
         "status_redraw",
@@ -640,7 +640,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let expanded = format_expand_time_cstring(ft, msgfmt);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     screen_write_start(&mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
         &mut ctx,

@@ -102,7 +102,7 @@ unsafe fn window_set_fill_cell(
         b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let expanded = format_expand_cstring(ft, value);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);
     screen_write_start(&mut ctx, &raw mut s);
     format_draw(
@@ -234,7 +234,7 @@ pub unsafe fn window_pane_get_border_style(
     if *flag == 0 {
         ft = format_create_defaults(::core::ptr::null_mut::<cmdq_item>(), c, s, (*s).curw_ptr(), wp);
         style_apply(saved, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), option, ft);
-        format_free(ft);
+        format_free(Box::from_raw(ft));
         *flag = 1 as ::core::ffi::c_int;
     }
     memcpy(
@@ -327,7 +327,7 @@ pub unsafe fn window_make_pane_status(
         0 as ::core::ffi::c_int,
     );
     screen_write_stop(&mut ctx);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     if grid_compare((*wp).status_screen.grid(), old.grid()) == 0 as ::core::ffi::c_int {
         screen_free(&mut old);
         return 0 as ::core::ffi::c_int;

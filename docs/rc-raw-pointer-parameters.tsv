@@ -1,0 +1,423 @@
+entity	path	line	owner	member	type
+window	src/alerts.rs	101	alerts_check_all	mut w	* mut window
+session	src/alerts.rs	108	alerts_check_session	mut s	* mut session
+window	src/alerts.rs	116	alerts_enabled	mut w	* mut window
+window	src/alerts.rs	156	alerts_reset	mut w	* mut window
+window	src/alerts.rs	191	alerts_queue	mut w	* mut window
+window	src/alerts.rs	217	alerts_check_bell	mut w	* mut window
+window	src/alerts.rs	270	alerts_check_activity	mut w	* mut window
+window	src/alerts.rs	325	alerts_check_silence	mut w	* mut window
+session	src/cfg.rs	308	cfg_show_causes	mut s	* mut session
+window_pane	src/cmd/core.rs	569	cmd_mouse_at	mut wp	* mut window_pane
+session	src/cmd/core.rs	618	cmd_mouse_window	mut sp	* mut * mut session
+session	src/cmd/core.rs	654	cmd_mouse_pane	mut sp	* mut * mut session
+window	src/cmd/entries/break_pane.rs	87	cmd_break_pane_float	mut w	* mut window
+window_pane	src/cmd/entries/break_pane.rs	88	cmd_break_pane_float	mut wp	* mut window_pane
+client	src/cmd/entries/command_prompt.rs	266	cmd_command_prompt_callback	mut c	* mut client
+client	src/cmd/entries/confirm_before.rs	138	cmd_confirm_before_callback	mut c	* mut client
+client	src/cmd/entries/display_menu.rs	140	cmd_display_menu_get_popup_pos	mut tc	* mut client
+client	src/cmd/entries/display_menu.rs	532	cmd_display_menu_get_menu_pos	mut tc	* mut client
+window_pane	src/cmd/entries/join_pane.rs	107	cmd_join_pane_place	mut wp	* mut window_pane
+window_pane	src/cmd/entries/join_pane.rs	361	cmd_join_pane_move	mut wp	* mut window_pane
+window_pane	src/cmd/entries/join_pane.rs	552	cmd_join_pane_zindex	mut wp	* mut window_pane
+window	src/cmd/entries/join_pane.rs	602	cmd_join_pane_tile	mut w	* mut window
+window_pane	src/cmd/entries/join_pane.rs	603	cmd_join_pane_tile	mut wp	* mut window_pane
+session	src/cmd/entries/kill_pane.rs	91	cmd_kill_pane_filter	mut s	* mut session
+session	src/cmd/entries/kill_session.rs	125	cmd_kill_session_filter	mut s	* mut session
+session	src/cmd/entries/kill_window.rs	151	cmd_kill_window_filter	mut s	* mut session
+session	src/cmd/entries/list_panes.rs	85	cmd_list_panes_session	mut s	* mut session
+session	src/cmd/entries/list_panes.rs	98	cmd_list_panes_window	mut s	* mut session
+client	src/cmd/entries/refresh_client.rs	63	cmd_refresh_client_update_subscription	mut tc	* mut client
+client	src/cmd/entries/refresh_client.rs	191	cmd_refresh_client_update_offset	tc	* mut client
+window	src/cmd/entries/select_pane.rs	97	cmd_select_pane_redraw	mut w	* mut window
+client	src/cmd/find.rs	140	cmd_find_inside_pane	mut c	* mut client
+session	src/cmd/find.rs	908	cmd_find_from_session	mut s	* mut session
+session	src/cmd/find.rs	938	cmd_find_from_session_window	mut s	* mut session
+window	src/cmd/find.rs	939	cmd_find_from_session_window	mut w	* mut window
+window	src/cmd/find.rs	958	cmd_find_from_window	mut w	* mut window
+window_pane	src/cmd/find.rs	981	cmd_find_from_winlink_pane	mut wp	* mut window_pane
+window_pane	src/cmd/find.rs	997	cmd_find_from_pane	mut wp	* mut window_pane
+client	src/cmd/find.rs	1063	cmd_find_from_client	mut c	* mut client
+session	src/cmd/queue.rs	393	cmdq_insert_hook	_s	* mut session
+client	src/control.rs	594	control_set_window_size	c	* mut client
+client	src/control.rs	601	control_get_window_size	c	* mut client
+client	src/control.rs	618	control_clear_window_size	c	* mut client
+client	src/control.rs	637	control_window_pane	mut c	* mut client
+client	src/control.rs	657	control_reset_offsets	c	* mut client
+client	src/control.rs	696	control_set_pane_on	c	* mut client
+window_pane	src/control.rs	696	control_set_pane_on	wp	* mut window_pane
+client	src/control.rs	712	control_set_pane_off	c	* mut client
+window_pane	src/control.rs	712	control_set_pane_off	wp	* mut window_pane
+client	src/control.rs	724	control_continue_pane	c	* mut client
+window_pane	src/control.rs	724	control_continue_pane	wp	* mut window_pane
+client	src/control.rs	741	control_pause_pane	c	* mut client
+window_pane	src/control.rs	741	control_pause_pane	wp	* mut window_pane
+client	src/control.rs	753	control_reset_pane	c	* mut client
+window_pane	src/control.rs	753	control_reset_pane	wp	* mut window_pane
+client	src/control.rs	763	control_check_reply_buffer	mut c	* mut client
+client	src/control.rs	798	control_write_line	c	* mut client
+client	src/control.rs	857	control_flush_deferred	c	* mut client
+client	src/control.rs	870	control_write	c	* mut client
+client	src/control.rs	880	control_write_guard	mut c	* mut client
+client	src/control.rs	920	control_notify_write	mut c	* mut client
+client	src/control.rs	948	control_check_age	mut c	* mut client
+window_pane	src/control.rs	949	control_check_age	mut wp	* mut window_pane
+client	src/control.rs	998	control_write_output	mut c	* mut client
+window_pane	src/control.rs	998	control_write_output	mut wp	* mut window_pane
+client	src/control.rs	1223	control_flush_all_blocks	mut c	* mut client
+client	src/control.rs	1272	control_append_data	mut c	* mut client
+window_pane	src/control.rs	1276	control_append_data	mut wp	* mut window_pane
+client	src/control.rs	1349	control_write_data	mut c	* mut client
+client	src/control.rs	1379	control_write_pending	mut c	* mut client
+client	src/control.rs	1702	control_ready	mut c	* mut client
+client	src/control.rs	1747	control_stop	c	* mut client
+client	src/control.rs	1778	control_add_sub	mut c	* mut client
+client	src/control.rs	1791	control_remove_sub	mut c	* mut client
+session	src/environ.rs	272	environ_for_session	mut s	* mut session
+client	src/events.rs	117	events_fire_client	mut c	* mut client
+session	src/events.rs	166	events_fire_session	mut s	* mut session
+window	src/events.rs	187	events_fire_window	mut w	* mut window
+window_pane	src/events.rs	206	events_fire_pane	mut wp	* mut window_pane
+client	src/events_payload.rs	268	event_payload_set_client	mut c	* mut client
+session	src/events_payload.rs	277	event_payload_set_session	mut s	* mut session
+window	src/events_payload.rs	288	event_payload_set_window	mut w	* mut window
+window_pane	src/events_payload.rs	299	event_payload_set_pane	mut wp	* mut window_pane
+session	src/format/expression.rs	1039	format_add_window_neighbour	mut s	* mut session
+client	src/format/expression.rs	2246	format_cycle_callback	c	* mut client
+client	src/format/expression.rs	2251	format_cycle_start_timer	mut c	* mut client
+client	src/format/expression.rs	3634	format_single_cstring	mut c	* mut client
+session	src/format/expression.rs	3635	format_single_cstring	mut s	* mut session
+window_pane	src/format/expression.rs	3637	format_single_cstring	mut wp	* mut window_pane
+client	src/format/expression.rs	3647	format_single_from_state_cstring	c	* mut client
+client	src/format/jobs.rs	296	format_lost_client	mut c	* mut client
+client	src/format/tree.rs	141	format_create	c	* mut client
+client	src/format/tree.rs	166	format_create_owned	c	* mut client
+client	src/format.rs	349	format_create_defaults	mut c	* mut client
+session	src/format.rs	350	format_create_defaults	mut s	* mut session
+window_pane	src/format.rs	352	format_create_defaults	mut wp	* mut window_pane
+client	src/format.rs	376	format_create_from_state	mut c	* mut client
+client	src/format.rs	388	format_defaults	mut c	* mut client
+session	src/format.rs	389	format_defaults	mut s	* mut session
+window_pane	src/format.rs	391	format_defaults	mut wp	* mut window_pane
+session	src/format.rs	474	format_defaults_session	mut s	* mut session
+client	src/format.rs	477	format_defaults_client	mut c	* mut client
+window	src/format.rs	483	format_defaults_window	mut w	* mut window
+window_pane	src/format.rs	492	format_defaults_pane	mut wp	* mut window_pane
+session	src/hooks.rs	530	hooks_monitor_add	mut s	* mut session
+client	src/input.rs	361	input_client_has_requests	c	* mut client
+window_pane	src/input.rs	2216	input_fire_pane_title_changed	mut wp	* mut window_pane
+window_pane	src/input.rs	2438	input_parse_pane	mut wp	* mut window_pane
+window_pane	src/input.rs	2454	input_parse_buffer	mut wp	* mut window_pane
+window_pane	src/input.rs	5456	input_fire_command_event	mut wp	* mut window_pane
+client	src/input.rs	6073	input_request_reply	c	* mut client
+session	src/job.rs	86	job_run	mut s	* mut session
+client	src/key_bindings.rs	854	key_bindings_dispatch	mut c	* mut client
+window	src/layout/core.rs	341	layout_fix_offsets	mut w	* mut window
+window	src/layout/core.rs	418	layout_fix_panes	mut w	* mut window
+window_pane	src/layout/core.rs	418	layout_fix_panes	mut skip	* mut window_pane
+window	src/layout/core.rs	521	layout_resize_check	mut w	* mut window
+window	src/layout/core.rs	584	layout_resize_adjust	mut w	* mut window
+window	src/layout/core.rs	642	layout_resize_set_size	mut w	* mut window
+window	src/layout/core.rs	691	layout_destroy_cell	w	* mut window
+window	src/layout/core.rs	731	layout_init	mut w	* mut window
+window_pane	src/layout/core.rs	731	layout_init	mut wp	* mut window_pane
+window	src/layout/core.rs	745	layout_free	w	* mut window
+window	src/layout/core.rs	748	layout_clamp_floating_panes	mut w	* mut window
+window	src/layout/core.rs	823	layout_resize	mut w	* mut window
+window_pane	src/layout/core.rs	872	layout_resize_pane_to	mut wp	* mut window_pane
+window_pane	src/layout/core.rs	1066	layout_resize_floating_pane_to	mut wp	* mut window_pane
+window_pane	src/layout/core.rs	1100	layout_resize_floating_pane	mut wp	* mut window_pane
+window	src/layout/core.rs	1138	layout_resize_layout	mut w	* mut window
+window_pane	src/layout/core.rs	1167	layout_resize_pane	mut wp	* mut window_pane
+window	src/layout/core.rs	1193	layout_resize_pane_grow	mut w	* mut window
+window	src/layout/core.rs	1237	layout_resize_pane_shrink	mut w	* mut window
+window_pane	src/layout/core.rs	1278	layout_assign_pane	mut wp	* mut window_pane
+window	src/layout/core.rs	1292	layout_new_pane_size	mut w	* mut window
+window	src/layout/core.rs	1333	layout_set_size_check	mut w	* mut window
+window	src/layout/core.rs	1411	layout_resize_child_cells	mut w	* mut window
+window	src/layout/core.rs	1496	layout_replace_with_node	w	* mut window
+window_pane	src/layout/core.rs	1516	layout_split_check_space	mut wp	* mut window_pane
+window_pane	src/layout/core.rs	1604	layout_split_pane	mut wp	* mut window_pane
+window	src/layout/core.rs	1784	layout_floating_pane	mut w	* mut window
+window_pane	src/layout/core.rs	1785	layout_floating_pane	mut wp	* mut window_pane
+window_pane	src/layout/core.rs	1807	layout_close_pane	mut wp	* mut window_pane
+window	src/layout/core.rs	1828	layout_spread_cell	mut w	* mut window
+window_pane	src/layout/core.rs	1919	layout_spread_out	mut wp	* mut window_pane
+window	src/layout/core.rs	1942	layout_get_tiled_cell	mut w	* mut window
+window_pane	src/layout/core.rs	1943	layout_get_tiled_cell	mut wp	* mut window_pane
+window	src/layout/core.rs	2022	layout_get_floating_cell	mut w	* mut window
+window_pane	src/layout/core.rs	2023	layout_get_floating_cell	mut wp	* mut window_pane
+window	src/layout/core.rs	2072	layout_floating_args_parse	mut w	* mut window
+window	src/layout/core.rs	2209	layout_split_floating_cell	mut w	* mut window
+window	src/layout/core.rs	2381	layout_remove_tile	mut w	* mut window
+window	src/layout/core.rs	2422	layout_insert_tile	mut w	* mut window
+window	src/layout/custom.rs	412	layout_parse	mut w	* mut window
+window	src/layout/custom.rs	578	layout_assign_from_ctx	mut w	* mut window
+window	src/layout/custom.rs	612	layout_assign_fallback	mut w	* mut window
+window	src/layout/custom.rs	629	layout_assign	mut w	* mut window
+window	src/layout/custom.rs	967	layout_parse_apply_ctx	mut w	* mut window
+window	src/layout/set.rs	89	layout_set_select	mut w	* mut window
+window	src/layout/set.rs	107	layout_set_next	mut w	* mut window
+window	src/layout/set.rs	129	layout_set_previous	mut w	* mut window
+window	src/layout/set.rs	153	layout_set_first_tiled	mut w	* mut window
+window	src/layout/set.rs	167	layout_set_link_floating	mut w	* mut window
+window	src/layout/set.rs	183	layout_set_even	mut w	* mut window
+window	src/layout/set.rs	262	layout_set_even_h	mut w	* mut window
+window	src/layout/set.rs	265	layout_set_even_v	mut w	* mut window
+window	src/layout/set.rs	289	layout_set_main_h	mut w	* mut window
+window	src/layout/set.rs	447	layout_set_main_h_mirrored	mut w	* mut window
+window	src/layout/set.rs	605	layout_set_main_v	mut w	* mut window
+window	src/layout/set.rs	763	layout_set_main_v_mirrored	mut w	* mut window
+window	src/layout/set.rs	921	layout_set_tiled	mut w	* mut window
+client	src/monitor.rs	71	monitor_get_session	c	* mut client
+client	src/monitor.rs	89	monitor_create_formats	mut c	* mut client
+session	src/monitor.rs	90	monitor_create_formats	mut s	* mut session
+window_pane	src/monitor.rs	92	monitor_create_formats	mut wp	* mut window_pane
+session	src/monitor.rs	134	monitor_report	mut s	* mut session
+window_pane	src/monitor.rs	136	monitor_report	mut wp	* mut window_pane
+session	src/monitor.rs	170	monitor_check_value	mut s	* mut session
+window_pane	src/monitor.rs	172	monitor_check_value	mut wp	* mut window_pane
+window_pane	src/monitor.rs	303	monitor_check_all_panes_one	mut wp	* mut window_pane
+client	src/monitor.rs	742	monitor_create_client	mut c	* mut client
+session	src/monitor.rs	748	monitor_create_session	mut s	* mut session
+client	src/monitor.rs	782	monitor_create_client_owned	c	* mut client
+session	src/monitor.rs	788	monitor_create_session_owned	s	* mut session
+window	src/names.rs	28	name_time_callback	w	* mut window
+window	src/names.rs	31	name_time_expired	mut w	* mut window
+window	src/names.rs	47	check_window_name	mut w	* mut window
+window	src/names.rs	155	format_window_name	w	* mut window
+client	src/popup.rs	198	popup_restore_check	c	* mut client
+client	src/popup.rs	466	popup_draw	c	* mut client
+client	src/popup.rs	587	popup_resize	c	* mut client
+client	src/popup.rs	631	popup_handle_drag	mut c	* mut client
+client	src/popup.rs	706	popup_key	c	* mut client
+client	src/popup.rs	879	popup_present	mut c	* mut client
+client	src/popup.rs	886	popup_modify	mut c	* mut client
+client	src/popup.rs	1015	popup_display	mut c	* mut client
+session	src/popup.rs	1016	popup_display	mut s	* mut session
+window	src/resize.rs	44	resize_fire_window_resized	mut w	* mut window
+window	src/resize.rs	87	resize_window	mut w	* mut window
+client	src/resize.rs	142	ignore_client_size	mut c	* mut client
+window	src/resize.rs	173	clients_with_window	mut w	* mut window
+client	src/resize.rs	192	clients_calculate_size	mut c	* mut client
+window	src/resize.rs	193	clients_calculate_size	mut w	* mut window
+client	src/resize.rs	404	default_window_size	mut c	* mut client
+session	src/resize.rs	405	default_window_size	mut s	* mut session
+window	src/resize.rs	406	default_window_size	mut w	* mut window
+window	src/resize.rs	496	recalculate_size	mut w	* mut window
+window_pane	src/screen_redraw.rs	313	redraw_mark_pane_inside	mut wp	* mut window_pane
+window_pane	src/screen_redraw.rs	345	redraw_mark_pane_scrollbar	mut wp	* mut window_pane
+window_pane	src/screen_redraw.rs	470	redraw_mark_border_status	mut wp	* mut window_pane
+window_pane	src/screen_redraw.rs	578	redraw_mark_pane_borders	mut wp	* mut window_pane
+window_pane	src/screen_redraw.rs	739	redraw_mark_pane	mut wp	* mut window_pane
+window	src/screen_redraw.rs	1016	redraw_invalidate_scene	mut w	* mut window
+window_pane	src/screen_redraw.rs	1544	redraw_draw_pane_lines	wp	* mut window_pane
+window_pane	src/screen_redraw.rs	1617	redraw_pane_status_line	mut wp	* mut window_pane
+window_pane	src/screen_redraw.rs	1643	redraw_pane_status_width	wp	* mut window_pane
+window_pane	src/screen_redraw.rs	1687	redraw_draw_pane_prompt	mut wp	* mut window_pane
+window_pane	src/screen_write.rs	1115	screen_write_sync_callback	wp	* mut window_pane
+window_pane	src/screen_write.rs	1127	screen_write_start_sync	mut wp	* mut window_pane
+window_pane	src/screen_write.rs	1151	screen_write_stop_sync	mut wp	* mut window_pane
+window_pane	src/screen_write.rs	1370	screen_write_flush_dirty	mut wp	* mut window_pane
+window_pane	src/screen_write.rs	1414	screen_write_clear_dirty	wp	* mut window_pane
+session	src/server.rs	126	server_set_marked	mut s	* mut session
+window_pane	src/server.rs	128	server_set_marked	mut wp	* mut window_pane
+session	src/server.rs	142	server_is_marked	mut s	* mut session
+window_pane	src/server.rs	144	server_is_marked	mut wp	* mut window_pane
+client	src/server_acl.rs	95	server_acl_check	mut c	* mut client
+client	src/server_acl.rs	244	server_acl_join	mut c	* mut client
+client	src/server_client.rs	859	server_client_set_overlay	mut c	* mut client
+client	src/server_client.rs	893	server_client_clear_overlay	mut c	* mut client
+client	src/server_client.rs	930	server_client_overlay_draw	c	* mut client
+client	src/server_client.rs	941	server_client_overlay_key	c	* mut client
+client	src/server_client.rs	957	server_client_overlay_mode	c	* mut client
+client	src/server_client.rs	971	server_client_overlay_resize	c	* mut client
+client	src/server_client.rs	983	server_client_overlay_check	c	* mut client
+client	src/server_client.rs	1058	server_client_check_nested	mut c	* mut client
+client	src/server_client.rs	1094	server_client_set_key_table	mut c	* mut client
+client	src/server_client.rs	1106	server_client_key_table_activity_diff	mut c	* mut client
+client	src/server_client.rs	1124	server_client_get_key_table	mut c	* mut client
+client	src/server_client.rs	1140	server_client_is_default_key_table	mut c	* mut client
+client	src/server_client.rs	1294	server_client_attached_lost	mut c	* mut client
+client	src/server_client.rs	1336	server_client_fire_session_changed	mut c	* mut client
+session	src/server_client.rs	1336	server_client_fire_session_changed	mut old	* mut session
+client	src/server_client.rs	1400	server_client_fire_resized	mut c	* mut client
+client	src/server_client.rs	1472	server_client_set_session	mut c	* mut client
+session	src/server_client.rs	1472	server_client_set_session	mut s	* mut session
+client	src/server_client.rs	1597	server_client_free	c	* mut client
+client	src/server_client.rs	1617	server_client_suspend	mut c	* mut client
+client	src/server_client.rs	1632	server_client_detach	mut c	* mut client
+client	src/server_client.rs	1645	server_client_exec	mut c	* mut client
+client	src/server_client.rs	2502	server_client_update_theme_colours	mut c	* mut client
+client	src/server_client.rs	2564	server_client_is_bracket_paste	mut c	* mut client
+client	src/server_client.rs	2601	server_client_is_assume_paste	mut c	* mut client
+client	src/server_client.rs	2659	server_client_update_latest	mut c	* mut client
+client	src/server_client.rs	2681	server_client_repeat_time	mut c	* mut client
+client	src/server_client.rs	5122	server_client_control_flags	mut c	* mut client
+client	src/server_client.rs	5165	server_client_set_flags	mut c	* mut client
+client	src/server_client.rs	5242	server_client_get_flags	mut c	* mut client
+window_pane	src/server_client.rs	5343	server_client_remove_pane	mut wp	* mut window_pane
+client	src/server_client.rs	5461	server_client_report_theme	mut c	* mut client
+window_pane	src/server_fn.rs	71	server_fire_pane_exit	mut wp	* mut window_pane
+session	src/server_fn.rs	338	server_renumber_session	mut s	* mut session
+session	src/server_fn.rs	367	server_link_window	mut src	* mut session
+session	src/server_fn.rs	369	server_link_window	mut dst	* mut session
+session	src/server_fn.rs	422	server_unlink_window	mut s	* mut session
+session	src/server_fn.rs	570	server_destroy_session_group	mut s	* mut session
+window	src/server_fn.rs	797	server_unzoom_window	mut w	* mut window
+session	src/session.rs	89	sessions_remove	elm	* mut session
+session	src/session.rs	360	session_add_ref	s	* mut session
+session	src/session.rs	380	session_free	s	* mut session
+session	src/session.rs	390	session_destroy	mut s	* mut session
+session	src/session.rs	516	session_attach	mut s	* mut session
+window	src/session.rs	517	session_attach	mut w	* mut window
+session	src/session.rs	535	session_detach	mut s	* mut session
+session	src/session.rs	572	session_is_linked	mut s	* mut session
+window	src/session.rs	572	session_is_linked	mut w	* mut window
+session	src/session.rs	591	session_next	mut s	* mut session
+session	src/session.rs	623	session_previous	mut s	* mut session
+session	src/session.rs	646	session_select	mut s	* mut session
+session	src/session.rs	653	session_last	mut s	* mut session
+session	src/session.rs	665	session_fire_window_changed	mut s	* mut session
+session	src/session.rs	722	session_set_current	mut s	* mut session
+session	src/session.rs	784	session_group_fire	mut s	* mut session
+session	src/session.rs	827	session_group_remove	mut s	* mut session
+session	src/session.rs	864	session_group_synchronize_to	mut s	* mut session
+session	src/session.rs	875	session_group_synchronize_from	mut target	* mut session
+session	src/session.rs	887	session_group_synchronize1	mut target	* mut session
+session	src/session.rs	887	session_group_synchronize1	mut s	* mut session
+session	src/session.rs	948	session_renumber_windows	mut s	* mut session
+session	src/shared/client.rs	211	set_session	session	* mut session
+client	src/shared/client.rs	401	client_retain	ptr	* mut client
+session	src/shared/command.rs	263	set_s	ptr	* mut session
+window	src/shared/command.rs	284	set_w	ptr	* mut window
+window_pane	src/shared/command.rs	305	set_wp	ptr	* mut window_pane
+window_pane	src/shared/window.rs	270	set_active	pane	* mut window_pane
+session	src/sort.rs	517	sort_get_winlinks_session	s	* mut session
+window_pane	src/spawn.rs	168	spawn_fire_pane_created	mut wp	* mut window_pane
+window_pane	src/spawn.rs	985	spawn_editor_finish	mut wp	* mut window_pane
+client	src/status.rs	70	status_timer_callback	c	* mut client
+client	src/status.rs	98	status_timer_start	mut c	* mut client
+session	src/status.rs	129	status_update_cache	mut s	* mut session
+client	src/status.rs	191	status_push_screen	mut c	* mut client
+client	src/status.rs	205	status_pop_screen	mut c	* mut client
+client	src/status.rs	216	status_init	mut c	* mut client
+client	src/status.rs	232	status_free	mut c	* mut client
+client	src/status.rs	254	status_redraw	mut c	* mut client
+client	src/status.rs	443	status_message_set	mut c	* mut client
+client	src/status.rs	516	status_message_clear	mut c	* mut client
+client	src/status.rs	551	status_message_callback	c	* mut client
+client	src/status.rs	554	status_message_redraw	mut c	* mut client
+client	src/status.rs	675	status_prompt_accept	mut c	* mut client
+client	src/status.rs	686	status_prompt_set	mut c	* mut client
+client	src/status.rs	735	status_prompt_clear	mut c	* mut client
+client	src/status.rs	746	status_prompt_update	mut c	* mut client
+client	src/status.rs	776	status_prompt_redraw	mut c	* mut client
+client	src/status.rs	836	status_prompt_key	mut c	* mut client
+client	src/style/colour.rs	494	colour_toescape	c	* mut client
+window	src/tty.rs	1360	tty_update_window_offset	mut w	* mut window
+client	src/tty.rs	1375	tty_update_client_offset	mut c	* mut client
+client	src/tty.rs	1999	tty_client_ready	mut c	* mut client
+window_pane	src/tty.rs	3304	tty_style_changed	mut wp	* mut window_pane
+window_pane	src/tty.rs	3341	tty_default_colours	wp	* mut window_pane
+client	src/tty_features.rs	214	tty_parse_client_features	mut c	* mut client
+client	src/tty_features.rs	430	tty_default_features	mut c	* mut client
+window	src/window.rs	202	windows_remove	elm	* mut window
+window	src/window.rs	325	window_winlinks_first	w	* mut window
+window	src/window.rs	340	window_winlinks_next	w	* mut window
+window	src/window.rs	354	window_winlinks_append	w	* mut window
+window	src/window.rs	365	window_winlinks_remove	w	* mut window
+window	src/window.rs	435	window_fire_renamed	mut w	* mut window
+window	src/window.rs	468	window_fire_pane_changed	mut w	* mut window
+window_pane	src/window.rs	469	window_fire_pane_changed	mut wp	* mut window_pane
+window_pane	src/window.rs	470	window_fire_pane_changed	mut lastwp	* mut window_pane
+window_pane	src/window.rs	511	window_fire_pane_moved	mut wp	* mut window_pane
+window	src/window.rs	512	window_fire_pane_moved	mut old_w	* mut window
+window	src/window.rs	514	window_fire_pane_moved	mut new_w	* mut window
+window_pane	src/window.rs	574	window_fire_pane_mode_changed	mut wp	* mut window_pane
+window_pane	src/window.rs	623	window_fire_pane_prompt	mut wp	* mut window_pane
+window	src/window.rs	655	winlink_find_by_window	mut w	* mut window
+window	src/window.rs	774	winlink_set_window	w	* mut window
+session	src/window.rs	823	winlink_next_by_number	mut s	* mut session
+session	src/window.rs	837	winlink_previous_by_number	mut s	* mut session
+window	src/window.rs	1017	window_update_activity	mut w	* mut window
+window	src/window.rs	1023	window_replace_old_layout	w	* mut window
+window	src/window.rs	1031	window_replace_name	w	* mut window
+window	src/window.rs	1100	enter	window	* mut window
+window	src/window.rs	1128	window_destroy	mut w	* mut window
+window_pane	src/window.rs	1153	window_pane_destroy_ready	mut wp	* mut window_pane
+window	src/window.rs	1178	window_add_ref	w	* mut window
+window	src/window.rs	1195	window_remove_ref	w	* mut window
+window_pane	src/window.rs	1211	window_pane_add_ref	wp	* mut window_pane
+window	src/window.rs	1230	window_set_name	mut w	* mut window
+window	src/window.rs	1241	window_resize	mut w	* mut window
+window	src/window.rs	1372	window_update_focus	mut w	* mut window
+window_pane	src/window.rs	1382	window_pane_update_focus	mut wp	* mut window_pane
+window	src/window.rs	1455	window_set_active_pane	mut w	* mut window
+window_pane	src/window.rs	1456	window_set_active_pane	mut wp	* mut window_pane
+window_pane	src/window.rs	1498	window_pane_get_palette	mut wp	* mut window_pane
+window	src/window.rs	1506	window_redraw_active_switch	mut w	* mut window
+window_pane	src/window.rs	1506	window_redraw_active_switch	mut wp	* mut window_pane
+window	src/window.rs	1771	window_unzoom	w	* mut window
+window	src/window.rs	1776	window_unzoom_internal	w	* mut window
+window	src/window.rs	1866	window_active_pane_is_over_zoom	mut w	* mut window
+window	src/window.rs	1879	window_push_zoom	mut w	* mut window
+window	src/window.rs	1903	window_pop_zoom	mut w	* mut window
+window	src/window.rs	1931	window_add_pane	mut w	* mut window
+window_pane	src/window.rs	1932	window_add_pane	mut other	* mut window_pane
+window	src/window.rs	1983	window_lost_pane	mut w	* mut window
+window_pane	src/window.rs	1983	window_lost_pane	mut wp	* mut window_pane
+window	src/window.rs	2027	window_remove_pane	mut w	* mut window
+window	src/window.rs	2108	window_destroy_panes	w	* mut window
+window_pane	src/window.rs	2174	window_pane_printable_flags	mut wp	* mut window_pane
+window_pane	src/window.rs	2226	window_pane_weak	wp	* mut window_pane
+window_pane	src/window.rs	2460	window_pane_mode_remove	wp	* mut window_pane
+window_pane	src/window.rs	2478	window_pane_mode_promote	wp	* mut window_pane
+window	src/window.rs	2619	window_pane_create	mut w	* mut window
+window_pane	src/window.rs	2676	window_pane_wait_finish	mut wp	* mut window_pane
+window_pane	src/window.rs	2791	window_pane_free	mut wp	* mut window_pane
+window_pane	src/window.rs	2859	window_pane_set_event	mut wp	* mut window_pane
+window_pane	src/window.rs	3822	window_pane_stack_push	mut wp	* mut window_pane
+window_pane	src/window.rs	3832	window_pane_stack_remove	mut wp	* mut window_pane
+session	src/window.rs	3857	winlink_shuffle_up	mut s	* mut session
+window_pane	src/window.rs	3918	window_pane_start_input	wp	* mut window_pane
+window_pane	src/window.rs	3966	window_pane_update_used_data	mut wp	* mut window_pane
+window_pane	src/window.rs	3979	window_pane_default_cursor	mut wp	* mut window_pane
+window_pane	src/window.rs	4086	window_pane_get_bg	mut wp	* mut window_pane
+window_pane	src/window.rs	4113	window_get_bg_client	mut wp	* mut window_pane
+window_pane	src/window.rs	4131	window_pane_get_bg_control_client	mut wp	* mut window_pane
+window_pane	src/window.rs	4147	window_pane_get_fg	mut wp	* mut window_pane
+window_pane	src/window.rs	4165	window_pane_get_fg_control_client	mut wp	* mut window_pane
+window_pane	src/window.rs	4181	window_pane_get_theme	mut wp	* mut window_pane
+window	src/window_border.rs	40	window_set_fill_cell	mut w	* mut window
+window	src/window_border.rs	127	window_set_fill_cells	mut w	* mut window
+window	src/window_border.rs	147	window_get_fill_cell	mut w	* mut window
+window_pane	src/window_border.rs	158	window_get_border_cell	mut wp	* mut window_pane
+window_pane	src/window_border.rs	208	window_pane_get_border_cell	mut wp	* mut window_pane
+window_pane	src/window_border.rs	216	window_pane_get_border_style	mut wp	* mut window_pane
+client	src/window_border.rs	217	window_pane_get_border_style	mut c	* mut client
+window_pane	src/window_border.rs	247	window_make_pane_status	mut wp	* mut window_pane
+client	src/window_border.rs	248	window_make_pane_status	mut c	* mut client
+window_pane	src/window_copy.rs	1194	window_copy_get_word_cstring	mut wp	* mut window_pane
+window_pane	src/window_copy.rs	1208	window_copy_get_line_cstring	mut wp	* mut window_pane
+window_pane	src/window_copy.rs	1220	window_copy_get_hyperlink_cstring	mut wp	* mut window_pane
+session	src/window_copy.rs	8203	window_copy_pipe_run	mut s	* mut session
+session	src/window_copy.rs	8242	window_copy_pipe	mut s	* mut session
+session	src/window_copy.rs	8249	window_copy_copy_pipe	mut s	* mut session
+session	src/window_customize.rs	178	session	s	* mut session
+session	src/window_panes.rs	150	window_panes_get_source	mut sp	* mut * mut session
+window	src/window_panes.rs	152	window_panes_get_source	mut wp	* mut * mut window
+window_pane	src/window_panes.rs	230	window_panes_add_area	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	244	window_panes_pane_floating	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	254	window_panes_pane_visible	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	261	window_panes_get_geometry	mut wp	* mut window_pane
+window	src/window_panes.rs	543	window_panes_mark_pane_status_borders	mut w	* mut window
+window_pane	src/window_panes.rs	588	window_panes_get_floating_borders	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	621	window_panes_clip_floating_pane	mut wp	* mut window_pane
+window	src/window_panes.rs	875	window_panes_draw_borders	mut w	* mut window
+window_pane	src/window_panes.rs	941	window_panes_draw_floating_border	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	1053	window_panes_clear_floating_area	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	1127	window_panes_draw_format	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	1208	window_panes_draw_number	mut wp	* mut window_pane
+window_pane	src/window_panes.rs	1447	window_panes_draw_pane	mut wp	* mut window_pane
+session	src/window_switch.rs	148	window_switch_add_session	mut s	* mut session

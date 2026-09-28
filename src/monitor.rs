@@ -276,7 +276,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         if (*wl).session.ptr_eq(&(*s).observer) {
             ft = monitor_create_formats(c, s, wl, wp);
             let value = format_expand_cstring(ft, ((*me).format).as_ptr());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             find.pane = (*wp).id;
             find.idx = (*wl).idx as u_int;
             mp = monitor_panes_find(&(*me).panes, &find);
@@ -397,7 +397,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         if (*wl).session.ptr_eq(&(*s).observer) {
             ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
             let value = format_expand_cstring(ft, ((*me).format).as_ptr());
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             find.window = (*w).id;
             find.idx = (*wl).idx as u_int;
             mw = monitor_windows_find(&(*me).windows, &find);
@@ -420,7 +420,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         wl = window_winlinks_next(w, wl);
     }
     if let Some(window) = window_owner {
-        crate::src::window::window_remove_ref(window.get(), c"monitor_check_window".as_ptr(), || window);
+        crate::src::window::window_remove_ref(window, c"monitor_check_window".as_ptr());
     }
     drop(session_owner);
     if let Some(client) = client_owner {
@@ -530,7 +530,7 @@ unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
         }
         me = me1;
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     drop(session_owner);
     if let Some(client) = client_owner {
         drop(client);
@@ -596,7 +596,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
                 }
                 me = me1;
             }
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         wl = winlinks_next(&*wl);
@@ -655,7 +655,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
             }
             me = me1;
         }
-        format_free(ft);
+        format_free(Box::from_raw(ft));
         wl = winlinks_next(&*wl);
     }
     me = monitor_items_minmax(&(*ms).items);
@@ -771,11 +771,9 @@ unsafe fn monitor_clear(mut ms: *mut monitor_set) {
         }
     }
 }
-pub unsafe fn monitor_destroy(ms: *mut monitor_set) {
-    if !ms.is_null() {
-        monitor_clear(ms);
-        drop(Box::from_raw(ms));
-    }
+pub unsafe fn monitor_destroy(mut owner: Box<monitor_set>) {
+    monitor_clear(&raw mut *owner);
+    drop(owner);
 }
 
 pub unsafe fn monitor_create_client_owned(
@@ -1274,12 +1272,12 @@ mod last_owner_tests {
                 assert!(monitor_has_client(set), "expired explicit client remains selected");
                 assert!(monitor_client(set).is_none());
                 monitor_check_sessions(set);
-                monitor_destroy(set);
+                monitor_destroy(Box::from_raw(set));
                 shutdown_runtime();
             }
             let global = monitor_create(Rc::new(|_| {}));
             assert!(!monitor_has_client(global));
-            monitor_destroy(global);
+            monitor_destroy(Box::from_raw(global));
         }
     }
 
@@ -1313,7 +1311,7 @@ mod last_owner_tests {
             assert_eq!(observer.strong_count(), 2);
 
             sessions_remove(&raw mut sessions, session);
-            monitor_destroy(set);
+            monitor_destroy(Box::from_raw(set));
             assert_eq!(observer.strong_count(), 1);
             shutdown_runtime();
             assert!(observer.upgrade().is_none());
@@ -1403,7 +1401,7 @@ mod last_owner_tests {
             assert_eq!(capture.borrow().last.as_slice(), first.to_bytes());
             assert_eq!(capture.borrow().name.as_slice(), b"reentrant-last");
             assert!(monitor_items_minmax(&(*set).items).is_null());
-            monitor_destroy(set);
+            monitor_destroy(Box::from_raw(set));
         }
     }
 

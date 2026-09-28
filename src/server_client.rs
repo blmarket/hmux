@@ -1330,7 +1330,7 @@ unsafe fn server_client_attached_lost(mut c: *mut client) {
             }
         }
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
 unsafe fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut session) {
@@ -1739,7 +1739,7 @@ unsafe fn server_client_update_scrollbar_hover(
             cursor = window_pane_next(wp.as_ref());
         }
     })();
-    crate::src::window::window_remove_ref(window_owner.get(), c"server_client_update_scrollbar_hover".as_ptr(), || window_owner);
+    crate::src::window::window_remove_ref(window_owner, c"server_client_update_scrollbar_hover".as_ptr());
     result
 }
 unsafe fn server_client_check_mouse_in_pane(
@@ -2496,7 +2496,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         }
         return key;
     })();
-    crate::src::window::window_remove_ref(window_owner.get(), c"server_client_check_mouse".as_ptr(), || window_owner);
+    crate::src::window::window_remove_ref(window_owner, c"server_client_check_mouse".as_ptr());
     result
 }
 pub unsafe fn server_client_update_theme_colours(mut c: *mut client) {
@@ -2558,7 +2558,7 @@ pub unsafe fn server_client_update_theme_colours(mut c: *mut client) {
         }
         i = i.wrapping_add(1);
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn server_client_is_bracket_paste(
     mut c: *mut client,
@@ -3406,7 +3406,7 @@ pub unsafe fn server_client_loop() {
         let w = window_owner.get();
         server_client_check_window_resize(&window_owner);
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
@@ -3425,7 +3425,7 @@ pub unsafe fn server_client_loop() {
             pane_cursor = window_pane_next(Some(&*wp));
         }
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
@@ -3453,7 +3453,7 @@ pub unsafe fn server_client_loop() {
         }
         check_window_name(w);
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
@@ -3465,7 +3465,7 @@ pub unsafe fn server_client_loop() {
             pane_cursor = window_pane_next(Some(&*wp));
         }
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
 unsafe fn server_client_check_window_resize(owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
@@ -4049,7 +4049,7 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
         tty_sync_end(tty);
         (*tty).flags |= flags;
     })();
-    crate::src::window::window_remove_ref(window_owner.get(), c"server_client_reset_state".as_ptr(), || window_owner);
+    crate::src::window::window_remove_ref(window_owner, c"server_client_reset_state".as_ptr());
     result
 }
 unsafe fn server_client_repeat_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -4227,7 +4227,7 @@ unsafe fn server_client_check_modes(client_owner: &std::rc::Rc<std::cell::Unsafe
             cursor = window_pane_next(Some(&*wp));
         }
     })();
-    crate::src::window::window_remove_ref(window_owner.get(), c"server_client_check_modes".as_ptr(), || window_owner);
+    crate::src::window::window_remove_ref(window_owner, c"server_client_check_modes".as_ptr());
     result
 }
 unsafe fn server_client_any_pane_redraw(c: &client, w: &window) -> bool {
@@ -4444,7 +4444,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
             ((*c).redraw) as usize
         ));
     })();
-    crate::src::window::window_remove_ref(window_owner.get(), c"server_client_check_redraw".as_ptr(), || window_owner);
+    crate::src::window::window_remove_ref(window_owner, c"server_client_check_redraw".as_ptr());
     result
 }
 unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -4480,7 +4480,7 @@ unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCe
             (*c).title.as_deref().expect("updated client title"),
         );
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 /// Acquire the current active pane for an immediate client operation.
 /// Raw relationship fields are accessed only while resolving the handle.

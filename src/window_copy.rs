@@ -7482,7 +7482,7 @@ unsafe fn window_copy_write_line(
         );
         screen_write_putc(&mut *ctx, &grid_default_cell, '$' as i32 as u_char);
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn window_copy_write_lines(
     mut wme: *mut window_mode_entry,
@@ -7994,7 +7994,7 @@ unsafe fn window_copy_set_selection(
         ft,
     );
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     clipx = window_copy_line_number_width(wme);
     if clipx >= (*s).grid().sx {
         clipx = (*s).grid().sx.wrapping_sub(1 as u_int);

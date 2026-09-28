@@ -525,7 +525,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         (*py) as u32,
         (h) as u32
     ));
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn cmd_display_menu_get_menu_pos(
@@ -913,7 +913,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         (*py) as u32,
         (h) as u32
     ));
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

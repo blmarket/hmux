@@ -118,7 +118,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 return CMD_RETURN_ERROR;
             }
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            crate::src::window::window_remove_ref(previous.get(), c"cmd_swap_pane_exec".as_ptr(), || previous);
+            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec".as_ptr());
             src_w = src_window_owner.get();
             src_pane_owner = cmd_swap_pane_next_tiled_pane(window_pane_next(Some(&*dst_wp)))
                 .or_else(|| cmd_swap_pane_next_tiled_pane(window_pane_first(Some(&*dst_w))))
@@ -131,7 +131,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
                 return CMD_RETURN_ERROR;
             }
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            crate::src::window::window_remove_ref(previous.get(), c"cmd_swap_pane_exec".as_ptr(), || previous);
+            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec".as_ptr());
             src_w = src_window_owner.get();
             src_pane_owner = cmd_swap_pane_prev_tiled_pane(window_pane_previous(Some(&*dst_wp)))
                 .or_else(|| cmd_swap_pane_prev_tiled_pane(window_pane_last(Some(&*dst_w))))
@@ -234,7 +234,7 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         }
         return CMD_RETURN_NORMAL;
     })();
-    crate::src::window::window_remove_ref(src_window_owner.get(), c"cmd_swap_pane_exec".as_ptr(), || src_window_owner);
-    crate::src::window::window_remove_ref(dst_window_owner.get(), c"cmd_swap_pane_exec".as_ptr(), || dst_window_owner);
+    crate::src::window::window_remove_ref(src_window_owner, c"cmd_swap_pane_exec".as_ptr());
+    crate::src::window::window_remove_ref(dst_window_owner, c"cmd_swap_pane_exec".as_ptr());
     result
 }

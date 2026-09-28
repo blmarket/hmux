@@ -1649,7 +1649,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
                 }
             }
             window_cursor = windows_next(&*w);
-            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
         }
     }
     if strcmp(
@@ -1688,7 +1688,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             w = window_owner.get();
             window_set_fill_cells(w);
             window_cursor = windows_next(&*w);
-            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
         }
     }
     if strcmp(
@@ -1837,7 +1837,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             ) as ::core::ffi::c_int;
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
             window_cursor = windows_next(&*w);
-            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
         }
     }
     if strcmp(
@@ -1870,7 +1870,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             w = window_owner.get();
             layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
             window_cursor = windows_next(&*w);
-            crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
         }
     }
     if strcmp(

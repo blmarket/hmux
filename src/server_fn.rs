@@ -333,7 +333,7 @@ pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     recalculate_sizes();
-    window_remove_ref(owner.get(), b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char, || owner);
+    window_remove_ref(owner, b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char);
 }
 pub unsafe fn server_renumber_session(mut s: *mut session) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();

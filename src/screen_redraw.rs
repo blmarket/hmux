@@ -1023,7 +1023,7 @@ pub unsafe fn redraw_invalidate_all_scenes() {
         w = window_owner.get();
         redraw_invalidate_scene(w);
         window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner.get(), c"window traversal".as_ptr(), || window_owner);
+        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
 unsafe fn redraw_get_scene(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Option<Box<redraw_scene>> {
@@ -1142,7 +1142,7 @@ unsafe fn redraw_get_default_border_style(
             b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char,
             ft,
         );
-        format_free(ft);
+        format_free(Box::from_raw(ft));
         dctx.pane_lines = options_get_number(
             oo,
             b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char,

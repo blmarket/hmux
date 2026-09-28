@@ -347,7 +347,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         }
     }
     (*pd).border_cell.attr = 0 as u_short;
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 /// Geometry and defaults are fixed for one synchronous input batch. The palette
 /// has a separate sole owner so each terminal command can snapshot the colours

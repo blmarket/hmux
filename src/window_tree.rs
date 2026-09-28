@@ -375,7 +375,7 @@ unsafe fn window_tree_build_pane(
     format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
     let text = format_expand_cstring(ft, (*data).format.as_ptr());
     let name = CString::new(idx.to_string()).expect("pane index contains NUL");
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     let mti = mode_tree_add(
         &mut *(*data).tree_owner().get(),
         Some(parent),
@@ -454,7 +454,7 @@ unsafe fn window_tree_build_window(
     );
     let text = format_expand_cstring(ft, (*data).format.as_ptr());
     let name = CString::new(((*wl).idx as u_int).to_string()).expect("window index contains NUL");
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
         || (*data).type_0 as ::core::ffi::c_uint
@@ -536,7 +536,7 @@ unsafe fn window_tree_build_session(
         ::core::ptr::null_mut::<window_pane>(),
     );
     let text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -986,7 +986,7 @@ unsafe fn window_tree_draw_session(
                     );
                 }
             }
-            format_free(ft);
+            format_free(Box::from_raw(ft));
             if loop_0 != end.wrapping_sub(1 as u_int) {
                 screen_write_cursormove(
                     &mut *ctx,
@@ -1246,7 +1246,7 @@ unsafe fn window_tree_draw_window(
                         );
                     }
                 }
-                format_free(ft);
+                format_free(Box::from_raw(ft));
                 if loop_0 != end.wrapping_sub(1 as u_int) {
                     screen_write_cursormove(
                         &mut *ctx,
@@ -1428,7 +1428,7 @@ unsafe fn window_tree_draw_info(
         );
         screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
     }
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 unsafe fn window_tree_draw(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
@@ -1605,7 +1605,7 @@ unsafe fn window_tree_get_key(
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     return key;
 }
 unsafe fn window_tree_swap(

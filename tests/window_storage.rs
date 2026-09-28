@@ -20,20 +20,20 @@ fn global_index_observes_windows_and_lookups_retain_them() {
         assert!(window_find_by_id(124).is_none());
         let minimum = windows_minmax(&*head).unwrap();
         assert_eq!(minimum.get(), first.get());
-        window_remove_ref(minimum.get(), c"index minimum".as_ptr(), || minimum);
+        window_remove_ref(minimum, c"index minimum".as_ptr());
         let next = windows_next(&*first.get()).unwrap();
         assert_eq!(next.get(), second.get());
-        window_remove_ref(next.get(), c"index successor".as_ptr(), || next);
+        window_remove_ref(next, c"index successor".as_ptr());
         assert!(windows_next(&*second.get()).is_none());
 
         let duplicate = window::new();
         (*duplicate.get()).id = 123;
         let existing = windows_insert(head, &duplicate).unwrap();
         assert_eq!(existing.get(), first.get());
-        window_remove_ref(existing.get(), c"duplicate lookup".as_ptr(), || existing);
+        window_remove_ref(existing, c"duplicate lookup".as_ptr());
         assert!((*duplicate.get()).entry.owner.is_empty());
         assert!(windows_remove(head, duplicate.get()).is_null());
-        window_remove_ref(duplicate.get(), c"duplicate window".as_ptr(), || duplicate);
+        window_remove_ref(duplicate, c"duplicate window".as_ptr());
 
         let mut other = hmux2::src::shared::window::windows { storage: None };
         assert!(windows_remove(&mut other, first.get()).is_null());
@@ -44,12 +44,12 @@ fn global_index_observes_windows_and_lookups_retain_them() {
             second_weak.upgrade().is_some(),
             "removal must not destroy window"
         );
-        window_remove_ref(second.get(), c"removed window".as_ptr(), || second);
+        window_remove_ref(second, c"removed window".as_ptr());
         assert!(second_weak.upgrade().is_none());
 
-        window_remove_ref(first.get(), c"indexed window".as_ptr(), || first);
+        window_remove_ref(first, c"indexed window".as_ptr());
         assert!(first_weak.upgrade().is_some(), "lookup must retain window");
-        window_remove_ref(retained.get(), c"retained lookup".as_ptr(), || retained);
+        window_remove_ref(retained, c"retained lookup".as_ptr());
         assert!(first_weak.upgrade().is_none());
         assert!(
             (*head).storage.is_none(),

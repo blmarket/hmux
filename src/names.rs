@@ -168,7 +168,7 @@ unsafe fn format_window_name(w: *mut window) -> CString {
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let name = format_expand_cstring(ft, fmt);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     name
 }
 

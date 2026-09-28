@@ -389,7 +389,7 @@ pub unsafe fn spawn_window(
         (*w).latest = (*sc).tc.clone();
         winlink_set_window((*sc).wl_ptr(), w);
         // The winlink now owns the window; release the construction reference.
-        crate::src::window::window_remove_ref(window.get(), c"spawn_window".as_ptr(), || window);
+        crate::src::window::window_remove_ref(window, c"spawn_window".as_ptr());
     } else {
         w = ::core::ptr::null_mut::<window>();
     }

@@ -148,7 +148,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     );
     format_merge(ft, &raw mut *(*hd).formats);
     let expanded = format_expand_cstring(ft, value.as_ptr());
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     let pr = cmd_parse_from_string(
         expanded.as_c_str(),
         ::core::ptr::null_mut::<cmd_parse_input>(),
@@ -296,7 +296,7 @@ unsafe fn hooks_insert_event(
     };
     event_payload_get_target(ep, &mut hd.fs);
     hooks_insert(item, &raw mut hd);
-    format_free(Box::into_raw(hd.formats));
+    format_free(hd.formats);
 }
 unsafe fn hooks_event_cb(name: &CStr, payload: &mut event_payload) {
     let name = name.as_ptr();
@@ -382,14 +382,14 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: *const ::core::ffi::c_char) 
     format_add(&raw mut *hd.formats, c"hook".as_ptr(), |out| write_cstr(out, name));
     format_log_debug(&raw mut *hd.formats, c"hooks_run".as_ptr());
     hooks_insert(item, &raw mut hd);
-    format_free(Box::into_raw(hd.formats));
+    format_free(hd.formats);
 }
 impl Drop for hooks_monitor {
     fn drop(&mut self) {
         unsafe {
             events_remove_sink(self.sink);
             if let Some(set) = self.set.take() {
-                crate::src::monitor::monitor_destroy(Box::into_raw(set));
+                crate::src::monitor::monitor_destroy(set);
             }
         }
     }

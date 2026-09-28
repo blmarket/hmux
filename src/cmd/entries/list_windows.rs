@@ -125,7 +125,7 @@ unsafe fn cmd_list_windows_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
             let line = format_expand_cstring(ft, template);
             cmdq_print(item, |out| write_cstr(out, line.as_ptr()));
         }
-        format_free(ft);
+        format_free(Box::from_raw(ft));
         i = i.wrapping_add(1);
     }
     return CMD_RETURN_NORMAL;

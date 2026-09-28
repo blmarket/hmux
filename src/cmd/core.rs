@@ -641,7 +641,7 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, mut sp: *mut *mut sessio
         }
         wl = winlink_find_by_window(&raw mut (*s).windows, w);
         if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(window.get(), c"cmd_mouse_window".as_ptr(), || window);
+            crate::src::window::window_remove_ref(window, c"cmd_mouse_window".as_ptr());
         }
     }
     if !sp.is_null() {

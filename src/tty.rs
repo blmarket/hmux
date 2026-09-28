@@ -3336,7 +3336,7 @@ unsafe fn tty_style_changed(mut wp: *mut window_pane) {
         ft,
     );
     (*wp).cached_dim = (*sy).dim as u_int;
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 pub unsafe fn tty_default_colours(wp: *mut window_pane) -> (grid_cell, u_int) {
     if (*wp).flags & PANE_STYLECHANGED != 0 {

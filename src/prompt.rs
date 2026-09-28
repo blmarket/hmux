@@ -246,7 +246,7 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
     pr.message_format = pd.message_format;
     pr.keys = pd.keys;
     pr.word_separators = pd.word_separators;
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     drop(pr);
     owner
 }
@@ -400,7 +400,7 @@ pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     pr.hindex.fill(0);
     pr.closed = 0;
     prompt_clear_complete(pr);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
 }
 pub fn prompt_closed(pr: &prompt) -> ::core::ffi::c_int {
     pr.closed
@@ -603,7 +603,7 @@ unsafe fn prompt_layout(
         prompt_effective_style(pr, sy, ft);
     }
     let expanded = prompt_expand1(pr, ft);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     if aw == 0 as u_int {
         return (pl, expanded);
     }

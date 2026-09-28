@@ -17,6 +17,6 @@ fn boolean_operands_expand_in_order_and_preserve_bytes() {
             let result = format_expand_cstring(tree, expression.as_ptr());
             assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
-        format_free(tree);
+        format_free(Box::from_raw(tree));
     }
 }

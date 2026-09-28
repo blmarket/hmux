@@ -45,7 +45,7 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         assert_eq!(expanded.as_bytes(), b"replacement");
         assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);
 
-        format_free(ft);
+        format_free(Box::from_raw(ft));
         global_options = saved_options;
         global_w_options = saved_w_options;
         global_s_options = saved_s_options;

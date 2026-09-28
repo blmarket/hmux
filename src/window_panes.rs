@@ -190,7 +190,7 @@ unsafe fn window_panes_get_source(
         *wp = w;
     }
     if let Some(window) = window_owner {
-        crate::src::window::window_remove_ref(window.get(), c"window_panes_get_source".as_ptr(), || window);
+        crate::src::window::window_remove_ref(window, c"window_panes_get_source".as_ptr());
     }
     return 1 as ::core::ffi::c_int;
 }
@@ -368,7 +368,7 @@ unsafe fn window_panes_get_border_cell(
         b"display-panes-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     if let Some(owner) = session_owner {
         drop(owner);
     }
@@ -1322,7 +1322,7 @@ unsafe fn window_panes_draw_number(
         wp,
     );
     style_apply(&raw mut fgc, oo, name, ft);
-    format_free(ft);
+    format_free(Box::from_raw(ft));
     memcpy(
         &raw mut bgc as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,

@@ -43,7 +43,7 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
             let result = format_expand_cstring(tree, expression.as_ptr());
             assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
-        format_free(tree);
+        format_free(Box::from_raw(tree));
         global_options = saved_options;
         global_s_options = saved_s_options;
         global_w_options = saved_w_options;

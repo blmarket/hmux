@@ -1751,7 +1751,7 @@ pub unsafe fn control_stop(c: *mut client) {
     let subs = cs.subs.take();
     // Keep the owner published until callbacks and external resources are gone.
     if let Some(subs) = subs {
-        crate::src::monitor::monitor_destroy(Box::into_raw(subs));
+        crate::src::monitor::monitor_destroy(subs);
     }
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t == 0 {
         cs.write_event.free();
