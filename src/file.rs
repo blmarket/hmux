@@ -129,7 +129,8 @@ unsafe fn file_set_cmdq_wait(
 
 /// Stop a file-backed command wait without delivering its file callback.
 /// The scheduled terminal event still owns and frees the file itself.
-pub(crate) unsafe fn file_cancel_cmdq_wait(cf: *mut client_file) {
+pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = file_owner.get();
     let owner = &mut *cf;
     if owner.wait_item.is_null() {
         return;
@@ -212,7 +213,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
             (*rc::as_ptr(owner)).flags & CLIENT_DEAD as uint64_t != 0
         }));
     if dead {
-        file_cancel_cmdq_wait(cf);
+        file_cancel_cmdq_wait(owner);
     } else {
         let owner = &mut *cf;
         if !owner.wait_item.is_null() {
@@ -261,7 +262,8 @@ pub unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
         file_fire_done_cb(&completion.0);
     });
 }
-pub unsafe fn file_fire_read(mut cf: *mut client_file) {
+pub unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
+    let cf = file_owner.get();
     let c = client_rc_ptr(&(*cf).c);
     let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
     let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
@@ -689,7 +691,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     file_fire_done(&transfer_owner);
     return ::core::ptr::null_mut::<client_file>();
 }
-pub unsafe fn file_cancel(mut cf: *mut client_file) {
+pub unsafe fn file_cancel(cf: &mut client_file) {
     let mut msg: msg_read_cancel = msg_read_cancel { stream: 0 };
     log_debug(format_args!("read cancel file {}", ((*cf).stream) as i32));
     if (*cf).closed != 0 {
@@ -1285,7 +1287,7 @@ pub unsafe fn file_read_data(mut files: *mut client_files, imsg: &imsg) -> ::cor
             (*cf).error = ENOMEM;
             file_fire_done(file_owner.as_ref().expect("looked-up file"));
         } else {
-            file_fire_read(cf);
+            file_fire_read(file_owner.as_ref().expect("looked-up file"));
         }
     }
     return 0 as ::core::ffi::c_int;
@@ -1463,14 +1465,14 @@ mod completion_cancellation_tests {
             let mut item = cmdq_item::empty();
             file_set_cmdq_wait(cf, &mut item, None);
             assert!((*cf).wait_client.is_none());
-            file_cancel_cmdq_wait(cf);
+            file_cancel_cmdq_wait(&file);
 
             let client = client::new();
             item.client = Rc::downgrade(&client);
             drop(client);
             file_set_cmdq_wait(cf, &mut item, None);
             assert!((*cf).wait_client.as_ref().unwrap().upgrade().is_none());
-            file_cancel_cmdq_wait(cf);
+            file_cancel_cmdq_wait(&file);
         }
     }
 

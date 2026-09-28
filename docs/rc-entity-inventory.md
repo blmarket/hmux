@@ -1883,3 +1883,15 @@ cleanup policy are unchanged.
 completion, cancellation and owner-release coverage updated to the typed inputs.
 File read callbacks, index removal and other internal raw projections remain
 pending.
+
+## Implemented retained file read notifications and cancellation
+
+File read notifications and command-wait cancellation accept retained file
+handles, including from terminal completion and queue-abort dispatch. Sending a
+read-cancel message takes a mutable file borrow. Callers forward existing lookup,
+callback or wait owners, keeping allocations alive while cancellation callbacks
+run. Existing repeated-cancellation and dead-client semantics are preserved.
+
+`cargo test --workspace` and `git diff --check` passed, including command-wait
+cancellation and file-input callback tests adapted to the typed inputs. File-event
+client payloads, index removal and other raw internal projections remain pending.

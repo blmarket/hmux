@@ -3844,7 +3844,7 @@ unsafe fn window_pane_input_callback(
         && !closed
         && (wp.is_null() || (*c).flags & CLIENT_DEAD as uint64_t != 0 || error != 0)
     {
-        file_cancel(crate::src::shared::rc::as_ptr(file.as_ref().unwrap()));
+        file_cancel(&mut *file.as_ref().unwrap().get());
     } else if file.is_none() || closed || error != 0 {
         cmdq_continue(cdata.item.as_ptr());
     } else {
@@ -4601,7 +4601,7 @@ mod pane_input_owner_tests {
             evbuffer_add(&mut (*file).buffer, b"discard".as_ptr().cast(), 7);
             drop(client);
 
-            file_fire_read(file);
+            file_fire_read(&owner);
             assert_eq!(evbuffer_get_length(&(*file).buffer), 0);
             assert_ne!(item.flags & CMDQ_WAITING, 0);
             assert!((*file).cb.is_some());
@@ -4653,7 +4653,7 @@ mod pane_input_owner_tests {
                 let file_observer = (*file).observer.clone();
                 drop(owner);
                 if cancel {
-                    crate::src::file::file_cancel_cmdq_wait(file);
+                    crate::src::file::file_cancel_cmdq_wait(&file_owner);
                     assert!((*file).cb.is_none());
                 }
                 drop(file_owner);

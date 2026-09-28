@@ -131,7 +131,7 @@ pub(crate) unsafe fn cmdq_abort_file_wait(owner: &std::rc::Rc<std::cell::UnsafeC
     let Some(file) = (*first).wait_file.as_ref().and_then(std::rc::Weak::upgrade) else {
         return;
     };
-    file_cancel_cmdq_wait(crate::src::shared::rc::as_ptr(&file));
+    file_cancel_cmdq_wait(&file);
     (*queue).item = ::core::ptr::null_mut();
     while !(*queue).list.is_empty() {
         cmdq_remove((*queue).first_ptr());
