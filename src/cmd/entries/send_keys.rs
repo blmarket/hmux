@@ -119,7 +119,7 @@ unsafe fn cmd_send_keys_inject_key(
     }
     wme = (*wp).modes.active;
     if wme.is_null() || (*(*wme).mode).key_table.is_none() {
-        if window_pane_key(wp, tc, s, wl, key, ::core::ptr::null_mut::<mouse_event>())
+        if window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), tc_owner.as_ref(), wl, key, ::core::ptr::null_mut::<mouse_event>())
             != 0 as ::core::ffi::c_int
         {
             return ::core::ptr::null_mut::<cmdq_item>();
@@ -271,7 +271,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             cmdq_error(item, |out| out.write_all(b"no mouse target"));
             return CMD_RETURN_ERROR;
         }
-        window_pane_key(wp, tc, s, wl, (*m).key, m);
+        window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), tc_owner.as_ref(), wl, (*m).key, m);
         return CMD_RETURN_NORMAL;
     }
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_send_prefix_entry) {

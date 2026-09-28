@@ -1044,3 +1044,14 @@ session_remove_ref cleanup, preserving deferred release behavior.
 `cargo test --workspace` and `git diff --check` passed. All callback registrations
 and callers compile against the updated signatures. Winlink arguments, downstream
 session APIs and local raw model projections remain pending.
+
+## Implemented retained pane and client inputs for pane key dispatch
+
+`window_pane_key` borrows its pane owner and an optional client owner through mode
+callbacks and input processing. Server key paths and send-keys pass their existing
+clients and retain the selected pane before dispatch. The unused session argument
+was removed; mode callbacks receive the borrowed client directly.
+
+`cargo test --workspace` and `git diff --check` passed. All pane-key callers compile
+against the typed model arguments. Winlink/mouse views, caller pane lookup paths
+and local raw model projections remain pending.

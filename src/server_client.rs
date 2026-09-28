@@ -3153,7 +3153,7 @@ unsafe fn server_client_key_callback(
                         if !(server_client_handle_dead_key(wp, key) != 0) {
                             if !((*c).flags & CLIENT_READONLY as uint64_t != 0) {
                                 if !wp.is_null() {
-                                    window_pane_key(wp, c, s, wl, key, m);
+                                    window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), Some(&c_owner), wl, key, m);
                                 }
                             }
                         }
@@ -3290,7 +3290,7 @@ unsafe fn server_client_handle_key0(
                             << 32 as ::core::ffi::c_int)
         {
             if !(*wp).flags & PANE_EXITED != 0 {
-                window_pane_key(wp, c, s, (*s).curw, (*event).key, &raw mut (*event).m);
+                window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), Some(owner), (*s).curw, (*event).key, &raw mut (*event).m);
                 return 0 as ::core::ffi::c_int;
             }
         }

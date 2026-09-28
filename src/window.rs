@@ -3387,13 +3387,13 @@ pub unsafe fn window_pane_paste(
     }
 }
 pub unsafe fn window_pane_key(
-    mut wp: *mut window_pane,
-    mut c: *mut client,
-    mut s: *mut session,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut wl: *mut winlink,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> ::core::ffi::c_int {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     if (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -3415,9 +3415,9 @@ pub unsafe fn window_pane_key(
         {
             return 0 as ::core::ffi::c_int;
         }
-        if (*(*wme).mode).key.is_some() && !c.is_null() {
+        if let (Some(callback), Some(client)) = ((*(*wme).mode).key, client_owner) {
             key &= !KEYC_MASK_FLAGS;
-            (*(*wme).mode).key.expect("non-null function pointer")(wme, &(*c).observer.upgrade().expect("mode key client"), wl, key, m);
+            callback(wme, client, wl, key, m);
         }
         return 0 as ::core::ffi::c_int;
     }
