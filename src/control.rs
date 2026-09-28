@@ -622,7 +622,7 @@ unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut windo
     }
     if winlink_find_by_window(
         &raw mut (*(*c).session_ptr()).windows,
-        (*wp).window as *mut window,
+        (*wp).window_ptr(),
     )
     .is_null()
     {
@@ -981,7 +981,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
     let mut new_size: size_t = 0;
     if winlink_find_by_window(
         &raw mut (*(*c).session_ptr()).windows,
-        (*wp).window as *mut window,
+        (*wp).window_ptr(),
     )
     .is_null()
     {
@@ -1554,7 +1554,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     if !wp.is_null() && !wl.is_null() {
-        w = (*wp).window as *mut window;
+        w = (*wp).window_ptr();
         control_notify_write(c, |out| {
             out.write_all(b"%subscription-changed ")?;
             out.write_all(change.name.to_bytes())?;

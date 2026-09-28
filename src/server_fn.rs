@@ -97,7 +97,7 @@ unsafe fn server_fire_pane_exit(mut name: *const ::core::ffi::c_char, mut wp: *m
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window as *mut window,
+        (*wp).window_ptr(),
     );
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         event_payload_set_int(
@@ -289,7 +289,7 @@ pub unsafe fn server_lock_client(client_owner: &std::rc::Rc<std::cell::UnsafeCel
 }
 pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = (*wp).window_ptr();
     if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
         server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
         recalculate_sizes();
@@ -431,7 +431,7 @@ pub unsafe fn server_unlink_window(mut s: *mut session, mut wl: *mut winlink) {
 }
 pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut notify: ::core::ffi::c_int) {
     let wp = pane_owner.get();
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = (*wp).window_ptr();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),

@@ -2235,7 +2235,7 @@ unsafe fn input_fire_pane_title_changed(
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window as *mut window,
+        (*wp).window_ptr(),
     );
     event_payload_set_string(
         &mut *ep,
@@ -2462,7 +2462,7 @@ pub unsafe fn input_parse_buffer(
         return;
     }
     (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
-    window_update_activity((*wp).window as *mut window);
+    window_update_activity((*wp).window_ptr());
     if !(*wp).flags & PANE_ACTIVITY != 0 {
         (*wp).flags |= PANE_ACTIVITY;
         events_fire_pane(
@@ -2762,7 +2762,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     b"pane-bell\0" as *const u8 as *const ::core::ffi::c_char,
                     wp,
                 );
-                alerts_queue((*wp).window as *mut window, WINDOW_BELL);
+                alerts_queue((*wp).window_ptr(), WINDOW_BELL);
             }
         }
         8 => {
@@ -3934,7 +3934,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
     let mut n: ::core::ffi::c_int = 0;
     let mut m: ::core::ffi::c_int = 0;
     if !wp.is_null() {
-        w = (*wp).window as *mut window;
+        w = (*wp).window_ptr();
     }
     m = 0 as ::core::ffi::c_int;
     loop {
@@ -4763,8 +4763,8 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                 ) != 0
             {
                 input_fire_pane_title_changed(wp, p as *const ::core::ffi::c_char);
-                server_redraw_window_borders(&*((*wp).window));
-                server_status_window(&*((*wp).window));
+                server_redraw_window_borders(&*((*wp).window_ptr()));
+                server_status_window(&*((*wp).window_ptr()));
             }
         }
         4 => {
@@ -4772,8 +4772,8 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
         }
         7 => {
             if !wp.is_null() && screen_set_path(&mut *(*sctx).s, CStr::from_ptr(p.cast())) != 0 {
-                server_redraw_window_borders(&*((*wp).window));
-                server_status_window(&*((*wp).window));
+                server_redraw_window_borders(&*((*wp).window_ptr()));
+                server_status_window(&*((*wp).window_ptr()));
             }
         }
         8 => {
@@ -4849,8 +4849,8 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
         ) != 0
     {
         input_fire_pane_title_changed(wp, (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char);
-        server_redraw_window_borders(&*((*wp).window));
-        server_status_window(&*((*wp).window));
+        server_redraw_window_borders(&*((*wp).window_ptr()));
+        server_status_window(&*((*wp).window_ptr()));
     }
 }
 unsafe fn input_enter_rename(mut ictx: *mut input_ctx) {
@@ -4888,7 +4888,7 @@ unsafe fn input_exit_rename(mut ictx: *mut input_ctx) {
     ) {
         return;
     }
-    w = (*wp).window as *mut window;
+    w = (*wp).window_ptr();
     if (*ictx).input_len == 0 as size_t {
         o = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options)), std::ffi::CStr::from_ptr(b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
         if !o.is_null() {
@@ -5169,8 +5169,8 @@ unsafe fn input_set_progress_bar(
     let input_pane = input_pane_owner.as_ref().map_or(std::ptr::null_mut(), |pane| pane.get());
     screen_set_progress_bar(&mut *(*ictx).ctx.s, state, p);
     if !input_pane.is_null() {
-        server_redraw_window_borders(&*((*input_pane).window));
-        server_status_window(&*((*input_pane).window));
+        server_redraw_window_borders(&*((*input_pane).window_ptr()));
+        server_status_window(&*((*input_pane).window_ptr()));
     }
 }
 unsafe fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5486,7 +5486,7 @@ unsafe fn input_fire_command_event(mut wp: *mut window_pane, mut name: *const ::
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window as *mut window,
+        (*wp).window_ptr(),
     );
     event_payload_set_pane(
         &mut *ep,
@@ -5964,7 +5964,7 @@ unsafe fn input_add_request(
     if wp.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
-    w = (*wp).window as *mut window;
+    w = (*wp).window_ptr();
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {

@@ -7,10 +7,11 @@ use hmux2::src::tty::tty_default_colours;
 #[test]
 fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes() {
     unsafe {
-        let mut window = window::default();
+        let window_owner = window::new();
+        let window = &mut *window_owner.get();
         let pane_owner = window_pane::new();
         let pane = &mut *pane_owner.get();
-        pane.window = &raw mut window;
+        pane.window = std::rc::Rc::downgrade(&window_owner);
         pane.cached_gc = grid_cell {
             fg: 1,
             bg: 4,
@@ -49,6 +50,6 @@ fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes(
             assert!(grid_cells_equal(&pane.cached_active_gc, &cached_active));
         }
         window.set_active(std::ptr::null_mut());
-        pane.window = std::ptr::null_mut();
+        pane.window = std::rc::Weak::new();
     }
 }

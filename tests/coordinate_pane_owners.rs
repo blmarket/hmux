@@ -19,7 +19,7 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         let second = window_pane::new();
         for (owner, x) in [(&first, 0), (&second, 10)] {
             let pane = &mut *owner.get();
-            pane.window = window.get();
+            pane.window = Rc::downgrade(&window);
             pane.xoff = x;
             pane.sx = 9;
             pane.sy = 9;

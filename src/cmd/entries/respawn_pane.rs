@@ -105,8 +105,8 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         return CMD_RETURN_ERROR;
     }
     (*wp).flags |= PANE_REDRAW;
-    server_redraw_window_borders(&*((*wp).window));
-    server_status_window(&*((*wp).window));
+    server_redraw_window_borders(&*((*wp).window_ptr()));
+    server_status_window(&*((*wp).window_ptr()));
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

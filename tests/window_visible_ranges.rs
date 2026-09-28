@@ -23,15 +23,17 @@ unsafe fn calculate_ranges(
 }
 
 struct Scene {
-    window: Box<window>,
+    window: Rc<UnsafeCell<window>>,
     panes: Vec<Rc<UnsafeCell<window_pane>>>,
 }
 
 impl Scene {
     fn new() -> Self {
-        let mut window = Box::new(window::default());
-        window.sx = 80;
-        window.sy = 24;
+        let window = window::new();
+        unsafe {
+            (*window.get()).sx = 80;
+            (*window.get()).sy = 24;
+        }
         Self {
             window,
             panes: Vec::new(),
@@ -41,14 +43,14 @@ impl Scene {
     fn add_pane(&mut self, x: i32, y: i32, width: u32, height: u32) -> *mut window_pane {
         // These panes have no display resources requiring model cleanup.
         let mut pane = window_pane::empty();
-        pane.window = &mut *self.window;
+        pane.window = Rc::downgrade(&self.window);
         pane.xoff = x;
         pane.yoff = y;
         pane.sx = width;
         pane.sy = height;
         let owner = pane.into_shared();
         let ptr = rc::as_ptr(&owner);
-        self.window.z_index.push_front(Rc::downgrade(&owner));
+        unsafe { (*self.window.get()).z_index.push_front(Rc::downgrade(&owner)); }
         self.panes.push(owner);
         ptr
     }
@@ -127,11 +129,11 @@ fn reserved_scrollbar_is_included_in_occlusion() {
         let cover = scene.add_pane(15, 5, 5, 1);
         (*cover).scrollbar_style.width = 2;
         (*cover).scrollbar_style.pad = 1;
-        scene.window.sb = PANE_SCROLLBARS_ALWAYS;
-        scene.window.sb_pos = PANE_SCROLLBARS_LEFT;
+        (*scene.window.get()).sb = PANE_SCROLLBARS_ALWAYS;
+        (*scene.window.get()).sb_pos = PANE_SCROLLBARS_LEFT;
         let left = calculate_ranges(base, 10, 5, 20);
         assert_eq!(segments(&left), [(10, 1), (21, 9)]);
-        scene.window.sb_pos = 0;
+        (*scene.window.get()).sb_pos = 0;
         let right = calculate_ranges(base, 10, 5, 20);
         assert_eq!(segments(&right), [(10, 4), (24, 6)]);
         assert_eq!(segments(&left), [(10, 1), (21, 9)]);

@@ -146,7 +146,7 @@ unsafe fn screen_write_set_cursor(
     if wp.is_null() {
         return;
     }
-    w = (*wp).window as *mut window;
+    w = (*wp).window_ptr();
     if event_initialized(&(*w).offset_timer) == 0 {
         let window_observer = (*w).observer.clone();
         event_set(
@@ -183,12 +183,12 @@ fn screen_write_set_client_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<win
         let Some(owner) = observer.upgrade() else { return 0; };
         let wp = owner.get();
         if (*ttyctx).flags & TTY_CTX_INVISIBLE_PANES != 0 {
-            if session_has(&*(*c).session_ptr(), &*(*wp).window) != 0 {
+            if session_has(&*(*c).session_ptr(), &*(*wp).window_ptr()) != 0 {
                 return 1;
             }
             return 0;
         }
-        if (*(*(*c).session_ptr()).curw_ptr()).window_ptr() != (*wp).window {
+        if (*(*(*c).session_ptr()).curw_ptr()).window_ptr() != (*wp).window_ptr() {
             return 0;
         }
         if (*wp).layout_cell.is_null() {
@@ -243,8 +243,8 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::f
     ctx.flags |= SCREEN_WRITE_CHECKED_IF_OBSCURED;
     if (*write_pane).xoff < 0 as ::core::ffi::c_int
         || (*write_pane).yoff < 0 as ::core::ffi::c_int
-        || ((*write_pane).xoff as u_int).wrapping_add((*write_pane).sx) > (*(*write_pane).window).sx
-        || ((*write_pane).yoff as u_int).wrapping_add((*write_pane).sy) > (*(*write_pane).window).sy
+        || ((*write_pane).xoff as u_int).wrapping_add((*write_pane).sx) > (*(*write_pane).window_ptr()).sx
+        || ((*write_pane).yoff as u_int).wrapping_add((*write_pane).sy) > (*(*write_pane).window_ptr()).sy
     {
         ctx.flags |= SCREEN_WRITE_OBSCURED;
         return 1 as ::core::ffi::c_int;
@@ -362,7 +362,7 @@ unsafe fn screen_write_initctx(
     }
     if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
         if !write_pane.is_null()
-            && (write_pane != (*(*write_pane).window).active_ptr() || (*write_pane).screen_ptr() != &raw mut (*write_pane).base)
+            && (write_pane != (*(*write_pane).window_ptr()).active_ptr() || (*write_pane).screen_ptr() != &raw mut (*write_pane).base)
         {
             ttyctx.flags |= TTY_CTX_SYNC;
         } else {
@@ -2450,11 +2450,11 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
             .wrapping_sub((*s).rupper)
             .wrapping_add(1 as u_int);
     }
-    if !wp.is_null() && ((*wp).yoff as u_int).wrapping_add((*wp).sy) > (*(*wp).window).sy {
+    if !wp.is_null() && ((*wp).yoff as u_int).wrapping_add((*wp).sy) > (*(*wp).window_ptr()).sy {
         ttyctx.orlower = ttyctx.orlower.wrapping_sub(
             ((*wp).yoff as u_int)
                 .wrapping_add((*wp).sy)
-                .wrapping_sub((*(*wp).window).sy),
+                .wrapping_sub((*(*wp).window_ptr()).sy),
         );
     }
     ttyctx.data = tty_command_data::Count(ctx.scrolled);
@@ -2491,8 +2491,8 @@ unsafe fn screen_write_collect_flush_line(
     let mut c_end: ::core::ffi::c_int = 0;
     let mut ttyctx = tty_ctx::default();
     if !wp.is_null() {
-        wsx = (*(*wp).window).sx;
-        wsy = (*(*wp).window).sy;
+        wsx = (*(*wp).window_ptr()).sx;
+        wsy = (*(*wp).window_ptr()).sy;
         xoff = (*wp).xoff;
         yoff = (*wp).yoff;
     } else {
@@ -3473,14 +3473,14 @@ pub unsafe fn screen_write_alternateon(
             event_del(&raw mut (*wp).resize_timer);
         }
         layout_fix_panes(
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
             ::core::ptr::null_mut::<window_pane>(),
         );
         if !(*wp).resize_queue.is_empty() {
             window_pane_send_resize(&*wp, (*wp).sx, (*wp).sy);
             window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
         }
-        server_redraw_window_borders(&*((*wp).window));
+        server_redraw_window_borders(&*((*wp).window_ptr()));
     }
     screen_write_initctx(
         ctx,
@@ -3515,10 +3515,10 @@ pub unsafe fn screen_write_alternateoff(
     }
     if !wp.is_null() {
         layout_fix_panes(
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
             ::core::ptr::null_mut::<window_pane>(),
         );
-        server_redraw_window_borders(&*((*wp).window));
+        server_redraw_window_borders(&*((*wp).window_ptr()));
     }
     screen_write_initctx(
         ctx,

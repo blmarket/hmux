@@ -121,7 +121,7 @@ pub unsafe fn cmd_attach_session(
     wp = target.wp_ptr();
     if !wl.is_null() {
         if !wp.is_null() {
-            window_set_active_pane((*wp).window as *mut window, wp, 1 as ::core::ffi::c_int);
+            window_set_active_pane((*wp).window_ptr(), wp, 1 as ::core::ffi::c_int);
         }
         session_set_current(s, wl);
         if !wp.is_null() {

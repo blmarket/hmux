@@ -17,7 +17,7 @@ fn directional_selection_preserves_order_activity_and_retained_result() {
             (&lower, 10, 5, 10, 4),
         ] {
             let pane = &mut *owner.get();
-            pane.window = window.get();
+            pane.window = Rc::downgrade(&window);
             pane.xoff = x;
             pane.yoff = y;
             pane.sx = width;

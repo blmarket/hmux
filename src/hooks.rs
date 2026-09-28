@@ -438,7 +438,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         crate::src::shared::events::EventPayloadIdentity::HookMonitor(hm.addr()),
     );
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
-    if !wl.is_null() && !wp.is_null() && (*wp).window == (*wl).window_ptr() {
+    if !wl.is_null() && !wp.is_null() && (*wp).window_ptr() == (*wl).window_ptr() {
         cmd_find_from_winlink_pane(&raw mut fs, wl, wp, 0 as ::core::ffi::c_int);
     } else if !wl.is_null() {
         cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
@@ -508,7 +508,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
             event_payload_set_window(
                 &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).window as *mut window,
+                (*wp).window_ptr(),
             );
         }
     }

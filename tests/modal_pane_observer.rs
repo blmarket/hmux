@@ -11,7 +11,7 @@ fn losing_modal_pane_tolerates_expired_previous_target() {
         drop(previous);
         assert!((*window.get()).modal_last.upgrade().is_none());
         let modal = window_pane::new();
-        (*modal.get()).window = window.get();
+        (*modal.get()).window = Rc::downgrade(&window);
         (*window.get()).set_active(modal.get());
         (*window.get()).modal = Rc::downgrade(&modal);
         (*window.get()).panes.push_back(Rc::downgrade(&modal));
@@ -31,7 +31,7 @@ fn losing_previous_target_clears_observer_without_retaining_it() {
         let window = window::new();
         let previous = window_pane::new();
         let observer = Rc::downgrade(&previous);
-        (*previous.get()).window = window.get();
+        (*previous.get()).window = Rc::downgrade(&window);
         (*window.get()).modal_last = observer.clone();
         window_lost_pane(window.get(), previous.get());
         assert!(!(*window.get()).modal_last.ptr_eq(&observer));

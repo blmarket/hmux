@@ -169,7 +169,7 @@ unsafe fn cmd_select_pane_marked_pane(
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*mwp).window as *mut window,
+            (*mwp).window_ptr(),
         );
     } else if !lwp.is_null() {
         event_payload_set_pane(
@@ -180,7 +180,7 @@ unsafe fn cmd_select_pane_marked_pane(
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*lwp).window as *mut window,
+            (*lwp).window_ptr(),
         );
     } else {
         event_payload_set_pane(
@@ -191,7 +191,7 @@ unsafe fn cmd_select_pane_marked_pane(
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
         );
     }
     if !lwp.is_null() {
@@ -212,17 +212,17 @@ unsafe fn cmd_select_pane_marked_pane(
     );
     if !lwp.is_null() {
         (*lwp).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
-        server_redraw_window_borders(&*((*lwp).window));
-        server_status_window(&*((*lwp).window));
+        server_redraw_window_borders(&*((*lwp).window_ptr()));
+        server_status_window(&*((*lwp).window_ptr()));
     }
     if !mwp.is_null() {
         (*mwp).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
-        server_redraw_window_borders(&*((*mwp).window));
-        server_status_window(&*((*mwp).window));
+        server_redraw_window_borders(&*((*mwp).window_ptr()));
+        server_status_window(&*((*mwp).window_ptr()));
     }
     if window_pane_is_floating(&*wp) != 0 {
-        window_redraw_active_switch((*wp).window as *mut window, wp);
-        window_set_active_pane((*wp).window as *mut window, wp, 1 as ::core::ffi::c_int);
+        window_redraw_active_switch((*wp).window_ptr(), wp);
+        window_set_active_pane((*wp).window_ptr(), wp, 1 as ::core::ffi::c_int);
     }
     return CMD_RETURN_NORMAL;
 }
@@ -263,12 +263,12 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
         }
         if args_has(args, 'e' as i32 as u_char) != 0 {
             (*lastwp).flags &= !PANE_INPUTOFF;
-            server_redraw_window_borders(&*((*lastwp).window));
-            server_status_window(&*((*lastwp).window));
+            server_redraw_window_borders(&*((*lastwp).window_ptr()));
+            server_status_window(&*((*lastwp).window_ptr()));
         } else if args_has(args, 'd' as i32 as u_char) != 0 {
             (*lastwp).flags |= PANE_INPUTOFF;
-            server_redraw_window_borders(&*((*lastwp).window));
-            server_status_window(&*((*lastwp).window));
+            server_redraw_window_borders(&*((*lastwp).window_ptr()));
+            server_status_window(&*((*lastwp).window_ptr()));
         } else {
             if (*w).modal.upgrade().is_some() && !lastwp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
@@ -355,14 +355,14 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     }
     if args_has(args, 'e' as i32 as u_char) != 0 {
         (*wp).flags &= !PANE_INPUTOFF;
-        server_redraw_window_borders(&*((*wp).window));
-        server_status_window(&*((*wp).window));
+        server_redraw_window_borders(&*((*wp).window_ptr()));
+        server_status_window(&*((*wp).window_ptr()));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
         (*wp).flags |= PANE_INPUTOFF;
-        server_redraw_window_borders(&*((*wp).window));
-        server_status_window(&*((*wp).window));
+        server_redraw_window_borders(&*((*wp).window_ptr()));
+        server_status_window(&*((*wp).window_ptr()));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
@@ -379,7 +379,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
             event_payload_set_window(
                 &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                (*wp).window as *mut window,
+                (*wp).window_ptr(),
             );
             event_payload_set_string(
                 &mut *ep,
@@ -390,8 +390,8 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                 b"pane-title-changed\0" as *const u8 as *const ::core::ffi::c_char,
                 ep,
             );
-            server_redraw_window_borders(&*((*wp).window));
-            server_status_window(&*((*wp).window));
+            server_redraw_window_borders(&*((*wp).window_ptr()));
+            server_status_window(&*((*wp).window_ptr()));
         }
         return CMD_RETURN_NORMAL;
     }

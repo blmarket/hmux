@@ -223,7 +223,7 @@ pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, mut wp: *mu
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window as *mut window,
+        (*wp).window_ptr(),
     );
     events_fire(name, ep);
 }

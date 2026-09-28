@@ -465,7 +465,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                     event_payload_set_window(
                                         &mut *ep,
                                         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                                        (*new_wp).window as *mut window,
+                                        (*new_wp).window_ptr(),
                                     );
                                     event_payload_set_string(
                                         &mut *ep,
@@ -505,13 +505,13 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
                                             );
                                         }
                                         if restore_zoom != 0 {
-                                            window_pop_zoom((*wp).window as *mut window);
-                                            server_redraw_window(&*((*wp).window));
+                                            window_pop_zoom((*wp).window_ptr());
+                                            server_redraw_window(&*((*wp).window_ptr()));
                                         } else if !flags & SPAWN_FLOATING != 0
                                             && args_has(args, 'O' as i32 as u_char) == 0
                                         {
-                                            window_pop_zoom((*wp).window as *mut window);
-                                            server_redraw_window(&*((*wp).window));
+                                            window_pop_zoom((*wp).window_ptr());
+                                            server_redraw_window(&*((*wp).window_ptr()));
                                         }
                                         server_redraw_session(&*(s));
                                         if args_has(args, 'M' as i32 as u_char) != 0
@@ -568,10 +568,10 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         if is_floating == 0 {
             layout_close_pane(new_wp);
         }
-        window_remove_pane((*wp).window as *mut window, &pane_owner);
+        window_remove_pane((*wp).window_ptr(), &pane_owner);
     }
     if restore_zoom != 0 || !flags & SPAWN_FLOATING != 0 {
-        window_pop_zoom((*wp).window as *mut window);
+        window_pop_zoom((*wp).window_ptr());
     }
     drop(sc.environ.take());
     return CMD_RETURN_ERROR;
@@ -598,7 +598,7 @@ unsafe fn cmd_split_window_mouse_resize(client_owner: &std::rc::Rc<std::cell::Un
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wp).window as *mut window;
+    w = (*wp).window_ptr();
     lc = (*wp).layout_cell as *mut layout_cell;
     x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
     y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;

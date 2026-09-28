@@ -534,9 +534,9 @@ unsafe fn window_switch_init(
     if args_has(args, 'Z' as i32 as u_char) == 0 {
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {
-        (*data).zoomed = (*(*wp).window).flags & WINDOW_ZOOMED;
+        (*data).zoomed = (*(*wp).window_ptr()).flags & WINDOW_ZOOMED;
         if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(&*((*wp).window));
+            server_redraw_window(&*((*wp).window_ptr()));
         }
     }
     window_switch_build(data);
@@ -554,7 +554,7 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
     let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_switch_modedata = window_switch_data(wme);
     if (*data).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window((*mode_pane).window as *mut window);
+        server_unzoom_window((*mode_pane).window_ptr());
     }
     (*data).matches.clear();
     (*data).item_list.clear();

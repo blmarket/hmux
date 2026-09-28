@@ -42,7 +42,7 @@ pub unsafe fn window_visible_ranges(
         return;
     };
 
-    let w = base_wp.window;
+    let w = base_wp.window_ptr();
     if py as u_int >= (*w).sy || px as u_int >= (*w).sx {
         return;
     }

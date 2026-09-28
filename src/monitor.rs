@@ -267,7 +267,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         }
         return;
     }
-    w = (*wp).window as *mut window;
+    w = (*wp).window_ptr();
     wl = window_winlinks_first(w);
     while !wl.is_null() {
         if (*wl).session.ptr_eq(&(*s).observer) {

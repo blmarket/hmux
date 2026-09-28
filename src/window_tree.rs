@@ -868,7 +868,7 @@ unsafe fn window_tree_draw_session(
     }
     window_tree_border_cell(
         &raw mut gc,
-        options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -1065,7 +1065,7 @@ unsafe fn window_tree_draw_window(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     total = window_count_panes(&*w, 1 as ::core::ffi::c_int);
-    if (*data).hide_preview_this_pane != 0 && (*mode_pane).window == w {
+    if (*data).hide_preview_this_pane != 0 && (*mode_pane).window_ptr() == w {
         total = total.wrapping_sub(1);
     }
     if total == 0 as u_int {
@@ -1134,7 +1134,7 @@ unsafe fn window_tree_draw_window(
     }
     window_tree_border_cell(
         &raw mut gc,
-        options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         ::core::ptr::null_mut::<format_tree>(),
     );
     if left != 0 {
@@ -1357,7 +1357,7 @@ unsafe fn window_tree_draw_info(
             }
             window_tree_border_cell(
                 &raw mut gc,
-                options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
+                options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
                 ::core::ptr::null_mut::<format_tree>(),
             );
             screen_write_cursormove(
@@ -1417,7 +1417,7 @@ unsafe fn window_tree_draw_info(
     if sx > 14 as u_int && i < sy {
         window_tree_border_cell(
             &raw mut gc,
-            options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
             ::core::ptr::null_mut::<format_tree>(),
         );
         screen_write_cursormove(

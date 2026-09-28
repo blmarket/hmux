@@ -1679,7 +1679,7 @@ unsafe fn server_client_in_scrollbar_area(
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut w: *mut window = wp.window as *mut window;
+    let mut w: *mut window = wp.window_ptr();
     let mut width: u_int = 0;
     let mut pad: u_int = 0;
     let mut total: u_int = 0;
@@ -1746,7 +1746,7 @@ unsafe fn server_client_check_mouse_in_pane(
     sl_mpos: &mut u_int,
 ) -> key_code_mouse_location {
     let wp = pane_owner.get();
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = (*wp).window_ptr();
     let mut fwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut pane_status: ::core::ffi::c_int = 0;
     let mut sb_w: ::core::ffi::c_int = 0;
@@ -2170,7 +2170,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         if let Some(pane) = last_pane.as_ref() {
             loc = KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
             (*m).wp = (*pane.get()).id as ::core::ffi::c_int;
-            (*m).w = (*(*pane.get()).window).id as ::core::ffi::c_int;
+            (*m).w = (*(*pane.get()).window_ptr()).id as ::core::ffi::c_int;
         }
     } else if loc as ::core::ffi::c_uint
         == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2220,7 +2220,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                 wp = selected_pane.as_ref().expect("drag pane").get();
                 loc = KEYC_MOUSE_LOCATION_PANE;
                 (*m).wp = (*wp).id as ::core::ffi::c_int;
-                (*m).w = (*(*wp).window).id as ::core::ffi::c_int;
+                (*m).w = (*(*wp).window_ptr()).id as ::core::ffi::c_int;
             } else {
                 server_client_update_scrollbar_hover(
                     client_owner,
@@ -2319,7 +2319,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                 ));
             }
             (*m).wp = (*wp).id as ::core::ffi::c_int;
-            (*m).w = (*(*wp).window).id as ::core::ffi::c_int;
+            (*m).w = (*(*wp).window_ptr()).id as ::core::ffi::c_int;
         }
     } else {
         server_client_update_scrollbar_hover(
@@ -3279,7 +3279,7 @@ unsafe fn server_client_handle_key0(
             return 0 as ::core::ffi::c_int;
         }
         if !wp.is_null()
-            && (*(*wp).window).modal.ptr_eq(&(*wp).observer)
+            && (*(*wp).window_ptr()).modal.ptr_eq(&(*wp).observer)
             && (*wp).flags & PANE_CLOSEONCANCEL != 0
             && ((*event).key == '\u{1b}' as i32 as key_code
                 || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
@@ -3818,13 +3818,14 @@ mod prompt_cursor_tests {
             ] {
                 session.statusat = if at == 0 { 0 } else { 1 };
                 c.flags = if at == -1 { CLIENT_STATUSOFF as u64 } else { 0 };
-                let mut window = window::default();
+                let window_owner = window::new();
+                let window = &mut *window_owner.get();
                 window.sx = 100;
                 window.sy = 40;
                 let prompt = refbox::RefBox::new(prompt::default());
                 let base = window_pane::new();
                 let wp = rc::as_ptr(&base);
-                (*wp).window = &raw mut window;
+                (*wp).window = window.observer.clone();
                 (*wp).xoff = x;
                 (*wp).yoff = y;
                 (*wp).sy = 4;
@@ -3836,7 +3837,7 @@ mod prompt_cursor_tests {
                 let blocker = window_pane::new();
                 if covered {
                     let cover = rc::as_ptr(&blocker);
-                    (*cover).window = &raw mut window;
+                    (*cover).window = window.observer.clone();
                     (*cover).xoff = 6;
                     (*cover).yoff = if at == 0 { 3 } else { 6 };
                     (*cover).sx = 3;

@@ -150,7 +150,8 @@ pub struct window_pane {
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub id: u_int,
     pub active_point: u_int,
-    pub window: *mut window,
+    /// Nonowning parent; final window teardown provides a scoped fallback.
+    pub window: Weak<UnsafeCell<window>>,
     pub options: Option<Box<options>>,
     pub layout_cell: *mut layout_cell,
     pub saved_layout_cell: *mut layout_cell,
@@ -225,6 +226,17 @@ pub struct window_pane {
 }
 
 impl window_pane {
+    /// Resolve a live parent or the parent currently destroying this pane.
+    /// The returned borrow is bounded by the current operation; it must not
+    /// be stored past a callback that can release or detach the window.
+    pub unsafe fn window_ptr(&self) -> *mut window {
+        if let Some(owner) = self.window.upgrade() {
+            owner.get()
+        } else {
+            crate::src::window::window_teardown_ptr(&self.window)
+        }
+    }
+
     /// Resolve the displayed screen while the pane and selected mode are live.
     pub unsafe fn screen_ptr(&self) -> *mut screen {
         match &self.screen_source {

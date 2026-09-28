@@ -729,7 +729,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     window_lost_pane(src_w, src_wp);
     window_pane_list_remove(&mut *src_w, &*src_wp);
     window_pane_z_remove(&mut *src_w, &*src_wp);
-    (*src_wp).window = dst_w as *mut window;
+    (*src_wp).window = (*dst_w).observer.clone();
     options_set_parent(options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*dst_w).options).map_or(std::ptr::null_mut(), |options| options));
     (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     if flags & SPAWN_BEFORE != 0 {

@@ -631,7 +631,7 @@ unsafe fn cmd_find_get_pane(
         if (*fs).wp_ptr().is_null() {
             return -(1 as ::core::ffi::c_int);
         }
-        (*fs).set_w((*(*fs).wp_ptr()).window as *mut window);
+        (*fs).set_w((*(*fs).wp_ptr()).window_ptr());
         return cmd_find_best_session_with_window(fs);
     }
     (*fs).s = current.s.clone();
@@ -665,7 +665,7 @@ unsafe fn cmd_find_get_pane_with_session(
         if (*fs).wp_ptr().is_null() {
             return -(1 as ::core::ffi::c_int);
         }
-        (*fs).set_w((*(*fs).wp_ptr()).window as *mut window);
+        (*fs).set_w((*(*fs).wp_ptr()).window_ptr());
         return cmd_find_best_winlink_with_window(fs);
     }
     (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
@@ -692,7 +692,7 @@ unsafe fn cmd_find_get_pane_with_window(
         if (*fs).wp_ptr().is_null() {
             return -(1 as ::core::ffi::c_int);
         }
-        if (*(*fs).wp_ptr()).window != (*fs).w_ptr() {
+        if (*(*fs).wp_ptr()).window_ptr() != (*fs).w_ptr() {
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
@@ -985,7 +985,7 @@ pub unsafe fn cmd_find_from_pane(
     mut wp: *mut window_pane,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    if cmd_find_from_window(fs, (*wp).window as *mut window, flags) != 0 as ::core::ffi::c_int {
+    if cmd_find_from_window(fs, (*wp).window_ptr(), flags) != 0 as ::core::ffi::c_int {
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_wp(wp);
@@ -1076,7 +1076,7 @@ pub unsafe fn cmd_find_from_client(
     inside_pane_owner = cmd_find_inside_pane(c);
     wp = inside_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        (*fs).set_w((*wp).window as *mut window);
+        (*fs).set_w((*wp).window_ptr());
         if !(cmd_find_best_session_with_window(fs) != 0 as ::core::ffi::c_int) {
             (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
             (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
@@ -1658,7 +1658,7 @@ unsafe fn cmd_find_current_client(
         !wp.is_null()
     } {
         cmd_find_clear_state(&raw mut fs, CMD_FIND_QUIET);
-        fs.set_w((*wp).window as *mut window);
+        fs.set_w((*wp).window_ptr());
         if cmd_find_best_session_with_window(&raw mut fs) == 0 as ::core::ffi::c_int {
             if let Some(session_owner) = fs.s.upgrade() {
                 found = cmd_find_best_client(&*session_owner.get());
@@ -1912,7 +1912,7 @@ mod target_observer_tests {
             let wl = winlink_add(links, 1);
             (*wl).session = (*s).observer.clone();
             winlink_set_window(wl, w);
-            (*wp).window = w;
+            (*wp).window = (*w).observer.clone();
             (*w).panes.push_back(Rc::downgrade(&pane_owner));
             (*w).set_active(wp);
             (*s).set_curw(wl);
@@ -1949,7 +1949,7 @@ mod target_observer_tests {
             assert_eq!(cmd_find_valid_state(&state), 1);
             winlink_remove(links, replacement);
             (*w).panes.storage = None;
-            (*wp).window = std::ptr::null_mut();
+            (*wp).window = std::rc::Weak::new();
             drop(crate::src::session::sessions_remove(&raw mut sessions, s));
             *std::ptr::addr_of_mut!(sessions) = saved;
         }

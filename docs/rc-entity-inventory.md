@@ -2686,3 +2686,11 @@ Copy and view modes now own their data in the mode entry's typed Box slot,
 including the inline snapshot fixture. All production modes resolve payloads
 through typed Box or Rc owners. The erased `window_mode_entry.data` field is
 gone. The raw-field count is 34.
+
+## Implemented weak pane parent window
+
+`window_pane.window` now observes its Rc-owned parent weakly. The pane resolves
+that link for ordinary access. Final window destruction uses a scoped parent
+lookup so mode and pane cleanup can still reach the window after its strong
+count reaches zero. A regression exercises that final cleanup path. The
+raw-field count is 33.

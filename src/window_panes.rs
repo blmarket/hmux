@@ -323,7 +323,7 @@ unsafe fn window_panes_get_geometry(
     if sx == 0 as u_int || sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    status = window_get_pane_status(&*(*wp).window);
+    status = window_get_pane_status(&*(*wp).window_ptr());
     if layout_add_horizontal_border(root, lc, status) != 0 && sy > 1 as u_int {
         if status == PANE_STATUS_TOP {
             y = y.wrapping_add(1);
@@ -362,7 +362,7 @@ unsafe fn window_panes_get_border_cell(
     );
     style_apply(
         gc,
-        options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*wp).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"display-panes-border-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
@@ -1144,7 +1144,7 @@ unsafe fn window_panes_draw_format(
         return;
     }
     format = options_get_string(
-        options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"display-panes-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *format as ::core::ffi::c_int == '\0' as i32 {
@@ -1217,9 +1217,9 @@ unsafe fn window_panes_draw_number(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = window_panes_session(data);
     let mut s = session_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = (*wp).window_ptr();
     let mut wl: *mut winlink = if s.is_null() { std::ptr::null_mut() } else { (*s).curw_ptr() };
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut fgc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1639,7 +1639,7 @@ unsafe fn window_panes_init(
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = (*wp).window_ptr();
     let mut data: *mut window_panes_modedata = ::core::ptr::null_mut::<window_panes_modedata>();
     let mut self_0: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut source: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
@@ -1758,7 +1758,7 @@ unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_panes_modedata = window_panes_data(wme);
-    let mut w: *mut window = (*mode_pane).window as *mut window;
+    let mut w: *mut window = (*mode_pane).window_ptr();
     event_del(&raw mut (*data).timer);
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window(w);
@@ -1937,8 +1937,8 @@ unsafe fn window_panes_key(
         }
         return;
     }
-    if (*(*wp).window).flags & WINDOW_ZOOMED != 0 {
-        window_unzoom((*wp).window as *mut window, 1 as ::core::ffi::c_int);
+    if (*(*wp).window_ptr()).flags & WINDOW_ZOOMED != 0 {
+        window_unzoom((*wp).window_ptr(), 1 as ::core::ffi::c_int);
     }
     window_panes_run_command(data, client_owner, &*target);
     window_pane_reset_mode(&mode_pane_owner);

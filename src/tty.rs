@@ -3342,7 +3342,7 @@ pub unsafe fn tty_default_colours(wp: *mut window_pane) -> (grid_cell, u_int) {
     if (*wp).flags & PANE_STYLECHANGED != 0 {
         tty_style_changed(wp);
     }
-    let active = wp == (*(*wp).window).active_ptr();
+    let active = wp == (*(*wp).window_ptr()).active_ptr();
     let mut gc = grid_default_cell;
     gc.fg = if active && (*wp).cached_active_gc.fg != 8 {
         (*wp).cached_active_gc.fg

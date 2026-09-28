@@ -188,7 +188,7 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wp).window as *mut window,
+        (*wp).window_ptr(),
     );
     event_payload_set_int(
         &mut *ep,

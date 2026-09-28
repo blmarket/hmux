@@ -1093,7 +1093,7 @@ pub unsafe fn layout_resize_floating_pane_to(
         }
         (*lc).g.sx = size;
     }
-    redraw_invalidate_scene((*wp).window as *mut window);
+    redraw_invalidate_scene((*wp).window_ptr());
     Ok(())
 }
 pub unsafe fn layout_resize_floating_pane(
@@ -1131,7 +1131,7 @@ pub unsafe fn layout_resize_floating_pane(
             (*lc).g.xoff -= change;
         }
     }
-    redraw_invalidate_scene((*wp).window as *mut window);
+    redraw_invalidate_scene((*wp).window_ptr());
     Ok(())
 }
 pub unsafe fn layout_resize_layout(
@@ -1187,7 +1187,7 @@ pub unsafe fn layout_resize_pane(
             return;
         }
     }
-    layout_resize_layout((*wp).window as *mut window, lc, type_0, change, opposite);
+    layout_resize_layout((*wp).window_ptr(), lc, type_0, change, opposite);
 }
 unsafe fn layout_resize_pane_grow(
     mut w: *mut window,
@@ -1280,10 +1280,10 @@ pub unsafe fn layout_assign_pane(
 ) {
     layout_make_leaf(lc, &(*wp).observer.upgrade().expect("live layout pane"));
     if do_not_resize != 0 {
-        layout_fix_panes((*wp).window as *mut window, wp);
+        layout_fix_panes((*wp).window_ptr(), wp);
     } else {
         layout_fix_panes(
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
             ::core::ptr::null_mut::<window_pane>(),
         );
     };
@@ -1517,7 +1517,7 @@ pub unsafe fn layout_split_check_space(
     mut lc: *mut layout_cell,
     mut type_0: layout_type,
 ) -> ::core::ffi::c_int {
-    let mut root: *mut layout_cell = (*(*wp).window).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
+    let mut root: *mut layout_cell = (*(*wp).window_ptr()).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     let mut sb_style: *mut style = &raw mut (*wp).scrollbar_style;
     let mut minimum: u_int = 0;
     let mut sx: u_int = (*lc).g.sx;
@@ -1526,10 +1526,10 @@ pub unsafe fn layout_split_check_space(
     if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
         fatalx(|out| out.write_all(b"floating cells cannot be split"));
     }
-    status = window_get_pane_status(&*(*wp).window);
+    status = window_get_pane_status(&*(*wp).window_ptr());
     match type_0 as ::core::ffi::c_uint {
         0 => {
-            if (*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS {
+            if (*(*wp).window_ptr()).sb == PANE_SCROLLBARS_ALWAYS {
                 minimum = (PANE_MINIMUM * 2 as ::core::ffi::c_int
                     + (*sb_style).width
                     + (*sb_style).pad) as u_int;
@@ -1623,7 +1623,7 @@ pub unsafe fn layout_split_pane(
     let mut full_size: ::core::ffi::c_int = flags & SPAWN_FULLSIZE;
     let mut before: ::core::ffi::c_int = flags & SPAWN_BEFORE;
     if full_size != 0 {
-        lc = (*(*wp).window).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
+        lc = (*(*wp).window_ptr()).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root);
     } else {
         lc = (*wp).layout_cell as *mut layout_cell;
     }
@@ -1650,7 +1650,7 @@ pub unsafe fn layout_split_pane(
     }
     if full_size != 0
         && layout_set_size_check(
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
             lc,
             type_0,
             new_size as ::core::ffi::c_int,
@@ -1677,13 +1677,13 @@ pub unsafe fn layout_split_pane(
             == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             (*lc).g.sx = new_size;
-            layout_resize_child_cells((*wp).window as *mut window, lc);
+            layout_resize_child_cells((*wp).window_ptr(), lc);
             (*lc).g.sx = saved_size;
         } else if (*lc).type_0 as ::core::ffi::c_uint
             == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             (*lc).g.sy = new_size;
-            layout_resize_child_cells((*wp).window as *mut window, lc);
+            layout_resize_child_cells((*wp).window_ptr(), lc);
             (*lc).g.sy = saved_size;
         }
         resize_first = 1 as u_int;
@@ -1717,7 +1717,7 @@ pub unsafe fn layout_split_pane(
             layout_cells_push_back(lc, new_owner);
         }
     } else {
-        lcparent = layout_replace_with_node((*wp).window as *mut window, lc, type_0);
+        lcparent = layout_replace_with_node((*wp).window_ptr(), lc, type_0);
         let mut new_owner = layout_create_cell();
         lcnew = &mut *new_owner;
         if flags & SPAWN_BEFORE != 0 {
@@ -1772,9 +1772,9 @@ pub unsafe fn layout_split_pane(
     }
     if full_size != 0 {
         if resize_first == 0 {
-            layout_resize_child_cells((*wp).window as *mut window, lc);
+            layout_resize_child_cells((*wp).window_ptr(), lc);
         }
-        layout_fix_offsets((*wp).window as *mut window);
+        layout_fix_offsets((*wp).window_ptr());
     } else {
         layout_make_leaf(lc, &(*wp).observer.upgrade().expect("live layout pane"));
     }
@@ -1805,7 +1805,7 @@ pub unsafe fn layout_floating_pane(
     return lcnew;
 }
 pub unsafe fn layout_close_pane(mut wp: *mut window_pane) {
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = (*wp).window_ptr();
     if (*wp).layout_cell.is_null() {
         return;
     }
@@ -1918,7 +1918,7 @@ pub unsafe fn layout_spread_cell(
 }
 pub unsafe fn layout_spread_out(mut wp: *mut window_pane) {
     let mut parent: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut w: *mut window = (*wp).window as *mut window;
+    let mut w: *mut window = (*wp).window_ptr();
     parent = (*(*wp).layout_cell).parent;
     if parent.is_null() {
         return;
@@ -2039,19 +2039,19 @@ pub unsafe fn layout_get_floating_cell(
     }
     if flags & SPAWN_FLOATOVERZOOM != 0 {
         window_push_zoom(
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
             0 as ::core::ffi::c_int,
             1 as ::core::ffi::c_int,
         );
     } else if window_active_pane_is_over_zoom(w) != 0 {
         window_push_zoom(
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
             0 as ::core::ffi::c_int,
             1 as ::core::ffi::c_int,
         );
     } else {
         window_push_zoom(
-            (*wp).window as *mut window,
+            (*wp).window_ptr(),
             1 as ::core::ffi::c_int,
             flags & SPAWN_ZOOM,
         );

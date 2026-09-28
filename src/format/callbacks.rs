@@ -635,7 +635,7 @@ unsafe fn format_cb_pane_modal_flag(mut ft: *mut format_tree) -> Option<CString>
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
-        if (*(*wp).window).modal.ptr_eq(&(*wp).observer) {
+        if (*(*wp).window_ptr()).modal.ptr_eq(&(*wp).observer) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -785,7 +785,7 @@ unsafe fn format_cb_pane_at_bottom(mut ft: *mut format_tree) -> Option<CString> 
     if wp.is_null() {
         return None;
     }
-    w = (*wp).window as *mut window;
+    w = (*wp).window_ptr();
     status = window_pane_get_pane_status(&*wp);
     if status == PANE_STATUS_BOTTOM {
         flag = ((*wp).yoff + (*wp).sy as ::core::ffi::c_int
@@ -1907,7 +1907,7 @@ unsafe fn format_cb_pane_active(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
-        if format_pane == (*(*format_pane).window).active_ptr() {
+        if format_pane == (*(*format_pane).window_ptr()).active_ptr() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1930,7 +1930,7 @@ unsafe fn format_cb_pane_at_right(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
         if (*format_pane).xoff + (*format_pane).sx as ::core::ffi::c_int
-            == (*(*format_pane).window).sx as ::core::ffi::c_int
+            == (*(*format_pane).window_ptr()).sx as ::core::ffi::c_int
         {
             return Some(c"1".to_owned());
         }
@@ -2201,7 +2201,7 @@ unsafe fn format_cb_pane_last(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
-        if format_pane == window_pane_stack_first(((*format_pane).window).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+        if format_pane == window_pane_stack_first(((*format_pane).window_ptr()).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2431,7 +2431,7 @@ unsafe fn format_cb_pane_unzoomed_height(mut ft: *mut format_tree) -> Option<CSt
     if wp.is_null() {
         return None;
     }
-    w = (*wp).window as *mut window;
+    w = (*wp).window_ptr();
     lc = (*wp).saved_layout_cell;
     if lc.is_null() {
         lc = (*wp).layout_cell as *mut layout_cell;
@@ -2482,7 +2482,7 @@ unsafe fn format_cb_pane_unzoomed_width(mut ft: *mut format_tree) -> Option<CStr
         return None;
     }
     sx = (*lc).g.sx;
-    if saved != 0 && (*wp).base.saved_grid.is_none() && (*(*wp).window).sb == PANE_SCROLLBARS_ALWAYS
+    if saved != 0 && (*wp).base.saved_grid.is_none() && (*(*wp).window_ptr()).sb == PANE_SCROLLBARS_ALWAYS
         || saved == 0 && window_pane_scrollbar_reserve(&*wp) != 0
     {
         sb_w = (*wp).scrollbar_style.width;

@@ -166,10 +166,10 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         (*dst_wp).layout_cell = src_lc as *mut layout_cell;
         (*dst_lc).wp = (*src_wp).observer.clone();
         (*src_wp).layout_cell = dst_lc as *mut layout_cell;
-        (*src_wp).window = dst_w as *mut window;
+    (*src_wp).window = (*dst_w).observer.clone();
         options_set_parent(options_owner_ptr(&mut (*src_wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*dst_w).options).map_or(std::ptr::null_mut(), |options| options));
         (*src_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-        (*dst_wp).window = src_w as *mut window;
+    (*dst_wp).window = (*src_w).observer.clone();
         options_set_parent(options_owner_ptr(&mut (*dst_wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*src_w).options).map_or(std::ptr::null_mut(), |options| options));
         (*dst_wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         sx = (*src_wp).sx;
