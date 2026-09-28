@@ -78,7 +78,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
-        s: None,
+        s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
@@ -200,7 +200,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         }
     }
     sc.item = (*item).observer.clone();
-    sc.s = (*s).observer.upgrade();
+    sc.s = (*s).observer.clone();
     sc.tc = tc_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
     argv_owner = args_to_vector(&*args);

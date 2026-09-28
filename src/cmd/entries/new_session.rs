@@ -159,7 +159,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut count: u_int = args_count(args);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
-        s: None,
+        s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
@@ -564,7 +564,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                 .expect("new session environment"), oo.take(), tiop.as_ref());
                                                         s = session_owner.get();
                                                         sc.item = (*item).observer.clone();
-                                                        sc.s = Some(session_owner.clone());
+                                                        sc.s = std::rc::Rc::downgrade(&session_owner);
                                                         if detached == 0 {
                                                             sc.tc = c_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
                                                         }

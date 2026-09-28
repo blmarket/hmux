@@ -129,7 +129,7 @@ pub const _PATH_TMP: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/tmp/\0") };
 
 unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
-    let session_owner = (*sc).s.clone().expect("spawn context session");
+    let session_owner = (*sc).s.upgrade().expect("spawn context session");
     let s = session_owner.get();
     let mut wl: *mut winlink = (*sc).wl_ptr();
     let wp0_owner = (*sc).wp0.upgrade();
@@ -166,6 +166,7 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
     ));
 }
 unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut window_pane) {
+    let session_owner = (*sc).s.upgrade();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -184,7 +185,7 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
     event_payload_set_session(
         &mut *ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
-        (*sc).s.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()),
+        session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()),
     );
     event_payload_set_window(
         &mut *ep,
@@ -269,7 +270,7 @@ pub unsafe fn spawn_window(
     mut sc: *mut spawn_context,
     cause: *mut Option<CString>,
 ) -> *mut winlink {
-    let session_owner = (*sc).s.clone().expect("spawn context session");
+    let session_owner = (*sc).s.upgrade().expect("spawn context session");
     let target_client_owner = (*sc).tc.upgrade();
     let s = session_owner.get();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -442,7 +443,7 @@ pub unsafe fn spawn_pane(
     let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    let session_owner = (*sc).s.clone().expect("spawn context session");
+    let session_owner = (*sc).s.upgrade().expect("spawn context session");
     let s = session_owner.get();
     let mut ts: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = (*(*sc).wl_ptr()).window_ptr();
@@ -1084,7 +1085,7 @@ pub(crate) unsafe fn spawn_editor(
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
-        s: None,
+        s: std::rc::Weak::new(),
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
@@ -1164,7 +1165,7 @@ pub(crate) unsafe fn spawn_editor(
         .concat(),
     )
     .expect("editor command components contain no NUL");
-    sc.s = Some(session_owner.clone());
+    sc.s = std::rc::Rc::downgrade(&session_owner);
     sc.set_wl(wl);
     sc.tc = std::rc::Rc::downgrade(client_owner);
     sc.wp0 = (*w).active.clone();
@@ -1264,7 +1265,7 @@ mod tests {
     }
 
     #[test]
-    fn spawn_context_observes_client_and_pane_without_retaining_them() {
+    fn spawn_context_observes_models_without_retaining_them() {
         unsafe {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
@@ -1273,13 +1274,13 @@ mod tests {
             let session_owner = session::new();
             let session_observer = std::rc::Rc::downgrade(&session_owner);
             let mut context = spawn_context {
-                item: std::rc::Weak::new(), s: Some(session_owner.clone()),
+                item: std::rc::Weak::new(), s: std::rc::Rc::downgrade(&session_owner),
                 wl: refbox::Weak::new(), tc: std::rc::Rc::downgrade(&owner),
                 wp0: std::rc::Rc::downgrade(&pane_owner), lc: std::ptr::null_mut(),
                 name: None, argv: Vec::new(), environ: None,
                 idx: 0, cwd: None, flags: 0,
             };
-            let s = context.s.as_ref().unwrap().get();
+            let s = session_owner.get();
             let wl = winlink_add(&raw mut (*s).windows, 0);
             context.set_wl(wl);
             assert_eq!(context.wl_ptr(), wl);
@@ -1288,7 +1289,8 @@ mod tests {
             drop(owner);
             drop(pane_owner);
             drop(session_owner);
-            assert!(session_observer.upgrade().is_some());
+            assert!(session_observer.upgrade().is_none());
+            assert!(context.s.upgrade().is_none());
             assert!(pane_observer.upgrade().is_none());
             assert!(context.wp0.upgrade().is_none());
             assert!(observer.upgrade().is_none());

@@ -30,7 +30,7 @@ entity can have owning, weak, and borrowed holders simultaneously.
 
 | Entity | Owning holders and release evidence | Weak holders / borrowed views | Tracking status |
 | --- | --- | --- | --- |
-| `session` | Session index; event targets/payloads; monitor session; run-shell data; spawn context. `session_remove_ref` consumes an `Rc` and defers release. | Self observer, find state, monitor changes, mode selections; group membership; client session/last-session and winlink session are weak; format context is weak. The current winlink field is a weak RefBox observer. | Owners typed; raw relationships and traversal projections remain. |
+| `session` | Session index; event targets/payloads; monitor session; run-shell data. `session_remove_ref` consumes an `Rc` and defers release. | Self observer, find state, monitor changes, mode selections; group membership; client session/last-session, winlink session, format and spawn contexts are weak. The current winlink field is a weak RefBox observer. | Owners typed; raw relationships and traversal projections remain. |
 | `window` | Creation returns `WindowOwner`; winlinks own `WindowOwner`; alerts and event payloads retain `Rc`. `window_remove_ref` performs live close notification before release. | Self observer, find state, menus, monitor changes; pane parent and format/redraw context. Global index is weak. | **Migrated:** index entries, index traversal, ID lookup and all their callers retain `WindowOwner` while accessing the window. |
 | `window_pane` | Pane index; retained event targets/payloads. `window_pane_remove_ref` consumes an `Rc`; logical destruction removes the index owner. | Pane lists/history, find state, mode tree, prompts and monitor changes; window active/modal/zoom panes use weak handles; raw layout cells, input and render contexts remain. | Owners and many observers typed; remaining raw relationships and short-lived upgrade projections need migration. |
 | `client` | Client registry; queue items; prepared commands; format trees; popups; asynchronous command data; file records; queued key events and event payloads. `server_client_unref_owned` defers a consumed owner. | Self observer, target-client/find state, monitor, prompt and key-event observers, window latest-client identity; raw tty parent, input/render/format contexts. | Owners typed; borrowed constructor migration in progress. Preserve deferred release. |
@@ -776,8 +776,8 @@ and window latest-client state receives only the weak identity. Context
 destruction does not release a client reference.
 
 `cargo test --workspace` passed, including a regression proving that a context
-does not retain its target after the external owner drops. Spawn session
-ownership and legacy model projections remain under review.
+does not retain its target after the external owner drops. Legacy model
+projections remain under review.
 
 ## Implemented spawn-context source-pane observer
 
@@ -787,20 +787,19 @@ removing it from ordering, rebuilding the layout and reinserting it; pane spawni
 keeps a local upgraded owner throughout reset, callback and creation work.
 
 `cargo test --workspace` passed. The context-lifetime regression verifies that
-the source pane and client expire when their independent owners drop. Spawn
-session ownership, layout views and
-legacy raw projections remain pending.
+the source pane and client expire when their independent owners drop. Session,
+layout and legacy raw projections remain under review.
 
-## Implemented spawn-context session owner
+## Implemented spawn-context session observer
 
-`spawn_context.s` now owns an optional session `Rc` for the spawn operation.
-Command/editor contexts retain their session, and window/pane spawning keeps a
-local owner throughout access. Context destruction releases this temporary owner.
+`spawn_context.s` now stores a session `Weak`. Command/editor contexts observe
+their session, and window/pane spawning keeps a local upgrade throughout access.
+Pane-created payload setup also holds an upgrade while setting its session.
+Context destruction does not release a session reference.
 
 `cargo test --workspace` passed. The context-lifetime regression verifies
-session retention after the external owner drops. Client and source pane are
-weak observers. Session ownership, layout views and legacy raw projections remain
-under review.
+that session, client and source-pane observers expire after their independent
+owners drop. Layout views and legacy raw projections remain under review.
 
 ## Implemented mode source-pane observer
 
@@ -1296,7 +1295,7 @@ client projections and editor spawning APIs remain pending.
 ## Implemented retained clients and sessions for editor spawning
 
 Editor spawning borrows the client Rc and retains its session before invoking the
-file writer, then clones both handles into the spawn context. Buffer and customize
+file writer, then stores weak identities in the spawn context. Buffer and customize
 editor callers pass their existing client owners. A client without a live session
 returns without creating an editor or invoking its callbacks; supplied callback
 captures are released on that return.

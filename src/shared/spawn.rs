@@ -85,7 +85,7 @@ pub type spawn_finish_edit_cb =
 #[repr(C)]
 pub struct spawn_context {
     pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
-    pub s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    pub s: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
     /// Observe the target client; each spawn operation retains an upgrade while using it.
     pub tc: std::rc::Weak<std::cell::UnsafeCell<client>>,
