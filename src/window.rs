@@ -3303,13 +3303,14 @@ pub unsafe fn window_pane_prompt_key(
     return result;
 }
 unsafe fn window_pane_copy_paste(
-    mut wp: *mut window_pane,
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
+    owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    bytes: &[u8],
 ) {
-    let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    loop_0 = window_pane_first((*wp).window).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
+    let wp = owner.get();
+    let window_owner = (*(*wp).window).observer.upgrade().expect("pane window");
+    let mut cursor = window_pane_first(window_owner.get());
+    while let Some(pane_owner) = cursor {
+        let loop_0 = pane_owner.get();
         if loop_0 != wp
             && (*loop_0).modes.active.is_null()
             && (*loop_0).fd != -(1 as ::core::ffi::c_int)
@@ -3323,11 +3324,11 @@ unsafe fn window_pane_copy_paste(
             log_debug(format_args!(
                 "{}: {}",
                 "window_pane_copy_paste",
-                log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+                log_cstr_n(bytes.as_ptr().cast(), bytes.len() as ::core::ffi::c_int)
             ));
-            bufferevent_write((*loop_0).event, buf as *const ::core::ffi::c_void, len);
+            bufferevent_write((*loop_0).event, bytes.as_ptr().cast(), bytes.len());
         }
-        loop_0 = window_pane_next(loop_0).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(loop_0);
     }
 }
 unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, key: key_code) {
@@ -3352,11 +3353,11 @@ unsafe fn window_pane_copy_key(owner: &std::rc::Rc<std::cell::UnsafeCell<window_
     }
 }
 pub unsafe fn window_pane_paste(
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut key: key_code,
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
+    bytes: &[u8],
 ) {
+    let wp = pane_owner.get();
     if !(*wp).modes.active.is_null() {
         return;
     }
@@ -3377,15 +3378,15 @@ pub unsafe fn window_pane_paste(
     log_debug(format_args!(
         "{}: {}",
         "window_pane_paste",
-        log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
+        log_cstr_n(bytes.as_ptr().cast(), bytes.len() as ::core::ffi::c_int)
     ));
-    bufferevent_write((*wp).event, buf as *const ::core::ffi::c_void, len);
+    bufferevent_write((*wp).event, bytes.as_ptr().cast(), bytes.len());
     if options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        window_pane_copy_paste(wp, buf, len);
+        window_pane_copy_paste(pane_owner, bytes);
     }
 }
 pub unsafe fn window_pane_key(

@@ -3139,7 +3139,7 @@ unsafe fn server_client_key_callback(
                                 current_block = 1578459965781631232;
                             } else {
                                 if let Some(bytes) = (*event).bytes_ptr_len() {
-                                    window_pane_paste(wp, key, bytes.as_ptr().cast_mut().cast(), bytes.len());
+                                    window_pane_paste(&(*wp).observer.upgrade().expect("paste target pane"), key, bytes);
                                 }
                                 key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
                                 current_block = 1578459965781631232;

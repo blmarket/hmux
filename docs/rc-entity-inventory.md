@@ -1065,3 +1065,13 @@ lookup instead of extracting pointers from temporary owners.
 
 `cargo test --workspace` and `git diff --check` passed. Pane/window association
 storage, paste delivery and local raw projections remain pending.
+
+## Implemented retained panes through paste delivery
+
+Pane paste delivery borrows its Rc pane and a byte slice. Synchronized paste
+retains the source window and each destination pane through output and successor
+lookup, replacing pointers extracted from temporary pane owners. Key dispatch
+retains its selected pane before invoking the paste API.
+
+`cargo test --workspace` and `git diff --check` passed. Pane/window association
+storage, outer pane lookup paths and local raw model projections remain pending.
