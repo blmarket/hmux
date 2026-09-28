@@ -2614,7 +2614,7 @@ unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CS
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !format_session.is_null() {
-        wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
+        wl = (*format_session).curw_ptr();
         if !wl.is_null() {
             if (*wl).flags & WINLINK_ACTIVITY != 0 {
                 return Some(c"1".to_owned());
@@ -2629,7 +2629,7 @@ unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CStrin
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !format_session.is_null() {
-        wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
+        wl = (*format_session).curw_ptr();
         if !wl.is_null() {
             if (*wl).flags & WINLINK_BELL != 0 {
                 return Some(c"1".to_owned());
@@ -2644,7 +2644,7 @@ unsafe fn format_cb_session_silence_flag(mut ft: *mut format_tree) -> Option<CSt
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !format_session.is_null() {
-        wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
+        wl = (*format_session).curw_ptr();
         if !wl.is_null() {
             if (*wl).flags & WINLINK_SILENCE != 0 {
                 return Some(c"1".to_owned());
