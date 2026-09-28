@@ -1267,3 +1267,16 @@ remaining internal legacy calls still project raw pointers.
 `cargo test --workspace` and `git diff --check` passed. A regression verifies client
 identity and retention during live dispatch, release after return, and `None`
 after expiration. Customize internals and other raw model APIs remain pending.
+
+## Implemented retained clients for customize action helpers
+
+Nine customize helpers now borrow optional Rc client handles: environment/option
+editing and creation, array-key editing, key editing/creation, editor startup and
+current-group creation. Key dispatch passes its retained client through this
+chain. Prompt setup no longer recovers ownership from raw client addresses in
+these helpers. Editor startup projects a pointer only at the remaining legacy
+spawn API boundary.
+
+`cargo test --workspace` and `git diff --check` passed, including existing
+customize prompt payload/cleanup tests. Customize model-data pointers, internal
+client projections and editor spawning APIs remain pending.

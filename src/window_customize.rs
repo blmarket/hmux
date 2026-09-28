@@ -3220,7 +3220,7 @@ unsafe fn window_customize_set_environment_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_set_environment(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
     item: &window_customize_itemdata,
     mut global: ::core::ffi::c_int,
@@ -3309,7 +3309,7 @@ unsafe fn window_customize_set_environment(
         window_customize_prompt_callbacks(owner, window_customize_set_environment_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+        client_owner,
         &prompt,
         Some(&value),
         PROMPT_TYPE_COMMAND,
@@ -3412,7 +3412,7 @@ unsafe fn window_customize_add_option_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_option(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
     mut scope: window_customize_scope,
     mut oo: *mut options,
@@ -3441,7 +3441,7 @@ unsafe fn window_customize_add_option(
         window_customize_prompt_callbacks(owner, window_customize_add_option_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+        client_owner,
         prompt,
         Some(c"@"),
         PROMPT_TYPE_COMMAND,
@@ -3524,7 +3524,7 @@ unsafe fn window_customize_add_environment_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_environment(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
     mut scope: window_customize_scope,
     target: CustomizeEnvironment,
@@ -3544,7 +3544,7 @@ unsafe fn window_customize_add_environment(
         window_customize_prompt_callbacks(owner, window_customize_add_environment_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+        client_owner,
         c"New environment: ",
         Some(c""),
         PROMPT_TYPE_COMMAND,
@@ -3641,7 +3641,7 @@ unsafe fn window_customize_edit_close_cb(
 unsafe fn window_customize_start_edit(
     mut data: *mut window_customize_modedata,
     item: &window_customize_itemdata,
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
 ) {
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
@@ -3738,7 +3738,7 @@ unsafe fn window_customize_start_edit(
     let bytes = value.to_bytes();
     let bytes = if bytes.is_empty() { b"\n" } else { bytes };
     let editor = spawn_editor(
-        c,
+        client_owner.map_or(std::ptr::null_mut(), |owner| owner.get()),
         |stream| spawn_editor_write(stream, bytes),
         Some(Box::new(move |editor, buf| unsafe {
             window_customize_edit_close_cb(editor, buf, ed)
@@ -3749,7 +3749,7 @@ unsafe fn window_customize_start_edit(
     }
 }
 unsafe fn window_customize_set_option(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
     item: &window_customize_itemdata,
     mut global: ::core::ffi::c_int,
@@ -3908,7 +3908,7 @@ unsafe fn window_customize_set_option(
             window_customize_prompt_callbacks(owner, window_customize_set_option_callback);
         mode_tree_set_prompt(
             (*data).data.as_ref().expect("mode tree owner").clone(),
-            c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+            client_owner,
             &prompt,
             Some(&value),
             PROMPT_TYPE_COMMAND,
@@ -3998,7 +3998,7 @@ unsafe fn window_customize_set_array_key_callback(
     };
 }
 unsafe fn window_customize_set_array_key(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
     item: &window_customize_itemdata,
 ) {
@@ -4046,7 +4046,7 @@ unsafe fn window_customize_set_array_key(
         window_customize_prompt_callbacks(owner, window_customize_set_array_key_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+        client_owner,
         &prompt,
         item.array_key.as_deref(),
         PROMPT_TYPE_COMMAND,
@@ -4249,7 +4249,7 @@ fn window_customize_key_prompt(key_string: &CStr) -> CString {
 }
 
 unsafe fn window_customize_set_key(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
     item: &window_customize_itemdata,
 ) {
@@ -4283,7 +4283,7 @@ unsafe fn window_customize_set_key(
         drop(kt);
         mode_tree_set_prompt(
             (*data).data.as_ref().expect("mode tree owner").clone(),
-            c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+            client_owner,
             &prompt,
             Some(&value),
             PROMPT_TYPE_COMMAND,
@@ -4312,7 +4312,7 @@ unsafe fn window_customize_set_key(
         drop(kt);
         mode_tree_set_prompt(
             (*data).data.as_ref().expect("mode tree owner").clone(),
-            c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+            client_owner,
             &prompt,
             Some(&note),
             PROMPT_TYPE_COMMAND,
@@ -4426,7 +4426,7 @@ unsafe fn window_customize_add_key_callback(
     };
 }
 unsafe fn window_customize_add_key(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
     table: &CStr,
 ) {
@@ -4449,7 +4449,7 @@ unsafe fn window_customize_add_key(
         window_customize_prompt_callbacks(owner, window_customize_add_key_callback);
     mode_tree_set_prompt(
         (*data).data.as_ref().expect("mode tree owner").clone(),
-        c.as_ref().map(|client| client.observer.upgrade().expect("prompt client is live")).as_ref(),
+        client_owner,
         &prompt,
         Some(c""),
         PROMPT_TYPE_COMMAND,
@@ -4709,7 +4709,7 @@ unsafe fn window_customize_change_tagged_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_current(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_customize_modedata,
 ) -> ::core::ffi::c_int {
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
@@ -4733,7 +4733,7 @@ unsafe fn window_customize_add_current(
     }
     if name.as_ref() == c"Server Options" {
         window_customize_add_option(
-            c,
+            client_owner,
             data,
             WINDOW_CUSTOMIZE_SERVER,
             global_options,
@@ -4743,7 +4743,7 @@ unsafe fn window_customize_add_current(
     }
     if name.as_ref() == c"Session Options" {
         window_customize_add_option(
-            c,
+            client_owner,
             data,
             WINDOW_CUSTOMIZE_SESSION,
             options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
@@ -4753,7 +4753,7 @@ unsafe fn window_customize_add_current(
     }
     if name.as_ref() == c"Window & Pane Options" {
         window_customize_add_option(
-            c,
+            client_owner,
             data,
             WINDOW_CUSTOMIZE_PANE,
             options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
@@ -4763,7 +4763,7 @@ unsafe fn window_customize_add_current(
     }
     if name.as_ref() == c"Session Hooks" {
         window_customize_add_option(
-            c,
+            client_owner,
             data,
             WINDOW_CUSTOMIZE_SESSION,
             options_owner_ptr(&mut (*fs.s_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
@@ -4773,7 +4773,7 @@ unsafe fn window_customize_add_current(
     }
     if name.as_ref() == c"Window & Pane Hooks" {
         window_customize_add_option(
-            c,
+            client_owner,
             data,
             WINDOW_CUSTOMIZE_PANE,
             options_owner_ptr(&mut (*fs.wp_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
@@ -4783,7 +4783,7 @@ unsafe fn window_customize_add_current(
     }
     if name.as_ref() == c"Global Environment" {
         window_customize_add_environment(
-            c,
+            client_owner,
             data,
             WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT,
             CustomizeEnvironment::Global,
@@ -4792,7 +4792,7 @@ unsafe fn window_customize_add_current(
     }
     if name.as_ref() == c"Session Environment" {
         window_customize_add_environment(
-            c,
+            client_owner,
             data,
             WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
             CustomizeEnvironment::session(fs.s_ptr()),
@@ -4801,7 +4801,7 @@ unsafe fn window_customize_add_current(
     }
     if let Some(table) = name.to_bytes_with_nul().strip_prefix(b"Key Table - ") {
         let table = CStr::from_bytes_with_nul(table).expect("key table suffix is NUL terminated");
-        window_customize_add_key(c, data, table);
+        window_customize_add_key(client_owner, data, table);
         return 1;
     }
     return 0 as ::core::ffi::c_int;
@@ -4843,13 +4843,13 @@ unsafe fn window_customize_key(
         match key {
             101 => {
                 if let Some(item) = item {
-                    window_customize_start_edit(data, &item, c);
+                    window_customize_start_edit(data, &item, Some(client_owner));
                 }
             }
             97 => {
                 if let Some(item) = item.filter(|item| item.type_0 == WINDOW_CUSTOMIZE_ITEM_OPTION)
                 {
-                    window_customize_set_array_key(c, data, &item);
+                    window_customize_set_array_key(Some(client_owner), data, &item);
                 }
             }
             13 | 115 => {
@@ -4857,15 +4857,15 @@ unsafe fn window_customize_key(
                     if item.type_0 as ::core::ffi::c_uint
                         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        window_customize_set_key(c, data, &item);
+                        window_customize_set_key(Some(client_owner), data, &item);
                     } else if item.type_0 as ::core::ffi::c_uint
                         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int
                             as ::core::ffi::c_uint
                     {
-                        window_customize_set_environment(c, data, &item, 0 as ::core::ffi::c_int);
+                        window_customize_set_environment(Some(client_owner), data, &item, 0 as ::core::ffi::c_int);
                     } else {
                         window_customize_set_option(
-                            c,
+                            Some(client_owner),
                             data,
                             &item,
                             0 as ::core::ffi::c_int,
@@ -4878,7 +4878,7 @@ unsafe fn window_customize_key(
                         );
                     }
                     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-                } else if window_customize_add_current(c, data) != 0 {
+                } else if window_customize_add_current(Some(client_owner), data) != 0 {
                     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
                 }
             }
@@ -4886,7 +4886,7 @@ unsafe fn window_customize_key(
                 if let Some(item) = item.filter(|item| item.type_0 == WINDOW_CUSTOMIZE_ITEM_OPTION)
                 {
                     window_customize_set_option(
-                        c,
+                        Some(client_owner),
                         data,
                         &item,
                         0 as ::core::ffi::c_int,
@@ -4906,10 +4906,10 @@ unsafe fn window_customize_key(
                         == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int
                             as ::core::ffi::c_uint
                     {
-                        window_customize_set_environment(c, data, &item, 1 as ::core::ffi::c_int);
+                        window_customize_set_environment(Some(client_owner), data, &item, 1 as ::core::ffi::c_int);
                     } else {
                         window_customize_set_option(
-                            c,
+                            Some(client_owner),
                             data,
                             &item,
                             1 as ::core::ffi::c_int,
