@@ -79,7 +79,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: None,
-        wl: ::core::ptr::null_mut::<winlink>(),
+        wl: refbox::Weak::new(),
         tc: None,
         wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),

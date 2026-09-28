@@ -30,7 +30,7 @@ entity can have owning, weak, and borrowed holders simultaneously.
 
 | Entity | Owning holders and release evidence | Weak holders / borrowed views | Tracking status |
 | --- | --- | --- | --- |
-| `session` | Session index; event targets/payloads; monitor session; run-shell data. `session_remove_ref` consumes an `Rc` and defers release. | Self observer, find state, monitor changes, mode selections; group membership; raw client session/last-session, winlink session, format/spawn context. | Owners typed; raw relationships and traversal projections remain. |
+| `session` | Session index; event targets/payloads; monitor session; run-shell data; spawn context. `session_remove_ref` consumes an `Rc` and defers release. | Self observer, find state, monitor changes, mode selections; group membership; raw client session/last-session, winlink session, format context. | Owners typed; raw relationships and traversal projections remain. |
 | `window` | Creation returns `WindowOwner`; winlinks own `WindowOwner`; alerts and event payloads retain `Rc`. `window_remove_ref` performs live close notification before release. | Self observer, find state, menus, monitor changes; pane parent and format/redraw context. Global index is weak. | **Migrated:** index entries, index traversal, ID lookup and all their callers retain `WindowOwner` while accessing the window. |
 | `window_pane` | Pane index; retained event targets/payloads. `window_pane_remove_ref` consumes an `Rc`; logical destruction removes the index owner. | Pane lists/history, find state, mode tree, prompts and monitor changes; raw active/modal/zoom panes, layout cells, input and render contexts. | Owners and many observers typed; remaining raw relationships and short-lived upgrade projections need migration. |
 | `client` | Client registry; queue items; prepared commands; format trees; popups; asynchronous command data; file records; queued key events and event payloads. `server_client_unref_owned` defers a consumed owner. | Self observer, target-client/find state, monitor, prompt and key-event observers, window latest-client identity; raw tty parent, input/render/format contexts. | Owners typed; borrowed constructor migration in progress. Preserve deferred release. |
@@ -69,7 +69,7 @@ fixtures are not production entities.
 
 ## Related entities that are not shared Rc models
 
-`winlink`, prompts, menus, mode-tree items and several mode item records use
+`winlink`, pane mode entries, prompts, menus, mode-tree items and several mode item records use
 `RefBox` with `refbox::Weak`. Their ownership is **single-owner**, not shared `Rc`.
 Sessions own boxed session groups; tty terms, format trees, jobs, queue items,
 options, layouts and input contexts also have their own non-Rc storage contracts.

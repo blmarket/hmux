@@ -36,7 +36,7 @@ pub type spawn_finish_edit_cb =
 pub struct spawn_context {
     pub item: *mut cmdq_item,
     pub s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    pub wl: *mut winlink,
+    pub wl: refbox::Weak<winlink>,
     /// Retain the target client for the duration of this spawn operation.
     pub tc: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
     pub wp0: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
@@ -47,4 +47,20 @@ pub struct spawn_context {
     pub idx: ::core::ffi::c_int,
     pub cwd: Option<std::ffi::CString>,
     pub flags: ::core::ffi::c_int,
+}
+
+impl spawn_context {
+    /// A borrowed view for the synchronous legacy spawn calls.
+    pub fn wl_ptr(&self) -> *mut winlink {
+        if self.wl.is_alive() {
+            self.wl.as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+
+    /// The caller supplies a live winlink owned by a session index.
+    pub unsafe fn set_wl(&mut self, wl: *mut winlink) {
+        self.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
+    }
 }

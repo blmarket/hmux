@@ -126,7 +126,7 @@ pub const _PATH_TMP: [::core::ffi::c_char; 6] =
 unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
     let session_owner = (*sc).s.clone().expect("spawn context session");
     let s = session_owner.get();
-    let mut wl: *mut winlink = (*sc).wl;
+    let mut wl: *mut winlink = (*sc).wl_ptr();
     let wp0 = (*sc).wp0.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let name = (*sc).name.as_deref().unwrap_or(c"none");
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
@@ -174,7 +174,7 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
         .as_ref()
         .map_or(::core::ptr::null(), |value| value.as_ptr());
     let mut ep = event_payload_create();
-    cmd_find_from_winlink_pane(&raw mut fs, (*sc).wl, wp, 0 as ::core::ffi::c_int);
+    cmd_find_from_winlink_pane(&raw mut fs, (*sc).wl_ptr(), wp, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_session(
         &mut *ep,
@@ -189,7 +189,7 @@ unsafe fn spawn_fire_pane_created(mut sc: *mut spawn_context, mut wp: *mut windo
     event_payload_set_int(
         &mut *ep,
         b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(*sc).wl).idx,
+        (*(*sc).wl_ptr()).idx,
     );
     event_payload_set_pane(
         &mut *ep,
@@ -279,7 +279,7 @@ pub unsafe fn spawn_window(
         sc,
     );
     if (*sc).flags & SPAWN_RESPAWN != 0 {
-        w = (*(*sc).wl).window_ptr();
+        w = (*(*sc).wl_ptr()).window_ptr();
         if !(*sc).flags & SPAWN_KILL != 0 {
             wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !wp.is_null() {
@@ -295,7 +295,7 @@ pub unsafe fn spawn_window(
                         b"window ",
                         (*s).name.as_bytes(),
                         b":",
-                        (*(*sc).wl).idx.to_string().as_bytes(),
+                        (*(*sc).wl_ptr()).idx.to_string().as_bytes(),
                         b" still active",
                     ],
                 );
@@ -347,8 +347,8 @@ pub unsafe fn spawn_window(
                     b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
                 )) as ::core::ffi::c_int;
         }
-        (*sc).wl = winlink_add(&raw mut (*s).windows, idx);
-        if (*sc).wl.is_null() {
+        (*sc).set_wl(winlink_add(&raw mut (*s).windows, idx));
+        if (*sc).wl_ptr().is_null() {
             set_spawn_cause(
                 cause.as_mut(),
                 &[b"couldn't add window ", idx.to_string().as_bytes()],
@@ -368,7 +368,7 @@ pub unsafe fn spawn_window(
         let window = window_create(sx, sy, xpixel, ypixel);
         w = window.as_ptr();
         if w.is_null() {
-            winlink_remove(&raw mut (*s).windows, (*sc).wl);
+            winlink_remove(&raw mut (*s).windows, (*sc).wl_ptr());
             set_spawn_cause(
                 cause.as_mut(),
                 &[b"couldn't create window ", idx.to_string().as_bytes()],
@@ -376,11 +376,11 @@ pub unsafe fn spawn_window(
             return ::core::ptr::null_mut::<winlink>();
         }
         if (*s).curw.is_null() {
-            (*s).curw = (*sc).wl;
+            (*s).curw = (*sc).wl_ptr();
         }
-        (*(*sc).wl).session = (*s).observer.clone();
+        (*(*sc).wl_ptr()).session = (*s).observer.clone();
         (*w).latest = (*sc).tc.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        winlink_set_window((*sc).wl, w);
+        winlink_set_window((*sc).wl_ptr(), w);
         // The winlink now owns the window; release the construction reference.
         drop(window);
     } else {
@@ -390,7 +390,7 @@ pub unsafe fn spawn_window(
     wp = spawn_pane(sc, cause);
     if wp.is_null() {
         if !(*sc).flags & SPAWN_RESPAWN != 0 {
-            winlink_remove(&raw mut (*s).windows, (*sc).wl);
+            winlink_remove(&raw mut (*s).windows, (*sc).wl_ptr());
         }
         return ::core::ptr::null_mut::<winlink>();
     }
@@ -411,7 +411,7 @@ pub unsafe fn spawn_window(
         window_set_fill_cells(w);
     }
     if !(*sc).flags & SPAWN_DETACHED != 0 {
-        session_select(s, (*(*sc).wl).idx);
+        session_select(s, (*(*sc).wl_ptr()).idx);
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
         events_fire_window(
@@ -420,11 +420,11 @@ pub unsafe fn spawn_window(
         );
         events_fire_winlink(
             b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
-            (*sc).wl,
+            (*sc).wl_ptr(),
         );
     }
     session_group_synchronize_from(s);
-    return (*sc).wl;
+    return (*sc).wl_ptr();
 }
 pub unsafe fn spawn_pane(
     mut sc: *mut spawn_context,
@@ -438,7 +438,7 @@ pub unsafe fn spawn_pane(
     let session_owner = (*sc).s.clone().expect("spawn context session");
     let s = session_owner.get();
     let mut ts: *mut session = ::core::ptr::null_mut::<session>();
-    let mut w: *mut window = (*(*sc).wl).window_ptr();
+    let mut w: *mut window = (*(*sc).wl_ptr()).window_ptr();
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ee: Option<&environ_entry> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -538,7 +538,7 @@ pub unsafe fn spawn_pane(
                     b"pane ",
                     (*s).name.as_bytes(),
                     b":",
-                    (*(*sc).wl).idx.to_string().as_bytes(),
+                    (*(*sc).wl_ptr()).idx.to_string().as_bytes(),
                     b".",
                     idx.to_string().as_bytes(),
                     b" still active",
@@ -1082,7 +1082,7 @@ pub(crate) unsafe fn spawn_editor(
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: None,
-        wl: ::core::ptr::null_mut::<winlink>(),
+        wl: refbox::Weak::new(),
         tc: None,
         wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
@@ -1162,7 +1162,7 @@ pub(crate) unsafe fn spawn_editor(
     )
     .expect("editor command components contain no NUL");
     sc.s = Some(session_owner.clone());
-    sc.wl = wl;
+    sc.set_wl(wl);
     sc.tc = Some(client_owner.clone());
     sc.wp0 = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
     sc.lc = lc;
@@ -1226,13 +1226,19 @@ mod tests {
             let pane_observer = std::rc::Rc::downgrade(&pane_owner);
             let session_owner = session::new();
             let session_observer = std::rc::Rc::downgrade(&session_owner);
-            let context = spawn_context {
+            let mut context = spawn_context {
                 item: std::ptr::null_mut(), s: Some(session_owner.clone()),
-                wl: std::ptr::null_mut(), tc: Some(owner.clone()),
+                wl: refbox::Weak::new(), tc: Some(owner.clone()),
                 wp0: Some(pane_owner.clone()), lc: std::ptr::null_mut(),
                 name: None, argv: Vec::new(), environ: None,
                 idx: 0, cwd: None, flags: 0,
             };
+            let s = context.s.as_ref().unwrap().get();
+            let wl = winlink_add(&raw mut (*s).windows, 0);
+            context.set_wl(wl);
+            assert_eq!(context.wl_ptr(), wl);
+            winlink_remove(&raw mut (*s).windows, wl);
+            assert!(context.wl_ptr().is_null());
             drop(owner);
             drop(pane_owner);
             drop(session_owner);

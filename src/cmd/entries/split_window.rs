@@ -129,7 +129,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut sc: spawn_context = spawn_context {
         item: ::core::ptr::null_mut::<cmdq_item>(),
         s: None,
-        wl: ::core::ptr::null_mut::<winlink>(),
+        wl: refbox::Weak::new(),
         tc: None,
         wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
@@ -293,7 +293,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     }
     sc.item = item;
     sc.s = (*s).observer.upgrade();
-    sc.wl = wl;
+    sc.set_wl(wl);
     sc.wp0 = (*wp).observer.upgrade();
     sc.lc = lc;
     argv_owner = args_to_vector(&*args);
