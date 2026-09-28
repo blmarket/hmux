@@ -514,7 +514,10 @@ unsafe fn window_copy_sync_snapshot(mut data: *mut window_copy_mode_data, mut sr
 }
 unsafe fn window_copy_sync_backing(mut wme: *mut window_mode_entry) -> ::core::ffi::c_int {
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut wp: *mut window_pane = (*wme).swp;
+    let Some(source_owner) = (*wme).swp.upgrade() else {
+        return 0;
+    };
+    let wp = source_owner.get();
     let mut src: *mut screen = &raw mut (*wp).base;
     let mut dst: *mut screen = (*data).backing_mut();
     let mut sg: *mut grid = (*src).grid_mut();
@@ -525,7 +528,7 @@ unsafe fn window_copy_sync_backing(mut wme: *mut window_mode_entry) -> ::core::f
     let mut added: u_int = 0;
     let mut collected: u_int = 0;
     let mut kept: u_int = 0;
-    if (*data).viewmode != 0 || (*wme).swp != (*wme).wp {
+    if (*data).viewmode != 0 || wp != (*wme).wp {
         return 0 as ::core::ffi::c_int;
     }
     if (*sg).sx != (*dg).sx
@@ -626,7 +629,10 @@ unsafe fn window_copy_init(
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).swp;
+    let Some(source_owner) = (*wme).swp.upgrade() else {
+        return std::ptr::null_mut();
+    };
+    let wp = source_owner.get();
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
     let mut base: *mut screen = &raw mut (*wp).base;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -646,7 +652,7 @@ unsafe fn window_copy_init(
         &*base,
         &(*data).screen,
         Some((&mut cx, &mut cy)),
-        (*wme).swp != (*wme).wp,
+        wp != (*wme).wp,
     ));
     window_copy_sync_snapshot(data, (*base).grid_mut());
     (*data).cx = cx;
@@ -3470,7 +3476,10 @@ unsafe fn window_copy_cmd_search_forward_incremental(
     return action;
 }
 unsafe fn window_copy_do_refresh(mut wme: *mut window_mode_entry, mut follow: ::core::ffi::c_int) {
-    let mut wp: *mut window_pane = (*wme).swp;
+    let Some(source_owner) = (*wme).swp.upgrade() else {
+        return;
+    };
+    let wp = source_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oy_from_top: u_int = 0;
     if (*data).oy > (*data).backing().grid().hsize {
@@ -3483,7 +3492,7 @@ unsafe fn window_copy_do_refresh(mut wme: *mut window_mode_entry, mut follow: ::
             &(*wp).base,
             &(*data).screen,
             None,
-            (*wme).swp != (*wme).wp,
+            wp != (*wme).wp,
         ));
     }
     if follow != 0 {
@@ -3514,8 +3523,12 @@ unsafe fn window_copy_refresh_arm(mut wme: *mut window_mode_entry) {
     }
 }
 unsafe fn window_copy_refresh_allowed(mut wme: *mut window_mode_entry) -> ::core::ffi::c_int {
+    let Some(source_owner) = (*wme).swp.upgrade() else {
+        return 0;
+    };
+    let wp = source_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    if (*data).viewmode != 0 || (*wme).swp != (*wme).wp {
+    if (*data).viewmode != 0 || wp != (*wme).wp {
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
@@ -9696,7 +9709,8 @@ mod backing_owner_tests {
     fn incremental_sync_reuses_backing_and_replacement_preserves_the_source() {
         unsafe {
             let _options = ScreenOptions::new();
-            let mut pane = window_pane::empty();
+            let pane_owner = window_pane::new();
+            let pane = &mut *pane_owner.get();
             screen_init(&mut pane.base, 8, 3, 10);
             let mut data = window_copy_mode_data::default();
             data.backing = Some(window_copy_clone_screen(
@@ -9705,8 +9719,8 @@ mod backing_owner_tests {
             window_copy_sync_snapshot(&mut data, pane.base.grid_mut());
             let original = data.backing() as *const screen;
             let mut mode = window_mode_entry {
-                wp: &mut pane,
-                swp: &mut pane,
+                wp: pane,
+                swp: std::rc::Rc::downgrade(&pane_owner),
                 mode: &window_copy_mode,
                 data: (&mut data as *mut window_copy_mode_data).cast(),
             data_owner: None,
@@ -9728,8 +9742,15 @@ mod backing_owner_tests {
             assert!(data.backing.is_none());
             data.backing = Some(window_copy_clone_screen(&pane.base, &pane.base, None, true));
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
-            drop(data);
             assert_eq!(byte_at(&pane.base, 0, 0), b'B');
+            drop(pane_owner);
+            assert!(mode.swp.upgrade().is_none());
+            // An expired source leaves the independently owned snapshot intact.
+            assert_eq!(window_copy_sync_backing(&mut mode), 0);
+            assert_eq!(window_copy_refresh_allowed(&mut mode), 0);
+            window_copy_do_refresh(&mut mode, 0);
+            assert_eq!(byte_at(data.backing(), 0, 0), b'B');
+            drop(data);
             // An empty backing during initialization or repeated cleanup is valid.
             let mut empty = window_copy_mode_data::default();
             empty.clear_backing();

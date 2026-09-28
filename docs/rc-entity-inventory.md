@@ -802,3 +802,16 @@ local owner throughout access. Context destruction releases this temporary owner
 session, client and source-pane retention after external owners are dropped and
 release when the context ends. All three Rc model fields in spawn contexts now
 use owning handles. Layout/winlink views and legacy raw projections remain pending.
+
+## Implemented mode source-pane observer
+
+`window_mode_entry.swp` now stores a weak pane association. Mode entries did not
+retain/release this source, and copy mode owns an independent screen snapshot.
+Initialization upgrades and retains the source while copying; synchronization and
+refresh do the same while reading. An expired source prevents initialization or
+later refresh, preserving an existing snapshot without accessing freed pane data.
+
+`cargo test --workspace` passed. The incremental-copy regression now uses an Rc
+pane and verifies source expiration, disabled synchronization/refresh and retained
+snapshot contents. The owning-pane backreference, mode API raw parameters and
+legacy raw projections remain pending.

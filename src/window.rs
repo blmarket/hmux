@@ -2503,7 +2503,7 @@ mod window_mode_collection_tests {
     unsafe fn boxed_mode(wp: *mut window_pane) -> Box<window_mode_entry> {
         Box::new(window_mode_entry {
             wp,
-            swp: ::core::ptr::null_mut(),
+            swp: std::rc::Weak::new(),
             mode: &window_copy_mode,
             data: ::core::ptr::null_mut(),
             data_owner: None,
@@ -2955,7 +2955,7 @@ pub unsafe fn window_pane_set_mode(
         // The pane owns a stable Box address for as long as callbacks retain it.
         let entry = Box::new(window_mode_entry {
             wp,
-            swp,
+            swp: swp.as_ref().map(|pane| pane.observer.clone()).unwrap_or_default(),
             mode,
             data: ::core::ptr::null_mut(),
             data_owner: None,
