@@ -138,15 +138,15 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         args,
     ) == 0
     {
-        window_copy_set_line_numbers(wp, line_numbers);
+        window_copy_set_line_numbers(&pane_owner, line_numbers);
         if args_has(args, 'M' as i32 as u_char) != 0 {
             window_copy_start_drag(c_owner.as_ref(), &raw mut (*event).m);
         }
     } else {
-        window_copy_set_line_numbers(wp, line_numbers);
+        window_copy_set_line_numbers(&pane_owner, line_numbers);
     }
     if args_has(args, 'u' as i32 as u_char) != 0 {
-        window_copy_pageup(wp);
+        window_copy_pageup(&pane_owner);
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
         window_copy_pagedown(&pane_owner, args_has(args, 'e' as i32 as u_char));

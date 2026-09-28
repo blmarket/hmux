@@ -135,10 +135,11 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             return;
         }
     }
+    let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
     wme = (*wp).modes.active;
     if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
         window_pane_set_mode(
-            &(*wp).observer.upgrade().expect("mode target pane"),
+            &pane_owner,
             None,
             &window_view_mode,
             ::core::ptr::null_mut::<cmdq_item>(),
@@ -146,7 +147,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             ::core::ptr::null_mut::<args>(),
         );
     }
-    window_copy_add(wp, 1 as ::core::ffi::c_int, |out| write_cstr(out, msg));
+    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| write_cstr(out, msg));
 }
 fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_int) -> CString {
     let cmd = cmd.to_bytes();

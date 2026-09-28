@@ -1393,8 +1393,6 @@ unsafe fn redraw_draw_scrollbar_span(
     let mut off: u_int = 0;
     let mut sb_w: u_int = 0;
     let mut sb_pad: u_int = 0;
-    let mut cm_y: ::core::ffi::c_int = 0;
-    let mut cm_size: ::core::ffi::c_int = 0;
     if window_pane_mode(wp) == WINDOW_PANE_NO_MODE {
         total_height = (*s).grid().sy.wrapping_add((*s).grid().hsize);
         if total_height == 0 as u_int {
@@ -1407,14 +1405,9 @@ unsafe fn redraw_draw_scrollbar_span(
         if (*wp).modes.active.is_null() {
             return;
         }
-        if window_copy_get_current_offset(
-            wp,
-            &raw mut cm_y as *mut u_int,
-            &raw mut cm_size as *mut u_int,
-        ) == 0 as ::core::ffi::c_int
-        {
+        let Some((cm_y, cm_size)) = window_copy_get_current_offset(&*wp) else {
             return;
-        }
+        };
         total_height = (cm_size as u_int).wrapping_add(sb_h);
         if total_height == 0 as u_int {
             return;

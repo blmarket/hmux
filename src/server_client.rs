@@ -5353,10 +5353,11 @@ pub unsafe fn server_client_print(
             }
         } else {
             wp = (*(*(*(*c).session).curw).window_ptr()).active;
+            let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
             wme = (*wp).modes.active;
             if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
                 window_pane_set_mode(
-                    &(*wp).observer.upgrade().expect("mode target pane"),
+                    &pane_owner,
                     None,
                     &window_view_mode,
                     ::core::ptr::null_mut::<cmdq_item>(),
@@ -5369,7 +5370,7 @@ pub unsafe fn server_client_print(
                     let Some(line) = evbuffer_readln(evb) else {
                         break;
                     };
-                    window_copy_add(wp, 1 as ::core::ffi::c_int, |out| {
+                    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
                         write_cstr(out, line.as_ptr().cast::<::core::ffi::c_char>())
                     });
                 }
@@ -5378,12 +5379,12 @@ pub unsafe fn server_client_print(
                     line = evbuffer_pullup(evb, -1)
                         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                         as *mut ::core::ffi::c_char;
-                    window_copy_add(wp, 1 as ::core::ffi::c_int, |out| {
+                    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
                         write_cstr_n(out, line, (size as ::core::ffi::c_int) as i32)
                     });
                 }
             } else {
-                window_copy_add(wp, 0 as ::core::ffi::c_int, |out| write_cstr(out, msg));
+                window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| write_cstr(out, msg));
             }
         }
     }

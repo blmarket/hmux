@@ -335,10 +335,11 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
             return;
         }
         wp = (*(*(*s).curw).window_ptr()).active;
+        let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
         wme = (*wp).modes.active;
         if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
             window_pane_set_mode(
-                &(*wp).observer.upgrade().expect("mode target pane"),
+                &pane_owner,
                 None,
                 &window_view_mode,
                 ::core::ptr::null_mut::<cmdq_item>(),
@@ -347,7 +348,7 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
             );
         }
         cfg_drain_causes(|cause| {
-            window_copy_add(wp, 0 as ::core::ffi::c_int, |out| {
+            window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {
                 write_cstr(out, cause.as_ptr())
             });
         });

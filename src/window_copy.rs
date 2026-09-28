@@ -742,10 +742,11 @@ unsafe fn window_copy_free(mut wme: *mut window_mode_entry) {
     drop(Box::from_raw(data));
 }
 pub unsafe fn window_copy_add(
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut parse: ::core::ffi::c_int,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut backing: *mut screen = (*data).backing_mut();
@@ -853,8 +854,6 @@ unsafe fn window_copy_scroll1(
     let mut px: u_int = 0;
     let mut py: u_int = 0;
     let mut n: u_int = 0;
-    let mut offset: u_int = 0;
-    let mut size: u_int = 0;
     let mut new_offset: u_int = 0;
     let mut slider_height: u_int = (*wp).sb_slider_h;
     let mut sb_height: u_int = (*wp).sy;
@@ -878,12 +877,9 @@ unsafe fn window_copy_scroll1(
             .wrapping_sub((*wp).yoff as u_int)
             .wrapping_sub(sl_mpos as u_int) as ::core::ffi::c_int;
     }
-    if (*wp).modes.active.is_null()
-        || window_copy_get_current_offset(wp, &raw mut offset, &raw mut size)
-            == 0 as ::core::ffi::c_int
-    {
+    let Some((offset, size)) = window_copy_get_current_offset(&*wp) else {
         return;
-    }
+    };
     new_offset = (new_slider_y as ::core::ffi::c_float
         * (size.wrapping_add(sb_height) as ::core::ffi::c_float
             / sb_height as ::core::ffi::c_float)) as u_int;
@@ -950,7 +946,8 @@ unsafe fn window_copy_scroll1(
     window_pane_scrollbar_show(wp);
     window_copy_redraw_screen(wme);
 }
-pub unsafe fn window_copy_pageup(mut wp: *mut window_pane) {
+pub unsafe fn window_copy_pageup(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     window_copy_pageup1((*wp).modes.active, half_page);
 }
@@ -7077,9 +7074,10 @@ unsafe fn window_copy_cursor_unoffset(
     return vx;
 }
 pub unsafe fn window_copy_set_line_numbers(
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut enabled: ::core::ffi::c_int,
 ) {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     if wme.is_null() || !std::ptr::eq((*wme).mode, &window_copy_mode) {
         return;
@@ -7119,22 +7117,16 @@ unsafe fn window_copy_set_line_numbers1(
     (*data).line_numbers = line_numbers;
     window_copy_redraw_screen(wme);
 }
-pub unsafe fn window_copy_get_current_offset(
-    mut wp: *mut window_pane,
-    mut offset: *mut u_int,
-    mut size: *mut u_int,
-) -> ::core::ffi::c_int {
-    let mut wme: *mut window_mode_entry = (*wp).modes.active;
-    let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut hsize: u_int = 0;
-    if data.is_null() {
-        return 0 as ::core::ffi::c_int;
+pub unsafe fn window_copy_get_current_offset(pane: &window_pane) -> Option<(u_int, u_int)> {
+    let mode = pane.modes.active.as_ref()?;
+    if !std::ptr::eq(mode.mode, &window_copy_mode) && !std::ptr::eq(mode.mode, &window_view_mode) {
+        return None;
     }
-    hsize = (*data).backing().grid().hsize;
-    *offset = hsize.wrapping_sub((*data).oy);
-    *size = hsize;
-    return 1 as ::core::ffi::c_int;
+    let data = (mode.data as *const window_copy_mode_data).as_ref()?;
+    let hsize = data.backing().grid().hsize;
+    Some((hsize.wrapping_sub(data.oy), hsize))
 }
+
 unsafe fn window_copy_write_line(
     mut wme: *mut window_mode_entry,
     mut ctx: *mut screen_write_ctx,
@@ -9843,6 +9835,16 @@ mod backing_owner_tests {
                 prefix: 0,
                 kill: 0,
             };
+            assert_eq!(window_copy_get_current_offset(pane), None);
+            pane.modes.active = &mut mode;
+            let hsize = data.backing().grid().hsize;
+            assert_eq!(window_copy_get_current_offset(pane), Some((hsize, hsize)));
+            mode.mode = &window_view_mode;
+            assert_eq!(window_copy_get_current_offset(pane), Some((hsize, hsize)));
+            mode.mode = &crate::src::window_clock::window_clock_mode;
+            assert_eq!(window_copy_get_current_offset(pane), None);
+            mode.mode = &window_copy_mode;
+            pane.modes.active = std::ptr::null_mut();
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'B';
             grid_set_cell(pane.base.grid_mut(), 0, 0, &cell);

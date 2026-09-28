@@ -1149,3 +1149,17 @@ captures, not owners of the terminal's client.
 callback storage adds no strong owner, invocation temporarily retains the client,
 and expiration prevents further invocation. Raw pane/window/session projections
 inside the handlers and other model APIs remain pending.
+
+## Implemented retained and borrowed copy-mode pane APIs
+
+Copy output, page-up and line-number updates borrow Rc pane handles. Configuration
+errors, shell output and client output retain the pane before entering view mode
+and keep it through writing. Copy-mode commands reuse their selected pane owner.
+The read-only offset query borrows `&window_pane` and returns `Option<(offset,
+size)>`, removing raw output parameters and rejecting absent or unrelated modes
+before interpreting mode data.
+
+`cargo test --workspace` and `git diff --check` passed. Existing backing tests now
+cover the offset query for copy/view modes and absent/unrelated modes. The public
+copy-mode functions no longer take raw refcounted model arguments; private mode
+callbacks, erased mode data and internal raw model projections remain pending.
