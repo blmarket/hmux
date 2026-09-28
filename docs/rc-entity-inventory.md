@@ -857,6 +857,19 @@ also verifies that a surviving terminal does not keep its client alive. Raw
 terminal/event callback pointers, model API arguments and local raw projections
 remain pending.
 
+## Implemented retained customization reset/unset dispatch
+
+Reset/unset helpers and the shared per-item change dispatcher borrow the retained
+customization-mode Rc. Current-item and tagged prompt handlers receive that same
+typed owner, and current-item changes reuse the shared dispatcher. The prompt
+factory weakly observes its cleanup-owned mode, retains it during invocation, and
+rejects logically closed modes before entering the handler.
+
+`cargo test --workspace` and `git diff --check` passed. Lifetime checks cover live
+callback retention, cleanup release, closed-mode rejection and cached invocation
+after expiration. Validation/draw-waiting helpers, lifecycle callbacks, and
+internal raw projections remain pending.
+
 ## Implemented retained client path for terminal initialization
 
 Peer-message dispatch and client identification now borrow the retained Rc client

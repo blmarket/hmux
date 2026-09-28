@@ -3069,14 +3069,14 @@ fn window_customize_mode_prompt_callbacks(
     owner: Rc<UnsafeCell<window_customize_modedata>>,
     callback: unsafe fn(
         Option<&Rc<UnsafeCell<client>>>,
-        &UnsafeCell<window_customize_modedata>,
+        &Rc<UnsafeCell<window_customize_modedata>>,
         Option<&CStr>,
         prompt_key_result,
     ) -> prompt_result,
 ) -> (mode_tree_prompt_input_cb, prompt_free_cb) {
     let weak = Rc::downgrade(&owner);
     let inputcb: mode_tree_prompt_input_cb = Some(Box::new(move |client, text, key| {
-        let Some(owner) = weak.upgrade() else {
+        let Some(owner) = (unsafe { window_customize_live_mode(&weak) }) else {
             return PROMPT_CLOSE;
         };
         // Keep the callback's borrowed input alive if it closes its own prompt.
@@ -4072,9 +4072,10 @@ unsafe fn window_customize_set_array_key(
     );
 }
 unsafe fn window_customize_unset_environment(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
+    let data = mode_owner.get();
     let Some(mut environment) = item
         .environ
         .as_ref()
@@ -4112,9 +4113,10 @@ unsafe fn window_customize_unset_environment(
     );
 }
 unsafe fn window_customize_unset_option(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
+    let data = mode_owner.get();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
         return;
@@ -4143,9 +4145,10 @@ unsafe fn window_customize_unset_option(
     );
 }
 unsafe fn window_customize_reset_option(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
 ) {
+    let data = mode_owner.get();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if window_customize_check_item(data, item, ::core::ptr::null_mut::<cmd_find_state>()) == 0 {
@@ -4471,9 +4474,10 @@ unsafe fn window_customize_add_key(
     );
 }
 unsafe fn window_customize_unset_key(
-    data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
+    let data = mode_owner.get();
     let Some(table) = window_customize_get_key_table(item) else {
         return;
     };
@@ -4486,9 +4490,10 @@ unsafe fn window_customize_unset_key(
     key_bindings_remove(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
 }
 unsafe fn window_customize_reset_key(
-    data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
+    let data = mode_owner.get();
     let Some(table) = window_customize_get_key_table(item) else {
         return;
     };
@@ -4510,9 +4515,10 @@ unsafe fn window_customize_reset_key(
     key_bindings_reset(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
 }
 unsafe fn window_customize_change_each(
-    mut data: *mut window_customize_modedata,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
+    let data = mode_owner.get();
     let mut type_0: window_customize_item_type = item.type_0;
     let name = if type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -4533,24 +4539,24 @@ unsafe fn window_customize_change_each(
             if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_unset_key(data, item);
+                window_customize_unset_key(mode_owner, item);
             } else if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_unset_environment(data, item);
+                window_customize_unset_environment(mode_owner, item);
             } else {
-                window_customize_unset_option(data, item);
+                window_customize_unset_option(mode_owner, item);
             }
         }
         1 => {
             if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_reset_key(data, item);
+                window_customize_reset_key(mode_owner, item);
             } else if type_0 as ::core::ffi::c_uint
                 == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_customize_reset_option(data, item);
+                window_customize_reset_option(mode_owner, item);
             }
         }
         _ => {}
@@ -4563,7 +4569,7 @@ unsafe fn window_customize_change_each(
 }
 unsafe fn window_customize_change_current_callback(
     _c: Option<&Rc<UnsafeCell<client>>>,
-    owner: &UnsafeCell<window_customize_modedata>,
+    owner: &Rc<UnsafeCell<window_customize_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
@@ -4573,7 +4579,6 @@ unsafe fn window_customize_change_current_callback(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut type_0: window_customize_item_type = WINDOW_CUSTOMIZE_ITEM_OPTION;
     if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -4608,53 +4613,7 @@ unsafe fn window_customize_change_current_callback(
     let Some(item) = item_owner.as_customize() else {
         return PROMPT_CLOSE;
     };
-    type_0 = item.type_0;
-    let name = if type_0 as ::core::ffi::c_uint
-        == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        Some(
-            CStr::from_ptr(
-                (item.name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
-            .to_owned(),
-        )
-    } else {
-        None
-    };
-    match (*data).change as ::core::ffi::c_uint {
-        0 => {
-            if type_0 as ::core::ffi::c_uint
-                == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                window_customize_unset_key(data, &item);
-            } else if type_0 as ::core::ffi::c_uint
-                == WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                window_customize_unset_environment(data, &item);
-            } else {
-                window_customize_unset_option(data, &item);
-            }
-        }
-        1 => {
-            if type_0 as ::core::ffi::c_uint
-                == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                window_customize_reset_key(data, &item);
-            } else if type_0 as ::core::ffi::c_uint
-                == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                window_customize_reset_option(data, &item);
-            }
-        }
-        _ => {}
-    }
-    if type_0 as ::core::ffi::c_uint
-        == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        options_push_changes(name.as_ref().expect("option name was copied").as_ptr());
-    }
+    window_customize_change_each(owner, &item);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
@@ -4662,11 +4621,10 @@ unsafe fn window_customize_change_current_callback(
 }
 unsafe fn window_customize_change_tagged_callback(
     c: Option<&Rc<UnsafeCell<client>>>,
-    owner: &UnsafeCell<window_customize_modedata>,
+    owner: &Rc<UnsafeCell<window_customize_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let data = owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return PROMPT_CLOSE;
@@ -4708,7 +4666,7 @@ unsafe fn window_customize_change_tagged_callback(
         |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
             window_customize_change_each(
-                data,
+                owner,
                 &itemdata.as_customize().expect("tagged customize row"),
             )
         },
@@ -5132,6 +5090,16 @@ mod item_owner_tests {
 
     #[test]
     fn mode_list_keeps_items_stable_until_last_callback_reference() {
+        unsafe fn read_mode(
+            _: Option<&Rc<UnsafeCell<client>>>,
+            owner: &Rc<UnsafeCell<window_customize_modedata>>,
+            _: Option<&CStr>,
+            _: prompt_key_result,
+        ) -> prompt_result {
+            assert_eq!(Rc::strong_count(owner), 3);
+            assert_eq!((*owner.get()).dead, 0);
+            PROMPT_CONTINUE
+        }
         unsafe fn read_item(
             _client: Option<&Rc<UnsafeCell<client>>>,
             owner: &CustomizePromptItem,
@@ -5188,8 +5156,20 @@ mod item_owner_tests {
             assert!(Rc::ptr_eq(&live, &owner));
             assert_eq!(Rc::strong_count(&owner), 2);
             drop(live);
+            let (mut mode_input, mode_free) =
+                window_customize_mode_prompt_callbacks(owner.clone(), read_mode);
+            assert_eq!(Rc::strong_count(&owner), 2);
+            assert_eq!(
+                mode_input.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
+                PROMPT_CONTINUE
+            );
             (*data).dead = 1;
             assert!(window_customize_live_mode(&mode_observer).is_none());
+            assert_eq!(
+                mode_input.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
+                PROMPT_CLOSE
+            );
+            mode_free.unwrap()();
             (*data).dead = 0;
             assert_eq!(Rc::strong_count(&owner), 1);
             let prompt_owner = RefBox::new(CustomizePromptItem {
@@ -5205,6 +5185,10 @@ mod item_owner_tests {
             );
             freecb.unwrap()();
             assert!(mode_observer.upgrade().is_none());
+            assert_eq!(
+                mode_input.as_mut().unwrap()(None, None, PROMPT_KEY_CLOSE),
+                PROMPT_CLOSE
+            );
             assert!(window_customize_live_mode(&mode_observer).is_none());
             assert!(matches!(
                 prompt_observer.try_borrow_mut(),
