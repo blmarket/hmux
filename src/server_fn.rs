@@ -236,30 +236,28 @@ pub unsafe fn server_status_window(window: &window) {
     }
 }
 pub unsafe fn server_lock() {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if !(*c).session.is_null() {
-            server_lock_client(c);
+    let mut next = clients.first();
+    while let Some(owner) = next {
+        if !(&*owner.get()).session.is_null() {
+            server_lock_client(&owner);
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        next = clients.next(&owner);
     }
 }
-pub unsafe fn server_lock_session(mut s: *mut session) {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if (*c).session == s {
-            server_lock_client(c);
+pub unsafe fn server_lock_session(session_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+    let observer = std::rc::Rc::downgrade(session_owner);
+    let mut next = clients.first();
+    while let Some(owner) = next {
+        let matches = (&*owner.get()).session.as_ref()
+            .is_some_and(|session| session.observer.ptr_eq(&observer));
+        if matches {
+            server_lock_client(&owner);
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        next = clients.next(&owner);
     }
 }
-pub unsafe fn server_lock_client(mut c: *mut client) {
+pub unsafe fn server_lock_client(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = client_owner.get();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         return;

@@ -2299,3 +2299,15 @@ cycle. Lock timeout lookup uses borrowed options. No new Rc-managed type is adde
 `cargo test --workspace` and `git diff --check` passed. The server lock API still
 requires a raw session at its boundary; broader session/client relationships
 remain pending.
+
+## Implemented typed session and client lock dispatch
+
+Server/session lock traversal retains each registry client through terminal
+locking. Session locking accepts an existing session Rc and matches weak session
+identity. Client locking accepts the borrowed existing client handle; command and
+activity-timer callers forward their owners. Traversal advances after locking as
+before. No new Rc-managed type or persistent owner is introduced.
+
+`cargo test --workspace` and `git diff --check` passed. Client-lock internals still
+project a raw client for terminal operations and session option lookup; those
+accesses and broader model relationships remain pending.

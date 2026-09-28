@@ -444,7 +444,7 @@ unsafe fn session_lock_timer(owner: &Rc<UnsafeCell<session>>) {
         log_cstr(session.name.as_ptr()),
         session.activity_time.tv_sec as ::core::ffi::c_longlong
     ));
-    server_lock_session(owner.get());
+    server_lock_session(owner);
     recalculate_sizes();
 }
 pub unsafe fn session_update_activity(session: &mut session, from: Option<timeval>) {
