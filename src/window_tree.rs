@@ -2367,7 +2367,7 @@ unsafe fn window_tree_key(
         _ => {}
     }
     if finished != 0 {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(&mode_pane_owner);
     } else {
         mode_tree_draw((*data).data_ptr());
         (*wp).flags |= PANE_REDRAW;

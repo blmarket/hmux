@@ -558,7 +558,7 @@ pub unsafe fn spawn_pane(
             close((*source_pane).fd);
             (*source_pane).fd = -(1 as ::core::ffi::c_int);
         }
-        window_pane_reset_mode_all(source_pane);
+        window_pane_reset_mode_all(source_pane_owner.as_ref().expect("respawn source pane"));
         screen_reinit(&mut (*source_pane).base, 0 as ::core::ffi::c_int);
         if let Some(ictx) = (*source_pane).ictx.take() {
             input_free(ictx);

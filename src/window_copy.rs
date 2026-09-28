@@ -825,26 +825,28 @@ pub unsafe fn window_copy_add(
     screen_write_stop(&mut ctx);
 }
 pub unsafe fn window_copy_scroll(
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut sl_mpos: ::core::ffi::c_int,
     mut my: u_int,
     mut tty_oy: u_int,
     mut scroll_exit: ::core::ffi::c_int,
 ) {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = (*wp).modes.active;
     if !wme.is_null() {
         window_set_active_pane((*wp).window as *mut window, wp, 0 as ::core::ffi::c_int);
-        window_copy_scroll1(wme, wp, sl_mpos, my, tty_oy, scroll_exit);
+        window_copy_scroll1(wme, pane_owner, sl_mpos, my, tty_oy, scroll_exit);
     }
 }
 unsafe fn window_copy_scroll1(
     mut wme: *mut window_mode_entry,
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut sl_mpos: ::core::ffi::c_int,
     mut my: u_int,
     mut tty_oy: u_int,
     mut scroll_exit: ::core::ffi::c_int,
 ) {
+    let wp = pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -933,7 +935,7 @@ unsafe fn window_copy_scroll1(
         }
     }
     if scroll_exit != 0 && (*data).oy == 0 as u_int && (*data).screen.sel.is_none() {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(pane_owner);
         return;
     }
     if !(*data).searchmark.is_empty() && (*data).timeout == 0 {
@@ -1012,10 +1014,11 @@ unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::
     window_pane_scrollbar_show(mode_pane);
     window_copy_redraw_screen(wme);
 }
-pub unsafe fn window_copy_pagedown(mut wp: *mut window_pane, mut scroll_exit: ::core::ffi::c_int) {
+pub unsafe fn window_copy_pagedown(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut scroll_exit: ::core::ffi::c_int) {
+    let wp = pane_owner.get();
     let mut half_page: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if window_copy_pagedown1((*wp).modes.active, half_page, scroll_exit) != 0 {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(pane_owner);
         return;
     }
 }
@@ -1983,7 +1986,7 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     let mut m: *mut mouse_event = (*cs).m;
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
     let tty_oy = tty_window_offset(&(*c).tty).oy;
-    window_copy_scroll(wp, (*c).tty.mouse_slider_mpos, (*m).y, tty_oy, scroll_exit);
+    window_copy_scroll(&mode_pane_owner, (*c).tty.mouse_slider_mpos, (*m).y, tty_oy, scroll_exit);
     return WINDOW_COPY_CMD_MOVE;
 }
 unsafe fn window_copy_cmd_scroll_top(mut cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
@@ -5249,7 +5252,7 @@ unsafe fn window_copy_command_with_session(
     if action as ::core::ffi::c_uint
         == WINDOW_COPY_CMD_CANCEL as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(&mode_pane_owner);
     } else if action as ::core::ffi::c_uint
         == WINDOW_COPY_CMD_REDRAW as ::core::ffi::c_int as ::core::ffi::c_uint
     {

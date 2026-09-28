@@ -574,12 +574,13 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut wp: *mut window_pane = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).wp_ptr();
+    let pane_owner = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).wp.upgrade().expect("capture target pane");
+    let wp = pane_owner.get();
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clear_history_entry) {
-        window_pane_reset_mode_all(wp);
+        window_pane_reset_mode_all(&pane_owner);
         grid_clear_history((*wp).base.grid_mut());
         if args_has(args, 'H' as i32 as u_char) != 0 {
             screen_reset_hyperlinks(&mut *(*wp).screen);

@@ -1108,3 +1108,17 @@ callback now captures a weak pane and retains its upgrade while replacing state.
 `cargo test --workspace` and `git diff --check` passed, including prompt replacement
 and cleanup coverage. Other pane APIs and local raw model projections remain
 pending.
+
+## Implemented retained panes for mode cleanup
+
+Mode reset, reset-all and free-all now borrow an Rc pane, keeping the parent
+available through mode cleanup callbacks and subsequent state updates. Mode
+callbacks pass their upgraded parent; destruction passes its removed registry
+owner; respawn passes its retained source. Copy-mode and capture commands retain
+the selected target. Copy scrolling and page-down carry that owner through paths
+that can exit the mode.
+
+`cargo test --workspace` and `git diff --check` passed. A regression exercises
+multiple mode cleanup callbacks, checks removal before callback invocation and
+parent availability, and verifies final pane release. Mode-entry pointers,
+parent-window storage and internal raw model projections still require migration.

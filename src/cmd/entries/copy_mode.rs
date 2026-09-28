@@ -70,7 +70,6 @@ pub static cmd_clock_mode_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
-    let mouse_pane_owner;
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut event_snapshot = cmdq_get_event(item);
     let event: *mut key_event = &mut event_snapshot;
@@ -79,14 +78,15 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let c_owner = cmdq_get_client(item);
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
+    let mut wp = pane_owner.get();
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(args, 'q' as i32 as u_char) != 0 {
-        window_pane_reset_mode_all(wp);
+        window_pane_reset_mode_all(&pane_owner);
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
-        mouse_pane_owner = cmd_mouse_pane(
+        let mouse_pane_owner = cmd_mouse_pane(
             &raw mut (*event).m,
             &raw mut s,
             ::core::ptr::null_mut::<*mut winlink>(),
@@ -95,13 +95,14 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         if wp.is_null() {
             return CMD_RETURN_NORMAL;
         }
+        pane_owner = mouse_pane_owner.expect("mouse pane was resolved");
         if c.is_null() || (*c).session != s {
             return CMD_RETURN_NORMAL;
         }
     }
     if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clock_mode_entry) {
         window_pane_set_mode(
-            &(*wp).observer.upgrade().expect("mode target pane"),
+            &pane_owner,
             None,
             &window_clock_mode,
             item,
@@ -113,7 +114,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     let source_owner = if args_has(args, 's' as i32 as u_char) != 0 {
         (*source).wp.upgrade()
     } else {
-        (*wp).observer.upgrade()
+        Some(pane_owner.clone())
     };
     line_numbers = 1 as ::core::ffi::c_int;
     if !event.is_null()
@@ -129,7 +130,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         line_numbers = 0 as ::core::ffi::c_int;
     }
     if window_pane_set_mode(
-        &(*wp).observer.upgrade().expect("mode target pane"),
+        &pane_owner,
         source_owner.as_ref(),
         &window_copy_mode,
         item,
@@ -148,12 +149,12 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
         window_copy_pageup(wp);
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        window_copy_pagedown(wp, args_has(args, 'e' as i32 as u_char));
+        window_copy_pagedown(&pane_owner, args_has(args, 'e' as i32 as u_char));
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
         let tty_oy = tty_window_offset(&(*c).tty).oy;
         window_copy_scroll(
-            wp,
+            &pane_owner,
             (*c).tty.mouse_slider_mpos,
             (*event).m.y,
             tty_oy,

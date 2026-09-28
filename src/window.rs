@@ -2504,6 +2504,39 @@ unsafe fn window_pane_mode_promote(wp: *mut window_pane, wme: *mut window_mode_e
 mod window_mode_collection_tests {
     use super::*;
 
+    unsafe fn check_mode_cleanup(wme: *mut window_mode_entry) {
+        let owner = (*wme).wp.upgrade().expect("cleanup retains parent pane");
+        let pane = &mut *owner.get();
+        assert_ne!(pane.modes.active, wme);
+        pane.sx += 1;
+    }
+
+    #[test]
+    fn freeing_modes_keeps_parent_alive_until_all_callbacks_finish() {
+        static MODE: std::sync::LazyLock<window_mode> = std::sync::LazyLock::new(|| window_mode {
+            free: Some(check_mode_cleanup),
+            ..window_mode::default()
+        });
+        unsafe {
+            let owner = window_pane::new();
+            let observer = Rc::downgrade(&owner);
+            let wp = owner.get();
+            (*wp).sx = 0;
+            for _ in 0..3 {
+                let mut entry = boxed_mode(wp);
+                entry.mode = &MODE;
+                window_pane_mode_insert_front(&mut *wp, entry);
+            }
+            window_pane_free_modes(&owner);
+            assert_eq!((*wp).sx, 3);
+            assert!((*wp).modes.active.is_null());
+            assert!((*wp).modes.storage.is_none());
+            assert_eq!((*wp).screen, &raw mut (*wp).base);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+        }
+    }
+
     unsafe fn boxed_mode(wp: *mut window_pane) -> Box<window_mode_entry> {
         Box::new(window_mode_entry {
             wp: (*wp).observer.clone(),
@@ -2663,7 +2696,8 @@ pub unsafe fn window_pane_wait_finish(mut wp: *mut window_pane) {
     }
     cmdq_continue(item);
 }
-unsafe fn window_pane_free_modes(mut wp: *mut window_pane) {
+unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     while !(*wp).modes.active.is_null() {
         wme = (*wp).modes.active;
@@ -2709,7 +2743,7 @@ unsafe fn window_pane_destroy(mut wp: *mut window_pane) {
     let owner = window_pane_tree_remove(&mut *std::ptr::addr_of_mut!(all_window_panes), &mut *wp).expect("registered pane owner");
     (*wp).flags |= PANE_DESTROYED;
     window_pane_clear_prompt(&owner);
-    window_pane_free_modes(wp);
+    window_pane_free_modes(&owner);
     screen_write_clear_dirty(wp);
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         utempter_remove_record((*wp).fd);
@@ -2943,7 +2977,7 @@ pub unsafe fn window_pane_set_mode(
             return 1 as ::core::ffi::c_int;
         }
         if (*(*(*wp).modes.active).mode).flags & WINDOW_MODE_NO_STACK != 0 {
-            window_pane_reset_mode(wp);
+            window_pane_reset_mode(pane_owner);
         }
     }
     if !(*wp).modes.active.is_null() {
@@ -3004,7 +3038,8 @@ pub unsafe fn window_pane_set_mode(
     );
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn window_pane_reset_mode(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut next: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut w: *mut window = (*wp).window as *mut window;
@@ -3063,9 +3098,10 @@ pub unsafe fn window_pane_reset_mode(mut wp: *mut window_pane) {
         server_kill_pane(wp);
     }
 }
-pub unsafe fn window_pane_reset_mode_all(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_reset_mode_all(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     while !(*wp).modes.active.is_null() {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(pane_owner);
     }
 }
 fn window_pane_prompt_input_callback(

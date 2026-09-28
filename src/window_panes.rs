@@ -1621,7 +1621,7 @@ unsafe fn window_panes_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    window_pane_reset_mode(mode_pane);
+    window_pane_reset_mode(&mode_pane_owner);
 }
 unsafe fn window_panes_init(
     mut wme: *mut window_mode_entry,
@@ -1903,7 +1903,7 @@ unsafe fn window_panes_key(
     let mut target: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
     if key == '\u{1b}' as i32 as key_code || key == 'q' as i32 as key_code {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(&mode_pane_owner);
         return;
     }
     let target_owner = window_panes_get_target(wme, key, m);
@@ -1920,7 +1920,7 @@ unsafe fn window_panes_key(
                             as ::core::ffi::c_ulonglong)
                             << 32 as ::core::ffi::c_int)
         {
-            window_pane_reset_mode(wp);
+            window_pane_reset_mode(&mode_pane_owner);
         }
         return;
     }
@@ -1928,7 +1928,7 @@ unsafe fn window_panes_key(
         window_unzoom((*wp).window as *mut window, 1 as ::core::ffi::c_int);
     }
     window_panes_run_command(data, c, target);
-    window_pane_reset_mode(wp);
+    window_pane_reset_mode(&mode_pane_owner);
 }
 
 #[cfg(test)]

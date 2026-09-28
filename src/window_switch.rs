@@ -746,7 +746,7 @@ unsafe fn window_switch_key(
                 window_switch_set_current(data, (*data).offset.wrapping_add(y));
                 if key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code {
                     if window_switch_run_command(data, Some(client_owner)) != 0 {
-                        window_pane_reset_mode(wp);
+                        window_pane_reset_mode(&mode_pane_owner);
                     }
                     return;
                 }
@@ -766,12 +766,12 @@ unsafe fn window_switch_key(
         match key {
             13 => {
                 if window_switch_run_command(data, Some(client_owner)) != 0 {
-                    window_pane_reset_mode(wp);
+                    window_pane_reset_mode(&mode_pane_owner);
                 }
                 return;
             }
             27 | 35184372088923 | 35184372088931 | 35184372088935 => {
-                window_pane_reset_mode(wp);
+                window_pane_reset_mode(&mode_pane_owner);
                 return;
             }
             _ => {}

@@ -873,7 +873,7 @@ unsafe fn window_buffer_key(
         }
     }
     if finished != 0 || paste_is_empty() != 0 {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(&mode_pane_owner);
     } else {
         mode_tree_draw(mtd);
         window_buffer_draw_waiting(data);

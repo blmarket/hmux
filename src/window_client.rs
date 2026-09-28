@@ -923,7 +923,7 @@ unsafe fn window_client_key(
         _ => {}
     }
     if finished != 0 || server_client_how_many() == 0 as u_int {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(&mode_pane_owner);
     } else {
         mode_tree_draw(mtd);
         (*wp).flags |= PANE_REDRAW;

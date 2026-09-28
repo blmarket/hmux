@@ -5071,7 +5071,7 @@ unsafe fn window_customize_key(
         }
     }
     if finished != 0 {
-        window_pane_reset_mode(wp);
+        window_pane_reset_mode(&mode_pane_owner);
     } else {
         mode_tree_draw((*data).data_ptr());
         window_customize_draw_waiting(data);

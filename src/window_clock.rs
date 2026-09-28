@@ -710,7 +710,7 @@ unsafe fn window_clock_key(
 ) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    window_pane_reset_mode(mode_pane);
+    window_pane_reset_mode(&mode_pane_owner);
 }
 unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
