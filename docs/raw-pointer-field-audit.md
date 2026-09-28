@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **80 raw fields in
+fields and their lifecycle decisions. The current scanner finds **79 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-158 explicitly record a migration and ten record
-removal. The remaining 80 comprise 5 candidates, 27 needing an access or teardown
+158 explicitly record a migration and eleven record
+removal. The remaining 79 comprise 5 candidates, 26 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 80 fields have audit dispositions. Candidate and design entries
+The remaining 79 fields have audit dispositions. Candidate and design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -91,6 +91,7 @@ are now recorded individually in the TSV.
 | `cmd_run_shell_data.s`, `monitor_set.session` | `Option<Rc<UnsafeCell<session>>>` holds the retained session reference. Teardown takes it at the same point as before and calls `session_remove_ref` directly without storing diagnostic labels. Current/last-session observers in clients remain raw. |
 | `window_switch_modedata.matches` | Row indices into the mode-owned list. Rebuild clears the indices before replacing rows; bounded filtering/sorting borrows end before rendering or commands. Filtering, ranking, list growth and replacement are covered by a regression. |
 | `wait_event_item.sink`, `hooks_monitor.sink` | `EventSinkId` names a Box owned by the global event registry. Cancellation looks up the ID, so an expired registration cannot remove a replacement at a reused address. Active dispatch marks a sink dead and removes it afterward; detached sink owners are dropped outside the registry borrow. A regression covers self-removal, adding a replacement during dispatch, stale-ID cancellation, and ordinary removal. |
+| `window_copy_cmd_state.args` | Removed the raw argument holder. The command state only needed the original `-F` flag, so dispatch now stores that boolean before calling the command handler. Parsed arguments remain owned by the separate `wargs` Box. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |
 | `winlink.window` (now `window_owner`) | Optional `WindowOwner` stores the existing retained window reference and preserves last-close notifications. Swaps transfer owners. Release keeps the field installed through notification before taking/dropping it. Removed stack/unretained-window fixtures; a production-shaped close/retain regression covers this ordering. |
@@ -221,7 +222,7 @@ Seven focused tests pass under Valgrind: three find-state regressions, three
 window-link lifecycle tests, and monitor dispatch that unlinks its own target.
 There are no memory-access errors or definite/indirect leaks; the processes retain
 the existing 48-byte possibly-lost Rust test-harness allocation. The inventory
-coverage check now reports **80** remaining in-scope fields and **72** exclusions.
+coverage check now reports **79** remaining in-scope fields and **72** exclusions.
 
 ## Validation
 
@@ -243,7 +244,7 @@ definite/indirect leaks.
 The panes-mode session follow-up passes both session guard/lifetime tests under
 Valgrind with no memory-access errors or definite/indirect leaks.
 The updated inventory coverage check passes
-for all **80** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
+for all **79** in-scope remaining fields and **72** explicit exclusions, and `git diff --check` is clean.
 
 **38 focused lifecycle tests** also pass under Valgrind, including the editor
 subprocess (`--trace-children=yes`), with no memory-access errors or
@@ -275,12 +276,12 @@ pointers.
 ## Review status
 
 The earlier conclusion that all eligible fields had been migrated is superseded.
-The current inventory has 5 candidate fields, 27 design-dependent fields, and
+The current inventory has 5 candidate fields, 26 design-dependent fields, and
 48 retained raw fields. No candidate has been counted as migrated merely because
 its proposed type exists. All previously generic `Resolved` historical rows now
 name their current representation or removal.
 
-The scanner verifies all 80 remaining declarations, including pending candidates,
+The scanner verifies all 79 remaining declarations, including pending candidates,
 against the TSV and checks the 72 explicit exclusions. It does not prove that a
 candidate implementation is safe. Follow-up work must verify the producer's real
 owner, guard lifetime, null/expiration behavior, reentrant invalidation, identity

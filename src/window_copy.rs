@@ -311,7 +311,7 @@ pub const WINDOW_COPY_CMD_CLEAR_EMACS_ONLY: window_copy_cmd_clear = 2;
 pub const WINDOW_COPY_CMD_CLEAR_ALWAYS: window_copy_cmd_clear = 0;
 pub struct window_copy_cmd_state<'a> {
     pub wme: *mut window_mode_entry,
-    pub args: *mut args,
+    pub format_search: bool,
     pub wargs: Option<Box<args>>,
     pub m: *mut mouse_event,
     pub c: Option<&'a std::rc::Rc<std::cell::UnsafeCell<client>>>,
@@ -1526,7 +1526,7 @@ unsafe fn window_copy_expand_search_string(
     if ss.is_null() || *ss as ::core::ffi::c_int == '\0' as i32 {
         return 0 as ::core::ffi::c_int;
     }
-    if args_has((*cs).args, 'F' as i32 as u_char) != 0 {
+    if (*cs).format_search {
         let expanded = format_single_cstring(
             ::core::ptr::null_mut::<cmdq_item>(),
             ss,
@@ -5175,7 +5175,7 @@ unsafe fn window_copy_command_with_session(
     let mut wp: *mut window_pane = mode_pane;
     let mut cs: window_copy_cmd_state = window_copy_cmd_state {
         wme: ::core::ptr::null_mut::<window_mode_entry>(),
-        args: ::core::ptr::null_mut::<args>(),
+        format_search: false,
         wargs: None,
         m: ::core::ptr::null_mut::<mouse_event>(),
         c: None,
@@ -5201,7 +5201,7 @@ unsafe fn window_copy_command_with_session(
         window_copy_move_mouse(m);
     }
     cs.wme = wme;
-    cs.args = args;
+    cs.format_search = args_has(args, 'F' as i32 as u_char) != 0;
     cs.wargs = None;
     cs.m = m;
     cs.c = client_owner;
