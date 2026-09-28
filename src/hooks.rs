@@ -1,5 +1,3 @@
-use crate::src::server_client::server_client_unref_owned;
-use crate::src::session::session_remove_ref;
 use crate::src::shared::client::client_rc_ptr;
 use crate::src::shared::rc;
 use crate::src::window::window_pane_upgrade;
@@ -155,9 +153,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
         expanded.as_c_str(),
         ::core::ptr::null_mut::<cmd_parse_input>(),
     );
-    if let Some(client) = client_owner {
-        server_client_unref_owned(client);
-    }
+    drop(client_owner);
     return pr;
 }
 unsafe fn hooks_insert(mut item: *mut cmdq_item, mut hd: *mut hooks_data) {
@@ -516,12 +512,8 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     drop(link);
     event_payload_set_target(&mut *ep, &fs);
     events_fire(change.name.as_ptr(), ep);
-    if let Some(owner) = session_owner {
-        session_remove_ref(owner, c"hooks_monitor_cb");
-    }
-    if let Some(client) = client_owner {
-        server_client_unref_owned(client);
-    }
+    drop(session_owner);
+    drop(client_owner);
 }
 pub unsafe fn hooks_monitor_add(
     mut oo: *mut options,
