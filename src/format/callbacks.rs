@@ -86,7 +86,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut alerts: [::core::ffi::c_char; 1024] = [0; 1024];
     let mut alerted: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if s.is_null() {
@@ -94,9 +94,9 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-    while !wl.is_null() {
-        if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
-            if !alerted & (*wl).flags & WINLINK_ACTIVITY != 0 {
+    while wl.is_alive() {
+        if !(wl.get_unchecked().flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
+            if !alerted & wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
                     b"#\0" as *const u8 as *const ::core::ffi::c_char,
@@ -104,7 +104,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
                 );
                 alerted |= WINLINK_ACTIVITY;
             }
-            if !alerted & (*wl).flags & WINLINK_BELL != 0 {
+            if !alerted & wl.get_unchecked().flags & WINLINK_BELL != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
                     b"!\0" as *const u8 as *const ::core::ffi::c_char,
@@ -112,7 +112,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
                 );
                 alerted |= WINLINK_BELL;
             }
-            if !alerted & (*wl).flags & WINLINK_SILENCE != 0 {
+            if !alerted & wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
                     b"~\0" as *const u8 as *const ::core::ffi::c_char,
@@ -121,7 +121,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
                 alerted |= WINLINK_SILENCE;
             }
         }
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
     return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
 }
@@ -129,7 +129,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut alerts: [::core::ffi::c_char; 1024] = [0; 1024];
     let mut tmp: [::core::ffi::c_char; 16] = [0; 16];
     if s.is_null() {
@@ -137,9 +137,9 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-    while !wl.is_null() {
-        if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
-            xformat(&mut tmp, format_args!("{}", ((*wl).idx) as u32));
+    while wl.is_alive() {
+        if !(wl.get_unchecked().flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
+            xformat(&mut tmp, format_args!("{}", (wl.get_unchecked().idx) as u32));
             if *(&raw mut alerts as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
@@ -152,21 +152,21 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
                 &raw mut tmp as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
             );
-            if (*wl).flags & WINLINK_ACTIVITY != 0 {
+            if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
                     b"#\0" as *const u8 as *const ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
             }
-            if (*wl).flags & WINLINK_BELL != 0 {
+            if wl.get_unchecked().flags & WINLINK_BELL != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
                     b"!\0" as *const u8 as *const ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
             }
-            if (*wl).flags & WINLINK_SILENCE != 0 {
+            if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
                     b"~\0" as *const u8 as *const ::core::ffi::c_char,
@@ -174,7 +174,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
                 );
             }
         }
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
     return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
 }
@@ -182,16 +182,16 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut result: [::core::ffi::c_char; 1024] = [0; 1024];
     let mut tmp: [::core::ffi::c_char; 16] = [0; 16];
     if s.is_null() {
         return None;
     }
-    xformat(&mut result, format_args!("{}", ((*(*s).curw_ptr()).idx) as u32));
+    xformat(&mut result, format_args!("{}", (((*s).current_winlink()).get_unchecked().idx) as u32));
     wl = crate::src::window::winlink_stack_first(&(*s).lastw);
-    while !wl.is_null() {
-        xformat(&mut tmp, format_args!("{}", ((*wl).idx) as u32));
+    while wl.is_alive() {
+        xformat(&mut tmp, format_args!("{}", (wl.get_unchecked().idx) as u32));
         if *(&raw mut result as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
             strlcat(
                 &raw mut result as *mut ::core::ffi::c_char,
@@ -204,30 +204,30 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
             &raw mut tmp as *mut ::core::ffi::c_char,
             ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
         );
-        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl);
+        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
     return Some(CStr::from_ptr(&raw mut result as *mut ::core::ffi::c_char).to_owned());
 }
 unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut idx: u_int = 0;
     let mut value = None;
-    if (*ft).wl_ptr().is_null() {
+    if !(*ft).winlink_handle().is_alive() {
         return None;
     }
-    let session_owner = (*(*ft).wl_ptr()).session.upgrade()?;
+    let session_owner = ((*ft).winlink_handle()).get_unchecked().session.upgrade()?;
     s = session_owner.get();
     idx = 0 as u_int;
     wl = crate::src::window::winlink_stack_first(&(*s).lastw);
-    while !wl.is_null() {
+    while wl.is_alive() {
         idx = idx.wrapping_add(1);
-        if wl == (*ft).wl_ptr() {
+        if wl == (*ft).winlink_handle() {
             break;
         }
-        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl);
+        wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
-    if wl.is_null() {
+    if !wl.is_alive() {
         return Some(c"0".to_owned());
     }
     value =
@@ -236,23 +236,23 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
 }
 unsafe fn format_cb_window_linked_sessions_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut names = Vec::new();
-    if (*ft).wl_ptr().is_null() {
+    if !(*ft).winlink_handle().is_alive() {
         return None;
     }
-    w = (*(*ft).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     wl = window_winlinks_first((w).as_ref());
-    while !wl.is_null() {
-        let Some(session_owner) = (*wl).session.upgrade() else {
-            wl = window_winlinks_next((w).as_ref(), wl);
+    while wl.is_alive() {
+        let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+            wl = window_winlinks_next((w).as_ref(), wl.clone());
             continue;
         };
         if !names.is_empty() {
             names.push(b',');
         }
         names.extend_from_slice((*session_owner.get()).name.as_bytes());
-        wl = window_winlinks_next((w).as_ref(), wl);
+        wl = window_winlinks_next((w).as_ref(), wl.clone());
     }
     if names.is_empty() {
         return None;
@@ -261,23 +261,23 @@ unsafe fn format_cb_window_linked_sessions_list(mut ft: *mut format_tree) -> Opt
 }
 unsafe fn format_cb_window_active_sessions(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut n: u_int = 0 as u_int;
     let mut value = None;
-    if (*ft).wl_ptr().is_null() {
+    if !(*ft).winlink_handle().is_alive() {
         return None;
     }
-    w = (*(*ft).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     wl = window_winlinks_first((w).as_ref());
-    while !wl.is_null() {
-        let Some(session_owner) = (*wl).session.upgrade() else {
-            wl = window_winlinks_next((w).as_ref(), wl);
+    while wl.is_alive() {
+        let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+            wl = window_winlinks_next((w).as_ref(), wl.clone());
             continue;
         };
-        if (*session_owner.get()).curw_ptr() == wl {
+        if (*session_owner.get()).current_winlink() == wl {
             n = n.wrapping_add(1);
         }
-        wl = window_winlinks_next((w).as_ref(), wl);
+        wl = window_winlinks_next((w).as_ref(), wl.clone());
     }
     value =
         Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
@@ -285,25 +285,25 @@ unsafe fn format_cb_window_active_sessions(mut ft: *mut format_tree) -> Option<C
 }
 unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    if (*ft).wl_ptr().is_null() {
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
+    if !(*ft).winlink_handle().is_alive() {
         return None;
     }
-    w = (*(*ft).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut names = Vec::<u8>::new();
     wl = window_winlinks_first((w).as_ref());
-    while !wl.is_null() {
-        let Some(session_owner) = (*wl).session.upgrade() else {
-            wl = window_winlinks_next((w).as_ref(), wl);
+    while wl.is_alive() {
+        let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+            wl = window_winlinks_next((w).as_ref(), wl.clone());
             continue;
         };
-        if (*session_owner.get()).curw_ptr() == wl {
+        if (*session_owner.get()).current_winlink() == wl {
             if !names.is_empty() {
                 names.push(b',');
             }
             names.extend_from_slice((*session_owner.get()).name.as_bytes());
         }
-        wl = window_winlinks_next((w).as_ref(), wl);
+        wl = window_winlinks_next((w).as_ref(), wl.clone());
     }
     if names.is_empty() {
         return None;
@@ -316,16 +316,16 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
     let mut value = None;
-    if (*ft).wl_ptr().is_null() {
+    if !(*ft).winlink_handle().is_alive() {
         return None;
     }
-    w = (*(*ft).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         client_session = (*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !client_session.is_null() {
-            if w == (*(*client_session).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+            if w == ((*client_session).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
                 n = n.wrapping_add(1);
             }
         }
@@ -340,17 +340,17 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
-    if (*ft).wl_ptr().is_null() {
+    if !(*ft).winlink_handle().is_alive() {
         return None;
     }
-    w = (*(*ft).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut names = Vec::<u8>::new();
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         client_session = (*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !client_session.is_null() {
-            if w == (*(*client_session).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+            if w == ((*client_session).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
                 if !names.is_empty() {
                     names.push(b',');
                 }
@@ -847,7 +847,7 @@ unsafe fn format_cb_mouse_word(mut ft: *mut format_tree) -> Option<CString> {
     mouse_pane_owner = cmd_mouse_pane(
         &raw mut (*ft).m,
         None,
-        ::core::ptr::null_mut::<*mut winlink>(),
+        ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
@@ -884,7 +884,7 @@ unsafe fn format_cb_mouse_hyperlink(mut ft: *mut format_tree) -> Option<CString>
     mouse_pane_owner = cmd_mouse_pane(
         &raw mut (*ft).m,
         None,
-        ::core::ptr::null_mut::<*mut winlink>(),
+        ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
@@ -921,7 +921,7 @@ unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
     mouse_pane_owner = cmd_mouse_pane(
         &raw mut (*ft).m,
         None,
-        ::core::ptr::null_mut::<*mut winlink>(),
+        ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
@@ -1634,7 +1634,7 @@ unsafe fn format_cb_mouse_pane(mut ft: *mut format_tree) -> Option<CString> {
         mouse_pane_owner = cmd_mouse_pane(
             &raw mut (*ft).m,
             None,
-            ::core::ptr::null_mut::<*mut winlink>(),
+            ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
         );
         wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if !wp.is_null() {
@@ -1693,7 +1693,7 @@ unsafe fn format_cb_mouse_x(mut ft: *mut format_tree) -> Option<CString> {
     mouse_pane_owner = cmd_mouse_pane(
         &raw mut (*ft).m,
         None,
-        ::core::ptr::null_mut::<*mut winlink>(),
+        ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null()
@@ -1738,7 +1738,7 @@ unsafe fn format_cb_mouse_y(mut ft: *mut format_tree) -> Option<CString> {
     mouse_pane_owner = cmd_mouse_pane(
         &raw mut (*ft).m,
         None,
-        ::core::ptr::null_mut::<*mut winlink>(),
+        ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null()
@@ -2591,11 +2591,11 @@ unsafe fn format_cb_session_active(mut ft: *mut format_tree) -> Option<CString> 
 unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !format_session.is_null() {
-        wl = (*format_session).curw_ptr();
-        if !wl.is_null() {
-            if (*wl).flags & WINLINK_ACTIVITY != 0 {
+        wl = (*format_session).current_winlink();
+        if wl.is_alive() {
+            if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
                 return Some(c"1".to_owned());
             }
             return Some(c"0".to_owned());
@@ -2606,11 +2606,11 @@ unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CS
 unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !format_session.is_null() {
-        wl = (*format_session).curw_ptr();
-        if !wl.is_null() {
-            if (*wl).flags & WINLINK_BELL != 0 {
+        wl = (*format_session).current_winlink();
+        if wl.is_alive() {
+            if wl.get_unchecked().flags & WINLINK_BELL != 0 {
                 return Some(c"1".to_owned());
             }
             return Some(c"0".to_owned());
@@ -2621,11 +2621,11 @@ unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CStrin
 unsafe fn format_cb_session_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !format_session.is_null() {
-        wl = (*format_session).curw_ptr();
-        if !wl.is_null() {
-            if (*wl).flags & WINLINK_SILENCE != 0 {
+        wl = (*format_session).current_winlink();
+        if wl.is_alive() {
+            if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
                 return Some(c"1".to_owned());
             }
             return Some(c"0".to_owned());
@@ -2804,7 +2804,7 @@ unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CStr
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
         return Some(
-            CString::new(format!("{}", ((*(*format_session).curw_ptr()).idx) as u32))
+            CString::new(format!("{}", (((*format_session).current_winlink()).get_unchecked().idx) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
@@ -2813,20 +2813,20 @@ unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CStr
 unsafe fn format_cb_last_window_index(mut ft: *mut format_tree) -> Option<CString> {
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if !format_session.is_null() {
         wl = winlinks_minmax(&(*format_session).windows, RB_INF);
         return Some(
-            CString::new(format!("{}", ((*wl).idx) as u32))
+            CString::new(format!("{}", (wl.get_unchecked().idx) as u32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
     return None;
 }
 unsafe fn format_cb_window_active(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        let session_owner = (*(*ft).wl_ptr()).session.upgrade()?;
-        if (*ft).wl_ptr() == (*session_owner.get()).curw_ptr() {
+    if (*ft).winlink_handle().is_alive() {
+        let session_owner = ((*ft).winlink_handle()).get_unchecked().session.upgrade()?;
+        if (*ft).winlink_handle() == (*session_owner.get()).current_winlink() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2834,8 +2834,8 @@ unsafe fn format_cb_window_active(mut ft: *mut format_tree) -> Option<CString> {
     return None;
 }
 unsafe fn format_cb_window_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        if (*(*ft).wl_ptr()).flags & WINLINK_ACTIVITY != 0 {
+    if (*ft).winlink_handle().is_alive() {
+        if ((*ft).winlink_handle()).get_unchecked().flags & WINLINK_ACTIVITY != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2843,8 +2843,8 @@ unsafe fn format_cb_window_activity_flag(mut ft: *mut format_tree) -> Option<CSt
     return None;
 }
 unsafe fn format_cb_window_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        if (*(*ft).wl_ptr()).flags & WINLINK_BELL != 0 {
+    if (*ft).winlink_handle().is_alive() {
+        if ((*ft).winlink_handle()).get_unchecked().flags & WINLINK_BELL != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2881,9 +2881,9 @@ unsafe fn format_cb_window_cell_width(mut ft: *mut format_tree) -> Option<CStrin
     return None;
 }
 unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        let session_owner = (*(*ft).wl_ptr()).session.upgrade()?;
-        if (*ft).wl_ptr() == winlinks_minmax(&(*session_owner.get()).windows, RB_INF) {
+    if (*ft).winlink_handle().is_alive() {
+        let session_owner = ((*ft).winlink_handle()).get_unchecked().session.upgrade()?;
+        if (*ft).winlink_handle() == winlinks_minmax(&(*session_owner.get()).windows, RB_INF) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2891,9 +2891,9 @@ unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString>
     return None;
 }
 unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
+    if (*ft).winlink_handle().is_alive() {
         return Some(
-            window_printable_flags((*ft).wl_ptr(), 1 as ::core::ffi::c_int),
+            window_printable_flags(((*ft).winlink_handle()).clone(), 1 as ::core::ffi::c_int),
         );
     }
     return None;
@@ -2948,18 +2948,18 @@ unsafe fn format_cb_window_id(mut ft: *mut format_tree) -> Option<CString> {
     return None;
 }
 unsafe fn format_cb_window_index(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
+    if (*ft).winlink_handle().is_alive() {
         return Some(
-            CString::new(format!("{}", ((*(*ft).wl_ptr()).idx) as i32))
+            CString::new(format!("{}", (((*ft).winlink_handle()).get_unchecked().idx) as i32))
                 .expect("formatted numbers contain no NUL"),
         );
     }
     return None;
 }
 unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        let session_owner = (*(*ft).wl_ptr()).session.upgrade()?;
-        if (*ft).wl_ptr() == crate::src::window::winlink_stack_first(&(*session_owner.get()).lastw) {
+    if (*ft).winlink_handle().is_alive() {
+        let session_owner = ((*ft).winlink_handle()).get_unchecked().session.upgrade()?;
+        if (*ft).winlink_handle() == crate::src::window::winlink_stack_first(&(*session_owner.get()).lastw) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -2967,22 +2967,22 @@ unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString
     return None;
 }
 unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if !(*ft).wl_ptr().is_null() {
+    if (*ft).winlink_handle().is_alive() {
         let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         while !s.is_null() {
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-            while !wl.is_null() {
-                if (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*(*ft).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+            while wl.is_alive() {
+                if wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
                     if found != 0 {
                         return Some(c"1".to_owned());
                     }
                     found = 1 as ::core::ffi::c_int;
                 }
-                wl = winlinks_next(&*wl);
+                wl = winlinks_next(wl.get_unchecked());
             }
             s_owner = sessions_next(&*s);
             s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -2996,15 +2996,15 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
-    if (*ft).wl_ptr().is_null() {
+    if !(*ft).winlink_handle().is_alive() {
         return None;
     }
-    w = (*(*ft).wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
     while !sg.is_null() {
         let group_members = crate::src::session::session_group_members(sg);
         s = group_members.first().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if !s.is_null() && !winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window")).is_null() {
+        if !s.is_null() && winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window")).is_alive() {
             n = n.wrapping_add(1);
         }
         sg = session_groups_next(&*sg);
@@ -3013,7 +3013,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if session_group_contains((s).as_ref()).is_null() {
-            if !winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window")).is_null() {
+            if winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window")).is_alive() {
                 n = n.wrapping_add(1);
             }
         }
@@ -3025,8 +3025,8 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     );
 }
 unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        if server_check_marked() != 0 && marked_pane.wl_ptr() == (*ft).wl_ptr() {
+    if (*ft).winlink_handle().is_alive() {
+        if server_check_marked() != 0 && marked_pane.winlink_handle() == (*ft).winlink_handle() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -3079,16 +3079,16 @@ unsafe fn format_cb_window_panes(mut ft: *mut format_tree) -> Option<CString> {
     return None;
 }
 unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
+    if (*ft).winlink_handle().is_alive() {
         return Some(
-            window_printable_flags((*ft).wl_ptr(), 0 as ::core::ffi::c_int),
+            window_printable_flags(((*ft).winlink_handle()).clone(), 0 as ::core::ffi::c_int),
         );
     }
     return None;
 }
 unsafe fn format_cb_window_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        if (*(*ft).wl_ptr()).flags & WINLINK_SILENCE != 0 {
+    if (*ft).winlink_handle().is_alive() {
+        if ((*ft).winlink_handle()).get_unchecked().flags & WINLINK_SILENCE != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -3096,9 +3096,9 @@ unsafe fn format_cb_window_silence_flag(mut ft: *mut format_tree) -> Option<CStr
     return None;
 }
 unsafe fn format_cb_window_start_flag(mut ft: *mut format_tree) -> Option<CString> {
-    if !(*ft).wl_ptr().is_null() {
-        let session_owner = (*(*ft).wl_ptr()).session.upgrade()?;
-        if (*ft).wl_ptr() == winlinks_minmax(&(*session_owner.get()).windows, RB_NEGINF) {
+    if (*ft).winlink_handle().is_alive() {
+        let session_owner = ((*ft).winlink_handle()).get_unchecked().session.upgrade()?;
+        if (*ft).winlink_handle() == winlinks_minmax(&(*session_owner.get()).windows, RB_NEGINF) {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -4140,7 +4140,8 @@ mod owned_callback_tests {
             (*owner.get()).id = 42;
             (*owner.get()).sx = 80;
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             super::super::format_defaults_pane(ft, &owner.clone());
             assert!(observer.ptr_eq(&(*ft).wp));
             assert_eq!(format_cb_pane_id(ft).unwrap().as_c_str(), c"%42");
@@ -4153,7 +4154,7 @@ mod owned_callback_tests {
             assert!(super::super::format_get_pane(&*ft).is_none());
             assert!(format_cb_pane_id(ft).is_none());
             assert!(format_cb_pane_width(ft).is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -4163,7 +4164,8 @@ mod owned_callback_tests {
             let owner = window::new();
             (*owner.get()).name = c"observed-window".to_owned();
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             super::super::format_defaults_window(ft, (owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             assert!(observer.ptr_eq(&(*ft).w));
             assert_eq!(format_cb_window_name(ft).unwrap().as_c_str(), c"observed-window");
@@ -4174,7 +4176,7 @@ mod owned_callback_tests {
             assert!(observer.upgrade().is_none());
             assert!(format_cb_window_name(ft).is_none());
             assert!(format_cb_window_id(ft).is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -4184,7 +4186,8 @@ mod owned_callback_tests {
             let owner = session::new();
             (*owner.get()).name = c"observed-session".to_owned();
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             super::super::format_defaults_session(ft, &owner.clone());
             assert!(observer.ptr_eq(&(*ft).s));
             assert_eq!(format_cb_session_name(ft).unwrap().as_c_str(), c"observed-session");
@@ -4192,7 +4195,7 @@ mod owned_callback_tests {
             assert!(observer.upgrade().is_none());
             assert!(format_cb_session_name(ft).is_none());
             assert!(format_cb_session_id(ft).is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -4202,14 +4205,15 @@ mod owned_callback_tests {
             let owner = session::new();
             let session = owner.get();
             let link = crate::src::window::winlink_add(&raw mut (*session).windows, 7);
-            let ft = format_create(None, None, 0, 0);
-            super::super::format_defaults_winlink(ft, link);
-            assert_eq!((*ft).wl_ptr(), link);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
+            super::super::format_defaults_winlink(ft, link.clone());
+            assert_eq!((*ft).winlink_handle(), link);
             assert_eq!(format_cb_window_index(ft).unwrap().as_c_str(), c"7");
-            crate::src::window::winlink_remove(&raw mut (*session).windows, link);
-            assert!((*ft).wl_ptr().is_null());
+            crate::src::window::winlink_remove(&raw mut (*session).windows, link.clone());
+            assert!(!(*ft).winlink_handle().is_alive());
             assert!(format_cb_window_index(ft).is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -4219,14 +4223,15 @@ mod owned_callback_tests {
             let owner = client::new();
             (*owner.get()).name = Some(c"observed-client".to_owned());
             let observer = std::rc::Rc::downgrade(&owner);
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             (*ft).c = observer.clone();
             assert_eq!(format_cb_client_name(ft).unwrap().as_c_str(), c"observed-client");
             drop(owner);
             assert!(observer.upgrade().is_none());
             assert!(format_cb_client_name(ft).is_none());
             assert!(format_cb_client_width(ft).is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -4235,7 +4240,8 @@ mod owned_callback_tests {
         let owner = refbox::RefBox::new(crate::src::shared::paste::paste_buffer::empty());
         let buffer = crate::src::shared::paste::PasteBufferRef::observe(&owner);
         unsafe {
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             (*ft).pb = Some(buffer.clone());
             assert!(paste_buffer_data(&buffer.borrow()).is_none());
             assert!(format_cb_buffer_full(ft).is_none());
@@ -4260,7 +4266,7 @@ mod owned_callback_tests {
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"A");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"1");
             (*ft).pb = None;
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -4274,7 +4280,8 @@ mod owned_callback_tests {
                 assert!(std::ptr::eq(format_table_get(entry.key).unwrap(), entry));
             }
             assert!(format_table_get(c"not_a_builtin").is_none());
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             for key in [
                 c"buffer_full",
                 c"client_created",
@@ -4283,7 +4290,7 @@ mod owned_callback_tests {
             ] {
                 assert!(format_table_get(key).unwrap().get(ft).is_none());
             }
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -4302,7 +4309,8 @@ mod owned_callback_tests {
                 0
             );
             let pb = paste_get_name(name).unwrap();
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             (*ft).pb = Some(pb.clone());
             let full = format_cb_buffer_full(ft).unwrap();
             let sample = format_cb_buffer_sample(ft).unwrap();
@@ -4315,7 +4323,7 @@ mod owned_callback_tests {
             drop(pb);
             assert!(!weak.is_alive(), "format tree only observes the buffer");
             assert!(format_cb_buffer_full(ft).is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
             assert!(!weak.is_alive());
             assert_eq!(full.as_bytes(), b"A\xff");
             assert!(!sample.as_bytes().is_empty());

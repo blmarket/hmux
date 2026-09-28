@@ -535,11 +535,11 @@ pub unsafe fn recalculate_size(w_owner: &std::rc::Rc<std::cell::UnsafeCell<windo
         Some(w_owner),
         |candidate| unsafe {
             let session = candidate.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if session.is_null() || (*session).curw_ptr().is_null() {
+            if session.is_null() || !(*session).current_winlink().is_alive() {
                 return true;
             }
             if current != 0 {
-                (*(*session).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w
+                ((*session).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w
             } else {
                 session_has(&*session, &*w) == 0
             }

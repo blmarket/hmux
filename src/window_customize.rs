@@ -341,24 +341,24 @@ pub static window_customize_mode: window_mode = {
         init: Some(
             window_customize_init
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_customize_free as unsafe fn(*mut window_mode_entry) -> ()),
+        free: Some(window_customize_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         resize: Some(
-            window_customize_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> (),
+            window_customize_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
         ),
-        update: Some(window_customize_update as unsafe fn(*mut window_mode_entry) -> ()),
+        update: Some(window_customize_update as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         style_changed: None,
         key: Some(
             window_customize_key
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     &std::rc::Rc<std::cell::UnsafeCell<client>>,
-                    *mut winlink,
+                    refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
                 ) -> (),
@@ -486,7 +486,7 @@ unsafe fn window_customize_scope_text(
             CString::new(bytes).expect("session name contains no NUL")
         }
         6 => {
-            CString::new(format!("window {}", (*fs.wl_ptr()).idx)).expect("window index contains no NUL")
+            CString::new(format!("window {}", (fs.winlink_handle()).get_unchecked().idx)).expect("window index contains no NUL")
         }
         _ => CString::new(Vec::new()).expect("empty scope text"),
     }
@@ -916,14 +916,15 @@ unsafe fn window_customize_option_is_changed(
         return 1 as ::core::ffi::c_int;
     }
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        oo = options_create(::core::ptr::null_mut::<options>());
+        let mut oo_owner = options_create(::core::ptr::null_mut::<options>());
+        oo = &raw mut *oo_owner;
         defaults = options_default(oo, oe);
         if !array_key.is_null() {
             ov = crate::src::options::options_array_get_mut(&mut *(o), std::ffi::CStr::from_ptr(array_key)).map_or(std::ptr::null_mut(), |value| value);
             default_ov = crate::src::options::options_array_get_mut(&mut *(defaults), std::ffi::CStr::from_ptr(array_key)).map_or(std::ptr::null_mut(), |value| value);
             if ov.is_null() || default_ov.is_null() {
                 changed = (ov != default_ov) as ::core::ffi::c_int;
-                options_free(oo);
+                options_free(oo_owner);
                 return changed;
             }
         }
@@ -933,7 +934,7 @@ unsafe fn window_customize_option_is_changed(
             as ::core::ffi::c_int;
         drop(value);
         drop(default_value);
-        options_free(oo);
+        options_free(oo_owner);
         return changed;
     }
     let value = options_to_cstring(
@@ -1342,11 +1343,12 @@ unsafe fn window_customize_build_keys(
     );
     mode_tree_no_tag(&top);
     drop(title);
-    ft = format_create_from_state(
+    let mut ft_owner = format_create_from_state(
         None,
         None,
         &*fs,
     );
+    ft = &raw mut *ft_owner;
     format_add(
         ft,
         b"is_option\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1472,7 +1474,7 @@ unsafe fn window_customize_build_keys(
             count = count.wrapping_add(1);
         }
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     if (*data).hide_default != 0 && count == 0 as u_int {
         mode_tree_remove(&mut *(*data).tree_owner().get(), &top);
     }
@@ -1662,11 +1664,12 @@ unsafe fn window_customize_build(
     } else {
         cmd_find_from_pane(&raw mut fs, &(*(mode_pane)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
-    ft = format_create_from_state(
+    let mut ft_owner = format_create_from_state(
         None,
         None,
         &fs,
     );
+    ft = &raw mut *ft_owner;
     format_add(
         ft,
         b"is_option\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1777,12 +1780,13 @@ unsafe fn window_customize_build(
         filter,
         &raw mut fs,
     );
-    format_free(Box::from_raw(ft));
-    ft = format_create_from_state(
+    format_free(ft_owner);
+    let mut ft_owner = format_create_from_state(
         None,
         None,
         &fs,
     );
+    ft = &raw mut *ft_owner;
     format_add(
         ft,
         b"is_environment\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1794,7 +1798,7 @@ unsafe fn window_customize_build(
             window_customize_build_keys(mode_owner, &kt, ft, filter, &raw mut fs);
         }
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 unsafe fn window_customize_draw_key(
     item: &window_customize_itemdata,
@@ -2006,11 +2010,12 @@ unsafe fn window_customize_draw_option(
         space = b" \0" as *const u8 as *const ::core::ffi::c_char;
         unit = (*oe).unit_ptr();
     }
-    ft = format_create_from_state(
+    let mut ft_owner = format_create_from_state(
         None,
         None,
         &fs,
     );
+    ft = &raw mut *ft_owner;
     if oe.is_null() || (*oe).text_ptr().is_null() {
         if is_monitor != 0 {
             text = b"This hook runs when a monitor changes.\0" as *const u8
@@ -2597,7 +2602,7 @@ write_cstr(out, unit)
                                                                                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                                                                                             ));
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
-                                                                                                            xformat(&mut label, format_args!("Window value (from window {}): " , ((*fs.wl_ptr()).idx) as u32));
+                                                                                                            xformat(&mut label, format_args!("Window value (from window {}): " , ((fs.winlink_handle()).get_unchecked().idx) as u32));
                                                                                                             if window_customize_write_value(ctx,
 (*s).cx,
 sx,
@@ -2672,7 +2677,7 @@ write_cstr(out, unit)
         }
     }
     drop(default_value);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 unsafe fn window_customize_draw_environment(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
@@ -2874,15 +2879,15 @@ unsafe fn window_customize_menu(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.active_ptr();
-    if wme.is_null() || (*wme).shared_data_ptr::<window_customize_modedata>() != Some(data) {
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+    wme = (*wp).modes.active_weak();
+    if !wme.is_alive() || wme.get_unchecked().shared_data_ptr::<window_customize_modedata>() != Some(data) {
         return;
     }
     window_customize_key(
-        wme,
+        wme.clone(),
         c,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         key,
         ::core::ptr::null_mut::<mouse_event>(),
     );
@@ -2912,12 +2917,12 @@ fn window_customize_help() -> mode_tree_help_info {
     }
 }
 unsafe fn window_customize_init(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_customize_modedata =
@@ -2943,7 +2948,7 @@ unsafe fn window_customize_init(
         change: WINDOW_CUSTOMIZE_UNSET,
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
-    (*wme).data_owner = Some(owner);
+    wme.get_mut_unchecked().data_owner = Some(owner);
     let build_mode = (*data).observer.clone();
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
@@ -2987,8 +2992,8 @@ unsafe fn window_customize_init(
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
-unsafe fn window_customize_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let Some(data) = (*wme).shared_data_ptr::<window_customize_modedata>() else {
+unsafe fn window_customize_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+    let Some(data) = wme.get_unchecked().shared_data_ptr::<window_customize_modedata>() else {
         return std::ptr::null_mut();
     };
     (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
@@ -2996,8 +3001,8 @@ unsafe fn window_customize_get_screen(wme: *mut window_mode_entry) -> *mut scree
     })
 }
 
-unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
-    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {
+unsafe fn window_customize_free(mut wme: refbox::Weak<window_mode_entry>) {
+    let Some(mode_owner) = wme.get_unchecked().retained_data::<UnsafeCell<window_customize_modedata>>() else {
         return;
     };
     let data = mode_owner.get();
@@ -3006,18 +3011,18 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
         editor.cancel();
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    drop((*wme).data_owner.take());
+    drop(wme.get_mut_unchecked().data_owner.take());
 }
-unsafe fn window_customize_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {
+unsafe fn window_customize_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
+    let Some(mode_owner) = wme.get_unchecked().retained_data::<UnsafeCell<window_customize_modedata>>() else {
         return;
     };
     let data = mode_owner.get();
     if (*data).dead != 0 { return; }
     mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
-unsafe fn window_customize_update(mut wme: *mut window_mode_entry) {
-    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {
+unsafe fn window_customize_update(mut wme: refbox::Weak<window_mode_entry>) {
+    let Some(mode_owner) = wme.get_unchecked().retained_data::<UnsafeCell<window_customize_modedata>>() else {
         return;
     };
     let data = mode_owner.get();
@@ -3565,15 +3570,15 @@ unsafe fn window_customize_edit_close_cb(
     let mut current_block: u64;
     let item = &*ed.item;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut mode_owner = None;
     let mut cause: Option<CString> = None;
     let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        wme = (*wp).modes.active_ptr();
-        if !wme.is_null() && std::ptr::eq((*wme).mode, &window_customize_mode) {
-            mode_owner = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>();
+        wme = (*wp).modes.active_weak();
+        if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_customize_mode) {
+            mode_owner = wme.get_unchecked().retained_data::<UnsafeCell<window_customize_modedata>>();
             if let Some(owner) = mode_owner.as_ref() {
                 if (*owner.get()).editor.as_ref().is_some_and(|handle| handle.matches(editor.as_ref())) {
                     (*owner.get()).editor = None;
@@ -4765,17 +4770,17 @@ unsafe fn window_customize_add_current(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn window_customize_key(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    _wl: *mut winlink,
+    _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
     let c = client_owner.get();
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mode_owner = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>()
+    let mode_owner = wme.get_unchecked().retained_data::<UnsafeCell<window_customize_modedata>>()
         .expect("live mode payload");
     let data = mode_owner.get();
     let mut finished: ::core::ffi::c_int = 0;

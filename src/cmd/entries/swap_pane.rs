@@ -75,9 +75,9 @@ unsafe fn cmd_swap_pane_prev_tiled_pane(
     }
     pane
 }
-unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_swap_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut src_lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -92,13 +92,13 @@ unsafe fn cmd_swap_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
     let dst_pane_owner = (*target).wp.upgrade().expect("live swap target pane");
     let dst_w = dst_window_owner.get();
     let dst_wp = dst_pane_owner.get();
-    dst_idx = (*(*target).wl_ptr()).idx;
+    dst_idx = ((*target).winlink_handle()).get_unchecked().idx;
     let mut src_window_owner = (*source).w.upgrade().expect("live swap source window");
     let result = (|| {
         let mut src_pane_owner = (*source).wp.upgrade().expect("live swap source pane");
         let mut src_w = src_window_owner.get();
         let src_wp = src_pane_owner.get();
-        src_idx = (*(*source).wl_ptr()).idx;
+        src_idx = ((*source).winlink_handle()).get_unchecked().idx;
         if (*src_w).modal.ptr_eq(&(*src_wp).observer) || (*dst_w).modal.ptr_eq(&(*dst_wp).observer) {
             cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;

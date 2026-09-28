@@ -86,7 +86,7 @@ pub unsafe fn menu_add_item(
             item.name.as_ptr(),
             client_owner,
             None,
-            std::ptr::null_mut(),
+            refbox::Weak::new(),
             None,
         )
     };
@@ -137,7 +137,7 @@ pub unsafe fn menu_add_item(
                 command.as_ptr(),
                 client_owner,
                 None,
-                std::ptr::null_mut(),
+                refbox::Weak::new(),
                 None,
             )
         }
@@ -166,13 +166,14 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
         return;
     };
     let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options).map_or(std::ptr::null_mut(), |options| options);
-    let ft = format_create_defaults(
+    let mut ft_owner = format_create_defaults(
         None,
         None,
         (md.fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        md.fs.wl_ptr(),
+        (md.fs.winlink_handle()).clone(),
         (md.fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
+    let ft = &raw mut *ft_owner;
     let mut parsed = style::default();
     for (cell, option, override_style) in [
         (&mut md.style_gc, c"menu-style", md.style.as_deref()),
@@ -197,7 +198,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
             }
         }
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 
 pub unsafe fn menu_update(md: &mut menu_data) {
@@ -618,7 +619,8 @@ pub unsafe fn menu_display(
 ) {
     let setup_window = if fs.is_null() {
         let client = &*client_owner.expect("menu without a target requires a client").get();
-        let link = &*(*client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr();
+        let link_handle = (*client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink();
+        let link = link_handle.try_borrow_mut().expect("current menu link");
         link.window_owner.as_ref().expect("current link has a window").clone()
     } else {
         (*fs).w.upgrade().expect("live menu target window")
@@ -974,7 +976,8 @@ mod tests {
         use crate::src::tmux::global_options;
         unsafe {
             let previous_options = global_options;
-            global_options = options_create(std::ptr::null_mut());
+            let mut global_options_owner = options_create(std::ptr::null_mut());
+            global_options = &raw mut *global_options_owner;
             let definition = (&*std::ptr::addr_of!(options_table))
                 .iter()
                 .find(|entry| {
@@ -1051,7 +1054,7 @@ mod tests {
                 assert_eq!(cancelled.get(), 1);
                 assert!(observer.upgrade().is_none());
             }
-            options_free(global_options);
+            options_free(global_options_owner);
             global_options = previous_options;
         }
     }

@@ -123,24 +123,24 @@ unsafe fn cmd_break_pane_float(
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut wl: *mut winlink = (*source).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut src_s: *mut session = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut dst_s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = (*source).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut old_w: *mut window = w;
     let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = (*target).idx;
     let mut before: ::core::ffi::c_int = 0;
-    let mut old_idx: ::core::ffi::c_int = (*wl).idx;
+    let mut old_idx: ::core::ffi::c_int = wl.get_unchecked().idx;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if (*w).modal.ptr_eq(&(*wp).observer) {
@@ -159,10 +159,10 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
     }
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
-        if !(*target).wl_ptr().is_null() {
-            idx = winlink_shuffle_up(&(*(dst_s)).observer.upgrade().expect("live session"), (*target).wl_ptr(), before);
+        if (*target).winlink_handle().is_alive() {
+            idx = winlink_shuffle_up(&(*(dst_s)).observer.upgrade().expect("live session"), ((*target).winlink_handle()).clone(), before);
         } else {
-            idx = winlink_shuffle_up(&(*(dst_s)).observer.upgrade().expect("live session"), (*dst_s).curw_ptr(), before);
+            idx = winlink_shuffle_up(&(*(dst_s)).observer.upgrade().expect("live session"), ((*dst_s).current_winlink()).clone(), before);
         }
         if idx == -(1 as ::core::ffi::c_int) {
             return CMD_RETURN_ERROR;
@@ -172,7 +172,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
     if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
         if let Err(link_error) = server_link_window(
             &(*(src_s)).observer.upgrade().expect("live session"),
-            wl,
+            wl.clone(),
             &(*(dst_s)).observer.upgrade().expect("live session"),
             idx,
             0 as ::core::ffi::c_int,
@@ -189,15 +189,15 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
                 0 as ::core::ffi::c_longlong,
             );
         }
-        server_unlink_window(&(*(src_s)).observer.upgrade().expect("live session"), wl);
+        server_unlink_window(&(*(src_s)).observer.upgrade().expect("live session"), wl.clone());
         wl = winlink_find_by_window(&raw mut (*dst_s).windows, &(*(w)).observer.upgrade().expect("live window"));
-        if wl.is_null() {
+        if !wl.is_alive() {
             return CMD_RETURN_ERROR;
         }
-        window_fire_pane_moved(&(*(wp)).observer.upgrade().expect("live window_pane"), &(*(old_w)).observer.upgrade().expect("live window"), old_idx, &(*(w)).observer.upgrade().expect("live window"), (*wl).idx);
+        window_fire_pane_moved(&(*(wp)).observer.upgrade().expect("live window_pane"), &(*(old_w)).observer.upgrade().expect("live window"), old_idx, &(*(w)).observer.upgrade().expect("live window"), wl.get_unchecked().idx);
     } else {
         if idx != -(1 as ::core::ffi::c_int)
-            && !winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_null()
+            && winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_alive()
         {
             cmdq_error(item_handle, |out| write!(out, "index in use: {}", (idx) as i32));
             return CMD_RETURN_ERROR;
@@ -254,9 +254,9 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
             b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
             (*(w)).observer.upgrade().expect("live window"),
         );
-        window_fire_pane_moved(&(*(wp)).observer.upgrade().expect("live window_pane"), &(*(old_w)).observer.upgrade().expect("live window"), old_idx, &(*(w)).observer.upgrade().expect("live window"), (*wl).idx);
+        window_fire_pane_moved(&(*(wp)).observer.upgrade().expect("live window_pane"), &(*(old_w)).observer.upgrade().expect("live window"), old_idx, &(*(w)).observer.upgrade().expect("live window"), wl.get_unchecked().idx);
         if args_has(args, 'd' as i32 as u_char) == 0 {
-            session_select(&(*dst_s).observer.upgrade().expect("live session"), (*wl).idx);
+            session_select(&(*dst_s).observer.upgrade().expect("live session"), wl.get_unchecked().idx);
             cmd_find_from_session(&mut *current.current.borrow_mut(), &(*(dst_s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
         }
         server_redraw_session(&*(src_s));
@@ -273,7 +273,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
         if template.is_null() {
             template = BREAK_PANE_TEMPLATE.as_ptr();
         }
-        let cp = format_single_cstring(Some(item_handle), template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (dst_s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        let cp = format_single_cstring(Some(item_handle), template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (dst_s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         cmdq_print(item_handle, |out| write_cstr(out, cp.as_ptr()));
     }
     return CMD_RETURN_NORMAL;

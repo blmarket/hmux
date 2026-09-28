@@ -39,11 +39,11 @@ pub static cmd_rename_window_entry: cmd_entry = {
         exec: Some(cmd_rename_window_exec),
     }
 };
-unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_rename_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let name = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
     if !check_name(&name) {
         cmdq_error(item_handle, |out| {
@@ -52,13 +52,13 @@ unsafe fn cmd_rename_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
         });
         return CMD_RETURN_ERROR;
     }
-    window_set_name(&(*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), name.as_ptr(), 0 as ::core::ffi::c_int);
+    window_set_name(&(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), name.as_ptr(), 0 as ::core::ffi::c_int);
     options_set_number(
-        options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
         0 as ::core::ffi::c_longlong,
     );
-    server_redraw_window_borders(&*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
-    server_status_window(&*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_redraw_window_borders(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_status_window(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     return CMD_RETURN_NORMAL;
 }

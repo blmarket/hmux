@@ -943,13 +943,14 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     dfg0 = gc0.fg;
     screen_write_start(&mut ctx, s);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
-    ft = format_create_defaults(
+    let mut ft_owner = format_create_defaults(
         None,
         None,
         None,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
+    ft = &raw mut *ft_owner;
     keylen = 0 as ::core::ffi::c_int;
     i = 0 as u_int;
     while i < mode_tree_line_count(&*mtd) {
@@ -1251,7 +1252,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         }
         i = i.wrapping_add(1);
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     if !((*mtd).preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int) {
         sy = (*s).grid().sy;
         if !(sy <= 4 as u_int
@@ -1932,13 +1933,14 @@ unsafe fn mode_tree_draw_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut c
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    ft = format_create_defaults(
+    let mut ft_owner = format_create_defaults(
         None,
         None,
         None,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         (mode_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
+    ft = &raw mut *ft_owner;
     screen_write_cursormove(
         &mut *ctx,
         x as ::core::ffi::c_int,
@@ -1967,7 +1969,7 @@ unsafe fn mode_tree_draw_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, mut c
         mode_tree_draw_help_line(ctx, &gc, ft, line, item, x, y, w);
         y = y.wrapping_add(1);
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 unsafe fn mode_tree_display_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mtd = tree_owner.get();

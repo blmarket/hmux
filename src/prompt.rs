@@ -187,7 +187,7 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&mut
 pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
     let owner = refbox::RefBox::new(prompt::default());
     let mut pr = owner.try_borrow_mut().expect("live unborrowed prompt");
-    let ft = if let Some(fs) = pd.fs {
+    let mut ft_owner = if let Some(fs) = pd.fs {
         // Copy the selected target, matching cmd_find_copy_state rather than
         // inheriting the source's search flags or current-state pointer.
         pr.state = cmd_find_state {
@@ -202,7 +202,7 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
             None,
             None,
             (fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            fs.wl_ptr(),
+            (fs.winlink_handle()).clone(),
             (fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         )
     } else {
@@ -211,10 +211,11 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
             None,
             None,
             None,
-            std::ptr::null_mut(),
+            refbox::Weak::new(),
             None,
         )
     };
+    let ft = &raw mut *ft_owner;
     let input = pd.input.unwrap_or(c"");
     pr.string = pd.prompt.to_owned();
     let expanded = if pd.flags & PROMPT_NOFORMAT != 0 {
@@ -246,7 +247,7 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
     pr.message_format = pd.message_format;
     pr.keys = pd.keys;
     pr.word_separators = pd.word_separators;
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     drop(pr);
     owner
 }
@@ -377,17 +378,18 @@ fn prompt_incremental_input(pr: &prompt, prefix: u8) -> CString {
     CString::new(bytes).expect("the first NUL ends the prompt input")
 }
 pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
-    let ft = if cmd_find_valid_state(&pr.state) != 0 {
+    let mut ft_owner = if cmd_find_valid_state(&pr.state) != 0 {
         format_create_from_state(None, None, &pr.state)
     } else {
         format_create_defaults(
             None,
             None,
             None,
-            std::ptr::null_mut(),
+            refbox::Weak::new(),
             None,
         )
     };
+    let ft = &raw mut *ft_owner;
     pr.string = msg.to_owned();
     let input = input.unwrap_or(c"");
     let expanded = if pr.flags & PROMPT_NOFORMAT != 0 {
@@ -400,7 +402,7 @@ pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     pr.hindex.fill(0);
     pr.closed = 0;
     prompt_clear_complete(pr);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 pub fn prompt_closed(pr: &prompt) -> ::core::ffi::c_int {
     pr.closed
@@ -511,23 +513,24 @@ unsafe fn prompt_draw_complete(
         width = width.wrapping_add(cell.width as u_int);
     }
 }
-unsafe fn prompt_format_tree(pr: &prompt) -> *mut format_tree {
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
+    let mut owner;
     if cmd_find_valid_state(&pr.state) != 0 {
-        ft = format_create_from_state(
+        owner = format_create_from_state(
             None,
             None,
             &pr.state,
         );
     } else {
-        ft = format_create_defaults(
+        owner = format_create_defaults(
             None,
             None,
             None,
-            ::core::ptr::null_mut::<winlink>(),
+            (refbox::Weak::new()).clone(),
             None,
         );
     }
+    let ft = &raw mut *owner;
     let tmp = utf8_tocstr_cstring(&pr.buffer);
     format_add(
         ft,
@@ -557,7 +560,7 @@ unsafe fn prompt_format_tree(pr: &prompt) -> *mut format_tree {
             |out| out.write_all(b"0"),
         );
     }
-    return ft;
+    return owner;
 }
 unsafe fn prompt_expand1(pr: &prompt, mut ft: *mut format_tree) -> CString {
     let prompt = format_expand_time_cstring(ft, pr.string.as_ptr());
@@ -598,12 +601,13 @@ unsafe fn prompt_layout(
         area_width: aw,
         ..Default::default()
     };
-    ft = prompt_format_tree(pr);
+    let mut ft_owner = prompt_format_tree(pr);
+    ft = &raw mut *ft_owner;
     if let Some(sy) = sy.as_deref_mut() {
         prompt_effective_style(pr, sy, ft);
     }
     let expanded = prompt_expand1(pr, ft);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     if aw == 0 as u_int {
         return (pl, expanded);
     }

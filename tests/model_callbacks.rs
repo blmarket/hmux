@@ -16,7 +16,7 @@ fn parse(
     }
 }
 
-unsafe fn mode_screen(_: *mut window::window_mode_entry) -> *mut screen::screen {
+unsafe fn mode_screen(_: refbox::Weak<window::window_mode_entry>) -> *mut screen::screen {
     null_mut()
 }
 
@@ -40,6 +40,6 @@ fn callbacks_cross_original_module_paths_without_conversion() {
     assert!(draw_callback.is_some());
     assert!(server_callback.is_some());
     unsafe {
-        assert!(copy_mode.get_screen.unwrap()(null_mut()).is_null());
+        assert!(copy_mode.get_screen.unwrap()(refbox::Weak::new()).is_null());
     }
 }

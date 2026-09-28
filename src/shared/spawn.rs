@@ -100,17 +100,13 @@ pub struct spawn_context {
 }
 
 impl spawn_context {
-    /// A borrowed view for the synchronous legacy spawn calls.
-    pub fn wl_ptr(&self) -> *mut winlink {
-        if self.wl.is_alive() {
-            self.wl.as_ptr().cast_mut()
-        } else {
-            std::ptr::null_mut()
-        }
+    /// Observe the link selected for spawning.
+    pub fn winlink_handle(&self) -> refbox::Weak<winlink> {
+        self.wl.clone()
     }
 
     /// The caller supplies a live winlink owned by a session index.
-    pub unsafe fn set_wl(&mut self, wl: *mut winlink) {
-        self.wl = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
+    pub fn set_wl(&mut self, wl: refbox::Weak<winlink>) {
+        self.wl = wl;
     }
 }

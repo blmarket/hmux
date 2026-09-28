@@ -171,13 +171,9 @@ impl Drop for cmdq_item {
 }
 
 impl cmdq_item {
-    /// Project a legacy command pointer while its list owner remains live.
-    pub fn cmd_ptr(&self) -> *mut cmd {
-        if self.cmd.is_alive() {
-            self.cmd.as_ptr().cast_mut()
-        } else {
-            std::ptr::null_mut()
-        }
+    /// Observe the command retained by this queue item's command list.
+    pub fn command_handle(&self) -> refbox::Weak<cmd> {
+        self.cmd.clone()
     }
 
     pub fn empty() -> Self {
@@ -272,23 +268,14 @@ impl cmd_find_state {
         self.wp = value.map_or_else(std::rc::Weak::new, |value| value.observer.clone());
     }
 
-    /// # Safety
-    /// The caller must keep the winlink alive and uphold its borrowing rules
-    /// throughout pointer use. Re-resolve after callbacks that can remove it.
-    pub unsafe fn wl_ptr(&self) -> *mut winlink {
-        if self.wl.is_alive() {
-            self.wl.as_ptr().cast_mut()
-        } else {
-            std::ptr::null_mut()
-        }
+    /// Observe the selected link without extending its lifetime.
+    pub fn winlink_handle(&self) -> refbox::Weak<winlink> {
+        self.wl.clone()
     }
 
-    /// # Safety
-    /// A nonnull pointer must refer to a live RefBox-owned winlink.
-    pub unsafe fn set_wl(&mut self, ptr: *mut winlink) {
-        self.wl = ptr
-            .as_ref()
-            .map_or_else(refbox::Weak::new, |value| value.observer.clone());
+    /// Store the selected link identity; the session index retains ownership.
+    pub fn set_wl(&mut self, wl: refbox::Weak<winlink>) {
+        self.wl = wl;
     }
 }
 
@@ -342,7 +329,8 @@ pub struct cmd_entry {
     pub source: cmd_entry_flag,
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,
-    pub exec: Option<unsafe fn(*mut cmd, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>,
+    // The dispatching queue item retains the command-list owner through this call.
+    pub exec: Option<unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>,
 }
 
 #[repr(C)]

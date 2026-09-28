@@ -33,9 +33,12 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
         );
         let environment = environ_create();
         global_environ = Some(environment);
-        let server = options_create(std::ptr::null_mut());
-        let session = options_create(std::ptr::null_mut());
-        let window = options_create(std::ptr::null_mut());
+        let mut server_owner = options_create(std::ptr::null_mut());
+        let server = &raw mut *server_owner;
+        let mut session_owner = options_create(std::ptr::null_mut());
+        let session = &raw mut *session_owner;
+        let mut window_owner = options_create(std::ptr::null_mut());
+        let window = &raw mut *window_owner;
         global_options = server;
         global_s_options = session;
         global_w_options = window;
@@ -197,8 +200,8 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             global_s_options,
             global_w_options,
         ) = saved;
-        options_free(server);
-        options_free(session);
-        options_free(window);
+        options_free(server_owner);
+        options_free(session_owner);
+        options_free(window_owner);
     }
 }

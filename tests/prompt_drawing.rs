@@ -24,9 +24,12 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             global_w_options,
         );
         let environment = environ_create();
-        let server = options_create(std::ptr::null_mut());
-        let session = options_create(std::ptr::null_mut());
-        let window = options_create(std::ptr::null_mut());
+        let mut server_owner = options_create(std::ptr::null_mut());
+        let server = &raw mut *server_owner;
+        let mut session_owner = options_create(std::ptr::null_mut());
+        let session = &raw mut *session_owner;
+        let mut window_owner = options_create(std::ptr::null_mut());
+        let window = &raw mut *window_owner;
         global_environ = Some(environment);
         global_options = server;
         global_s_options = session;
@@ -232,8 +235,8 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
             global_s_options,
             global_w_options,
         ) = saved;
-        options_free(server);
-        options_free(session);
-        options_free(window);
+        options_free(server_owner);
+        options_free(session_owner);
+        options_free(window_owner);
     }
 }

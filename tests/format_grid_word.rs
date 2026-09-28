@@ -11,7 +11,8 @@ use hmux2::src::tmux::global_s_options;
 fn grid_word_collects_wide_cells_and_returns_owned_strings() {
     unsafe {
         let saved_s_options = global_s_options;
-        let s_options = options_create(core::ptr::null_mut());
+        let mut s_options_owner = options_create(core::ptr::null_mut());
+        let s_options = &raw mut *s_options_owner;
         let definition = (*(&raw const options_table))
             .iter()
             .find(|entry| entry.name == Some(c"word-separators"))
@@ -49,7 +50,7 @@ fn grid_word_collects_wide_cells_and_returns_owned_strings() {
 
         drop(gd);
         global_s_options = saved_s_options;
-        options_free(s_options);
+        options_free(s_options_owner);
         assert_eq!(first.as_bytes(), b"Hi");
         assert_eq!(second.as_bytes(), "漢Z".as_bytes());
     }

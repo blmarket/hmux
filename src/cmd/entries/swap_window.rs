@@ -39,17 +39,17 @@ pub static cmd_swap_window_entry: cmd_entry = {
         exec: Some(cmd_swap_window_exec),
     }
 };
-unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_swap_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut src: *mut session = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut dst: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sg_src: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut sg_dst: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut wl_src: *mut winlink = (*source).wl_ptr();
-    let mut wl_dst: *mut winlink = (*target).wl_ptr();
+    let mut wl_src: refbox::Weak<winlink> = (*source).winlink_handle();
+    let mut wl_dst: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut w_src: *mut window = ::core::ptr::null_mut::<window>();
     let mut w_dst: *mut window = ::core::ptr::null_mut::<window>();
     sg_src = session_group_contains((src).as_ref());
@@ -60,25 +60,25 @@ unsafe fn cmd_swap_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
         });
         return CMD_RETURN_ERROR;
     }
-    if (*wl_dst).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*wl_src).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+    if wl_dst.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == wl_src.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
         return CMD_RETURN_NORMAL;
     }
-    w_dst = (*wl_dst).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    w_src = (*wl_src).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    window_winlinks_remove(&mut *(w_dst), wl_dst);
-    window_winlinks_remove(&mut *(w_src), wl_src);
+    w_dst = wl_dst.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w_src = wl_src.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    window_winlinks_remove(&mut *(w_dst), (wl_dst).clone());
+    window_winlinks_remove(&mut *(w_src), (wl_src).clone());
     if wl_dst != wl_src {
-        std::mem::swap(&mut (*wl_dst).window_owner, &mut (*wl_src).window_owner);
+        std::mem::swap(&mut wl_dst.get_mut_unchecked().window_owner, &mut wl_src.get_mut_unchecked().window_owner);
     }
-    window_winlinks_append(&mut *(w_src), wl_dst);
-    window_winlinks_append(&mut *(w_dst), wl_src);
-    if marked_pane.wl_ptr() == wl_src {
-        marked_pane.set_wl(wl_dst);
+    window_winlinks_append(&mut *(w_src), (wl_dst).clone());
+    window_winlinks_append(&mut *(w_dst), (wl_src).clone());
+    if marked_pane.winlink_handle() == wl_src {
+        marked_pane.set_wl((wl_dst).clone());
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        session_select(&(*dst).observer.upgrade().expect("live session"), (*wl_dst).idx);
+        session_select(&(*dst).observer.upgrade().expect("live session"), wl_dst.get_unchecked().idx);
         if src != dst {
-            session_select(&(*src).observer.upgrade().expect("live session"), (*wl_src).idx);
+            session_select(&(*src).observer.upgrade().expect("live session"), wl_src.get_unchecked().idx);
         }
     }
     session_group_synchronize_from(&(*src).observer.upgrade().expect("live session"));

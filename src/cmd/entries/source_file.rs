@@ -238,9 +238,9 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     }
     CString::new(quoted).expect("C string path has no interior NUL")
 }
-unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_source_file_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
@@ -297,7 +297,7 @@ unsafe fn cmd_source_file_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
         cdata.flags |= CMD_PARSE_PARSEONLY;
     }
     if c.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        parse_flags = cmd_get_parse_flags(self_0);
+        parse_flags = cmd_get_parse_flags(self_0.clone());
         if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
             cdata.flags |= CMD_PARSE_VERBOSE;
         }

@@ -66,9 +66,9 @@ pub static cmd_suspend_client_entry: cmd_entry = {
         exec: Some(cmd_detach_client_exec),
     }
 };
-unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_detach_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -78,7 +78,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut msgtype: msgtype = 0 as msgtype;
     let mut cmd: *const ::core::ffi::c_char = args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_suspend_client_entry) {
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_suspend_client_entry) {
         server_client_suspend(&(*(tc)).observer.upgrade().expect("live client"));
         return CMD_RETURN_NORMAL;
     }

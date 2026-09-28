@@ -165,22 +165,22 @@ pub static window_buffer_mode: window_mode = {
         init: Some(
             window_buffer_init
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_buffer_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(window_buffer_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
-        update: Some(window_buffer_update as unsafe fn(*mut window_mode_entry) -> ()),
+        free: Some(window_buffer_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        resize: Some(window_buffer_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> ()),
+        update: Some(window_buffer_update as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         style_changed: None,
         key: Some(
             window_buffer_key
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     &std::rc::Rc<std::cell::UnsafeCell<client>>,
-                    *mut winlink,
+                    refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
                 ) -> (),
@@ -220,7 +220,7 @@ unsafe fn window_buffer_build(
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     window_buffer_clear_items(&mut (*data).item_list);
     let buffers = sort_get_buffers(&*sort_crit);
@@ -236,7 +236,7 @@ unsafe fn window_buffer_build(
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {
         s = (*data).fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        wl = (*data).fs.wl_ptr();
+        wl = (*data).fs.winlink_handle();
         wp = (*data).fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     let mut current_block_32: u64;
@@ -245,18 +245,18 @@ unsafe fn window_buffer_build(
         let item_handle = (&(*data).item_list)[i as usize].downgrade();
         let item = ModeTreeItemData::Buffer(item_handle.clone()).as_buffer().unwrap();
         if let Some(pb) = paste_get_name(&item.name) {
-            ft = format_create(
+            let mut ft_owner = format_create(
                 None,
                 None,
                 FORMAT_NONE,
                 0 as ::core::ffi::c_int,
             );
-            format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            ft = &raw mut *ft_owner;
+            format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             format_defaults_paste_buffer(&mut *ft, &pb);
             if !filter.is_null() {
                 let cp = format_expand_cstring(ft, filter);
                 if format_true(cp.as_ptr()) == 0 {
-                    format_free(Box::from_raw(ft));
                     current_block_32 = 5948590327928692120;
                 } else {
                     current_block_32 = 1608152415753874203;
@@ -277,9 +277,9 @@ unsafe fn window_buffer_build(
                         Some(&text),
                         -(1 as ::core::ffi::c_int),
                     );
-                    format_free(Box::from_raw(ft));
                 }
             }
+            format_free(ft_owner);
         }
         i = i.wrapping_add(1);
     }
@@ -364,15 +364,15 @@ unsafe fn window_buffer_menu(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.active_ptr();
-    if wme.is_null() || (*wme).boxed_data_ptr::<window_buffer_modedata>() != Some(data) {
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+    wme = (*wp).modes.active_weak();
+    if !wme.is_alive() || wme.get_unchecked().boxed_data_ptr::<window_buffer_modedata>() != Some(data) {
         return;
     }
     window_buffer_key(
-        wme,
+        wme.clone(),
         c,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         key,
         ::core::ptr::null_mut::<mouse_event>(),
     );
@@ -384,31 +384,32 @@ unsafe fn window_buffer_get_key(
 ) -> key_code {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut key: key_code = 0;
     if cmd_find_valid_state(&(*data).fs) != 0 {
         s = (*data).fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        wl = (*data).fs.wl_ptr();
+        wl = (*data).fs.winlink_handle();
         wp = (*data).fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     let Some(pb) = paste_get_name(&item.name) else {
         return KEYC_NONE;
     };
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         None,
         None,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
-    format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     format_defaults_paste_buffer(&mut *ft, &pb);
     format_add(
         ft,
@@ -417,7 +418,7 @@ unsafe fn window_buffer_get_key(
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return key;
 }
 fn window_buffer_sort(sort_crit: &mut sort_criteria) {
@@ -446,19 +447,19 @@ fn window_buffer_help() -> mode_tree_help_info {
         lines: window_buffer_help_lines,
     }
 }
-unsafe fn window_buffer_data(wme: *mut window_mode_entry) -> *mut window_buffer_modedata {
-    (*wme)
+unsafe fn window_buffer_data(wme: refbox::Weak<window_mode_entry>) -> *mut window_buffer_modedata {
+    wme.get_unchecked()
         .boxed_data_ptr::<window_buffer_modedata>()
         .expect("buffer mode payload")
 }
 
 unsafe fn window_buffer_init(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
@@ -489,7 +490,7 @@ unsafe fn window_buffer_init(
         item_list: Vec::new(),
     }));
     data = owner.get();
-    (*wme).boxed_data = Some(owner);
+    wme.get_mut_unchecked().boxed_data = Some(owner);
     let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
     cmd_find_copy_state(&raw mut (*data).fs, fs);
     (*data).data = Some(mode_tree_start(
@@ -531,8 +532,8 @@ unsafe fn window_buffer_init(
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     return s;
 }
-unsafe fn window_buffer_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let Some(data) = (*wme).boxed_data_ptr::<window_buffer_modedata>() else {
+unsafe fn window_buffer_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+    let Some(data) = wme.get_unchecked().boxed_data_ptr::<window_buffer_modedata>() else {
         return std::ptr::null_mut();
     };
     (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
@@ -540,8 +541,8 @@ unsafe fn window_buffer_get_screen(wme: *mut window_mode_entry) -> *mut screen {
     })
 }
 
-unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
-    let Some(data) = (*wme).boxed_data_ptr::<window_buffer_modedata>() else {
+unsafe fn window_buffer_free(mut wme: refbox::Weak<window_mode_entry>) {
+    let Some(data) = wme.get_unchecked().boxed_data_ptr::<window_buffer_modedata>() else {
         return;
     };
     if let Some(editor) = (*data).editor.as_ref() {
@@ -549,14 +550,14 @@ unsafe fn window_buffer_free(mut wme: *mut window_mode_entry) {
     }
     mode_tree_free((*data).data.take().expect("mode tree owner"));
     window_buffer_clear_items(&mut (*data).item_list);
-    drop((*wme).boxed_data.take());
+    drop(wme.get_mut_unchecked().boxed_data.take());
 }
-unsafe fn window_buffer_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_buffer_modedata = window_buffer_data(wme);
+unsafe fn window_buffer_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
+    let mut data: *mut window_buffer_modedata = window_buffer_data(wme.clone());
     mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
-unsafe fn window_buffer_update(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_buffer_modedata = window_buffer_data(wme);
+unsafe fn window_buffer_update(mut wme: refbox::Weak<window_mode_entry>) {
+    let mut data: *mut window_buffer_modedata = window_buffer_data(wme.clone());
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -706,13 +707,13 @@ unsafe fn window_buffer_edit_close_cb(
 ) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        wme = (*wp).modes.active_ptr();
-        if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
-            data = window_buffer_data(wme);
+        wme = (*wp).modes.active_weak();
+        if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_buffer_mode) {
+            data = window_buffer_data(wme.clone());
             if (*data).editor.as_ref().is_some_and(|handle| handle.matches(editor.as_ref())) {
                 (*data).editor = None;
             }
@@ -748,9 +749,9 @@ unsafe fn window_buffer_edit_close_cb(
     let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
-        wme = (*wp).modes.active_ptr();
-        if !wme.is_null() && std::ptr::eq((*wme).mode, &window_buffer_mode) {
-            data = window_buffer_data(wme);
+        wme = (*wp).modes.active_weak();
+        if !!wme.is_alive() && std::ptr::eq(wme.get_unchecked().mode, &window_buffer_mode) {
+            data = window_buffer_data(wme.clone());
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
             mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             window_buffer_draw_waiting(data);
@@ -791,17 +792,17 @@ unsafe fn window_buffer_start_edit(
     (*data).editor = editor;
 }
 unsafe fn window_buffer_key(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    _wl: *mut winlink,
+    _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
     let c = client_owner.get();
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_buffer_modedata = window_buffer_data(wme);
+    let mut data: *mut window_buffer_modedata = window_buffer_data(wme.clone());
     let tree_owner = (*data).tree_owner();
     let mut finished: ::core::ffi::c_int = 0;
     if paste_is_empty() != 0 {

@@ -74,11 +74,11 @@ fn cmd_if_shell_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_if_shell_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client((item).as_ref());
@@ -92,9 +92,9 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std:
         let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
             && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
         {
-            args_make_commands_now(self_0, item_handle, 1 as u_int, 0 as ::core::ffi::c_int)
+            args_make_commands_now(self_0.clone(), item_handle, 1 as u_int, 0 as ::core::ffi::c_int)
         } else if count == 3 as u_int {
-            args_make_commands_now(self_0, item_handle, 2 as u_int, 0 as ::core::ffi::c_int)
+            args_make_commands_now(self_0.clone(), item_handle, 2 as u_int, 0 as ::core::ffi::c_int)
         } else {
             return CMD_RETURN_NORMAL;
         };
@@ -114,7 +114,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std:
         wait: wait != 0,
     });
     cdata.cmd_if = Some(args_make_commands_prepare(
-        self_0,
+        self_0.clone(),
         item_handle,
         1 as u_int,
         ::core::ptr::null::<::core::ffi::c_char>(),
@@ -123,7 +123,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std:
     ));
     if count == 3 as u_int {
         cdata.cmd_else = Some(args_make_commands_prepare(
-            self_0,
+            self_0.clone(),
             item_handle,
             2 as u_int,
             ::core::ptr::null::<::core::ffi::c_char>(),

@@ -64,16 +64,16 @@ pub static cmd_display_message_entry: cmd_entry = {
         exec: Some(cmd_display_message_exec),
     }
 };
-unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_display_message_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
@@ -144,8 +144,9 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, item_handle: &std::rc::
     } else {
         flags = 0 as ::core::ffi::c_int;
     }
-    ft = format_create_with_client(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
-    format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    let mut ft_owner = format_create_with_client(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
+    ft = &raw mut *ft_owner;
+    format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
             cmdq_print(item_handle, |out| {
@@ -154,7 +155,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, item_handle: &std::rc::
                 write_cstr(out, value.as_ptr())
             });
         });
-        format_free(Box::from_raw(ft));
+        format_free(ft_owner);
         return CMD_RETURN_NORMAL;
     }
     let mut msg = if args_has(args, 'l' as i32 as u_char) != 0 {
@@ -173,7 +174,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, item_handle: &std::rc::
                 )
             });
             drop(msg);
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
             return CMD_RETURN_ERROR;
         };
         msg = json_to_string(&jn);
@@ -195,6 +196,6 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, item_handle: &std::rc::
         });
     }
     drop(msg);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return CMD_RETURN_NORMAL;
 }

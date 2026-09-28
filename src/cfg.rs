@@ -310,7 +310,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell
     let mut registry_c_owner = clients.first();
     let mut c: *mut client = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if CFG_CAUSES.lock().unwrap().is_empty() {
         return;
     }
@@ -333,10 +333,10 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell
         if s.is_null() || (*s).attached == 0 as u_int {
             return;
         }
-        wp = (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-        wme = (*wp).modes.active_ptr();
-        if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
+        wme = (*wp).modes.active_weak();
+        if !wme.is_alive() || !std::ptr::eq(wme.get_unchecked().mode, &window_view_mode) {
             window_pane_set_mode(
                 &pane_owner,
                 None,

@@ -23,26 +23,26 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
             .unwrap()
             .downgrade();
 
-        winlink_stack_push(&raw mut stack, first);
-        winlink_stack_push(&raw mut stack, second);
+        winlink_stack_push(&raw mut stack, (first).clone());
+        winlink_stack_push(&raw mut stack, (second).clone());
         assert_eq!(winlink_stack_indices(&stack), [2, 1]);
         assert_eq!(winlink_stack_first(&stack), second);
-        assert_eq!(winlink_stack_next(&stack, second), first);
+        assert_eq!(winlink_stack_next(&stack, (second).clone()), first);
 
-        winlink_stack_remove(&raw mut stack, second);
-        winlink_remove(&raw mut links, second);
+        winlink_stack_remove(&raw mut stack, (second).clone());
+        winlink_remove(&raw mut links, (second).clone());
         assert_eq!(
             old_second.try_borrow_mut().err(),
             Some(BorrowError::Dropped)
         );
         assert_eq!(winlink_stack_first(&stack), first);
 
-        winlinks_reindex(&raw mut links, first, 3);
+        winlinks_reindex(&raw mut links, (first).clone(), 3);
         assert_eq!(winlink_stack_indices(&stack), [3]);
         assert_eq!(winlink_stack_first(&stack), first);
 
-        winlink_stack_remove(&raw mut stack, first);
-        winlink_remove(&raw mut links, first);
+        winlink_stack_remove(&raw mut stack, (first).clone());
+        winlink_remove(&raw mut links, (first).clone());
         winlink_stack_clear(&mut stack);
         assert!(links.storage.is_none());
     }
@@ -54,11 +54,11 @@ fn history_entry_is_removed_before_its_owner() {
         let mut links = winlinks { storage: None };
         let mut stack = winlink_stack { storage: None };
         let link = winlink_add(&raw mut links, 7);
-        winlink_stack_push(&raw mut stack, link);
-        winlink_stack_remove(&raw mut stack, link);
-        winlink_remove(&raw mut links, link);
+        winlink_stack_push(&raw mut stack, link.clone());
+        winlink_stack_remove(&raw mut stack, link.clone());
+        winlink_remove(&raw mut links, link.clone());
 
-        assert!(winlink_stack_first(&stack).is_null());
+        assert!(!winlink_stack_first(&stack).is_alive());
         assert!(winlink_stack_indices(&stack).is_empty());
         winlink_stack_clear(&mut stack);
     }
@@ -79,7 +79,7 @@ fn boxed_session_drops_its_winlink_owner() {
             .get(&9)
             .unwrap()
             .downgrade();
-        winlink_stack_push(&raw mut owner.lastw, link);
+        winlink_stack_push(&raw mut owner.lastw, link.clone());
         winlink_stack_clear(&mut owner.lastw);
         drop(owner);
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
@@ -93,7 +93,7 @@ fn expired_history_observer_is_an_invariant_violation() {
         let mut links = winlinks { storage: None };
         let mut stack = winlink_stack { storage: None };
         let link = winlink_add(&raw mut links, 1);
-        winlink_stack_push(&raw mut stack, link);
+        winlink_stack_push(&raw mut stack, link.clone());
         // Deliberately violate teardown order without dereferencing the dead pointer.
         drop(links);
         winlink_stack_indices(&stack);

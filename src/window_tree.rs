@@ -215,22 +215,22 @@ pub static window_tree_mode: window_mode = {
         init: Some(
             window_tree_init
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_tree_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(window_tree_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
-        update: Some(window_tree_update as unsafe fn(*mut window_mode_entry) -> ()),
+        free: Some(window_tree_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        resize: Some(window_tree_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> ()),
+        update: Some(window_tree_update as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
         style_changed: None,
         key: Some(
             window_tree_key
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     &std::rc::Rc<std::cell::UnsafeCell<client>>,
-                    *mut winlink,
+                    refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
                 ) -> (),
@@ -309,11 +309,11 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
     };
     let s = session.get();
     let wl = if item.type_0 == WINDOW_TREE_SESSION {
-        (*s).curw_ptr()
+        (*s).current_winlink()
     } else {
         winlink_find_by_index(&raw mut (*s).windows, item.winlink)
     };
-    let Some(link) = wl.as_ref() else { return WindowTreeTarget::default(); };
+    let Ok(link) = wl.try_borrow_mut() else { return WindowTreeTarget::default(); };
     let pane = if item.type_0 == WINDOW_TREE_SESSION || item.type_0 == WINDOW_TREE_WINDOW {
         (*link.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active.upgrade()
     } else {
@@ -346,7 +346,7 @@ fn window_tree_remove_last_item(
 }
 unsafe fn window_tree_build_pane(
     session_owner: &Rc<UnsafeCell<session>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     pane_owner: &Rc<UnsafeCell<window_pane>>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     parent: &ModeTreeItemRef,
@@ -362,20 +362,21 @@ unsafe fn window_tree_build_pane(
         window_tree_itemdata {
             type_0: WINDOW_TREE_PANE,
             session: (*s).id as ::core::ffi::c_int,
-            winlink: (*wl).idx,
+            winlink: wl.get_unchecked().idx,
             pane: (*wp).id as ::core::ffi::c_int,
         },
     );
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    ft = &raw mut *ft_owner;
+    format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     let text = format_expand_cstring(ft, (*data).format.as_ptr());
     let name = CString::new(idx.to_string()).expect("pane index contains NUL");
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     let mti = mode_tree_add(
         &mut *(*data).tree_owner().get(),
         Some(parent),
@@ -389,7 +390,7 @@ unsafe fn window_tree_build_pane(
 }
 unsafe fn window_tree_filter_pane(
     session_owner: &Rc<UnsafeCell<session>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     pane_owner: &Rc<UnsafeCell<window_pane>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
@@ -402,7 +403,7 @@ unsafe fn window_tree_filter_pane(
         filter,
         None,
         (session_owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        wl,
+        wl.clone(),
         (pane_owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
     );
     result = format_true(cp.as_ptr());
@@ -410,7 +411,7 @@ unsafe fn window_tree_filter_pane(
 }
 unsafe fn window_tree_build_window(
     session_owner: &Rc<UnsafeCell<session>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
     parent: &ModeTreeItemRef,
@@ -432,29 +433,30 @@ unsafe fn window_tree_build_window(
         window_tree_itemdata {
             type_0: WINDOW_TREE_WINDOW,
             session: (*s).id as ::core::ffi::c_int,
-            winlink: (*wl).idx,
+            winlink: wl.get_unchecked().idx,
             pane: -(1 as ::core::ffi::c_int),
         },
     );
-    if !(*wl).window_handle().is_none() && !(*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().is_none() {
-        tag = (FORMAT_PANE | (*(*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as uint64_t;
+    if !wl.get_unchecked().window_handle().is_none() && !(*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().is_none() {
+        tag = (FORMAT_PANE | (*(*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as uint64_t;
     }
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         tag as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         None,
         (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        wl,
+        wl.clone(),
         None,
     );
     let text = format_expand_cstring(ft, (*data).format.as_ptr());
-    let name = CString::new(((*wl).idx as u_int).to_string()).expect("window index contains NUL");
-    format_free(Box::from_raw(ft));
+    let name = CString::new((wl.get_unchecked().idx as u_int).to_string()).expect("window index contains NUL");
+    format_free(ft_owner);
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
         || (*data).type_0 as ::core::ffi::c_uint
@@ -468,21 +470,21 @@ unsafe fn window_tree_build_window(
         &mut *(*data).tree_owner().get(),
         Some(parent),
         ModeTreeItemData::Tree(item_owner.clone()),
-        wl as uint64_t,
+        wl.as_ptr() as uint64_t,
         &name,
         Some(&text),
         expanded,
     );
     mode_tree_align(&mti);
-    let l = sort_get_panes_window(&*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*sort_crit);
+    let l = sort_get_panes_window(&*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*sort_crit);
     let n = u_int::try_from(l.len()).expect("too many panes in window tree");
     found = 0 as u_int;
     i = 0 as u_int;
     while i < n {
-        if !(window_tree_filter_pane(session_owner, wl, &l[i as usize], filter) == 0) {
+        if !(window_tree_filter_pane(session_owner, wl.clone(), &l[i as usize], filter) == 0) {
             found = found.wrapping_add(1);
             if !((*data).hide_preview_this_pane != 0 && l[i as usize].get() == mode_pane) {
-                window_tree_build_pane(session_owner, wl, &l[i as usize], mode_owner, &mti);
+                window_tree_build_pane(session_owner, wl.clone(), &l[i as usize], mode_owner, &mti);
             }
         }
         i = i.wrapping_add(1);
@@ -504,7 +506,7 @@ unsafe fn window_tree_build_session(
 ) {
     let s = session_owner.get();
     let data = mode_owner.get();
-    let mut wl: *mut winlink = (*s).curw_ptr();
+    let mut wl: refbox::Weak<winlink> = (*s).current_winlink();
     let mut i: u_int = 0;
     let mut empty: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
@@ -519,24 +521,25 @@ unsafe fn window_tree_build_session(
             pane: -(1 as ::core::ffi::c_int),
         },
     );
-    if !wl.is_null() && !(*wl).window_handle().is_none() && !(*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().is_none() {
-        tag = (FORMAT_PANE | (*(*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as uint64_t;
+    if wl.is_alive() && !wl.get_unchecked().window_handle().is_none() && !(*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().is_none() {
+        tag = (FORMAT_PANE | (*(*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as uint64_t;
     }
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         tag as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         None,
         (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
     let text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     if (*data).type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -558,7 +561,7 @@ unsafe fn window_tree_build_session(
     empty = 0 as u_int;
     i = 0 as u_int;
     while i < n {
-        if window_tree_build_window(session_owner, l[i as usize], mode_owner, sort_crit, &mti, filter) == 0 {
+        if window_tree_build_window(session_owner, (l[i as usize]).clone(), mode_owner, sort_crit, &mti, filter) == 0 {
             empty = empty.wrapping_add(1);
         }
         i = i.wrapping_add(1);
@@ -634,13 +637,13 @@ unsafe fn window_tree_build(
             }
         }
         2 => {
-            if !(*data).fs.session_handle().is_none() && !(*data).fs.wl_ptr().is_null() {
-                *tag = (*data).fs.wl_ptr() as uint64_t;
+            if !(*data).fs.session_handle().is_none() && (*data).fs.winlink_handle().is_alive() {
+                *tag = (*data).fs.winlink_handle().as_ptr() as uint64_t;
             }
         }
         3 => {
-            if window_count_panes(&*(*(*data).fs.wl_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), 1 as ::core::ffi::c_int) == 1 as u_int {
-                *tag = (*data).fs.wl_ptr() as uint64_t;
+            if window_count_panes(&*((*data).fs.winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), 1 as ::core::ffi::c_int) == 1 as u_int {
+                *tag = (*data).fs.winlink_handle().as_ptr() as uint64_t;
             } else {
                 *tag = (*data).fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) as uint64_t;
             }
@@ -758,7 +761,7 @@ unsafe fn window_tree_draw_session(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
     let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
@@ -817,12 +820,12 @@ unsafe fn window_tree_draw_session(
     }
     current = 0 as u_int;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-    while !wl.is_null() {
-        if wl == (*s).curw_ptr() {
+    while wl.is_alive() {
+        if wl == (*s).current_winlink() {
             break;
         }
         current = current.wrapping_add(1);
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
     if current < visible {
         start = 0 as u_int;
@@ -915,26 +918,27 @@ unsafe fn window_tree_draw_session(
     loop_0 = 0 as u_int;
     i = loop_0;
     wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-    while !wl.is_null() {
+    while wl.is_alive() {
         if loop_0 == end {
             break;
         }
         if loop_0 < start {
             loop_0 = loop_0.wrapping_add(1);
         } else {
-            w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             oo = options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options);
-            ft = format_create(
+            let mut ft_owner = format_create(
                 None,
                 None,
                 (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
+            ft = &raw mut *ft_owner;
             format_defaults(
                 ft,
                 None,
                 (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                wl,
+                wl.clone(),
                 None,
             );
             window_tree_border_cell(&raw mut gc, oo, ft);
@@ -986,7 +990,7 @@ unsafe fn window_tree_draw_session(
                     );
                 }
             }
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
             if loop_0 != end.wrapping_sub(1 as u_int) {
                 screen_write_cursormove(
                     &mut *ctx,
@@ -999,13 +1003,13 @@ unsafe fn window_tree_draw_session(
             loop_0 = loop_0.wrapping_add(1);
             i = i.wrapping_add(1);
         }
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
 }
 unsafe fn window_tree_draw_window(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     session_owner: &Rc<UnsafeCell<session>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
@@ -1016,7 +1020,7 @@ unsafe fn window_tree_draw_window(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
     let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
@@ -1190,13 +1194,14 @@ unsafe fn window_tree_draw_window(
                 loop_0 = loop_0.wrapping_add(1);
             } else {
                 oo = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
-                ft = format_create(
+                let mut ft_owner = format_create(
                     None,
                     None,
                     (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                ft = &raw mut *ft_owner;
+                format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
                 window_tree_border_cell(&raw mut gc, oo, ft);
                 memcpy(
                     &raw mut label_gc as *mut ::core::ffi::c_void,
@@ -1246,7 +1251,7 @@ unsafe fn window_tree_draw_window(
                         );
                     }
                 }
-                format_free(Box::from_raw(ft));
+                format_free(ft_owner);
                 if loop_0 != end.wrapping_sub(1 as u_int) {
                     screen_write_cursormove(
                         &mut *ctx,
@@ -1277,7 +1282,7 @@ unsafe fn window_tree_draw_info(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = (*ctx).screen_ptr();
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1305,7 +1310,7 @@ unsafe fn window_tree_draw_info(
     let mut n: u_int = 0 as u_int;
     let _target_owners_1 = window_tree_pull_item(item);
     sp = _target_owners_1.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = if _target_owners_1.winlink.is_alive() { _target_owners_1.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+    wl = _target_owners_1.winlink.clone();
     wp = _target_owners_1.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if sp.is_null() || wp.is_null() {
         return;
@@ -1341,13 +1346,14 @@ unsafe fn window_tree_draw_info(
     count[fresh2 as usize] = (::core::mem::size_of::<[*const ::core::ffi::c_char; 9]>() as usize)
         .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
         as u_int;
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    format_defaults(ft, None, (sp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    ft = &raw mut *ft_owner;
+    format_defaults(ft, None, (sp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     i = 0 as u_int;
     j = 0 as u_int;
     while j < n {
@@ -1428,7 +1434,7 @@ unsafe fn window_tree_draw_info(
         );
         screen_write_vline(&mut *ctx, sy.wrapping_sub(i), Some(&gc));
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 unsafe fn window_tree_draw(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
@@ -1443,11 +1449,11 @@ unsafe fn window_tree_draw(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut sp: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let target_owners = window_tree_pull_item(item);
     sp = target_owners.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = if target_owners.winlink.is_alive() { target_owners.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+    wl = target_owners.winlink.clone();
     wp = target_owners.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         return;
@@ -1461,7 +1467,7 @@ unsafe fn window_tree_draw(
             window_tree_draw_session(mode_owner, target_owners.session.as_ref().expect("resolved preview session"), ctx, sx, sy);
         }
         2 => {
-            window_tree_draw_window(mode_owner, target_owners.session.as_ref().expect("resolved preview session"), wl, ctx, sx, sy);
+            window_tree_draw_window(mode_owner, target_owners.session.as_ref().expect("resolved preview session"), wl.clone(), ctx, sx, sy);
         }
         3 => {
             if (*data).hide_preview_this_pane == 0 || wp != mode_pane {
@@ -1478,12 +1484,12 @@ unsafe fn window_tree_search(
 ) -> ::core::ffi::c_int {
     let ss = search.as_ptr();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut retval: ::core::ffi::c_int = 0;
     let _target_owners_3 = window_tree_pull_item(item);
     s = _target_owners_3.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = if _target_owners_3.winlink.is_alive() { _target_owners_3.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+    wl = _target_owners_3.winlink.clone();
     wp = _target_owners_3.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     match item.type_0 as ::core::ffi::c_uint {
         0 => return 0 as ::core::ffi::c_int,
@@ -1500,19 +1506,19 @@ unsafe fn window_tree_search(
                 as ::core::ffi::c_int;
         }
         2 => {
-            if s.is_null() || wl.is_null() {
+            if s.is_null() || !wl.is_alive() {
                 return 0 as ::core::ffi::c_int;
             }
             if icase != 0 {
-                return (strcasestr((*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr().cast_mut(), ss)
+                return (strcasestr((*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr().cast_mut(), ss)
                     != NULL as *mut ::core::ffi::c_char)
                     as ::core::ffi::c_int;
             }
-            return (strstr((*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr().cast_mut(), ss)
+            return (strstr((*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr().cast_mut(), ss)
                 != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
         }
         3 => {
-            if !(s.is_null() || wl.is_null() || wp.is_null()) {
+            if !(s.is_null() || !wl.is_alive() || wp.is_null()) {
                 let Some(cmd) = osdep_get_name_cstring((*wp).fd) else {
                     return 0 as ::core::ffi::c_int;
                 };
@@ -1541,15 +1547,15 @@ unsafe fn window_tree_menu(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    wme = (*wp).modes.active_ptr();
-    if wme.is_null() || (*wme).shared_data_ptr::<window_tree_modedata>() != Some(data) {
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+    wme = (*wp).modes.active_weak();
+    if !wme.is_alive() || wme.get_unchecked().shared_data_ptr::<window_tree_modedata>() != Some(data) {
         return;
     }
     window_tree_key(
-        wme,
+        wme.clone(),
         c,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         key,
         ::core::ptr::null_mut::<mouse_event>(),
     );
@@ -1562,18 +1568,19 @@ unsafe fn window_tree_get_key(
     let data = mode_owner.get();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut key: key_code = 0;
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     let _target_owners_4 = window_tree_pull_item(item);
     s = _target_owners_4.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = if _target_owners_4.winlink.is_alive() { _target_owners_4.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+    wl = _target_owners_4.winlink.clone();
     wp = _target_owners_4.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1582,7 +1589,7 @@ unsafe fn window_tree_get_key(
             ft,
             None,
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            ::core::ptr::null_mut::<winlink>(),
+            (refbox::Weak::new()).clone(),
             None,
         );
     } else if item.type_0 as ::core::ffi::c_uint
@@ -1592,11 +1599,11 @@ unsafe fn window_tree_get_key(
             ft,
             None,
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            wl,
+            wl.clone(),
             None,
         );
     } else {
-        format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(ft, None, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
     format_add(
         ft,
@@ -1605,7 +1612,7 @@ unsafe fn window_tree_get_key(
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return key;
 }
 unsafe fn window_tree_swap(
@@ -1615,8 +1622,8 @@ unsafe fn window_tree_swap(
 ) -> ::core::ffi::c_int {
     let mut cur_session: *mut session = ::core::ptr::null_mut::<session>();
     let mut other_session: *mut session = ::core::ptr::null_mut::<session>();
-    let mut cur_winlink: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut other_winlink: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut cur_winlink: refbox::Weak<winlink> = refbox::Weak::new();
+    let mut other_winlink: refbox::Weak<winlink> = refbox::Weak::new();
     let mut cur_window: *mut window = ::core::ptr::null_mut::<window>();
     let mut other_window: *mut window = ::core::ptr::null_mut::<window>();
     let mut cur_pane: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1631,37 +1638,37 @@ unsafe fn window_tree_swap(
     }
     let _target_owners_5 = window_tree_pull_item(cur);
     cur_session = _target_owners_5.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    cur_winlink = if _target_owners_5.winlink.is_alive() { _target_owners_5.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+    cur_winlink = _target_owners_5.winlink.clone();
     cur_pane = _target_owners_5.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let _target_owners_6 = window_tree_pull_item(other);
     other_session = _target_owners_6.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    other_winlink = if _target_owners_6.winlink.is_alive() { _target_owners_6.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+    other_winlink = _target_owners_6.winlink.clone();
     other_pane = _target_owners_6.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if cur_session.is_null() || cur_winlink.is_null() {
+    if cur_session.is_null() || !cur_winlink.is_alive() {
         return 0 as ::core::ffi::c_int;
     }
-    if other_session.is_null() || other_winlink.is_null() {
+    if other_session.is_null() || !other_winlink.is_alive() {
         return 0 as ::core::ffi::c_int;
     }
     if cur_session != other_session {
         return 0 as ::core::ffi::c_int;
     }
-    if sort_would_window_tree_swap(sort_crit, cur_winlink, other_winlink) != 0 {
+    if sort_would_window_tree_swap(sort_crit, (cur_winlink).clone(), (other_winlink).clone()) != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    other_window = (*other_winlink).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    cur_window = (*cur_winlink).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    window_winlinks_remove(&mut *(other_window), other_winlink);
-    window_winlinks_remove(&mut *(cur_window), cur_winlink);
+    other_window = other_winlink.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    cur_window = cur_winlink.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    window_winlinks_remove(&mut *(other_window), (other_winlink).clone());
+    window_winlinks_remove(&mut *(cur_window), (cur_winlink).clone());
     if other_winlink != cur_winlink {
-        std::mem::swap(&mut (*other_winlink).window_owner, &mut (*cur_winlink).window_owner);
+        std::mem::swap(&mut other_winlink.get_mut_unchecked().window_owner, &mut cur_winlink.get_mut_unchecked().window_owner);
     }
-    window_winlinks_append(&mut *(cur_window), other_winlink);
-    window_winlinks_append(&mut *(other_window), cur_winlink);
-    if (*cur_session).curw_ptr() == cur_winlink {
-        session_set_current(&(*cur_session).observer.upgrade().expect("live session"), other_winlink);
-    } else if (*cur_session).curw_ptr() == other_winlink {
-        session_set_current(&(*cur_session).observer.upgrade().expect("live session"), cur_winlink);
+    window_winlinks_append(&mut *(cur_window), (other_winlink).clone());
+    window_winlinks_append(&mut *(other_window), (cur_winlink).clone());
+    if (*cur_session).current_winlink() == cur_winlink {
+        session_set_current(&(*cur_session).observer.upgrade().expect("live session"), (other_winlink).clone());
+    } else if (*cur_session).current_winlink() == other_winlink {
+        session_set_current(&(*cur_session).observer.upgrade().expect("live session"), (cur_winlink).clone());
     }
     session_group_synchronize_from(&(*cur_session).observer.upgrade().expect("live session"));
     server_redraw_session_group(&*(cur_session));
@@ -1701,12 +1708,12 @@ fn window_tree_help() -> mode_tree_help_info {
     }
 }
 unsafe fn window_tree_init(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
@@ -1750,7 +1757,7 @@ unsafe fn window_tree_init(
         each: 0,
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
-    (*wme).data_owner = Some(owner);
+    wme.get_mut_unchecked().data_owner = Some(owner);
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
     if args_has(args, 's' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_TREE_SESSION;
@@ -1821,8 +1828,8 @@ unsafe fn window_tree_init(
     (*data).type_0 = WINDOW_TREE_NONE;
     return s;
 }
-unsafe fn window_tree_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let Some(data) = (*wme).shared_data_ptr::<window_tree_modedata>() else {
+unsafe fn window_tree_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+    let Some(data) = wme.get_unchecked().shared_data_ptr::<window_tree_modedata>() else {
         return std::ptr::null_mut();
     };
     (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
@@ -1830,25 +1837,25 @@ unsafe fn window_tree_get_screen(wme: *mut window_mode_entry) -> *mut screen {
     })
 }
 
-unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
-    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {
+unsafe fn window_tree_free(mut wme: refbox::Weak<window_mode_entry>) {
+    let Some(mode_owner) = wme.get_unchecked().retained_data::<UnsafeCell<window_tree_modedata>>() else {
         return;
     };
     let data = mode_owner.get();
     (*data).dead = 1 as ::core::ffi::c_int;
     mode_tree_free((*data).data.take().expect("mode tree owner"));
-    drop((*wme).data_owner.take());
+    drop(wme.get_mut_unchecked().data_owner.take());
 }
-unsafe fn window_tree_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {
+unsafe fn window_tree_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
+    let Some(mode_owner) = wme.get_unchecked().retained_data::<UnsafeCell<window_tree_modedata>>() else {
         return;
     };
     let data = mode_owner.get();
     if (*data).dead != 0 { return; }
     mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
-unsafe fn window_tree_update(mut wme: *mut window_mode_entry) {
-    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {
+unsafe fn window_tree_update(mut wme: refbox::Weak<window_mode_entry>) {
+    let Some(mode_owner) = wme.get_unchecked().retained_data::<UnsafeCell<window_tree_modedata>>() else {
         return;
     };
     let data = mode_owner.get();
@@ -1897,7 +1904,7 @@ unsafe fn window_tree_get_target(
     } else {
         cmd_find_from_winlink_pane(
             fs,
-            resolved.winlink.as_ptr().cast_mut(),
+            (resolved.winlink.clone()).clone(),
             &(*(resolved.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"),
             0,
         );
@@ -2162,15 +2169,15 @@ unsafe fn window_tree_mouse(
         }
         let mut loop_0 = 0 as u_int;
         let mut wl = winlinks_minmax(&(*session_owner.get()).windows, RB_NEGINF);
-        while !wl.is_null() {
+        while wl.is_alive() {
             if loop_0 == (*data).start.wrapping_add(x) {
                 break;
             }
             loop_0 = loop_0.wrapping_add(1);
-            wl = winlinks_next(&*wl);
+            wl = winlinks_next(wl.get_unchecked());
         }
-        if !wl.is_null() {
-            mode_tree_set_current(&mut *(*data).tree_owner().get(), wl as uint64_t);
+        if wl.is_alive() {
+            mode_tree_set_current(&mut *(*data).tree_owner().get(), wl.as_ptr() as uint64_t);
         }
         return '\r' as i32 as key_code;
     }
@@ -2184,8 +2191,8 @@ unsafe fn window_tree_mouse(
         if (*data).dead != 0 || !target.winlink.is_alive() {
             return KEYC_NONE;
         }
-        let wl = target.winlink.as_ptr();
-        let mut pane = window_pane_first(((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+        let wl = target.winlink.clone();
+        let mut pane = window_pane_first((wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
         for _ in 0..(*data).start.wrapping_add(x) {
             pane = pane.as_ref().and_then(|owner| window_pane_next((owner.get()).as_ref()));
             if pane.is_none() {
@@ -2200,17 +2207,17 @@ unsafe fn window_tree_mouse(
     return KEYC_NONE as ::core::ffi::c_ulong as key_code;
 }
 unsafe fn window_tree_key(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    _wl: *mut winlink,
+    _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
     let c = client_owner.get();
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mode_owner = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>()
+    let mode_owner = wme.get_unchecked().retained_data::<UnsafeCell<window_tree_modedata>>()
         .expect("live mode payload");
     let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
@@ -2228,7 +2235,7 @@ unsafe fn window_tree_key(
     let mut y: u_int = 0;
     let mut idx: u_int = 0;
     let mut ns: *mut session = ::core::ptr::null_mut::<session>();
-    let mut nwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut nwl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut selection = mode_tree_get_current(&*(*data).tree_owner().get());
     finished = mode_tree_key((*data).data.as_ref().expect("mode tree owner").clone(), Some(client_owner), &raw mut key, m, &raw mut x, &raw mut y);
@@ -2272,18 +2279,18 @@ unsafe fn window_tree_key(
         }
         72 => {
             mode_tree_expand((*data).data.clone().as_ref().expect("mode tree owner"), (*fsp).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) as uint64_t);
-            mode_tree_expand((*data).data.clone().as_ref().expect("mode tree owner"), (*fsp).wl_ptr() as uint64_t);
+            mode_tree_expand((*data).data.clone().as_ref().expect("mode tree owner"), (*fsp).winlink_handle().as_ptr() as uint64_t);
             if mode_tree_set_current(&mut *(*data).tree_owner().get(), mode_pane as uint64_t) == 0 {
-                mode_tree_set_current(&mut *(*data).tree_owner().get(), (*fsp).wl_ptr() as uint64_t);
+                mode_tree_set_current(&mut *(*data).tree_owner().get(), (*fsp).winlink_handle().as_ptr() as uint64_t);
             }
         }
         109 if item.is_some() => {
             let item = item.as_deref().unwrap();
             let _target_owners_10 = window_tree_pull_item(item);
             ns = _target_owners_10.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            nwl = if _target_owners_10.winlink.is_alive() { _target_owners_10.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+            nwl = _target_owners_10.winlink.clone();
             nwp = _target_owners_10.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            server_set_marked((ns).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), nwl, (nwp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            server_set_marked((ns).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (nwl).clone(), (nwp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
         }
         77 => {
@@ -2302,7 +2309,7 @@ unsafe fn window_tree_key(
             let item = item.as_deref().unwrap();
             let _target_owners_11 = window_tree_pull_item(item);
             ns = _target_owners_11.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            nwl = if _target_owners_11.winlink.is_alive() { _target_owners_11.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
+            nwl = _target_owners_11.winlink.clone();
             nwp = _target_owners_11.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             let prompt = match item.type_0 as ::core::ffi::c_uint {
                 1 => {
@@ -2316,9 +2323,9 @@ unsafe fn window_tree_key(
                     }
                 }
                 2 => {
-                    if !nwl.is_null() {
+                    if nwl.is_alive() {
                         Some(
-                            CString::new(format!("Kill window {}? ", (*nwl).idx as u32))
+                            CString::new(format!("Kill window {}? ", nwl.get_unchecked().idx as u32))
                                 .expect("window index contains no NUL"),
                         )
                     } else {

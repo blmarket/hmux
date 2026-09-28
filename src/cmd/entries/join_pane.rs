@@ -100,12 +100,12 @@ pub static cmd_move_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_join_pane_place(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut position: *const ::core::ffi::c_char,
 ) -> cmd_retval {
     let mut wp = wp_owner.get();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wx: ::core::ffi::c_int = (*w).sx as ::core::ffi::c_int;
@@ -355,11 +355,11 @@ unsafe fn cmd_join_pane_place(
 unsafe fn cmd_join_pane_move(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut args: *mut args,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> cmd_retval {
     let mut wp = wp_owner.get();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut argval: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -480,7 +480,7 @@ unsafe fn cmd_join_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsafe
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*event).m.valid == 0 {
@@ -496,7 +496,7 @@ unsafe fn cmd_join_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsafe
     if window_pane_is_floating(&*wp) == 0 {
         return CMD_RETURN_NORMAL;
     }
-    w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
     (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
@@ -509,7 +509,7 @@ unsafe fn cmd_join_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsafe
 unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
     let c = client_owner.get();
     let mouse_pane_owner;
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -523,7 +523,7 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeC
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     lc = (*wp).layout_cell as *mut layout_cell;
     y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
     x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
@@ -550,12 +550,12 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &std::rc::Rc<std::cell::UnsafeC
 }
 unsafe fn cmd_join_pane_zindex(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut s: *const ::core::ffi::c_char,
 ) -> cmd_retval {
     let mut wp = wp_owner.get();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: u_int = 0;
@@ -642,15 +642,15 @@ unsafe fn cmd_join_pane_tile(
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_join_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut dst_s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut src_wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut dst_wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut src_wl: refbox::Weak<winlink> = refbox::Weak::new();
+    let mut dst_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut src_w: *mut window = ::core::ptr::null_mut::<window>();
     let mut dst_w: *mut window = ::core::ptr::null_mut::<window>();
     let mut src_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -660,11 +660,11 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
     let mut dst_idx: ::core::ffi::c_int = 0;
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     dst_s = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    dst_wl = (*target).wl_ptr();
+    dst_wl = (*target).winlink_handle();
     dst_wp = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    dst_w = (*dst_wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    dst_idx = (*dst_wl).idx;
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_pane_entry) {
+    dst_w = dst_wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    dst_idx = dst_wl.get_unchecked().idx;
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_move_pane_entry) {
         if args_has(args, 'M' as i32 as u_char) != 0 {
             return cmd_join_pane_mouse_update(item_handle);
         }
@@ -684,18 +684,18 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
             server_unzoom_window(&(*(dst_w)).observer.upgrade().expect("live window"));
             s = args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !s.is_null() {
-                return cmd_join_pane_place(item_handle, dst_wl, &(*(dst_wp)).observer.upgrade().expect("live pane"), s);
+                return cmd_join_pane_place(item_handle, (dst_wl).clone(), &(*(dst_wp)).observer.upgrade().expect("live pane"), s);
             }
             s = args_get(&*(args), 'z' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if !s.is_null() {
-                return cmd_join_pane_zindex(item_handle, dst_wl, &(*(dst_wp)).observer.upgrade().expect("live pane"), s);
+                return cmd_join_pane_zindex(item_handle, (dst_wl).clone(), &(*(dst_wp)).observer.upgrade().expect("live pane"), s);
             }
-            return cmd_join_pane_move(item_handle, args, dst_wl, &(*(dst_wp)).observer.upgrade().expect("live window_pane"));
+            return cmd_join_pane_move(item_handle, args, (dst_wl).clone(), &(*(dst_wp)).observer.upgrade().expect("live window_pane"));
         }
     }
-    src_wl = (*source).wl_ptr();
+    src_wl = (*source).winlink_handle();
     src_wp = (*source).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    src_w = (*src_wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    src_w = src_wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if (*src_w).modal.ptr_eq(&(*src_wp).observer) || (*dst_w).modal.ptr_eq(&(*dst_wp).observer) {
         cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
@@ -758,7 +758,7 @@ unsafe fn cmd_join_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
     } else {
         server_status_session(&*(dst_s));
     }
-    window_fire_pane_moved(&(*(src_wp)).observer.upgrade().expect("live window_pane"), &(*(src_w)).observer.upgrade().expect("live window"), (*src_wl).idx, &(*(dst_w)).observer.upgrade().expect("live window"), dst_idx);
+    window_fire_pane_moved(&(*(src_wp)).observer.upgrade().expect("live window_pane"), &(*(src_w)).observer.upgrade().expect("live window"), src_wl.get_unchecked().idx, &(*(dst_w)).observer.upgrade().expect("live window"), dst_idx);
     if window_count_panes(&*src_w, 1 as ::core::ffi::c_int) == 0 as u_int {
         server_kill_window((*source).w.upgrade().expect("live source window"), 1);
     } else {

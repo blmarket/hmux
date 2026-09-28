@@ -86,16 +86,16 @@ impl control_state {
         }
     }
 
-    fn add_block(&mut self, owner: refbox::RefBox<control_block>) -> *mut control_block {
-        let block = owner.as_ptr().cast_mut();
+    fn add_block(&mut self, owner: refbox::RefBox<control_block>) -> refbox::Weak<control_block> {
+        let block = owner.downgrade();
         self.all_blocks.push_back(owner);
         block
     }
 
-    fn block(&self, index: usize) -> *mut control_block {
+    fn block(&self, index: usize) -> refbox::Weak<control_block> {
         self.all_blocks
             .get(index)
-            .map_or(std::ptr::null_mut(), |owner| owner.as_ptr().cast_mut())
+            .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
     }
 
     fn pending_snapshot(&self) -> Vec<u_int> {
@@ -110,27 +110,19 @@ impl control_state {
     }
 }
 
-fn control_first_block(cs: &control_state) -> *mut control_block {
+fn control_first_block(cs: &control_state) -> refbox::Weak<control_block> {
     cs.block(0)
 }
 
-fn control_first_pane_block(cp: &control_pane) -> *mut control_block {
-    cp.blocks.front().map_or(std::ptr::null_mut(), control_block_ptr)
+fn control_first_pane_block(cp: &control_pane) -> refbox::Weak<control_block> {
+    cp.blocks.front().cloned().unwrap_or_default()
 }
 
-fn control_block_ptr(block: &refbox::Weak<control_block>) -> *mut control_block {
-    assert!(
-        block.is_alive(),
-        "pane block must be owned by its control state"
-    );
-    block.as_ptr().cast_mut()
-}
-
-fn control_remove_pane_block(cp: &mut control_pane, block: *mut control_block) {
+fn control_remove_pane_block(cp: &mut control_pane, block: &refbox::Weak<control_block>) {
     let index = cp
         .blocks
         .iter()
-        .position(|candidate| std::ptr::eq(candidate.as_ptr(), block))
+        .position(|candidate| candidate == block)
         .expect("control pane block must be queued on its pane");
     cp.blocks.remove(index).expect("located pane block");
 }
@@ -138,16 +130,8 @@ fn control_remove_pane_block(cp: &mut control_pane, block: *mut control_block) {
 fn control_add_block(
     cs: &mut control_state,
     owner: refbox::RefBox<control_block>,
-) -> *mut control_block {
+) -> refbox::Weak<control_block> {
     cs.add_block(owner)
-}
-
-fn control_add_block_with_weak(
-    cs: &mut control_state,
-    owner: refbox::RefBox<control_block>,
-) -> (*mut control_block, refbox::Weak<control_block>) {
-    let observer = owner.downgrade();
-    (control_add_block(cs, owner), observer)
 }
 
 #[cfg(test)]
@@ -198,7 +182,7 @@ mod control_queue_tests {
             assert_eq!(cs.block(1), reply);
             assert_eq!(
                 std::ffi::CStr::from_ptr(
-                    ((*reply).line)
+                    ((*reply.try_borrow_mut().expect("live control block")).line)
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
                 )
@@ -206,10 +190,10 @@ mod control_queue_tests {
                 b"reply-\xff"
             );
 
-            control_free_block(cs, output);
+            control_free_block(cs, &output);
             assert_eq!(control_first_block(cs), reply);
             assert_eq!(cs.queued_reply_bytes, 8);
-            control_free_block(cs, reply);
+            control_free_block(cs, &reply);
             assert_eq!(cs.block(0), control_first_block(cs));
             assert_eq!(cs.queued_reply_bytes, 0);
         }
@@ -233,10 +217,12 @@ mod control_queue_tests {
         unsafe {
             let mut owner = control_state::new();
             let cs = &mut owner;
-            let (first, first_weak) = control_add_block_with_weak(cs, control_block::new(None, 12));
-            let (middle, middle_weak) =
-                control_add_block_with_weak(cs, control_block::new(None, 23));
-            let (last, last_weak) = control_add_block_with_weak(cs, control_block::new(None, 34));
+            let first = control_add_block(cs, control_block::new(None, 12));
+            let first_weak = first.clone();
+            let middle = control_add_block(cs, control_block::new(None, 23));
+            let middle_weak = middle.clone();
+            let last = control_add_block(cs, control_block::new(None, 34));
+            let last_weak = last.clone();
             let mut pane = control_pane {
                 pane: 7,
                 offset: window_pane_offset { used: 0 },
@@ -247,20 +233,20 @@ mod control_queue_tests {
             };
 
             assert_eq!(control_first_pane_block(&pane), first);
-            control_remove_pane_block(&mut pane, middle);
-            control_free_block(cs, middle);
+            control_remove_pane_block(&mut pane, &middle);
+            control_free_block(cs, &middle);
             assert!(!middle_weak.is_alive());
             assert_eq!(control_first_pane_block(&pane), first);
-            assert_eq!((*last).size, 34);
+            assert_eq!(last.try_borrow_mut().expect("live control block").size, 34);
             assert_eq!(cs.block(0), first);
             assert_eq!(cs.block(1), last);
-            control_remove_pane_block(&mut pane, first);
-            control_free_block(cs, first);
+            control_remove_pane_block(&mut pane, &first);
+            control_free_block(cs, &first);
             assert_eq!(control_first_pane_block(&pane), last);
             assert_eq!(control_first_block(cs), last);
-            control_remove_pane_block(&mut pane, last);
-            control_free_block(cs, last);
-            assert!(control_first_block(cs).is_null());
+            control_remove_pane_block(&mut pane, &last);
+            control_free_block(cs, &last);
+            assert!(!control_first_block(cs).is_alive());
         }
     }
 
@@ -319,7 +305,7 @@ mod control_queue_tests {
             for id in [4, 9] {
                 wp.id = id;
                 wp.offset.used = 123;
-                let (_, block) = control_add_block_with_weak(owner, control_block::new(None, 10));
+                let block = control_add_block(owner, control_block::new(None, 10));
                 let pane = control_add_pane(&mut owner.panes, &wp);
                 pane.blocks.push_back(block);
                 pane.pending_flag = 1;
@@ -448,7 +434,7 @@ mod control_queue_tests {
                     cs,
                     control_block::new(Some(CString::new("reply").unwrap()), 0),
                 );
-                let (_, output) = control_add_block_with_weak(cs, control_block::new(None, 10));
+                let output = control_add_block(cs, control_block::new(None, 10));
                 let wp = window_pane::empty();
                 let pane = control_add_pane(&mut cs.panes, &wp);
                 pane.blocks.push_back(output);
@@ -542,32 +528,25 @@ mod control_queue_tests {
     }
 }
 
-unsafe fn control_free_block(cs: &mut control_state, cb: *mut control_block) {
+unsafe fn control_free_block(cs: &mut control_state, cb: &refbox::Weak<control_block>) {
     control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, cb);
 }
 
 unsafe fn control_release_block(
     blocks: &mut VecDeque<refbox::RefBox<control_block>>,
     queued_reply_bytes: &mut size_t,
-    cb: *mut control_block,
+    cb: &refbox::Weak<control_block>,
 ) {
-    let mut size: size_t = 0;
-    if (*cb).size == 0 as size_t && !(*cb).line.is_none() {
-        size = (*cb)
-            .line
-            .as_ref()
-            .expect("reply block has an owned line")
-            .as_bytes_with_nul()
-            .len();
-        if *queued_reply_bytes > size {
-            *queued_reply_bytes = queued_reply_bytes.wrapping_sub(size);
-        } else {
-            *queued_reply_bytes = 0 as size_t;
-        }
+    let size = {
+        let block = cb.try_borrow_mut().expect("live control block");
+        (block.size == 0).then(|| block.line.as_ref().map(|line| line.as_bytes_with_nul().len())).flatten()
+    };
+    if let Some(size) = size {
+        *queued_reply_bytes = queued_reply_bytes.saturating_sub(size);
     }
     let index = blocks
         .iter()
-        .position(|owner| std::ptr::eq(owner.as_ptr(), cb))
+        .position(|owner| cb.is(owner))
         .expect("control block must be owned by its state");
     drop(blocks.remove(index).expect("located control block"));
 }
@@ -629,7 +608,7 @@ unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
         control_release_block(
             &mut cs.all_blocks,
             &mut cs.queued_reply_bytes,
-            control_block_ptr(&block),
+            &block,
         );
     }
 }
@@ -637,7 +616,7 @@ unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
 unsafe fn control_window_pane(c: &client, pane: u_int) -> Option<Rc<UnsafeCell<window_pane>>> {
     let session = c.session.upgrade()?;
     let pane = window_pane_find_by_id(pane)?;
-    if winlink_find_by_window(&raw mut (*session.get()).windows, &(*((*pane.get()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window")).is_null() {
+    if !winlink_find_by_window(&raw mut (*session.get()).windows, &(*((*pane.get()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window")).is_alive() {
         return None;
     }
     Some(pane)
@@ -650,7 +629,7 @@ pub unsafe fn control_reset_offsets(c: &mut client) {
     if let Some(panes) = cs.panes.storage.take() {
         for (_, mut pane) in *panes {
             while let Some(block) = pane.blocks.pop_front() {
-                control_free_block(cs, control_block_ptr(&block));
+                control_free_block(cs, &block);
             }
         }
     }
@@ -803,7 +782,7 @@ unsafe fn control_check_reply_buffer(c_owner: &Rc<UnsafeCell<client>>, mut added
 unsafe fn control_write_line(c_owner: &Rc<UnsafeCell<client>>, line: CString) {
     let c = c_owner.get();
 
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
+    let mut cb = refbox::Weak::<control_block>::new();
     let size = line.as_bytes_with_nul().len() as size_t;
     if control_check_reply_buffer(c_owner, size) != 0 {
         return;
@@ -811,7 +790,7 @@ unsafe fn control_write_line(c_owner: &Rc<UnsafeCell<client>>, line: CString) {
     let Some(cs) = (*c).control_state.as_deref_mut() else {
         return;
     };
-    if control_first_block(cs).is_null() {
+    if !control_first_block(cs).is_alive() {
         log_debug(format_args!(
             "{}: {}: writing line: {}",
             "control_write_line",
@@ -840,7 +819,7 @@ unsafe fn control_write_line(c_owner: &Rc<UnsafeCell<client>>, line: CString) {
     }
     cb = control_add_block(cs, control_block::new(Some(line), 0));
     cs.queued_reply_bytes = cs.queued_reply_bytes.wrapping_add(size);
-    (*cb).t = get_timer();
+    (*cb.try_borrow_mut().expect("live control block")).t = get_timer();
     log_debug(format_args!(
         "{}: {}: storing line: {}",
         "control_write_line",
@@ -851,7 +830,7 @@ unsafe fn control_write_line(c_owner: &Rc<UnsafeCell<client>>, line: CString) {
                 as *const _
         ),
         log_cstr(
-            (((*cb).line)
+            (((*cb.try_borrow_mut().expect("live control block")).line)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
@@ -967,7 +946,7 @@ unsafe fn control_check_age(
     let c = c_owner.get();
     let wp = wp_owner.get();
 
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
+    let mut cb = refbox::Weak::<control_block>::new();
     let mut t: uint64_t = 0;
     let mut age: uint64_t = 0;
     let cs = (*c)
@@ -975,14 +954,14 @@ unsafe fn control_check_age(
         .as_deref_mut()
         .expect("control client state");
     cb = control_first_pane_block(cs.panes.get(pane).expect("indexed control pane"));
-    if cb.is_null() {
+    if !cb.is_alive() {
         return 0 as ::core::ffi::c_int;
     }
     t = get_timer();
-    if (*cb).t >= t {
+    if (*cb.try_borrow_mut().expect("live control block")).t >= t {
         return 0 as ::core::ffi::c_int;
     }
-    age = t.wrapping_sub((*cb).t);
+    age = t.wrapping_sub((*cb.try_borrow_mut().expect("live control block")).t);
     log_debug(format_args!(
         "{}: {}: %{} is {} behind",
         "control_check_age",
@@ -1022,13 +1001,12 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
         .as_deref_mut()
         .expect("control client state");
     let pane = (*wp).id;
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
+    let mut cb = refbox::Weak::<control_block>::new();
     let mut new_size: size_t = 0;
-    if winlink_find_by_window(
+    if !winlink_find_by_window(
         &raw mut (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows,
         &(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
-    )
-    .is_null()
+    ).is_alive()
     {
         return;
     }
@@ -1054,12 +1032,10 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
                 return;
             }
             window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.queued, new_size);
-            let (new_block, block) =
-                control_add_block_with_weak(cs, control_block::new(None, new_size));
-            cb = new_block;
-            (*cb).t = get_timer();
+            cb = control_add_block(cs, control_block::new(None, new_size));
+            (*cb.try_borrow_mut().expect("live control block")).t = get_timer();
             let cp = cs.panes.get_mut(pane).expect("indexed control pane");
-            cp.blocks.push_back(block);
+            cp.blocks.push_back(cb.clone());
             log_debug(format_args!(
                 "{}: {}: new output block of {} for %{}",
                 "control_write_output",
@@ -1069,7 +1045,7 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                         as *const _
                 ),
-                ((*cb).size) as usize,
+                ((*cb.try_borrow_mut().expect("live control block")).size) as usize,
                 ((*wp).id) as u32
             ));
             if cp.pending_flag == 0 {
@@ -1193,7 +1169,7 @@ pub unsafe fn control_all_done(c: &client) -> ::core::ffi::c_int {
         .control_state
         .as_deref()
         .expect("control client state");
-    if !control_first_block(cs).is_null() {
+    if control_first_block(cs).is_alive() {
         return 0 as ::core::ffi::c_int;
     }
     return (cs.write_event.with_ptr(|stream| unsafe {
@@ -1251,7 +1227,7 @@ unsafe fn control_flush_all_blocks(c_owner: &Rc<UnsafeCell<client>>) {
         .expect("control client state");
     loop {
         let cb = control_first_block(cs);
-        if cb.is_null() || (*cb).size != 0 as size_t {
+        if !cb.is_alive() || (*cb.try_borrow_mut().expect("live control block")).size != 0 as size_t {
             break;
         }
         log_debug(format_args!(
@@ -1264,32 +1240,23 @@ unsafe fn control_flush_all_blocks(c_owner: &Rc<UnsafeCell<client>>) {
                     as *const _
             ),
             log_cstr(
-                (((*cb).line)
+                (((*cb.try_borrow_mut().expect("live control block")).line)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             )
         ));
+        let line = cb.try_borrow_mut().expect("live control block")
+            .line.as_ref().expect("reply block has a line").clone();
         let Some(()) = cs.write_event.with_ptr(|stream| unsafe {
-            bufferevent_write(
-                stream,
-                ((*cb).line)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                    as *const ::core::ffi::c_void,
-                strlen(
-                    ((*cb).line)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                ),
-            );
+            bufferevent_write(stream, line.as_ptr().cast(), line.as_bytes().len());
             bufferevent_write(
                 stream,
                 b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
         }) else { break };
-        control_free_block(cs, cb);
+        control_free_block(cs, &cb);
     }
 }
 unsafe fn control_append_data(
@@ -1415,7 +1382,7 @@ unsafe fn control_write_pending(
     let mut message: Option<Box<evbuffer>> = None;
     let mut used: size_t = 0 as size_t;
     let mut size: size_t = 0;
-    let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
+    let mut cb = refbox::Weak::<control_block>::new();
     let mut age: uint64_t = 0;
     let mut t: uint64_t = get_timer();
     let pane_owner = control_window_pane(&*c, pane);
@@ -1450,8 +1417,8 @@ unsafe fn control_write_pending(
                 .as_deref_mut()
                 .expect("control client state");
             cb = control_first_pane_block(cs.panes.get(pane).expect("indexed control pane"));
-            if (*cb).t < t {
-                age = t.wrapping_sub((*cb).t);
+            if (*cb.try_borrow_mut().expect("live control block")).t < t {
+                age = t.wrapping_sub((*cb.try_borrow_mut().expect("live control block")).t);
             } else {
                 age = 0 as uint64_t;
             }
@@ -1464,13 +1431,13 @@ unsafe fn control_write_pending(
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                         as *const _
                 ),
-                ((*cb).size) as usize,
+                ((*cb.try_borrow_mut().expect("live control block")).size) as usize,
                 age as ::core::ffi::c_ulonglong,
                 (pane) as u32,
                 (used) as usize,
                 (limit) as usize
             ));
-            size = (*cb).size;
+            size = (*cb.try_borrow_mut().expect("live control block")).size;
             if size > limit.wrapping_sub(used) {
                 size = limit.wrapping_sub(used);
             }
@@ -1483,15 +1450,18 @@ unsafe fn control_write_pending(
                 pane_owner.as_ref().expect("live control pane"),
                 size,
             ));
-            (*cb).size = (*cb).size.wrapping_sub(size);
-            if (*cb).size == 0 as size_t {
+            {
+                let mut block = cb.try_borrow_mut().expect("live control block");
+                block.size = block.size.wrapping_sub(size);
+            }
+            if (*cb.try_borrow_mut().expect("live control block")).size == 0 as size_t {
                 control_remove_pane_block(
                     cs.panes.get_mut(pane).expect("indexed control pane"),
-                    cb,
+                    &cb,
                 );
-                control_free_block(cs, cb);
+                control_free_block(cs, &cb);
                 cb = control_first_block(cs);
-                if !cb.is_null() && (*cb).size == 0 as size_t {
+                if cb.is_alive() && (*cb.try_borrow_mut().expect("live control block")).size == 0 as size_t {
                     if !wp.is_null() {
                         if let Some(message) = message.take() {
                             control_write_data(c_owner, message);
@@ -1750,7 +1720,7 @@ pub unsafe fn control_discard(c: &mut client) {
                 control_release_block(
                     &mut cs.all_blocks,
                     &mut cs.queued_reply_bytes,
-                    control_block_ptr(&block),
+                    &block,
                 );
             }
         }
@@ -1768,10 +1738,10 @@ pub unsafe fn control_discard_all(c: &mut client) {
         .expect("control client state");
     loop {
         let cb = control_first_block(cs);
-        if cb.is_null() {
+        if !cb.is_alive() {
             break;
         }
-        control_free_block(cs, cb);
+        control_free_block(cs, &cb);
     }
     cs.queued_reply_bytes = 0 as size_t;
     let _ = cs.write_event.with_ptr(|stream| unsafe {
@@ -1803,10 +1773,10 @@ pub unsafe fn control_stop(c_owner: &Rc<UnsafeCell<client>>) {
     cs.windows.storage = None;
     loop {
         let cb = control_first_block(cs);
-        if cb.is_null() {
+        if !cb.is_alive() {
             break;
         }
-        control_free_block(cs, cb);
+        control_free_block(cs, &cb);
     }
     drop((*c).control_state.take());
 }

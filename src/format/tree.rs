@@ -144,10 +144,8 @@ pub unsafe fn format_create(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
-) -> *mut format_tree {
-    Box::into_raw(format_create_box(
-        c_owner.cloned(), item_handle, tag, flags,
-    ))
+) -> Box<format_tree> {
+    format_create_box(c_owner.cloned(), item_handle, tag, flags)
 }
 
 /// Construct a format tree retaining the supplied client handle.
@@ -160,8 +158,8 @@ pub unsafe fn format_create_with_client(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
-) -> *mut format_tree {
-    Box::into_raw(format_create_box(c.cloned(), item_handle, tag, flags))
+) -> Box<format_tree> {
+    format_create_box(c.cloned(), item_handle, tag, flags)
 }
 
 pub unsafe fn format_create_owned(
@@ -285,7 +283,7 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
-    unsafe fn tree() -> *mut format_tree {
+    unsafe fn tree() -> Box<format_tree> {
         format_create(None, None, 0, 0)
     }
 
@@ -295,17 +293,18 @@ mod tests {
             for (cancel, boxed) in [(false, false), (true, false), (false, true), (true, true)] {
                 let owner = client::new();
                 let observer = Rc::downgrade(&owner);
-                let ft = if boxed {
-                    Box::into_raw(format_create_owned(Some(&owner), None, 17, 0))
+                let mut ft_owner = if boxed {
+                    format_create_owned(Some(&owner), None, 17, 0)
                 } else {
                     format_create_with_client(Some(&owner), None, 17, 0)
                 };
+                let ft = &raw mut *ft_owner;
                 assert!(Rc::ptr_eq((*ft).client.as_ref().unwrap(), &owner));
                 assert_eq!((*ft).tag, 17);
                 drop(owner);
                 assert!(observer.upgrade().is_some());
 
-                format_free(Box::from_raw(ft));
+                format_free(ft_owner);
                 assert!(observer.upgrade().is_some());
                 if cancel {
                     crate::src::reactor::shutdown_runtime();
@@ -316,9 +315,10 @@ mod tests {
                 crate::src::reactor::shutdown_runtime();
             }
 
-            let ft = format_create_with_client(None, None, 0, 0);
+            let mut ft_owner = format_create_with_client(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             assert!((*ft).client.is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -332,7 +332,8 @@ mod tests {
     #[test]
     fn owned_callbacks_cache_values_and_absence_until_replaced() {
         unsafe {
-            let ft = tree();
+            let mut ft_owner = tree();
+            let ft = &raw mut *ft_owner;
             let calls = Rc::new(Cell::new(0));
             let observed = calls.clone();
             format_add_owned_cb(ft, c"owned", move |_| {
@@ -364,14 +365,15 @@ mod tests {
                 Some(FormatValue::Time(123))
             ));
             assert_eq!(calls.get(), 2);
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
     #[test]
     fn boxed_entries_preserve_identity_and_borrow_values_during_replacement() {
         unsafe {
-            let ft = tree();
+            let mut ft_owner = tree();
+            let ft = &raw mut *ft_owner;
             let key = CString::new(b"custom\xff".to_vec()).unwrap();
             let first = CString::new(b"first\xff".to_vec()).unwrap();
             format_add_cstr(ft, &key, &first);
@@ -392,7 +394,7 @@ mod tests {
                 address
             );
             let entry = (*ft).tree.entries.remove(key.as_bytes()).unwrap();
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
             assert_eq!(entry.key, key);
             assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
         }
@@ -401,7 +403,8 @@ mod tests {
     #[test]
     fn lazy_callbacks_can_replace_remove_and_reinsert_their_own_entry() {
         unsafe {
-            let ft = tree();
+            let mut ft_owner = tree();
+            let ft = &raw mut *ft_owner;
             format_add_owned_cb(ft, c"owned", |ft| {
                 format_add_cstr(ft.as_ptr(), c"owned", c"replacement");
                 Some(c"stale".to_owned())
@@ -446,7 +449,7 @@ mod tests {
                 Some(c"recursive".to_owned())
             });
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recursive");
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -454,7 +457,8 @@ mod tests {
     fn stale_evaluation_cannot_cache_into_a_reinserted_entry_after_unwind() {
         use std::panic::{catch_unwind, AssertUnwindSafe};
         unsafe {
-            let ft = tree();
+            let mut ft_owner = tree();
+            let ft = &raw mut *ft_owner;
             format_add_owned_cb(ft, c"owned", |ft| {
                 drop((*ft.as_ptr()).tree.entries.remove(b"owned".as_slice()));
                 format_add_owned_cb(ft.as_ptr(), c"owned", |_| panic!("replacement callback"));
@@ -468,7 +472,7 @@ mod tests {
             ));
             format_add_cstr(ft, c"owned", c"recovered");
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"recovered");
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
@@ -477,10 +481,14 @@ mod tests {
         use crate::src::options::{options_create, options_free};
         unsafe {
             let saved = (global_options, global_w_options, global_s_options);
-            global_options = options_create(std::ptr::null_mut());
-            global_w_options = options_create(std::ptr::null_mut());
-            global_s_options = options_create(std::ptr::null_mut());
-            let ft = tree();
+            let mut global_options_owner = options_create(std::ptr::null_mut());
+            global_options = &raw mut *global_options_owner;
+            let mut global_w_options_owner = options_create(std::ptr::null_mut());
+            global_w_options = &raw mut *global_w_options_owner;
+            let mut global_s_options_owner = options_create(std::ptr::null_mut());
+            global_s_options = &raw mut *global_s_options_owner;
+            let mut ft_owner = tree();
+            let ft = &raw mut *ft_owner;
             format_add_owned_cb(ft, c"custom_removed_entry", |ft| {
                 drop(
                     (*ft.as_ptr())
@@ -494,10 +502,10 @@ mod tests {
                 format_expand_cstring(ft, c"before#{custom_removed_entry}after".as_ptr()).as_c_str(),
                 c"beforeafter"
             );
-            format_free(Box::from_raw(ft));
-            options_free(global_options);
-            options_free(global_w_options);
-            options_free(global_s_options);
+            format_free(ft_owner);
+            options_free(global_options_owner);
+            options_free(global_w_options_owner);
+            options_free(global_s_options_owner);
             (global_options, global_w_options, global_s_options) = saved;
         }
     }
@@ -512,7 +520,8 @@ mod tests {
     #[test]
     fn cached_captures_drop_on_replacement_and_remaining_entries_drop_in_key_order() {
         unsafe {
-            let ft = tree();
+            let mut ft_owner = tree();
+            let ft = &raw mut *ft_owner;
             let drops = Rc::new(RefCell::new(Vec::new()));
             for (key, id) in [(c"beta", 2), (c"alpha", 1), (c"replace", 3)] {
                 let record = RecordDrop(id, drops.clone());
@@ -525,7 +534,7 @@ mod tests {
             assert!(drops.borrow().is_empty());
             format_add_cstr(ft, c"replace", c"literal");
             assert_eq!(*drops.borrow(), [3]);
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
             assert_eq!(*drops.borrow(), [3, 1, 2]);
         }
     }
@@ -544,12 +553,12 @@ mod tests {
         }
         for owned in [false, true] {
             unsafe {
-                let mut owner = owned.then(|| {
+                let mut owner = if owned {
                     format_create_owned(None, None, FORMAT_NONE, 0)
-                });
-                let ft = owner
-                    .as_mut()
-                    .map_or_else(|| tree(), |tree| &raw mut **tree);
+                } else {
+                    tree()
+                };
+                let ft = &raw mut *owner;
                 let calls = Rc::new(Cell::new(0));
                 for replace in [true, false] {
                     let capture = Reenter {
@@ -566,11 +575,7 @@ mod tests {
                         assert_eq!(text_value(ft, c"from-drop").unwrap().as_c_str(), c"created");
                     }
                 }
-                if owned {
-                    format_free(owner.take().unwrap());
-                } else {
-                    format_free(Box::from_raw(ft));
-                }
+                format_free(owner);
                 assert_eq!(calls.get(), 2);
             }
         }
@@ -578,8 +583,10 @@ mod tests {
     #[test]
     fn merge_copies_only_materialized_values_and_supports_the_same_tree() {
         unsafe {
-            let source = tree();
-            let destination = tree();
+            let mut source_owner = tree();
+            let source = &raw mut *source_owner;
+            let mut destination_owner = tree();
+            let destination = &raw mut *destination_owner;
             format_add_cstr(source, c"literal", c"text");
             format_add_owned_cb(source, c"cached", |_| Some(c"value".to_owned()));
             assert_eq!(text_value(source, c"cached").unwrap().as_c_str(), c"value");
@@ -607,8 +614,8 @@ mod tests {
                 text_value(destination, c"cached").unwrap().as_c_str(),
                 c"value"
             );
-            format_free(Box::from_raw(source));
-            format_free(Box::from_raw(destination));
+            format_free(source_owner);
+            format_free(destination_owner);
         }
     }
 }

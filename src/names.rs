@@ -166,12 +166,13 @@ unsafe fn format_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>
     let mut w = w_owner.get();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut fmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults_window(ft, Some(w_owner));
     format_defaults_pane(ft, &(*((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"));
     fmt = options_get_string(
@@ -179,7 +180,7 @@ unsafe fn format_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let name = format_expand_cstring(ft, fmt);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     name
 }
 

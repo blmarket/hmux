@@ -972,15 +972,16 @@ pub unsafe fn style_add(
     mut ft: *mut format_tree,
 ) -> *mut style {
     let mut sy: *mut style = ::core::ptr::null_mut::<style>();
-    let mut ft0: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+    let mut ft0_owner = None;
     if ft.is_null() {
-        ft0 = format_create(
+        let mut owner = format_create(
             None,
             None,
             0 as ::core::ffi::c_int,
             FORMAT_NOJOBS,
         );
-        ft = ft0;
+        ft = &raw mut *owner;
+        ft0_owner = Some(owner);
     }
     sy = options_string_to_style(oo, name, ft);
     if sy.is_null() {
@@ -997,8 +998,8 @@ pub unsafe fn style_add(
     }
     (*gc).attr =
         ((*gc).attr as ::core::ffi::c_int | (*sy).gc.attr as ::core::ffi::c_int) as u_short;
-    if !ft0.is_null() {
-        format_free(Box::from_raw(ft0));
+    if let Some(owner) = ft0_owner {
+        format_free(owner);
     }
     return sy;
 }
@@ -1077,7 +1078,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
         (*oe).default_str_ptr(),
         None,
         None,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
     if style_parse(sb_style, &raw const grid_default_cell, style.as_ptr())
@@ -1095,7 +1096,7 @@ pub unsafe fn style_set_scrollbar_style_from_option(
             s,
             None,
             None,
-            ::core::ptr::null_mut::<winlink>(),
+            (refbox::Weak::new()).clone(),
             None,
         );
         if style_parse(sb_style, &raw const grid_default_cell, expanded.as_ptr())

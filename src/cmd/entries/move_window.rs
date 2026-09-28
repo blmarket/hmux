@@ -67,9 +67,9 @@ pub static cmd_link_window_entry: cmd_entry = {
         exec: Some(cmd_move_window_exec),
     }
 };
-unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_move_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -82,7 +82,7 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
     let mut tflag: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut src: *mut session = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut dst: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = (*source).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut idx: ::core::ffi::c_int = 0;
     let mut kflag: ::core::ffi::c_int = 0;
     let mut dflag: ::core::ffi::c_int = 0;
@@ -121,23 +121,23 @@ unsafe fn cmd_move_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
     sflag = args_has(args, 's' as i32 as u_char);
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
-        if !target.wl_ptr().is_null() {
-            idx = winlink_shuffle_up(&(*(dst)).observer.upgrade().expect("live session"), target.wl_ptr(), before);
+        if target.winlink_handle().is_alive() {
+            idx = winlink_shuffle_up(&(*(dst)).observer.upgrade().expect("live session"), (target.winlink_handle()).clone(), before);
         } else {
-            idx = winlink_shuffle_up(&(*(dst)).observer.upgrade().expect("live session"), (*dst).curw_ptr(), before);
+            idx = winlink_shuffle_up(&(*(dst)).observer.upgrade().expect("live session"), ((*dst).current_winlink()).clone(), before);
         }
         if idx == -(1 as ::core::ffi::c_int) {
             return CMD_RETURN_ERROR;
         }
     }
     if let Err(cause) =
-        server_link_window(&(*(src)).observer.upgrade().expect("live session"), wl, &(*(dst)).observer.upgrade().expect("live session"), idx, kflag, (dflag == 0) as ::core::ffi::c_int)
+        server_link_window(&(*(src)).observer.upgrade().expect("live session"), wl.clone(), &(*(dst)).observer.upgrade().expect("live session"), idx, kflag, (dflag == 0) as ::core::ffi::c_int)
     {
         cmdq_error(item_handle, |out| write_cstr(out, cause.as_ptr()));
         return CMD_RETURN_ERROR;
     }
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_move_window_entry) {
-        server_unlink_window(&(*(src)).observer.upgrade().expect("live session"), wl);
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_move_window_entry) {
+        server_unlink_window(&(*(src)).observer.upgrade().expect("live session"), wl.clone());
     }
     if sflag == 0
         && options_get_number(

@@ -142,11 +142,11 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: st
             (*(fs.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
         );
     }
-    if !fs.wl_ptr().is_null() {
+    if fs.winlink_handle().is_alive() {
         event_payload_set_int(
             &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            (*fs.wl_ptr()).idx,
+            (fs.winlink_handle()).get_unchecked().idx,
         );
     } else if fs.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
@@ -231,7 +231,7 @@ pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, owner: std:
     );
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: *mut winlink) {
+pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: refbox::Weak<winlink>) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -241,9 +241,9 @@ pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: 
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
+    cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
-    if let Some(session_owner) = (*wl).session.upgrade() {
+    if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
@@ -253,12 +253,12 @@ pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: 
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+        (*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
     );
     event_payload_set_int(
         &mut *ep,
         b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-        (*wl).idx,
+        wl.get_unchecked().idx,
     );
     events_fire(name, ep);
 }

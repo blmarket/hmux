@@ -33,18 +33,14 @@ pub struct session {
 }
 
 impl session {
-    /// Borrowed compatibility view of the current session-index winlink.
-    pub fn curw_ptr(&self) -> *mut winlink {
-        if self.curw.is_alive() {
-            self.curw.as_ptr().cast_mut()
-        } else {
-            std::ptr::null_mut()
-        }
+    /// Observe the current session-index winlink.
+    pub fn current_winlink(&self) -> refbox::Weak<winlink> {
+        self.curw.clone()
     }
 
     /// The supplied winlink must be live in a session index.
-    pub unsafe fn set_curw(&mut self, wl: *mut winlink) {
-        self.curw = wl.as_ref().map_or_else(refbox::Weak::new, |wl| wl.observer.clone());
+    pub fn set_curw(&mut self, wl: refbox::Weak<winlink>) {
+        self.curw = wl;
     }
 
     pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {

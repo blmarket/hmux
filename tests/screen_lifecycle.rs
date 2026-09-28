@@ -16,7 +16,8 @@ use hmux2::src::tmux::global_options;
 fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
     unsafe {
         let previous = global_options;
-        global_options = options_create(std::ptr::null_mut());
+        let mut global_options_owner = options_create(std::ptr::null_mut());
+        global_options = &raw mut *global_options_owner;
         let definition = options_table
             .iter()
             .find(|entry| entry.name == Some(c"extended-keys"))
@@ -72,7 +73,7 @@ fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
         assert!(s.title.is_empty());
         assert!(s.path.is_none());
         assert!(s.tabs.is_empty());
-        options_free(global_options);
+        options_free(global_options_owner);
         global_options = previous;
     }
 }

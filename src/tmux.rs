@@ -398,6 +398,26 @@ pub const LC_TIME: ::core::ffi::c_int = __LC_TIME;
 pub const CLOCK_MONOTONIC: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
+// Sole owners; the public pointers below only observe these stable allocations.
+static mut global_options_owner: Option<Box<options>> = None;
+static mut global_s_options_owner: Option<Box<options>> = None;
+static mut global_w_options_owner: Option<Box<options>> = None;
+
+pub(crate) unsafe fn free_global_options() {
+    if let Some(owner) = (*(&raw mut global_options_owner)).take() {
+        crate::src::options::options_free(owner);
+        global_options = std::ptr::null_mut();
+    }
+    if let Some(owner) = (*(&raw mut global_s_options_owner)).take() {
+        crate::src::options::options_free(owner);
+        global_s_options = std::ptr::null_mut();
+    }
+    if let Some(owner) = (*(&raw mut global_w_options_owner)).take() {
+        crate::src::options::options_free(owner);
+        global_w_options = std::ptr::null_mut();
+    }
+}
+
 pub static mut global_options: *mut options = ::core::ptr::null::<options>() as *mut options;
 pub static mut global_s_options: *mut options = ::core::ptr::null::<options>() as *mut options;
 pub static mut global_w_options: *mut options = ::core::ptr::null::<options>() as *mut options;
@@ -968,9 +988,12 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
             flags |= CLIENT_UTF8 as uint64_t;
         }
     }
-    global_options = options_create(::core::ptr::null_mut::<options>());
-    global_s_options = options_create(::core::ptr::null_mut::<options>());
-    global_w_options = options_create(::core::ptr::null_mut::<options>());
+    global_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_options = (*(&raw mut global_options_owner)).as_deref_mut().unwrap();
+    global_s_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_s_options = (*(&raw mut global_s_options_owner)).as_deref_mut().unwrap();
+    global_w_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_w_options = (*(&raw mut global_w_options_owner)).as_deref_mut().unwrap();
     oe = &raw const options_table as *const options_table_entry;
     while !(*oe).name_ptr().is_null() {
         if (*oe).scope & OPTIONS_TABLE_SERVER != 0 {

@@ -802,12 +802,12 @@ pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
     }
 }
 pub unsafe fn args_make_commands_now(
-    self_0: *mut cmd,
+    self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     idx: u_int,
     expand: ::core::ffi::c_int,
 ) -> Option<Rc<std::cell::RefCell<cmd_list>>> {
-    let mut state = args_make_commands_prepare(self_0, item_handle, idx, std::ptr::null(), 0, expand);
+    let mut state = args_make_commands_prepare(self_0.clone(), item_handle, idx, std::ptr::null(), 0, expand);
     match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => Some(commands),
         Err(error) => {
@@ -824,7 +824,7 @@ pub unsafe fn args_make_commands_now(
     }
 }
 pub unsafe fn args_make_commands_prepare(
-    mut self_0: *mut cmd,
+    mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut idx: u_int,
     mut default_command: *const ::core::ffi::c_char,
@@ -832,7 +832,7 @@ pub unsafe fn args_make_commands_prepare(
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
@@ -873,7 +873,7 @@ pub unsafe fn args_make_commands_prepare(
     if wait != 0 {
         state.pi.set_item(Some(item_handle));
     }
-    let (source, line) = cmd_get_source(&*self_0);
+    let (source, line) = cmd_get_source(self_0.get_unchecked());
     state.pi.line = line;
     if let Some(file) = source {
         state.file = Some(file.to_owned());

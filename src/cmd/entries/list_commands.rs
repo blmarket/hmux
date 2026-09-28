@@ -77,10 +77,10 @@ unsafe fn cmd_list_single_command(
         cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
     }
 }
-unsafe fn cmd_list_commands(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_list_commands(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut command: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -88,17 +88,18 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std:
     if template.is_null() {
         template = LIST_COMMANDS_TEMPLATE.as_ptr();
     }
-    ft = format_create_with_client(
+    let mut ft_owner = format_create_with_client(
         queue_client.as_ref(),
         Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         None,
         None,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
     command = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -113,11 +114,11 @@ unsafe fn cmd_list_commands(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std:
             }
             Err(cause) => {
                 cmdq_error(item_handle, |out| write_cstr(out, cause.as_ptr()));
-                format_free(Box::from_raw(ft));
+                format_free(ft_owner);
                 return CMD_RETURN_ERROR;
             }
         }
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return CMD_RETURN_NORMAL;
 }

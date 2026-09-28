@@ -124,9 +124,9 @@ fn cmd_command_prompt_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_command_prompt_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
@@ -167,7 +167,7 @@ unsafe fn cmd_command_prompt_exec(mut self_0: *mut cmd, item_handle: &std::rc::R
         cdata.wp = window_pane_weak(&*(wp));
     }
     cdata.state = Some(args_make_commands_prepare(
-        self_0,
+        self_0.clone(),
         item_handle,
         0 as u_int,
         b"%1\0" as *const u8 as *const ::core::ffi::c_char,

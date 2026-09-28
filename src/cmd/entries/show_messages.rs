@@ -51,12 +51,12 @@ pub static cmd_show_messages_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_show_messages_terminals(
-    mut self_0: *mut cmd,
+    mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
@@ -98,15 +98,15 @@ unsafe fn cmd_show_messages_terminals(
     }
     return (n != 0 as u_int) as ::core::ffi::c_int;
 }
-unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+unsafe fn cmd_show_messages_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut done: ::core::ffi::c_int = 0;
     let mut blank: ::core::ffi::c_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     blank = 0 as ::core::ffi::c_int;
     done = blank;
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        blank = cmd_show_messages_terminals(self_0, item_handle, blank);
+        blank = cmd_show_messages_terminals(self_0.clone(), item_handle, blank);
         done = 1 as ::core::ffi::c_int;
     }
     if args_has(args, 'J' as i32 as u_char) != 0 {
@@ -116,7 +116,8 @@ unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
     if done != 0 {
         return CMD_RETURN_NORMAL;
     }
-    ft = format_create_from_target(item_handle);
+    let mut ft_owner = format_create_from_target(item_handle);
+    ft = &raw mut *ft_owner;
     for msg in message_log.iter_rev() {
         format_add(
             ft,
@@ -137,6 +138,6 @@ unsafe fn cmd_show_messages_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
         cmdq_print(item_handle, |out| write_cstr(out, s.as_ptr()));
     }
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return CMD_RETURN_NORMAL;
 }

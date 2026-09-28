@@ -238,8 +238,8 @@ impl window_pane {
                 if !observer.is_alive() {
                     return std::ptr::null_mut();
                 }
-                let entry = observer.as_ptr().cast_mut();
-                (*(*entry).mode).display_screen.expect("mode display screen getter")(entry)
+                let mode = observer.get_unchecked().mode;
+                mode.display_screen.expect("mode display screen getter")(observer.clone())
             }
         }
     }
@@ -304,13 +304,7 @@ impl window_pane_modes {
             .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
     }
 
-    /// A borrowed compatibility pointer valid until the mode stack changes.
-    pub fn active_ptr(&self) -> *mut window_mode_entry {
-        self.storage
-            .as_ref()
-            .and_then(|storage| storage.entries.first())
-            .map_or(std::ptr::null_mut(), |entry| entry.as_ptr().cast_mut())
-    }
+
 }
 
 /// Ordered, non-owning pane handles. Retained Rc references keep allocations

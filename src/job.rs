@@ -67,18 +67,34 @@ unsafe fn job_completion(job: *mut job) -> JobCompletion {
         output,
     }
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct joblist {
     pub lh_first: *mut job,
+    // Links and callbacks observe allocations owned here.
+    owners: Vec<Box<job>>,
 }
 
 pub const O_RDWR: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
 
 static mut all_jobs: joblist = joblist {
     lh_first: ::core::ptr::null::<job>() as *mut job,
+    owners: Vec::new(),
 };
 
+// Return a nonowning identity; completion or cancellation explicitly removes
+// the owner through job_free. Moving the Vec never moves the boxed jobs.
+unsafe fn job_insert(mut owner: Box<job>) -> *mut job {
+    let job = &raw mut *owner;
+    (*job).entry.le_next = all_jobs.lh_first;
+    if !(*job).entry.le_next.is_null() {
+        (*all_jobs.lh_first).entry.le_prev = &raw mut (*job).entry.le_next;
+    }
+    all_jobs.lh_first = job;
+    (*job).entry.le_prev = &raw mut all_jobs.lh_first;
+    (*(&raw mut all_jobs.owners)).push(owner);
+    job
+}
+
+/// Start a registry-owned job and return its nonowning identity.
 pub unsafe fn job_run(
     cmd: Option<&CStr>,
     argv: &Vec<CString>,
@@ -343,7 +359,7 @@ pub unsafe fn job_run(
                         ..job::empty()
                     });
 
-                    job = Box::into_raw(owner).cast::<job>();
+                    job = job_insert(owner);
                     (*job).state = JOB_RUNNING;
                     (*job).flags = flags;
                     (*job).pid = pid;
@@ -355,12 +371,6 @@ pub unsafe fn job_run(
                         );
                     }
                     (*job).status = 0 as ::core::ffi::c_int;
-                    (*job).entry.le_next = all_jobs.lh_first;
-                    if !(*job).entry.le_next.is_null() {
-                        (*all_jobs.lh_first).entry.le_prev = &raw mut (*job).entry.le_next;
-                    }
-                    all_jobs.lh_first = job;
-                    (*job).entry.le_prev = &raw mut all_jobs.lh_first;
                     (*job).updatecb = updatecb;
                     (*job).completecb = completecb;
                     (*job).freecb = freecb;
@@ -414,6 +424,14 @@ pub unsafe fn job_run(
     return ::core::ptr::null_mut::<job>();
 }
 pub unsafe fn job_free(mut job: *mut job) {
+    // End the registry borrow before any destructor or callback can reenter it.
+    let owner = {
+        let owners = &mut *(&raw mut all_jobs.owners);
+        let index = owners.iter().position(|owner| std::ptr::eq(&**owner, job))
+            .expect("job must belong to the registry");
+        owners.swap_remove(index)
+    };
+
     log_debug(format_args!(
         "free job {}: {}",
         log_pointer((job) as *const ::core::ffi::c_void),
@@ -438,7 +456,7 @@ pub unsafe fn job_free(mut job: *mut job) {
     if (*job).fd != -(1 as ::core::ffi::c_int) {
         close((*job).fd);
     }
-    drop(Box::from_raw(job));
+    drop(owner);
 }
 pub unsafe fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
     let mut ws: winsize = winsize {
@@ -582,6 +600,54 @@ pub unsafe fn job_get_event(mut job: *mut job) -> *mut bufferevent {
 #[cfg(test)]
 mod job_stream_tests {
     use super::*;
+
+    #[test]
+    fn registry_owner_survives_reentrant_free_and_preserves_cleanup_order() {
+        unsafe {
+            assert!(all_jobs.lh_first.is_null());
+            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+            let mut second = Box::new(job::empty());
+            second.pid = -1;
+            second.fd = -1;
+            let second = job_insert(second);
+
+            let mut pair = [0; 2];
+            assert_eq!(::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()), 0);
+            let fd = pair[0];
+            let mut first = Box::new(job::empty());
+            first.pid = -1;
+            first.fd = fd;
+            let stream = bufferevent_new(fd, None, None, None);
+            first.event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            let callback_stream = first.event.clone();
+            let observed = calls.clone();
+            first.freecb = Some(Box::new(move || {
+                // The freeing job has left both indexes, but its resources
+                // remain available until its free callback returns.
+                assert_eq!(all_jobs.lh_first, second);
+                assert_eq!((*(&raw const all_jobs.owners)).len(), 1);
+                assert_eq!(callback_stream.ptr(), stream);
+                assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
+                job_free(second);
+                let mut replacement = Box::new(job::empty());
+                replacement.pid = -1;
+                replacement.fd = -1;
+                let replacement = job_insert(replacement);
+                job_free(replacement);
+                observed.set(observed.get() + 1);
+            }));
+            let first = job_insert(first);
+            let event = (*first).event.clone();
+            job_free(first);
+            assert_eq!(calls.get(), 1);
+            assert!(event.ptr().is_null());
+            assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
+            assert!(all_jobs.lh_first.is_null());
+            assert!((*(&raw const all_jobs.owners)).is_empty());
+            close(pair[1]);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 
     #[test]
     fn completion_reads_a_live_stream_and_skips_one_after_free() {

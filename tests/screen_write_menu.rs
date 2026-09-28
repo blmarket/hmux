@@ -20,7 +20,8 @@ unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
 fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
     unsafe {
         let previous = global_options;
-        global_options = options_create(std::ptr::null_mut());
+        let mut global_options_owner = options_create(std::ptr::null_mut());
+        global_options = &raw mut *global_options_owner;
         let table = &*(&raw const options_table);
         let definition = table
             .iter()
@@ -99,7 +100,7 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
             assert_eq!(menu.items[2].name.as_deref(), Some(c"-Off"));
             assert_eq!(menu.title.as_c_str(), c"Title");
         }
-        options_free(global_options);
+        options_free(global_options_owner);
         global_options = previous;
     }
 }

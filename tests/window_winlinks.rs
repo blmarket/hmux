@@ -9,9 +9,9 @@ use refbox::BorrowError;
 unsafe fn window_indices(w: &window) -> Vec<i32> {
     let mut result = Vec::new();
     let mut link = window_winlinks_first(Some(w));
-    while !link.is_null() {
-        result.push((*link).idx);
-        link = window_winlinks_next(Some(w), link);
+    while link.is_alive() {
+        result.push(link.get_unchecked().idx);
+        link = window_winlinks_next(Some(w), link.clone());
     }
     result
 }
@@ -35,10 +35,10 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         let first = winlink_add(&raw mut owner.windows, 12);
         let second = winlink_add(&raw mut owner.windows, 3);
         let third = winlink_add(&raw mut owner.windows, 18);
-        let initial = [first, second, third];
-        for link in initial {
-            (*link).session = std::rc::Rc::downgrade(&session_owner);
-            winlink_set_window(link, &first_owner);
+        let initial = [first.clone(), second.clone(), third.clone()];
+        for mut link in initial {
+            link.get_mut_unchecked().session = std::rc::Rc::downgrade(&session_owner);
+            winlink_set_window(link.clone(), &first_owner);
         }
         assert_eq!(window_indices(&*first_window), [12, 3, 18]);
 
@@ -62,41 +62,41 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
             .get(&3)
             .unwrap()
             .downgrade();
-        let stable_first = first as *const _;
-        let mut added = vec![first, second, third];
+        let stable_first = first.clone();
+        let mut added = vec![first.clone(), second.clone(), third.clone()];
         for idx in 100..228 {
-            let link = winlink_add(&raw mut owner.windows, idx);
-            (*link).session = std::rc::Rc::downgrade(&session_owner);
-            winlink_set_window(link, &first_owner);
+            let mut link = winlink_add(&raw mut owner.windows, idx);
+            link.get_mut_unchecked().session = std::rc::Rc::downgrade(&session_owner);
+            winlink_set_window(link.clone(), &first_owner);
             added.push(link);
         }
 
-        assert_eq!(weak.as_ptr(), stable_first);
+        assert_eq!(weak, stable_first);
         assert_eq!(window_winlinks_first((first_window).as_ref()), first);
         assert_eq!(window_indices(&*first_window).len(), added.len());
         assert_eq!(window_indices(&*first_window)[..3], [12, 3, 18]);
 
         // Reindexing changes the session lookup key without changing either
         // the handle address or its position in the window's association order.
-        winlinks_reindex(&raw mut owner.windows, second, 30);
-        assert_eq!(weak_second.as_ptr(), second as *const _);
+        winlinks_reindex(&raw mut owner.windows, (second).clone(), 30);
+        assert_eq!(weak_second, second);
         assert_eq!(window_indices(&*first_window)[..3], [12, 30, 18]);
 
         // Moving a link removes it from the old owner's ordered handles. Moving
         // it back appends it, matching the former TAILQ insertion behavior.
-        winlink_set_window(second, &second_owner);
+        winlink_set_window((second).clone(), &second_owner);
         assert_eq!(window_indices(&*first_window)[..2], [12, 18]);
         assert_eq!(window_indices(&*second_window), [30]);
-        assert!(window_winlinks_next((first_window).as_ref(), second).is_null());
-        assert_eq!(window_winlinks_next((first_window).as_ref(), first), third);
-        winlink_set_window(second, &first_owner);
+        assert!(!window_winlinks_next((first_window).as_ref(), (second).clone()).is_alive());
+        assert_eq!(window_winlinks_next((first_window).as_ref(), (first).clone()), third);
+        winlink_set_window((second).clone(), &first_owner);
         assert_eq!(window_indices(&*first_window).last(), Some(&30));
 
         for link in added {
-            winlink_remove(&raw mut owner.windows, link);
+            winlink_remove(&raw mut owner.windows, link.clone());
         }
-        assert!(window_winlinks_first((first_window).as_ref()).is_null());
-        assert!(window_winlinks_first((second_window).as_ref()).is_null());
+        assert!(!window_winlinks_first((first_window).as_ref()).is_alive());
+        assert!(!window_winlinks_first((second_window).as_ref()).is_alive());
         assert!((*first_window).winlinks.storage.is_none());
         assert!((*second_window).winlinks.storage.is_none());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
@@ -152,7 +152,7 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         let w_owner = window::new();
         let w = rc::as_ptr(&w_owner);
         let weak = Rc::downgrade(&w_owner);
-        winlink_set_window(link, &w_owner);
+        winlink_set_window(link.clone(), &w_owner);
         window_remove_ref(w_owner, c"creator".as_ptr());
         assert_eq!(weak.strong_count(), 1);
         let count = Rc::new(Cell::new(0));
@@ -160,12 +160,13 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         let retained = Rc::new(std::cell::RefCell::new(None));
         let retained_callback = retained.clone();
         let callback_window = weak.clone();
+        let callback_link = link.clone();
         let sink = events_add_sink(c"window-closed", Rc::new(move |_, _| {
-            assert_eq!((*link).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), w);
+            assert_eq!(callback_link.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), w);
             calls.set(calls.get() + 1);
             *retained_callback.borrow_mut() = Some(window_add_ref(&callback_window.upgrade().expect("window lives through notification"), c"close observer".as_ptr()));
         }));
-        winlink_remove(&mut links, link);
+        winlink_remove(&mut links, link.clone());
         assert_eq!(count.get(), 1);
         assert!(links.storage.is_none());
         assert_eq!(weak.strong_count(), 1);
@@ -186,16 +187,16 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
         let other = session::new();
         let window_owner = window::new();
         let mut links = winlinks { storage: None };
-        let link = winlink_add(&mut links, 0);
-        (*link).session = Rc::downgrade(&first);
-        winlink_set_window(link, &window_owner);
+        let mut link = winlink_add(&mut links, 0);
+        link.get_mut_unchecked().session = Rc::downgrade(&first);
+        winlink_set_window(link.clone(), &window_owner);
         assert_eq!(session_has(&*first.get(), &*window_owner.get()), 1);
         assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
         let observer = Rc::downgrade(&first);
         drop(first);
         assert!(observer.upgrade().is_none());
         assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
-        winlink_remove(&mut links, link);
+        winlink_remove(&mut links, link.clone());
         assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
         hmux2::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
     }

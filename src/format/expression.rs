@@ -971,7 +971,8 @@ pub(super) unsafe fn format_loop_sessions(
         } else {
             all.as_ptr()
         };
-        nft = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+        let mut nft_owner = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+        nft = &raw mut *nft_owner;
         format_add(
             nft,
             b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
@@ -992,13 +993,13 @@ pub(super) unsafe fn format_loop_sessions(
             nft,
             (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            ::core::ptr::null_mut::<winlink>(),
+            (refbox::Weak::new()).clone(),
             None,
         );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(Box::from_raw(next.ft));
+        format_free(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1014,7 +1015,7 @@ pub(super) unsafe fn format_window_name(
     let mut ft: *mut format_tree = (*es).ft;
     let format_session_owner = (*ft).s.upgrade();
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if format_session.is_null() {
         format_log1(
             es,
@@ -1025,17 +1026,17 @@ pub(super) unsafe fn format_window_name(
     }
     let name = format_expand1_cstring(es, fmt);
     wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
-    while !wl.is_null() {
-        if strcmp((*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
+    while wl.is_alive() {
+        if strcmp((*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
             return Some(c"1".to_owned());
         }
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
     return Some(c"0".to_owned());
 }
 pub(super) unsafe fn format_add_window_neighbour(
     mut nft: *mut format_tree,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut prefix: *const ::core::ffi::c_char,
 ) {
@@ -1045,13 +1046,13 @@ pub(super) unsafe fn format_add_window_neighbour(
     let prefix = CStr::from_ptr(prefix).to_bytes();
     let key = CString::new([prefix, b"_window_index"].concat()).expect("C string key");
     format_add(nft, key.as_ptr(), |out| {
-        write!(out, "{}", ((*wl).idx) as u32)
+        write!(out, "{}", (wl.get_unchecked().idx) as u32)
     });
     let key = CString::new([prefix, b"_window_active"].concat()).expect("C string key");
     format_add(nft, key.as_ptr(), |out| {
-        write!(out, "{}", ((wl == (*s).curw_ptr()) as ::core::ffi::c_int) as i32)
+        write!(out, "{}", ((wl == (*s).current_winlink()) as ::core::ffi::c_int) as i32)
     });
-    let o_root = options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+    let o_root = options_owner_ptr(&mut (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
     o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
@@ -1105,7 +1106,7 @@ pub(super) unsafe fn format_loop_windows(
         },
     };
     let mut buffer = Vec::new();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut i: ::core::ffi::c_int = 0;
     if s.is_null() {
@@ -1121,8 +1122,8 @@ pub(super) unsafe fn format_loop_windows(
     let n = ::core::ffi::c_int::try_from(l.len()).expect("too many winlinks in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        wl = l[i as usize];
-        w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wl = l[i as usize].clone();
+        w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         format_log1(
             es,
             b"format_loop_windows\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1130,22 +1131,23 @@ pub(super) unsafe fn format_loop_windows(
                 write!(
                     out,
                     "window loop: {} @{}",
-                    ((*wl).idx) as u32,
+                    (wl.get_unchecked().idx) as u32,
                     ((*w).id) as u32
                 )
             },
         );
-        let use_0 = if active.is_some() && wl == (*s).curw_ptr() {
+        let use_0 = if active.is_some() && wl == (*s).current_winlink() {
             active.as_ref().unwrap().as_ptr()
         } else {
             all.as_ptr()
         };
-        nft = format_create_with_client(
+        let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
             (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
             (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
             (*ft).flags,
         );
+        nft = &raw mut *nft_owner;
         format_add(
             nft,
             b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1162,7 +1164,7 @@ pub(super) unsafe fn format_loop_windows(
                 )
             },
         );
-        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == (*s).curw_ptr() {
+        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == (*s).current_winlink() {
             format_add(
                 nft,
                 b"window_after_active\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1176,7 +1178,7 @@ pub(super) unsafe fn format_loop_windows(
             );
         }
         if (i + 1 as ::core::ffi::c_int) < n
-            && l[(i + 1 as ::core::ffi::c_int) as usize] == (*s).curw_ptr()
+            && l[(i + 1 as ::core::ffi::c_int) as usize] == (*s).current_winlink()
         {
             format_add(
                 nft,
@@ -1193,7 +1195,7 @@ pub(super) unsafe fn format_loop_windows(
         if (i + 1 as ::core::ffi::c_int) < n {
             format_add_window_neighbour(
                 nft,
-                l[(i + 1 as ::core::ffi::c_int) as usize],
+                (l[(i + 1 as ::core::ffi::c_int) as usize]).clone(),
                 &(*(s)).observer.upgrade().expect("live session"),
                 b"next\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1201,16 +1203,16 @@ pub(super) unsafe fn format_loop_windows(
         if i > 0 as ::core::ffi::c_int {
             format_add_window_neighbour(
                 nft,
-                l[(i - 1 as ::core::ffi::c_int) as usize],
+                (l[(i - 1 as ::core::ffi::c_int) as usize]).clone(),
                 &(*(s)).observer.upgrade().expect("live session"),
                 b"prev\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, None);
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), None);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(Box::from_raw(nft));
+        format_free(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1282,12 +1284,13 @@ pub(super) unsafe fn format_loop_panes(
         } else {
             all.as_ptr()
         };
-        nft = format_create_with_client(
+        let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
             (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
             (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
             (*ft).flags,
         );
+        nft = &raw mut *nft_owner;
         format_add(
             nft,
             b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1304,11 +1307,11 @@ pub(super) unsafe fn format_loop_panes(
                 )
             },
         );
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
-        format_free(Box::from_raw(nft));
+        format_free(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -1365,7 +1368,8 @@ pub(super) unsafe fn format_loop_add_option(
         },
     );
     let item_owner = (*ft).item.upgrade();
-    nft = format_create_with_client((*ft).client.as_ref(), (item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+    let mut nft_owner = format_create_with_client((*ft).client.as_ref(), (item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+    nft = &raw mut *nft_owner;
     format_add(
         nft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1454,11 +1458,11 @@ pub(super) unsafe fn format_loop_add_option(
         b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (i) as u32),
     );
-    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
-    format_free(Box::from_raw(nft));
+    format_free(nft_owner);
     buffer.extend_from_slice(expanded.as_bytes());
 }
 pub(super) unsafe fn format_loop_add_array_item(
@@ -1514,7 +1518,8 @@ pub(super) unsafe fn format_loop_add_array_item(
         },
     );
     let item_owner = (*ft).item.upgrade();
-    nft = format_create_with_client((*ft).client.as_ref(), (item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+    let mut nft_owner = format_create_with_client((*ft).client.as_ref(), (item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+    nft = &raw mut *nft_owner;
     format_add(
         nft,
         b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1615,11 +1620,11 @@ pub(super) unsafe fn format_loop_add_array_item(
         b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (i) as u32),
     );
-    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
     next.ft = nft;
     let expanded = format_expand1_cstring(&raw mut next, fmt);
-    format_free(Box::from_raw(nft));
+    format_free(nft_owner);
     buffer.extend_from_slice(expanded.as_bytes());
 }
 pub(super) unsafe fn format_loop_options(
@@ -1778,7 +1783,8 @@ pub(super) unsafe fn format_loop_environ(
                 write_cstr(out, ((*envent).name).as_ptr().cast_mut())
             },
         );
-        nft = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+        let mut nft_owner = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+        nft = &raw mut *nft_owner;
         format_add(
             nft,
             b"environ_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1854,11 +1860,11 @@ pub(super) unsafe fn format_loop_environ(
             b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (i) as u32),
         );
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
-        format_free(Box::from_raw(nft));
+        format_free(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i = i.wrapping_add(1);
     }
@@ -1920,7 +1926,8 @@ pub(super) unsafe fn format_loop_clients(
                 )
             },
         );
-        nft = format_create_with_client(Some(&clients_sorted[i as usize]), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int, (*ft).flags);
+        let mut nft_owner = format_create_with_client(Some(&clients_sorted[i as usize]), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int, (*ft).flags);
+        nft = &raw mut *nft_owner;
         format_add(
             nft,
             b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1937,11 +1944,11 @@ pub(super) unsafe fn format_loop_clients(
                 )
             },
         );
-        format_defaults(nft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (*ft).wl_ptr(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(nft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
-        format_free(Box::from_raw(nft));
+        format_free(nft_owner);
         buffer.extend_from_slice(expanded.as_bytes());
         i += 1;
     }
@@ -3643,12 +3650,13 @@ pub(crate) unsafe fn format_single_cstring(
     mut fmt: *const ::core::ffi::c_char,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> CString {
-    let ft = format_create_defaults(item_handle, c_owner, s_owner, wl, wp_owner);
+    let mut ft_owner = format_create_defaults(item_handle, c_owner, s_owner, wl.clone(), wp_owner);
+    let ft = &raw mut *ft_owner;
     let expanded = format_expand_cstring(ft, fmt);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return expanded;
 }
 pub(crate) unsafe fn format_single_from_state_cstring(
@@ -3657,7 +3665,7 @@ pub(crate) unsafe fn format_single_from_state_cstring(
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: *mut cmd_find_state,
 ) -> CString {
-    format_single_cstring(item_handle, fmt, c_owner, (*fs).s.upgrade().as_ref(), (*fs).wl_ptr(), (*fs).wp.upgrade().as_ref())
+    format_single_cstring(item_handle, fmt, c_owner, (*fs).s.upgrade().as_ref(), ((*fs).winlink_handle()).clone(), (*fs).wp.upgrade().as_ref())
 }
 pub(crate) unsafe fn format_single_from_target_cstring(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -3732,12 +3740,13 @@ mod format_choose_tests {
     #[test]
     fn expanded_owners_outlive_their_inputs_and_tree() {
         unsafe {
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             let input = CString::new(b"\xff:##:#,:#}:tail#".to_vec()).unwrap();
             let owned = format_expand_cstring(ft, input.as_ptr());
             let timed_owned = format_expand_time_cstring(ft, input.as_ptr());
             drop(input);
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
 
             assert_eq!(owned.as_bytes(), b"\xff:#:,:}:tail");
             assert_eq!(timed_owned.as_bytes(), owned.as_bytes());
@@ -3749,7 +3758,8 @@ mod format_choose_tests {
     #[test]
     fn owned_expansion_preserves_empty_and_limit_results() {
         unsafe {
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             assert!(format_expand_cstring(ft, std::ptr::null())
                 .as_bytes()
                 .is_empty());
@@ -3780,14 +3790,15 @@ mod format_choose_tests {
             assert!(format_expand1_cstring(&raw mut es, too_long.as_ptr())
                 .as_bytes()
                 .is_empty());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 
     #[test]
     fn split_operands_preserve_escapes_nesting_and_bytes() {
         unsafe {
-            let ft = format_create(None, None, 0, 0);
+            let mut ft_owner = format_create(None, None, 0, 0);
+            let ft = &raw mut *ft_owner;
             let mut es: format_expand_state = Default::default();
             es.ft = ft;
             es.start_time = get_timer();
@@ -3827,7 +3838,7 @@ mod format_choose_tests {
             }
 
             assert!(format_choose(&raw mut es, c"no delimiter".as_ptr()).is_none());
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     }
 }

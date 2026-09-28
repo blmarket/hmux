@@ -63,7 +63,8 @@ fn indices_are_normalized_and_invalid_indices_are_rejected() {
 #[test]
 fn option_reload_replaces_defaults_without_changing_overrides() {
     unsafe {
-        let oo = options_create(null_mut());
+        let mut oo_owner = options_create(null_mut());
+        let oo = &raw mut *oo_owner;
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
@@ -94,7 +95,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         colour_palette_from_option(Some(&mut p), oo);
         assert!(p.default_palette.is_none());
         assert_eq!(colour_palette_get(Some(&p), COLOUR_FLAG_256 | 255), -1);
-        options_free(oo);
+        options_free(oo_owner);
         // The arrays are released by normal Rust drop when p leaves scope.
     }
 }

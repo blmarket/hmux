@@ -374,9 +374,9 @@ unsafe fn cmd_capture_pane_history(
         };
         (saved, &wp.base)
     } else {
-        let active = wp.modes.active_ptr();
-        let s = if args_has(args, b'M') != 0 && !active.is_null() {
-            match (*(*active).mode).get_screen {
+        let active = wp.modes.active_weak();
+        let s = if args_has(args, b'M') != 0 && active.is_alive() {
+            match (*(active).get_unchecked().mode).get_screen {
                 Some(get_screen) => &*get_screen(active),
                 None => &wp.base,
             }
@@ -570,9 +570,9 @@ unsafe fn cmd_capture_pane_history(
     }
     Some(buf)
 }
-unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_capture_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pane_owner = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).wp.upgrade().expect("capture target pane");
@@ -580,7 +580,7 @@ unsafe fn cmd_capture_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clear_history_entry) {
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_clear_history_entry) {
         window_pane_reset_mode_all(&pane_owner);
         grid_clear_history((*wp).base.grid_mut());
         if args_has(args, 'H' as i32 as u_char) != 0 {

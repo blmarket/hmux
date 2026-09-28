@@ -113,7 +113,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
         wp: Default::default(),
         idx: 0,
     };
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if cdata.wp_id != -(1 as ::core::ffi::c_int) {
         lookup_wp_owner = window_pane_find_by_id(cdata.wp_id as u_int);
         wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -124,7 +124,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             return;
         }
         if cdata.client.is_some() && !(*client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get())).session_handle().is_none() {
-            wp = (*(*(*(*client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get())).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = (*((*(*client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get())).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if wp.is_null()
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
@@ -137,8 +137,8 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
         }
     }
     let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-    wme = (*wp).modes.active_ptr();
-    if wme.is_null() || !std::ptr::eq((*wme).mode, &window_view_mode) {
+    wme = (*wp).modes.active_weak();
+    if !wme.is_alive() || !std::ptr::eq(wme.get_unchecked().mode, &window_view_mode) {
         window_pane_set_mode(
             &pane_owner,
             None,
@@ -161,9 +161,9 @@ fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_
     CString::new(message).expect("run-shell command and status text contain no NUL")
 }
 
-unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_run_shell_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -217,7 +217,8 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
     if args_has(args, 'C' as i32 as u_char) == 0 {
         cmd = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
         if !cmd.is_null() {
-            ft = format_create_from_target(item_handle);
+            let mut ft_owner = format_create_from_target(item_handle);
+            ft = &raw mut *ft_owner;
             i = 1 as u_int;
             while i < args_count(args) {
                 xformat(&mut key, format_args!("{}", i as u32));
@@ -227,11 +228,11 @@ unsafe fn cmd_run_shell_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
                 i = i.wrapping_add(1);
             }
             cdata.cmd = Some(format_expand_cstring(ft, cmd));
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
     } else {
         cdata.state = Some(args_make_commands_prepare(
-            self_0,
+            self_0.clone(),
             item_handle,
             0 as u_int,
             ::core::ptr::null::<::core::ffi::c_char>(),

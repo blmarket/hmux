@@ -97,15 +97,15 @@ pub static cmd_previous_layout_entry: cmd_entry = {
         exec: Some(cmd_select_layout_exec),
     }
 };
-unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_select_layout_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_target_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut layoutname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
@@ -114,12 +114,12 @@ unsafe fn cmd_select_layout_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
     let mut layout: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
-    next = (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_next_layout_entry)) as ::core::ffi::c_int;
+    next = (std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_next_layout_entry)) as ::core::ffi::c_int;
     if args_has(args, 'n' as i32 as u_char) != 0 {
         next = 1 as ::core::ffi::c_int;
     }
     previous =
-        (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_previous_layout_entry)) as ::core::ffi::c_int;
+        (std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_previous_layout_entry)) as ::core::ffi::c_int;
     if args_has(args, 'p' as i32 as u_char) != 0 {
         previous = 1 as ::core::ffi::c_int;
     }

@@ -146,7 +146,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: *mut session = (*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
@@ -161,7 +161,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
     if w > (*tty).sx || h > (*tty).sy {
         return 0 as ::core::ffi::c_int;
     }
-    ft = format_create_from_target(item_handle);
+    let mut ft_owner = format_create_from_target(item_handle);
+    ft = &raw mut *ft_owner;
     if (*event).m.valid != 0 {
         format_add(
             ft,
@@ -213,7 +214,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
                 if !((*candidate).type_0 as ::core::ffi::c_uint
                     != STYLE_RANGE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    if (*candidate).argument == (*wl).idx as u_int {
+                    if (*candidate).argument == wl.get_unchecked().idx as u_int {
                         sr = candidate as *const style_range as *mut style_range;
                         break;
                     }
@@ -521,7 +522,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         (*py) as u32,
         (h) as u32
     ));
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn cmd_display_menu_get_menu_pos(
@@ -539,7 +540,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut s: *mut session = (*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut window: *mut window = (*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
@@ -566,7 +567,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
         0 as u_int
     }) as ::core::ffi::c_long;
     let tty_window_view { ox, oy, sy, .. } = tty_window_offset(&(*tc).tty);
-    ft = format_create_from_target(item_handle);
+    let mut ft_owner = format_create_from_target(item_handle);
+    ft = &raw mut *ft_owner;
     if (*event).m.valid != 0 {
         mouse_x = (*event).m.x.wrapping_add(ox) as ::core::ffi::c_long;
         if (*event).m.statusat == 0 as ::core::ffi::c_int {
@@ -624,7 +626,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
                 if !((*candidate).type_0 as ::core::ffi::c_uint
                     != STYLE_RANGE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    if (*candidate).argument == (*wl).idx as u_int {
+                    if (*candidate).argument == wl.get_unchecked().idx as u_int {
                         sr = candidate as *const style_range as *mut style_range;
                         break;
                     }
@@ -911,12 +913,12 @@ unsafe fn cmd_display_menu_get_menu_pos(
         (*py) as u32,
         (h) as u32
     ));
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
@@ -925,7 +927,7 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item_handle: &std::rc::Rc<std:
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
-    let o = options_owner_ptr(&mut (*(*(*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+    let o = options_owner_ptr(&mut (*((*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
         if std::ffi::CStr::from_ptr(args_get(&*(args), b'C').map_or(std::ptr::null(), |value| value.as_ptr())) == c"-" {
@@ -1029,10 +1031,10 @@ unsafe fn cmd_display_menu_exec(self_0: *mut cmd, item_handle: &std::rc::Rc<std:
     );
     CMD_RETURN_NORMAL
 }
-unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let tc_owner = cmdq_get_target_client((item).as_ref());
@@ -1059,7 +1061,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
     let mut h: u_int = 0;
     let mut count: u_int = args_count(args);
     let mut env: Option<Box<environ>> = None;
-    let mut o: *mut options = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut o: *mut options = options_owner_ptr(&mut (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if args_has(args, 'C' as i32 as u_char) != 0 {
         server_client_clear_overlay(&(*(tc)).observer.upgrade().expect("live client"));

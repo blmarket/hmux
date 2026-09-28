@@ -52,10 +52,10 @@ pub static cmd_list_clients_entry: cmd_entry = {
         exec: Some(cmd_list_clients_exec),
     }
 };
-unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_list_clients_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -92,12 +92,13 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize].get();
         if !((*c).session_handle().is_none() || !s.is_null() && s != (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())) {
-            ft = format_create_with_client(
+            let mut ft_owner = format_create_with_client(
                 queue_client.as_ref(),
                 Some(item_handle),
                 FORMAT_NONE,
                 0 as ::core::ffi::c_int,
             );
+            ft = &raw mut *ft_owner;
             format_add(
                 ft,
                 b"line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -107,7 +108,7 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
                 ft,
                 (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 None,
-                ::core::ptr::null_mut::<winlink>(),
+                (refbox::Weak::new()).clone(),
                 None,
             );
             if !filter.is_null() {
@@ -120,7 +121,7 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
                 let line = format_expand_cstring(ft, template);
                 cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
             }
-            format_free(Box::from_raw(ft));
+            format_free(ft_owner);
         }
         i = i.wrapping_add(1);
     }

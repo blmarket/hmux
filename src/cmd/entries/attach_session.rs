@@ -85,7 +85,7 @@ pub unsafe fn cmd_attach_session(
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c_loop: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
@@ -118,23 +118,23 @@ pub unsafe fn cmd_attach_session(
         return CMD_RETURN_ERROR;
     }
     s = target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = target.wl_ptr();
+    wl = target.winlink_handle();
     wp = target.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !wl.is_null() {
+    if wl.is_alive() {
         if !wp.is_null() {
             window_set_active_pane(&(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
         }
-        session_set_current(&(*s).observer.upgrade().expect("live session"), wl);
+        session_set_current(&(*s).observer.upgrade().expect("live session"), wl.clone());
         if !wp.is_null() {
-            cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl.clone(), &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
         } else {
-            cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl, 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl.clone(), 0 as ::core::ffi::c_int);
         }
     }
     if !cflag.is_null() {
         session_set_cwd(
             &mut *s,
-            Some(format_single_cstring(Some(item_handle), cflag, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref())),
+            Some(format_single_cstring(Some(item_handle), cflag, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref())),
         );
     }
     if !fflag.is_null() {
@@ -232,8 +232,8 @@ pub unsafe fn cmd_attach_session(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_attach_session_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+unsafe fn cmd_attach_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     return cmd_attach_session(
         item_handle,
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),

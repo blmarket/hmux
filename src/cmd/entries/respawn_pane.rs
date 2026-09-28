@@ -43,9 +43,9 @@ pub static cmd_respawn_pane_entry: cmd_entry = {
         exec: Some(cmd_respawn_pane_exec),
     }
 };
-unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_respawn_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
@@ -63,12 +63,12 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
     };
     let mut argv_owner = Vec::new();
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = (*item).observer.clone();
     sc.s = (*s).observer.clone();
-    sc.set_wl(wl);
+    sc.set_wl(wl.clone());
     sc.wp0 = (*wp).observer.clone();
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;

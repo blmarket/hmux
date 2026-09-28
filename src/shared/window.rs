@@ -198,39 +198,39 @@ pub struct window_mode {
     pub flags: ::core::ffi::c_int,
     pub init: Option<
         unsafe fn(
-            *mut window_mode_entry,
+            refbox::Weak<window_mode_entry>,
             Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
             *mut cmd_find_state,
             *mut args,
         ) -> *mut screen,
     >,
-    pub free: Option<unsafe fn(*mut window_mode_entry) -> ()>,
-    pub resize: Option<unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()>,
-    pub update: Option<unsafe fn(*mut window_mode_entry) -> ()>,
-    pub style_changed: Option<unsafe fn(*mut window_mode_entry) -> ()>,
+    pub free: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
+    pub resize: Option<unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> ()>,
+    pub update: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
+    pub style_changed: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> ()>,
     pub key: Option<
         unsafe fn(
-            *mut window_mode_entry,
+            refbox::Weak<window_mode_entry>,
             &std::rc::Rc<std::cell::UnsafeCell<client>>,
-            *mut winlink,
+            refbox::Weak<winlink>,
             key_code,
             *mut mouse_event,
         ) -> (),
     >,
-    pub key_table: Option<unsafe fn(*mut window_mode_entry) -> *const ::core::ffi::c_char>,
+    pub key_table: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *const ::core::ffi::c_char>,
     pub command: Option<
         unsafe fn(
-            *mut window_mode_entry,
+            refbox::Weak<window_mode_entry>,
             Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
             Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-            *mut winlink,
+            refbox::Weak<winlink>,
             *mut args,
             *mut mouse_event,
         ) -> (),
     >,
-    pub formats: Option<unsafe fn(*mut window_mode_entry, *mut format_tree) -> ()>,
-    pub get_screen: Option<unsafe fn(*mut window_mode_entry) -> *mut screen>,
-    pub display_screen: Option<unsafe fn(*mut window_mode_entry) -> *mut screen>,
+    pub formats: Option<unsafe fn(refbox::Weak<window_mode_entry>, *mut format_tree) -> ()>,
+    pub get_screen: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen>,
+    pub display_screen: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *mut screen>,
 }
 
 impl Default for window_mode {

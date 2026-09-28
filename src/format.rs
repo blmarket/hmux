@@ -348,38 +348,39 @@ pub unsafe fn format_create_defaults(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-) -> *mut format_tree {
+) -> Box<format_tree> {
     let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+    let mut owner;
     if !item.is_null() {
-        ft = format_create_with_client(
+        owner = format_create_with_client(
             queue_client.as_ref(),
             item_handle,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
     } else {
-        ft = format_create(
+        owner = format_create(
             None,
             item_handle,
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
     }
-    format_defaults(ft, c_owner, s_owner, wl, wp_owner);
-    return ft;
+    let ft = &raw mut *owner;
+    format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
+    return owner;
 }
 pub unsafe fn format_create_from_state(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: &cmd_find_state,
-) -> *mut format_tree {
-    return format_create_defaults(item_handle, c_owner, fs.s.upgrade().as_ref(), fs.wl_ptr(), fs.wp.upgrade().as_ref());
+) -> Box<format_tree> {
+    return format_create_defaults(item_handle, c_owner, fs.s.upgrade().as_ref(), (fs.winlink_handle()).clone(), fs.wp.upgrade().as_ref());
 }
-pub unsafe fn format_create_from_target(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> *mut format_tree {
+pub unsafe fn format_create_from_target(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> Box<format_tree> {
     let item = item_handle.get();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -389,7 +390,7 @@ pub unsafe fn format_defaults(
     mut ft: *mut format_tree,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
     let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -418,11 +419,11 @@ pub unsafe fn format_defaults(
     } else {
         log_debug(format_args!("{}: s=none", "format_defaults"));
     }
-    if !wl.is_null() {
+    if wl.is_alive() {
         log_debug(format_args!(
             "{}: wl={}",
             "format_defaults",
-            ((*wl).idx) as u32
+            (wl.get_unchecked().idx) as u32
         ));
     } else {
         log_debug(format_args!("{}: wl=none", "format_defaults"));
@@ -444,7 +445,7 @@ pub unsafe fn format_defaults(
     }
     if !wp.is_null() {
         (*ft).type_0 = FORMAT_TYPE_PANE;
-    } else if !wl.is_null() {
+    } else if wl.is_alive() {
         (*ft).type_0 = FORMAT_TYPE_WINDOW;
     } else if !s.is_null() {
         (*ft).type_0 = FORMAT_TYPE_SESSION;
@@ -454,13 +455,12 @@ pub unsafe fn format_defaults(
     let session_owner = s_owner.cloned().or_else(|| {
         c_owner.and_then(|owner| (*owner.get()).session.upgrade())
     });
-    if wl.is_null() {
-        wl = session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| (*owner.get()).curw_ptr());
+    if !wl.is_alive() {
+        wl = session_owner.as_ref().map_or_else(refbox::Weak::new, |owner| (*owner.get()).current_winlink());
     }
     let pane_owner = wp_owner.cloned().or_else(|| {
-        wl.as_ref()
-            .and_then(|link| link.window_owner.as_ref())
-            .and_then(|owner| (*owner.get()).active.upgrade())
+        wl.try_borrow_mut().ok()
+            .and_then(|link| link.window_owner.as_ref().and_then(|owner| (*owner.get()).active.upgrade()))
     });
     if let Some(client) = c_owner {
         format_defaults_client(ft, client);
@@ -468,8 +468,8 @@ pub unsafe fn format_defaults(
     if let Some(session) = session_owner.as_ref() {
         format_defaults_session(ft, session);
     }
-    if !wl.is_null() {
-        format_defaults_winlink(ft, wl);
+    if wl.is_alive() {
+        format_defaults_winlink(ft, wl.clone());
     }
     if let Some(pane) = pane_owner.as_ref() {
         format_defaults_pane(ft, pane);
@@ -491,22 +491,22 @@ unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &std::rc::Rc
 pub unsafe fn format_defaults_window(mut ft: *mut format_tree, w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>) {
     (*ft).w = w_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
 }
-unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: *mut winlink) {
+unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak<winlink>) {
     if (*ft).w.upgrade().is_none() {
-        format_defaults_window(ft, (*wl).window_owner.as_ref());
+        format_defaults_window(ft, wl.get_unchecked().window_owner.as_ref());
     }
-    (*ft).wl = (*wl).observer.clone();
+    (*ft).wl = wl.get_unchecked().observer.clone();
 }
 pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let mut wp = wp_owner.get();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if (*ft).w.upgrade().is_none() {
         format_defaults_window(ft, (*wp).window.upgrade().as_ref());
     }
     (*ft).wp = std::rc::Rc::downgrade(wp_owner);
-    wme = (*wp).modes.active_ptr();
-    if !wme.is_null() && (*(*wme).mode).formats.is_some() {
-        (*(*wme).mode).formats.expect("non-null function pointer")(wme, ft);
+    wme = (*wp).modes.active_weak();
+    if !!wme.is_alive() && (*wme.get_unchecked().mode).formats.is_some() {
+        (*wme.get_unchecked().mode).formats.expect("non-null function pointer")(wme, ft);
     }
 }
 pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &PasteBufferRef) {

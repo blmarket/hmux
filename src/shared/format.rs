@@ -135,13 +135,9 @@ pub struct format_tree {
 }
 
 impl format_tree {
-    /// Borrow the current link only while its session index still owns it.
-    pub fn wl_ptr(&self) -> *mut winlink {
-        if self.wl.is_alive() {
-            self.wl.as_ptr().cast_mut()
-        } else {
-            std::ptr::null_mut()
-        }
+    /// Observe the format context link without extending its lifetime.
+    pub fn winlink_handle(&self) -> refbox::Weak<winlink> {
+        self.wl.clone()
     }
 }
 

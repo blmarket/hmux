@@ -627,7 +627,12 @@ impl<T: ?Sized> Weak<T> {
     }
 
     /// Returns an immutable reference to the data without checking if
-    /// the data is already mutably borrowed or dropped.
+    /// the data is already mutably borrowed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this weak reference is empty or its owner has been dropped,
+    /// including when an active borrow is delaying payload destruction.
     ///
     /// # Safety
     ///
@@ -636,14 +641,20 @@ impl<T: ?Sized> Weak<T> {
     ///    `RefBox::new_cyclic`).
     /// 3. Ensure the owning `RefBox` is alive for the entire lifetime
     ///    of the returned reference.
-    /// 4. Ensure this weak reference is not empty.
+    #[track_caller]
     pub unsafe fn get_unchecked(&self) -> &T {
+        assert!(self.is_alive(), "RefBox Weak access requires a live owner");
         // SAFETY: the caller must uphold the safety requirements
         unsafe { self.ptr.as_ref().data_ref() }
     }
 
     /// Returns a mutable reference to the data without checking if
-    /// the data is already mutably borrowed or dropped.
+    /// the data is already mutably borrowed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this weak reference is empty or its owner has been dropped,
+    /// including when an active borrow is delaying payload destruction.
     ///
     /// # Safety
     ///
@@ -652,8 +663,9 @@ impl<T: ?Sized> Weak<T> {
     ///    `RefBox::new_cyclic`).
     /// 3. Ensure the owning `RefBox` is alive for the entire lifetime
     ///    of the returned reference.
-    /// 4. Ensure this weak reference is not empty.
+    #[track_caller]
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
+        assert!(self.is_alive(), "RefBox Weak access requires a live owner");
         // SAFETY: the caller must uphold the safety requirements
         unsafe { self.ptr.as_ref().data_mut() }
     }
@@ -977,6 +989,52 @@ mod tests {
         assert_eq!(weak.is_alive(), true);
         drop(ref_box);
         assert_eq!(weak.is_alive(), false);
+    }
+
+    #[test]
+    fn weak_unchecked_access_requires_live_owner() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        // Both empty handles and expired allocations must panic before forming
+        // a reference to their payload.
+        let owner = RefBox::new(7);
+        let expired = owner.downgrade();
+        drop(owner);
+        for mut weak in [crate::Weak::<i32>::new(), expired] {
+            assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
+                let _ = weak.get_unchecked();
+            })).is_err());
+            assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
+                let _ = weak.get_mut_unchecked();
+            })).is_err());
+        }
+
+        let owner = RefBox::new(7);
+        let mut weak = owner.downgrade();
+        unsafe {
+            assert_eq!(*weak.get_unchecked(), 7);
+            *weak.get_mut_unchecked() = 9;
+            assert_eq!(*weak.get_unchecked(), 9);
+        }
+    }
+
+    #[test]
+    fn weak_unchecked_access_rejects_owner_dropped_during_borrow() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        let owner = RefBox::new(7);
+        let borrowed_weak = owner.downgrade();
+        let mut weak = owner.downgrade();
+        let borrow = borrowed_weak.try_borrow_mut().unwrap();
+        drop(owner);
+        assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
+            let _ = weak.get_unchecked();
+        })).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
+            let _ = weak.get_mut_unchecked();
+        })).is_err());
+        // The existing guard remains valid until it releases the payload.
+        assert_eq!(*borrow, 7);
     }
 
     #[test]

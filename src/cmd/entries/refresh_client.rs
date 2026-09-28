@@ -74,11 +74,11 @@ unsafe fn cmd_refresh_client_update_subscription(
     );
 }
 unsafe fn cmd_refresh_client_control_client_size(
-    mut self_0: *mut cmd,
+    mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut size: *const ::core::ffi::c_char = args_get(&*(args), 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -235,9 +235,9 @@ unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
     }
 }
 
-unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_refresh_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut tty: *mut tty = &raw mut (*tc).tty;
@@ -270,7 +270,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::R
         if args_has(args, 'c' as i32 as u_char) != 0 {
             (*tc).pan_window = std::rc::Weak::new();
         } else {
-            w = (*(*(*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            w = ((*(*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if !(*tc).pan_window_is(&*w) {
                 (*tc).set_pan_window(&*w);
                 (*tc).pan_ox = (*tty).oox;
@@ -333,7 +333,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: *mut cmd, item_handle: &std::rc::R
         }
     } else if args_has(args, 'C' as i32 as u_char) != 0 {
         if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
-            return cmd_refresh_client_control_client_size(self_0, item_handle);
+            return cmd_refresh_client_control_client_size(self_0.clone(), item_handle);
         }
     } else {
         if args_has(args, 'S' as i32 as u_char) != 0 {

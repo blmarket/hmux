@@ -64,17 +64,17 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
         exec: Some(cmd_pipe_pane_exec),
     }
 };
-unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_pipe_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
     let wp = pane_owner.get();
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let mut old_fd: ::core::ffi::c_int = 0;
     let mut pipe_fd: [::core::ffi::c_int; 2] = [0; 2];
@@ -126,15 +126,16 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
         });
         return CMD_RETURN_ERROR;
     }
-    ft = format_create_with_client(
+    let mut ft_owner = format_create_with_client(
         queue_client.as_ref(),
         Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    format_defaults(ft, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    ft = &raw mut *ft_owner;
+    format_defaults(ft, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     let cmd = format_expand_time_cstring(ft, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     (*wp).pipe_pid = fork() as pid_t;

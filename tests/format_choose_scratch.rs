@@ -10,14 +10,18 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
         let saved_options = global_options;
         let saved_s_options = global_s_options;
         let saved_w_options = global_w_options;
-        let options = options_create(std::ptr::null_mut());
-        let s_options = options_create(std::ptr::null_mut());
-        let w_options = options_create(std::ptr::null_mut());
+        let mut options_owner = options_create(std::ptr::null_mut());
+        let options = &raw mut *options_owner;
+        let mut s_options_owner = options_create(std::ptr::null_mut());
+        let s_options = &raw mut *s_options_owner;
+        let mut w_options_owner = options_create(std::ptr::null_mut());
+        let w_options = &raw mut *w_options_owner;
         global_options = options;
         global_s_options = s_options;
         global_w_options = w_options;
 
-        let tree = format_create(None, None, 0, 0);
+        let mut tree_owner = format_create(None, None, 0, 0);
+        let tree = &raw mut *tree_owner;
         for (expression, expected) in [
             (b"#{==:a#,b,a#,b}\0".as_slice(), b"1".as_slice()),
             (b"#{==:#{e|+:1,2},3}\0", b"1"),
@@ -43,12 +47,12 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
             let result = format_expand_cstring(tree, expression.as_ptr());
             assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
-        format_free(Box::from_raw(tree));
+        format_free(tree_owner);
         global_options = saved_options;
         global_s_options = saved_s_options;
         global_w_options = saved_w_options;
-        options_free(options);
-        options_free(s_options);
-        options_free(w_options);
+        options_free(options_owner);
+        options_free(s_options_owner);
+        options_free(w_options_owner);
     }
 }

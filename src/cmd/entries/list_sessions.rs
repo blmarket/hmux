@@ -52,10 +52,10 @@ pub static cmd_list_sessions_entry: cmd_entry = {
         exec: Some(cmd_list_sessions_exec),
     }
 };
-unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_list_sessions_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut i: u_int = 0;
@@ -86,12 +86,13 @@ unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
     let n = u_int::try_from(l.len()).expect("too many sessions to list");
     i = 0 as u_int;
     while i < n {
-        ft = format_create_with_client(
+        let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
             Some(item_handle),
             FORMAT_NONE,
             0 as ::core::ffi::c_int,
         );
+        ft = &raw mut *ft_owner;
         format_add(
             ft,
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
@@ -101,7 +102,7 @@ unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
             ft,
             (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
             (l[i as usize].get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            ::core::ptr::null_mut::<winlink>(),
+            (refbox::Weak::new()).clone(),
             None,
         );
         if !filter.is_null() {
@@ -114,7 +115,7 @@ unsafe fn cmd_list_sessions_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc
             let line = format_expand_cstring(ft, template);
             cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
         }
-        format_free(Box::from_raw(ft));
+        format_free(ft_owner);
         i = i.wrapping_add(1);
     }
     return CMD_RETURN_NORMAL;

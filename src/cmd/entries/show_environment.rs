@@ -56,11 +56,11 @@ unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
     CString::new(escaped).expect("environment value was truncated at its first NUL")
 }
 unsafe fn cmd_show_environment_print(
-    mut self_0: *mut cmd,
+    mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     envent: &environ_entry,
 ) {
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
         return;
     }
@@ -105,9 +105,9 @@ unsafe fn cmd_show_environment_print(
         });
     };
 }
-unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_show_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let env: &environ;
     let mut envent: Option<&environ_entry> = None;
@@ -149,12 +149,12 @@ unsafe fn cmd_show_environment_exec(mut self_0: *mut cmd, item_handle: &std::rc:
             });
             return CMD_RETURN_ERROR;
         }
-        cmd_show_environment_print(self_0, item_handle, envent.unwrap());
+        cmd_show_environment_print(self_0.clone(), item_handle, envent.unwrap());
         return CMD_RETURN_NORMAL;
     }
     for entry in environ_iter(&*env) {
         let envent = entry;
-        cmd_show_environment_print(self_0, item_handle, envent);
+        cmd_show_environment_print(self_0.clone(), item_handle, envent);
     }
     return CMD_RETURN_NORMAL;
 }

@@ -193,7 +193,8 @@ fn update_borrows_sources_and_accepts_owned_snapshots() {
     use hmux2::src::options::{options_array_set, options_create, options_empty, options_free};
     use std::ptr::null_mut;
     unsafe {
-        let options = options_create(null_mut());
+        let mut options_owner = options_create(null_mut());
+        let options = &raw mut *options_owner;
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
@@ -236,7 +237,7 @@ fn update_borrows_sources_and_accepts_owned_snapshots() {
             source.find_bytes(b"missing").unwrap().unwrap().value(),
             None
         );
-        options_free(options);
+        options_free(options_owner);
     }
 }
 

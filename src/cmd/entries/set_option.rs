@@ -124,9 +124,9 @@ fn cmd_set_option_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_set_hook_event_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if args_count(args) == 0 as u_int {
@@ -163,11 +163,11 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: *mut cmd, item_handle: &std::rc::R
             (*((*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
         );
     }
-    if !(*target).wl_ptr().is_null() {
+    if (*target).winlink_handle().is_alive() {
         event_payload_set_int(
             &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(*target).wl_ptr()).idx,
+            ((*target).winlink_handle()).get_unchecked().idx,
         );
     } else if (*target).idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
@@ -297,10 +297,10 @@ unsafe fn cmd_set_hook_monitor_exec(
     }
     return CMD_RETURN_ERROR;
 }
-unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut append: ::core::ffi::c_int = args_has(args, 'a' as i32 as u_char);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -319,13 +319,13 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
     let mut ambiguous: ::core::ffi::c_int = 0;
     let mut scope: ::core::ffi::c_int = 0;
     window =
-        (std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_window_option_entry)) as ::core::ffi::c_int;
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_hook_entry)
+        (std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_window_option_entry)) as ::core::ffi::c_int;
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
         && args_has(args, 'E' as i32 as u_char) != 0
     {
-        return cmd_set_hook_event_exec(self_0, item_handle);
+        return cmd_set_hook_event_exec(self_0.clone(), item_handle);
     }
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_hook_entry)
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
         && args_has(args, 'B' as i32 as u_char) != 0
     {
         return cmd_set_hook_monitor_exec(item_handle, args, window);
@@ -335,7 +335,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
         return CMD_RETURN_ERROR;
     }
     let argument = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_set_hook_entry)
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
         && args_has(args, 'R' as i32 as u_char) != 0
     {
         hooks_run(Some(item_handle), argument.as_ptr());
@@ -494,7 +494,7 @@ unsafe fn cmd_set_option_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<st
                                             write_cstr(out, value)
                                         });
                                         if std::ptr::eq(
-                                            cmd_get_entry(&*self_0),
+                                            cmd_get_entry(self_0.get_unchecked()),
                                             &cmd_set_hook_entry,
                                         ) {
                                             hooks_add_event(name);

@@ -62,14 +62,14 @@ pub static cmd_resize_pane_entry: cmd_entry = {
         exec: Some(cmd_resize_pane_exec),
     }
 };
-unsafe fn cmd_resize_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
     let wp = pane_owner.get();
-    let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -269,8 +269,8 @@ unsafe fn cmd_resize_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsa
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -281,7 +281,7 @@ unsafe fn cmd_resize_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsa
     mouse_pane_owner = cmd_mouse_pane(
         &raw mut (*event).m,
         Some(&mut mouse_session_owner),
-        ::core::ptr::null_mut::<*mut winlink>(),
+        ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
     s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -308,7 +308,7 @@ unsafe fn cmd_resize_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsa
 unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
     let c = client_owner.get();
     let mouse_pane_owner;
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -331,7 +331,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     lc = (*wp).layout_cell as *mut layout_cell;
     sx = (*wp).sx as ::core::ffi::c_int;
     sy = (*wp).sy as ::core::ffi::c_int;
@@ -451,7 +451,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<
 }
 unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
     let c = client_owner.get();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut y: u_int = 0;
     let mut ly: u_int = 0;
@@ -472,11 +472,11 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cel
     let mut resizes: u_int = 0 as u_int;
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
     wl = cmd_mouse_window(m, None);
-    if wl.is_null() {
+    if !wl.is_alive() {
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     y = (*m).y.wrapping_add((*m).oy);
     x = (*m).x.wrapping_add((*m).ox);
     if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {

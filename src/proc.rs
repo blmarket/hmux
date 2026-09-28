@@ -187,8 +187,7 @@ pub unsafe fn proc_send(
     proc_update_event(peer);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc {
-    let mut tp: *mut tmuxproc = ::core::ptr::null_mut::<tmuxproc>();
+pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> {
     let mut u: utsname = utsname {
         sysname: [0; 65],
         nodename: [0; 65],
@@ -239,7 +238,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
         log_cstr((NCURSES_VERSION.as_ptr()) as *const _),
         (NCURSES_VERSION_PATCH) as u32
     ));
-    tp = Box::into_raw(Box::new(tmuxproc {
+    Box::new(tmuxproc {
         name: CStr::from_ptr(name).to_owned(),
         exit: 0,
         signalcb: None,
@@ -252,9 +251,20 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc 
         ev_sigusr2: Default::default(),
         ev_sigwinch: Default::default(),
         peers: Vec::new(),
-    }));
-    return tp;
+    })
 }
+/// Stop observers and release peers before releasing the process allocation.
+/// Call only after dispatch has returned and no further process use is possible.
+pub unsafe fn proc_free(mut owner: Box<tmuxproc>) {
+    let tp = &raw mut *owner;
+    proc_clear_signals(tp, 0);
+    while let Some(peer) = (*tp).peers.last_mut() {
+        let peer = &raw mut **peer;
+        proc_remove_peer(peer);
+    }
+    drop(owner);
+}
+
 pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut() -> bool>) {
     log_debug(format_args!(
         "{} loop enter",
@@ -493,4 +503,41 @@ pub unsafe fn proc_get_peer_uid(mut peer: *mut tmuxpeer) -> uid_t {
 }
 pub unsafe fn proc_get_peer_gid(mut peer: *mut tmuxpeer) -> gid_t {
     return (*peer).gid;
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    #[test]
+    fn process_free_cancels_events_and_explicitly_closes_remaining_peers() {
+        unsafe {
+            let mut owner = proc_start(c"process-owner-test".as_ptr());
+            let tp = &raw mut *owner;
+            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+            let observed = calls.clone();
+            event_set(&raw mut (*tp).ev_sigint, -1, 0, move |_, _| {
+                observed.set(observed.get() + 1);
+            });
+            let timeout = timeval { tv_sec: 0, tv_usec: 0 };
+            event_add(&raw mut (*tp).ev_sigint, &timeout);
+
+            let mut pair = [0; 2];
+            assert_eq!(::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()), 0);
+            let capture = refbox::RefBox::new(());
+            let observer = capture.downgrade();
+            proc_add_peer(tp, pair[0], Box::new(move |_| {
+                let _keep_capture = &capture;
+                panic!("peer callback must be cancelled before freeing its owner");
+            }));
+            proc_free(owner);
+            assert_eq!(::libc::fcntl(pair[0], ::libc::F_GETFD), -1);
+            assert!(matches!(observer.try_borrow_mut(), Err(refbox::BorrowError::Dropped)));
+            close(pair[1]);
+            event_loop();
+            assert_eq!(calls.get(), 0);
+            assert_eq!(std::rc::Rc::strong_count(&calls), 1);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 }

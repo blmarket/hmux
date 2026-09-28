@@ -317,12 +317,13 @@ pub unsafe fn status_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
     if (*c).flags & CLIENT_STATUSFORCE as uint64_t != 0 {
         flags |= FORMAT_FORCE;
     }
-    ft = format_create(Some(c_owner), None, FORMAT_NONE, flags);
+    let mut ft_owner = format_create(Some(c_owner), None, FORMAT_NONE, flags);
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         Some(c_owner),
         None,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
     style_apply(
@@ -420,7 +421,7 @@ pub unsafe fn status_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
         }
     }
     screen_write_stop(&mut ctx);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     log_debug(format_args!(
         "{} exit: force={}, changed={}",
         "status_redraw",
@@ -621,13 +622,14 @@ pub unsafe fn status_message_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<
         messageline = lines.wrapping_sub(1 as u_int);
     }
     let (ax, aw) = status_message_area(&*c);
-    ft = format_create_defaults(
+    let mut ft_owner = format_create_defaults(
         None,
         Some(c_owner),
         None,
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
+    ft = &raw mut *ft_owner;
     style_apply(
         &raw mut gc,
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
@@ -665,7 +667,7 @@ pub unsafe fn status_message_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<
         b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
     );
     let expanded = format_expand_time_cstring(ft, msgfmt);
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     screen_write_start(&mut ctx, (*sl).active_screen());
     screen_write_fast_copy(
         &mut ctx,
@@ -932,7 +934,8 @@ mod status_screen_tests {
         use crate::src::options::{options_set_number, options_set_string};
 
         unsafe {
-            let oo = options_create(std::ptr::null_mut());
+            let mut oo_owner = options_create(std::ptr::null_mut());
+            let oo = &raw mut *oo_owner;
             for name in [
                 c"message-style",
                 c"message-line",
@@ -947,7 +950,7 @@ mod status_screen_tests {
             }
             let session_owner = session::new();
             let session = &mut *session_owner.get();
-            session.options = Some(Box::from_raw(oo));
+            session.options = Some(oo_owner);
             let mut c = client::empty();
             c.set_session(Some(session));
             c.tty.sx = 80;
@@ -1006,8 +1009,10 @@ mod status_screen_tests {
     fn temporary_screen_is_shared_until_last_pop_and_base_survives() {
         unsafe {
             let previous = (global_options, global_s_options);
-            global_options = options_create(std::ptr::null_mut());
-            global_s_options = options_create(std::ptr::null_mut());
+            let mut global_options_owner = options_create(std::ptr::null_mut());
+            global_options = &raw mut *global_options_owner;
+            let mut global_s_options_owner = options_create(std::ptr::null_mut());
+            global_s_options = &raw mut *global_s_options_owner;
             for (options, name) in [
                 (global_options, c"extended-keys"),
                 (global_s_options, c"status"),
@@ -1097,8 +1102,8 @@ mod status_screen_tests {
             assert!((*c).status.active.is_none());
             status_free(&mut *(&mut *c));
 
-            options_free(global_options);
-            options_free(global_s_options);
+            options_free(global_options_owner);
+            options_free(global_s_options_owner);
             (global_options, global_s_options) = previous;
         }
     }

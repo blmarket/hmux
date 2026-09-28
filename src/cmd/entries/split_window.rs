@@ -115,10 +115,10 @@ pub static cmd_split_window_entry: cmd_entry = {
         exec: Some(cmd_split_window_exec),
     }
 };
-unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_split_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
@@ -139,8 +139,8 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -170,7 +170,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
     if window_active_pane_is_over_zoom(&(*(w)).observer.upgrade().expect("live window")) != 0 {
         restore_zoom = 1 as ::core::ffi::c_int;
     }
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_new_pane_entry) {
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_new_pane_entry) {
         is_floating = (args_has(args, 'L' as i32 as u_char) == 0) as ::core::ffi::c_int;
     } else {
         if window_pane_is_visible(&*wp) == 0 {
@@ -287,7 +287,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
     }
     sc.item = (*item).observer.clone();
     sc.s = (*s).observer.clone();
-    sc.set_wl(wl);
+    sc.set_wl(wl.clone());
     sc.wp0 = (*wp).observer.clone();
     sc.lc = lc;
     argv_owner = args_to_vector(&*args);
@@ -495,7 +495,7 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
                                         if !flags & SPAWN_DETACHED != 0 {
                                             cmd_find_from_winlink_pane(
                                                 &mut *current.current.borrow_mut(),
-                                                wl,
+                                                wl.clone(),
                                                 &(*(new_wp)).observer.upgrade().expect("live window_pane"),
                                                 0 as ::core::ffi::c_int,
                                             );
@@ -527,13 +527,13 @@ unsafe fn cmd_split_window_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
                                                 template = SPLIT_WINDOW_TEMPLATE.as_ptr();
                                             }
                                             let cp = format_single_cstring(
-                                                Some(item_handle), template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (new_wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                                                Some(item_handle), template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (new_wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                                             );
                                             cmdq_print(item_handle, |out| write_cstr(out, cp.as_ptr()));
                                         }
                                         cmd_find_from_winlink_pane(
                                             &raw mut fs,
-                                            wl,
+                                            wl.clone(),
                                             &(*(new_wp)).observer.upgrade().expect("live window_pane"),
                                             0 as ::core::ffi::c_int,
                                         );

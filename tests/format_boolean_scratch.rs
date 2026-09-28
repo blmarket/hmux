@@ -5,7 +5,8 @@ use std::ffi::CStr;
 #[test]
 fn boolean_operands_expand_in_order_and_preserve_bytes() {
     unsafe {
-        let tree = format_create(None, None, 0, 0);
+        let mut tree_owner = format_create(None, None, 0, 0);
+        let tree = &raw mut *tree_owner;
         for (expression, expected) in [
             (b"#{&&:1,1,0}\0".as_slice(), b"0".as_slice()),
             (b"#{||:0,0,1}\0".as_slice(), b"1".as_slice()),
@@ -17,6 +18,6 @@ fn boolean_operands_expand_in_order_and_preserve_bytes() {
             let result = format_expand_cstring(tree, expression.as_ptr());
             assert_eq!(result.as_bytes(), expected, "{expression:?}");
         }
-        format_free(Box::from_raw(tree));
+        format_free(tree_owner);
     }
 }

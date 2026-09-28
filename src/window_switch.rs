@@ -100,22 +100,22 @@ pub static window_switch_mode: window_mode = {
         init: Some(
             window_switch_init
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
                     *mut cmd_find_state,
                     *mut args,
                 ) -> *mut screen,
         ),
-        free: Some(window_switch_free as unsafe fn(*mut window_mode_entry) -> ()),
-        resize: Some(window_switch_resize as unsafe fn(*mut window_mode_entry, u_int, u_int) -> ()),
+        free: Some(window_switch_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
+        resize: Some(window_switch_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> ()),
         update: None,
         style_changed: None,
         key: Some(
             window_switch_key
                 as unsafe fn(
-                    *mut window_mode_entry,
+                    refbox::Weak<window_mode_entry>,
                     &std::rc::Rc<std::cell::UnsafeCell<client>>,
-                    *mut winlink,
+                    refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
                 ) -> (),
@@ -151,17 +151,18 @@ unsafe fn window_switch_add_session(
     let mut s = s_owner.get();
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    ft = format_create(
+    let mut ft_owner = format_create(
         None,
         None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         None,
         Some(s_owner),
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
     item = window_switch_add_item(data);
@@ -172,38 +173,39 @@ unsafe fn window_switch_add_session(
     *order = (*order).wrapping_add(1);
     (*item).order = fresh7;
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 unsafe fn window_switch_add_window(
     mut data: *mut window_switch_modedata,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     mut order: *mut u_int,
 ) {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let Some(session_owner) = (*wl).session.upgrade() else { return; };
-    ft = format_create(
+    let Some(session_owner) = wl.get_unchecked().session.upgrade() else { return; };
+    let mut ft_owner = format_create(
         None,
         None,
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         None,
         (session_owner.get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        wl,
+        wl.clone(),
         None,
     );
     item = window_switch_add_item(data);
     (*item).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     (*item).session = (*session_owner.get()).id as ::core::ffi::c_int;
-    (*item).winlink = (*wl).idx;
+    (*item).winlink = wl.get_unchecked().idx;
     let fresh4 = *order;
     *order = (*order).wrapping_add(1);
     (*item).order = fresh4;
     (*item).text = format_expand_cstring(ft, (*data).format.as_ptr());
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 fn window_switch_matches(
     items: &mut [Box<window_switch_itemdata>],
@@ -258,7 +260,7 @@ unsafe fn window_switch_build(mut data: *mut window_switch_modedata) {
         1 => {
             let links = sort_get_winlinks(&raw mut sort_crit);
             for wl in links {
-                window_switch_add_window(data, wl, &raw mut order);
+                window_switch_add_window(data, wl.clone(), &raw mut order);
             }
         }
         _ => {}
@@ -292,17 +294,17 @@ unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut c
             .wrapping_add(1 as u_int);
     }
 }
-unsafe fn window_switch_data(wme: *mut window_mode_entry) -> *mut window_switch_modedata {
-    (*wme)
+unsafe fn window_switch_data(wme: refbox::Weak<window_mode_entry>) -> *mut window_switch_modedata {
+    wme.get_unchecked()
         .boxed_data_ptr::<window_switch_modedata>()
         .expect("switch mode payload")
 }
 
-unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_switch_modedata = window_switch_data(wme);
+    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
     let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -465,12 +467,12 @@ unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
     screen_write_stop(&mut ctx);
 }
 unsafe fn window_switch_init(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     _item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
@@ -501,7 +503,7 @@ unsafe fn window_switch_init(
         offset: 0,
     }));
     data = owner.get();
-    (*wme).boxed_data = Some(owner);
+    wme.get_mut_unchecked().boxed_data = Some(owner);
     if args_has(args, 'w' as i32 as u_char) != 0 {
         (*data).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
     } else {
@@ -542,18 +544,18 @@ unsafe fn window_switch_init(
     }
     window_switch_build(data);
     prompt_incremental_start(&prompt);
-    window_switch_draw_screen(wme);
+    window_switch_draw_screen(wme.clone());
     return s;
 }
-unsafe fn window_switch_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let data = (*wme).boxed_data_ptr::<window_switch_modedata>();
+unsafe fn window_switch_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+    let data = wme.get_unchecked().boxed_data_ptr::<window_switch_modedata>();
     data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
-unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+unsafe fn window_switch_free(mut wme: refbox::Weak<window_mode_entry>) {
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut data: *mut window_switch_modedata = window_switch_data(wme);
+    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window(&(*((*mode_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
     }
@@ -563,15 +565,15 @@ unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
         prompt_free(&prompt.downgrade());
     }
     screen_free(&mut (*data).screen);
-    drop((*wme).boxed_data.take());
+    drop(wme.get_mut_unchecked().boxed_data.take());
 }
-unsafe fn window_switch_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_switch_modedata = window_switch_data(wme);
+unsafe fn window_switch_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
+    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
     let mut s: *mut screen = &raw mut (*data).screen;
     screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
     window_switch_build(data);
     window_switch_set_current(data, (*data).current);
-    window_switch_draw_screen(wme);
+    window_switch_draw_screen(wme.clone());
 }
 unsafe fn window_switch_run_command(
     mut data: *mut window_switch_modedata,
@@ -587,7 +589,7 @@ unsafe fn window_switch_run_command(
         idx: 0,
     };
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut target: Option<CString> = None;
     let state;
     if (*data).matches.is_empty() {
@@ -611,14 +613,14 @@ unsafe fn window_switch_run_command(
             s = session_find_by_id((*item).session as u_int).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
             if !s.is_null() {
                 wl = winlink_find_by_index(&raw mut (*s).windows, (*item).winlink);
-                if !s.is_null() && !wl.is_null() {
+                if !s.is_null() && wl.is_alive() {
                     let mut bytes = Vec::from(b"=".as_slice());
                     bytes.extend_from_slice((*s).name.as_bytes());
                     bytes.push(b':');
-                    bytes.extend_from_slice(((*wl).idx as u32).to_string().as_bytes());
+                    bytes.extend_from_slice((wl.get_unchecked().idx as u32).to_string().as_bytes());
                     bytes.push(b'.');
                     target = Some(CString::new(bytes).expect("window target contains no NUL"));
-                    cmd_find_from_winlink(&raw mut fs, wl, 0 as ::core::ffi::c_int);
+                    cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
                 }
             }
         }
@@ -684,18 +686,18 @@ unsafe fn window_switch_prompt_callback(
     return PROMPT_CONTINUE;
 }
 unsafe fn window_switch_key(
-    mut wme: *mut window_mode_entry,
+    mut wme: refbox::Weak<window_mode_entry>,
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    _wl: *mut winlink,
+    _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
     let c = client_owner.get();
-    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut current_block: u64;
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_switch_modedata = window_switch_data(wme);
+    let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
     let mut visible: u_int = 0;
     let mut current: u_int = (*data).current;
     let mut x: u_int = 0;
@@ -736,7 +738,7 @@ unsafe fn window_switch_key(
                 || result as ::core::ffi::c_uint
                     == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                window_switch_draw_screen(wme);
+                window_switch_draw_screen(wme.clone());
                 (*wp).flags |= PANE_REDRAW;
             }
             return;
@@ -792,7 +794,7 @@ unsafe fn window_switch_key(
         if let Some(prompt) = (*data).prompt.as_ref().map(|prompt| prompt.downgrade()) {
             result = prompt_key(&prompt, key, &mut redraw);
             if redraw != 0 {
-                window_switch_draw_screen(wme);
+                window_switch_draw_screen(wme.clone());
                 (*wp).flags |= PANE_REDRAW;
             }
             if result as ::core::ffi::c_uint
@@ -1067,7 +1069,7 @@ unsafe fn window_switch_key(
             _ => {}
         }
     }
-    window_switch_draw_screen(wme);
+    window_switch_draw_screen(wme.clone());
     (*wp).flags |= PANE_REDRAW;
 }
 

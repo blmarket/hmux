@@ -32,6 +32,17 @@ root. All 18 Rc reversal entries are converted. The completed conversions below
 supersede the earlier shared-ownership guidance; the broader raw ownership
 backlog remains separate from that completed reversal scope.
 
+## RefBox observer API follow-up (2026-09-28)
+
+Control-block, queued-command, window-link, and pane-mode observer APIs now
+exchange existing `refbox::Weak<T>` handles, including command and mode callback
+tables. Their containers retain RefBox ownership and explicit cleanup ordering.
+No new types were needed. Unsafe synchronous readers still depend on their
+existing lifetime guarantees; Weak representation does not remove that duty.
+Remaining projected addresses are chooser numeric identity tags and test
+identity assertions, not raw observer APIs. RefBox library internals are unchanged.
+See `../report.md` relative to the repository root for scope and validation.
+
 ## Completed migrations
 
 | Allocation | Result |
@@ -98,6 +109,24 @@ The [raw-pointer field audit](raw-pointer-field-audit.md) records the subsequent
 field migrations and supersedes the earlier backlog below wherever an owner is
 now typed. Its TSV covers every original pointer field, including skipped model,
 parent and callback observers and their ownership/lifetime constraints.
+
+## Constructor and transfer follow-up (2026-09-28)
+
+Format constructors and forwarding helpers, monitor constructors and index
+insert/remove operations, option constructors, and process constructors now
+transfer boxes directly. Format, monitor, option, and process cleanup remains
+explicit. The existing job list now owns `Vec<Box<job>>`; job callbacks and
+intrusive links observe those allocations, and removal detaches the box before
+cleanup callbacks. Process callers retain local boxes and explicitly cancel
+signals and remove peers before freeing them. No new custom type was introduced.
+
+No `Box::into_raw`/`Box::from_raw` calls remain in application `src/`, including
+its unit tests. Remaining workspace sites are RefBox implementation primitives
+and the intentional architecture fixture. RefBox-derived raw observer APIs are
+a separate follow-up; many underlying fields already store Weak identities.
+See `../../report.md` relative to this file for scope, exceptions, and validation.
+The ownership-transfer portions of the historical backlog below are superseded
+by this follow-up; its remaining observer constraints still apply.
 
 ## Remaining production ownership paths
 

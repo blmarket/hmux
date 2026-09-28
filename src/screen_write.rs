@@ -188,7 +188,7 @@ fn screen_write_set_client_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<win
             }
             return 0;
         }
-        if (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+        if ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             return 0;
         }
         if (*wp).layout_cell.is_null() {

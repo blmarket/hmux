@@ -124,16 +124,16 @@ pub static mut message_log: message_list = message_list::new();
 pub static mut current_time: time_t = 0;
 pub unsafe fn server_set_marked(
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
     let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
     marked_pane.set_s((s).as_ref());
-    marked_pane.set_wl(wl);
-    if !wl.is_null() {
-        marked_pane.set_w(((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+    marked_pane.set_wl(wl.clone());
+    if wl.is_alive() {
+        marked_pane.set_w((wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
     }
     marked_pane.set_wp((wp).as_ref());
 }
@@ -142,15 +142,15 @@ pub unsafe fn server_clear_marked() {
 }
 pub unsafe fn server_is_marked(
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> ::core::ffi::c_int {
     let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    if s.is_null() || wl.is_null() || wp.is_null() {
+    if s.is_null() || !wl.is_alive() || wp.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || marked_pane.wl_ptr() != wl {
+    if marked_pane.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || marked_pane.winlink_handle() != wl {
         return 0 as ::core::ffi::c_int;
     }
     if marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != wp {
@@ -279,7 +279,8 @@ pub(crate) unsafe fn server_start(
     if event_reinit() != 0 as ::core::ffi::c_int {
         fatalx(|out| out.write_all(b"event_reinit failed"));
     }
-    server_proc = proc_start(b"server\0" as *const u8 as *const ::core::ffi::c_char);
+    let mut process_owner = proc_start(c"server".as_ptr());
+    server_proc = &raw mut *process_owner;
     proc_set_signals(
         server_proc,
         Some(Box::new(|sig| unsafe { server_signal(sig) })),
@@ -343,6 +344,8 @@ pub(crate) unsafe fn server_start(
                 b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
                 cause.as_ptr(),
             );
+            crate::src::proc::proc_free(process_owner);
+            server_proc = std::ptr::null_mut();
             exit(1 as ::core::ffi::c_int);
         }
     }
@@ -360,6 +363,8 @@ pub(crate) unsafe fn server_start(
     job_kill_all();
     prompt_save_history();
     server_clear_messages();
+    crate::src::proc::proc_free(process_owner);
+    server_proc = std::ptr::null_mut();
     exit(0 as ::core::ffi::c_int);
 }
 unsafe fn server_loop() -> ::core::ffi::c_int {

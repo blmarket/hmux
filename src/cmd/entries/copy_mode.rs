@@ -69,9 +69,9 @@ pub static cmd_clock_mode_entry: cmd_entry = {
         exec: Some(cmd_copy_mode_exec),
     }
 };
-unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_copy_mode_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
@@ -91,7 +91,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
         let mouse_pane_owner = cmd_mouse_pane(
             &raw mut (*event).m,
             Some(&mut mouse_session_owner),
-            ::core::ptr::null_mut::<*mut winlink>(),
+            ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
         );
         s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -103,7 +103,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std
             return CMD_RETURN_NORMAL;
         }
     }
-    if std::ptr::eq(cmd_get_entry(&*self_0), &cmd_clock_mode_entry) {
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_clock_mode_entry) {
         window_pane_set_mode(
             &pane_owner,
             None,

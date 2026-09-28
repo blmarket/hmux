@@ -173,7 +173,7 @@ pub unsafe fn event_payload_get_target(
     let s = session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let w = window_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut flags: ::core::ffi::c_int = fs.flags;
     if t.idx != -(1 as ::core::ffi::c_int)
         && !s.is_null()
@@ -181,25 +181,25 @@ pub unsafe fn event_payload_get_target(
         && session_alive(s.as_ref()) != 0
     {
         wl = winlink_find_by_index(&raw mut (*s).windows, t.idx);
-        if !wl.is_null() && (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w {
-            wl = ::core::ptr::null_mut::<winlink>();
+        if wl.is_alive() && wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w {
+            wl = refbox::Weak::new();
         }
     }
     cmd_find_clear_state(fs, flags);
     fs.s = t.s.clone();
     fs.w = t.w.clone();
     fs.wp = t.wp.clone();
-    fs.set_wl(wl);
-    fs.idx = if !wl.is_null() {
-        (*wl).idx
+    fs.set_wl(wl.clone());
+    fs.idx = if wl.is_alive() {
+        wl.get_unchecked().idx
     } else {
         -(1 as ::core::ffi::c_int)
     };
     if cmd_find_valid_state(&*fs) != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    if !wl.is_null() && !wp.is_null() && window_has_pane(&*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &t.wp) {
-        cmd_find_from_winlink_pane(fs, wl, &(*(wp)).observer.upgrade().expect("live window_pane"), flags);
+    if wl.is_alive() && !wp.is_null() && window_has_pane(&*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &t.wp) {
+        cmd_find_from_winlink_pane(fs, wl.clone(), &(*(wp)).observer.upgrade().expect("live window_pane"), flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }
@@ -210,8 +210,8 @@ pub unsafe fn event_payload_get_target(
     {
         return 1 as ::core::ffi::c_int;
     }
-    if !wl.is_null() {
-        cmd_find_from_winlink(fs, wl, flags);
+    if wl.is_alive() {
+        cmd_find_from_winlink(fs, wl.clone(), flags);
         if cmd_find_valid_state(&*fs) != 0 {
             return 1 as ::core::ffi::c_int;
         }

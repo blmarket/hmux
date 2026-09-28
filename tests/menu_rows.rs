@@ -17,9 +17,12 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
             global_w_options,
             global_environ.take(),
         );
-        global_options = options_create(null_mut());
-        global_s_options = options_create(null_mut());
-        global_w_options = options_create(null_mut());
+        let mut global_options_owner = options_create(null_mut());
+        global_options = &raw mut *global_options_owner;
+        let mut global_s_options_owner = options_create(null_mut());
+        global_s_options = &raw mut *global_s_options_owner;
+        let mut global_w_options_owner = options_create(null_mut());
+        global_w_options = &raw mut *global_w_options_owner;
         global_environ = Some(environ_create());
         let owner = client::new();
         (&mut *owner.get()).tty.sx = 120;
@@ -107,9 +110,9 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         drop(menu);
         hmux2::src::reactor::event_loop();
         assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-        options_free(global_options);
-        options_free(global_s_options);
-        options_free(global_w_options);
+        options_free(global_options_owner);
+        options_free(global_s_options_owner);
+        options_free(global_w_options_owner);
         drop(global_environ.take());
         (
             global_options,

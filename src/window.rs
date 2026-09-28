@@ -244,20 +244,20 @@ pub fn windows_next(elm: &window) -> Option<std::rc::Rc<std::cell::UnsafeCell<wi
     .find_map(|(_, weak)| weak.upgrade())
 }
 
-pub fn winlinks_find(head: &winlinks, elm: &winlink) -> *mut winlink {
+pub fn winlinks_find(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
     let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
+        return refbox::Weak::new();
     };
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
     let key = elm.idx;
     map.get(&key)
-        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr() as *mut winlink)
+        .map_or(refbox::Weak::new(), |owner| owner.downgrade())
 }
-pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> *mut winlink {
+pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
     let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
+        return refbox::Weak::new();
     };
     let map = owner
         .try_borrow_mut()
@@ -265,13 +265,13 @@ pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> *mut winlink {
     let key = elm.idx;
     map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, owner)| {
-            owner.as_ptr() as *mut winlink
+        .map_or(refbox::Weak::new(), |(_, owner)| {
+            owner.downgrade()
         })
 }
-pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
+pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> refbox::Weak<winlink> {
     let Some(owner) = head.storage.as_ref() else {
-        return std::ptr::null_mut();
+        return refbox::Weak::new();
     };
     let map = owner
         .try_borrow_mut()
@@ -281,93 +281,93 @@ pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> *mut w
     } else {
         map.last_key_value()
     };
-    pair.map_or(std::ptr::null_mut(), |(_, owner)| {
-        owner.as_ptr() as *mut winlink
+    pair.map_or(refbox::Weak::new(), |(_, owner)| {
+        owner.downgrade()
     })
 }
-pub unsafe fn winlinks_next(elm: &winlink) -> *mut winlink {
+pub unsafe fn winlinks_next(elm: &winlink) -> refbox::Weak<winlink> {
     let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Dropped) => return refbox::Weak::new(),
         Err(refbox::BorrowError::Borrowed) => panic!("winlink index already borrowed"),
     };
     let key = elm.idx;
     map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
         .next()
-        .map_or(std::ptr::null_mut(), |(_, owner)| {
-            owner.as_ptr() as *mut winlink
+        .map_or(refbox::Weak::new(), |(_, owner)| {
+            owner.downgrade()
         })
 }
-pub unsafe fn winlinks_prev(elm: &winlink) -> *mut winlink {
+pub unsafe fn winlinks_prev(elm: &winlink) -> refbox::Weak<winlink> {
     let owner = &elm.entry.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
+        Err(refbox::BorrowError::Dropped) => return refbox::Weak::new(),
         Err(refbox::BorrowError::Borrowed) => panic!("winlink index already borrowed"),
     };
     let key = elm.idx;
     map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
         .next_back()
-        .map_or(std::ptr::null_mut(), |(_, owner)| {
-            owner.as_ptr() as *mut winlink
+        .map_or(refbox::Weak::new(), |(_, owner)| {
+            owner.downgrade()
         })
 }
 
 /// Return the first winlink in a window's association order.
-pub unsafe fn window_winlinks_first(w_value: Option<&window>) -> *mut winlink {
+pub unsafe fn window_winlinks_first(w_value: Option<&window>) -> refbox::Weak<winlink> {
     let w: *mut window = w_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
     if w.is_null() {
-        return std::ptr::null_mut();
+        return refbox::Weak::new();
     }
     (*w).winlinks
         .storage
         .as_deref()
         .and_then(|links| links.first())
         .filter(|link| link.is_alive())
-        .map_or(std::ptr::null_mut(), |link| link.as_ptr().cast_mut())
+        .map_or(refbox::Weak::new(), |link| link.clone())
 }
 
-/// Return the next winlink in `w` after `wl`, or null when it is no longer in
+/// Return the next winlink in `w` after `wl`, or an empty handle when it is no longer in
 /// that window. Taking the owner explicitly keeps iteration correct if a
 /// callback moves `wl` to another window while the original list is traversed.
-pub unsafe fn window_winlinks_next(w_value: Option<&window>, wl: *mut winlink) -> *mut winlink {
+pub unsafe fn window_winlinks_next(w_value: Option<&window>, wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
     let w: *mut window = w_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
-    if w.is_null() || wl.is_null() {
-        return std::ptr::null_mut();
+    if w.is_null() || !wl.is_alive() {
+        return refbox::Weak::new();
     }
     let Some(links) = (*w).winlinks.storage.as_deref() else {
-        return std::ptr::null_mut();
+        return refbox::Weak::new();
     };
     links
-        .next_after(|link| link.as_ptr() == wl.cast_const())
+        .next_after(|link| *link == wl)
         .filter(|link| link.is_alive())
-        .map_or(std::ptr::null_mut(), |link| link.as_ptr().cast_mut())
+        .map_or(refbox::Weak::new(), |link| link.clone())
 }
 
 /// Append a non-owning winlink handle to the window's association order.
-pub unsafe fn window_winlinks_append(w_value: &mut window, wl: *mut winlink) {
+pub unsafe fn window_winlinks_append(w_value: &mut window, wl: refbox::Weak<winlink>) {
     let w: *mut window = w_value as *mut _;
-    assert!(!w.is_null() && !wl.is_null());
+    assert!(!w.is_null() && wl.is_alive());
     let links = (*w).winlinks.storage.get_or_insert_with(|| Box::default());
     assert!(
-        !links.contains(&(*wl).observer),
+        !links.contains(&wl.get_unchecked().observer),
         "winlink is already present in this window"
     );
-    links.push_back((*wl).observer.clone());
+    links.push_back(wl.get_unchecked().observer.clone());
 }
 
 /// Remove a non-owning winlink handle from its window's association order.
-pub unsafe fn window_winlinks_remove(w_value: &mut window, wl: *mut winlink) {
+pub unsafe fn window_winlinks_remove(w_value: &mut window, wl: refbox::Weak<winlink>) {
     let w: *mut window = w_value as *mut _;
-    assert!(!w.is_null() && !wl.is_null());
+    assert!(!w.is_null() && wl.is_alive());
     let links = (*w)
         .winlinks
         .storage
         .as_mut()
         .expect("window winlink collection must be alive");
     links
-        .remove_first(|link| link.as_ptr() == wl.cast_const())
+        .remove_first(|link| *link == wl)
         .expect("winlink must belong to its window");
     if links.is_empty() {
         (*w).winlinks.storage = None;
@@ -658,22 +658,22 @@ unsafe fn window_fire_pane_prompt(
     );
     events_fire(name, ep);
 }
-pub unsafe fn winlink_find_by_window(mut wwl: *mut winlinks, w_owner: &Rc<std::cell::UnsafeCell<window>>) -> *mut winlink {
+pub unsafe fn winlink_find_by_window(mut wwl: *mut winlinks, w_owner: &Rc<std::cell::UnsafeCell<window>>) -> refbox::Weak<winlink> {
     let mut w = w_owner.get();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlinks_minmax(&*wwl, RB_NEGINF);
-    while !wl.is_null() {
-        if (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w {
+    while wl.is_alive() {
+        if wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w {
             return wl;
         }
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
-    return ::core::ptr::null_mut::<winlink>();
+    return refbox::Weak::new();
 }
 pub unsafe fn winlink_find_by_index(
     mut wwl: *mut winlinks,
     mut idx: ::core::ffi::c_int,
-) -> *mut winlink {
+) -> refbox::Weak<winlink> {
     let mut wl: winlink = winlink {
         observer: Default::default(),
         idx: 0,
@@ -688,16 +688,16 @@ pub unsafe fn winlink_find_by_index(
     wl.idx = idx;
     return winlinks_find(&*wwl, &wl);
 }
-pub unsafe fn winlink_find_by_window_id(mut wwl: *mut winlinks, mut id: u_int) -> *mut winlink {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+pub unsafe fn winlink_find_by_window_id(mut wwl: *mut winlinks, mut id: u_int) -> refbox::Weak<winlink> {
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlinks_minmax(&*wwl, RB_NEGINF);
-    while !wl.is_null() {
-        if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id == id {
+    while wl.is_alive() {
+        if (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id == id {
             return wl;
         }
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
-    return ::core::ptr::null_mut::<winlink>();
+    return refbox::Weak::new();
 }
 unsafe fn winlink_next_index(
     mut wwl: *mut winlinks,
@@ -706,7 +706,7 @@ unsafe fn winlink_next_index(
     let mut i: ::core::ffi::c_int = 0;
     i = idx;
     loop {
-        if winlink_find_by_index(wwl, i).is_null() {
+        if !winlink_find_by_index(wwl, i).is_alive() {
             return i;
         }
         if i == INT_MAX {
@@ -721,26 +721,26 @@ unsafe fn winlink_next_index(
     return -(1 as ::core::ffi::c_int);
 }
 pub unsafe fn winlink_count(mut wwl: *mut winlinks) -> u_int {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut n: u_int = 0;
     n = 0 as u_int;
     wl = winlinks_minmax(&*wwl, RB_NEGINF);
-    while !wl.is_null() {
+    while wl.is_alive() {
         n = n.wrapping_add(1);
-        wl = winlinks_next(&*wl);
+        wl = winlinks_next(wl.get_unchecked());
     }
     return n;
 }
-pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -> *mut winlink {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -> refbox::Weak<winlink> {
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if idx < 0 as ::core::ffi::c_int {
         // Decode -(base_index + 1) without negating INT_MIN first.
         idx = winlink_next_index(wwl, -(idx + 1));
         if idx == -(1 as ::core::ffi::c_int) {
-            return ::core::ptr::null_mut::<winlink>();
+            return refbox::Weak::new();
         }
-    } else if !winlink_find_by_index(wwl, idx).is_null() {
-        return ::core::ptr::null_mut::<winlink>();
+    } else if winlink_find_by_index(wwl, idx).is_alive() {
+        return refbox::Weak::new();
     }
     let owner = refbox::RefBox::new(winlink {
         observer: Default::default(),
@@ -750,8 +750,8 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
         flags: 0,
         entry: winlink_entry { owner: refbox::Weak::new() },
     });
-    wl = owner.as_ptr() as *mut winlink;
-    (*wl).observer = owner.downgrade();
+    wl = owner.downgrade();
+    owner.try_borrow_mut().expect("new winlink").observer = wl.clone();
     let storage = (*wwl).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = storage.downgrade();
     let mut map = storage
@@ -765,37 +765,37 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
             unreachable!("winlink index was checked above")
         }
     }
-    (*wl).entry.owner = observer;
+    wl.get_mut_unchecked().entry.owner = observer;
     return wl;
 }
 // Keep the field published through the close notification. Its callback can
 // inspect the winlink or retain the window. Detach only after that notification,
 // then drop the consumed Rc without notifying or cleaning up twice.
-unsafe fn winlink_release_window(wl: *mut winlink, from: &CStr) {
-    window_prepare_release((*wl).window_owner.as_ref().expect("winlink window reference"), from.as_ptr());
-    drop((*wl).window_owner.take().expect("winlink window reference"));
+unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>, from: &CStr) {
+    window_prepare_release(wl.get_unchecked().window_owner.as_ref().expect("winlink window reference"), from.as_ptr());
+    drop(wl.get_mut_unchecked().window_owner.take().expect("winlink window reference"));
 }
 
-pub unsafe fn winlink_set_window(wl: *mut winlink, w_owner: &Rc<std::cell::UnsafeCell<window>>) {
+pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &Rc<std::cell::UnsafeCell<window>>) {
     let mut w = w_owner.get();
-    if !(*wl).window_handle().is_none() {
-        window_winlinks_remove(&mut *((*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())), wl);
-        winlink_release_window(wl, c"winlink_set_window");
+    if !wl.get_unchecked().window_handle().is_none() {
+        window_winlinks_remove(&mut *(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())), wl.clone());
+        winlink_release_window(wl.clone(), c"winlink_set_window");
     }
-    (*wl).window_owner = Some(window_add_ref(w_owner, c"winlink_set_window".as_ptr()));
-    window_winlinks_append(&mut *(w), wl);
+    wl.get_mut_unchecked().window_owner = Some(window_add_ref(w_owner, c"winlink_set_window".as_ptr()));
+    window_winlinks_append(&mut *(w), wl.clone());
 }
-pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
-    if let Some(session_owner) = (*wl).session.upgrade() {
-        winlink_stack_remove(&raw mut (*session_owner.get()).lastw, wl);
+pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlink>) {
+    if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
+        winlink_stack_remove(&raw mut (*session_owner.get()).lastw, wl.clone());
     }
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !w.is_null() {
-        window_winlinks_remove(&mut *(w), wl);
-        winlink_release_window(wl, c"winlink_remove");
+        window_winlinks_remove(&mut *(w), wl.clone());
+        winlink_release_window(wl.clone(), c"winlink_remove");
     }
     // Window teardown above may reenter; borrow the owning map only afterward.
-    let idx = (*wl).idx;
+    let idx = wl.get_unchecked().idx;
     let (owner, empty) = {
         let storage = (*wwl)
             .storage
@@ -805,12 +805,12 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
             .try_borrow_mut()
             .expect("winlink index already borrowed");
         assert_eq!(
-            map.get(&idx).map(|owner| owner.as_ptr()),
-            Some(wl as *const winlink),
+            map.get(&idx).map(|owner| owner.downgrade()),
+            Some(wl.clone()),
             "removed winlink must belong to this index"
         );
         let owner = map.remove(&idx).expect("winlink must have an owner");
-        (*wl).entry.owner = refbox::Weak::new();
+        wl.get_mut_unchecked().entry.owner = refbox::Weak::new();
         (owner, map.is_empty())
     };
     if empty {
@@ -818,21 +818,21 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
     }
     drop(owner);
 }
-pub unsafe fn winlink_next(mut wl: *mut winlink) -> *mut winlink {
-    return winlinks_next(&*wl);
+pub unsafe fn winlink_next(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    return winlinks_next(wl.get_unchecked());
 }
-pub unsafe fn winlink_previous(mut wl: *mut winlink) -> *mut winlink {
-    return winlinks_prev(&*wl);
+pub unsafe fn winlink_previous(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    return winlinks_prev(wl.get_unchecked());
 }
 pub unsafe fn winlink_next_by_number(
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     s_owner: &Rc<std::cell::UnsafeCell<session>>,
     mut n: ::core::ffi::c_int,
-) -> *mut winlink {
+) -> refbox::Weak<winlink> {
     let mut s = s_owner.get();
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_next(&*wl);
-        if wl.is_null() {
+        wl = winlinks_next(wl.get_unchecked());
+        if !wl.is_alive() {
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         }
         n -= 1;
@@ -840,14 +840,14 @@ pub unsafe fn winlink_next_by_number(
     return wl;
 }
 pub unsafe fn winlink_previous_by_number(
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     s_owner: &Rc<std::cell::UnsafeCell<session>>,
     mut n: ::core::ffi::c_int,
-) -> *mut winlink {
+) -> refbox::Weak<winlink> {
     let mut s = s_owner.get();
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_prev(&*wl);
-        if wl.is_null() {
+        wl = winlinks_prev(wl.get_unchecked());
+        if !wl.is_alive() {
             wl = winlinks_minmax(&(*s).windows, RB_INF);
         }
         n -= 1;
@@ -856,17 +856,17 @@ pub unsafe fn winlink_previous_by_number(
 }
 /// Borrow the owner through the existing window index. The raw pointer remains
 /// a compatibility view; neither it nor its address is a separate ownership key.
-unsafe fn winlink_weak(wl: *mut winlink) -> refbox::Weak<winlink> {
-    let owner = &(*wl).entry.owner;
+unsafe fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    let owner = &wl.get_unchecked().entry.owner;
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
     let owner = map
-        .get(&(*wl).idx)
+        .get(&wl.get_unchecked().idx)
         .expect("visited winlink must have an owner");
     assert_eq!(
-        owner.as_ptr(),
-        wl as *const winlink,
+        owner.downgrade(),
+        wl.clone(),
         "visited winlink must belong to its index"
     );
     owner.downgrade()
@@ -874,7 +874,7 @@ unsafe fn winlink_weak(wl: *mut winlink) -> refbox::Weak<winlink> {
 
 /// Move the owner between keys without invalidating the winlink or its observers.
 /// The caller must supply a live member of `head` and an unused destination index.
-pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: *mut winlink, idx: i32) {
+pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: refbox::Weak<winlink>, idx: i32) {
     let owner = (*head)
         .storage
         .as_ref()
@@ -882,10 +882,10 @@ pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: *mut winlink, idx: i32) 
     let mut map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
-    let old_idx = (*wl).idx;
+    let old_idx = wl.get_unchecked().idx;
     assert_eq!(
-        map.get(&old_idx).map(|owner| owner.as_ptr()),
-        Some(wl as *const winlink),
+        map.get(&old_idx).map(|owner| owner.downgrade()),
+        Some(wl.clone()),
         "reindexed winlink must belong to this index"
     );
     if old_idx == idx {
@@ -901,44 +901,44 @@ pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: *mut winlink, idx: i32) 
         .expect("reindexed winlink is already borrowed");
     map.insert(idx, owner);
 }
-pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, wl: *mut winlink) {
-    if wl.is_null() {
+pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+    if !wl.is_alive() {
         return;
     }
-    winlink_stack_remove(stack, wl);
+    winlink_stack_remove(stack, wl.clone());
     if (*stack).storage.is_none() {
         (*stack).storage = Some(Box::default());
     }
-    let weak = winlink_weak(wl);
+    let weak = winlink_weak(wl.clone());
     (*stack)
         .storage
         .as_mut()
         .expect("visit history was just initialized")
         .push_front(weak);
-    (*wl).flags |= WINLINK_VISITED;
+    wl.get_mut_unchecked().flags |= WINLINK_VISITED;
 }
-pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, wl: *mut winlink) {
-    if wl.is_null() {
+pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+    if !wl.is_alive() {
         return;
     }
     if let Some(storage) = (*stack).storage.as_mut() {
-        storage.retain(|link| checked_winlink_ptr(link) != wl);
+        storage.retain(|link| *link != wl);
     }
-    (*wl).flags &= !WINLINK_VISITED;
+    wl.get_mut_unchecked().flags &= !WINLINK_VISITED;
 }
 
 /// Append while rebuilding a session's saved visit order.
-pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, wl: *mut winlink) {
+pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, mut wl: refbox::Weak<winlink>) {
     if stack.storage.is_none() {
         stack.storage = Some(Box::default());
     }
-    let weak = winlink_weak(wl);
+    let weak = winlink_weak(wl.clone());
     stack
         .storage
         .as_mut()
         .expect("visit history was just initialized")
         .push_back(weak);
-    (*wl).flags |= WINLINK_VISITED;
+    wl.get_mut_unchecked().flags |= WINLINK_VISITED;
 }
 
 pub fn winlink_stack_clear(stack: &mut winlink_stack) {
@@ -961,44 +961,14 @@ pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {
         .collect()
 }
 
-fn checked_winlink_ptr(link: &refbox::Weak<winlink>) -> *mut winlink {
-    match link.try_access_mut(|node| node as *mut winlink) {
-        Ok(ptr) => ptr,
-        Err(refbox::BorrowError::Dropped) => {
-            panic!("visited winlink owner was dropped before observer teardown")
-        }
-        Err(refbox::BorrowError::Borrowed) => panic!("visited winlink is already borrowed"),
-    }
+pub fn winlink_stack_first(stack: &winlink_stack) -> refbox::Weak<winlink> {
+    stack.storage.as_ref().and_then(|links| links.front()).cloned().unwrap_or_default()
 }
 
-pub fn winlink_stack_first(stack: &winlink_stack) -> *mut winlink {
-    let Some(storage) = stack.storage.as_ref() else {
-        return std::ptr::null_mut();
-    };
-    storage
-        .iter()
-        .map(checked_winlink_ptr)
-        .next()
-        .unwrap_or(std::ptr::null_mut())
-}
-
-pub fn winlink_stack_next(stack: &winlink_stack, wl: *mut winlink) -> *mut winlink {
-    if wl.is_null() || stack.storage.is_none() {
-        return std::ptr::null_mut();
-    }
-    let queue = stack.storage.as_ref().expect("checked above");
-    let Some(position) = queue
-        .iter()
-        .position(|link| checked_winlink_ptr(link) == wl)
-    else {
-        return std::ptr::null_mut();
-    };
-    queue
-        .iter()
-        .skip(position + 1)
-        .map(checked_winlink_ptr)
-        .next()
-        .unwrap_or(std::ptr::null_mut())
+pub fn winlink_stack_next(stack: &winlink_stack, wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    let Some(queue) = stack.storage.as_ref() else { return refbox::Weak::new() };
+    let Some(position) = queue.iter().position(|link| *link == wl) else { return refbox::Weak::new() };
+    queue.get(position + 1).cloned().unwrap_or_default()
 }
 pub unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -1381,7 +1351,7 @@ pub unsafe fn window_pane_update_focus(wp_owner: Option<&Rc<std::cell::UnsafeCel
                 if !(*c).session_handle().is_none()
                     && (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).attached != 0 as u_int
                     && (*c).flags & CLIENT_FOCUSED as uint64_t != 0
-                    && (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())
+                    && ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())
                     && (*c).overlay_draw.is_none()
                     && (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).menu.is_none()
                 {
@@ -2123,13 +2093,13 @@ pub unsafe fn window_destroy_panes(w_owner: &Rc<std::cell::UnsafeCell<window>>) 
     }
 }
 pub unsafe fn window_printable_flags(
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     mut escape: ::core::ffi::c_int,
 ) -> std::ffi::CString {
-    let session_owner = (*wl).session.upgrade();
+    let session_owner = wl.get_unchecked().session.upgrade();
     let mut flags: [::core::ffi::c_char; 32] = [0; 32];
     let mut pos: u_int = 0 as u_int;
-    if (*wl).flags & WINLINK_ACTIVITY != 0 {
+    if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
         let fresh3 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh3 as usize] = '#' as i32 as ::core::ffi::c_char;
@@ -2139,17 +2109,17 @@ pub unsafe fn window_printable_flags(
             flags[fresh4 as usize] = '#' as i32 as ::core::ffi::c_char;
         }
     }
-    if (*wl).flags & WINLINK_BELL != 0 {
+    if wl.get_unchecked().flags & WINLINK_BELL != 0 {
         let fresh5 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh5 as usize] = '!' as i32 as ::core::ffi::c_char;
     }
-    if (*wl).flags & WINLINK_SILENCE != 0 {
+    if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
         let fresh6 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh6 as usize] = '~' as i32 as ::core::ffi::c_char;
     }
-    if session_owner.as_ref().is_some_and(|owner| wl == (*owner.get()).curw_ptr()) {
+    if session_owner.as_ref().is_some_and(|owner| wl == (*owner.get()).current_winlink()) {
         let fresh7 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh7 as usize] = '*' as i32 as ::core::ffi::c_char;
@@ -2159,17 +2129,17 @@ pub unsafe fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh8 as usize] = '-' as i32 as ::core::ffi::c_char;
     }
-    if server_check_marked() != 0 && wl == marked_pane.wl_ptr() {
+    if server_check_marked() != 0 && wl == marked_pane.winlink_handle() {
         let fresh9 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh9 as usize] = 'M' as i32 as ::core::ffi::c_char;
     }
-    if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.upgrade().is_some() {
+    if (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.upgrade().is_some() {
         let fresh10 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh10 as usize] = 'O' as i32 as ::core::ffi::c_char;
     }
-    if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED != 0 {
+    if (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & WINDOW_ZOOMED != 0 {
         let fresh11 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh11 as usize] = 'Z' as i32 as ::core::ffi::c_char;
@@ -2412,34 +2382,34 @@ pub fn window_pane_z_swap_order(
 /// so this derives ordering from the owning collection without putting queue
 /// links into each callback-visible mode entry.
 #[cfg(test)]
-unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut window_mode_entry {
-    if wme.is_null() {
-        return ::core::ptr::null_mut();
+unsafe fn window_pane_mode_next(wme: refbox::Weak<window_mode_entry>) -> refbox::Weak<window_mode_entry> {
+    if !wme.is_alive() {
+        return refbox::Weak::new();
     }
-    let Some(pane_owner) = (*wme).wp.upgrade() else {
-        return ::core::ptr::null_mut();
+    let Some(pane_owner) = wme.get_unchecked().wp.upgrade() else {
+        return refbox::Weak::new();
     };
     let Some(storage) = (*pane_owner.get()).modes.storage.as_ref() else {
-        return ::core::ptr::null_mut();
+        return refbox::Weak::new();
     };
     let Some(index) = storage.entries.iter().position(|entry| {
-        entry.as_ptr() == (wme as *const window_mode_entry)
+        wme.is(entry)
     }) else {
-        return ::core::ptr::null_mut();
+        return refbox::Weak::new();
     };
     storage
         .entries
         .get(index + 1)
-        .map_or(::core::ptr::null_mut(), |entry| {
-            entry.as_ptr().cast_mut()
+        .map_or(refbox::Weak::new(), |entry| {
+            entry.downgrade()
         })
 }
 
 /// Resolve a live mode entry against its pane-owned stack before observing it.
 pub(crate) unsafe fn window_pane_mode_weak(
-    wme: *mut window_mode_entry,
+    wme: refbox::Weak<window_mode_entry>,
 ) -> refbox::Weak<window_mode_entry> {
-    let pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let storage = (*pane_owner.get())
         .modes
         .storage
@@ -2448,7 +2418,7 @@ pub(crate) unsafe fn window_pane_mode_weak(
     storage
         .entries
         .iter()
-        .find(|entry| entry.as_ptr() == wme.cast_const())
+        .find(|entry| wme.is(entry))
         .expect("mode entry belongs to its pane")
         .downgrade()
 }
@@ -2466,14 +2436,14 @@ unsafe fn window_pane_mode_insert_front(
 
 unsafe fn window_pane_mode_remove(
     wp_value: &mut window_pane,
-    wme: *mut window_mode_entry,
+    wme: refbox::Weak<window_mode_entry>,
 ) -> Option<refbox::RefBox<window_mode_entry>> {
     let wp: *mut window_pane = wp_value as *mut _;
     let modes = &mut (*wp).modes;
     let (removed, empty) = {
         let storage = modes.storage.as_mut()?;
         let index = storage.entries.iter().position(|entry| {
-            entry.as_ptr() == (wme as *const window_mode_entry)
+            wme.is(entry)
         })?;
         let removed = storage.entries.remove(index);
         (removed, storage.entries.is_empty())
@@ -2484,12 +2454,12 @@ unsafe fn window_pane_mode_remove(
     Some(removed)
 }
 
-unsafe fn window_pane_mode_promote(wp_value: &mut window_pane, wme: *mut window_mode_entry) {
+unsafe fn window_pane_mode_promote(wp_value: &mut window_pane, wme: refbox::Weak<window_mode_entry>) {
     let wp: *mut window_pane = wp_value as *mut _;
-    if (*wp).modes.active_ptr() == wme {
+    if (*wp).modes.active_weak() == wme {
         return;
     }
-    let Some(entry) = window_pane_mode_remove(&mut *(wp), wme) else {
+    let Some(entry) = window_pane_mode_remove(&mut *(wp), wme.clone()) else {
         return;
     };
     window_pane_mode_insert_front(&mut *wp, entry);
@@ -2499,15 +2469,15 @@ unsafe fn window_pane_mode_promote(wp_value: &mut window_pane, wme: *mut window_
 mod window_mode_collection_tests {
     use super::*;
 
-    unsafe fn test_mode_display(wme: *mut window_mode_entry) -> *mut screen {
-        let owner = (*wme).wp.upgrade().expect("mode belongs to pane");
+    unsafe fn test_mode_display(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
+        let owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to pane");
         &raw mut (*owner.get()).status_screen
     }
 
-    unsafe fn check_mode_cleanup(wme: *mut window_mode_entry) {
-        let owner = (*wme).wp.upgrade().expect("cleanup retains parent pane");
+    unsafe fn check_mode_cleanup(wme: refbox::Weak<window_mode_entry>) {
+        let owner = wme.get_unchecked().wp.upgrade().expect("cleanup retains parent pane");
         let pane = &mut *owner.get();
-        assert_ne!(pane.modes.active_ptr(), wme);
+        assert_ne!(pane.modes.active_weak(), wme);
         let expected = if pane.modes.is_empty() {
             &raw mut pane.base
         } else {
@@ -2564,27 +2534,25 @@ mod window_mode_collection_tests {
             (*wp).modes = window_pane_modes::default();
             assert!(!(*wp).modes.active_weak().is_alive());
 
-            let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp)).as_ptr().cast_mut();
-            let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp)).as_ptr().cast_mut();
+            let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp));
+            let b = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp));
             let c_observer = window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp));
-            let c = c_observer.as_ptr().cast_mut();
-            assert_eq!((*wp).modes.active_ptr(), c);
-            assert_eq!((*wp).modes.active_weak().as_ptr().cast_mut(), c);
-            assert_eq!(window_pane_mode_next(c), b);
-            assert_eq!(window_pane_mode_next(b), a);
-            assert!(window_pane_mode_next(a).is_null());
+            let c = c_observer.clone();
+            assert_eq!((*wp).modes.active_weak(), c);
+            assert_eq!(window_pane_mode_next((c).clone()), b);
+            assert_eq!(window_pane_mode_next((b).clone()), a);
+            assert!(!window_pane_mode_next((a).clone()).is_alive());
 
-            window_pane_mode_promote(&mut *(wp), a);
+            window_pane_mode_promote(&mut *(wp), (a).clone());
             assert!(c_observer.is_alive());
-            assert_eq!((*wp).modes.active_ptr(), a);
-            assert_eq!((*wp).modes.active_weak().as_ptr().cast_mut(), a);
-            assert_eq!(window_pane_mode_next(a), c);
-            assert_eq!(window_pane_mode_next(c), b);
+            assert_eq!((*wp).modes.active_weak(), a);
+            assert_eq!(window_pane_mode_next((a).clone()), c);
+            assert_eq!(window_pane_mode_next((c).clone()), b);
 
-            let removed = window_pane_mode_remove(&mut *(wp), c).expect("mode was present");
-            assert_eq!(removed.as_ptr().cast_mut(), c);
-            assert_eq!((*wp).modes.active_ptr(), a);
-            assert_eq!(window_pane_mode_next(a), b);
+            let removed = window_pane_mode_remove(&mut *(wp), (c).clone()).expect("mode was present");
+            assert_eq!(removed.downgrade(), c);
+            assert_eq!((*wp).modes.active_weak(), a);
+            assert_eq!(window_pane_mode_next((a).clone()), b);
             drop(removed);
             assert!(!c_observer.is_alive());
 
@@ -2592,12 +2560,12 @@ mod window_mode_collection_tests {
             for _ in 0..64 {
                 window_pane_mode_insert_front(&mut *wp, boxed_mode(&*wp));
             }
-            assert_eq!(window_pane_mode_next(a), b);
-            assert!(window_pane_mode_next(b).is_null());
+            assert_eq!(window_pane_mode_next((a).clone()), b);
+            assert!(!window_pane_mode_next((b).clone()).is_alive());
 
             while !(*wp).modes.is_empty() {
-                let top = (*wp).modes.active_ptr();
-                drop(window_pane_mode_remove(&mut *(wp), top).expect("mode was present"));
+                let top = (*wp).modes.active_weak();
+                drop(window_pane_mode_remove(&mut *(wp), top.clone()).expect("mode was present"));
             }
             assert!((*wp).modes.storage.is_none());
             assert!(!(*wp).modes.active_weak().is_alive());
@@ -2605,7 +2573,7 @@ mod window_mode_collection_tests {
             let detached = boxed_mode(&*wp);
             drop(pane_owner);
             assert!(detached.get_unchecked().wp.upgrade().is_none());
-            assert!(window_pane_mode_next(detached.as_ptr().cast_mut()).is_null());
+            assert!(!window_pane_mode_next(detached.downgrade()).is_alive());
         }
     }
 }
@@ -2711,17 +2679,17 @@ pub unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window
 }
 unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     while !(*wp).modes.is_empty() {
-        wme = (*wp).modes.active_ptr();
-        let entry = window_pane_mode_remove(&mut *(wp), wme).expect("mode entry is owned by pane");
-        let next = (*wp).modes.active_ptr();
-        (*wp).screen_source = if next.is_null() {
+        wme = (*wp).modes.active_weak();
+        let entry = window_pane_mode_remove(&mut *(wp), wme.clone()).expect("mode entry is owned by pane");
+        let next = (*wp).modes.active_weak();
+        (*wp).screen_source = if !next.is_alive() {
             PaneScreenSource::Base
         } else {
             PaneScreenSource::Mode((*wp).modes.active_weak())
         };
-        (*(*wme).mode).free.expect("non-null function pointer")(wme);
+        (*wme.get_unchecked().mode).free.expect("non-null function pointer")(wme);
         drop(entry);
     }
     (*wp).screen_source = PaneScreenSource::Base;
@@ -2911,7 +2879,7 @@ pub fn window_pane_clear_resizes(
 }
 pub unsafe fn window_pane_resize(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>, sx: u_int, sy: u_int) {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -2943,9 +2911,9 @@ pub unsafe fn window_pane_resize(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     ));
     let reflow = (*wp).base.saved_grid.is_none() as ::core::ffi::c_int;
     screen_resize(&mut (*wp).base, sx, sy, reflow);
-    wme = (*wp).modes.active_ptr();
-    if !wme.is_null() && (*(*wme).mode).resize.is_some() {
-        (*(*wme).mode).resize.expect("non-null function pointer")(wme, sx, sy);
+    wme = (*wp).modes.active_weak();
+    if wme.is_alive() && (*wme.get_unchecked().mode).resize.is_some() {
+        (*wme.get_unchecked().mode).resize.expect("non-null function pointer")(wme, sx, sy);
     }
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
@@ -2994,7 +2962,7 @@ pub unsafe fn window_pane_set_mode(
     mut args: *mut args,
 ) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mode_screen: *mut screen;
     let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
@@ -3017,11 +2985,11 @@ pub unsafe fn window_pane_set_mode(
         .and_then(|storage| storage.entries.iter().find(|entry| std::ptr::eq(entry.get_unchecked().mode, mode)))
         .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade);
     if existing.is_alive() {
-        wme = existing.as_ptr().cast_mut();
-        window_pane_mode_promote(&mut *(wp), wme);
-        mode_screen = (*(*wme).mode).display_screen.expect("mode display screen getter")(wme);
+        wme = existing.clone();
+        window_pane_mode_promote(&mut *(wp), wme.clone());
+        mode_screen = (*wme.get_unchecked().mode).display_screen.expect("mode display screen getter")(wme.clone());
     } else {
-        // The pane owns a stable RefBox address for as long as callbacks retain it.
+        // The pane owns the entry; callbacks observe it through its weak identity.
         let entry = refbox::RefBox::new(window_mode_entry {
             wp: (*wp).observer.clone(),
             swp: source_owner.map(std::rc::Rc::downgrade).unwrap_or_default(),
@@ -3031,14 +2999,14 @@ pub unsafe fn window_pane_set_mode(
             prefix: 1,
             kill: 0,
         });
-        wme = window_pane_mode_insert_front(&mut *wp, entry).as_ptr().cast_mut();
-        mode_screen = (*(*wme).mode).init.expect("non-null function pointer")(wme, item_handle, fs, args);
+        wme = window_pane_mode_insert_front(&mut *wp, entry);
+        mode_screen = (*wme.get_unchecked().mode).init.expect("non-null function pointer")(wme.clone(), item_handle, fs, args);
         if mode_screen.is_null() {
-            drop(window_pane_mode_remove(&mut *(wp), wme).expect("mode entry is owned by pane"));
+            drop(window_pane_mode_remove(&mut *(wp), wme.clone()).expect("mode entry is owned by pane"));
             return 1 as ::core::ffi::c_int;
         }
     }
-    (*wme).kill = if !args.is_null() {
+    wme.get_mut_unchecked().kill = if !args.is_null() {
         args_has(args, 'k' as i32 as u_char)
     } else {
         0 as ::core::ffi::c_int
@@ -3067,8 +3035,8 @@ pub unsafe fn window_pane_set_mode(
 }
 pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut next: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+    let mut next: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut kill_0: ::core::ffi::c_int = 0;
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3076,42 +3044,42 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
     if (*wp).modes.is_empty() {
         return;
     }
-    wme = (*wp).modes.active_ptr();
-    p = (*(*wme).mode).name.as_ptr();
-    kill_0 = (*wme).kill;
-    let entry = window_pane_mode_remove(&mut *(wp), wme).expect("mode entry is owned by pane");
-    next = (*wp).modes.active_ptr();
-    (*wp).screen_source = if next.is_null() {
+    wme = (*wp).modes.active_weak();
+    p = (*wme.get_unchecked().mode).name.as_ptr();
+    kill_0 = wme.get_unchecked().kill;
+    let entry = window_pane_mode_remove(&mut *(wp), wme.clone()).expect("mode entry is owned by pane");
+    next = (*wp).modes.active_weak();
+    (*wp).screen_source = if !next.is_alive() {
         PaneScreenSource::Base
     } else {
         PaneScreenSource::Mode((*wp).modes.active_weak())
     };
-    (*(*wme).mode).free.expect("non-null function pointer")(wme);
+    (*wme.get_unchecked().mode).free.expect("non-null function pointer")(wme);
     drop(entry);
-    next = (*wp).modes.active_ptr();
-    (*wp).screen_source = if next.is_null() {
+    next = (*wp).modes.active_weak();
+    (*wp).screen_source = if !next.is_alive() {
         PaneScreenSource::Base
     } else {
         PaneScreenSource::Mode((*wp).modes.active_weak())
     };
-    if next.is_null() {
+    if !next.is_alive() {
         (*wp).flags &= !PANE_UNSEENCHANGES;
         log_debug(format_args!("{}: no next mode", "window_pane_reset_mode"));
     } else {
         log_debug(format_args!(
             "{}: next mode is {}",
             "window_pane_reset_mode",
-            crate::src::log::log_bytes((*(*next).mode).name.to_bytes())
+            crate::src::log::log_bytes((*next.get_unchecked().mode).name.to_bytes())
         ));
         assert!(!(*wp).screen_ptr().is_null(), "restored mode has a screen");
-        if (*(*next).mode).resize.is_some() {
-            (*(*next).mode).resize.expect("non-null function pointer")(next, (*wp).sx, (*wp).sy);
+        if (*next.get_unchecked().mode).resize.is_some() {
+            (*next.get_unchecked().mode).resize.expect("non-null function pointer")(next.clone(), (*wp).sx, (*wp).sy);
         }
     }
-    name = if next.is_null() {
+    name = if !next.is_alive() {
         ::core::ptr::null::<::core::ffi::c_char>()
     } else {
-        (*(*next).mode).name.as_ptr()
+        (*next.get_unchecked().mode).name.as_ptr()
     };
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(&(*(w)).observer.upgrade().expect("live window"), None);
@@ -3455,12 +3423,12 @@ pub unsafe fn window_pane_paste(
 pub unsafe fn window_pane_key(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> ::core::ffi::c_int {
     let wp = pane_owner.get();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
         || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -3473,15 +3441,15 @@ pub unsafe fn window_pane_key(
     {
         return -(1 as ::core::ffi::c_int);
     }
-    wme = (*wp).modes.active_ptr();
-    if !wme.is_null() {
+    wme = (*wp).modes.active_weak();
+    if wme.is_alive() {
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             == (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
                 << 32 as ::core::ffi::c_int
         {
             return 0 as ::core::ffi::c_int;
         }
-        if let (Some(callback), Some(client)) = ((*(*wme).mode).key, client_owner) {
+        if let (Some(callback), Some(client)) = ((*wme.get_unchecked().mode).key, client_owner) {
             key &= !KEYC_MASK_FLAGS;
             callback(wme, client, wl, key, m);
         }
@@ -3852,40 +3820,40 @@ pub unsafe fn window_pane_stack_remove(
         (*wp).flags &= !PANE_VISITED;
     }
 }
-pub unsafe fn winlink_clear_flags(mut wl: *mut winlink) {
-    let mut loop_0: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+pub unsafe fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
+    let mut loop_0: refbox::Weak<winlink> = refbox::Weak::new();
+    let w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     (*w).flags &= !WINDOW_ALERTFLAGS;
     loop_0 = window_winlinks_first((w).as_ref());
-    while !loop_0.is_null() {
-        if (*loop_0).flags & WINLINK_ALERTFLAGS != 0 as ::core::ffi::c_int {
-            (*loop_0).flags &= !WINLINK_ALERTFLAGS;
-            if let Some(session_owner) = (*loop_0).session.upgrade() {
+    while loop_0.is_alive() {
+        if loop_0.get_unchecked().flags & WINLINK_ALERTFLAGS != 0 as ::core::ffi::c_int {
+            loop_0.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+            if let Some(session_owner) = loop_0.get_unchecked().session.upgrade() {
                 server_status_session(&*(session_owner.get()));
             }
         }
-        loop_0 = window_winlinks_next((w).as_ref(), loop_0);
+        loop_0 = window_winlinks_next((w).as_ref(), (loop_0).clone());
     }
 }
 pub unsafe fn winlink_shuffle_up(
     s_owner: &Rc<std::cell::UnsafeCell<session>>,
-    mut wl: *mut winlink,
+    mut wl: refbox::Weak<winlink>,
     mut before: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut s = s_owner.get();
     let mut idx: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;
-    if wl.is_null() {
+    if !wl.is_alive() {
         return -(1 as ::core::ffi::c_int);
     }
     if before != 0 {
-        idx = (*wl).idx;
+        idx = wl.get_unchecked().idx;
     } else {
-        idx = (*wl).idx + 1 as ::core::ffi::c_int;
+        idx = wl.get_unchecked().idx + 1 as ::core::ffi::c_int;
     }
     last = idx;
     while last < INT_MAX {
-        if winlink_find_by_index(&raw mut (*s).windows, last).is_null() {
+        if !winlink_find_by_index(&raw mut (*s).windows, last).is_alive() {
             break;
         }
         last += 1;
@@ -3895,7 +3863,7 @@ pub unsafe fn winlink_shuffle_up(
     }
     while last > idx {
         wl = winlink_find_by_index(&raw mut (*s).windows, last - 1 as ::core::ffi::c_int);
-        winlinks_reindex(&raw mut (*s).windows, wl, last);
+        winlinks_reindex(&raw mut (*s).windows, wl.clone(), last);
         last -= 1;
     }
     return idx;
@@ -4399,25 +4367,25 @@ mod collection_index_tests {
             let mut head = winlinks { storage: None };
             let first = winlink_add(&mut head, 1);
             let second = winlink_add(&mut head, 3);
-            assert!(!first.is_null() && !second.is_null());
-            assert!(winlink_add(&mut head, 1).is_null());
-            winlinks_reindex(&mut head, second, 2);
+            assert!(first.is_alive() && second.is_alive());
+            assert!(!winlink_add(&mut head, 1).is_alive());
+            winlinks_reindex(&mut head, (second).clone(), 2);
 
-            let index_observer = (*first).entry.owner.clone();
-            let node_observer = winlink_weak(first);
+            let index_observer = first.get_unchecked().entry.owner.clone();
+            let node_observer = winlink_weak((first).clone());
             let mut moved = head;
             assert_eq!(winlinks_minmax(&moved, RB_NEGINF), first);
-            assert_eq!(winlinks_next(&*first), second);
-            assert_eq!((*second).idx, 2);
+            assert_eq!(winlinks_next(first.get_unchecked()), second);
+            assert_eq!(second.get_unchecked().idx, 2);
 
-            winlink_remove(&mut moved, first);
+            winlink_remove(&mut moved, (first).clone());
             assert!(matches!(
                 node_observer.try_access_mut(|link| link.idx),
                 Err(refbox::BorrowError::Dropped)
             ));
             assert!(index_observer.try_borrow_mut().is_ok());
-            let second_observer = winlink_weak(second);
-            winlink_remove(&mut moved, second);
+            let second_observer = winlink_weak((second).clone());
+            winlink_remove(&mut moved, (second).clone());
             drop(moved);
             assert!(matches!(
                 second_observer.try_access_mut(|link| link.idx),
@@ -4722,8 +4690,8 @@ mod zoom_teardown_tests {
     use crate::src::shared::rc;
     use std::cell::Cell;
 
-    unsafe fn check_parent_during_final_mode_cleanup(wme: *mut window_mode_entry) {
-        let pane_owner = (*wme).wp.upgrade().expect("pane is retained during cleanup");
+    unsafe fn check_parent_during_final_mode_cleanup(wme: refbox::Weak<window_mode_entry>) {
+        let pane_owner = wme.get_unchecked().wp.upgrade().expect("pane is retained during cleanup");
         let pane = &mut *pane_owner.get();
         let parent_owner = pane.window.upgrade().expect("cleanup retains the parent");
         assert_eq!((*parent_owner.get()).lifecycle, WindowLifecycle::Destroying);
@@ -4731,7 +4699,7 @@ mod zoom_teardown_tests {
         assert_eq!(parent, parent_owner.get());
         // Releasing a temporary owner during cleanup must not restart cleanup.
         window_remove_ref(parent_owner.clone(), c"reentrant mode cleanup".as_ptr());
-        if let Some(slot) = (*wme).boxed_data.as_ref() {
+        if let Some(slot) = wme.get_unchecked().boxed_data.as_ref() {
             let slot = slot.downcast_ref::<Rc<RefCell<Option<Rc<std::cell::UnsafeCell<window>>>>>>().unwrap();
             *slot.borrow_mut() = Some(parent_owner);
         }

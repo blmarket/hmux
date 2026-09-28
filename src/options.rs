@@ -243,14 +243,13 @@ pub fn options_create_owned(parent: *mut options) -> Box<options> {
     })
 }
 
-/// Legacy ownership transfer. The caller must eventually consume the returned
-/// allocation with options_free or transfer it to a model owner.
-pub unsafe fn options_create(parent: *mut options) -> *mut options {
-    Box::into_raw(options_create_owned(parent))
+/// Return the sole owner for explicit cleanup or transfer to a model.
+pub fn options_create(parent: *mut options) -> Box<options> {
+    options_create_owned(parent)
 }
 
-pub unsafe fn options_free(oo: *mut options) {
-    drop(Box::from_raw(oo));
+pub unsafe fn options_free(oo: Box<options>) {
+    drop(oo);
 }
 
 impl Drop for options {
@@ -1075,7 +1074,7 @@ pub unsafe fn options_scope_from_name(
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut s: *mut session = (*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*fs).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*fs).winlink_handle();
     let mut wp: *mut window_pane = (*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut target: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
@@ -1160,19 +1159,19 @@ pub unsafe fn options_scope_from_name(
             if args_has(args, 'g' as i32 as u_char) != 0 {
                 *oo = global_w_options;
                 scope = OPTIONS_TABLE_WINDOW;
-            } else if wl.is_null() && !target.is_null() {
+            } else if !wl.is_alive() && !target.is_null() {
                 format_options_cause!(
                     cause,
                     b"no such window: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
-            } else if wl.is_null() {
+            } else if !wl.is_alive() {
                 format_options_cause!(
                     cause,
                     b"no current window\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
-                *oo = options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+                *oo = options_owner_ptr(&mut (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
                 scope = OPTIONS_TABLE_WINDOW;
             }
         }
@@ -1188,7 +1187,7 @@ pub unsafe fn options_scope_from_flags(
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
     let mut s: *mut session = (*fs).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: *mut winlink = (*fs).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*fs).winlink_handle();
     let mut wp: *mut window_pane = (*fs).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut target: *const ::core::ffi::c_char = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if args_has(args, 's' as i32 as u_char) != 0 {
@@ -1218,7 +1217,7 @@ pub unsafe fn options_scope_from_flags(
             *oo = global_w_options;
             return 0x4 as ::core::ffi::c_int;
         }
-        if wl.is_null() {
+        if !wl.is_alive() {
             if !target.is_null() {
                 format_options_cause!(
                     cause,
@@ -1233,7 +1232,7 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = options_owner_ptr(&mut (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+        *oo = options_owner_ptr(&mut (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
         return 0x4 as ::core::ffi::c_int;
     } else {
         if args_has(args, 'g' as i32 as u_char) != 0 {

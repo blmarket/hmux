@@ -275,7 +275,8 @@ mod input_buffer_ownership_tests {
     #[test]
     fn colon_parameter_survives_later_numeric_error_until_next_split() {
         unsafe {
-            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+            let mut ictx_owner = Box::new(input_ctx::new());
+            let ictx = &raw mut *ictx_owner;
             let invalid = b"38:5:196;invalid\0";
             (&mut (*ictx).param_buf)[..invalid.len()].copy_from_slice(invalid);
             (*ictx).param_len = invalid.len() - 1;
@@ -302,14 +303,15 @@ mod input_buffer_ownership_tests {
                 c"48:5:25"
             );
             input_clear_params(&mut *ictx);
-            drop(Box::from_raw(ictx));
+            drop(ictx_owner);
         }
     }
 
     #[test]
     fn parser_buffer_grows_preserves_bytes_and_shrinks() {
         unsafe {
-            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+            let mut ictx_owner = Box::new(input_ctx::new());
+            let ictx = &raw mut *ictx_owner;
             assert_eq!((*ictx).input_buf.len(), INPUT_BUF_START as usize);
             for ch in (0..96).map(|i| if i == 17 { 0 } else { b'a' + (i % 26) }) {
                 (*ictx).ch = ch as i32;
@@ -322,7 +324,7 @@ mod input_buffer_ownership_tests {
 
             (*ictx).shrink_buffer();
             assert_eq!((*ictx).input_buf.len(), INPUT_BUF_START as usize);
-            drop(Box::from_raw(ictx));
+            drop(ictx_owner);
         }
     }
 }
@@ -415,7 +417,8 @@ mod input_request_ownership_tests {
     #[test]
     fn queued_reply_survives_earlier_request_removal() {
         unsafe {
-            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+            let mut ictx_owner = Box::new(input_ctx::new());
+            let ictx = &raw mut *ictx_owner;
 
             let client_owner = client::new();
             let c = client_owner.get();
@@ -451,14 +454,15 @@ mod input_request_ownership_tests {
             input_free_request(queued);
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx));
+            drop(ictx_owner);
         }
     }
 
     #[test]
     fn matched_request_can_be_freed_before_later_queued_reply() {
         unsafe {
-            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+            let mut ictx_owner = Box::new(input_ctx::new());
+            let ictx = &raw mut *ictx_owner;
 
             let client_owner = client::new();
             let c = client_owner.get();
@@ -480,25 +484,27 @@ mod input_request_ownership_tests {
             assert!(input_ctx_requests(ictx).is_empty());
             assert!(input_client_requests(&mut *c).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx));
+            drop(ictx_owner);
         }
     }
 
     #[test]
     fn reply_without_pending_request_does_not_queue() {
         unsafe {
-            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+            let mut ictx_owner = Box::new(input_ctx::new());
+            let ictx = &raw mut *ictx_owner;
             input_reply(ictx, 1, |out| out.write_all(b"\x1b[0n"));
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx));
+            drop(ictx_owner);
         }
     }
 
     #[test]
     fn cancelling_client_drops_its_requests_from_the_input_owner() {
         unsafe {
-            let ictx = Box::into_raw(Box::new(input_ctx::new()));
+            let mut ictx_owner = Box::new(input_ctx::new());
+            let ictx = &raw mut *ictx_owner;
 
             let client_owner = client::new();
             let c = client_owner.get();
@@ -520,7 +526,7 @@ mod input_request_ownership_tests {
             assert!(!input_client_has_requests(&mut *(c)));
             assert!(input_ctx_requests(ictx).is_empty());
             assert_eq!((*ictx).request_count, 0);
-            drop(Box::from_raw(ictx));
+            drop(ictx_owner);
         }
     }
 }
@@ -5480,11 +5486,11 @@ unsafe fn input_fire_command_event(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<
             (*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"),
         );
     }
-    if !fs.wl_ptr().is_null() {
+    if fs.winlink_handle().is_alive() {
         event_payload_set_int(
             &mut *ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            (*fs.wl_ptr()).idx,
+            (fs.winlink_handle()).get_unchecked().idx,
         );
     }
     event_payload_set_window(

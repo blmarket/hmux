@@ -101,10 +101,10 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !((*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-            if (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
+            if ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w && tty_window_bigger(&raw mut (*c).tty) != 0 {
                 server_redraw_client(&mut *(c));
             } else {
-                if (*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w {
+                if ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w {
                     (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
                 }
                 if session_has(&*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*w) != 0 {
@@ -117,11 +117,11 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
     }
 }
 unsafe fn cmd_select_pane_marked_pane(
-    mut self_0: *mut cmd,
+    mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -131,7 +131,7 @@ unsafe fn cmd_select_pane_marked_pane(
         wp: std::rc::Weak::new(),
         idx: 0,
     };
-    let mut wl: *mut winlink = (*target).wl_ptr();
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut mwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -142,10 +142,10 @@ unsafe fn cmd_select_pane_marked_pane(
     if server_check_marked() != 0 {
         lwp = marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    if args_has(args, 'M' as i32 as u_char) != 0 || server_is_marked((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref()) != 0 {
+    if args_has(args, 'M' as i32 as u_char) != 0 || server_is_marked((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref()) != 0 {
         server_clear_marked();
     } else {
-        server_set_marked((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        server_set_marked((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     }
     mwp = marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ep = event_payload_create();
@@ -228,10 +228,10 @@ unsafe fn cmd_select_pane_marked_pane(
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_select_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
-    let entry = cmd_get_entry(&*self_0);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let entry = cmd_get_entry(self_0.get_unchecked());
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut fs: cmd_find_state = cmd_find_state {
@@ -242,8 +242,8 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
         wp: std::rc::Weak::new(),
         idx: 0,
     };
-    let mut wl: *mut winlink = (*target).wl_ptr();
-    let mut w: *mut window = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -283,7 +283,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
             }
             window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (lastwp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
             if window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(lastwp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int) != 0 {
-                cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl, 0 as ::core::ffi::c_int);
+                cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl.clone(), 0 as ::core::ffi::c_int);
                 cmd_select_pane_redraw(&(*(w)).observer.upgrade().expect("live window"));
             }
             if visible == 0 && window_pop_zoom(&(*(w)).observer.upgrade().expect("live window")) != 0 {
@@ -293,7 +293,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'm' as i32 as u_char) != 0 || args_has(args, 'M' as i32 as u_char) != 0 {
-        return cmd_select_pane_marked_pane(self_0, item_handle);
+        return cmd_select_pane_marked_pane(self_0.clone(), item_handle);
     }
     style = args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !style.is_null() {
@@ -411,7 +411,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
     }
     window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     if window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int) != 0 {
-        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
+        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl.clone(), &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
     }
     cmdq_insert_hook((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), item_handle, &mut current.current_snapshot(), |out| out.write_all(b"after-select-pane"));
     cmd_select_pane_redraw(&(*(w)).observer.upgrade().expect("live window"));

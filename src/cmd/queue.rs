@@ -170,8 +170,8 @@ impl Drop for cmdq_list {
 pub fn cmdq_get_name(item: &cmdq_item) -> Option<&std::ffi::CStr> {
     item.name.as_deref()
 }
-pub fn cmdq_get_cmd(item: &cmdq_item) -> *mut cmd {
-    item.cmd_ptr()
+pub fn cmdq_get_cmd(item: &cmdq_item) -> refbox::Weak<cmd> {
+    item.command_handle()
 }
 pub fn cmdq_get_client(item_handle: Option<&cmdq_item>) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
     item_handle.and_then(|item| item.client.upgrade())
@@ -268,8 +268,8 @@ pub unsafe fn cmdq_add_formats(state: &cmdq_state, mut ft: *mut format_tree) {
 }
 pub unsafe fn cmdq_merge_formats(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, mut ft: *mut format_tree) {
     let item = item_handle.get();
-    if !(*item).cmd_ptr().is_null() {
-        let entry = cmd_get_entry(&*(*item).cmd_ptr());
+    if (*item).command_handle().is_alive() {
+        let entry = cmd_get_entry(&((*item).command_handle()).get_unchecked());
         format_add(
             ft,
             b"command\0" as *const u8 as *const ::core::ffi::c_char,
@@ -369,8 +369,8 @@ pub unsafe fn cmdq_insert_hook(
 ) {
     let item = item_handle.get();
     let mut _s = _s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut cmd: *mut cmd = (*item).cmd_ptr();
-    let mut args_0: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
+    let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
+    let mut args_0: *mut args = cmd_get_args_mut(cmd.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -493,11 +493,11 @@ pub unsafe fn cmdq_get_command(
     ));
     let mut remaining = None;
     for command in cmdlist.list.iter().rev() {
-        let cmd = command.as_ptr().cast_mut();
-        let owner = cmdq_new_named_item(cmd_get_entry(&*cmd).name);
+        let cmd = command.downgrade();
+        let owner = cmdq_new_named_item(cmd_get_entry(cmd.get_unchecked()).name);
         let item = owner.get();
         (*item).type_0 = CMDQ_COMMAND;
-        (*item).group = cmd_get_group(cmd);
+        (*item).group = cmd_get_group(cmd.clone());
         (*item).state = Some(state.clone());
         (*item).cmd = command.downgrade();
         (*item).cmdlist = Some(commands.clone());
@@ -519,7 +519,7 @@ unsafe fn cmdq_find_flag(
         cmd_find_from_client(fs, (target_client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
-    value = args_get(&*(cmd_get_args_mut(&mut *(*item).cmd_ptr()).map_or(std::ptr::null_mut(), |args| args)), flag.flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    value = args_get(&*(cmd_get_args_mut(((*item).command_handle()).get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args)), flag.flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if cmd_find_target(fs, Some(item_handle), value, flag.type_0, flag.flags) != 0 as ::core::ffi::c_int {
         cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
         return CMD_RETURN_ERROR;
@@ -533,7 +533,7 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    let tmp = cmd_print_cstring(&*(*item).cmd_ptr());
+    let tmp = cmd_print_cstring(&((*item).command_handle()).get_unchecked());
     if !c.is_null() {
         uid = proc_get_peer_uid((*c).peer);
         let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
@@ -595,9 +595,9 @@ unsafe fn cmdq_fire_command(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq
     let saved_client_ptr = saved_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let name = cmdq_name(saved_client.as_ref().map(|owner| &*owner.get()));
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
-    let mut cmd: *mut cmd = (*item).cmd_ptr();
-    let mut args: *mut args = cmd_get_args_mut(&mut *cmd).map_or(std::ptr::null_mut(), |args| args);
-    let entry = cmd_get_entry(&*cmd);
+    let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
+    let mut args: *mut args = cmd_get_args_mut(cmd.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let entry = cmd_get_entry(cmd.get_unchecked());
     let mut tc = None;
     let saved = (*item).client.clone();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
@@ -616,7 +616,7 @@ unsafe fn cmdq_fire_command(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq
         cmdq_add_message(item_handle);
     }
     if log_get_level() > 1 as ::core::ffi::c_int {
-        let tmp = cmd_print_cstring(&*cmd);
+        let tmp = cmd_print_cstring(cmd.get_unchecked());
         log_debug(format_args!(
             "{} {}: ({}) {}",
             "cmdq_fire_command",
@@ -676,7 +676,7 @@ unsafe fn cmdq_fire_command(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq
             if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
                 retval = cmdq_find_flag(item_handle, &raw mut (*item).target, &entry.target);
                 if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
-                    retval = entry.exec.expect("non-null function pointer")(cmd, item_handle);
+                    retval = entry.exec.expect("non-null function pointer")(cmd.clone(), item_handle);
                     assert!(!(*item).removed, "executing command item removed during dispatch");
                     if !(retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int) {
                         if entry.flags & CMD_AFTERHOOK != 0 {
@@ -873,7 +873,7 @@ pub unsafe fn cmdq_error(
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut cmd: *mut cmd = (*item).cmd_ptr();
+    let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: u_int = 0;
     let mut msg = format_message_with(write);
@@ -883,7 +883,7 @@ pub unsafe fn cmdq_error(
         crate::src::log::log_bytes(msg.as_bytes())
     ));
     if c.is_null() {
-        let (source, source_line) = cmd_get_source(&*cmd);
+        let (source, source_line) = cmd_get_source(cmd.get_unchecked());
         file = source.map_or(std::ptr::null(), |file| file.as_ptr());
         line = source_line;
         if cfg_finished == 0 {

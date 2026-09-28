@@ -18,7 +18,8 @@ use std::os::unix::ffi::OsStrExt;
 fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
     unsafe {
         let previous_options = global_options;
-        let options = options_create(std::ptr::null_mut());
+        let mut options_owner = options_create(std::ptr::null_mut());
+        let options = &raw mut *options_owner;
         for name in [c"prompt-history-limit", c"history-file"] {
             let definition = (&*std::ptr::addr_of!(options_table))
                 .iter()
@@ -229,6 +230,6 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         prompt_history_clear(PROMPT_TYPE_SEARCH);
         global_options = previous_options;
-        options_free(options);
+        options_free(options_owner);
     }
 }

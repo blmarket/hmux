@@ -74,7 +74,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     let ep = &*payload;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = event_payload_get_window(ep).map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -83,7 +83,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     }
     template = b"%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}\0"
         as *const u8 as *const ::core::ffi::c_char;
-    if window_winlinks_first((w).as_ref()).is_null() || (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root).is_null() {
+    if !window_winlinks_first((w).as_ref()).is_alive() || (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root).is_null() {
         return;
     }
     let mut registry_c_owner = clients.first();
@@ -97,16 +97,17 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
         {
             s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             wl = winlink_find_by_window_id(&raw mut (*s).windows, (*w).id);
-            if !wl.is_null() {
-                ft = format_create(
+            if wl.is_alive() {
+                let mut ft_owner = format_create(
                     (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                     None,
                     FORMAT_NONE,
                     0 as ::core::ffi::c_int,
                 );
-                format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl, None);
+                ft = &raw mut *ft_owner;
+                format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), None);
                 let cp = format_expand_cstring(ft, template);
-                format_free(Box::from_raw(ft));
+                format_free(ft_owner);
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| write_cstr(out, cp.as_ptr()));
             }
         }
@@ -160,7 +161,7 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
             || (*c).session_handle().is_none())
         {
             cs = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_alive() {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| write!(out, "%window-close @{}", ((*w).id) as u32));
             } else {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
@@ -190,7 +191,7 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
             || (*c).session_handle().is_none())
         {
             cs = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_alive() {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| write!(out, "%window-add @{}", ((*w).id) as u32));
             } else {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
@@ -220,7 +221,7 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
             || (*c).session_handle().is_none())
         {
             cs = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_alive() {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
                     write!(out, "%window-renamed @{} ", ((*w).id) as u32)?;
                     write_cstr(out, (*w).name.as_ptr())
@@ -366,7 +367,7 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
     let ep = &*payload;
     let mut s: *mut session = event_payload_get_session(ep).map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    if s.is_null() || (*s).curw_ptr().is_null() {
+    if s.is_null() || !(*s).current_winlink().is_alive() {
         return;
     }
     let mut registry_c_owner = clients.first();
@@ -382,7 +383,7 @@ unsafe fn control_session_window_changed_cb(_name: &CStr, payload: &mut event_pa
                     out,
                     "%session-window-changed ${} @{}",
                     ((*s).id) as u32,
-                    ((*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as u32
+                    ((*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id) as u32
                 )
             });
         }

@@ -8,9 +8,12 @@ use std::rc::Rc;
 #[test]
 fn format_condition_handles_expired_parser_client() {
     unsafe {
-        global_options = options_create(std::ptr::null_mut());
-        global_s_options = options_create(std::ptr::null_mut());
-        global_w_options = options_create(std::ptr::null_mut());
+        let mut global_options_owner = options_create(std::ptr::null_mut());
+        global_options = &raw mut *global_options_owner;
+        let mut global_s_options_owner = options_create(std::ptr::null_mut());
+        global_s_options = &raw mut *global_s_options_owner;
+        let mut global_w_options_owner = options_create(std::ptr::null_mut());
+        global_w_options = &raw mut *global_w_options_owner;
         global_environ = Some(hmux2::src::environ::environ_create());
         let client = client::new();
         let mut input = cmd_parse_input {
@@ -30,9 +33,9 @@ fn format_condition_handles_expired_parser_client() {
             c"display-message absent",
         );
         drop(result);
-        options_free(global_options);
-        options_free(global_s_options);
-        options_free(global_w_options);
+        options_free(global_options_owner);
+        options_free(global_s_options_owner);
+        options_free(global_w_options_owner);
         global_options = std::ptr::null_mut();
         global_s_options = std::ptr::null_mut();
         global_w_options = std::ptr::null_mut();

@@ -85,10 +85,10 @@ unsafe fn cmd_save_buffer_done(
     }
     cmdq_continue(item_handle);
 }
-unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_save_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pb;
@@ -111,7 +111,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<s
         }
     }
     let pb = pb.expect("buffer lookup checked above");
-    let show_buffer = std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_buffer_entry);
+    let show_buffer = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_buffer_entry);
     if show_buffer {
         if !(*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             let mut evb = evbuffer_new();

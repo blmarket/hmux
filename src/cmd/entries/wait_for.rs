@@ -254,8 +254,8 @@ unsafe fn cmd_wait_for_client_name(wei: *mut wait_event_item) -> CString {
         cmd_wait_for_item_client_name(&(*(item.get())).observer.upgrade().expect("live command queue item"))
     })
 }
-unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+unsafe fn cmd_wait_for_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
     if args_has(args, 'E' as i32 as u_char) != 0 {
@@ -313,12 +313,13 @@ unsafe fn cmd_wait_for_event_cb(
         cmd_wait_for_event_print(&(*(item)).observer.upgrade().expect("live command queue item"), ep);
     }
     if !(*wei).filter.is_none() {
-        ft = format_create_with_client(
+        let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
             (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
             FORMAT_NONE,
             FORMAT_NOJOBS,
         );
+        ft = &raw mut *ft_owner;
         event_payload_add_formats(ep, ft, ::core::ptr::null::<::core::ffi::c_char>());
         let expanded = format_expand_cstring(
             ft,
@@ -327,7 +328,7 @@ unsafe fn cmd_wait_for_event_cb(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
         );
         flag = format_true(expanded.as_ptr());
-        format_free(Box::from_raw(ft));
+        format_free(ft_owner);
         if flag == 0 {
             return;
         }

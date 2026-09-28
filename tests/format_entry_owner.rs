@@ -20,14 +20,18 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         let saved_options = global_options;
         let saved_w_options = global_w_options;
         let saved_s_options = global_s_options;
-        let options = options_create(core::ptr::null_mut());
-        let w_options = options_create(core::ptr::null_mut());
-        let s_options = options_create(core::ptr::null_mut());
+        let mut options_owner = options_create(core::ptr::null_mut());
+        let options = &raw mut *options_owner;
+        let mut w_options_owner = options_create(core::ptr::null_mut());
+        let w_options = &raw mut *w_options_owner;
+        let mut s_options_owner = options_create(core::ptr::null_mut());
+        let s_options = &raw mut *s_options_owner;
         global_options = options;
         global_w_options = w_options;
         global_s_options = s_options;
 
-        let ft = format_create(None, None, 0, 0);
+        let mut ft_owner = format_create(None, None, 0, 0);
+        let ft = &raw mut *ft_owner;
         let key = b"zz_test_format_value\0".as_ptr().cast();
         let expression = b"#{zz_test_format_value}\0".as_ptr().cast();
         format_add_owned_cb(ft, std::ffi::CStr::from_ptr(key), callback);
@@ -45,12 +49,12 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         assert_eq!(expanded.as_bytes(), b"replacement");
         assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);
 
-        format_free(Box::from_raw(ft));
+        format_free(ft_owner);
         global_options = saved_options;
         global_w_options = saved_w_options;
         global_s_options = saved_s_options;
-        options_free(options);
-        options_free(w_options);
-        options_free(s_options);
+        options_free(options_owner);
+        options_free(w_options_owner);
+        options_free(s_options_owner);
     }
 }

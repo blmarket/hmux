@@ -7,7 +7,8 @@ use std::ptr::{null, null_mut};
 #[test]
 fn ordered_names_survive_updates_and_removal() {
     unsafe {
-        let oo = options_create(null_mut());
+        let mut oo_owner = options_create(null_mut());
+        let oo = &raw mut *oo_owner;
         assert!(options_iter(&*oo).next().is_none());
         let mut names: Vec<Vec<u8>> = (0..128)
             .rev()
@@ -42,15 +43,17 @@ fn ordered_names_survive_updates_and_removal() {
         assert!(hmux2::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(c"@key-000".as_ptr())).map_or(std::ptr::null_mut(), |entry| entry).is_null());
         // Repopulate so destruction also exercises nonempty storage.
         options_set_string(oo, c"@again".as_ptr(), 0, |out| out.write_all(b"value"));
-        options_free(oo);
+        options_free(oo_owner);
     }
 }
 
 #[test]
 fn aliases_parent_fallback_and_shadowing() {
     unsafe {
-        let parent = options_create(null_mut());
-        let child = options_create(parent);
+        let mut parent_owner = options_create(null_mut());
+        let parent = &raw mut *parent_owner;
+        let mut child_owner = options_create(parent);
+        let child = &raw mut *child_owner;
         let inherited = options_set_string(parent, c"@shared".as_ptr(), 0, |out| {
             out.write_all(b"parent")
         });
@@ -96,16 +99,17 @@ fn aliases_parent_fallback_and_shadowing() {
             CStr::from_ptr(options_get_string(child, c"display-panes-colour".as_ptr())),
             c"red"
         );
-        options_free(child);
+        options_free(child_owner);
         assert_eq!(hmux2::src::options::options_get_only_mut(&mut *(parent), std::ffi::CStr::from_ptr(c"@shared".as_ptr())).map_or(std::ptr::null_mut(), |entry| entry), inherited);
-        options_free(parent);
+        options_free(parent_owner);
     }
 }
 
 #[test]
 fn scalar_string_replacement_append_and_default_keep_stable_entry() {
     unsafe {
-        let oo = options_create(null_mut());
+        let mut oo_owner = options_create(null_mut());
+        let oo = &raw mut *oo_owner;
         let entry = options_set_string(oo, c"@bytes".as_ptr(), 0, |out| {
             write_cstr(out, c"\xff".as_ptr())
         });
@@ -153,14 +157,15 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             write_cstr(out, c"tail".as_ptr())
         });
         assert_eq!(CStr::from_ptr((*empty).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())), c"(null)tail");
-        options_free(oo);
+        options_free(oo_owner);
     }
 }
 
 #[test]
 fn array_keys_order_normalize_and_keep_stable_items() {
     unsafe {
-        let oo = options_create(null_mut());
+        let mut oo_owner = options_create(null_mut());
+        let oo = &raw mut *oo_owner;
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
@@ -275,14 +280,15 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         // Replacing the option also destroys populated array storage.
         let replacement = options_default(oo, definition);
         assert!(!options_array_iter_mut(&mut *(replacement)).next().map_or(std::ptr::null_mut(), |item| item).is_null());
-        options_free(oo);
+        options_free(oo_owner);
     }
 }
 
 #[test]
 fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     unsafe {
-        let oo = options_create(null_mut());
+        let mut oo_owner = options_create(null_mut());
+        let oo = &raw mut *oo_owner;
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
@@ -319,6 +325,6 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
             CStr::from_ptr(cause.as_ref().unwrap().as_ptr()),
             c"bad colour: invalid-colour"
         );
-        options_free(oo);
+        options_free(oo_owner);
     }
 }

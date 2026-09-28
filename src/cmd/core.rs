@@ -273,14 +273,14 @@ pub fn cmd_get_args(cmd: &cmd) -> Option<&args> {
 pub fn cmd_get_args_mut(cmd: &mut cmd) -> Option<&mut args> {
     cmd.args.as_deref_mut()
 }
-pub unsafe fn cmd_get_group(mut cmd: *mut cmd) -> u_int {
-    return (*cmd).group;
+pub unsafe fn cmd_get_group(mut cmd: refbox::Weak<cmd>) -> u_int {
+    return cmd.get_unchecked().group;
 }
 pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
     (cmd.file.as_deref(), cmd.line)
 }
-pub unsafe fn cmd_get_parse_flags(mut cmd: *mut cmd) -> ::core::ffi::c_int {
-    return (*cmd).parse_flags;
+pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
+    return cmd.get_unchecked().parse_flags;
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -616,22 +616,22 @@ pub unsafe fn cmd_mouse_at(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>) -> *mut winlink {
+pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>) -> refbox::Weak<winlink> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if (*m).valid == 0 {
-        return ::core::ptr::null_mut::<winlink>();
+        return refbox::Weak::new();
     }
     if (*m).s == -1 {
-        return std::ptr::null_mut();
+        return refbox::Weak::new();
     }
     let Some(session_owner) = session_find_by_id((*m).s as u_int) else {
-        return std::ptr::null_mut();
+        return refbox::Weak::new();
     };
     s = session_owner.get();
     if (*m).w == -(1 as ::core::ffi::c_int) {
-        wl = (*s).curw_ptr();
+        wl = (*s).current_winlink();
     } else {
         let window_owner = window_find_by_id((*m).w as u_int);
         w = window_owner.as_ref().map_or(
@@ -639,7 +639,7 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<s
             crate::src::shared::rc::as_ptr,
         );
         if w.is_null() {
-            return ::core::ptr::null_mut::<winlink>();
+            return refbox::Weak::new();
         }
         wl = winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window"));
         if let Some(window) = window_owner {
@@ -654,17 +654,17 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<s
 pub unsafe fn cmd_mouse_pane(
     mut m: *mut mouse_event,
     sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
-    mut wlp: *mut *mut winlink,
+    mut wlp: *mut refbox::Weak<winlink>,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     wl = cmd_mouse_window(m, sp);
-    if wl.is_null() {
+    if !wl.is_alive() {
         return None;
     }
     let pane_owner;
     if (*m).wp == -(1 as ::core::ffi::c_int) {
-        pane_owner = (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active.upgrade();
+        pane_owner = (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active.upgrade();
         wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
         pane_owner = window_pane_find_by_id((*m).wp as u_int);
@@ -672,11 +672,11 @@ pub unsafe fn cmd_mouse_pane(
         if wp.is_null() {
             return None;
         }
-        if !window_has_pane(&*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &(*wp).observer) {
+        if !window_has_pane(&*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &(*wp).observer) {
             return None;
         }
     }
-    if (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.upgrade().is_some() && !pane_owner.as_ref().is_some_and(|owner| (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.ptr_eq(&std::rc::Rc::downgrade(owner))) {
+    if (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.upgrade().is_some() && !pane_owner.as_ref().is_some_and(|owner| (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.ptr_eq(&std::rc::Rc::downgrade(owner))) {
         return None;
     }
     if !wlp.is_null() {

@@ -48,14 +48,14 @@ pub static cmd_kill_session_entry: cmd_entry = {
         exec: Some(cmd_kill_session_exec),
     }
 };
-unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_kill_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let source = (*target).s.upgrade().expect("live target session");
     let s = source.get();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null()
         && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
@@ -65,10 +65,10 @@ unsafe fn cmd_kill_session_exec(mut self_0: *mut cmd, item_handle: &std::rc::Rc<
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-        while !wl.is_null() {
-            (*(*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags &= !WINDOW_ALERTFLAGS;
-            (*wl).flags &= !WINLINK_ALERTFLAGS;
-            wl = winlinks_next(&*wl);
+        while wl.is_alive() {
+            (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags &= !WINDOW_ALERTFLAGS;
+            wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+            wl = winlinks_next(wl.get_unchecked());
         }
         server_redraw_session(&*(s));
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
@@ -135,21 +135,22 @@ unsafe fn cmd_kill_session_filter(
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    ft = format_create_with_client(
+    let mut ft_owner = format_create_with_client(
         queue_client.as_ref(),
         Some(item_handle),
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
+    ft = &raw mut *ft_owner;
     format_defaults(
         ft,
         None,
         Some(s_owner),
-        ::core::ptr::null_mut::<winlink>(),
+        (refbox::Weak::new()).clone(),
         None,
     );
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
     return flag;
 }

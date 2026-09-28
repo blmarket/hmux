@@ -178,11 +178,11 @@ pub unsafe fn server_redraw_window(window: &window) {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
         let matches = client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()
-            .and_then(|session| session.curw_ptr().as_ref())
-            .and_then(|link| link.window_owner.as_ref())
+            .and_then(|session| session.curw.try_borrow_mut().ok())
+            .and_then(|link| link.window_owner.clone())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
                 &window.observer,
-                &std::rc::Rc::downgrade(current),
+                &std::rc::Rc::downgrade(&current),
             ));
         if matches {
             server_redraw_client(client);
@@ -195,9 +195,9 @@ pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::Un
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
         let matches = client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()
-            .and_then(|session| session.curw_ptr().as_ref())
-            .and_then(|link| link.window_owner.as_ref())
-            .is_some_and(|current| std::rc::Rc::ptr_eq(current, window_owner));
+            .and_then(|session| session.curw.try_borrow_mut().ok())
+            .and_then(|link| link.window_owner.clone())
+            .is_some_and(|current| std::rc::Rc::ptr_eq(&current, window_owner));
         if matches {
             client.flags |= CLIENT_REDRAWMENU as uint64_t;
         }
@@ -209,11 +209,11 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
         let matches = client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()
-            .and_then(|session| session.curw_ptr().as_ref())
-            .and_then(|link| link.window_owner.as_ref())
+            .and_then(|session| session.curw.try_borrow_mut().ok())
+            .and_then(|link| link.window_owner.clone())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
                 &window.observer,
-                &std::rc::Rc::downgrade(current),
+                &std::rc::Rc::downgrade(&current),
             ));
         if matches {
             client.flags |= CLIENT_REDRAWBORDERS as uint64_t;
@@ -306,7 +306,7 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
 pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window>>, mut renumber: ::core::ffi::c_int) {
     let w = owner.get();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
@@ -316,10 +316,10 @@ pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window
             server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
             loop {
                 wl = winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window"));
-                if wl.is_null() {
+                if !wl.is_alive() {
                     break;
                 }
-                if session_detach(&(*s).observer.upgrade().expect("live session"), wl) != 0 {
+                if session_detach(&(*s).observer.upgrade().expect("live session"), wl.clone()) != 0 {
                     server_destroy_session_group(&(*(s)).observer.upgrade().expect("live session"));
                     break;
                 } else {
@@ -366,7 +366,7 @@ pub unsafe fn server_renumber_all() {
 }
 pub unsafe fn server_link_window(
     src_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
-    mut srcwl: *mut winlink,
+    mut srcwl: refbox::Weak<winlink>,
     dst_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut dstidx: ::core::ffi::c_int,
     mut killflag: ::core::ffi::c_int,
@@ -374,7 +374,7 @@ pub unsafe fn server_link_window(
 ) -> Result<(), std::ffi::CString> {
     let mut src = src_owner.get();
     let mut dst = dst_owner.get();
-    let mut dstwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
+    let mut dstwl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut srcsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut dstsg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     srcsg = session_group_contains((src).as_ref());
@@ -382,26 +382,26 @@ pub unsafe fn server_link_window(
     if src != dst && !srcsg.is_null() && !dstsg.is_null() && srcsg == dstsg {
         return Err(c"sessions are grouped".to_owned());
     }
-    dstwl = ::core::ptr::null_mut::<winlink>();
+    dstwl = refbox::Weak::new();
     if dstidx != -(1 as ::core::ffi::c_int) {
         dstwl = winlink_find_by_index(&raw mut (*dst).windows, dstidx);
     }
-    if !dstwl.is_null() {
-        if (*dstwl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == (*srcwl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+    if dstwl.is_alive() {
+        if dstwl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == srcwl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
             return Err(std::ffi::CString::new(format!("same index: {dstidx}"))
                 .expect("numeric diagnostic contains no NUL"));
         }
         if killflag != 0 {
             events_fire_winlink(
                 b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
-                dstwl,
+                (dstwl).clone(),
             );
-            (*dstwl).flags &= !WINLINK_ALERTFLAGS;
-            winlink_stack_remove(&raw mut (*dst).lastw, dstwl);
-            winlink_remove(&raw mut (*dst).windows, dstwl);
-            if dstwl == (*dst).curw_ptr() {
+            dstwl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+            winlink_stack_remove(&raw mut (*dst).lastw, (dstwl).clone());
+            winlink_remove(&raw mut (*dst).windows, (dstwl).clone());
+            if dstwl == (*dst).current_winlink() {
                 selectflag = 1 as ::core::ffi::c_int;
-                (*dst).set_curw(::core::ptr::null_mut::<winlink>());
+                (*dst).set_curw((refbox::Weak::new()).clone());
             }
         }
     }
@@ -412,22 +412,22 @@ pub unsafe fn server_link_window(
                 b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
             )) as ::core::ffi::c_int;
     }
-    let window_owner = (*srcwl).window_owner.as_ref().expect("source window").clone();
+    let window_owner = srcwl.get_unchecked().window_owner.as_ref().expect("source window").clone();
     let attached = session_attach(&(*dst).observer.upgrade().expect("live session"), &window_owner, dstidx);
     window_remove_ref(window_owner, c"server_link_window".as_ptr());
     dstwl = attached?;
-    if marked_pane.wl_ptr() == srcwl {
-        marked_pane.set_wl(dstwl);
+    if marked_pane.winlink_handle() == srcwl {
+        marked_pane.set_wl((dstwl).clone());
     }
     if selectflag != 0 {
-        session_select(&(*dst).observer.upgrade().expect("live session"), (*dstwl).idx);
+        session_select(&(*dst).observer.upgrade().expect("live session"), dstwl.get_unchecked().idx);
     }
     server_redraw_session_group(&*(dst));
     Ok(())
 }
-pub unsafe fn server_unlink_window(s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>, mut wl: *mut winlink) {
+pub unsafe fn server_unlink_window(s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>, mut wl: refbox::Weak<winlink>) {
     let mut s = s_owner.get();
-    if session_detach(&(*s).observer.upgrade().expect("live session"), wl) != 0 {
+    if session_detach(&(*s).observer.upgrade().expect("live session"), wl.clone()) != 0 {
         server_destroy_session_group(s_owner);
     } else {
         server_redraw_session_group(&*(s));
@@ -539,7 +539,7 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
                     s,
                     None,
                     None,
-                    ::core::ptr::null_mut::<winlink>(),
+                    (refbox::Weak::new()).clone(),
                     (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
                 );
                 format_draw(

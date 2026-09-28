@@ -288,14 +288,15 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     if s.is_null() {
         return;
     }
-    o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
-    ft = format_create_defaults(
+    o = options_owner_ptr(&mut (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut ft_owner = format_create_defaults(
         None,
         (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
         (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        (*s).curw_ptr(),
+        ((*s).current_winlink()).clone(),
         None,
     );
+    ft = &raw mut *ft_owner;
     memcpy(
         &raw mut (*pd).defaults as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,
@@ -348,7 +349,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         }
     }
     (*pd).border_cell.attr = 0 as u_short;
-    format_free(Box::from_raw(ft));
+    format_free(ft_owner);
 }
 /// Geometry and defaults are fixed for one synchronous input batch. The palette
 /// has a separate sole owner so each terminal command can snapshot the colours
@@ -1060,9 +1061,9 @@ pub unsafe fn popup_display(
         link: 0,
     };
     if !s.is_null() {
-        o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+        o = options_owner_ptr(&mut (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     } else {
-        o = options_owner_ptr(&mut (*(*(*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).curw_ptr()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+        o = options_owner_ptr(&mut (*((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     }
     if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
         lines = options_get_number(
