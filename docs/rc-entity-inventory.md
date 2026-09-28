@@ -1797,3 +1797,16 @@ issuing the ioctl.
 
 `cargo test --workspace` and `git diff --check` passed. The raw parent-window link,
 mode-entry pointers and internal event/resize projections remain pending.
+
+## Implemented retained server pane maintenance
+
+The server maintenance passes keep each pane in an Rc while invoking style
+callbacks, checking resize/buffer state, clearing flags and sending theme updates.
+The resize, buffer and theme helpers take retained panes; window-resize checking
+receives the existing retained window. Resize timers derive Weak captures directly
+from the pane owner. Client traversal in the main pass and buffer accounting uses
+owning cursors, with scoped mutable client borrows for buffer accounting.
+
+`cargo test --workspace` and `git diff --check` passed. Raw client/session and
+pane/window relationships, mode-entry pointers and several maintenance helper
+internals remain pending.

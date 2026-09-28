@@ -3400,72 +3400,71 @@ pub unsafe fn server_client_handle_key_after(
     return server_client_handle_key0(owner, event, after, next);
 }
 pub unsafe fn server_client_loop() {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
-        server_client_check_window_resize(w);
+        let w = window_owner.as_ptr();
+        server_client_check_window_resize(window_owner.as_rc());
         window_cursor = windows_next(&*w);
     }
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
-        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
+        let w = window_owner.as_ptr();
+        let mut pane_cursor = window_pane_first(Some(&*w));
+        while let Some(pane_owner) = pane_cursor {
+            let wp = pane_owner.get();
             if (*wp).flags & PANE_STYLECHANGED != 0 {
-                wme = (*wp).modes.active;
+                let wme = (*wp).modes.active;
                 if !wme.is_null() && (*(*wme).mode).style_changed.is_some() {
                     (*(*wme).mode)
                         .style_changed
                         .expect("non-null function pointer")(wme);
                 }
             }
-            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            pane_cursor = window_pane_next(Some(&*wp));
         }
         window_cursor = windows_next(&*w);
     }
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
+    while let Some(client_owner) = registry_c_owner {
+        let c = client_owner.get();
         server_client_check_exit(c, 0 as ::core::ffi::c_int);
         if !(*c).session.is_null() && !(*(*c).session).curw.is_null() {
             server_client_check_modes(c);
-            server_client_check_redraw(registry_c_owner.as_ref().expect("current registry client"));
+            server_client_check_redraw(&client_owner);
             server_client_reset_state(c);
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner = clients.next(&client_owner);
     }
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
-        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
+        let w = window_owner.as_ptr();
+        let mut pane_cursor = window_pane_first(Some(&*w));
+        while let Some(pane_owner) = pane_cursor {
+            let wp = pane_owner.get();
             if (*wp).fd != -(1 as ::core::ffi::c_int) {
-                server_client_check_pane_resize(wp);
-                server_client_check_pane_buffer(wp);
+                server_client_check_pane_resize(&pane_owner);
+                server_client_check_pane_buffer(&pane_owner);
             }
             (*wp).flags &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_ACTIVITY);
-            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            pane_cursor = window_pane_next(Some(&*wp));
         }
         check_window_name(w);
         window_cursor = windows_next(&*w);
     }
     let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.as_ptr();
-        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            window_pane_send_theme_update(wp);
-            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        let w = window_owner.as_ptr();
+        let mut pane_cursor = window_pane_first(Some(&*w));
+        while let Some(pane_owner) = pane_cursor {
+            let wp = pane_owner.get();
+            window_pane_send_theme_update(&pane_owner);
+            pane_cursor = window_pane_next(Some(&*wp));
         }
         window_cursor = windows_next(&*w);
     }
 }
-unsafe fn server_client_check_window_resize(mut w: *mut window) {
+unsafe fn server_client_check_window_resize(owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let w = owner.get();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*w).flags & WINDOW_RESIZE != 0 {
         return;
@@ -3502,7 +3501,8 @@ unsafe fn server_client_resize_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<w
     ));
     event_del(&raw mut (*wp).resize_timer);
 }
-unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
+unsafe fn server_client_check_pane_resize(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 250000 as __suseconds_t,
@@ -3511,7 +3511,7 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
         return;
     }
     if event_initialized(&(*wp).resize_timer) == 0 {
-        let resize_timer_observer = (*wp).observer.clone();
+        let resize_timer_observer = std::rc::Rc::downgrade(pane_owner);
         event_set(
             &raw mut (*wp).resize_timer,
             -(1 as ::core::ffi::c_int),
@@ -3588,9 +3588,9 @@ unsafe fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     }
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);
 }
-unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
+unsafe fn server_client_check_pane_buffer(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut minimum: size_t = 0;
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut off: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut flag: ::core::ffi::c_int = 0;
     let mut attached_clients: u_int = 0 as u_int;
@@ -3600,8 +3600,8 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
         minimum = (*wp).pipe_offset.used;
     }
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
+    while let Some(client_owner) = registry_c_owner {
+        let c = &mut *client_owner.get();
         if !(*c).session.is_null() {
             attached_clients = attached_clients.wrapping_add(1);
             if !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
@@ -3647,8 +3647,7 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                 }
             }
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner = clients.next(&client_owner);
     }
     if attached_clients == 0 as u_int {
         off = 0 as ::core::ffi::c_int;
@@ -3675,8 +3674,8 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                 (*wp).pipe_offset.used = (*wp).pipe_offset.used.wrapping_sub((*wp).base_offset);
             }
             let mut registry_c_owner = clients.first();
-            c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            while !c.is_null() {
+            while let Some(client_owner) = registry_c_owner {
+                let c = &mut *client_owner.get();
                 if !((*c).session.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0) {
                     if let Some(wpo) = control_pane_offset(
                         (*c).control_state
@@ -3691,8 +3690,7 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                         }
                     }
                 }
-                registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-                c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                registry_c_owner = clients.next(&client_owner);
             }
             (*wp).base_offset = minimum;
         } else {

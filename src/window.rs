@@ -4151,9 +4151,10 @@ pub unsafe fn window_pane_get_theme(mut wp: *mut window_pane) -> client_theme {
     }
     return colour_totheme(window_pane_get_bg(wp));
 }
-pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut theme: client_theme = THEME_UNKNOWN;
-    if wp.is_null() || window_pane_exited(&*wp) != 0 {
+    if window_pane_exited(&*wp) != 0 {
         return;
     }
     if !(*wp).flags & PANE_THEMECHANGED != 0 {
