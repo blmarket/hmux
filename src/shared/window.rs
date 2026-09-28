@@ -164,7 +164,8 @@ pub struct window_winlinks {
 
 #[repr(C)]
 pub struct window_mode_entry {
-    pub wp: *mut window_pane,
+    /// The pane owns this entry; retaining it here would create a cycle.
+    pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     /// Non-owning source; copy mode keeps an independent screen snapshot.
     pub swp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub mode: &'static window_mode,

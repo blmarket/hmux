@@ -617,7 +617,9 @@ unsafe fn window_clock_start_timer(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_clock_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     let mut now: tm = tm {
         tm_sec: 0,
@@ -663,7 +665,9 @@ unsafe fn window_clock_init(
     _fs: *mut cmd_find_state,
     _args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     data = Box::into_raw(Box::new(window_clock_mode_data {
@@ -706,10 +710,14 @@ unsafe fn window_clock_key(
     _key: key_code,
     _m: *mut mouse_event,
 ) {
-    window_pane_reset_mode((*wme).wp);
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    window_pane_reset_mode(mode_pane);
 }
 unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut data: *mut window_clock_mode_data = (*wme).data as *mut window_clock_mode_data;
     let mut ctx: screen_write_ctx = screen_write_ctx {

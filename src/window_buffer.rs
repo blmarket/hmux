@@ -458,7 +458,9 @@ unsafe fn window_buffer_init(
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
@@ -789,7 +791,9 @@ unsafe fn window_buffer_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_buffer_modedata = (*wme).data as *mut window_buffer_modedata;
     let mut mtd: *mut mode_tree_data = (*data).data_ptr();
     let mut finished: ::core::ffi::c_int = 0;

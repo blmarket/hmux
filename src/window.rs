@@ -2427,10 +2427,13 @@ pub unsafe fn window_pane_z_swap_order(
 /// so this derives ordering from the owning collection without putting queue
 /// links into each callback-visible mode entry.
 pub(crate) unsafe fn window_pane_mode_next(wme: *mut window_mode_entry) -> *mut window_mode_entry {
-    if wme.is_null() || (*wme).wp.is_null() {
+    if wme.is_null() {
         return ::core::ptr::null_mut();
     }
-    let Some(storage) = (*(*wme).wp).modes.storage.as_ref() else {
+    let Some(pane_owner) = (*wme).wp.upgrade() else {
+        return ::core::ptr::null_mut();
+    };
+    let Some(storage) = (*pane_owner.get()).modes.storage.as_ref() else {
         return ::core::ptr::null_mut();
     };
     let Some(index) = storage.entries.iter().position(|entry| {
@@ -2502,7 +2505,7 @@ mod window_mode_collection_tests {
 
     unsafe fn boxed_mode(wp: *mut window_pane) -> Box<window_mode_entry> {
         Box::new(window_mode_entry {
-            wp,
+            wp: (*wp).observer.clone(),
             swp: std::rc::Weak::new(),
             mode: &window_copy_mode,
             data: ::core::ptr::null_mut(),
@@ -2516,9 +2519,8 @@ mod window_mode_collection_tests {
     #[test]
     fn pane_mode_stack_reorders_and_removes_stable_entries() {
         unsafe {
-            // The production pane owner is zero-initialized before its fields
-            // are populated; modes itself is initialized explicitly here.
-            let wp = Box::into_raw(Box::new(window_pane::empty()));
+            let pane_owner = window_pane::new();
+            let wp = pane_owner.get();
             (*wp).modes = window_pane_modes::default();
 
             let a = window_pane_mode_insert_front(&mut *wp, boxed_mode(wp));
@@ -2553,7 +2555,10 @@ mod window_mode_collection_tests {
             }
             assert!((*wp).modes.storage.is_none());
 
-            drop(Box::from_raw(wp));
+            let detached = boxed_mode(wp);
+            drop(pane_owner);
+            assert!(detached.wp.upgrade().is_none());
+            assert!(window_pane_mode_next((&*detached as *const window_mode_entry).cast_mut()).is_null());
         }
     }
 }
@@ -2955,7 +2960,7 @@ pub unsafe fn window_pane_set_mode(
     } else {
         // The pane owns a stable Box address for as long as callbacks retain it.
         let entry = Box::new(window_mode_entry {
-            wp,
+            wp: (*wp).observer.clone(),
             swp: source_owner.map(std::rc::Rc::downgrade).unwrap_or_default(),
             mode,
             data: ::core::ptr::null_mut(),

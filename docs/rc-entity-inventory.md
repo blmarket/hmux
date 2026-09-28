@@ -827,3 +827,18 @@ lookup. Modes without a source pass `None`.
 `cargo test --workspace` and `git diff --check` passed. All mode-creation callers
 compile against the typed pane arguments. The mode's owning-pane backreference,
 other raw callback arguments and internal model projections remain pending.
+
+## Implemented mode parent-pane observer
+
+`window_mode_entry.wp` now stores a weak parent-pane association, avoiding a cycle
+with the pane-owned mode stack. Mode consumers upgrade once and retain the parent
+through access; required live-parent callbacks explicitly check that invariant.
+Stack traversal returns no successor for an expired parent. Source/parent identity
+comparisons use weak identity directly without recovering raw model addresses.
+Normal logical pane destruction retains its registry owner through mode cleanup.
+
+`cargo test --workspace` and `git diff --check` passed. The mode-stack regression
+now uses a real Rc pane and verifies that a detached entry neither retains its
+parent nor traverses an expired stack. The existing copy snapshot regression also
+passes with weak parent/source handles. Mode-entry callback pointers, local raw
+model projections and other model fields/APIs remain pending.

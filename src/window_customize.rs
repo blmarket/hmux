@@ -2931,7 +2931,9 @@ unsafe fn window_customize_init(
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
@@ -4815,7 +4817,9 @@ unsafe fn window_customize_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
     let mut finished: ::core::ffi::c_int = 0;
     let mut tagged: u_int = 0;

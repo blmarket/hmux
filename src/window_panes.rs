@@ -1620,7 +1620,9 @@ unsafe fn window_panes_draw_screen(mut wme: *mut window_mode_entry) {
 }
 unsafe fn window_panes_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
-    window_pane_reset_mode((*wme).wp);
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    window_pane_reset_mode(mode_pane);
 }
 unsafe fn window_panes_init(
     mut wme: *mut window_mode_entry,
@@ -1628,7 +1630,9 @@ unsafe fn window_panes_init(
     _fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut w: *mut window = (*wp).window as *mut window;
     let mut data: *mut window_panes_modedata = ::core::ptr::null_mut::<window_panes_modedata>();
     let mut self_0: *mut cmd = ::core::ptr::null_mut::<cmd>();
@@ -1739,8 +1743,10 @@ unsafe fn window_panes_init(
     return &raw mut (*data).screen;
 }
 unsafe fn window_panes_free(mut wme: *mut window_mode_entry) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
-    let mut w: *mut window = (*(*wme).wp).window as *mut window;
+    let mut w: *mut window = (*mode_pane).window as *mut window;
     event_del(&raw mut (*data).timer);
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window(w);
@@ -1851,6 +1857,8 @@ unsafe fn window_panes_get_target(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> Option<Rc<UnsafeCell<window_pane>>> {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -1869,7 +1877,7 @@ unsafe fn window_panes_get_target(
         if key != KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code
             || m.is_null()
             || cmd_mouse_at(
-                (*wme).wp,
+                mode_pane,
                 m,
                 &raw mut x,
                 &raw mut y,
@@ -1890,7 +1898,9 @@ unsafe fn window_panes_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut target: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut data: *mut window_panes_modedata = (*wme).data as *mut window_panes_modedata;
     if key == '\u{1b}' as i32 as key_code || key == 'q' as i32 as key_code {

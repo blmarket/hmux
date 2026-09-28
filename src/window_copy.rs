@@ -432,7 +432,9 @@ pub const WINDOW_COPY_DRAG_REPEAT_TIME: ::core::ffi::c_int = 50000 as ::core::ff
 pub const WINDOW_COPY_REFRESH_INTERVAL: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
 unsafe fn window_copy_scroll_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut tv: timeval = timeval {
         tv_sec: 0,
@@ -528,7 +530,7 @@ unsafe fn window_copy_sync_backing(mut wme: *mut window_mode_entry) -> ::core::f
     let mut added: u_int = 0;
     let mut collected: u_int = 0;
     let mut kept: u_int = 0;
-    if (*data).viewmode != 0 || wp != (*wme).wp {
+    if (*data).viewmode != 0 || !(*wme).swp.ptr_eq(&(*wme).wp) {
         return 0 as ::core::ffi::c_int;
     }
     if (*sg).sx != (*dg).sx
@@ -576,7 +578,9 @@ unsafe fn window_copy_sync_backing(mut wme: *mut window_mode_entry) -> ::core::f
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut window_copy_mode_data {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut base: *mut screen = &raw mut (*wp).base;
     let mut data = Box::into_raw(Box::new(window_copy_mode_data::default()));
     (*wme).data = data as *mut ::core::ffi::c_void;
@@ -652,7 +656,7 @@ unsafe fn window_copy_init(
         &*base,
         &(*data).screen,
         Some((&mut cx, &mut cy)),
-        wp != (*wme).wp,
+        !(*wme).swp.ptr_eq(&(*wme).wp),
     ));
     window_copy_sync_snapshot(data, (*base).grid_mut());
     (*data).cx = cx;
@@ -700,7 +704,9 @@ unsafe fn window_copy_view_init(
     _fs: *mut cmd_find_state,
     _args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = ::core::ptr::null_mut::<window_copy_mode_data>();
     let mut base: *mut screen = &raw mut (*wp).base;
     let mut sx: u_int = (*base).grid().sx;
@@ -947,6 +953,8 @@ pub unsafe fn window_copy_pageup(mut wp: *mut window_pane) {
     window_copy_pageup1((*wp).modes.active, half_page);
 }
 unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::core::ffi::c_int) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut n: u_int = 0;
@@ -1001,7 +1009,7 @@ unsafe fn window_copy_pageup1(mut wme: *mut window_mode_entry, mut half_page: ::
         );
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    window_pane_scrollbar_show((*wme).wp);
+    window_pane_scrollbar_show(mode_pane);
     window_copy_redraw_screen(wme);
 }
 pub unsafe fn window_copy_pagedown(mut wp: *mut window_pane, mut scroll_exit: ::core::ffi::c_int) {
@@ -1016,6 +1024,8 @@ unsafe fn window_copy_pagedown1(
     mut half_page: ::core::ffi::c_int,
     mut scroll_exit: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut n: u_int = 0;
@@ -1073,7 +1083,7 @@ unsafe fn window_copy_pagedown1(
         );
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
-    window_pane_scrollbar_show((*wme).wp);
+    window_pane_scrollbar_show(mode_pane);
     window_copy_redraw_screen(wme);
     return 0 as ::core::ffi::c_int;
 }
@@ -1457,7 +1467,9 @@ unsafe fn window_copy_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut
     window_copy_redraw_screen(wme);
 }
 unsafe fn window_copy_key_table(mut wme: *mut window_mode_entry) -> *const ::core::ffi::c_char {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     if options_get_number(
         options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options),
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1471,6 +1483,8 @@ unsafe fn window_copy_expand_search_string(
     mut cs: *mut window_copy_cmd_state,
 ) -> ::core::ffi::c_int {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut ss: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if ss.is_null() || *ss as ::core::ffi::c_int == '\0' as i32 {
@@ -1483,7 +1497,7 @@ unsafe fn window_copy_expand_search_string(
             ::core::ptr::null_mut::<client>(),
             ::core::ptr::null_mut::<session>(),
             ::core::ptr::null_mut::<winlink>(),
-            (*wme).wp,
+            mode_pane,
         );
         if expanded.as_bytes().is_empty() {
             return 0 as ::core::ffi::c_int;
@@ -1575,10 +1589,12 @@ unsafe fn window_copy_do_copy_end_of_line(
     mut cancel: ::core::ffi::c_int,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut c: *mut client = (*cs).c;
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut count: u_int = args_count((*cs).parsed_args());
     let mut np: u_int = (*wme).prefix;
     let mut ocx: u_int = 0;
@@ -1693,10 +1709,12 @@ unsafe fn window_copy_do_copy_line(
     mut cancel: ::core::ffi::c_int,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut c: *mut client = (*cs).c;
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut count: u_int = args_count((*cs).parsed_args());
     let mut np: u_int = (*wme).prefix;
@@ -1809,10 +1827,12 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut c: *mut client = (*cs).c;
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut prefix: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut set_paste: ::core::ffi::c_int =
@@ -1956,7 +1976,9 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut c: *mut client = (*cs).c;
     let mut m: *mut mouse_event = (*cs).m;
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
@@ -1980,8 +2002,10 @@ unsafe fn window_copy_cmd_centre_vertical(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    window_copy_update_cursor(wme, (*data).cx, (*(*wme).wp).sy.wrapping_div(2 as u_int));
+    window_copy_update_cursor(wme, (*data).cx, (*mode_pane).sy.wrapping_div(2 as u_int));
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -1989,8 +2013,10 @@ unsafe fn window_copy_cmd_centre_horizontal(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    window_copy_update_cursor(wme, (*(*wme).wp).sx.wrapping_div(2 as u_int), (*data).cy);
+    window_copy_update_cursor(wme, (*mode_pane).sx.wrapping_div(2 as u_int), (*data).cy);
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -2051,6 +2077,8 @@ unsafe fn window_copy_cmd_history_bottom(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let s = (*data).backing();
     let mut oy: u_int = 0;
@@ -2082,7 +2110,7 @@ unsafe fn window_copy_cmd_history_bottom(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show((*wme).wp);
+        window_pane_scrollbar_show(mode_pane);
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -2090,6 +2118,8 @@ unsafe fn window_copy_cmd_history_top(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oy: u_int = 0;
     let mut old_oy: u_int = (*data).oy;
@@ -2116,7 +2146,7 @@ unsafe fn window_copy_cmd_history_top(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show((*wme).wp);
+        window_pane_scrollbar_show(mode_pane);
     }
     return WINDOW_COPY_CMD_REDRAW;
 }
@@ -3055,10 +3085,12 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut c: *mut client = (*cs).c;
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut command: Option<CString> = None;
     let mut prefix: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -3119,10 +3151,12 @@ unsafe fn window_copy_cmd_pipe_no_clear(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut c: *mut client = (*cs).c;
     let mut s: *mut session = (*cs).s_ptr();
     let mut wl: *mut winlink = (*cs).wl_ptr();
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut command: Option<CString> = None;
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if !s.is_null() && !arg0.is_null() && *arg0 as ::core::ffi::c_int != '\0' as i32 {
@@ -3492,7 +3526,7 @@ unsafe fn window_copy_do_refresh(mut wme: *mut window_mode_entry, mut follow: ::
             &(*wp).base,
             &(*data).screen,
             None,
-            wp != (*wme).wp,
+            !(*wme).swp.ptr_eq(&(*wme).wp),
         ));
     }
     if follow != 0 {
@@ -3528,14 +3562,16 @@ unsafe fn window_copy_refresh_allowed(mut wme: *mut window_mode_entry) -> ::core
     };
     let wp = source_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    if (*data).viewmode != 0 || wp != (*wme).wp {
+    if (*data).viewmode != 0 || !(*wme).swp.ptr_eq(&(*wme).wp) {
         return 0 as ::core::ffi::c_int;
     }
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_copy_refresh_timer(mut arg: *mut ::core::ffi::c_void) {
     let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut follow: ::core::ffi::c_int = 0;
     if (*wp).modes.active != wme || (*data).refresh_active == 0 {
@@ -3573,8 +3609,10 @@ unsafe fn window_copy_cmd_refresh_now(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: *mut window_mode_entry = (*cs).wme;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut follow: ::core::ffi::c_int = 0;
     if window_copy_refresh_allowed(wme) == 0 {
         return WINDOW_COPY_CMD_NOTHING;
@@ -5101,8 +5139,10 @@ unsafe fn window_copy_command_with_session(
     args: *mut args,
     m: *mut mouse_event,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut cs: window_copy_cmd_state = window_copy_cmd_state {
         wme: ::core::ptr::null_mut::<window_mode_entry>(),
         args: ::core::ptr::null_mut::<args>(),
@@ -5225,6 +5265,8 @@ unsafe fn window_copy_scroll_to(
     mut py: u_int,
     mut no_redraw: ::core::ffi::c_int,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut gd: *mut grid = (*data).backing_mut().grid_mut();
     let mut offset: u_int = 0;
@@ -5259,7 +5301,7 @@ unsafe fn window_copy_scroll_to(
     }
     window_copy_update_selection(wme, 1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int);
     if (*data).oy != old_oy {
-        window_pane_scrollbar_show((*wme).wp);
+        window_pane_scrollbar_show(mode_pane);
     }
     if no_redraw == 0 {
         window_copy_redraw_screen(wme);
@@ -6112,7 +6154,9 @@ unsafe fn window_copy_search(
     mut direction: ::core::ffi::c_int,
     mut regex: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = (*data).backing_mut();
     let mut ss: screen = screen::empty();
@@ -6759,7 +6803,9 @@ unsafe fn window_copy_update_style(
     mut mkgc: *const grid_cell,
     mut clgc: *const grid_cell,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut mark: u_int = 0;
     let mut start: u_int = 0;
@@ -6916,7 +6962,9 @@ unsafe fn window_copy_write_one(
     }
 }
 unsafe fn window_copy_line_number_mode(mut wme: *mut window_mode_entry) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut mode: ::core::ffi::c_int = 0;
@@ -6949,7 +6997,9 @@ unsafe fn window_copy_line_numbers_active(mut wme: *mut window_mode_entry) -> ::
         as ::core::ffi::c_int;
 }
 unsafe fn window_copy_cursor_line_active(mut wme: *mut window_mode_entry) -> ::core::ffi::c_int {
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     s = options_get_string(
         oo,
@@ -7038,8 +7088,10 @@ unsafe fn window_copy_set_line_numbers1(
     mut enabled: ::core::ffi::c_int,
     mut force: ::core::ffi::c_int,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut active: ::core::ffi::c_int = 0;
     let mut line_numbers: ::core::ffi::c_int = 0;
     if data.is_null() {
@@ -7085,7 +7137,9 @@ unsafe fn window_copy_write_line(
     mut ctx: *mut screen_write_ctx,
     mut py: u_int,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
@@ -7409,7 +7463,9 @@ unsafe fn window_copy_redraw_selection(mut wme: *mut window_mode_entry, mut old_
     window_copy_redraw_lines(wme, start, end.wrapping_sub(start).wrapping_add(1 as u_int));
 }
 unsafe fn window_copy_redraw_lines(mut wme: *mut window_mode_entry, mut py: u_int, mut ny: u_int) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -7561,7 +7617,9 @@ unsafe fn window_copy_synchronize_cursor(
     };
 }
 unsafe fn window_copy_update_cursor(mut wme: *mut window_mode_entry, mut cx: u_int, mut cy: u_int) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -7822,7 +7880,9 @@ unsafe fn window_copy_set_selection(
     mut may_redraw: ::core::ffi::c_int,
     mut no_reset: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
@@ -7915,7 +7975,9 @@ unsafe fn window_copy_set_selection(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_copy_get_selection(mut wme: *mut window_mode_entry) -> Option<Vec<u8>> {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut buf = Vec::<u8>::new();
@@ -8033,12 +8095,14 @@ unsafe fn window_copy_copy_buffer(
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let prefix = if set_paste != 0 && !buf.is_empty() && !prefix.is_null() {
         Some(CStr::from_ptr(prefix).to_owned())
     } else {
         None
     };
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -8145,7 +8209,9 @@ unsafe fn window_copy_copy_selection(
     }
 }
 unsafe fn window_copy_append_selection(mut wme: *mut window_mode_entry) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut buf: Vec<u8>;
     let mut bufname: Option<CString> = None;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -8304,8 +8370,10 @@ unsafe fn window_copy_cursor_limit(
     mut py: u_int,
     mut allow_onemore: ::core::ffi::c_int,
 ) -> u_int {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     if allow_onemore != 0
         || options_get_number(
             oo,
@@ -8475,7 +8543,9 @@ unsafe fn window_copy_cursor_left(mut wme: *mut window_mode_entry) {
     window_copy_acquire_cursor_up(wme, hsize, (*data).oy, oldy, px, py);
 }
 unsafe fn window_copy_cursor_right(mut wme: *mut window_mode_entry, mut all: ::core::ffi::c_int) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
     let back_s = (*data).backing();
@@ -8510,8 +8580,10 @@ unsafe fn window_copy_cursor_up(
     mut wme: *mut window_mode_entry,
     mut scroll_only: ::core::ffi::c_int,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -8617,8 +8689,10 @@ unsafe fn window_copy_cursor_down(
     mut wme: *mut window_mode_entry,
     mut scroll_only: ::core::ffi::c_int,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -8784,8 +8858,10 @@ unsafe fn window_copy_cursor_jump_to(mut wme: *mut window_mode_entry) {
     }
 }
 unsafe fn window_copy_cursor_jump_to_back(mut wme: *mut window_mode_entry) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*(*wme).wp).window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*(*mode_pane).window).options).map_or(std::ptr::null_mut(), |options| options);
     let back_s = (*data).backing();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -8848,7 +8924,9 @@ unsafe fn window_copy_cursor_next_word_end_pos(
     mut ppx: *mut u_int,
     mut ppy: *mut u_int,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
     let back_s = (*data).backing();
@@ -8886,7 +8964,9 @@ unsafe fn window_copy_cursor_next_word_end(
     mut separators: *const ::core::ffi::c_char,
     mut no_reset: ::core::ffi::c_int,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut oo: *mut options = options_owner_ptr(&mut (*(*wp).window).options).map_or(std::ptr::null_mut(), |options| options);
     let back_s = (*data).backing();
@@ -8959,8 +9039,10 @@ unsafe fn window_copy_cursor_previous_word(
     mut separators: *const ::core::ffi::c_char,
     mut already: ::core::ffi::c_int,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
-    let mut w: *mut window = (*(*wme).wp).window as *mut window;
+    let mut w: *mut window = (*mode_pane).window as *mut window;
     let back_s = (*data).backing();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -9036,7 +9118,9 @@ unsafe fn window_copy_cursor_prompt(
     window_copy_redraw_screen(wme);
 }
 unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -9146,7 +9230,9 @@ unsafe fn window_copy_scroll_up(mut wme: *mut window_mode_entry, mut ny: u_int) 
     window_pane_scrollbar_redraw(wp);
 }
 unsafe fn window_copy_scroll_down(mut wme: *mut window_mode_entry, mut ny: u_int) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = (*wme).data as *mut window_copy_mode_data;
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -9719,7 +9805,7 @@ mod backing_owner_tests {
             window_copy_sync_snapshot(&mut data, pane.base.grid_mut());
             let original = data.backing() as *const screen;
             let mut mode = window_mode_entry {
-                wp: pane,
+                wp: std::rc::Rc::downgrade(&pane_owner),
                 swp: std::rc::Rc::downgrade(&pane_owner),
                 mode: &window_copy_mode,
                 data: (&mut data as *mut window_copy_mode_data).cast(),

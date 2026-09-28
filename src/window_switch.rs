@@ -292,7 +292,9 @@ unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut c
     }
 }
 unsafe fn window_switch_draw_screen(mut wme: *mut window_mode_entry) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -461,7 +463,9 @@ unsafe fn window_switch_init(
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut pd = prompt_create_data::default();
@@ -534,9 +538,11 @@ unsafe fn window_switch_init(
     return s;
 }
 unsafe fn window_switch_free(mut wme: *mut window_mode_entry) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     if (*data).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window((*(*wme).wp).window as *mut window);
+        server_unzoom_window((*mode_pane).window as *mut window);
     }
     (*data).matches.clear();
     (*data).item_list.clear();
@@ -673,8 +679,10 @@ unsafe fn window_switch_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
     let mut current_block: u64;
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_switch_modedata = (*wme).data as *mut window_switch_modedata;
     let mut visible: u_int = 0;
     let mut current: u_int = (*data).current;

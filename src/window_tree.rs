@@ -1697,7 +1697,9 @@ unsafe fn window_tree_init(
     mut fs: *mut cmd_find_state,
     mut args: *mut args,
 ) -> *mut screen {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
@@ -2161,7 +2163,9 @@ unsafe fn window_tree_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let mut wp: *mut window_pane = (*wme).wp;
+    let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane = mode_pane_owner.get();
+    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -2225,7 +2229,7 @@ unsafe fn window_tree_key(
         72 => {
             mode_tree_expand((*data).data_ptr(), (*fsp).s_ptr() as uint64_t);
             mode_tree_expand((*data).data_ptr(), (*fsp).wl_ptr() as uint64_t);
-            if mode_tree_set_current((*data).data_ptr(), (*wme).wp as uint64_t) == 0 {
+            if mode_tree_set_current((*data).data_ptr(), mode_pane as uint64_t) == 0 {
                 mode_tree_set_current((*data).data_ptr(), (*fsp).wl_ptr() as uint64_t);
             }
         }
