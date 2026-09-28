@@ -1215,3 +1215,17 @@ upgraded only for the duration of drawing.
 drawing with an expired parent and with a destroyed tree whose screen is already
 released. Drawing internals, callback payloads and other raw model APIs remain
 pending.
+
+## Implemented retained trees for prompt cleanup and search/filter dispatch
+
+Mode-tree prompt clearing borrows an Rc through prompt free callbacks and the
+subsequent cursor update. Search/filter handlers and their rebuild paths also
+borrow retained trees. Their stored prompt closures capture Weak trees instead
+of raw pointers, upgrade during invocation, and close on expiration or logical
+destruction. Existing prompt callback-record ownership and cleanup ordering are
+preserved.
+
+`cargo test --workspace` and `git diff --check` passed. A regression verifies no
+strong ownership from closure storage, temporary retention during live dispatch,
+and skipped callbacks after destruction or expiration. Prompt client adapters,
+row operations and internal raw model projections remain pending.

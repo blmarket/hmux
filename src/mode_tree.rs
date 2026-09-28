@@ -651,7 +651,7 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_
             server_unzoom_window((*wp).window);
         }
     }
-    mode_tree_clear_prompt(mtd);
+    mode_tree_clear_prompt(&owner);
     mode_tree_free_items(&mut (*mtd).children);
     mode_tree_clear_lines(mtd);
     screen_free(&mut (*mtd).screen);
@@ -1336,7 +1336,8 @@ unsafe fn mode_tree_draw_prompt(mut mtd: *mut mode_tree_data, ctx: &mut screen_w
         0 as ::core::ffi::c_int,
     );
 }
-pub unsafe fn mode_tree_clear_prompt(mut mtd: *mut mode_tree_data) {
+pub unsafe fn mode_tree_clear_prompt(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
     if let Some(prompt) = (*mtd).prompt.take() {
         prompt_free(&prompt.downgrade());
         (*mtd).screen.mode &= !MODE_CURSOR;
@@ -1434,7 +1435,7 @@ pub unsafe fn mode_tree_set_prompt(
         s = ::core::ptr::null_mut::<session>();
         oo = global_s_options;
     }
-    mode_tree_clear_prompt(mtd);
+    mode_tree_clear_prompt(&tree);
     let mtp = refbox::RefBox::new(mode_tree_prompt {
         mtd: Some(tree.clone()),
         c: if c.is_null() {
@@ -1557,8 +1558,8 @@ unsafe fn mode_tree_search(mtd: *mut mode_tree_data, forward: bool) -> Option<Mo
         }
     }
 }
-unsafe fn mode_tree_search_set(mtd: *mut mode_tree_data) {
-    let tree_owner = (*mtd).observer.upgrade().expect("live mode tree");
+unsafe fn mode_tree_search_set(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };
@@ -1578,16 +1579,31 @@ unsafe fn mode_tree_search_set(mtd: *mut mode_tree_data) {
         row.expanded = 1;
         parent = row.parent.clone();
     }
-    mode_tree_build(&tree_owner);
+    mode_tree_build(tree_owner);
     mode_tree_set_current(mtd, tag);
-    mode_tree_draw(&tree_owner);
+    mode_tree_draw(tree_owner);
     (*mode_pane).flags |= PANE_REDRAW;
 }
+fn mode_tree_observed_prompt_callback(
+    tree: &Rc<UnsafeCell<mode_tree_data>>,
+    callback: unsafe fn(&Rc<UnsafeCell<mode_tree_data>>, Option<&CStr>, prompt_key_result) -> prompt_result,
+) -> mode_tree_prompt_input_cb {
+    let observer = Rc::downgrade(tree);
+    Some(Box::new(move |_, input, key| {
+        let Some(owner) = observer.upgrade() else { return PROMPT_CLOSE; };
+        unsafe {
+            if (*owner.get()).dead != 0 { return PROMPT_CLOSE; }
+            callback(&owner, input, key)
+        }
+    }))
+}
+
 unsafe fn mode_tree_search_callback(
-    mut mtd: *mut mode_tree_data,
+    tree_owner: &Rc<UnsafeCell<mode_tree_data>>,
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
+    let mtd = tree_owner.get();
     if (*mtd).dead != 0 {
         return PROMPT_CLOSE;
     }
@@ -1597,7 +1613,7 @@ unsafe fn mode_tree_search_callback(
     (*mtd).search = replacement;
     if let Some(search) = (*mtd).search.as_ref() {
         (*mtd).search_icase = mode_tree_is_lowercase(search.as_ptr());
-        mode_tree_search_set(mtd);
+        mode_tree_search_set(tree_owner);
     }
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -1606,11 +1622,11 @@ unsafe fn mode_tree_search_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn mode_tree_filter_callback(
-    mut mtd: *mut mode_tree_data,
+    tree_owner: &Rc<UnsafeCell<mode_tree_data>>,
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let tree_owner = (*mtd).observer.upgrade().expect("live mode tree");
+    let mtd = tree_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return PROMPT_CLOSE;
     };
@@ -1622,8 +1638,8 @@ unsafe fn mode_tree_filter_callback(
         .filter(|text| !text.to_bytes().is_empty())
         .map(CStr::to_owned);
     (*mtd).filter = replacement;
-    mode_tree_build(&tree_owner);
-    mode_tree_draw(&tree_owner);
+    mode_tree_build(tree_owner);
+    mode_tree_draw(tree_owner);
     (*mode_pane).flags |= PANE_REDRAW;
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -1631,15 +1647,15 @@ unsafe fn mode_tree_filter_callback(
     }
     return PROMPT_CLOSE;
 }
-unsafe fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
-    let tree_owner = (*mtd).observer.upgrade().expect("live mode tree");
+unsafe fn mode_tree_clear_filter(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
+    let mtd = tree_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     (*mtd).filter = None;
-    mode_tree_build(&tree_owner);
-    mode_tree_draw(&tree_owner);
+    mode_tree_build(tree_owner);
+    mode_tree_draw(tree_owner);
     (*mode_pane).flags |= PANE_REDRAW;
 }
 fn mode_tree_menu_callback(
@@ -1992,7 +2008,7 @@ pub unsafe fn mode_tree_key(
                 == PROMPT_KEY_CLOSE as ::core::ffi::c_int as ::core::ffi::c_uint
                 || prompt_closed(&prompt.try_borrow_mut().expect("live unborrowed prompt")) != 0)
         {
-            mode_tree_clear_prompt(mtd);
+            mode_tree_clear_prompt(&tree);
         }
         if (*mtd).dead != 0 {
             *key = KEYC_NONE;
@@ -2258,19 +2274,17 @@ pub unsafe fn mode_tree_key(
                 Some(c""),
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
-                Some(Box::new(move |_, s, key| unsafe {
-                    mode_tree_search_callback(mtd, s, key)
-                })),
+                mode_tree_observed_prompt_callback(&tree, mode_tree_search_callback),
                 None,
             );
         }
         110 => {
             (*mtd).search_dir = MODE_TREE_SEARCH_FORWARD;
-            mode_tree_search_set(mtd);
+            mode_tree_search_set(&tree);
         }
         78 => {
             (*mtd).search_dir = MODE_TREE_SEARCH_BACKWARD;
-            mode_tree_search_set(mtd);
+            mode_tree_search_set(&tree);
         }
         102 => {
             mode_tree_set_prompt(
@@ -2280,15 +2294,13 @@ pub unsafe fn mode_tree_key(
                 Some((*mtd).filter.as_deref().unwrap_or(c"")),
                 PROMPT_TYPE_SEARCH,
                 PROMPT_NOFORMAT,
-                Some(Box::new(move |_, s, key| unsafe {
-                    mode_tree_filter_callback(mtd, s, key)
-                })),
+                mode_tree_observed_prompt_callback(&tree, mode_tree_filter_callback),
                 None,
             );
         }
         99 => {
-            mode_tree_clear_prompt(mtd);
-            mode_tree_clear_filter(mtd);
+            mode_tree_clear_prompt(&tree);
+            mode_tree_clear_filter(&tree);
         }
         118 => {
             match (*mtd).preview {
@@ -2673,6 +2685,33 @@ mod queued_prompt_accept_tests {
     use crate::src::cmd::queue::cmdq_free_detached;
     use crate::src::shared::rc;
     use std::ptr::NonNull;
+
+    #[test]
+    fn observed_prompt_callbacks_retain_only_during_live_dispatch() {
+        unsafe fn callback(
+            tree: &Rc<UnsafeCell<mode_tree_data>>,
+            _: Option<&CStr>,
+            _: prompt_key_result,
+        ) -> prompt_result {
+            assert_eq!(Rc::strong_count(tree), 2);
+            (*tree.get()).zoomed += 1;
+            PROMPT_CONTINUE
+        }
+        unsafe {
+            let tree = mode_tree_alloc_data();
+            let observer = Rc::downgrade(&tree);
+            let mut input = mode_tree_observed_prompt_callback(&tree, callback).unwrap();
+            assert_eq!(Rc::strong_count(&tree), 1);
+            assert_eq!(input(None, None, PROMPT_KEY_HANDLED) as u32, PROMPT_CONTINUE as u32);
+            assert_eq!((*tree.get()).zoomed, 1);
+            (*tree.get()).dead = 1;
+            assert_eq!(input(None, None, PROMPT_KEY_HANDLED) as u32, PROMPT_CLOSE as u32);
+            assert_eq!((*tree.get()).zoomed, 1);
+            drop(tree);
+            assert!(observer.upgrade().is_none());
+            assert_eq!(input(None, None, PROMPT_KEY_HANDLED) as u32, PROMPT_CLOSE as u32);
+        }
+    }
 
     #[test]
     fn queued_acceptance_releases_its_tree_when_fired_or_cancelled() {
