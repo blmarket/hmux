@@ -643,7 +643,9 @@ fn window_customize_copy_item(item: &window_customize_itemdata) -> Box<window_cu
     Box::new(item.clone())
 }
 
-unsafe fn window_customize_draw_waiting(mut data: *mut window_customize_modedata) {
+unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_customize_modedata>>) {
+    let data = mode_owner.get();
+    if (*data).dead != 0 { return; }
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -3015,10 +3017,10 @@ unsafe fn window_customize_init(
     return s;
 }
 unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
-    if data.is_null() {
+    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {
         return;
-    }
+    };
+    let data = mode_owner.get();
     (*data).dead = 1 as ::core::ffi::c_int;
     if !(*data).editor.is_null() {
         spawn_cancel_editor((*data).editor);
@@ -3028,12 +3030,20 @@ unsafe fn window_customize_free(mut wme: *mut window_mode_entry) {
     (*wme).data = std::ptr::null_mut();
 }
 unsafe fn window_customize_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
+    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {
+        return;
+    };
+    let data = mode_owner.get();
+    if (*data).dead != 0 { return; }
     mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
 unsafe fn window_customize_update(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_customize_modedata = (*wme).data as *mut window_customize_modedata;
-    window_customize_draw_waiting(data);
+    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>() else {
+        return;
+    };
+    let data = mode_owner.get();
+    if (*data).dead != 0 { return; }
+    window_customize_draw_waiting(&mode_owner);
 }
 
 // Fields drop in declaration order: the detached item before the retained mode.
@@ -3578,24 +3588,27 @@ unsafe fn window_customize_edit_close_cb(
     let item = &*ed.item;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut data: *mut window_customize_modedata =
-        ::core::ptr::null_mut::<window_customize_modedata>();
+    let mut mode_owner = None;
     let mut cause: Option<CString> = None;
     let lookup_wp_owner = window_pane_find_by_id(ed.wp_id);
     wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !wp.is_null() {
         wme = (*wp).modes.active;
         if !wme.is_null() && std::ptr::eq((*wme).mode, &window_customize_mode) {
-            data = (*wme).data as *mut window_customize_modedata;
-            if NonNull::new((*data).editor) == Some(editor) {
-                (*data).editor = ::core::ptr::null_mut::<spawn_editor_state>();
+            mode_owner = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>();
+            if let Some(owner) = mode_owner.as_ref() {
+                if NonNull::new((*owner.get()).editor) == Some(editor) {
+                    (*owner.get()).editor = std::ptr::null_mut();
+                }
             }
         }
     }
     let Some(mut value) = buf else {
         return;
     };
-    if value.is_empty() || data.is_null() || (*data).dead != 0 {
+    let Some(mode_owner) = mode_owner else { return; };
+    let data = mode_owner.get();
+    if value.is_empty() || (*data).dead != 0 {
         return;
     }
     if value.last() == Some(&b'\n') {
@@ -4788,9 +4801,8 @@ unsafe fn window_customize_key(
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mode_owner = (*wme).data_owner.as_ref().expect("customize mode owner")
-        .clone().downcast::<UnsafeCell<window_customize_modedata>>()
-        .expect("customize mode payload");
+    let mode_owner = (*wme).retained_data::<UnsafeCell<window_customize_modedata>>()
+        .expect("live mode payload");
     let data = mode_owner.get();
     let mut finished: ::core::ffi::c_int = 0;
     let mut tagged: u_int = 0;
@@ -5042,7 +5054,7 @@ unsafe fn window_customize_key(
         window_pane_reset_mode(&mode_pane_owner);
     } else {
         mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-        window_customize_draw_waiting(data);
+        window_customize_draw_waiting(&mode_owner);
         (*wp).flags |= PANE_REDRAW;
     };
 }

@@ -1446,3 +1446,16 @@ accessing the resulting selection.
 `cargo test --workspace` and `git diff --check` passed. Reset/unset helpers,
 validation helpers, mode lifecycle callbacks, and internal raw model projections
 remain pending.
+
+## Implemented typed tree/customization lifecycle payload access
+
+Mode entries expose `retained_data<T>()` to clone and downcast their owning Rc
+payload. Tree/customization free, resize, update and key callbacks use this
+accessor instead of casting the erased callback pointer. Editor completion retains
+the discovered customization payload, and waiting-screen drawing borrows it.
+Resize/update paths check logical closure; tree update rechecks after rebuilding.
+
+`cargo test --workspace` and `git diff --check` passed. Neither mode now casts the
+erased entry data pointer to its Rc model type. The erased compatibility field,
+internal UnsafeCell projections, validation helpers and other model raw accesses
+remain pending.

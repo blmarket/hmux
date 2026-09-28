@@ -1818,26 +1818,35 @@ unsafe fn window_tree_init(
     return s;
 }
 unsafe fn window_tree_free(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
-    if data.is_null() {
+    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {
         return;
-    }
+    };
+    let data = mode_owner.get();
     (*data).dead = 1 as ::core::ffi::c_int;
     mode_tree_free((*data).data.take().expect("mode tree owner"));
     drop((*wme).data_owner.take());
     (*wme).data = std::ptr::null_mut();
 }
 unsafe fn window_tree_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
+    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {
+        return;
+    };
+    let data = mode_owner.get();
+    if (*data).dead != 0 { return; }
     mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
 unsafe fn window_tree_update(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
+    let Some(mode_owner) = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>() else {
+        return;
+    };
+    let data = mode_owner.get();
+    if (*data).dead != 0 { return; }
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
+    if (*data).dead != 0 { return; }
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
 }
@@ -2198,9 +2207,8 @@ unsafe fn window_tree_key(
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mode_owner = (*wme).data_owner.as_ref().expect("tree mode owner")
-        .clone().downcast::<UnsafeCell<window_tree_modedata>>()
-        .expect("tree mode payload");
+    let mode_owner = (*wme).retained_data::<UnsafeCell<window_tree_modedata>>()
+        .expect("live mode payload");
     let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,

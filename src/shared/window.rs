@@ -177,6 +177,15 @@ pub struct window_mode_entry {
     pub kill: ::core::ffi::c_int,
 }
 
+impl window_mode_entry {
+    /// Retain an Rc-backed payload across callbacks that may remove this entry.
+    pub fn retained_data<T: std::any::Any>(&self) -> Option<std::rc::Rc<T>> {
+        self.data_owner.as_ref().map(|owner| {
+            owner.clone().downcast::<T>().expect("mode payload type")
+        })
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_mode {
