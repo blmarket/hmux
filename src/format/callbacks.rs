@@ -61,7 +61,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        if (*loop_0).session == s {
+        if (*loop_0).session_ptr() == s {
             if !names.is_empty() {
                 names.push(b',');
             }
@@ -323,7 +323,7 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        client_session = (*loop_0).session;
+        client_session = (*loop_0).session_ptr();
         if !client_session.is_null() {
             if w == (*(*client_session).curw_ptr()).window_ptr() {
                 n = n.wrapping_add(1);
@@ -348,7 +348,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        client_session = (*loop_0).session;
+        client_session = (*loop_0).session_ptr();
         if !client_session.is_null() {
             if w == (*(*client_session).curw_ptr()).window_ptr() {
                 if !names.is_empty() {
@@ -709,7 +709,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        client_session = (*loop_0).session;
+        client_session = (*loop_0).session_ptr();
         if !client_session.is_null() {
             for session_loop in crate::src::session::session_group_members(sg) {
                 if session_loop.get() == client_session {
@@ -1262,8 +1262,8 @@ unsafe fn format_cb_client_readonly(mut ft: *mut format_tree) -> Option<CString>
 unsafe fn format_cb_client_session(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() && !(*format_client).session.is_null() {
-        return Some((*(*format_client).session).name.clone());
+    if !format_client.is_null() && !(*format_client).session_ptr().is_null() {
+        return Some((*(*format_client).session_ptr()).name.clone());
     }
     return None;
 }
@@ -2604,7 +2604,7 @@ unsafe fn format_cb_session_active(mut ft: *mut format_tree) -> Option<CString> 
     if format_session.is_null() || format_client.is_null() {
         return None;
     }
-    if (*format_client).session == format_session {
+    if (*format_client).session_ptr() == format_session {
         return Some(c"1".to_owned());
     }
     return Some(c"0".to_owned());

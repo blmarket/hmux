@@ -93,9 +93,9 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && (*c).control_state.is_some())
-            || (*c).session.is_null())
+            || (*c).session_ptr().is_null())
         {
-            s = (*c).session;
+            s = (*c).session_ptr();
             wl = winlink_find_by_window_id(&raw mut (*s).windows, (*w).id);
             if !wl.is_null() {
                 ft = format_create(
@@ -157,9 +157,9 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && (*c).control_state.is_some())
-            || (*c).session.is_null())
+            || (*c).session_ptr().is_null())
         {
-            cs = (*c).session;
+            cs = (*c).session_ptr();
             if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
                 control_notify_write(c, |out| write!(out, "%window-close @{}", ((*w).id) as u32));
             } else {
@@ -187,9 +187,9 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && (*c).control_state.is_some())
-            || (*c).session.is_null())
+            || (*c).session_ptr().is_null())
         {
-            cs = (*c).session;
+            cs = (*c).session_ptr();
             if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
                 control_notify_write(c, |out| write!(out, "%window-add @{}", ((*w).id) as u32));
             } else {
@@ -217,9 +217,9 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && (*c).control_state.is_some())
-            || (*c).session.is_null())
+            || (*c).session_ptr().is_null())
         {
-            cs = (*c).session;
+            cs = (*c).session_ptr();
             if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
                 control_notify_write(c, |out| {
                     write!(out, "%window-renamed @{} ", ((*w).id) as u32)?;
@@ -241,10 +241,10 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
     let mut cc: *mut client = event_payload_get_client(ep);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    if cc.is_null() || (*cc).session.is_null() {
+    if cc.is_null() || (*cc).session_ptr().is_null() {
         return;
     }
-    s = (*cc).session;
+    s = (*cc).session_ptr();
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
@@ -252,7 +252,7 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
             && (*c).flags & CLIENT_CONTROL as uint64_t != 0
             && !(*c).flags & CLIENT_EXIT as uint64_t != 0
             && (*c).control_state.is_some())
-            || (*c).session.is_null())
+            || (*c).session_ptr().is_null())
         {
             if cc == c {
                 control_notify_write(c, |out| {

@@ -585,7 +585,7 @@ unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
 
 unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    if (*c).session.is_null() {
+    if (*c).session_ptr().is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
     let lookup_wp_owner = window_pane_find_by_id(pane);
@@ -594,7 +594,7 @@ unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut windo
         return ::core::ptr::null_mut::<window_pane>();
     }
     if winlink_find_by_window(
-        &raw mut (*(*c).session).windows,
+        &raw mut (*(*c).session_ptr()).windows,
         (*wp).window as *mut window,
     )
     .is_null()
@@ -945,7 +945,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
     let mut new_size: size_t = 0;
     if winlink_find_by_window(
-        &raw mut (*(*c).session).windows,
+        &raw mut (*(*c).session_ptr()).windows,
         (*wp).window as *mut window,
     )
     .is_null()

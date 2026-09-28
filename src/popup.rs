@@ -241,7 +241,7 @@ impl Drop for popup_data {
             if self.published && !self.item.is_null() {
                 let c_owner = cmdq_get_client(self.item);
                 let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-                if !c.is_null() && (*c).session.is_null() {
+                if !c.is_null() && (*c).session_ptr().is_null() {
                     (*c).retval = self.status;
                 }
                 cmdq_continue(self.item);
@@ -268,7 +268,7 @@ impl Drop for popup_data {
 unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     let pd = popup.as_ptr();
     let mut c: *mut client = client_rc_ptr(&(*pd).c);
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     let mut o: *mut options = ::core::ptr::null_mut::<options>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sytmp: style = style {
@@ -1068,7 +1068,7 @@ pub unsafe fn popup_display(
     if !s.is_null() {
         o = options_owner_ptr(&mut (*(*(*s).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     } else {
-        o = options_owner_ptr(&mut (*(*(*(*c).session).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
+        o = options_owner_ptr(&mut (*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options);
     }
     if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
         lines = options_get_number(

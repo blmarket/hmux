@@ -183,12 +183,12 @@ fn screen_write_set_client_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<win
         let Some(owner) = observer.upgrade() else { return 0; };
         let wp = owner.get();
         if (*ttyctx).flags & TTY_CTX_INVISIBLE_PANES != 0 {
-            if session_has(&*(*c).session, &*(*wp).window) != 0 {
+            if session_has(&*(*c).session_ptr(), &*(*wp).window) != 0 {
                 return 1;
             }
             return 0;
         }
-        if (*(*(*c).session).curw_ptr()).window_ptr() != (*wp).window {
+        if (*(*(*c).session_ptr()).curw_ptr()).window_ptr() != (*wp).window {
             return 0;
         }
         if (*wp).layout_cell.is_null() {

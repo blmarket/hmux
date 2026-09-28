@@ -431,7 +431,7 @@ pub unsafe fn format_defaults(
     } else {
         log_debug(format_args!("{}: wp=none", "format_defaults"));
     }
-    if !c.is_null() && !s.is_null() && (*c).session != s {
+    if !c.is_null() && !s.is_null() && (*c).session_ptr() != s {
         log_debug(format_args!(
             "{}: session does not match",
             "format_defaults"
@@ -447,7 +447,7 @@ pub unsafe fn format_defaults(
         (*ft).type_0 = FORMAT_TYPE_UNKNOWN;
     }
     if s.is_null() && !c.is_null() {
-        s = (*c).session;
+        s = (*c).session_ptr();
     }
     if wl.is_null() && !s.is_null() {
         wl = (*s).curw_ptr();
@@ -476,7 +476,7 @@ unsafe fn format_defaults_session(mut ft: *mut format_tree, mut s: *mut session)
 }
 unsafe fn format_defaults_client(mut ft: *mut format_tree, mut c: *mut client) {
     if (*ft).s.upgrade().is_none() {
-        (*ft).s = (*c).session.as_ref().map_or_else(std::rc::Weak::new, |session| session.observer.clone());
+    (*ft).s = (*c).session.clone();
     }
     (*ft).c = (*c).observer.clone();
 }

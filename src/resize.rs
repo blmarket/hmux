@@ -142,7 +142,7 @@ pub unsafe fn resize_window(
 }
 unsafe fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_int {
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    if (*c).session.is_null() {
+    if (*c).session_ptr().is_null() {
         return 1 as ::core::ffi::c_int;
     }
     if (*c).flags & CLIENT_NOSIZEFLAGS as uint64_t != 0 {
@@ -152,7 +152,7 @@ unsafe fn ignore_client_size(mut c: *mut client) -> ::core::ffi::c_int {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if !(*loop_0).session.is_null() {
+            if !(*loop_0).session_ptr().is_null() {
                 if !((*loop_0).flags & CLIENT_NOSIZEFLAGS as uint64_t != 0) {
                     if !(*loop_0).flags & CLIENT_IGNORESIZE as uint64_t != 0 {
                         return 1 as ::core::ffi::c_int;
@@ -177,7 +177,7 @@ unsafe fn clients_with_window(mut w: *mut window) -> u_int {
     let mut registry_loop_0_owner = clients.first();
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        if !(ignore_client_size(loop_0) != 0 || session_has(&*(*loop_0).session, &*w) == 0) {
+        if !(ignore_client_size(loop_0) != 0 || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
             n = n.wrapping_add(1);
             if n > 1 as u_int {
                 break;
@@ -444,8 +444,8 @@ pub unsafe fn default_window_size(
             c,
             w,
             |candidate| unsafe {
-                (!w.is_null() && session_has(&*candidate.session, &*w) == 0)
-                    || (w.is_null() && candidate.session != s)
+                (!w.is_null() && session_has(&*candidate.session_ptr(), &*w) == 0)
+                    || (w.is_null() && candidate.session_ptr() != s)
             },
             sx,
             sy,
@@ -525,7 +525,7 @@ pub unsafe fn recalculate_size(mut w: *mut window, mut now: ::core::ffi::c_int) 
         ::core::ptr::null_mut::<client>(),
         w,
         |candidate| unsafe {
-            let session = candidate.session;
+            let session = candidate.session_ptr();
             if session.is_null() || (*session).curw_ptr().is_null() {
                 return true;
             }
@@ -598,7 +598,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        s = (*c).session;
+        s = (*c).session_ptr();
         if !s.is_null() && (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t == 0 {
             (*s).attached = (*s).attached.wrapping_add(1);
         }

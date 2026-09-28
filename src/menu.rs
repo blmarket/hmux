@@ -618,7 +618,7 @@ pub unsafe fn menu_display(
 ) {
     let setup_window = WindowOwner::adopt(if fs.is_null() {
         let client = &*client_owner.expect("menu without a target requires a client").get();
-        let link = &*(*client.session).curw_ptr();
+        let link = &*(*client.session_ptr()).curw_ptr();
         link.window_owner.as_ref().expect("current link has a window").as_rc().clone()
     } else {
         (*fs).w.upgrade().expect("live menu target window")

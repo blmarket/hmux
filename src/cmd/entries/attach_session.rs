@@ -150,8 +150,8 @@ pub unsafe fn cmd_attach_session(
         }
         (*c).flags |= (CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t;
     }
-    (*c).last_session = (*c).session.as_ref().map_or_else(std::rc::Weak::new, |session| session.observer.clone());
-    if !(*c).session.is_null() {
+    (*c).last_session = (*c).session.clone();
+    if !(*c).session_ptr().is_null() {
         if dflag != 0 || xflag != 0 {
             if xflag != 0 {
                 msgtype = MSG_DETACHKILL;
@@ -161,7 +161,7 @@ pub unsafe fn cmd_attach_session(
             let mut registry_c_loop_owner = clients.first();
             c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop).session != s || c == c_loop) {
+                if !((*c_loop).session_ptr() != s || c == c_loop) {
                     server_client_detach(c_loop, msgtype);
                 }
                 registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));
@@ -196,7 +196,7 @@ pub unsafe fn cmd_attach_session(
             let mut registry_c_loop_owner = clients.first();
             c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop).session != s || c == c_loop) {
+                if !((*c_loop).session_ptr() != s || c == c_loop) {
                     server_client_detach(c_loop, msgtype);
                 }
                 registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));

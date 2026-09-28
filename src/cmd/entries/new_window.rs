@@ -187,7 +187,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         if session_set_current(s, new_wl) == 0 as ::core::ffi::c_int {
             server_redraw_session(&*(s));
         }
-        if !c.is_null() && !(*c).session.is_null() {
+        if !c.is_null() && !(*c).session_ptr().is_null() {
             (*(*(*s).curw_ptr()).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         }
         recalculate_sizes();

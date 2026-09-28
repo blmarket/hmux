@@ -1287,7 +1287,7 @@ pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
     let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    let mut w: *mut window = (*(*(*c).session).curw_ptr()).window_ptr();
+    let mut w: *mut window = (*(*(*c).session_ptr()).curw_ptr()).window_ptr();
     return ((*tty).sx < (*w).sx || (*tty).sy.wrapping_sub(status_line_size(&*c)) < (*w).sy)
         as ::core::ffi::c_int;
 }
@@ -1301,7 +1301,7 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
     }
 }
 unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
-    let w = (*(*c.session).curw_ptr()).window_ptr();
+    let w = (*(*c.session_ptr()).curw_ptr()).window_ptr();
     let wp = (*w).active_ptr();
     let lines = status_line_size(c);
     if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
@@ -1362,9 +1362,9 @@ pub unsafe fn tty_update_window_offset(mut w: *mut window) {
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session.is_null()
-            && !(*(*c).session).curw_ptr().is_null()
-            && (*(*(*c).session).curw_ptr()).window_ptr() == w
+        if !(*c).session_ptr().is_null()
+            && !(*(*c).session_ptr()).curw_ptr().is_null()
+            && (*(*(*c).session_ptr()).curw_ptr()).window_ptr() == w
         {
             tty_update_client_offset(c);
         }
@@ -1997,7 +1997,7 @@ pub unsafe fn tty_sync_end(mut tty: *mut tty) {
     }
 }
 unsafe fn tty_client_ready(ctx: &tty_ctx, mut c: *mut client) -> ::core::ffi::c_int {
-    if (*c).session.is_null() || tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term).is_null() {
+    if (*c).session_ptr().is_null() || tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term).is_null() {
         return 0 as ::core::ffi::c_int;
     }
     if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {

@@ -5939,7 +5939,7 @@ unsafe fn input_add_request(
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session.is_null() || session_has(&*(*loop_0).session, &*w) == 0) {
+            if !((*loop_0).session_ptr().is_null() || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
                 if !(!(*loop_0).tty.flags & TTY_STARTED != 0) {
                     if c.is_null() {
                         c = loop_0;

@@ -1369,10 +1369,10 @@ pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
             let mut registry_c_owner = clients.first();
             c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c.is_null() {
-                if !(*c).session.is_null()
-                    && (*(*c).session).attached != 0 as u_int
+                if !(*c).session_ptr().is_null()
+                    && (*(*c).session_ptr()).attached != 0 as u_int
                     && (*c).flags & CLIENT_FOCUSED as uint64_t != 0
-                    && (*(*(*c).session).curw_ptr()).window_ptr() == (*wp).window
+                    && (*(*(*c).session_ptr()).curw_ptr()).window_ptr() == (*wp).window
                     && (*c).overlay_draw.is_none()
                     && (*(*wp).window).menu.is_none()
                 {
@@ -2658,7 +2658,7 @@ pub unsafe fn window_pane_wait_finish(mut wp: *mut window_pane) {
     }
     let c_owner = cmdq_get_client(item);
     c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    if !c.is_null() && (*c).session.is_null() {
+    if !c.is_null() && (*c).session_ptr().is_null() {
         (*c).retval = retval;
     }
     cmdq_continue(item);
@@ -2800,7 +2800,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+        if !(*c).session_ptr().is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_write_output(c, wp);
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
@@ -3133,8 +3133,7 @@ pub unsafe fn window_pane_set_prompt(
     mut type_0: prompt_type,
 ) {
     let wp = pane_owner.get();
-    let session_owner = client_owner.and_then(|owner| (*owner.get()).session.as_ref())
-        .and_then(|session| session.observer.upgrade());
+    let session_owner = client_owner.and_then(|owner| (*owner.get()).session.upgrade());
     let mut pd = prompt_create_data::default();
     window_pane_clear_prompt(pane_owner);
     let wpp = refbox::RefBox::new(window_pane_prompt {
@@ -3876,7 +3875,7 @@ pub unsafe fn window_pane_start_input(
     if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
         return Ok(1);
     }
-    if !(*c).session.is_null() {
+    if !(*c).session_ptr().is_null() {
         return Ok(1);
     }
     // The file initializer publishes its weak identity before dispatch. The
@@ -4065,7 +4064,7 @@ pub unsafe fn window_get_bg_client(mut wp: *mut window_pane) -> ::core::ffi::c_i
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session.is_null() || session_has(&*(*loop_0).session, &*w) == 0) {
+            if !((*loop_0).session_ptr().is_null() || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
                 if !((*loop_0).tty.bg == -(1 as ::core::ffi::c_int)) {
                     return (*loop_0).tty.bg;
                 }
@@ -4099,7 +4098,7 @@ pub unsafe fn window_pane_get_fg(mut wp: *mut window_pane) -> ::core::ffi::c_int
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session.is_null() || session_has(&*(*loop_0).session, &*w) == 0) {
+            if !((*loop_0).session_ptr().is_null() || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
                 if !((*loop_0).tty.fg == -(1 as ::core::ffi::c_int)) {
                     return (*loop_0).tty.fg;
                 }
@@ -4139,7 +4138,7 @@ pub unsafe fn window_pane_get_theme(mut wp: *mut window_pane) -> client_theme {
     loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session.is_null() || session_has(&*(*loop_0).session, &*w) == 0) {
+            if !((*loop_0).session_ptr().is_null() || session_has(&*(*loop_0).session_ptr(), &*w) == 0) {
                 match (*loop_0).theme as ::core::ffi::c_uint {
                     1 => {
                         found_light = 1 as ::core::ffi::c_int;

@@ -914,7 +914,7 @@ unsafe fn redraw_build_cells<'a>(mut bctx: *mut redraw_build_ctx<'a>, cells: &'a
 }
 unsafe fn redraw_make_scene(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Option<Box<redraw_scene>> {
     let c = client_owner.get();
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     let mut w: *mut window = (*(*s).curw_ptr()).window_ptr();
     let window_owner = (*w).observer.upgrade()?;
     let mut bctx: redraw_build_ctx = redraw_build_ctx {
@@ -1027,7 +1027,7 @@ pub unsafe fn redraw_invalidate_all_scenes() {
 }
 unsafe fn redraw_get_scene(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Option<Box<redraw_scene>> {
     let c = client_owner.get();
-    let w = (*(*(*c).session).curw_ptr()).window_ptr();
+    let w = (*(*(*c).session_ptr()).curw_ptr()).window_ptr();
     let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(&mut *c);
     let scene = (*c).redraw_scene.take();
     let reason = match scene.as_deref() {
@@ -1117,7 +1117,7 @@ unsafe fn redraw_get_default_border_style(
     let scene = dctx.scene;
     let Some(client_owner) = scene.c.upgrade() else { return; };
     let c = client_owner.get();
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     let Some(window_owner) = scene.w.upgrade() else { return; };
     let mut oo: *mut options = options_owner_ptr(&mut (*window_owner.get()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -1662,7 +1662,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     let window_owner = scene.w.upgrade()?;
     let client_owner = scene.c.upgrade()?;
     let c = client_owner.get();
-    let s = (*c).session;
+    let s = (*c).session_ptr();
     let mut dctx = redraw_draw_ctx {
         scene,
         active: (*window_owner.get()).active.clone(),
@@ -1766,7 +1766,7 @@ unsafe fn redraw_draw_pane_prompt(dctx: &mut redraw_draw_ctx<'_>, mut wp: *mut w
 }
 unsafe fn redraw_draw(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>, mut flags: ::core::ffi::c_int) {
     let c = client_owner.get();
-    let s = (*c).session;
+    let s = (*c).session_ptr();
     let w = (*(*s).curw_ptr()).window_ptr();
     let mut redraw = 0;
     if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
@@ -1817,7 +1817,7 @@ unsafe fn redraw_draw_scene(
     let wp = pane_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let Some(window_owner) = scene.w.upgrade() else { return; };
     let w = window_owner.get();
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut sl: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut i: u_int = 0;
@@ -2026,7 +2026,7 @@ pub unsafe fn redraw_screen(client_owner: &std::rc::Rc<std::cell::UnsafeCell<cli
         if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;
         }
-        if (*(*(*(*c).session).curw_ptr()).window_ptr()).menu.is_some() {
+        if (*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).menu.is_some() {
             flags |= REDRAW_MENU;
         }
         if flags != 0 as ::core::ffi::c_int {
@@ -2037,7 +2037,7 @@ pub unsafe fn redraw_screen(client_owner: &std::rc::Rc<std::cell::UnsafeCell<cli
 pub unsafe fn redraw_pane(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let c = client_owner.get();
     redraw_draw(client_owner, Some(pane_owner), REDRAW_PANE | REDRAW_PANE_SCROLLBAR);
-    if (*(*(*(*c).session).curw_ptr()).window_ptr()).menu.is_some() {
+    if (*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).menu.is_some() {
         redraw_draw(client_owner, None, REDRAW_MENU);
     }
 }

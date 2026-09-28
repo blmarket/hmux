@@ -96,7 +96,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
             return CMD_RETURN_NORMAL;
         }
         pane_owner = mouse_pane_owner.expect("mouse pane was resolved");
-        if c.is_null() || (*c).session != s {
+        if c.is_null() || (*c).session_ptr() != s {
             return CMD_RETURN_NORMAL;
         }
     }

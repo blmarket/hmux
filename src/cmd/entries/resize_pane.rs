@@ -284,7 +284,7 @@ unsafe fn cmd_resize_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
         ::core::ptr::null_mut::<*mut winlink>(),
     );
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() || c.is_null() || (*c).session != s {
+    if wp.is_null() || c.is_null() || (*c).session_ptr() != s {
         return CMD_RETURN_NORMAL;
     }
     if window_pane_is_floating(&*wp) == 0 {

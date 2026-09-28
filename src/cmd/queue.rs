@@ -571,7 +571,7 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
         } else {
             c"".to_owned()
         };
-        if !(*c).session.is_null()
+        if !(*c).session_ptr().is_null()
             && state.event.key != KEYC_NONE as ::core::ffi::c_ulong as key_code
         {
             let key = key_string_format(state.event.key, false);
@@ -1003,7 +1003,7 @@ pub unsafe fn cmdq_error(
                 write_cstr(out, msg.as_ptr())
             });
         }
-    } else if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+    } else if (*c).session_ptr().is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         server_add_message(|out| {
             write_cstr(
                 out,

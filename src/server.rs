@@ -399,7 +399,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session.is_null() {
+        if !(*c).session_ptr().is_null() {
             return 0 as ::core::ffi::c_int;
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
@@ -427,7 +427,7 @@ unsafe fn server_send_exit() {
             (*c).flags |= CLIENT_EXIT as uint64_t;
             (*c).exit_type = CLIENT_EXIT_SHUTDOWN;
         }
-        (*c).session = ::core::ptr::null_mut::<session>();
+        (*c).set_session(::core::ptr::null_mut::<session>());
     }
     let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);

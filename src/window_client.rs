@@ -359,7 +359,7 @@ unsafe fn window_client_build(
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize].get();
-        if !((*c).session.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
+        if !((*c).session_ptr().is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             window_client_add_item(&mut (*data).items, &clients_sorted[i as usize]);
         }
         i = i.wrapping_add(1);
@@ -420,7 +420,7 @@ unsafe fn window_client_draw_info(
 ) {
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut s: *mut screen = (*ctx).s;
-    let mut w: *mut window = (*(*(*c).session).curw_ptr()).window_ptr();
+    let mut w: *mut window = (*(*(*c).session_ptr()).curw_ptr()).window_ptr();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -525,7 +525,7 @@ unsafe fn window_client_draw(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
-    let mut session: *mut session = (*c).session;
+    let mut session: *mut session = (*c).session_ptr();
     let mut s: *mut screen = (*ctx).s;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();

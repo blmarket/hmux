@@ -105,7 +105,7 @@ unsafe fn cmd_load_buffer_done(
                 write_cstr(out, cause.as_ref().unwrap().as_ptr())
             });
         } else if !tc.is_null()
-            && !(*tc).session.is_null()
+            && !(*tc).session_ptr().is_null()
             && !(*tc).flags & CLIENT_DEAD as uint64_t != 0
         {
             tty_set_selection(

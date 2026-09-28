@@ -1495,11 +1495,7 @@ pub unsafe fn mode_tree_set_prompt(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let session_owner = client_owner.and_then(|client| {
-        (*client.get()).session.as_ref().map(|session| {
-            session.observer.upgrade().expect("prompt client session is live")
-        })
-    });
+    let session_owner = client_owner.and_then(|client| (*client.get()).session.upgrade());
     let s = session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let oo = if let Some(session) = s.as_mut() {
         options_owner_ptr(&mut session.options).map_or(std::ptr::null_mut(), |options| options)

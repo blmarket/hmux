@@ -317,7 +317,7 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                             is_control = 1 as ::core::ffi::c_int;
                         }
                         already_attached = 0 as ::core::ffi::c_int;
-                        if !c.is_null() && !(*c).session.is_null() {
+                        if !c.is_null() && !(*c).session_ptr().is_null() {
                             already_attached = 1 as ::core::ffi::c_int;
                         }
                         tmp = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -655,8 +655,8 @@ unsafe fn cmd_new_session_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
                                                                             0 as size_t,
                                                                         );
                                                                     }
-                                                                } else if !(*c).session.is_null() {
-                                                                    (*c).last_session = (*c).session.as_ref().map_or_else(std::rc::Weak::new, |session| session.observer.clone());
+                                                                } else if !(*c).session_ptr().is_null() {
+                                                                    (*c).last_session = (*c).session.clone();
                                                                 }
                                                                 server_client_set_session(c, s);
                                                                 if !cmdq_get_flags(item)

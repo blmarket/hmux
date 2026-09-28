@@ -488,7 +488,7 @@ unsafe fn cmd_join_pane_mouse_update(mut item: *mut cmdq_item) -> cmd_retval {
     }
     mouse_pane_owner = cmd_mouse_pane(&raw mut (*event).m, &raw mut s, &raw mut wl);
     wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() || c.is_null() || (*c).session != s {
+    if wp.is_null() || c.is_null() || (*c).session_ptr() != s {
         return CMD_RETURN_NORMAL;
     }
     if window_pane_is_floating(&*wp) == 0 {

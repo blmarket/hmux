@@ -179,7 +179,7 @@ unsafe fn cmd_select_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
             out.write_all(b"after-select-window")
         });
     }
-    if !c.is_null() && !(*c).session.is_null() {
+    if !c.is_null() && !(*c).session_ptr().is_null() {
         (*(*(*s).curw_ptr()).window_ptr()).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
     }
     recalculate_sizes();

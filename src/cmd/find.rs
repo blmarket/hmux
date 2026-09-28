@@ -193,7 +193,8 @@ pub unsafe fn cmd_find_best_client(s: &session) -> Option<std::rc::Rc<std::cell:
     while let Some(owner) = cursor {
         cursor = clients.next(&owner);
         let candidate = &*owner.get();
-        let Some(attached_session) = candidate.session.as_ref() else { continue; };
+        let Some(attached_owner) = candidate.session.upgrade() else { continue; };
+        let attached_session = &*attached_owner.get();
         if s.attached != 0 && !attached_session.observer.ptr_eq(&s.observer) { continue; }
         if cmd_find_client_better(candidate, best.as_ref().map(|owner| &*owner.get())) {
             best = Some(owner);
@@ -337,8 +338,8 @@ unsafe fn cmd_find_get_session(
         1 as ::core::ffi::c_int,
     );
     c = matched_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !c.is_null() && !(*c).session.is_null() {
-        (*fs).set_s((*c).session);
+    if !c.is_null() && !(*c).session_ptr().is_null() {
+        (*fs).set_s((*c).session_ptr());
         return 0 as ::core::ffi::c_int;
     }
     if (*fs).flags & CMD_FIND_EXACT_SESSION != 0 {
@@ -1052,14 +1053,14 @@ pub unsafe fn cmd_find_from_client(
     if c.is_null() {
         return cmd_find_from_nothing(fs, flags);
     }
-    if !(*c).session.is_null() {
+    if !(*c).session_ptr().is_null() {
         cmd_find_clear_state(fs, flags);
-        (*fs).set_wp((*(*(*(*c).session).curw_ptr()).window_ptr()).active_ptr());
+        (*fs).set_wp((*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).active_ptr());
         if (*fs).wp_ptr().is_null() {
-            cmd_find_from_session(fs, (*c).session, flags);
+            cmd_find_from_session(fs, (*c).session_ptr(), flags);
             return 0 as ::core::ffi::c_int;
         }
-        (*fs).set_s((*c).session);
+        (*fs).set_s((*c).session_ptr());
         (*fs).set_wl((*(*fs).s_ptr()).curw_ptr());
         (*fs).set_w((*(*fs).wl_ptr()).window_ptr());
         cmd_find_log_state(
@@ -1257,13 +1258,13 @@ pub unsafe fn cmd_find_target(
                 ) == 0 as ::core::ffi::c_int
             {
                 c = queue_client_ptr;
-                if c.is_null() || (*c).session.is_null() {
+                if c.is_null() || (*c).session_ptr().is_null() {
                     cmdq_error(item, |out| out.write_all(b"no current client"));
                     current_block = 5193823237153215208;
                 } else {
-                    (*fs).set_wl((*(*c).session).curw_ptr());
-                    (*fs).set_wp((*(*(*(*c).session).curw_ptr()).window_ptr()).active_ptr());
-                    (*fs).set_w((*(*(*c).session).curw_ptr()).window_ptr());
+                    (*fs).set_wl((*(*c).session_ptr()).curw_ptr());
+                    (*fs).set_wp((*(*(*(*c).session_ptr()).curw_ptr()).window_ptr()).active_ptr());
+                    (*fs).set_w((*(*(*c).session_ptr()).curw_ptr()).window_ptr());
                     current_block = 15319680530019787978;
                 }
             } else if strcmp(target, b"=\0" as *const u8 as *const ::core::ffi::c_char)
@@ -1640,7 +1641,7 @@ unsafe fn cmd_find_current_client(
         c_owner = cmdq_get_client(item);
         c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
-    if !c.is_null() && !(*c).session.is_null() {
+    if !c.is_null() && !(*c).session_ptr().is_null() {
         return c_owner;
     }
     found = None;
@@ -1687,7 +1688,7 @@ pub unsafe fn cmd_find_client(
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session.is_null() {
+        if !(*c).session_ptr().is_null() {
             if strcmp(
                 copy_ptr,
                 ((*c).name)
@@ -1769,8 +1770,8 @@ mod target_observer_tests {
             let other_session = session::new();
             let first = client::new();
             let second = client::new();
-            (*first.get()).session = session_owner.get();
-            (*second.get()).session = other_session.get();
+            (*first.get()).set_session(session_owner.get());
+            (*second.get()).set_session(other_session.get());
             (*first.get()).activity_time.tv_sec = 10;
             (*second.get()).activity_time.tv_sec = 20;
             clients.push_back(first.clone());
@@ -1786,8 +1787,8 @@ mod target_observer_tests {
             let observer = Rc::downgrade(&second);
             let registry = std::mem::replace(&mut *std::ptr::addr_of_mut!(clients), saved);
             drop(registry);
-            (*first.get()).session = std::ptr::null_mut();
-            (*second.get()).session = std::ptr::null_mut();
+            (*first.get()).set_session(std::ptr::null_mut());
+            (*second.get()).set_session(std::ptr::null_mut());
             drop(first);
             drop(second);
             assert!(observer.upgrade().is_some());

@@ -630,7 +630,7 @@ pub unsafe fn spawn_pane(
         0 as ::core::ffi::c_int,
         |out| write!(out, "%{}", ((*new_wp).id) as u32),
     );
-    if !c.is_null() && (*c).session.is_null() {
+    if !c.is_null() && (*c).session_ptr().is_null() {
         ee = environ_find(
             (*c).environ.as_deref().expect("environment"),
             b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1074,8 +1074,7 @@ pub(crate) unsafe fn spawn_editor(
     write: impl FnOnce(&CFile) -> bool,
     mut cb: spawn_finish_edit_cb,
 ) -> *mut spawn_editor_state {
-    let Some(session_owner) = (*client_owner.get()).session.as_ref()
-        .and_then(|session| session.observer.upgrade()) else {
+    let Some(session_owner) = (*client_owner.get()).session.upgrade() else {
         return std::ptr::null_mut();
     };
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();

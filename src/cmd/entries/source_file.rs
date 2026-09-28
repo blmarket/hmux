@@ -145,7 +145,7 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
         cdata.depth_active = false;
         return;
     }
-    if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session.is_null() {
+    if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session_ptr().is_null() {
         (*c).retval = 1;
     }
     let after = cdata.after;

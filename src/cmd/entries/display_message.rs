@@ -130,7 +130,7 @@ unsafe fn cmd_display_message_exec(mut self_0: *mut cmd, mut item: *mut cmdq_ite
         template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
     }
     let best_client_owner;
-    if !tc.is_null() && (*tc).session == s {
+    if !tc.is_null() && (*tc).session_ptr() == s {
         c = tc;
     } else if !s.is_null() {
         best_client_owner = cmd_find_best_client(&*s);

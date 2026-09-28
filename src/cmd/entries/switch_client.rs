@@ -152,14 +152,14 @@ unsafe fn cmd_switch_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
-        adjacent_session_owner = session_next_session((*tc).session.as_ref(), &sort_crit);
+        adjacent_session_owner = session_next_session((*tc).session_ptr().as_ref(), &sort_crit);
         s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             cmdq_error(item, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        adjacent_session_owner = session_previous_session((*tc).session.as_ref(), &sort_crit);
+        adjacent_session_owner = session_previous_session((*tc).session_ptr().as_ref(), &sort_crit);
         s = adjacent_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             cmdq_error(item, |out| out.write_all(b"can't find previous session"));

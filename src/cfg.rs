@@ -324,8 +324,8 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
         });
     } else {
         if s.is_null() {
-            if !c.is_null() && !(*c).session.is_null() {
-                s = (*c).session;
+            if !c.is_null() && !(*c).session_ptr().is_null() {
+                s = (*c).session_ptr();
             } else {
                 let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
                 s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);

@@ -10,13 +10,13 @@ new raw fields added there. The requested
 The three supporting workspace crates contain no such fields.
 
 The [field-by-field inventory](raw-pointer-fields.tsv) records all **320** original
-fields and their lifecycle decisions. The current scanner finds **72 raw fields in
+fields and their lifecycle decisions. The current scanner finds **71 raw fields in
 scope** and **72 excluded external ABI/resource fields**. Of the original rows,
-164 explicitly record a migration and twelve record
-removal. The remaining 72 comprise 1 candidate, 23 needing an access or teardown
+165 explicitly record a migration and twelve record
+removal. The remaining 71 comprise 23 needing an access or teardown
 design, and 48 retained raw under current ownership.
 
-The remaining 72 fields have audit dispositions. Candidate and design entries
+The remaining 71 fields have audit dispositions. Design entries
 are pending work, not implemented changes.
 The earlier blanket skips for Rc/RefBox observers and nonowning indexes were too
 broad: inability to hold a reference does not rule out a weak handle.
@@ -99,6 +99,7 @@ are now recorded individually in the TSV.
 | `format_tree.wl` | `refbox::Weak<winlink>` observes the session index owner. Format callbacks and nested trees project a pointer only for a live entry; the index callback returns no value after removal. Session activity and silence callbacks read the session link they selected. |
 | `session.curw` | `refbox::Weak<winlink>` observes the session's index entry. `curw_ptr` returns null after removal; explicit clearing leaves an empty weak handle. Session teardown checks emptiness to distinguish explicit destruction from an expired current link. Group synchronization replaces the observer before dropping old links. |
 | `window.active` | `Weak<UnsafeCell<window_pane>>` observes the pane index owner. Selection and pane loss update the weak identity; retained lookups upgrade directly, while legacy callers use `active_ptr` only under their existing pane-index lifetime contract. That pointer projection is not a borrow guard. Redraw snapshots clone the weak identity. |
+| `client.session` | `Weak<UnsafeCell<session>>` observes the session index owner. Attachment and detachment update the weak identity; retained consumers upgrade it, while legacy `session_ptr` calls depend on their existing indexed-session lifetime. Last-session history clones the weak handle. |
 | `window_copy_cmd_state.wme` | A weak mode-entry observer replaces the raw command-state field. Command dispatch finds the pane-owned RefBox, and callbacks check that it is live before projecting a legacy pointer. Dispatch also stops before using saved mode data if a callback removed the entry. |
 
 | `options_entry.tableentry` | Optional static metadata reference. Legacy constructor pointers are resolved against the immutable option table; the reference comes from that array. Removed the test-only stack descriptor. |

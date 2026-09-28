@@ -963,8 +963,8 @@ pub(super) unsafe fn format_loop_sessions(
         );
         let use_0 = if active.is_some()
             && !format_client.is_null()
-            && !(*format_client).session.is_null()
-            && (*s).id == (*(*format_client).session).id
+            && !(*format_client).session_ptr().is_null()
+            && (*s).id == (*(*format_client).session_ptr()).id
         {
             active.as_ref().unwrap().as_ptr()
         } else {

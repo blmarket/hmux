@@ -68,7 +68,7 @@ unsafe fn monitor_client(ms: *mut monitor_set) -> Option<Rc<UnsafeCell<client>>>
 unsafe fn monitor_get_session(ms: *mut monitor_set, c: *mut client) -> Option<Rc<UnsafeCell<session>>> {
     let s = if (*ms).client.is_some() {
         if c.is_null() { return None; }
-        (*c).session
+        (*c).session_ptr()
     } else {
         let s = (*ms).session.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
         if s.is_null() {

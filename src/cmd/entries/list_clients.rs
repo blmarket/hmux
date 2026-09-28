@@ -90,7 +90,7 @@ unsafe fn cmd_list_clients_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize].get();
-        if !((*c).session.is_null() || !s.is_null() && s != (*c).session) {
+        if !((*c).session_ptr().is_null() || !s.is_null() && s != (*c).session_ptr()) {
             ft = format_create_with_client(
                 queue_client.as_ref(),
                 item,

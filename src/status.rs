@@ -69,7 +69,7 @@ use crate::src::shared::window::winlink;
 
 unsafe fn status_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     let mut c: *mut client = arg as *mut client;
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -97,7 +97,7 @@ unsafe fn status_timer_callback(mut arg: *mut ::core::ffi::c_void) {
     ));
 }
 pub unsafe fn status_timer_start(mut c: *mut client) {
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     if event_initialized(&(*c).status.timer) != 0 {
         event_del(&raw mut (*c).status.timer);
     } else {
@@ -145,7 +145,7 @@ pub unsafe fn status_update_cache(mut s: *mut session) {
     };
 }
 pub unsafe fn status_at_line(c: &client) -> ::core::ffi::c_int {
-    let mut s: *mut session = c.session;
+    let mut s: *mut session = c.session_ptr();
     if c.flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return -(1 as ::core::ffi::c_int);
     }
@@ -155,7 +155,7 @@ pub unsafe fn status_at_line(c: &client) -> ::core::ffi::c_int {
     return c.tty.sy.wrapping_sub(status_line_size(c)) as ::core::ffi::c_int;
 }
 pub unsafe fn status_line_size(c: &client) -> u_int {
-    let mut s: *mut session = c.session;
+    let mut s: *mut session = c.session_ptr();
     if c.flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
         return 0 as u_int;
     }
@@ -168,7 +168,7 @@ pub unsafe fn status_line_size(c: &client) -> u_int {
     return (*s).statuslines;
 }
 pub unsafe fn status_prompt_line_at(c: &client) -> u_int {
-    let mut s: *mut session = c.session;
+    let mut s: *mut session = c.session_ptr();
     let mut line: u_int = 0;
     let mut lines: u_int = 0;
     lines = status_line_size(c);
@@ -255,7 +255,7 @@ pub unsafe fn status_free(mut c: *mut client) {
 pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut sle: *mut style_line_entry = ::core::ptr::null_mut::<style_line_entry>();
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         s: ::core::ptr::null_mut::<screen>(),
@@ -485,7 +485,7 @@ pub unsafe fn status_message_set(
     });
     if delay == -(1 as ::core::ffi::c_int) {
         delay = options_get_number(
-            options_owner_ptr(&mut (*(*c).session).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*(*c).session_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
             b"display-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
     }
@@ -527,7 +527,7 @@ pub unsafe fn status_message_clear(mut c: *mut client) {
 }
 unsafe fn status_message_area(c: &client) -> (u_int, u_int) {
     let sy = options_string_to_style(
-        options_owner_ptr(&mut (*c.session).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*c.session_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         c"message-style".as_ptr(),
         std::ptr::null_mut(),
     )
@@ -564,7 +564,7 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         scrolled: 0,
         bg: 0,
     };
-    let mut s: *mut session = (*c).session;
+    let mut s: *mut session = (*c).session_ptr();
     let mut old_screen: screen = screen::empty();
     let mut lines: u_int = 0;
     let mut messageline: u_int = 0;
@@ -699,7 +699,7 @@ pub unsafe fn status_prompt_set(
     status_message_clear(c);
     status_prompt_clear(c);
     status_push_screen(c);
-    prompt_set_options(&mut pd, ((*c).session).as_mut());
+    prompt_set_options(&mut pd, ((*c).session_ptr()).as_mut());
     pd.fs = fs.as_ref();
     pd.prompt = CStr::from_ptr(msg);
     pd.input = if input.is_null() {
@@ -763,7 +763,7 @@ unsafe fn status_prompt_screen_line(c: &client) -> u_int {
     let tty = &c.tty;
     let mut n: u_int = 0;
     if options_get_number(
-        options_owner_ptr(&mut (*c.session).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*c.session_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_longlong
     {
@@ -909,10 +909,11 @@ mod status_screen_tests {
                     .unwrap();
                 options_default(oo, definition);
             }
-            let mut session = session::empty();
+            let session_owner = session::new();
+            let session = &mut *session_owner.get();
             session.options = Some(Box::from_raw(oo));
             let mut c = client::empty();
-            c.session = &raw mut session;
+            c.set_session(session);
             c.tty.sx = 80;
             for (style, expected) in [
                 ("default", (0, 80)),
@@ -956,7 +957,7 @@ mod status_screen_tests {
             }
             let saved = global_s_options;
             global_s_options = oo;
-            c.session = std::ptr::null_mut();
+            c.set_session(std::ptr::null_mut());
             c.flags = 0;
             options_set_number(oo, c"status".as_ptr(), 4);
             assert_eq!(status_line_size(&c), 4);

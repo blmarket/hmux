@@ -136,9 +136,7 @@ pub unsafe fn server_redraw_session(session: &session) {
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
-        if client.session.as_ref().is_some_and(|current| {
-            std::rc::Weak::ptr_eq(&current.observer, &session.observer)
-        }) {
+        if client.session.ptr_eq(&session.observer) {
             server_redraw_client(client);
         }
     }
@@ -159,9 +157,7 @@ pub unsafe fn server_status_session(session: &session) {
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
-        if client.session.as_ref().is_some_and(|current| {
-            std::rc::Weak::ptr_eq(&current.observer, &session.observer)
-        }) {
+        if client.session.ptr_eq(&session.observer) {
             client.flags |= CLIENT_REDRAWSTATUS as uint64_t;
         }
     }
@@ -182,7 +178,7 @@ pub unsafe fn server_redraw_window(window: &window) {
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
-        let matches = client.session.as_ref()
+        let matches = client.session_ptr().as_ref()
             .and_then(|session| session.curw_ptr().as_ref())
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
@@ -199,7 +195,7 @@ pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::Un
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
-        let matches = client.session.as_ref()
+        let matches = client.session_ptr().as_ref()
             .and_then(|session| session.curw_ptr().as_ref())
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Rc::ptr_eq(current.as_rc(), window_owner));
@@ -213,7 +209,7 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
         let client = &mut *client_owner.get();
-        let matches = client.session.as_ref()
+        let matches = client.session_ptr().as_ref()
             .and_then(|session| session.curw_ptr().as_ref())
             .and_then(|link| link.window_owner.as_ref())
             .is_some_and(|current| std::rc::Weak::ptr_eq(
@@ -238,7 +234,7 @@ pub unsafe fn server_status_window(window: &window) {
 pub unsafe fn server_lock() {
     let mut next = clients.first();
     while let Some(owner) = next {
-        if !(&*owner.get()).session.is_null() {
+        if !(&*owner.get()).session_ptr().is_null() {
             server_lock_client(&owner);
         }
         next = clients.next(&owner);
@@ -248,8 +244,7 @@ pub unsafe fn server_lock_session(session_owner: &std::rc::Rc<std::cell::UnsafeC
     let observer = std::rc::Rc::downgrade(session_owner);
     let mut next = clients.first();
     while let Some(owner) = next {
-        let matches = (&*owner.get()).session.as_ref()
-            .is_some_and(|session| session.observer.ptr_eq(&observer));
+        let matches = (&*owner.get()).session.ptr_eq(&observer);
         if matches {
             server_lock_client(&owner);
         }
@@ -266,7 +261,7 @@ pub unsafe fn server_lock_client(client_owner: &std::rc::Rc<std::cell::UnsafeCel
         return;
     }
     cmd = options_get_string(
-        options_owner_ptr(&mut (*(*c).session).options).map_or(std::ptr::null_mut(), |options| options),
+        options_owner_ptr(&mut (*(*c).session_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"lock-command\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if *cmd as ::core::ffi::c_int == '\0' as i32
@@ -667,12 +662,12 @@ pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !((*c).session != s) {
+        if !((*c).session_ptr() != s) {
             let target = replacement.as_ref().or_else(|| {
                 ((*c).flags & CLIENT_NO_DETACH_ON_DESTROY != 0)
                     .then_some(fallback.as_ref()).flatten()
             });
-            (*c).session = ::core::ptr::null_mut::<session>();
+            (*c).set_session(::core::ptr::null_mut::<session>());
             (*c).last_session = std::rc::Weak::new();
             server_client_set_session(c, target.map_or(std::ptr::null_mut(), |owner| owner.get()));
             if target.is_none() {

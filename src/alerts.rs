@@ -392,12 +392,12 @@ unsafe fn alerts_set_message(
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !((*c).session != s || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
+        if !((*c).session_ptr() != s || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
             if visual == VISUAL_OFF || visual == VISUAL_BOTH {
                 tty_putcode(&raw mut (*c).tty, TTYC_BEL);
             }
             if !(visual == VISUAL_OFF) {
-                if (*(*c).session).curw_ptr() == wl {
+                if (*(*c).session_ptr()).curw_ptr() == wl {
                     status_message_set(
                         c,
                         -(1 as ::core::ffi::c_int),

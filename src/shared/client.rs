@@ -178,7 +178,8 @@ pub struct client {
     pub message_string: Option<std::ffi::CString>,
     pub message_timer: event,
     pub prompt: Option<PromptOwner>,
-    pub session: *mut session,
+    /// Attached session identity; the session index owns the Rc allocation.
+    pub session: std::rc::Weak<UnsafeCell<session>>,
     /// Previous session observer; this link never keeps a session alive.
     pub last_session: std::rc::Weak<UnsafeCell<session>>,
     pub theme_colours: [::core::ffi::c_int; 10],
@@ -199,6 +200,21 @@ pub struct client {
 }
 
 impl client {
+    /// Legacy pointer view. Callers must retain the session or keep it indexed
+    /// throughout use; this upgrade is only a liveness check.
+    pub fn session_ptr(&self) -> *mut session {
+        self.session
+            .upgrade()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+    }
+
+    /// The caller supplies a live Rc-backed session.
+    pub unsafe fn set_session(&mut self, session: *mut session) {
+        self.session = session
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, |session| session.observer.clone());
+    }
+
     pub fn pan_window_is(&self, window: &super::window::window) -> bool {
         self.pan_window.strong_count() != 0
             && std::rc::Weak::ptr_eq(&self.pan_window, &window.observer)
@@ -396,6 +412,21 @@ pub fn client_rc_ptr(owner: &Option<Rc<UnsafeCell<client>>>) -> *mut client {
 mod retained_client_tests {
     use super::*;
     use crate::src::{reactor, shared::rc};
+
+    #[test]
+    fn attached_session_observer_does_not_retain_a_removed_session() {
+        let mut client = client::empty();
+        let session = super::super::session::session::new();
+        let observer = Rc::downgrade(&session);
+        unsafe {
+            client.set_session(session.get());
+        }
+        assert_eq!(client.session_ptr(), session.get());
+        assert_eq!(Rc::strong_count(&session), 1);
+        drop(session);
+        assert!(observer.upgrade().is_none());
+        assert!(client.session_ptr().is_null());
+    }
 
     #[test]
     fn pan_window_observes_identity_without_retaining_the_window() {

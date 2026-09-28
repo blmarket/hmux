@@ -112,7 +112,7 @@ unsafe fn cmd_save_buffer_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let pb = pb.expect("buffer lookup checked above");
     let show_buffer = std::ptr::eq(cmd_get_entry(&*self_0), &cmd_show_buffer_entry);
     if show_buffer {
-        if !(*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+        if !(*c).session_ptr().is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             let mut evb = evbuffer_new();
             {
                 let buffer = pb.borrow();

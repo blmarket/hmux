@@ -122,8 +122,8 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             cmdq_print(cdata.item, |out| write_cstr(out, msg));
             return;
         }
-        if cdata.client.is_some() && !(*client_rc_ptr(&cdata.client)).session.is_null() {
-            wp = (*(*(*(*client_rc_ptr(&cdata.client)).session).curw_ptr()).window_ptr()).active_ptr();
+        if cdata.client.is_some() && !(*client_rc_ptr(&cdata.client)).session_ptr().is_null() {
+            wp = (*(*(*(*client_rc_ptr(&cdata.client)).session_ptr()).curw_ptr()).window_ptr()).active_ptr();
         }
         if wp.is_null()
             && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
@@ -424,7 +424,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     if !item.is_null() {
         if let Some(client) = cmdq_get_client(item) {
             let c = crate::src::shared::rc::as_ptr(&client);
-            if (*c).session.is_null() {
+            if (*c).session_ptr().is_null() {
                 (*c).retval = retcode;
             }
         }

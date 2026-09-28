@@ -164,7 +164,7 @@ unsafe fn cmd_confirm_before_callback(
     if !item.is_null() {
         if let Some(client) = cmdq_get_client(item) {
             let c = crate::src::shared::rc::as_ptr(&client);
-            if (*c).session.is_null() {
+            if (*c).session_ptr().is_null() {
                 (*c).retval = retcode;
             }
         }

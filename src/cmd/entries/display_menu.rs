@@ -149,7 +149,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(item);
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: *mut session = (*tc).session;
+    let mut s: *mut session = (*tc).session_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wp: *mut window_pane = (*target).wp_ptr();
     let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
@@ -540,7 +540,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(item);
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: *mut session = (*tc).session;
+    let mut s: *mut session = (*tc).session_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut window: *mut window = (*target).w_ptr();
     let mut wp: *mut window_pane = (*target).wp_ptr();

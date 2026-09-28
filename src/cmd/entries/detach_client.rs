@@ -103,7 +103,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if (*loop_0).session == s {
+            if (*loop_0).session_ptr() == s {
                 if !cmd.is_null() {
                     server_client_exec(loop_0, cmd);
                 } else {
@@ -119,7 +119,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item)
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if !(*loop_0).session.is_null() && loop_0 != tc {
+            if !(*loop_0).session_ptr().is_null() && loop_0 != tc {
                 if !cmd.is_null() {
                     server_client_exec(loop_0, cmd);
                 } else {
