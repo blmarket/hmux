@@ -2106,3 +2106,16 @@ invalidating callback input, sort-result preservation and eventual tree release.
 `cargo test --workspace` and `git diff --check` passed, including existing callback
 self-destruction coverage. Raw projections in recursive line building, rendering
 and other model operations remain pending.
+
+## Implemented scoped tree borrows during recursive line building
+
+Recursive line building borrows the tree only for local depth and line updates,
+ending each borrow before descending into children. Key callbacks are removed
+from the tree for dispatch and restored only while live and without overwriting
+a replacement. Row payloads and child traversal snapshots remain typed values;
+logical destruction and row expiry checks are preserved.
+
+A regression test checks key callback replacement across rebuilds and eventual
+release of both the tree and its rows. `cargo test --workspace` and
+`git diff --check` passed, including existing row-removal callback coverage.
+Rendering, other tree interactions and broader model relationships remain pending.

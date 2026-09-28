@@ -238,20 +238,26 @@ fn mode_tree_clear_lines(mtd: &mut mode_tree_data) {
     mtd.lines = Vec::new();
 }
 unsafe fn mode_tree_build_lines(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, items: &[ModeTreeItemRef], depth: u_int) {
-    let mtd = tree_owner.get();
-    (*mtd).depth = depth;
-    (*mtd).maxdepth = (*mtd).maxdepth.max(depth);
+    {
+        let tree = &mut *tree_owner.get();
+        tree.depth = depth;
+        tree.maxdepth = tree.maxdepth.max(depth);
+    }
     let mut flat = 1;
     for (index, item) in items.iter().enumerate() {
-        if (*mtd).dead != 0 { return; }
-        if !item.is_alive() { continue; }
-        let line = (*mtd).lines.len() as u_int;
-        (*mtd).lines.push(mode_tree_line {
-            item: item.clone(),
-            depth,
-            last: (index + 1 == items.len()) as i32,
-            flat: 0,
-        });
+        let line = {
+            let tree = &mut *tree_owner.get();
+            if tree.dead != 0 { return; }
+            if !item.is_alive() { continue; }
+            let line = tree.lines.len() as u_int;
+            tree.lines.push(mode_tree_line {
+                item: item.clone(),
+                depth,
+                last: (index + 1 == items.len()) as i32,
+                flat: 0,
+            });
+            line
+        };
         let (children, expanded) = {
             let mut row = item.borrow_mut();
             row.line = line;
@@ -263,10 +269,16 @@ unsafe fn mode_tree_build_lines(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, ite
         if expanded != 0 {
             mode_tree_build_lines(tree_owner, &children, depth.wrapping_add(1));
         }
-        if (*mtd).dead != 0 { return; }
+        if (&*tree_owner.get()).dead != 0 { return; }
         let Some(data) = item.try_borrow().map(|row| row.itemdata.clone()) else { continue; };
-        let key = if let Some(callback) = (*mtd).keycb.as_mut() {
+        let callback = (&mut *tree_owner.get()).keycb.take();
+        let key = if let Some(mut callback) = callback {
             let key = callback(&data, line);
+            let tree = &mut *tree_owner.get();
+            if tree.dead != 0 { return; }
+            if tree.keycb.is_none() {
+                tree.keycb = Some(callback);
+            }
             if key == KEYC_UNKNOWN {
                 KEYC_NONE
             } else {
@@ -279,15 +291,16 @@ unsafe fn mode_tree_build_lines(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, ite
         } else {
             KEYC_NONE
         };
-        if (*mtd).dead != 0 { return; }
+        if (&*tree_owner.get()).dead != 0 { return; }
         let keystr = (key != KEYC_NONE).then(|| key_string_format(key, false));
         let Some(mut row) = item.try_borrow() else { continue; };
         row.key = key;
         row.set_keystr(keystr);
     }
+    let tree = &mut *tree_owner.get();
     for item in items {
         let Some(row) = item.try_borrow() else { continue; };
-        if let Some(line) = (&mut (*mtd).lines).get_mut(row.line as usize) {
+        if let Some(line) = tree.lines.get_mut(row.line as usize) {
             if line.item == *item { line.flat = flat; }
         }
     }
@@ -2588,6 +2601,31 @@ mod mode_tree_tests {
             assert_eq!(mode_tree_call_build(&owner, None, false), Some(9));
             drop(owner);
             assert!(observer.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn line_key_callback_replacement_survives_dispatch() {
+        unsafe {
+            let owner = mode_tree_alloc_data();
+            let observer = Rc::downgrade(&owner);
+            let callback_tree = observer.clone();
+            let row = mode_tree_test_row(&mut *owner.get());
+            (&mut *owner.get()).keycb = Some(Box::new(move |_, _| {
+                let owner = callback_tree.upgrade().unwrap();
+                let tree = &mut *owner.get();
+                assert!(tree.keycb.is_none());
+                tree.keycb = Some(Box::new(|_, _| b'y' as key_code));
+                b'x' as key_code
+            }));
+            mode_tree_build_lines(&owner, &[row.clone()], 0);
+            assert_eq!(row.borrow().key, b'x' as key_code);
+            mode_tree_clear_lines(&mut *owner.get());
+            mode_tree_build_lines(&owner, &[row.clone()], 0);
+            assert_eq!(row.borrow().key, b'y' as key_code);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            assert!(!row.is_alive());
         }
     }
 
