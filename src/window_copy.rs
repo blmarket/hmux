@@ -664,17 +664,31 @@ unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut windo
         options_owner_ptr(&mut (*(*wp).window_ptr()).options).map_or(std::ptr::null_mut(), |options| options),
         b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
+    let mode_observer = crate::src::window::window_pane_mode_weak(wme);
+    let scroll_observer = mode_observer.clone();
     event_set(
         &raw mut (*data).dragtimer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_copy_scroll_timer(wme) },
+        move |_, _| unsafe {
+            match scroll_observer.try_borrow_mut() {
+                Ok(mut mode) => window_copy_scroll_timer(&mut *mode),
+                Err(refbox::BorrowError::Dropped) => {}
+                Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
+            }
+        },
     );
     event_set(
         &raw mut (*data).refresh_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_copy_refresh_timer(wme) },
+        move |_, _| unsafe {
+            match mode_observer.try_borrow_mut() {
+                Ok(mut mode) => window_copy_refresh_timer(&mut *mode),
+                Err(refbox::BorrowError::Dropped) => {}
+                Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
+            }
+        },
     );
     return data;
 }
