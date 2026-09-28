@@ -1483,3 +1483,15 @@ closed-mode check; obsolete raw tree temporaries were removed from kill prompts.
 `cargo test --workspace` and `git diff --check` passed. Neither tree nor
 customization helpers now accept raw mode-data arguments. Internal UnsafeCell
 projections, pointer-valued row tags and raw session/window/pane uses remain.
+
+## Implemented typed tree target actions
+
+Target command formatting keeps resolved session/pane handles and snapshots the
+winlink index under a checked borrow. Kill actions use the resolved owners
+without raw model locals or recovering a session owner from its pointer. Window
+kills retain a WindowOwner before releasing the winlink borrow and entering
+destructive code, preserving the window release-notification policy.
+
+`cargo test --workspace` and `git diff --check` passed. Raw projections remain at
+legacy find-state/destruction API boundaries; target resolution internals and
+other preview/key-handler raw accesses remain pending.

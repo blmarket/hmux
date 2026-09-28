@@ -1858,43 +1858,41 @@ unsafe fn window_tree_get_target(
     item: &window_tree_itemdata,
     fs: &mut cmd_find_state,
 ) -> Option<CString> {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let _target_owners_7 = window_tree_pull_item(item);
-    s = _target_owners_7.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = if _target_owners_7.winlink.is_alive() { _target_owners_7.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
-    wp = _target_owners_7.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let target = match item.type_0 as ::core::ffi::c_uint {
-        1 if !s.is_null() => {
-            let mut bytes = Vec::from(b"=".as_slice());
-            bytes.extend_from_slice((*s).name.as_bytes());
-            bytes.push(b':');
-            Some(CString::new(bytes).unwrap())
-        }
-        2 if !s.is_null() && !wl.is_null() => {
-            let mut bytes = Vec::from(b"=".as_slice());
-            bytes.extend_from_slice((*s).name.as_bytes());
-            bytes.push(b':');
-            bytes.extend_from_slice((*wl).idx.to_string().as_bytes());
-            bytes.push(b'.');
-            Some(CString::new(bytes).unwrap())
-        }
-        3 if !s.is_null() && !wl.is_null() && !wp.is_null() => {
-            let mut bytes = Vec::from(b"=".as_slice());
-            bytes.extend_from_slice((*s).name.as_bytes());
-            bytes.push(b':');
-            bytes.extend_from_slice((*wl).idx.to_string().as_bytes());
-            bytes.extend_from_slice(b".%");
-            bytes.extend_from_slice((*wp).id.to_string().as_bytes());
-            Some(CString::new(bytes).unwrap())
-        }
-        _ => None,
+    let resolved = window_tree_pull_item(item);
+    let link_index = match resolved.winlink.try_borrow_mut() {
+        Ok(link) => Some(link.idx),
+        Err(refbox::BorrowError::Dropped) => None,
+        Err(refbox::BorrowError::Borrowed) => panic!("tree target winlink already borrowed"),
     };
+    let target = resolved.session.as_ref().and_then(|session_owner| {
+        let mut bytes = Vec::from(b"=".as_slice());
+        bytes.extend_from_slice((*session_owner.get()).name.as_bytes());
+        bytes.push(b':');
+        match item.type_0 {
+            WINDOW_TREE_SESSION => {},
+            WINDOW_TREE_WINDOW => {
+                bytes.extend_from_slice(link_index?.to_string().as_bytes());
+                bytes.push(b'.');
+            }
+            WINDOW_TREE_PANE => {
+                let pane_owner = resolved.pane.as_ref()?;
+                bytes.extend_from_slice(link_index?.to_string().as_bytes());
+                bytes.extend_from_slice(b".%");
+                bytes.extend_from_slice((*pane_owner.get()).id.to_string().as_bytes());
+            }
+            _ => return None,
+        }
+        Some(CString::new(bytes).expect("tree target contains no NUL"))
+    });
     if target.is_none() {
-        cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
+        cmd_find_clear_state(fs, 0);
     } else {
-        cmd_find_from_winlink_pane(fs, wl, wp, 0 as ::core::ffi::c_int);
+        cmd_find_from_winlink_pane(
+            fs,
+            resolved.winlink.as_ptr().cast_mut(),
+            resolved.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()),
+            0,
+        );
     }
     target
 }
@@ -1984,37 +1982,36 @@ unsafe fn window_tree_command_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let _target_owners_8 = window_tree_pull_item(item);
-    s = _target_owners_8.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = if _target_owners_8.winlink.is_alive() { _target_owners_8.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
-    wp = _target_owners_8.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    match item.type_0 as ::core::ffi::c_uint {
-        1 => {
-            if !s.is_null() {
-                let source = (*s).observer.upgrade().expect("live tree session");
-                server_destroy_session(&source);
-                session_destroy(
-                    s,
-                    1 as ::core::ffi::c_int,
-                    b"window_tree_kill_each\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+    let target = window_tree_pull_item(item);
+    match item.type_0 {
+        WINDOW_TREE_SESSION => {
+            if let Some(session_owner) = target.session.as_ref() {
+                server_destroy_session(session_owner);
+                session_destroy(session_owner.get(), 1, c"window_tree_kill_each".as_ptr());
             }
         }
-        2 => {
-            if !wl.is_null() {
-                server_kill_window((*wl).window_ptr(), 0 as ::core::ffi::c_int);
+        WINDOW_TREE_WINDOW => {
+            // Release the winlink borrow before destruction can unlink it.
+            let window_owner = match target.winlink.try_borrow_mut() {
+                Ok(link) => link.window_owner.as_ref().map(|owner| {
+                    crate::src::shared::window::WindowOwner::adopt(
+                        owner.0.as_ref().expect("live window owner").clone(),
+                    )
+                }),
+                Err(refbox::BorrowError::Dropped) => None,
+                Err(refbox::BorrowError::Borrowed) => panic!("tree target winlink already borrowed"),
+            };
+            if let Some(window_owner) = window_owner {
+                server_kill_window(window_owner.as_ptr(), 0);
             }
         }
-        3 => {
-            if !wp.is_null() {
-                server_kill_pane(wp);
+        WINDOW_TREE_PANE => {
+            if let Some(pane_owner) = target.pane.as_ref() {
+                server_kill_pane(pane_owner.get());
             }
         }
-        0 | _ => {}
-    };
+        _ => {},
+    }
 }
 unsafe fn window_tree_kill_current_callback(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
