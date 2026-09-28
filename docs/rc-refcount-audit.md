@@ -25,6 +25,10 @@ does not make its `Weak` field an owning holder. The full inventory remains in
 | `client.keytable` | Retained table reference. | Baseline `src/server_client.rs` increments the selected table's references at creation and key-table switch, and unrefs the previous table. Current `key_bindings_get_table` returns the corresponding owner, while replacement and client cleanup drop the old owner. |
 | `key_binding.commands` and default binding snapshots | Owned command-list references. | Baseline `src/key_bindings.rs::key_bindings_add` transfers the supplied list into the binding, and `key_bindings_init_done` increments its references for each snapshot; `key_bindings_free` releases it. Current add moves the supplied `Rc`, snapshot creation clones it, and binding drop releases it. |
 | `cmd_confirm_before_data.cmdlist` | Owned command-list transfer. | Baseline `src/cmd_confirm_before.rs` stores the list returned by `args_make_commands_now` and calls `cmd_list_free` on completion or cleanup. Current data creation moves that owner into the record, whose drop releases it. |
+| `cmd_parse_result.cmdlist` | Owned parse-result list. | Baseline `src/cmd_parse.rs` creates a command list for a successful parse and transfers or frees it with the result. Current parse result stores the newly created `Rc` and moves it to the consumer or drops it. |
+| `args_command_state.cmdlist` | Retained `Rc` with explicit release. | Baseline `src/arguments.rs::args_make_commands_prepare` increments `cmdlist.references` when preparing an existing command-list argument; `args_make_commands_free` calls `cmd_list_free`. Current preparation clones the list and state drop releases it. |
+| `OptionCommand` | Owned command-list transfer into an option. | Baseline `src/options.rs::options_set_command` frees the old option list then stores the supplied list without another increment. Current setter moves the supplied `Rc` into `OptionCommand` and replacement drops the previous value. |
+| Buffer, client, tree and customize mode `data` | One owning mode-tree reference per mode. | Baseline `src/mode_tree.rs::mode_tree_start` creates a tree with `references = 1`, and `mode_tree_free` releases that reference. Each current mode stores the returned `Rc` and passes it to `mode_tree_free` on mode cleanup. |
 | `mode_tree_prompt.mtd` | Retained `Rc` with explicit release. | Baseline `src/mode_tree.rs::mode_tree_set_prompt` increments the tree's references and its prompt free callback calls `mode_tree_remove_ref`; current prompt creation clones the tree and its free callback drops that clone after user cleanup. |
 | `cmdq_item.state` and `.cmdlist` | Retained `Rc` references per command item. | Baseline `src/cmd_queue.rs::cmdq_get_command` calls `cmdq_link_state` and increments `cmdlist.references` for each item; `cmdq_remove` frees both. Current command-item construction clones both owners per item and removal drops them. |
 | Event payload model values and targets | Retained `Rc` with explicit release. | Baseline `src/events_payload.rs` adds the matching client/session/window/pane reference in each `event_payload_set_*` and `event_payload_set_target`, then releases it in `event_payload_free_value` or `event_payload_free_target`. Current code retains each model and uses the corresponding release function on item or target cleanup. |
@@ -35,7 +39,7 @@ not finish the review of every creation site.
 ## Remaining audit
 
 - Review stored strong model holders in command queues, prepared commands,
-  clients, file records, prompts, mode data, and callback captures. Trace each
+  clients, file records, prompts, mode payloads, and callback captures. Trace each
   clone or upgrade to its final release and compare it with the intended tmux
   ownership transition. Convert unmatched lasting holders to `Weak` or a bounded
   borrow while preserving scoped guards for access.
