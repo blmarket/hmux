@@ -129,7 +129,7 @@ pub struct mode_tree_prompt {
 pub type mode_tree_prompt_input_cb = Option<
     Box<
         dyn FnMut(
-            Option<std::ptr::NonNull<client>>,
+            Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
             Option<&std::ffi::CStr>,
             prompt_key_result,
         ) -> prompt_result,

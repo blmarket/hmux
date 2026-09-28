@@ -3026,7 +3026,7 @@ struct CustomizePromptItem {
 fn window_customize_prompt_callbacks<T: 'static>(
     owner: RefBox<T>,
     callback: unsafe fn(
-        Option<NonNull<client>>,
+        Option<&Rc<UnsafeCell<client>>>,
         &T,
         Option<&CStr>,
         prompt_key_result,
@@ -3049,7 +3049,7 @@ fn window_customize_prompt_callbacks<T: 'static>(
 fn window_customize_mode_prompt_callbacks(
     owner: Rc<UnsafeCell<window_customize_modedata>>,
     callback: unsafe fn(
-        Option<NonNull<client>>,
+        Option<&Rc<UnsafeCell<client>>>,
         &UnsafeCell<window_customize_modedata>,
         Option<&CStr>,
         prompt_key_result,
@@ -3070,12 +3070,12 @@ fn window_customize_mode_prompt_callbacks(
 }
 
 unsafe fn window_customize_set_option_callback(
-    c: Option<NonNull<client>>,
+    c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut current_block: u64;
     let item = &*owner.item;
@@ -3166,7 +3166,7 @@ unsafe fn window_customize_set_option_callback(
     };
 }
 unsafe fn window_customize_set_environment_callback(
-    _c: Option<NonNull<client>>,
+    _c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -3319,12 +3319,12 @@ unsafe fn window_customize_set_environment(
     );
 }
 unsafe fn window_customize_add_option_callback(
-    c: Option<NonNull<client>>,
+    c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -3451,12 +3451,12 @@ unsafe fn window_customize_add_option(
     );
 }
 unsafe fn window_customize_add_environment_callback(
-    c: Option<NonNull<client>>,
+    c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let Some(mut environment) = item
@@ -3919,12 +3919,12 @@ unsafe fn window_customize_set_option(
     };
 }
 unsafe fn window_customize_set_array_key_callback(
-    c: Option<NonNull<client>>,
+    c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -4154,12 +4154,12 @@ unsafe fn window_customize_reset_option(
     }
 }
 unsafe fn window_customize_set_command_callback(
-    c: Option<NonNull<client>>,
+    c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -4213,7 +4213,7 @@ unsafe fn window_customize_set_command_callback(
     };
 }
 unsafe fn window_customize_set_note_callback(
-    _c: Option<NonNull<client>>,
+    _c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -4323,12 +4323,12 @@ unsafe fn window_customize_set_key(
     }
 }
 unsafe fn window_customize_add_key_callback(
-    c: Option<NonNull<client>>,
+    c: Option<&Rc<UnsafeCell<client>>>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key0: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -4550,7 +4550,7 @@ unsafe fn window_customize_change_each(
     }
 }
 unsafe fn window_customize_change_current_callback(
-    _c: Option<NonNull<client>>,
+    _c: Option<&Rc<UnsafeCell<client>>>,
     owner: &UnsafeCell<window_customize_modedata>,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -4649,12 +4649,12 @@ unsafe fn window_customize_change_current_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_change_tagged_callback(
-    c: Option<NonNull<client>>,
+    c: Option<&Rc<UnsafeCell<client>>>,
     owner: &UnsafeCell<window_customize_modedata>,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), NonNull::as_ptr);
+    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let data = owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return PROMPT_CLOSE;
@@ -5122,7 +5122,7 @@ mod item_owner_tests {
     #[test]
     fn mode_list_keeps_items_stable_until_last_callback_reference() {
         unsafe fn read_item(
-            _client: Option<NonNull<client>>,
+            _client: Option<&Rc<UnsafeCell<client>>>,
             owner: &CustomizePromptItem,
             _text: Option<&CStr>,
             _key: prompt_key_result,
@@ -5214,7 +5214,7 @@ mod item_owner_tests {
             }
         }
         unsafe fn close(
-            _client: Option<NonNull<client>>,
+            _client: Option<&Rc<UnsafeCell<client>>>,
             owner: &Owner,
             _text: Option<&CStr>,
             _key: prompt_key_result,

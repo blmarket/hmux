@@ -1376,9 +1376,7 @@ fn mode_tree_prompt_input_callback(
         return PROMPT_CLOSE;
     };
     let result = callback(
-        client
-            .as_ref()
-            .and_then(|client| std::ptr::NonNull::new(crate::src::shared::rc::as_ptr(client))),
+        client.as_ref(),
         input,
         key,
     );
@@ -2556,6 +2554,40 @@ mod mode_prompt_data_tests {
             inputcb: None,
             freecb: None,
         })
+    }
+
+    #[test]
+    fn input_callbacks_borrow_retained_clients_and_report_expiration() {
+        unsafe {
+            let tree = mode_tree_alloc_data();
+            let record = data(&tree);
+            let client = client::new();
+            let observed = Rc::downgrade(&client);
+            let expected = observed.clone();
+            let calls = Rc::new(Cell::new(0));
+            let count = calls.clone();
+            {
+                let mut state = record.try_borrow_mut().unwrap();
+                state.c = observed.clone();
+                state.inputcb = Some(Box::new(move |client, _, _| {
+                    if count.get() == 0 {
+                        let client = client.expect("live prompt client");
+                        assert_eq!(Rc::strong_count(client), 2);
+                        assert!(Rc::ptr_eq(client, &expected.upgrade().unwrap()));
+                    } else {
+                        assert!(client.is_none());
+                    }
+                    count.set(count.get() + 1);
+                    PROMPT_CONTINUE
+                }));
+            }
+            mode_tree_prompt_input_callback(&record.downgrade(), None, PROMPT_KEY_HANDLED);
+            assert_eq!(Rc::strong_count(&client), 1);
+            drop(client);
+            assert!(observed.upgrade().is_none());
+            mode_tree_prompt_input_callback(&record.downgrade(), None, PROMPT_KEY_HANDLED);
+            assert_eq!(calls.get(), 2);
+        }
     }
 
     #[test]

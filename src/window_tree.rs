@@ -1907,16 +1907,16 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
         CMD_RETURN_NORMAL
     }))
 }
-unsafe fn window_tree_enqueue_command_done(c: *mut client, data: *mut window_tree_modedata) {
+unsafe fn window_tree_enqueue_command_done(client_owner: Option<&Rc<UnsafeCell<client>>>, data: *mut window_tree_modedata) {
     let Some(mode) = (*data).observer.upgrade() else { return; };
     let item = cmdq_get_callback_owned(
         c"window_tree_command_done".as_ptr(),
         window_tree_command_done(mode),
     );
-    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), item);
+    cmdq_append(client_owner, item);
 }
 unsafe fn window_tree_command_callback(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_tree_modedata,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -1927,19 +1927,18 @@ unsafe fn window_tree_command_callback(
     if (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
-    let command_client = c.as_ref().map(|client| client.observer.upgrade().expect("mode command client is live"));
     (*data).entered = Some(s.to_owned());
     mode_tree_each_tagged(
         (*data).data.clone().as_ref().expect("live mode tree"),
         |row, _| unsafe {
             let itemdata = row.borrow().itemdata.clone();
-            window_tree_command_each(data, &itemdata.as_tree().expect("tree row payload"), command_client.as_ref())
+            window_tree_command_each(data, &itemdata.as_tree().expect("tree row payload"), client_owner)
         },
         KEYC_NONE as ::core::ffi::c_ulong as key_code,
         1 as ::core::ffi::c_int,
     );
     (*data).entered = None;
-    window_tree_enqueue_command_done(c, data);
+    window_tree_enqueue_command_done(client_owner, data);
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
@@ -1973,7 +1972,7 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
     };
 }
 unsafe fn window_tree_kill_current_callback(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_tree_modedata,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -2018,11 +2017,11 @@ unsafe fn window_tree_kill_current_callback(
         window_tree_kill_each(&item);
     }
     server_renumber_all();
-    window_tree_enqueue_command_done(c, data);
+    window_tree_enqueue_command_done(client_owner, data);
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_kill_tagged_callback(
-    mut c: *mut client,
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
     mut data: *mut window_tree_modedata,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -2072,7 +2071,7 @@ unsafe fn window_tree_kill_tagged_callback(
         1 as ::core::ffi::c_int,
     );
     server_renumber_all();
-    window_tree_enqueue_command_done(c, data);
+    window_tree_enqueue_command_done(client_owner, data);
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_mouse(
@@ -2294,7 +2293,7 @@ unsafe fn window_tree_key(
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                     Some(Box::new(move |c, s, key| unsafe {
                         window_tree_kill_current_callback(
-                            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                            c,
                             data,
                             s,
                             key,
@@ -2318,7 +2317,7 @@ unsafe fn window_tree_key(
                     PROMPT_SINGLE | PROMPT_NOFORMAT | (*data).prompt_flags,
                     Some(Box::new(move |c, s, key| unsafe {
                         window_tree_kill_tagged_callback(
-                            c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                            c,
                             data,
                             s,
                             key,
@@ -2345,7 +2344,7 @@ unsafe fn window_tree_key(
                 PROMPT_NOFORMAT,
                 Some(Box::new(move |c, s, key| unsafe {
                     window_tree_command_callback(
-                        c.map_or(::core::ptr::null_mut(), std::ptr::NonNull::as_ptr),
+                        c,
                         data,
                         s,
                         key,

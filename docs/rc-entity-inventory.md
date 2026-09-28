@@ -1254,3 +1254,16 @@ still raw and remains pending.
 `cargo test --workspace` and `git diff --check` passed, including existing prompt
 cleanup and queued acceptance tests. Customize helper arguments, client callback
 adapters and internal raw projections still require migration.
+
+## Implemented retained client borrows for mode-tree prompt callbacks
+
+The mode-tree prompt callback type now receives `Option<&Rc<UnsafeCell<client>>>`
+instead of `Option<NonNull<client>>`. Dispatch passes its weak-client upgrade by
+borrow for the callback duration. Tree command/kill callbacks carry that borrow
+through command execution and completion queueing without pointer recovery.
+Customize callback factories and handlers accept the same typed borrow; their
+remaining internal legacy calls still project raw pointers.
+
+`cargo test --workspace` and `git diff --check` passed. A regression verifies client
+identity and retention during live dispatch, release after return, and `None`
+after expiration. Customize internals and other raw model APIs remain pending.
