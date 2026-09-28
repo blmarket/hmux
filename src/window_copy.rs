@@ -475,8 +475,7 @@ pub const WINDOW_COPY_SEARCH_ALL_TIMEOUT: ::core::ffi::c_int = 200 as ::core::ff
 pub const WINDOW_COPY_SEARCH_MAX_LINE: ::core::ffi::c_int = 2000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_DRAG_REPEAT_TIME: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
 pub const WINDOW_COPY_REFRESH_INTERVAL: ::core::ffi::c_int = 50000 as ::core::ffi::c_int;
-unsafe fn window_copy_scroll_timer(mut arg: *mut ::core::ffi::c_void) {
-    let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
+unsafe fn window_copy_scroll_timer(wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
@@ -669,13 +668,13 @@ unsafe fn window_copy_common_init(mut wme: *mut window_mode_entry) -> *mut windo
         &raw mut (*data).dragtimer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_copy_scroll_timer(wme as *mut ::core::ffi::c_void) },
+        move |_, _| unsafe { window_copy_scroll_timer(wme) },
     );
     event_set(
         &raw mut (*data).refresh_timer,
         -(1 as ::core::ffi::c_int),
         0 as ::core::ffi::c_short,
-        move |_, _| unsafe { window_copy_refresh_timer(wme as *mut ::core::ffi::c_void) },
+        move |_, _| unsafe { window_copy_refresh_timer(wme) },
     );
     return data;
 }
@@ -3615,8 +3614,7 @@ unsafe fn window_copy_refresh_allowed(mut wme: *mut window_mode_entry) -> ::core
     }
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn window_copy_refresh_timer(mut arg: *mut ::core::ffi::c_void) {
-    let mut wme: *mut window_mode_entry = arg as *mut window_mode_entry;
+unsafe fn window_copy_refresh_timer(wme: *mut window_mode_entry) {
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
