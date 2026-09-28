@@ -3429,9 +3429,9 @@ pub unsafe fn server_client_loop() {
         let c = client_owner.get();
         server_client_check_exit(c, 0 as ::core::ffi::c_int);
         if !(*c).session.is_null() && !(*(*c).session).curw.is_null() {
-            server_client_check_modes(c);
+            server_client_check_modes(&client_owner);
             server_client_check_redraw(&client_owner);
-            server_client_reset_state(c);
+            server_client_reset_state(&client_owner);
         }
         registry_c_owner = clients.next(&client_owner);
     }
@@ -3847,14 +3847,24 @@ mod prompt_cursor_tests {
     }
 }
 
-unsafe fn server_client_reset_state(mut c: *mut client) {
+unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = client_owner.get();
+    let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
+        return;
+    };
+    let Some(link) = (*session_owner.get()).curw.as_ref() else {
+        return;
+    };
+    let window_owner = crate::src::shared::window::WindowOwner::adopt(
+        link.window_owner.as_ref().expect("current link window").as_rc().clone(),
+    );
+    let w = window_owner.as_ptr();
     let mut r = Vec::new();
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
-    let mut wp: *mut window_pane = (*w).active;
-    let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let active_owner = (*w).active.as_ref().and_then(|pane| pane.observer.upgrade());
+    let wp = active_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *const screen = std::ptr::null();
-    let mut oo: *mut options = options_owner_ptr(&mut (*(*c).session).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options = options_owner_ptr(&mut (*session_owner.get()).options).map_or(std::ptr::null_mut(), |options| options);
     let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut cursor: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0;
@@ -3994,12 +4004,13 @@ unsafe fn server_client_reset_state(mut c: *mut client) {
     if options_get_number(oo, b"mouse\0" as *const u8 as *const ::core::ffi::c_char) != 0 {
         if (*c).overlay_draw.is_none() && (*w).menu.is_none() {
             mode &= !ALL_MOUSE_MODES;
-            loop_0 = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            while !loop_0.is_null() {
-                if (*(*loop_0).screen).mode & MODE_MOUSE_ALL != 0 {
+            let mut cursor = window_pane_first(Some(&*w));
+            while let Some(pane_owner) = cursor {
+                let pane = &*pane_owner.get();
+                if (*pane.screen).mode & MODE_MOUSE_ALL != 0 {
                     mode |= MODE_MOUSE_ALL;
                 }
-                loop_0 = window_pane_next(loop_0.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                cursor = window_pane_next(Some(pane));
             }
         }
         if options_get_number(
@@ -4169,23 +4180,33 @@ unsafe fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c
 unsafe fn server_client_redraw_timer() {
     log_debug(format_args!("redraw timer fired"));
 }
-unsafe fn server_client_check_modes(mut c: *mut client) {
-    let mut w: *mut window = (*(*(*c).session).curw).window_ptr();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
+unsafe fn server_client_check_modes(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let c = client_owner.get();
+    let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
+        return;
+    };
+    let Some(link) = (*session_owner.get()).curw.as_ref() else {
+        return;
+    };
+    let window_owner = crate::src::shared::window::WindowOwner::adopt(
+        link.window_owner.as_ref().expect("current link window").as_rc().clone(),
+    );
+    let w = window_owner.as_ptr();
+
     if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
         return;
     }
     if !(*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
         return;
     }
-    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        wme = (*wp).modes.active;
+    let mut cursor = window_pane_first(Some(&*w));
+    while let Some(pane_owner) = cursor {
+        let wp = pane_owner.get();
+        let wme = (*wp).modes.active;
         if !wme.is_null() && (*(*wme).mode).update.is_some() {
             (*(*wme).mode).update.expect("non-null function pointer")(wme);
         }
-        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        cursor = window_pane_next(Some(&*wp));
     }
 }
 unsafe fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_int {

@@ -1810,3 +1810,15 @@ owning cursors, with scoped mutable client borrows for buffer accounting.
 `cargo test --workspace` and `git diff --check` passed. Raw client/session and
 pane/window relationships, mode-entry pointers and several maintenance helper
 internals remain pending.
+
+## Implemented retained client mode maintenance
+
+Client mode updates and terminal-state reset take retained client handles. Both
+retain the associated session and current window, returning early when either
+association is absent. Window release uses WindowOwner. Mode-update traversal
+retains each pane across its callback; state reset retains the active pane and
+uses owning traversal with scoped pane borrows when gathering mouse modes.
+
+`cargo test --workspace` and `git diff --check` passed. Client/session and active
+pane relationship fields still require raw access when acquiring the handles;
+mode-screen pointers and legacy terminal APIs also remain pending.
