@@ -2109,15 +2109,12 @@ unsafe fn window_tree_kill_tagged_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_mouse(
-    mut data: *mut window_tree_modedata,
+    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut key: key_code,
     mut x: u_int,
     item: &window_tree_itemdata,
 ) -> key_code {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut loop_0: u_int = 0;
+    let data = mode_owner.get();
     if key != KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code {
         return KEYC_NONE as ::core::ffi::c_ulong as key_code;
     }
@@ -2140,19 +2137,19 @@ unsafe fn window_tree_mouse(
             x = (*data).end.wrapping_sub(1 as u_int);
         }
     }
-    let _target_owners_9 = window_tree_pull_item(item);
-    s = _target_owners_9.session.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wl = if _target_owners_9.winlink.is_alive() { _target_owners_9.winlink.as_ptr().cast_mut() } else { std::ptr::null_mut() };
-    wp = _target_owners_9.pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let target = window_tree_pull_item(item);
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if s.is_null() {
-            return KEYC_NONE as ::core::ffi::c_ulong as key_code;
-        }
+        let Some(session_owner) = target.session.as_ref() else {
+            return KEYC_NONE;
+        };
         mode_tree_expand_current((*data).data.clone().as_ref().expect("mode tree owner"));
-        loop_0 = 0 as u_int;
-        wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+        if (*data).dead != 0 {
+            return KEYC_NONE;
+        }
+        let mut loop_0 = 0 as u_int;
+        let mut wl = winlinks_minmax(&(*session_owner.get()).windows, RB_NEGINF);
         while !wl.is_null() {
             if loop_0 == (*data).start.wrapping_add(x) {
                 break;
@@ -2168,21 +2165,23 @@ unsafe fn window_tree_mouse(
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if wl.is_null() {
-            return KEYC_NONE as ::core::ffi::c_ulong as key_code;
+        if !target.winlink.is_alive() {
+            return KEYC_NONE;
         }
         mode_tree_expand_current((*data).data.clone().as_ref().expect("mode tree owner"));
-        loop_0 = 0 as u_int;
-        wp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            if loop_0 == (*data).start.wrapping_add(x) {
+        if (*data).dead != 0 || !target.winlink.is_alive() {
+            return KEYC_NONE;
+        }
+        let wl = target.winlink.as_ptr();
+        let mut pane = window_pane_first((*wl).window_ptr());
+        for _ in 0..(*data).start.wrapping_add(x) {
+            pane = pane.as_ref().and_then(|owner| window_pane_next(owner.get()));
+            if pane.is_none() {
                 break;
             }
-            loop_0 = loop_0.wrapping_add(1);
-            wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        if !wp.is_null() {
-            mode_tree_set_current(&mut *(*data).data_ptr(), wp as uint64_t);
+        if let Some(pane_owner) = pane {
+            mode_tree_set_current(&mut *(*data).data_ptr(), pane_owner.get() as uint64_t);
         }
         return '\r' as i32 as key_code;
     }
@@ -2199,7 +2198,10 @@ unsafe fn window_tree_key(
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_tree_modedata = (*wme).data as *mut window_tree_modedata;
+    let mode_owner = (*wme).data_owner.as_ref().expect("tree mode owner")
+        .clone().downcast::<UnsafeCell<window_tree_modedata>>()
+        .expect("tree mode payload");
+    let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -2218,12 +2220,8 @@ unsafe fn window_tree_key(
     let mut ns: *mut session = ::core::ptr::null_mut::<session>();
     let mut nwl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mode = (*data).observer.clone();
     let mut selection = mode_tree_get_current(&*(*data).data_ptr());
     finished = mode_tree_key((*data).data.as_ref().expect("mode tree owner").clone(), Some(client_owner), &raw mut key, m, &raw mut x, &raw mut y);
-    let Some(_mode_owner) = mode.upgrade() else {
-        return;
-    };
     if (*data).dead != 0 {
         return;
     }
@@ -2249,7 +2247,10 @@ unsafe fn window_tree_key(
         }
         key = item
             .as_deref()
-            .map_or(KEYC_NONE, |item| window_tree_mouse(data, key, x, item));
+            .map_or(KEYC_NONE, |item| window_tree_mouse(&mode_owner, key, x, item));
+        if (*data).dead != 0 {
+            return;
+        }
     }
     let item = selection.as_tree();
     match key {
@@ -2326,7 +2327,7 @@ unsafe fn window_tree_key(
                 0 | _ => None,
             };
             if let Some(prompt) = prompt {
-                let mode = (*data).observer.upgrade().expect("live tree mode");
+                let mode = mode_owner.clone();
                 let (inputcb, freecb) = window_tree_prompt_callbacks(mode, window_tree_kill_current_callback);
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
@@ -2344,7 +2345,7 @@ unsafe fn window_tree_key(
             tagged = mode_tree_count_tagged(&*(*data).data_ptr());
             if !(tagged == 0 as u_int) {
                 let prompt = CString::new(format!("Kill {tagged} tagged? ")).unwrap();
-                let mode = (*data).observer.upgrade().expect("live tree mode");
+                let mode = mode_owner.clone();
                 let (inputcb, freecb) = window_tree_prompt_callbacks(mode, window_tree_kill_tagged_callback);
                 mode_tree_set_prompt(
                     (*data).data.as_ref().expect("mode tree owner").clone(),
@@ -2365,7 +2366,7 @@ unsafe fn window_tree_key(
             } else {
                 CString::new("(current) ").unwrap()
             };
-            let mode = (*data).observer.upgrade().expect("live tree mode");
+            let mode = mode_owner.clone();
             let (inputcb, freecb) = window_tree_prompt_callbacks(mode, window_tree_command_callback);
             mode_tree_set_prompt(
                 (*data).data.as_ref().expect("mode tree owner").clone(),

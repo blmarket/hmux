@@ -1396,3 +1396,15 @@ their session/link when no active pane exists.
 `cargo test --workspace` and `git diff --check` passed. Callers still derive local
 raw projections for legacy operations; winlink/window internals and those caller
 bodies remain pending.
+
+## Implemented retained tree-mode input and mouse traversal
+
+Key dispatch clones and downcasts the mode entry's owning payload before invoking
+callbacks, replacing its erased-pointer cast and late observer upgrade. Prompt
+creation clones this retained owner. Mouse handling borrows the mode Rc and
+retains pane traversal handles through selection. Expansion checks logical mode
+closure and weak winlink expiry before subsequent access; key dispatch also stops
+when mouse expansion closes the mode.
+
+`cargo test --workspace` and `git diff --check` passed. Internal UnsafeCell
+projections, session winlink traversal, and pointer-valued row tags remain pending.
