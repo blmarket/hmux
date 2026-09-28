@@ -1895,3 +1895,15 @@ run. Existing repeated-cancellation and dead-client semantics are preserved.
 `cargo test --workspace` and `git diff --check` passed, including command-wait
 cancellation and file-input callback tests adapted to the typed inputs. File-event
 client payloads, index removal and other raw internal projections remain pending.
+
+## Implemented typed clients in file callback events
+
+File callback events now carry an optional borrowed Rc client handle instead of
+NonNull<client>. Read and completion dispatch retain a client snapshot for the
+callback's duration and check its flags through that handle. Callbacks may clone
+the borrowed handle explicitly to extend ownership beyond dispatch.
+
+`cargo test --workspace` and `git diff --check` passed. A new test verifies a
+completion callback can retain its client after the file leaves the index and is
+freed, then release the client by dropping its saved handle. File-index removal
+and other internal raw projections remain pending.

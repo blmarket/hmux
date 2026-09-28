@@ -306,7 +306,8 @@ pub struct client_file {
 }
 
 pub struct client_file_event<'a> {
-    pub client: Option<std::ptr::NonNull<client>>,
+    /// Borrowed retained client for this callback; clone to retain it afterward.
+    pub client: Option<&'a std::rc::Rc<std::cell::UnsafeCell<client>>>,
     pub path: Option<&'a CStr>,
     pub error: i32,
     pub closed: bool,

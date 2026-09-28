@@ -206,11 +206,11 @@ unsafe fn file_destroy(cf: &mut client_file) {
 }
 unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = owner.get();
-    let c: *mut client = client_rc_ptr(&(*cf).c);
+    let client_owner = (*cf).c.clone();
     let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
-    let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
+    let dead = client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
-            (*rc::as_ptr(owner)).flags & CLIENT_DEAD as uint64_t != 0
+            (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
         }));
     if dead {
         file_cancel_cmdq_wait(owner);
@@ -227,7 +227,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     if !dead {
         if let Some(callback) = callback.as_mut() {
             callback(client_file_event {
-                client: std::ptr::NonNull::new(c),
+                client: client_owner.as_ref(),
                 path: (*cf).path.as_deref(),
                 error: (*cf).error,
                 closed: true,
@@ -264,16 +264,16 @@ pub unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
 }
 pub unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let cf = file_owner.get();
-    let c = client_rc_ptr(&(*cf).c);
+    let client_owner = (*cf).c.clone();
     let wait_client = (*cf).wait_client.as_ref().map(Weak::upgrade);
-    let dead = (!c.is_null() && (*c).flags & CLIENT_DEAD as uint64_t != 0)
+    let dead = client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
         || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
-            (*rc::as_ptr(owner)).flags & CLIENT_DEAD as uint64_t != 0
+            (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
         }));
     if !dead {
         if let Some(callback) = (*cf).cb.as_mut() {
             callback(client_file_event {
-                client: std::ptr::NonNull::new(client_rc_ptr(&(*cf).c)),
+                client: client_owner.as_ref(),
                 path: (*cf).path.as_deref(),
                 error: (*cf).error,
                 closed: false,
@@ -1456,6 +1456,7 @@ mod file_index_ownership_tests {
 #[cfg(test)]
 mod completion_cancellation_tests {
     use super::*;
+    use crate::src::reactor::event_loop;
 
     #[test]
     fn command_wait_distinguishes_unspecified_and_expired_clients() {
@@ -1495,4 +1496,28 @@ mod completion_cancellation_tests {
             assert!(client_observer.upgrade().is_none());
         }
     }
+
+    #[test]
+    fn completion_callback_can_retain_its_client_after_file_retirement() {
+        unsafe {
+            let client = client::new();
+            let observed = Rc::downgrade(&client);
+            let saved = Rc::new(std::cell::RefCell::new(None));
+            let callback_saved = saved.clone();
+            let file = file_create_with_client(client.get(), 7, Some(Box::new(move |event| {
+                assert!(event.closed);
+                *callback_saved.borrow_mut() = event.client.cloned();
+            })));
+            let file_observed = Rc::downgrade(&file);
+            file_fire_done(&file);
+            drop(file);
+            drop(client);
+            event_loop();
+            assert!(file_observed.upgrade().is_none());
+            assert!(Rc::ptr_eq(saved.borrow().as_ref().unwrap(), &observed.upgrade().unwrap()));
+            drop(saved.borrow_mut().take());
+            assert!(observed.upgrade().is_none());
+        }
+    }
+
 }
