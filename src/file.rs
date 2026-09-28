@@ -174,7 +174,7 @@ pub unsafe fn file_create_with_peer(
     (*cf).stream = stream;
     (*cf).cb = cb;
     (*cf).peer = peer;
-    client_files_insert(files, owner.clone());
+    client_files_insert(&mut *files, owner.clone());
     return owner;
 }
 unsafe fn file_create_with_client(
@@ -193,12 +193,12 @@ unsafe fn file_create_with_client(
     (*cf).cb = cb;
     if !client_rc_ptr(&(*cf).c).is_null() {
         (*cf).peer = (*client_rc_ptr(&(*cf).c)).peer;
-        client_files_insert(&raw mut (*client_rc_ptr(&(*cf).c)).files, owner.clone());
+        client_files_insert(&mut (*client_rc_ptr(&(*cf).c)).files, owner.clone());
     }
     return owner;
 }
 unsafe fn file_destroy(cf: &mut client_file) {
-    client_files_remove(cf);
+    client_files_remove(&mut *cf);
     if let Some(client) = cf.c.take() {
         server_client_unref_owned(client);
     }
@@ -238,7 +238,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     drop(callback);
     // Completion retires the stream even if a lookup guard still retains its
     // allocation. Final Drop remains an idempotent unlink fallback.
-    client_files_remove(cf);
+    client_files_remove(&mut *cf);
 }
 /// Own completion until dispatch or cancellation. Both paths retire the index
 /// entry while a typed owner still keeps the file and its callback data alive.
@@ -246,7 +246,7 @@ struct FileCompletion(Rc<UnsafeCell<client_file>>);
 
 impl Drop for FileCompletion {
     fn drop(&mut self) {
-        unsafe { client_files_remove(rc::as_ptr(&self.0)); }
+        unsafe { client_files_remove(&mut *self.0.get()); }
     }
 }
 
@@ -844,7 +844,7 @@ unsafe fn file_write_finished(mut cf: *mut client_file) {
             buffer: None,
         });
     }
-    client_files_remove(cf);
+    client_files_remove(&mut *cf);
 }
 unsafe fn file_write_error_callback(
     mut what: ::core::ffi::c_short,
@@ -1056,7 +1056,7 @@ unsafe fn file_read_error_callback(
     );
     bufferevent_free((*cf).event);
     close((*cf).fd);
-    client_files_remove(cf);
+    client_files_remove(&mut *cf);
 }
 unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = owner.get();
@@ -1328,12 +1328,12 @@ pub fn client_files_find(
 }
 
 pub unsafe fn client_files_insert(
-    head: *mut client_files,
+    head: &mut client_files,
     file: Rc<UnsafeCell<client_file>>,
 ) -> Option<Rc<UnsafeCell<client_file>>> {
     let elm = rc::as_ptr(&file);
     let key = client_files_key(&*elm);
-    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let owner = head.storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
         .try_borrow_mut()
@@ -1348,8 +1348,8 @@ pub unsafe fn client_files_insert(
 
 /// Unlink by identity, including during final Rc Drop when upgrade cannot work.
 /// The head retains its empty index until it is dropped or replaced.
-pub unsafe fn client_files_remove(elm: *mut client_file) {
-    let Some(owner) = (*elm).entry.owner.take() else {
+pub fn client_files_remove(elm: &mut client_file) {
+    let Some(owner) = elm.entry.owner.take() else {
         return;
     };
     let mut map = match owner.try_borrow_mut() {
@@ -1360,7 +1360,7 @@ pub unsafe fn client_files_remove(elm: *mut client_file) {
     let key = client_files_key(&*elm);
     if map
         .get(&key)
-        .is_some_and(|file| rc::as_ptr(file) == elm)
+        .is_some_and(|file| Rc::downgrade(file).ptr_eq(&elm.observer))
     {
         let file = map.remove(&key);
         drop(map);
@@ -1376,7 +1376,7 @@ pub fn client_files_minmax(head: &client_files) -> Option<Rc<UnsafeCell<client_f
     map.values().next().cloned()
 }
 
-pub unsafe fn client_files_next(elm: &client_file) -> Option<Rc<UnsafeCell<client_file>>> {
+pub fn client_files_next(elm: &client_file) -> Option<Rc<UnsafeCell<client_file>>> {
     let owner = elm.entry.owner.as_ref()?;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
@@ -1425,7 +1425,7 @@ mod file_index_ownership_tests {
         unsafe {
             let mut files = client_files::default();
             let first = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
-            client_files_remove(rc::as_ptr(&first));
+            client_files_remove(&mut *first.get());
             drop(first);
             assert!(
                 files
@@ -1446,7 +1446,7 @@ mod file_index_ownership_tests {
             let found = client_files_minmax(&files).unwrap();
             assert_eq!(rc::as_ptr(&found), rc::as_ptr(&replacement));
             drop(found);
-            client_files_remove(rc::as_ptr(&replacement));
+            client_files_remove(&mut *replacement.get());
             drop(replacement);
             assert!(client_files_minmax(&files).is_none());
         }

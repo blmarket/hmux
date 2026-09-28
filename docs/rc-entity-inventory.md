@@ -1907,3 +1907,15 @@ the borrowed handle explicitly to extend ownership beyond dispatch.
 completion callback can retain its client after the file leaves the index and is
 freed, then release the client by dropping its saved handle. File-index removal
 and other internal raw projections remain pending.
+
+## Implemented borrowed file-index boundaries
+
+File-index removal is safe Rust taking a mutable file borrow and comparing weak
+allocation identities. It requires no upgrade, preserving final-drop cleanup and
+idempotent removal after terminal completion. Next-file lookup is also safe Rust;
+insertion takes a mutable index borrow and still consumes an owning file handle.
+Callers in completion, cancellation, I/O cleanup and tests use the borrowed API.
+
+`cargo test --workspace` and `git diff --check` passed, including index replacement,
+retained lookup guards and completion cancellation coverage. Internal file/peer
+projections and legacy file-transfer entry points remain pending.
