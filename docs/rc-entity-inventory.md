@@ -1589,3 +1589,14 @@ reads the raw parent-window relationship.
 
 `cargo test --workspace` and `git diff --check` passed. Caller-local raw
 projections, parent-window links and remaining geometry APIs are still pending.
+
+## Implemented borrowed window pane counting
+
+Pane counting borrows the window and traverses its ordered weak entries directly,
+retaining each upgraded pane during the floating-state query. It no longer keeps
+raw pane traversal pointers or performs repeated next-pane lookups. Layout,
+formatting, command, tree-mode and teardown callers supply window borrows.
+
+`cargo test --workspace` and `git diff --check` passed. Floating-state layout
+access, caller-local raw window projections and other traversal APIs remain
+pending.

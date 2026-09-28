@@ -253,7 +253,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -
     let mut Zflag: ::core::ffi::c_int = args_has(args, 'Z' as i32 as u_char);
     if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(args, 'l' as i32 as u_char) != 0 {
         lastwp = window_pane_stack_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if lastwp.is_null() && window_count_panes(w, 1 as ::core::ffi::c_int) == 2 as u_int {
+        if lastwp.is_null() && window_count_panes(&*w, 1 as ::core::ffi::c_int) == 2 as u_int {
             lastwp = window_pane_previous((*w).active).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             if lastwp.is_null() {
                 lastwp = window_pane_next((*w).active).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

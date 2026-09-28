@@ -169,7 +169,7 @@ unsafe fn cmd_break_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         }
     }
     server_unzoom_window(w);
-    if window_count_panes(w, 1 as ::core::ffi::c_int) == 1 as u_int {
+    if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
         if let Err(link_error) = server_link_window(
             src_s,
             wl,

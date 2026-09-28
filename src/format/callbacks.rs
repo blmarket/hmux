@@ -3096,7 +3096,7 @@ unsafe fn format_cb_window_panes(mut ft: *mut format_tree) -> Option<CString> {
         return Some(
             CString::new(format!(
                 "{}",
-                (window_count_panes(format_window, 1 as ::core::ffi::c_int)) as u32
+                (window_count_panes(&*format_window, 1 as ::core::ffi::c_int)) as u32
             ))
             .expect("formatted numbers contain no NUL"),
         );

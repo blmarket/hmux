@@ -638,7 +638,7 @@ unsafe fn window_tree_build(
             }
         }
         3 => {
-            if window_count_panes((*(*data).fs.wl_ptr()).window_ptr(), 1 as ::core::ffi::c_int) == 1 as u_int {
+            if window_count_panes(&*(*(*data).fs.wl_ptr()).window_ptr(), 1 as ::core::ffi::c_int) == 1 as u_int {
                 *tag = (*data).fs.wl_ptr() as uint64_t;
             } else {
                 *tag = (*data).fs.wp_ptr() as uint64_t;
@@ -1063,7 +1063,7 @@ unsafe fn window_tree_draw_window(
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    total = window_count_panes(w, 1 as ::core::ffi::c_int);
+    total = window_count_panes(&*w, 1 as ::core::ffi::c_int);
     if (*data).hide_preview_this_pane != 0 && (*mode_pane).window == w {
         total = total.wrapping_sub(1);
     }

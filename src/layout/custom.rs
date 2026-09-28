@@ -435,7 +435,7 @@ pub unsafe fn layout_parse(
         return -(1 as ::core::ffi::c_int);
     }
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
-    npanes = window_count_panes(w, with_floating);
+    npanes = window_count_panes(&*w, with_floating);
     if npanes == 0 as u_int {
         layout_format_cause!(pctx.cause.as_deref_mut(), "window @{} has no panes", (*w).id,);
     } else {
@@ -612,7 +612,7 @@ unsafe fn layout_assign_fallback_tiled(
 unsafe fn layout_assign_fallback(mut w: *mut window, mut lcroot: *mut layout_cell, floating: &mut Vec<Box<layout_cell>>) {
     let panes = (*w).panes.snapshot();
     layout_assign_fallback_tiled(&mut panes.iter().cloned(), lcroot);
-    if window_count_panes(w, 1 as ::core::ffi::c_int) > 1 as u_int
+    if window_count_panes(&*w, 1 as ::core::ffi::c_int) > 1 as u_int
         && (*lcroot).type_0 as ::core::ffi::c_uint
             == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {

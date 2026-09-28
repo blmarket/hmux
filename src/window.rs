@@ -1704,7 +1704,7 @@ pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
     if (*w).flags & WINDOW_ZOOMED != 0 {
         return -(1 as ::core::ffi::c_int);
     }
-    if window_count_panes(w, 1 as ::core::ffi::c_int) == 1 as u_int {
+    if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
         return -(1 as ::core::ffi::c_int);
     }
     if (*w).active != wp
@@ -2080,19 +2080,17 @@ pub unsafe fn window_pane_last_index(wp: &window_pane) -> Option<u32> {
         .map(|position| position as u32)
 }
 pub unsafe fn window_count_panes(
-    mut w: *mut window,
-    mut with_floating: ::core::ffi::c_int,
+    w: &window,
+    with_floating: ::core::ffi::c_int,
 ) -> u_int {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut n: u_int = 0 as u_int;
-    wp = window_pane_first(w).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        if with_floating != 0 || window_pane_is_floating(&*wp) == 0 {
-            n = n.wrapping_add(1);
+    w.panes.storage.as_deref().into_iter().flatten().fold(0, |count, observer| {
+        let pane = observer.upgrade().expect("live pane in ordering");
+        if with_floating != 0 || window_pane_is_floating(&*pane.get()) == 0 {
+            count.wrapping_add(1)
+        } else {
+            count
         }
-        wp = window_pane_next(wp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    }
-    return n;
+    })
 }
 pub unsafe fn window_destroy_panes(w: *mut window) {
     while let Some(owner) = window_pane_stack_first(w) {

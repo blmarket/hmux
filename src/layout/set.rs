@@ -192,7 +192,7 @@ unsafe fn layout_set_even(mut w: *mut window, mut type_0: layout_type) {
         b"layout_set_even\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
-    n = window_count_panes(w, 0 as ::core::ffi::c_int);
+    n = window_count_panes(&*w, 0 as ::core::ffi::c_int);
     if n <= 1 as u_int {
         return;
     }
@@ -304,7 +304,7 @@ unsafe fn layout_set_main_h(mut w: *mut window) {
         b"layout_set_main_h\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
-    n = window_count_panes(w, 0 as ::core::ffi::c_int);
+    n = window_count_panes(&*w, 0 as ::core::ffi::c_int);
     if n <= 1 as u_int {
         return;
     }
@@ -462,7 +462,7 @@ unsafe fn layout_set_main_h_mirrored(mut w: *mut window) {
         b"layout_set_main_h_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
-    n = window_count_panes(w, 0 as ::core::ffi::c_int);
+    n = window_count_panes(&*w, 0 as ::core::ffi::c_int);
     if n <= 1 as u_int {
         return;
     }
@@ -620,7 +620,7 @@ unsafe fn layout_set_main_v(mut w: *mut window) {
         b"layout_set_main_v\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
-    n = window_count_panes(w, 0 as ::core::ffi::c_int);
+    n = window_count_panes(&*w, 0 as ::core::ffi::c_int);
     if n <= 1 as u_int {
         return;
     }
@@ -778,7 +778,7 @@ unsafe fn layout_set_main_v_mirrored(mut w: *mut window) {
         b"layout_set_main_v_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
-    n = window_count_panes(w, 0 as ::core::ffi::c_int);
+    n = window_count_panes(&*w, 0 as ::core::ffi::c_int);
     if n <= 1 as u_int {
         return;
     }
@@ -940,7 +940,7 @@ unsafe fn layout_set_tiled(mut w: *mut window) {
         b"layout_set_tiled\0" as *const u8 as *const ::core::ffi::c_char,
         1 as u_int,
     );
-    n = window_count_panes(w, 0 as ::core::ffi::c_int);
+    n = window_count_panes(&*w, 0 as ::core::ffi::c_int);
     if n <= 1 as u_int {
         return;
     }
