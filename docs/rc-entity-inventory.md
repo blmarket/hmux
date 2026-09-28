@@ -1610,3 +1610,14 @@ pane owner; regex/glob behavior and one-based result numbering are unchanged.
 
 `cargo test --workspace` and `git diff --check` passed. Other format-expression
 raw locals, pane model fields and remaining pane helper APIs remain pending.
+
+## Implemented retained pane geometry lookup
+
+Full-size geometry lookup borrows a retained pane Rc and returns its offset/size
+tuple instead of writing through four raw output pointers. Containment checks
+also borrow a retained pane, and coordinate/directional lookup passes its existing
+source or candidate owner. Modal mouse handling forwards its retained handle.
+
+`cargo test --workspace` and `git diff --check` passed, including coordinate-pane
+ownership coverage. Internal pane/window projections and scrollbar/layout helper
+APIs remain pending.

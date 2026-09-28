@@ -2202,7 +2202,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
         px = px.wrapping_add((*m).ox);
         py = py.wrapping_add((*m).oy);
         let modal_owner = (*w).modal.upgrade();
-        if let Some(modal) = modal_owner.filter(|owner| window_pane_contains(owner.get(), px, py) == 0) {
+        if let Some(modal) = modal_owner.filter(|owner| window_pane_contains(owner, px, py) == 0) {
             if modal.get() == lwp
                 && (*c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int
                 && (type_0 as ::core::ffi::c_uint
