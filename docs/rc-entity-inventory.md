@@ -2552,3 +2552,10 @@ empty handle. The raw-field count is 47.
 readiness checks that the owner survives; wait completion takes and upgrades
 the observer before reporting status and continuing the queue. The raw-field
 count is 46.
+
+## Implemented weak parser command item
+
+`cmd_parse_input.item` now observes a queue item weakly. Verbose printing and
+format expansion keep an upgrade for their synchronous work; source parsing
+without a command uses an empty observer. The prepared-command test now uses
+an owned queue item. The raw-field count is 45.

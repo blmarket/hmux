@@ -112,7 +112,7 @@ pub unsafe fn load_cfg(
         flags: 0,
         file: None,
         line: 0,
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -144,7 +144,7 @@ pub unsafe fn load_cfg(
     pi.flags = flags;
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
-    pi.item = item;
+    pi.set_item(item);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     pr = cmd_parse_from_file(stream.as_ptr(), &raw mut pi);
     drop(stream);
@@ -201,7 +201,7 @@ pub unsafe fn load_cfg_from_buffer(
         flags: 0,
         file: None,
         line: 0,
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -222,7 +222,7 @@ pub unsafe fn load_cfg_from_buffer(
     pi.flags = flags;
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;
-    pi.item = item;
+    pi.set_item(item);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     pr = cmd_parse_from_buffer(buf, len, &raw mut pi);
     if pr.status as ::core::ffi::c_uint

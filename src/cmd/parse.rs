@@ -101,18 +101,20 @@ pub fn cmd_parse_error_uppercase_first(error: &mut Option<CString>) {
     *cause = CString::from_vec_with_nul(bytes).expect("cause remains NUL terminated");
 }
 unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_list) {
-    if (*pi).item.is_null() || !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
+    if !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
         return;
     }
+    let Some(item_owner) = (*pi).item.upgrade() else { return };
+    let item = item_owner.get();
     let s = cmd_list_print_cstring(cmdlist, 0);
     if (*pi).file.is_some() {
-        cmdq_print((*pi).item, |out| {
+        cmdq_print(item, |out| {
             write_cstr(out, (*pi).file_ptr())?;
             write!(out, ":{}: ", ((*pi).line) as u32)?;
             out.write_all(s.as_bytes())
         });
     } else {
-        cmdq_print((*pi).item, |out| {
+        cmdq_print(item, |out| {
             write!(out, "{}: ", ((*pi).line) as u32)?;
             out.write_all(s.as_bytes())
         });
@@ -153,7 +155,9 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
                 cmd_find_from_client(&raw mut fs, client_ptr, 0);
                 &raw mut fs
             };
-            let ft = format_create_with_client(client_owner.as_ref(), (*pi).item, FORMAT_NONE, FORMAT_NOJOBS);
+            let item_owner = pi.item.upgrade();
+            let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            let ft = format_create_with_client(client_owner.as_ref(), item, FORMAT_NONE, FORMAT_NOJOBS);
             format_defaults(ft, client_ptr, (*fsp).s_ptr(), (*fsp).wl_ptr(), (*fsp).wp_ptr());
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(ft);
@@ -431,7 +435,7 @@ pub unsafe fn cmd_parse_from_file(
         flags: 0,
         file: None,
         line: 0,
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -462,7 +466,7 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
         flags: 0,
         file: None,
         line: 0,
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -508,7 +512,7 @@ pub unsafe fn cmd_parse_from_buffer(
         flags: 0,
         file: None,
         line: 0,
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,
@@ -558,7 +562,7 @@ pub unsafe fn cmd_parse_from_arguments(
         flags: 0,
         file: None,
         line: 0,
-        item: ::core::ptr::null_mut::<cmdq_item>(),
+        item: std::rc::Weak::new(),
         c: Default::default(),
         fs: cmd_find_state {
             flags: 0,

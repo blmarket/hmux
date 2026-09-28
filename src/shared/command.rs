@@ -413,13 +413,17 @@ pub struct cmd_parse_input {
     pub flags: ::core::ffi::c_int,
     pub file: Option<::std::ffi::CString>,
     pub line: u_int,
-    pub item: *mut cmdq_item,
+    pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     /// Parser context observes the client; prepared commands own it separately.
     pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
     pub fs: cmd_find_state,
 }
 
 impl cmd_parse_input {
+    pub unsafe fn set_item(&mut self, item: *mut cmdq_item) {
+        self.item = item.as_ref().map_or_else(std::rc::Weak::new, |item| item.observer.clone());
+    }
+
     pub fn file_ptr(&self) -> *const ::core::ffi::c_char {
         self.file
             .as_ref()

@@ -770,11 +770,11 @@ mod ownership_tests {
             command.args = Some(source);
             command.file = Some(CString::new(b"source\xff.conf".as_slice()).unwrap());
             command.line = 17;
-            let mut item = cmdq_item::empty();
-            item.target_client = std::rc::Rc::downgrade(&client);
+            let item = crate::src::cmd::queue::cmdq_get_callback_owned(c"parse test".as_ptr(), None);
+            (*item).target_client = std::rc::Rc::downgrade(&client);
             let state = args_make_commands_prepare(
                 &mut command,
-                &mut item,
+                item,
                 0,
                 c"display-message %1".as_ptr(),
                 1,
@@ -789,7 +789,7 @@ mod ownership_tests {
                 b"source\xff.conf"
             );
             assert_eq!(state.pi.line, 17);
-            assert_eq!(state.pi.item, &mut item as *mut _);
+            assert!(state.pi.item.ptr_eq(&(*item).observer));
             assert_eq!(
                 args_make_commands_get_command_cstring(&state).as_bytes(),
                 b"display-message"
@@ -799,6 +799,7 @@ mod ownership_tests {
                 b"display-message %1"
             );
             drop(state);
+            crate::src::cmd::queue::cmdq_free_detached(item);
             assert!(observer.upgrade().is_some(), "client cleanup is deferred");
             crate::src::reactor::shutdown_runtime();
             assert!(observer.upgrade().is_none());
@@ -998,7 +999,7 @@ pub unsafe fn args_make_commands_prepare(
         )
     ));
     if wait != 0 {
-        state.pi.item = item;
+        state.pi.set_item(item);
     }
     let (source, line) = cmd_get_source(&*self_0);
     state.pi.line = line;
