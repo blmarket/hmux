@@ -19,7 +19,7 @@ use super::screen::screen;
 use super::spawn::spawn_editor_state;
 use super::status::status_prompt_input_cb;
 use super::style::{style, style_line_entry};
-use super::window::{window, window_mode_entry};
+use super::window::{window, window_mode, window_mode_entry};
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct window_pane_offset {
@@ -294,6 +294,11 @@ pub struct window_pane_modes {
 impl window_pane_modes {
     pub fn is_empty(&self) -> bool {
         self.storage.as_ref().is_none_or(|storage| storage.entries.is_empty())
+    }
+
+    pub fn active_mode(&self) -> Option<&'static window_mode> {
+        let entry = self.storage.as_ref()?.entries.first()?;
+        Some(entry.try_borrow_mut().expect("active pane mode already borrowed").mode)
     }
 
     /// Observe the current entry without retaining the pane-owned allocation.

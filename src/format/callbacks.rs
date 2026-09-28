@@ -2230,16 +2230,8 @@ unsafe fn format_cb_pane_marked_set(mut ft: *mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_pane_mode(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    if !format_pane.is_null() {
-        wme = (*format_pane).modes.active_ptr();
-        if !wme.is_null() {
-            return Some(CStr::from_ptr((*(*wme).mode).name.as_ptr()).to_owned());
-        }
-        return None;
-    }
-    return None;
+    let pane = &*format_pane_owner?.get();
+    pane.modes.active_mode().map(|mode| mode.name.to_owned())
 }
 unsafe fn format_cb_pane_path(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();

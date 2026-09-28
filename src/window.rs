@@ -2991,16 +2991,16 @@ pub unsafe fn window_pane_set_mode(
     let mut w: *mut window = (*wp).window_ptr();
     let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if !(*wp).modes.is_empty() {
-        if std::ptr::eq((*(*wp).modes.active_ptr()).mode, mode) {
+    if let Some(active) = (*wp).modes.active_mode() {
+        if std::ptr::eq(active, mode) {
             return 1 as ::core::ffi::c_int;
         }
-        if (*(*(*wp).modes.active_ptr()).mode).flags & WINDOW_MODE_NO_STACK != 0 {
+        if active.flags & WINDOW_MODE_NO_STACK != 0 {
             window_pane_reset_mode(pane_owner);
         }
     }
-    if !(*wp).modes.is_empty() {
-        oname = (*(*(*wp).modes.active_ptr()).mode).name.as_ptr();
+    if let Some(active) = (*wp).modes.active_mode() {
+        oname = active.name.as_ptr();
     }
     let existing = (*wp)
         .modes
@@ -3986,11 +3986,11 @@ pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
     screen_set_default_cursor(&mut *(*wp).screen_ptr(), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
 }
 pub unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
-    if !wp.modes.is_empty() {
-        if std::ptr::eq((*wp.modes.active_ptr()).mode, &window_copy_mode) {
+    if let Some(active) = wp.modes.active_mode() {
+        if std::ptr::eq(active, &window_copy_mode) {
             return 1 as ::core::ffi::c_int;
         }
-        if std::ptr::eq((*wp.modes.active_ptr()).mode, &window_view_mode) {
+        if std::ptr::eq(active, &window_view_mode) {
             return 2 as ::core::ffi::c_int;
         }
     }
