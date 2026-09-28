@@ -2335,3 +2335,11 @@ snapshots the option when word selection starts, so later cursor movement reads
 its own stable string even if the option entry is replaced. A focused regression
 replaces that option and verifies the stored selection still reads the original
 bytes. The field inventory now counts 84 remaining in-scope raw fields.
+
+## Implemented owned spawn window names
+
+`spawn_context.name` now stores `Option<CString>`. New-window and new-session
+snapshot the requested name while their argument storage is live. Spawn logging
+borrows the name, and window creation clones it into the window. An absent name
+continues to select the default. The field inventory now counts 83 remaining
+in-scope raw fields.

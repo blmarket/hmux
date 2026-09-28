@@ -83,7 +83,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
         tc: None,
         wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: None,
         argv: Vec::new(),
         environ: None,
         idx: 0,
@@ -203,7 +203,7 @@ unsafe fn cmd_new_window_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) ->
     sc.item = item;
     sc.s = (*s).observer.upgrade();
     sc.tc = tc_owner.clone();
-    sc.name = wname;
+    sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());

@@ -56,7 +56,7 @@ unsafe fn cmd_respawn_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) 
         tc: None,
         wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: None,
         argv: Vec::new(),
         environ: None,
         idx: 0,

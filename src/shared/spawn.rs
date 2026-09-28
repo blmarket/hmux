@@ -41,7 +41,7 @@ pub struct spawn_context {
     pub tc: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
     pub wp0: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     pub lc: *mut layout_cell,
-    pub name: *const ::core::ffi::c_char,
+    pub name: Option<std::ffi::CString>,
     pub argv: Vec<std::ffi::CString>,
     pub environ: Option<Box<environ>>,
     pub idx: ::core::ffi::c_int,

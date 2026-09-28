@@ -128,16 +128,12 @@ unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_con
     let s = session_owner.get();
     let mut wl: *mut winlink = (*sc).wl;
     let wp0 = (*sc).wp0.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut name: *const ::core::ffi::c_char = if (*sc).name.is_null() {
-        b"none\0" as *const u8 as *const ::core::ffi::c_char
-    } else {
-        (*sc).name
-    };
+    let name = (*sc).name.as_deref().unwrap_or(c"none");
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
     log_debug(format_args!(
         "{}: name={}, flags={}",
         log_cstr((from) as *const _),
-        log_cstr((name) as *const _),
+        log_cstr(name.as_ptr()),
         log_hex((((*sc).flags) as u32) as u64)
     ));
     if !wl.is_null() && !wp0.is_null() {
@@ -399,12 +395,12 @@ pub unsafe fn spawn_window(
         return ::core::ptr::null_mut::<winlink>();
     }
     if !(*sc).flags & SPAWN_RESPAWN != 0 {
-        if (*sc).name.is_null() {
+        if (*sc).name.is_none() {
             drop(window_replace_name(w, default_window_name_cstring(&*w)));
         } else {
             drop(window_replace_name(
                 w,
-                CStr::from_ptr((*sc).name).to_owned(),
+                (*sc).name.as_ref().expect("requested window name").clone(),
             ));
             options_set_number(
                 options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
@@ -1090,7 +1086,7 @@ pub(crate) unsafe fn spawn_editor(
         tc: None,
         wp0: None,
         lc: ::core::ptr::null_mut::<layout_cell>(),
-        name: ::core::ptr::null::<::core::ffi::c_char>(),
+        name: None,
         argv: Vec::new(),
         environ: None,
         idx: 0,
@@ -1234,7 +1230,7 @@ mod tests {
                 item: std::ptr::null_mut(), s: Some(session_owner.clone()),
                 wl: std::ptr::null_mut(), tc: Some(owner.clone()),
                 wp0: Some(pane_owner.clone()), lc: std::ptr::null_mut(),
-                name: std::ptr::null(), argv: Vec::new(), environ: None,
+                name: None, argv: Vec::new(), environ: None,
                 idx: 0, cwd: std::ptr::null(), flags: 0,
             };
             drop(owner);
