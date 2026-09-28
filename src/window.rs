@@ -4661,7 +4661,7 @@ mod pane_input_owner_tests {
         (*file).wait_client = Some(Rc::downgrade(client));
         data.file = (*file).observer.clone();
         (*file).cb = data.into_callback();
-        (*item).wait_file = Some((*file).observer.clone());
+        (*item).wait_file = (*file).observer.clone();
         (*item).flags = CMDQ_WAITING;
         owner
     }
@@ -4702,7 +4702,7 @@ mod pane_input_owner_tests {
             drop(owner);
             event_loop();
             assert_eq!((*item).flags & CMDQ_WAITING, 0);
-            assert!((*item).wait_file.is_none());
+            assert!(Weak::ptr_eq(&(*item).wait_file, &Weak::new()));
             assert!(file_observer.upgrade().is_none());
             assert!(client_observer.upgrade().is_none());
             cmdq_free_detached(item);
@@ -4727,7 +4727,7 @@ mod pane_input_owner_tests {
                 pane.flags = PANE_EMPTY;
                 pane.id = u_int::MAX;
                 assert_eq!(window_pane_start_input(&mut pane, item), Ok(0));
-                let file_owner = (*item).wait_file.as_ref().unwrap().upgrade().unwrap();
+                let file_owner = (*item).wait_file.upgrade().unwrap();
                 let file = rc::as_ptr(&file_owner);
                 assert!(!file.is_null());
                 assert!((*file).cb.is_some());
@@ -4739,7 +4739,7 @@ mod pane_input_owner_tests {
                 }
                 drop(file_owner);
                 event_loop();
-                assert!((*item).wait_file.is_none());
+                assert!(Weak::ptr_eq(&(*item).wait_file, &Weak::new()));
                 if !cancel {
                     assert_eq!((*item).flags & CMDQ_WAITING, 0);
                 }
@@ -4771,7 +4771,7 @@ mod pane_input_owner_tests {
                 drop(owner);
                 event_loop();
                 assert_eq!((*item).flags & CMDQ_WAITING != 0, dead);
-                assert!((*item).wait_file.is_none());
+                assert!(Weak::ptr_eq(&(*item).wait_file, &Weak::new()));
                 assert!(file_observer.upgrade().is_none());
                 assert!(client_observer.upgrade().is_none());
                 cmdq_free_detached(item);

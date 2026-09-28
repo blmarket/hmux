@@ -2751,3 +2751,8 @@ preserving the rule that expiry never redirects input to the queue client.
 `cmd_command_prompt_cdata.wp` also uses an empty `Weak` for a status prompt.
 Pane prompts retain a distinct weak allocation identity after expiry, so an
 expired pane closes the prompt instead of switching to the status line.
+
+`cmdq_item.wait_file` now uses an empty `Weak` for no file wait. Completion or
+cancellation clears the matching allocation identity before removing the queue
+item. An expired but uncleared file identity still fails the queue-removal
+assertion, preserving the cleanup invariant.

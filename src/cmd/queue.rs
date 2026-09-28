@@ -62,7 +62,7 @@ unsafe fn cmdq_new_named_item(label: Option<&CStr>) -> *mut cmdq_item {
     let owner = std::rc::Rc::new(std::cell::UnsafeCell::new(cmdq_item {
         name: None,
         cancel_data: None,
-        wait_file: None,
+        wait_file: std::rc::Weak::new(),
         ..cmdq_item::empty()
     }));
     let item = owner.get();
@@ -112,16 +112,19 @@ pub(crate) fn cmdq_set_wait_file(
     item: &mut cmdq_item,
     file: &std::rc::Rc<std::cell::UnsafeCell<client_file>>,
 ) {
-    assert!(item.wait_file.is_none(), "queue item already has a file wait");
-    item.wait_file = Some(std::rc::Rc::downgrade(file));
+    assert!(
+        std::rc::Weak::ptr_eq(&item.wait_file, &std::rc::Weak::new()),
+        "queue item already has a file wait"
+    );
+    item.wait_file = std::rc::Rc::downgrade(file);
 }
 
 pub(crate) fn cmdq_clear_wait_file(
     item: &mut cmdq_item,
     file: &std::rc::Weak<std::cell::UnsafeCell<client_file>>,
 ) {
-    if item.wait_file.as_ref().is_some_and(|waiting| waiting.ptr_eq(file)) {
-        item.wait_file = None;
+    if item.wait_file.ptr_eq(file) {
+        item.wait_file = std::rc::Weak::new();
     }
 }
 
@@ -134,7 +137,7 @@ pub(crate) unsafe fn cmdq_abort_file_wait(owner: &std::rc::Rc<std::cell::UnsafeC
     if first.is_null() || (*first).flags & CMDQ_WAITING == 0 {
         return;
     }
-    let Some(file) = (*first).wait_file.as_ref().and_then(std::rc::Weak::upgrade) else {
+    let Some(file) = (*first).wait_file.upgrade() else {
         return;
     };
     file_cancel_cmdq_wait(&file);
@@ -459,7 +462,7 @@ pub unsafe fn cmdq_continue(mut item: *mut cmdq_item) {
 }
 unsafe fn cmdq_remove(mut item: *mut cmdq_item) {
     assert!(
-        (*item).wait_file.is_none(),
+        std::rc::Weak::ptr_eq(&(*item).wait_file, &std::rc::Weak::new()),
         "file wait must finish or cancel before queue item removal"
     );
     cmdq_cancel_unfired_data(&mut *item);

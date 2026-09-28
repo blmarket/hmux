@@ -159,7 +159,7 @@ pub struct cmdq_item {
     pub cmd: refbox::Weak<cmd>,
     pub cb: cmdq_cb,
     pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
-    pub(crate) wait_file: Option<std::rc::Weak<std::cell::UnsafeCell<super::client::client_file>>>,
+    pub(crate) wait_file: std::rc::Weak<std::cell::UnsafeCell<super::client::client_file>>,
 }
 
 impl cmdq_item {
