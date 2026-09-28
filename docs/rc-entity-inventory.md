@@ -1994,3 +1994,16 @@ control-client, dead-client and acknowledgement behavior is preserved.
 
 `cargo test --workspace` and `git diff --check` passed. Internal file projections,
 other client access paths and raw model relationship fields remain pending.
+
+## Implemented file borrows during transfer startup
+
+Read/write transfer startup accesses its retained file through a mutable borrow.
+Write creation and wait registration are shared by both path branches; read
+callback initialization runs before acquiring the file borrow. These borrows end
+before terminal completion scheduling. The transfer Rc still owns the allocation,
+with index ownership and scheduled completion ownership unchanged. This removes
+the last explicit raw client_file declaration in file.rs; inferred raw file
+projections in other operations still require migration.
+
+`cargo test --workspace` and `git diff --check` passed, including existing file
+completion and cancellation tests. The broader model migration remains pending.

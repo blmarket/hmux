@@ -419,9 +419,7 @@ unsafe fn file_write_impl(
     mut cb: client_file_cb,
     wait: Option<(*mut cmdq_item, Option<Box<dyn FnOnce()>>)>,
 ) {
-    let transfer_owner;
     let mut current_block: u64;
-    let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut msglen: size_t = 0;
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let fresh0 = file_next_stream;
@@ -429,31 +427,26 @@ unsafe fn file_write_impl(
     let mut stream: u_int = fresh0 as u_int;
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut mode: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, cb);
+    if let Some((item, cancel_cb)) = wait {
+        file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
+    }
+    let cf = &mut *transfer_owner.get();
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, cb);
-        cf = rc::as_ptr(&transfer_owner);
-        if let Some((item, cancel_cb)) = wait {
-            file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
-        }
-        file_set_path(&mut *cf, CString::new("-").unwrap());
+        file_set_path(cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
         if client_owner.is_none_or(|owner| {
             let client = &*owner.get();
             client.flags & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0
         }) {
-            (*cf).error = EBADF;
+            cf.error = EBADF;
             current_block = 4636144702248558238;
         } else {
             current_block = 8821498768635335055;
         }
     } else {
-        transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, cb);
-        cf = rc::as_ptr(&transfer_owner);
-        if let Some((item, cancel_cb)) = wait {
-            file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
-        }
         file_set_path(
-            &mut *cf,
+            cf,
             file_get_path(client_owner.map(|owner| &*owner.get()), CStr::from_ptr(path)),
         );
         if client_owner.is_none_or(|owner| {
@@ -466,20 +459,20 @@ unsafe fn file_write_impl(
                 mode = b"wb\0" as *const u8 as *const ::core::ffi::c_char;
             }
             f = fopen(
-                ((*cf).path)
+                cf.path
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 mode,
             ) as *mut FILE;
             if f.is_null() {
-                (*cf).error = *__errno_location();
+                cf.error = *__errno_location();
             } else {
                 let file = CFile::from_raw(f).expect("fopen returned a non-null stream");
                 let write_failed =
                     fwrite(bdata, 1 as size_t, bsize, file.as_ptr()) as size_t != bsize;
                 drop(file);
                 if write_failed {
-                    (*cf).error = EIO;
+                    cf.error = EIO;
                 }
             }
             current_block = 4636144702248558238;
@@ -489,20 +482,20 @@ unsafe fn file_write_impl(
     }
     match current_block {
         8821498768635335055 => {
-            evbuffer_add(&mut *(*cf).buffer, bdata, bsize);
+            evbuffer_add(&mut *cf.buffer, bdata, bsize);
             msglen = strlen(
-                ((*cf).path)
+                cf.path
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             )
             .wrapping_add(1 as size_t)
             .wrapping_add(::core::mem::size_of::<msg_write_open>() as size_t);
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
-                (*cf).error = E2BIG;
+                cf.error = E2BIG;
             } else {
                 let mut msg = vec![0_u8; msglen];
                 let header = msg_write_open {
-                    stream: (*cf).stream,
+                    stream: cf.stream,
                     fd,
                     flags,
                 };
@@ -515,21 +508,21 @@ unsafe fn file_write_impl(
                     msg.as_mut_ptr()
                         .add(::core::mem::size_of::<msg_write_open>())
                         .cast(),
-                    ((*cf).path)
+                    cf.path
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
                         as *const ::core::ffi::c_void,
                     msglen.wrapping_sub(::core::mem::size_of::<msg_write_open>() as size_t),
                 );
                 if proc_send(
-                    (*cf).peer,
+                    cf.peer,
                     MSG_WRITE_OPEN,
                     -(1 as ::core::ffi::c_int),
                     msg.as_ptr().cast(),
                     msglen,
                 ) != 0 as ::core::ffi::c_int
                 {
-                    (*cf).error = EINVAL;
+                    cf.error = EINVAL;
                 } else {
                     return;
                 }
@@ -569,24 +562,25 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     let mut size: size_t = 0;
     let mut buffer: [::core::ffi::c_char; 8192] = [0; 8192];
     let transfer_owner = file_create_with_client(client_owner, stream as ::core::ffi::c_int, None);
-    let cf = transfer_owner.get();
     file_set_cmdq_wait(&transfer_owner, item, cancel_cb);
-    (*cf).cb = callback(Rc::downgrade(&transfer_owner));
+    let cb = callback(Rc::downgrade(&transfer_owner));
+    let cf = &mut *transfer_owner.get();
+    cf.cb = cb;
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
-        file_set_path(&mut *cf, CString::new("-").unwrap());
+        file_set_path(cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
         if client_owner.is_none_or(|owner| {
             let client = &*owner.get();
             client.flags & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0
         }) {
-            (*cf).error = EBADF;
+            cf.error = EBADF;
             current_block = 17369485759464587280;
         } else {
             current_block = 17710118112003399050;
         }
     } else {
         file_set_path(
-            &mut *cf,
+            cf,
             file_get_path(client_owner.map(|owner| &*owner.get()), CStr::from_ptr(path)),
         );
         if client_owner.is_none_or(|owner| {
@@ -594,13 +588,13 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
             client.flags & CLIENT_ATTACHED as uint64_t != 0
         }) {
             f = fopen(
-                ((*cf).path)
+                cf.path
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 b"rb\0" as *const u8 as *const ::core::ffi::c_char,
             ) as *mut FILE;
             if f.is_null() {
-                (*cf).error = *__errno_location();
+                cf.error = *__errno_location();
             } else {
                 file_owner = CFile::from_raw(f);
                 let file = file_owner
@@ -614,16 +608,16 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                         file.as_ptr(),
                     ) as size_t;
                     if ferror(file.as_ptr()) != 0 {
-                        (*cf).error = *__errno_location();
+                        cf.error = *__errno_location();
                         current_block = 17369485759464587280;
                         break;
                     } else if evbuffer_add(
-                        &mut *(*cf).buffer,
+                        &mut *cf.buffer,
                         &raw mut buffer as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
                         size,
                     ) != 0 as ::core::ffi::c_int
                     {
-                        (*cf).error = ENOMEM;
+                        cf.error = ENOMEM;
                         current_block = 17369485759464587280;
                         break;
                     } else if size != ::core::mem::size_of::<[::core::ffi::c_char; 8192]>() as usize
@@ -636,7 +630,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                     17369485759464587280 => {}
                     _ => {
                         if ferror(file.as_ptr()) != 0 {
-                            (*cf).error = EIO;
+                            cf.error = EIO;
                         }
                     }
                 }
@@ -649,7 +643,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     match current_block {
         17710118112003399050 => {
             let path = CStr::from_ptr(
-                ((*cf).path)
+                cf.path
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             )
@@ -657,10 +651,10 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
             let header_len = ::core::mem::size_of::<msg_read_open>();
             let msglen = header_len + path.len();
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
-                (*cf).error = E2BIG;
+                cf.error = E2BIG;
             } else {
                 let header = msg_read_open {
-                    stream: (*cf).stream,
+                    stream: cf.stream,
                     fd,
                 };
                 let mut msg = vec![0; msglen];
@@ -671,14 +665,14 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                 );
                 msg[header_len..].copy_from_slice(path);
                 if proc_send(
-                    (*cf).peer,
+                    cf.peer,
                     MSG_READ_OPEN,
                     -(1 as ::core::ffi::c_int),
                     msg.as_ptr().cast(),
                     msglen,
                 ) != 0 as ::core::ffi::c_int
                 {
-                    (*cf).error = EINVAL;
+                    cf.error = EINVAL;
                 } else {
                     return;
                 }
