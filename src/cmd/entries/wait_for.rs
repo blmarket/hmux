@@ -20,6 +20,8 @@ use crate::src::shared::events::{event_payload, event_payload_item, events_callb
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use std::ffi::{CStr, CString};
+use std::cell::UnsafeCell;
+use std::rc::Weak;
 
 #[repr(C)]
 pub struct wait_channel {
@@ -38,7 +40,7 @@ pub struct wait_channels {
 
 #[repr(C)]
 pub struct wait_event_item {
-    pub item: *mut cmdq_item,
+    pub item: Weak<UnsafeCell<cmdq_item>>,
     pub sink: EventSinkId,
     pub name: std::ffi::CString,
     pub filter: Option<std::ffi::CString>,
@@ -231,7 +233,9 @@ unsafe fn cmd_wait_for_item_client_name(item: *mut cmdq_item) -> CString {
         .unwrap_or_default()
 }
 unsafe fn cmd_wait_for_client_name(wei: *mut wait_event_item) -> CString {
-    cmd_wait_for_item_client_name((*wei).item)
+    (*wei).item.upgrade().map_or_else(CString::default, |item| {
+        cmd_wait_for_item_client_name(item.get())
+    })
 }
 unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
@@ -258,13 +262,13 @@ unsafe fn cmd_wait_for_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> c
     }
     return cmd_wait_for_wait(item, name, wc);
 }
-unsafe fn cmd_wait_for_event_print(mut wei: *mut wait_event_item, ep: &event_payload) {
+unsafe fn cmd_wait_for_event_print(item: *mut cmdq_item, ep: &event_payload) {
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     for epi in event_payload_items(&*ep) {
         key = event_payload_item_name(epi).as_ptr();
         if *key as ::core::ffi::c_int != '_' as i32 {
             let value = event_payload_item_print_owned(epi);
-            cmdq_print((*wei).item, |out| {
+            cmdq_print(item, |out| {
                 write_cstr(out, key)?;
                 out.write_all(b"=")?;
                 write_cstr(out, value.as_ptr().cast::<::core::ffi::c_char>())
@@ -277,17 +281,24 @@ unsafe fn cmd_wait_for_event_cb(
     payload: &mut event_payload,
     wei: *mut wait_event_item,
 ) {
-    let queue_client = cmdq_get_client((*wei).item);
+    let Some(item_owner) = (*wei).item.upgrade() else {
+        if let Some(owner) = wait_event_items_remove(&raw mut wait_event_items, wei) {
+            cmd_wait_for_event_free(owner);
+        }
+        return;
+    };
+    let item = item_owner.get();
+    let queue_client = cmdq_get_client(item);
     let ep = &*payload;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if (*wei).verbose != 0 {
-        cmd_wait_for_event_print(wei, ep);
+        cmd_wait_for_event_print(item, ep);
     }
     if !(*wei).filter.is_none() {
         ft = format_create_with_client(
             queue_client.as_ref(),
-            (*wei).item,
+            item,
             FORMAT_NONE,
             FORMAT_NOJOBS,
         );
@@ -305,13 +316,24 @@ unsafe fn cmd_wait_for_event_cb(
         }
     }
     let owner = wait_event_items_remove(&raw mut wait_event_items, wei);
-    cmdq_continue((*wei).item);
+    cmdq_continue(item);
     if let Some(owner) = owner {
         cmd_wait_for_event_free(owner);
     }
 }
 unsafe fn cmd_wait_for_event_free(owner: Box<wait_event_item>) {
     events_remove_sink(owner.sink);
+}
+
+unsafe fn cmd_wait_for_event_prune_expired(items: &mut Vec<Box<wait_event_item>>) {
+    let mut index = 0;
+    while index < items.len() {
+        if items[index].item.upgrade().is_none() {
+            cmd_wait_for_event_free(items.remove(index));
+        } else {
+            index += 1;
+        }
+    }
 }
 unsafe fn cmd_wait_for_event(
     mut item: *mut cmdq_item,
@@ -338,7 +360,7 @@ unsafe fn cmd_wait_for_event(
         return CMD_RETURN_ERROR;
     }
     let mut owner = Box::new(wait_event_item {
-        item: item,
+        item: (*item).observer.clone(),
         sink: EventSinkId::default(),
         name: CStr::from_ptr(name).to_owned(),
         filter: if filter.is_null() {
@@ -361,6 +383,7 @@ unsafe fn cmd_wait_for_event_list(
     mut item: *mut cmdq_item,
     mut name: *const ::core::ffi::c_char,
 ) -> cmd_retval {
+    cmd_wait_for_event_prune_expired(&mut *(&raw mut wait_event_items));
     for owner in (&raw const wait_event_items).as_ref().unwrap() {
         let wei = std::ptr::from_ref(owner.as_ref()).cast_mut();
         if strcmp(((*wei).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
@@ -374,6 +397,7 @@ unsafe fn cmd_wait_for_event_wake(
     mut name: *const ::core::ffi::c_char,
     mut args: *mut args,
 ) -> cmd_retval {
+    cmd_wait_for_event_prune_expired(&mut *(&raw mut wait_event_items));
     let mut client_name: *const ::core::ffi::c_char = args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut index = 0;
     while index < (&raw const wait_event_items).as_ref().unwrap().len() {
@@ -381,7 +405,9 @@ unsafe fn cmd_wait_for_event_wake(
         if !(strcmp(((*wei).name).as_ptr().cast_mut(), name) != 0 as ::core::ffi::c_int) {
             if !(strcmp(cmd_wait_for_client_name(wei).as_ptr(), client_name) != 0 as ::core::ffi::c_int) {
                 let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
-                cmdq_continue(owner.item);
+                if let Some(item) = owner.item.upgrade() {
+                    cmdq_continue(item.get());
+                }
                 cmd_wait_for_event_free(owner);
                 return CMD_RETURN_NORMAL;
             }
@@ -564,7 +590,9 @@ pub unsafe fn cmd_wait_for_flush() {
         let Some(owner) = wait_event_items_remove(&raw mut wait_event_items, wei) else {
             break;
         };
-        cmdq_continue(owner.item);
+        if let Some(item) = owner.item.upgrade() {
+            cmdq_continue(item.get());
+        }
         cmd_wait_for_event_free(owner);
         wei = wei1;
     }
@@ -601,6 +629,7 @@ pub unsafe fn cmd_wait_for_flush() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::cmd::queue::{cmdq_free_detached, cmdq_get_callback_owned};
     use std::ffi::CString;
 
     fn test_channel(name: &CStr) -> Box<wait_channel> {
@@ -712,7 +741,7 @@ mod tests {
         let mut addresses = Vec::new();
         for _ in 0..128 {
             let mut owner = Box::new(wait_event_item {
-                item: ::core::ptr::null_mut(),
+                item: Weak::new(),
                 sink: EventSinkId::default(),
                 name: name.clone(),
                 filter: None,
@@ -736,6 +765,29 @@ mod tests {
             assert!(wait_event_items_remove(&raw mut items, addresses[36]).is_none());
             assert_eq!(wait_event_item_at(&raw mut items, 36), addresses[37]);
             assert_eq!(wait_event_item_at(&raw mut items, 126), addresses[127]);
+        }
+    }
+
+    #[test]
+    fn expired_event_waiter_is_pruned_without_removing_live_waiter() {
+        unsafe {
+            let expired = cmdq_get_callback_owned(c"expired waiter".as_ptr(), None);
+            let live = cmdq_get_callback_owned(c"live waiter".as_ptr(), None);
+            let mut items = vec![
+                Box::new(wait_event_item {
+                    item: (*expired).observer.clone(), sink: EventSinkId::default(),
+                    name: c"test".to_owned(), filter: None, verbose: 0,
+                }),
+                Box::new(wait_event_item {
+                    item: (*live).observer.clone(), sink: EventSinkId::default(),
+                    name: c"test".to_owned(), filter: None, verbose: 0,
+                }),
+            ];
+            cmdq_free_detached(expired);
+            cmd_wait_for_event_prune_expired(&mut items);
+            assert_eq!(items.len(), 1);
+            assert!(items[0].item.ptr_eq(&(*live).observer));
+            cmdq_free_detached(live);
         }
     }
 }

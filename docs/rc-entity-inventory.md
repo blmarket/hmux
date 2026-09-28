@@ -2574,3 +2574,10 @@ use production detached queue items. The raw-field count is 44.
 output and completion paths retain upgrades through queue item access, and
 expired waits skip their callbacks. A separate wait flag preserves background
 output and command append behavior. The raw-field count is 43.
+
+## Implemented weak event wait item
+
+`wait_event_item.item` now observes the queue item weakly. Event dispatch
+retains an upgrade through formatting and continuation, and removes the sink
+if the item expired. Event listing and waking prune expired records; flush
+skips queue continuation for expired items. The raw-field count is 42.
