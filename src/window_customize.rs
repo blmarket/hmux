@@ -1648,11 +1648,19 @@ unsafe fn window_customize_build_environment(
         );
     }
 }
+unsafe fn window_customize_live_mode(
+    observer: &Weak<UnsafeCell<window_customize_modedata>>,
+) -> Option<Rc<UnsafeCell<window_customize_modedata>>> {
+    let owner = observer.upgrade()?;
+    if (*owner.get()).dead != 0 { return None; }
+    Some(owner)
+}
+
 unsafe fn window_customize_build(
-    mut modedata: *mut ::core::ffi::c_void,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     mut filter: *const ::core::ffi::c_char,
 ) {
-    let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
+    let data = mode_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -2856,13 +2864,13 @@ unsafe fn window_customize_draw_environment(
     }
 }
 unsafe fn window_customize_draw(
-    mut modedata: *mut ::core::ffi::c_void,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
     ctx: &mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
+    let data = mode_owner.get();
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -2876,11 +2884,11 @@ unsafe fn window_customize_draw(
     };
 }
 unsafe fn window_customize_menu(
-    mut modedata: *mut ::core::ffi::c_void,
+    mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut key: key_code,
 ) {
-    let mut data: *mut window_customize_modedata = modedata as *mut window_customize_modedata;
+    let data = mode_owner.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -2888,7 +2896,7 @@ unsafe fn window_customize_menu(
     let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active;
-    if wme.is_null() || (*wme).data != modedata {
+    if wme.is_null() || (*wme).data != data.cast() {
         return;
     }
     window_customize_key(
@@ -2957,7 +2965,9 @@ unsafe fn window_customize_init(
     data = crate::src::shared::rc::as_ptr(&owner);
     (*wme).data_owner = Some(owner);
     (*wme).data = data as *mut ::core::ffi::c_void;
-    let data_handle = std::ptr::NonNull::new(data).expect("live customize mode data");
+    let build_mode = (*data).observer.clone();
+    let draw_mode = build_mode.clone();
+    let menu_mode = build_mode.clone();
     if args_has(args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
@@ -2965,22 +2975,25 @@ unsafe fn window_customize_init(
         &mode_pane_owner,
         args,
         Some(Box::new(move |_, tag, filter| {
+            let Some(mode) = window_customize_live_mode(&build_mode) else { return tag; };
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
             window_customize_build(
-                data_handle.as_ptr().cast(),
+                &mode,
                 filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
             );
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {
+            let Some(mode) = window_customize_live_mode(&draw_mode) else { return; };
             let Some(item_owner) = itemdata.as_customize() else {
                 return;
             };
-            window_customize_draw(data_handle.as_ptr().cast(), &item_owner, ctx, sx, sy)
+            window_customize_draw(&mode, &item_owner, ctx, sx, sy)
         })),
         None,
         Some(Box::new(move |client, key| {
-            window_customize_menu(data_handle.as_ptr().cast(), client, key)
+            let Some(mode) = window_customize_live_mode(&menu_mode) else { return; };
+            window_customize_menu(&mode, client, key)
         })),
         Some(Box::new(move |_| window_customize_height())),
         None,
@@ -5174,6 +5187,14 @@ mod item_owner_tests {
             }
             assert!(first_owner.is(&(&(*data).item_list)[0]));
             let mode_observer = (*data).observer.clone();
+            let live = window_customize_live_mode(&mode_observer).unwrap();
+            assert!(Rc::ptr_eq(&live, &owner));
+            assert_eq!(Rc::strong_count(&owner), 2);
+            drop(live);
+            (*data).dead = 1;
+            assert!(window_customize_live_mode(&mode_observer).is_none());
+            (*data).dead = 0;
+            assert_eq!(Rc::strong_count(&owner), 1);
             let prompt_owner = RefBox::new(CustomizePromptItem {
                 item: window_customize_copy_item(&snapshot),
                 mode: mode_observer.upgrade().unwrap(),
@@ -5187,6 +5208,7 @@ mod item_owner_tests {
             );
             freecb.unwrap()();
             assert!(mode_observer.upgrade().is_none());
+            assert!(window_customize_live_mode(&mode_observer).is_none());
             assert!(matches!(
                 prompt_observer.try_borrow_mut(),
                 Err(refbox::BorrowError::Dropped)

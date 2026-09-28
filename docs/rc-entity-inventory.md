@@ -1345,3 +1345,16 @@ mode owns the callback-bearing tree.
 now verify live observer upgrades, temporary retention, and rejection of closed
 or expired modes. Preview helpers, prompt captures and other internal raw model
 projections remain pending.
+
+## Implemented weak customize-mode callback captures
+
+Customize mode's build, draw and menu callbacks capture Weak mode handles instead
+of NonNull raw addresses. Each upgrades and retains a live mode for invocation,
+skipping closed or expired modes. Their entry points borrow Rc mode handles,
+removing erased mode-data arguments. Weak captures avoid a cycle between the mode
+and its owned callback-bearing tree.
+
+`cargo test --workspace` and `git diff --check` passed. Existing customize lifetime
+coverage now verifies observer identity, temporary ownership and rejection after
+logical destruction or final release. Nested customize helpers and remaining
+internal raw model projections still require migration.
