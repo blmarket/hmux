@@ -3095,7 +3095,7 @@ pub unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<windo
         0 as ::core::ffi::c_int,
     );
     if kill_0 != 0 {
-        server_kill_pane(wp);
+        server_kill_pane(pane_owner);
     }
 }
 pub unsafe fn window_pane_reset_mode_all(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {

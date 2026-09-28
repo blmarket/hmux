@@ -2007,7 +2007,7 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
         }
         WINDOW_TREE_PANE => {
             if let Some(pane_owner) = target.pane.as_ref() {
-                server_kill_pane(pane_owner.get());
+                server_kill_pane(pane_owner);
             }
         }
         _ => {},

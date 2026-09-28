@@ -1495,3 +1495,14 @@ destructive code, preserving the window release-notification policy.
 `cargo test --workspace` and `git diff --check` passed. Raw projections remain at
 legacy find-state/destruction API boundaries; target resolution internals and
 other preview/key-handler raw accesses remain pending.
+
+## Implemented retained pane destruction entry points
+
+`server_kill_pane` borrows an owning pane Rc across layout and destruction calls.
+Command, modal mouse/key, mode-reset and tree-mode callers supply retained
+handles. The kill-all command keeps owning current/next traversal handles through
+filtering and removal, and its filter helper borrows the current pane owner.
+
+`cargo test --workspace` and `git diff --check` passed. Parent-window access,
+kill-all target identity, session/winlink locals and lower-level teardown APIs
+still use raw projections and remain pending.

@@ -47,7 +47,7 @@ pub static cmd_kill_pane_entry: cmd_entry = {
 unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> cmd_retval {
     let mut args: *mut args = cmd_get_args_mut(&mut *self_0).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).wp_ptr();
+    let pane_owner = (*target).wp.upgrade();
     let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
         cmdq_error(item, |out| out.write_all(b"-f only valid with -a"));
@@ -56,11 +56,11 @@ unsafe fn cmd_kill_pane_exec(mut self_0: *mut cmd, mut item: *mut cmdq_item) -> 
     if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_pane_all(item, filter);
     }
-    if wp.is_null() {
+    let Some(pane_owner) = pane_owner else {
         cmdq_error(item, |out| out.write_all(b"no active pane to kill"));
         return CMD_RETURN_ERROR;
-    }
-    server_kill_pane(wp);
+    };
+    server_kill_pane(&pane_owner);
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_pane_all(
@@ -71,22 +71,17 @@ unsafe fn cmd_kill_pane_all(
     let mut s: *mut session = (*target).s_ptr();
     let mut wl: *mut winlink = (*target).wl_ptr();
     let mut wp: *mut window_pane = (*target).wp_ptr();
-    let mut loopwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut tmpwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     server_unzoom_window((*wl).window_ptr());
-    loopwp = window_pane_first((*wl).window_ptr()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loopwp.is_null() && {
-        tmpwp = window_pane_next(loopwp).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(loopwp == wp) {
-            if !(cmd_kill_pane_filter(item, s, wl, loopwp, filter) == 0) {
-                server_client_remove_pane(loopwp);
-                layout_close_pane(loopwp);
-                window_remove_pane((*wl).window_ptr(), loopwp);
-            }
+    let mut cursor = window_pane_first((*wl).window_ptr());
+    while let Some(pane_owner) = cursor {
+        cursor = window_pane_next(pane_owner.get());
+        if pane_owner.get() != wp
+            && cmd_kill_pane_filter(item, s, wl, &pane_owner, filter) != 0
+        {
+            server_client_remove_pane(pane_owner.get());
+            layout_close_pane(pane_owner.get());
+            window_remove_pane((*wl).window_ptr(), pane_owner.get());
         }
-        loopwp = tmpwp;
     }
     server_redraw_window((*wl).window_ptr());
     return CMD_RETURN_NORMAL;
@@ -95,7 +90,7 @@ unsafe fn cmd_kill_pane_filter(
     mut item: *mut cmdq_item,
     mut s: *mut session,
     mut wl: *mut winlink,
-    mut wp: *mut window_pane,
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let queue_client = cmdq_get_client(item);
@@ -110,7 +105,7 @@ unsafe fn cmd_kill_pane_filter(
         FORMAT_NONE,
         0 as ::core::ffi::c_int,
     );
-    format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, wp);
+    format_defaults(ft, ::core::ptr::null_mut::<client>(), s, wl, pane_owner.get());
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
     format_free(ft);

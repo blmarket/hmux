@@ -297,7 +297,8 @@ pub unsafe fn server_lock_client(mut c: *mut client) {
         strlen(cmd).wrapping_add(1 as size_t),
     );
 }
-pub unsafe fn server_kill_pane(mut wp: *mut window_pane) {
+pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+    let wp = pane_owner.get();
     let mut w: *mut window = (*wp).window as *mut window;
     if window_count_panes(w, 1 as ::core::ffi::c_int) == 1 as u_int {
         server_kill_window(w, 1 as ::core::ffi::c_int);

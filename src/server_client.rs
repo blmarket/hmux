@@ -2236,7 +2236,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                         || type_0 as ::core::ffi::c_uint
                             == KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    server_kill_pane(modal.get());
+                    server_kill_pane(&modal);
                 }
                 return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
             }
@@ -3273,7 +3273,8 @@ unsafe fn server_client_handle_key0(
             && ((*event).key == '\u{1b}' as i32 as key_code
                 || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
         {
-            server_kill_pane(wp);
+            let pane_owner = (*wp).observer.upgrade().expect("live modal pane");
+            server_kill_pane(&pane_owner);
             return 0 as ::core::ffi::c_int;
         }
         if !wp.is_null()
