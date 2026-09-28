@@ -329,8 +329,7 @@ pub unsafe fn file_print(
 }
 pub unsafe fn file_print_buffer(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
-    mut data: *mut ::core::ffi::c_void,
-    mut size: size_t,
+    data: &[u8],
 ) {
     let Some(client_owner) = client_owner else { return; };
     let mut find: client_file = client_file::empty();
@@ -348,7 +347,7 @@ pub unsafe fn file_print_buffer(
         let transfer_owner = file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add(&mut *(*cf).buffer, data, size);
+        evbuffer_add(&mut *(*cf).buffer, data.as_ptr().cast(), data.len());
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -361,7 +360,7 @@ pub unsafe fn file_print_buffer(
         );
     } else {
         let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
-        evbuffer_add(&mut *(*cf).buffer, data, size);
+        evbuffer_add(&mut *(*cf).buffer, data.as_ptr().cast(), data.len());
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
