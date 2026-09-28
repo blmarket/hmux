@@ -2658,3 +2658,10 @@ Mode callbacks resolve the stable allocation through that owner; the menu
 callback checks that its captured payload still belongs to the active mode.
 Cleanup releases the Box after cancelling the editor and freeing the mode tree.
 The raw-field count remains 35.
+
+## Client mode payload ownership
+
+`window_client_modedata` now lives in the mode entry's typed boxed slot.
+The menu callback checks that its captured allocation belongs to the active
+mode, and cleanup releases the Box after freeing its mode tree. Other mode
+payloads still use the raw field, so the raw-field count remains 35.

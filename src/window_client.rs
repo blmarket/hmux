@@ -660,7 +660,7 @@ unsafe fn window_client_menu(
     let mut wp: *mut window_pane = mode_pane;
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
     wme = (*wp).modes.active_ptr();
-    if wme.is_null() || (*wme).data != modedata {
+    if wme.is_null() || (*wme).boxed_data_ptr::<window_client_modedata>() != Some(data) {
         return;
     }
     window_client_key(
@@ -730,6 +730,12 @@ fn window_client_help() -> mode_tree_help_info {
         lines: window_client_help_lines,
     }
 }
+unsafe fn window_client_data(wme: *mut window_mode_entry) -> *mut window_client_modedata {
+    (*wme)
+        .boxed_data_ptr::<window_client_modedata>()
+        .expect("client mode payload")
+}
+
 unsafe fn window_client_init(
     mut wme: *mut window_mode_entry,
     _item: *mut cmdq_item,
@@ -756,7 +762,7 @@ unsafe fn window_client_init(
     } else {
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    data = Box::into_raw(Box::new(window_client_modedata {
+    let owner = Box::new(std::cell::UnsafeCell::new(window_client_modedata {
         wp: Weak::new(),
         data: None,
         format: CStr::from_ptr(format).to_owned(),
@@ -766,7 +772,8 @@ unsafe fn window_client_init(
         preview_is_info: 0,
         items: Vec::new(),
     }));
-    (*wme).data = data as *mut ::core::ffi::c_void;
+    data = owner.get();
+    (*wme).boxed_data = Some(owner);
     let data_handle = std::ptr::NonNull::new(data).expect("live client mode data");
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
     (*data).hide_preview_this_pane =
@@ -815,30 +822,28 @@ unsafe fn window_client_init(
     return s;
 }
 unsafe fn window_client_get_screen(wme: *mut window_mode_entry) -> *mut screen {
-    let data = (*wme).data.cast::<window_client_modedata>();
-    if data.is_null() {
+    let Some(data) = (*wme).boxed_data_ptr::<window_client_modedata>() else {
         return std::ptr::null_mut();
-    }
+    };
     (*data).data.as_ref().map_or(std::ptr::null_mut(), |tree| {
         &raw mut (*tree.get()).screen
     })
 }
 
 unsafe fn window_client_free(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
-    if data.is_null() {
+    let Some(data) = (*wme).boxed_data_ptr::<window_client_modedata>() else {
         return;
-    }
+    };
     mode_tree_free((*data).data.take().expect("mode tree owner"));
     (*data).items.clear();
-    drop(Box::from_raw(data));
+    drop((*wme).boxed_data.take());
 }
 unsafe fn window_client_resize(mut wme: *mut window_mode_entry, mut sx: u_int, mut sy: u_int) {
-    let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
+    let mut data: *mut window_client_modedata = window_client_data(wme);
     mode_tree_resize((*data).data.clone().as_ref().expect("mode tree owner"), sx, sy);
 }
 unsafe fn window_client_update(mut wme: *mut window_mode_entry) {
-    let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
+    let mut data: *mut window_client_modedata = window_client_data(wme);
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -879,7 +884,7 @@ unsafe fn window_client_key(
     let mode_pane_owner = (*wme).wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut data: *mut window_client_modedata = (*wme).data as *mut window_client_modedata;
+    let mut data: *mut window_client_modedata = window_client_data(wme);
     let tree_owner = (*data).tree_owner();
     let mut finished: ::core::ffi::c_int = 0;
     finished = mode_tree_key(
