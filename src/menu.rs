@@ -253,16 +253,16 @@ pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&Me
         let Some(owner) = window.upgrade() else {
             return;
         };
-        let w = crate::src::shared::rc::as_ptr(&owner);
+        let w = &mut *owner.get();
         if expected.is_some_and(|expected| {
-            !(*w)
+            !w
                 .menu
                 .as_ref()
                 .is_some_and(|current| expected.is(current))
         }) {
             return;
         }
-        (*w).menu.take()
+        w.menu.take()
     };
     let Some(menu) = menu else {
         return;
@@ -528,7 +528,7 @@ pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<c
         MenuKeyAction::Redraw => {
             let window = owner.try_borrow_mut().expect("live unborrowed menu").w.upgrade();
             if let Some(window) = window {
-                server_redraw_window_menu(crate::src::shared::rc::as_ptr(&window));
+                server_redraw_window_menu(&window);
             }
             return 0;
         }

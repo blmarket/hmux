@@ -2184,3 +2184,15 @@ No new Rc-managed entity type is introduced.
 `cargo test --workspace` and `git diff --check` passed, including replacement
 callbacks that release the final target-window owner. Client/session link access
 and command-find/redraw raw API boundaries remain pending.
+
+## Implemented typed window input for menu redraw
+
+Menu redraw accepts a borrowed existing window Rc. Its client traversal retains
+one registry client at a time and marks clients by comparing the current link's
+window holder with Rc identity, removing raw client cursor and window-pointer
+comparison. Menu close takes its overlay through a mutable window borrow, ending
+that scope before cancellation callbacks. No new Rc-managed type is introduced.
+
+`cargo test --workspace` and `git diff --check` passed. Client/session and current
+link relationships still require unsafe acquisition; broader redraw APIs and
+remaining menu style access remain pending.

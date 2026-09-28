@@ -194,19 +194,18 @@ pub unsafe fn server_redraw_window(mut w: *mut window) {
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
-pub unsafe fn server_redraw_window_menu(mut w: *mut window) {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if !(*c).session.is_null()
-            && !(*(*c).session).curw.is_null()
-            && (*(*(*c).session).curw).window_ptr() == w
-        {
-            (*c).flags |= CLIENT_REDRAWMENU as uint64_t;
+pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+    let mut next = clients.first();
+    while let Some(client_owner) = next {
+        next = clients.next(&client_owner);
+        let client = &mut *client_owner.get();
+        let matches = client.session.as_ref()
+            .and_then(|session| session.curw.as_ref())
+            .and_then(|link| link.window_owner.as_ref())
+            .is_some_and(|current| std::rc::Rc::ptr_eq(current.as_rc(), window_owner));
+        if matches {
+            client.flags |= CLIENT_REDRAWMENU as uint64_t;
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_redraw_window_borders(mut w: *mut window) {
