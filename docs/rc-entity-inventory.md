@@ -965,3 +965,13 @@ callback survives; invoking that callback then skips dispatch.
 `cargo test --workspace` and `git diff --check` passed. The regression checks a
 cancelled timer callback, nonownership and invocation after client expiration.
 Other terminal APIs and internal model projections remain pending.
+
+## Implemented retained client path for terminal opening
+
+`server_client_open` and `tty_open` now borrow an Rc client. Attach-session and
+new-session pass their existing retained queue client through both APIs. Terminal
+opening derives the terminal from that owner and registers weak event callbacks
+directly from it, eliminating the raw terminal argument and owner reconstruction.
+
+`cargo test --workspace` and `git diff --check` passed. Other terminal APIs and
+internal raw model projections remain pending.
