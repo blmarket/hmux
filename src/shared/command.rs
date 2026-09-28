@@ -201,7 +201,8 @@ impl cmdq_item {
 /// Box-owned by a client until client destruction; the lazy global queue lives for
 /// the process. The deque owns stable command item allocations.
 pub struct cmdq_list {
-    pub item: *mut cmdq_item,
+    /// Current execution position; the deque remains its sole owner.
+    pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub list: std::collections::VecDeque<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
 }
 

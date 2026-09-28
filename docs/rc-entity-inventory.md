@@ -2478,3 +2478,11 @@ at the original boundary. A regression verifies that the strong count stays
 one across transfer and weak identities expire after queued or detached free.
 Seventeen raw queue-item observers in the audit are now migration candidates;
 the current raw-field count remains 56.
+
+## Implemented weak current queue position
+
+`cmdq_list.item` now observes the deque-owned current item through its weak
+self-handle. Queue traversal installs it, and removal, abort or empty traversal
+clears it. The legacy `cmdq_running` pointer view checks that the item remains
+owned before use. The queue removal regression verifies expiry, reducing the
+raw-field count to 55.

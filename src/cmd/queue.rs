@@ -138,7 +138,7 @@ pub(crate) unsafe fn cmdq_abort_file_wait(owner: &std::rc::Rc<std::cell::UnsafeC
         return;
     };
     file_cancel_cmdq_wait(&file);
-    (*queue).item = ::core::ptr::null_mut();
+    (*queue).item = std::rc::Weak::new();
     while !(*queue).list.is_empty() {
         cmdq_remove((*queue).first_ptr());
     }
@@ -180,7 +180,7 @@ unsafe fn cmdq_get(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>) -
 
 pub fn cmdq_new() -> Box<cmdq_list> {
     Box::new(cmdq_list {
-        item: std::ptr::null_mut(),
+        item: std::rc::Weak::new(),
         list: std::collections::VecDeque::new(),
     })
 }
@@ -467,8 +467,8 @@ unsafe fn cmdq_remove(mut item: *mut cmdq_item) {
     let queue = (*item).queue;
     let position = (*queue).position(item);
     let owner = (*queue).list.remove(position).expect("queued command item");
-    if (*queue).item == item {
-        (*queue).item = std::ptr::null_mut();
+    if (*queue).item.ptr_eq(&(*item).observer) {
+        (*queue).item = std::rc::Weak::new();
     }
     drop(owner);
 }
@@ -854,8 +854,12 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
         log_cstr(name.as_ptr())
     ));
     loop {
-        (*queue).item = (*queue).first_ptr();
-        item = (*queue).item;
+        item = (*queue).first_ptr();
+        (*queue).item = if item.is_null() {
+            std::rc::Weak::new()
+        } else {
+            (*item).observer.clone()
+        };
         if item.is_null() {
             current_block = 7056779235015430508;
             break;
@@ -916,7 +920,7 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
             return items;
         }
         _ => {
-            (*queue).item = ::core::ptr::null_mut::<cmdq_item>();
+            (*queue).item = std::rc::Weak::new();
             log_debug(format_args!(
                 "{} {}: exit (empty)",
                 "cmdq_next",
@@ -928,13 +932,14 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
 }
 pub unsafe fn cmdq_running() -> *mut cmdq_item {
     let mut queue: *mut cmdq_list = cmdq_get(None);
-    if (*queue).item.is_null() {
+    if (*queue).item.strong_count() == 0 {
         return ::core::ptr::null_mut::<cmdq_item>();
     }
-    if (*(*queue).item).flags & CMDQ_WAITING != 0 {
+    let item = (*queue).item.as_ptr().cast_mut().cast::<cmdq_item>();
+    if (*item).flags & CMDQ_WAITING != 0 {
         return ::core::ptr::null_mut::<cmdq_item>();
     }
-    return (*queue).item;
+    return item;
 }
 pub unsafe fn cmdq_guard(
     mut item: *mut cmdq_item,
@@ -1233,7 +1238,9 @@ mod item_owner_tests {
             let guard = observer.upgrade().expect("queued item owner");
             assert_eq!(guard.get(), item);
             drop(guard);
-            drop(queue.list.pop_front());
+            queue.item = observer.clone();
+            cmdq_remove(item);
+            assert_eq!(queue.item.strong_count(), 0);
             assert!(observer.upgrade().is_none());
 
             let detached = cmdq_get_callback_owned(c"detached".as_ptr(), None);
