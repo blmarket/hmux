@@ -1,5 +1,3 @@
-use crate::src::server_client::server_client_unref_owned;
-use crate::src::session::session_remove_ref;
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
@@ -155,6 +153,32 @@ fn control_add_block_with_weak(
 #[cfg(test)]
 mod control_queue_tests {
     use super::*;
+
+    #[test]
+    fn subscription_callback_releases_temporary_client_guard_on_early_exit() {
+        unsafe {
+            for dead in [false, true] {
+                let client = client::new();
+                let observed = Rc::downgrade(&client);
+                if dead {
+                    (*client.get()).flags |= crate::src::shared::client::CLIENT_DEAD as uint64_t;
+                }
+                let change = monitor_change {
+                    name: c"subscription",
+                    value: c"value",
+                    last: None,
+                    c: observed.clone(),
+                    s: std::rc::Weak::new(),
+                    wl: refbox::Weak::new(),
+                    wp: std::rc::Weak::new(),
+                };
+                control_sub_change(&change);
+                assert_eq!(Rc::strong_count(&client), 1);
+                drop(client);
+                assert!(observed.upgrade().is_none());
+            }
+        }
+    }
 
     #[test]
     fn state_block_owner_preserves_order_addresses_and_reply_accounting() {
@@ -1530,25 +1554,25 @@ unsafe fn control_sub_change(change: &monitor_change) {
     let Some(client_owner) = change.c.upgrade() else { return };
     let c = crate::src::shared::rc::as_ptr(&client_owner);
     if (*c).flags & crate::src::shared::client::CLIENT_DEAD as uint64_t != 0 {
-        server_client_unref_owned(client_owner);
+        drop(client_owner);
         return;
     }
     let Some(session_owner) = change.s.upgrade() else {
-        server_client_unref_owned(client_owner);
+        drop(client_owner);
         return;
     };
     let s = crate::src::shared::rc::as_ptr(&session_owner);
     let mut link = change.wl.try_borrow_mut().ok();
     if !change.wl.is_empty() && link.is_none() {
-        session_remove_ref(session_owner, c"control_sub_change");
-        server_client_unref_owned(client_owner);
+        drop(session_owner);
+        drop(client_owner);
         return;
     }
     let wl = link.as_mut().map_or(std::ptr::null_mut(), |link| &raw mut **link);
     let pane_owner = crate::src::window::window_pane_upgrade(&change.wp);
     if !std::rc::Weak::ptr_eq(&change.wp, &std::rc::Weak::new()) && pane_owner.is_none() {
-        session_remove_ref(session_owner, c"control_sub_change");
-        server_client_unref_owned(client_owner);
+        drop(session_owner);
+        drop(client_owner);
         return;
     }
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
@@ -1590,8 +1614,8 @@ unsafe fn control_sub_change(change: &monitor_change) {
             out.write_all(change.value.to_bytes())
         });
     };
-    session_remove_ref(session_owner, c"control_sub_change");
-    server_client_unref_owned(client_owner);
+    drop(session_owner);
+    drop(client_owner);
 }
 fn control_stream_callbacks(owner: &Rc<UnsafeCell<client>>) -> (bufferevent_data_cb, bufferevent_data_cb, bufferevent_event_cb) {
     let read = Rc::downgrade(owner);
