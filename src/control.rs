@@ -12,7 +12,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
+    bufferevent_disable, bufferevent_enable, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
     evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
     evbuffer_read, evbuffer_readln,
@@ -416,8 +416,8 @@ mod control_queue_tests {
                 };
                 let cs = client.control_state.as_deref_mut().unwrap();
                 cs.subs = Some(subs);
-                cs.read_event = read_event;
-                cs.write_event = write_event;
+                cs.read_event = crate::src::reactor::StreamHandle::from_ptr(read_event);
+                cs.write_event = crate::src::reactor::StreamHandle::from_ptr(write_event);
                 cs.windows.set(4, 80, 24);
                 cs.deferred.push_back(CString::new("deferred").unwrap());
                 control_add_block(
@@ -431,9 +431,13 @@ mod control_queue_tests {
                 pane.pending_flag = 1;
                 cs.pending_panes.push_back(wp.id);
                 cs.pending_count = 1;
+                let read_observer = cs.read_event.clone();
+                let write_observer = cs.write_event.clone();
 
                 control_stop(c);
                 assert!(client.control_state.is_none());
+                assert!(!read_observer.is_alive());
+                assert!(!write_observer.is_alive());
                 assert_eq!(
                     *order.borrow(),
                     if shared_stream {
@@ -659,7 +663,9 @@ pub unsafe fn control_pane_offset<'a>(
         *off = 1;
         return None;
     }
-    *off = (evbuffer_get_length(&*(*cs.write_event).output) >= CONTROL_BUFFER_LOW as size_t)
+    *off = (cs.write_event.with_ptr(|stream| unsafe {
+        evbuffer_get_length(&*(*stream).output)
+    }).unwrap_or(0) >= CONTROL_BUFFER_LOW as size_t)
         as ::core::ffi::c_int;
     Some(&mut cp.offset)
 }
@@ -738,7 +744,9 @@ unsafe fn control_check_reply_buffer(mut c: *mut client, mut added: size_t) -> :
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_DISCARD != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    size = evbuffer_get_length(&*((*cs.write_event).output));
+    size = cs.write_event.with_ptr(|stream| unsafe {
+        evbuffer_get_length(&*(*stream).output)
+    }).unwrap_or(0);
     size = size.wrapping_add(cs.queued_reply_bytes);
     size = size.wrapping_add(added);
     if size < CONTROL_MAXIMUM_REPLY_BUFFER as size_t {
@@ -784,17 +792,19 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
             ),
             log_cstr((line.as_ptr()) as *const _)
         ));
-        bufferevent_write(
-            cs.write_event,
-            line.as_ptr() as *const ::core::ffi::c_void,
-            size.wrapping_sub(1 as size_t),
-        );
-        bufferevent_write(
-            cs.write_event,
-            b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-            1 as size_t,
-        );
-        bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
+        let _ = cs.write_event.with_ptr(|stream| unsafe {
+            bufferevent_write(
+                stream,
+                line.as_ptr() as *const ::core::ffi::c_void,
+                size.wrapping_sub(1 as size_t),
+            );
+            bufferevent_write(
+                stream,
+                b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
+                1 as size_t,
+            );
+            bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short)
+        });
         return;
     }
     cb = control_add_block(cs, control_block::new(Some(line), 0));
@@ -816,7 +826,9 @@ unsafe fn control_write_line(c: *mut client, line: CString) {
                 as *const _
         )
     ));
-    bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
+    let _ = cs.write_event.with_ptr(|stream| unsafe {
+        bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short)
+    });
 }
 unsafe fn control_flush_deferred(c: *mut client) {
     loop {
@@ -1029,7 +1041,9 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                 cp.pending_flag = 1 as ::core::ffi::c_int;
                 cs.pending_count = cs.pending_count.wrapping_add(1);
             }
-            bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
+            let _ = cs.write_event.with_ptr(|stream| unsafe {
+                bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short)
+            });
             return;
         }
     }
@@ -1082,7 +1096,9 @@ unsafe fn control_read_callback(owner: &Rc<UnsafeCell<client>>) {
         let Some(cs) = (*c).control_state.as_deref_mut() else {
             break;
         };
-        let Some(line) = evbuffer_readln(&mut *(*cs.read_event).input) else {
+        let Some(line) = cs.read_event.with_ptr(|stream| unsafe {
+            evbuffer_readln(&mut *(*stream).input)
+        }).flatten() else {
             break;
         };
         log_debug(format_args!(
@@ -1132,7 +1148,9 @@ pub unsafe fn control_all_done(c: &client) -> ::core::ffi::c_int {
     if !control_first_block(cs).is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    return (evbuffer_get_length(&*((*cs.write_event).output)) == 0 as size_t)
+    return (cs.write_event.with_ptr(|stream| unsafe {
+        evbuffer_get_length(&*(*stream).output)
+    }).unwrap_or(0) == 0 as size_t)
         as ::core::ffi::c_int;
 }
 pub unsafe fn control_wait_exit() {
@@ -1202,23 +1220,25 @@ unsafe fn control_flush_all_blocks(mut c: *mut client) {
                     as *const _
             )
         ));
-        bufferevent_write(
-            cs.write_event,
-            ((*cb).line)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                as *const ::core::ffi::c_void,
-            strlen(
+        let Some(()) = cs.write_event.with_ptr(|stream| unsafe {
+            bufferevent_write(
+                stream,
                 ((*cb).line)
                     .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ),
-        );
-        bufferevent_write(
-            cs.write_event,
-            b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-            1 as size_t,
-        );
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
+                    as *const ::core::ffi::c_void,
+                strlen(
+                    ((*cb).line)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ),
+            );
+            bufferevent_write(
+                stream,
+                b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
+                1 as size_t,
+            );
+        }) else { break };
         control_free_block(cs, cb);
     }
 }
@@ -1323,7 +1343,9 @@ unsafe fn control_write_data(mut c: *mut client, mut message: Box<evbuffer>) {
         b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
         1 as size_t,
     );
-    bufferevent_write_buffer(cs.write_event, &mut *message);
+    let _ = cs.write_event.with_ptr(|stream| unsafe {
+        bufferevent_write_buffer(stream, &mut *message)
+    });
 }
 unsafe fn control_write_pending(
     mut c: *mut client,
@@ -1443,7 +1465,9 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
         let Some(cs) = (*c).control_state.as_deref_mut() else {
             return;
         };
-        let buffered = evbuffer_get_length(&*(*cs.write_event).output);
+        let Some(buffered) = cs.write_event.with_ptr(|stream| unsafe {
+            evbuffer_get_length(&*(*stream).output)
+        }) else { return };
         if buffered >= CONTROL_BUFFER_HIGH as size_t || cs.pending_count == 0 {
             break;
         }
@@ -1465,7 +1489,10 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
             let Some(cs) = (*c).control_state.as_deref_mut() else {
                 return;
             };
-            if evbuffer_get_length(&*(*cs.write_event).output) >= CONTROL_BUFFER_HIGH as size_t {
+            let Some(buffered) = cs.write_event.with_ptr(|stream| unsafe {
+                evbuffer_get_length(&*(*stream).output)
+            }) else { return };
+            if buffered >= CONTROL_BUFFER_HIGH as size_t {
                 break;
             }
             if !cs.pending_panes.contains(&pane) {
@@ -1486,8 +1513,12 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
         }
     }
     if let Some(cs) = (*c).control_state.as_deref() {
-        if evbuffer_get_length(&*(*cs.write_event).output) == 0 {
-            bufferevent_disable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
+        if cs.write_event.with_ptr(|stream| unsafe {
+            evbuffer_get_length(&*(*stream).output)
+        }) == Some(0) {
+            let _ = cs.write_event.with_ptr(|stream| unsafe {
+                bufferevent_disable(stream, EV_WRITE as ::core::ffi::c_short)
+            });
         }
     }
 }
@@ -1601,47 +1632,50 @@ pub unsafe fn control_start(owner: &Rc<UnsafeCell<client>>) {
         .expect("control client state");
     cs.subs = Some(subs);
     let (read, write, error) = control_stream_callbacks(owner);
-    cs.read_event = bufferevent_new(
+    let read_stream = bufferevent_new(
         (*c).fd,
         read,
         write.clone(),
         error.clone(),
     );
-    if cs.read_event.is_null() {
+    if read_stream.is_null() {
         fatalx(|out| out.write_all(b"out of memory"));
     }
+    cs.read_event = crate::src::reactor::StreamHandle::from_ptr(read_stream);
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-        cs.write_event = cs.read_event;
+        cs.write_event = cs.read_event.clone();
     } else {
-        cs.write_event = bufferevent_new(
+        let write_stream = bufferevent_new(
             (*c).out_fd,
             None,
             write,
             error,
         );
-        if cs.write_event.is_null() {
+        if write_stream.is_null() {
             fatalx(|out| out.write_all(b"out of memory"));
         }
+        cs.write_event = crate::src::reactor::StreamHandle::from_ptr(write_stream);
     }
-    bufferevent_setwatermark(cs.write_event);
+    let _ = cs.write_event.with_ptr(|stream| unsafe {
+        bufferevent_setwatermark(stream)
+    });
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-        bufferevent_write(
-            cs.write_event,
-            b"\x1BP1000p\0" as *const u8 as *const ::core::ffi::c_char
-                as *const ::core::ffi::c_void,
-            7 as size_t,
-        );
-        bufferevent_enable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
+        let _ = cs.write_event.with_ptr(|stream| unsafe {
+            bufferevent_write(
+                stream,
+                b"\x1BP1000p\0" as *const u8 as *const ::core::ffi::c_char
+                    as *const ::core::ffi::c_void,
+                7 as size_t,
+            );
+            bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short)
+        });
     }
 }
 pub unsafe fn control_ready(mut c: *mut client) {
-    bufferevent_enable(
-        (*c).control_state
-            .as_deref_mut()
-            .expect("control client state")
-            .read_event,
-        EV_READ as ::core::ffi::c_short,
-    );
+    let cs = (*c).control_state.as_deref_mut().expect("control client state");
+    let _ = cs.read_event.with_ptr(|stream| unsafe {
+        bufferevent_enable(stream, EV_READ as ::core::ffi::c_short)
+    });
 }
 pub unsafe fn control_discard(c: &mut client) {
     let cs = (*c)
@@ -1659,7 +1693,9 @@ pub unsafe fn control_discard(c: &mut client) {
             }
         }
     }
-    bufferevent_disable(cs.read_event, EV_READ as ::core::ffi::c_short);
+    let _ = cs.read_event.with_ptr(|stream| unsafe {
+        bufferevent_disable(stream, EV_READ as ::core::ffi::c_short)
+    });
 }
 
 pub unsafe fn control_discard_all(c: &mut client) {
@@ -1676,19 +1712,23 @@ pub unsafe fn control_discard_all(c: &mut client) {
         control_free_block(cs, cb);
     }
     cs.queued_reply_bytes = 0 as size_t;
-    bufferevent_disable(cs.write_event, EV_WRITE as ::core::ffi::c_short);
+    let _ = cs.write_event.with_ptr(|stream| unsafe {
+        bufferevent_disable(stream, EV_WRITE as ::core::ffi::c_short)
+    });
 }
 pub unsafe fn control_stop(c: *mut client) {
     let Some(cs) = (*c).control_state.as_deref_mut() else {
         return;
     };
-    let (subs, read_event, write_event) = (cs.subs.take(), cs.read_event, cs.write_event);
+    let subs = cs.subs.take();
     // Keep the owner published until callbacks and external resources are gone.
     drop(subs);
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t == 0 {
-        bufferevent_free(write_event);
+        cs.write_event.free();
+    } else {
+        cs.write_event = Default::default();
     }
-    bufferevent_free(read_event);
+    cs.read_event.free();
     control_reset_offsets(c);
     let cs = (*c)
         .control_state

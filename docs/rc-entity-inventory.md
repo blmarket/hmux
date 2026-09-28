@@ -2412,3 +2412,12 @@ Write operations borrow the live slot, and completion/error paths free it at
 the existing point. Read callbacks copy a chunk before sending it and recheck
 the stream before draining input. The pending-write regression covers stream
 expiration. The field inventory now counts 63 remaining in-scope raw fields.
+
+## Implemented weak control streams
+
+`control_state.read_event` and `write_event` now hold weak runtime stream
+handles. Read and write operations borrow the live stream slot for each
+synchronous operation. Stop frees separate streams in the original order; in
+shared-stream mode it clears the write alias and frees the reader once. The
+cleanup regression checks callback order and handle expiration. The field
+inventory now counts 61 remaining in-scope raw fields.
