@@ -4209,28 +4209,29 @@ unsafe fn server_client_check_modes(client_owner: &std::rc::Rc<std::cell::Unsafe
         cursor = window_pane_next(Some(&*wp));
     }
 }
-unsafe fn server_client_any_pane_redraw(mut c: *mut client) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*c).session;
-    let mut w: *mut window = (*(*s).curw).window_ptr();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-        return 1 as ::core::ffi::c_int;
+unsafe fn server_client_any_pane_redraw(c: &client, w: &window) -> bool {
+    if c.flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
+        return true;
     }
-    wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        if (*wp).flags & (PANE_REDRAW | PANE_REDRAWSCROLLBAR) != 0 {
-            return 1 as ::core::ffi::c_int;
-        }
-        wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    }
-    return 0 as ::core::ffi::c_int;
+    w.panes.storage.as_deref().into_iter().flatten().any(|pane| {
+        let owner = pane.upgrade().expect("live pane in ordering");
+        (*owner.get()).flags & (PANE_REDRAW | PANE_REDRAWSCROLLBAR) != 0
+    })
 }
 unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let c = client_owner.get();
-    let mut s: *mut session = (*c).session;
+    let Some(session_owner) = (*c).session.as_ref().and_then(|session| session.observer.upgrade()) else {
+        return;
+    };
+    let Some(link) = (*session_owner.get()).curw.as_ref() else {
+        return;
+    };
+    let window_owner = crate::src::shared::window::WindowOwner::adopt(
+        link.window_owner.as_ref().expect("current link window").as_rc().clone(),
+    );
+    let s = session_owner.get();
+    let w = window_owner.as_ptr();
     let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut w: *mut window = (*(*s).curw).window_ptr();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut needed: ::core::ffi::c_int = 0;
     let mut tflags: ::core::ffi::c_int = 0;
     let mut mode: ::core::ffi::c_int = (*tty).mode;
@@ -4295,7 +4296,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
         != 0
     {
         needed = 1 as ::core::ffi::c_int;
-    } else if server_client_any_pane_redraw(c) != 0 {
+    } else if server_client_any_pane_redraw(&*c, &*w) {
         needed = 1 as ::core::ffi::c_int;
     }
     if needed == 0 {
@@ -4343,8 +4344,9 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
             log_debug(format_args!("redraw timer started"));
             event_add(&raw mut ev, &raw mut tv);
         }
-        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
+        let mut cursor = window_pane_first(Some(&*w));
+        while let Some(pane_owner) = cursor {
+            let wp = &*pane_owner.get();
             if (*wp).flags & PANE_REDRAW != 0 {
                 (*c).flags |= CLIENT_REDRAWWINDOW as uint64_t;
                 break;
@@ -4353,7 +4355,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
                     (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_REDRAWSCROLLBARS)
                         as uint64_t;
                 }
-                wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                cursor = window_pane_next(Some(wp));
             }
         }
         return;
@@ -4371,7 +4373,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
     (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
     if !(*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         for pane_owner in (*w).panes.snapshot() {
-            wp = pane_owner.get();
+            let wp = &*pane_owner.get();
             if (*wp).flags & PANE_REDRAW != 0 {
                 log_debug(format_args!(
                     "{}: redraw pane %{}",

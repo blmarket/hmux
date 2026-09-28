@@ -1822,3 +1822,16 @@ uses owning traversal with scoped pane borrows when gathering mouse modes.
 `cargo test --workspace` and `git diff --check` passed. Client/session and active
 pane relationship fields still require raw access when acquiring the handles;
 mode-screen pointers and legacy terminal APIs also remain pending.
+
+## Implemented retained client redraw models
+
+Client redraw retains the session and current window across rendering, with
+WindowOwner preserving window release policy. Deferred-redraw traversal keeps
+pane owners while reading flags. The redraw-needed query accepts shared client
+and window borrows and inspects upgraded weak ordering entries without deriving
+the window through raw client/session links. Existing snapshot-based pane redraw
+uses scoped shared pane borrows from its owners.
+
+`cargo test --workspace` and `git diff --check` passed. Acquiring session/window
+handles still crosses raw relationship fields; title/path/progress helpers and
+other rendering internals remain pending.
