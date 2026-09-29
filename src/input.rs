@@ -47,8 +47,7 @@ use crate::src::screen_write::{
     screen_write_mode_clear, screen_write_mode_set, screen_write_rawstring, screen_write_reset,
     screen_write_reverseindex, screen_write_scrolldown, screen_write_scrollregion,
     screen_write_scrollup, screen_write_setselection, screen_write_start,
-    screen_write_start_callback, screen_write_start_pane, screen_write_start_sync,
-    screen_write_stop, screen_write_stop_sync,
+    screen_write_start_callback, screen_write_start_pane, screen_write_stop,
 };
 use crate::src::server::clients;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
@@ -62,6 +61,7 @@ use crate::src::style::colour::{
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
 use crate::src::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selection};
+use crate::src::window::WindowPane;
 use crate::src::window::{
     window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client,
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data, window_set_name,
@@ -2376,11 +2376,7 @@ impl Drop for input_ctx {
             event_del(&raw mut (*ictx).request_timer);
             event_del(&raw mut (*ictx).ground_timer);
             if let Some(pane) = self.wp.upgrade() {
-                screen_write_stop_sync(
-                    (pane.get() as *mut window_pane)
-                        .cast::<std::cell::UnsafeCell<window_pane>>()
-                        .as_ref(),
-                );
+                pane.stop_sync();
             }
         }
     }
@@ -3986,11 +3982,9 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
                 }
             }
             2026 => {
-                screen_write_start_sync(
-                    (input_pane as *mut window_pane)
-                        .cast::<std::cell::UnsafeCell<window_pane>>()
-                        .as_ref(),
-                );
+                if let Some(pane) = input_pane_owner.as_ref() {
+                    pane.start_sync();
+                }
             }
             _ => {
                 log_debug(format_args!(

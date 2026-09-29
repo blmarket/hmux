@@ -3399,8 +3399,7 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
     let mut gc2 = *gc;
     let mut changed: ::core::ffi::c_int = 0;
     let style_ctx = style_ctx.unwrap_or(&tty_default_style_ctx);
-    let palette_guard = style_ctx.palette.resolve();
-    let palette = palette_guard.as_ref();
+    let palette = &style_ctx.palette;
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
         if gc2.fg == 8 as ::core::ffi::c_int {
             gc2.fg = style_ctx.defaults.fg;
@@ -3408,16 +3407,16 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
         if gc2.bg == 8 as ::core::ffi::c_int {
             gc2.bg = style_ctx.defaults.bg;
         }
-        if palette.is_some() {
-            changed = colour_palette_get(palette, gc2.fg);
+        palette.with_palette(|palette| {
+            let changed = colour_palette_get(palette, gc2.fg);
             if changed != -(1 as ::core::ffi::c_int) {
                 gc2.fg = changed;
             }
-            changed = colour_palette_get(palette, gc2.bg);
+            let changed = colour_palette_get(palette, gc2.bg);
             if changed != -(1 as ::core::ffi::c_int) {
                 gc2.bg = changed;
             }
-        }
+        });
     }
     gc2.fg = tty_map_theme_colour(tty, gc2.fg);
     gc2.bg = tty_map_theme_colour(tty, gc2.bg);
@@ -3601,7 +3600,11 @@ unsafe fn tty_map_theme_colour(
     }
     return m;
 }
-unsafe fn tty_check_fg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: &mut grid_cell) {
+unsafe fn tty_check_fg(
+    mut tty: *mut tty,
+    palette: &crate::src::shared::tty::PaletteSource,
+    gc: &mut grid_cell,
+) {
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
@@ -3618,7 +3621,7 @@ unsafe fn tty_check_fg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: 
         {
             c += 90 as ::core::ffi::c_int;
         }
-        c = colour_palette_get(palette, c);
+        c = palette.with_palette(|palette| colour_palette_get(palette, c));
         if c != -(1 as ::core::ffi::c_int) {
             gc.fg = c;
         }
@@ -3671,14 +3674,18 @@ unsafe fn tty_check_fg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: 
         gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_BRIGHT) as u_short;
     }
 }
-unsafe fn tty_check_bg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: &mut grid_cell) {
+unsafe fn tty_check_bg(
+    mut tty: *mut tty,
+    palette: &crate::src::shared::tty::PaletteSource,
+    gc: &mut grid_cell,
+) {
     let mut r: u_char = 0;
     let mut g: u_char = 0;
     let mut b: u_char = 0;
     let mut colours: u_int = 0;
     let mut c: ::core::ffi::c_int = 0;
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
-        c = colour_palette_get(palette, gc.bg);
+        c = palette.with_palette(|palette| colour_palette_get(palette, gc.bg));
         if c != -(1 as ::core::ffi::c_int) {
             gc.bg = c;
         }
@@ -3726,10 +3733,14 @@ unsafe fn tty_check_bg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: 
         gc.bg -= 90 as ::core::ffi::c_int;
     }
 }
-unsafe fn tty_check_us(mut tty: *mut tty, palette: Option<&colour_palette>, gc: &mut grid_cell) {
+unsafe fn tty_check_us(
+    mut tty: *mut tty,
+    palette: &crate::src::shared::tty::PaletteSource,
+    gc: &mut grid_cell,
+) {
     let mut c: ::core::ffi::c_int = 0;
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {
-        c = colour_palette_get(palette, gc.us);
+        c = palette.with_palette(|palette| colour_palette_get(palette, gc.us));
         if c != -(1 as ::core::ffi::c_int) {
             gc.us = c;
         }

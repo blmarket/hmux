@@ -469,43 +469,25 @@ pub enum PaletteSource {
     Snapshot(Box<colour_palette>),
 }
 
-pub enum PaletteGuard<'a> {
-    None,
-    Pane(std::rc::Rc<std::cell::UnsafeCell<window_pane>>),
-    Popup(refbox::Borrow<'a, colour_palette>),
-    Snapshot(&'a colour_palette),
-}
-
-impl PaletteGuard<'_> {
-    pub fn as_ref(&self) -> Option<&colour_palette> {
-        match self {
-            Self::None => None,
-            Self::Pane(pane) => Some(unsafe { &(*pane.get()).palette }),
-            Self::Popup(palette) => Some(palette),
-            Self::Snapshot(palette) => Some(palette),
-        }
-    }
-}
-
 impl PaletteSource {
-    pub fn resolve(&self) -> PaletteGuard<'_> {
+    /// The callback must not reenter the pane, dispatch model callbacks, or
+    /// retain any pointer/reference into the palette after returning.
+    pub unsafe fn with_palette<R>(&self, read: impl FnOnce(Option<&colour_palette>) -> R) -> R {
+        use crate::src::window::WindowPane;
         match self {
-            Self::None => PaletteGuard::None,
-            Self::Pane(pane) => pane
-                .upgrade()
-                .map_or(PaletteGuard::None, PaletteGuard::Pane),
+            Self::None => read(None),
+            Self::Pane(observer) => {
+                let owner = observer.upgrade();
+                let palette = owner.as_ref().map(|pane| pane.borrow_palette());
+                read(palette.as_deref())
+            }
             Self::Popup(palette) => match palette.try_borrow_mut() {
-                Ok(borrowed) => PaletteGuard::Popup(borrowed),
-                Err(refbox::BorrowError::Dropped) => PaletteGuard::None,
+                Ok(borrowed) => read(Some(&borrowed)),
+                Err(refbox::BorrowError::Dropped) => read(None),
                 Err(refbox::BorrowError::Borrowed) => panic!("popup palette already borrowed"),
             },
-            Self::Snapshot(palette) => PaletteGuard::Snapshot(palette),
+            Self::Snapshot(palette) => read(Some(palette)),
         }
-    }
-
-    pub fn with_palette<R>(&self, use_palette: impl FnOnce(Option<&colour_palette>) -> R) -> R {
-        let guard = self.resolve();
-        use_palette(guard.as_ref())
     }
 }
 
@@ -518,9 +500,12 @@ mod palette_source_tests {
         let pane = window_pane::new();
         unsafe { (*pane.get()).palette.fg = 3 };
         let pane_source = PaletteSource::Pane(std::rc::Rc::downgrade(&pane));
-        assert_eq!(pane_source.with_palette(|palette| palette.unwrap().fg), 3);
+        assert_eq!(
+            unsafe { pane_source.with_palette(|palette| palette.unwrap().fg) },
+            3
+        );
         drop(pane);
-        assert!(pane_source.with_palette(|palette| palette.is_none()));
+        assert!(unsafe { pane_source.with_palette(|palette| palette.is_none()) });
 
         let popup = refbox::RefBox::new(colour_palette {
             fg: 5,
@@ -528,10 +513,16 @@ mod palette_source_tests {
         });
         let popup_source = PaletteSource::Popup(popup.downgrade());
         let snapshot = PaletteSource::Snapshot(Box::new(popup.try_borrow_mut().unwrap().clone()));
-        assert_eq!(popup_source.with_palette(|palette| palette.unwrap().fg), 5);
+        assert_eq!(
+            unsafe { popup_source.with_palette(|palette| palette.unwrap().fg) },
+            5
+        );
         drop(popup);
-        assert!(popup_source.with_palette(|palette| palette.is_none()));
-        assert_eq!(snapshot.with_palette(|palette| palette.unwrap().fg), 5);
+        assert!(unsafe { popup_source.with_palette(|palette| palette.is_none()) });
+        assert_eq!(
+            unsafe { snapshot.with_palette(|palette| palette.unwrap().fg) },
+            5
+        );
     }
 }
 

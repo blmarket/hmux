@@ -1,0 +1,212 @@
+//! Pane-owned synchronized output. Release state before invoking the renderer.
+use super::*;
+use crate::src::screen_write::{
+    screen_write_initctx, screen_write_redraw_line, screen_write_start_pane, screen_write_stop,
+};
+use crate::src::shared::screen::MODE_SYNC;
+use crate::src::shared::screen_write::screen_write_ctx;
+use crate::src::shared::tty::tty_ctx;
+
+pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
+    let wp = pane.get();
+    (*wp).base.mode |= MODE_SYNC;
+    if event_initialized(&(*wp).sync_timer) == 0 {
+        let observer = Rc::downgrade(pane);
+        event_set(&raw mut (*wp).sync_timer, -1, 0, move |_, _| {
+            if let Some(pane) = observer.upgrade() {
+                log_debug(format_args!(
+                    "screen_write_sync_callback: %{} sync timer expired",
+                    pane.id()
+                ));
+                event_del(&raw mut (*pane.get()).sync_timer);
+                if pane.is_synchronized() {
+                    (*pane.get()).base.mode &= !MODE_SYNC;
+                    flush_dirty(&pane);
+                }
+            }
+        });
+    }
+    let mut timeout = timeval {
+        tv_sec: 1,
+        tv_usec: 0,
+    };
+    event_add(&raw mut (*wp).sync_timer, &mut timeout);
+    log_debug(format_args!(
+        "screen_write_start_sync: %{} started sync mode",
+        pane.id()
+    ));
+}
+
+pub(super) unsafe fn stop(pane: &Rc<UnsafeCell<window_pane>>) {
+    if !pane.is_synchronized() {
+        return;
+    }
+    {
+        let state = &mut *pane.get();
+        if event_initialized(&state.sync_timer) != 0 {
+            event_del(&mut state.sync_timer);
+        }
+        state.base.mode &= !MODE_SYNC;
+    }
+    flush_dirty(pane);
+    log_debug(format_args!(
+        "screen_write_stop_sync: %{} stopped sync mode",
+        pane.id()
+    ));
+}
+
+/// Final allocation cleanup cannot manufacture an Rc or an UnsafeCell reference
+/// from `&mut window_pane`. The logical destroy path already clears dirty rows.
+pub(super) unsafe fn stop_unowned(state: &mut window_pane) {
+    if state.base.mode & MODE_SYNC == 0 {
+        return;
+    }
+    if event_initialized(&state.sync_timer) != 0 {
+        event_del(&mut state.sync_timer);
+    }
+    state.base.mode &= !MODE_SYNC;
+    assert!(
+        state.sync_dirty.is_none(),
+        "dirty pane must be logically destroyed before final parser cleanup"
+    );
+    log_debug(format_args!(
+        "screen_write_stop_sync: %{} stopped sync mode",
+        state.id
+    ));
+}
+
+pub(super) fn clear_dirty(state: &mut window_pane) {
+    state.sync_dirty = None;
+    state.sync_dirty_size = 0;
+}
+
+pub(super) unsafe fn should_draw_rows(
+    state: &mut window_pane,
+    synchronized: bool,
+    mut y: u32,
+    mut count: u32,
+    height: u32,
+) -> bool {
+    if state.flags & (PANE_REDRAW | crate::src::shared::pane::PANE_DROP) != 0 {
+        return false;
+    }
+    if !synchronized {
+        return true;
+    }
+    if y >= height || count == 0 {
+        return false;
+    }
+    count = count.min(height - y);
+    if state.sync_dirty.is_none() || state.sync_dirty_size != height {
+        if state.sync_dirty.is_some() && state.sync_dirty_size != height {
+            y = 0;
+            count = height;
+        }
+        clear_dirty(state);
+        let bytes = (height.wrapping_add(7) >> 3) as usize;
+        let mut dirty = Vec::<bitstr_t>::new();
+        if dirty.try_reserve_exact(bytes).is_err() {
+            fatal(|out| out.write_all(b"bit_alloc failed"));
+        }
+        dirty.resize(bytes, 0);
+        state.sync_dirty = Some(dirty.into_boxed_slice());
+        state.sync_dirty_size = height;
+    }
+    let dirty = state.sync_dirty.as_mut().expect("allocated bitmap");
+    for row in y..y + count {
+        dirty[(row >> 3) as usize] |= 1 << (row & 7);
+    }
+    false
+}
+
+unsafe fn flush_dirty(pane: &Rc<UnsafeCell<window_pane>>) {
+    let wp = pane.get();
+    let mut r = Vec::new();
+    let mut ctx: screen_write_ctx = screen_write_ctx {
+        wp: std::rc::Weak::new(),
+        target: Default::default(),
+        flags: 0,
+        init_ctx_cb: None,
+        item: None,
+        scrolled: 0,
+        bg: 0,
+    };
+    let mut ttyctx = tty_ctx::default();
+    let mut s: *mut screen = &raw mut (*wp).base;
+    let mut y: u_int = 0;
+    let mut sy: u_int = (*s).grid().sy;
+    let mut lines: u_int = 0 as u_int;
+    if (*wp).sync_dirty.is_none() {
+        return;
+    }
+    screen_write_start_pane(&mut ctx, pane, s);
+    screen_write_initctx(
+        &mut ctx,
+        &mut ttyctx,
+        1 as ::core::ffi::c_int,
+        1 as ::core::ffi::c_int,
+    );
+    y = 0 as u_int;
+    while y < sy {
+        let dirty = {
+            let dirty = (*wp).sync_dirty.as_ref().expect("dirty bitmap present");
+            dirty[(y >> 3) as usize] & (1 << (y & 7)) != 0
+        };
+        if dirty {
+            screen_write_redraw_line(&mut ctx, &mut ttyctx, y, &mut r);
+            lines = lines.wrapping_add(1);
+        }
+        y = y.wrapping_add(1);
+    }
+    log_debug(format_args!(
+        "{}: %{} had {} dirty lines",
+        "screen_write_flush_dirty",
+        ((*wp).id) as u32,
+        (lines) as u32
+    ));
+    screen_write_stop(&mut ctx);
+    pane.clear_sync_dirty();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::src::reactor::{event_pending, shutdown_runtime};
+    use crate::src::shared::event::EV_TIMEOUT;
+
+    #[test]
+    fn stopping_and_destroying_sync_cancel_the_timer_without_retaining_the_pane() {
+        unsafe {
+            let pane = window_pane::new();
+            (*pane.get()).base.grid = Some(crate::src::grid::grid_create(8, 2, 0));
+            (*pane.get()).fd = -1;
+            (*pane.get()).pipe_fd = -1;
+            let observer = Rc::downgrade(&pane);
+            let pending = || {
+                event_pending(
+                    &(*pane.get()).sync_timer,
+                    EV_TIMEOUT as i16,
+                    std::ptr::null_mut(),
+                )
+            };
+            pane.start_sync();
+            pane.start_sync();
+            assert!(pane.is_synchronized());
+            assert_ne!(pending(), 0);
+            assert_eq!(Rc::strong_count(&pane), 1, "timer only observes the pane");
+            pane.stop_sync();
+            assert!(!pane.is_synchronized());
+            assert_eq!(pending(), 0);
+            pane.stop_sync();
+            pane.start_sync();
+            assert!(!pane.should_draw_rows(true, 0, 1, 2));
+            window_pane_tree_insert(&mut all_window_panes, pane.clone());
+            pane.destroy();
+            assert_eq!(pending(), 0);
+            assert!((*pane.get()).sync_dirty.is_none());
+            drop(pane);
+            assert!(observer.upgrade().is_none());
+            shutdown_runtime();
+        }
+    }
+}

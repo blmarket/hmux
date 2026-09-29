@@ -74,6 +74,7 @@ use crate::src::tty::{
     tty_update_window_offset, tty_window_offset, tty_write,
 };
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::src::window::WindowPane;
 use crate::src::window::{
     window_pane_clear_resizes, window_pane_is_floating, window_pane_scrollbar_overlay_visible,
     window_pane_scrollbar_redraw, window_pane_send_resize, window_pane_z_previous,
@@ -259,53 +260,14 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::f
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn screen_write_should_draw_lines(
-    ctx: &mut screen_write_ctx,
-    mut y: u_int,
-    mut ny: u_int,
-) -> ::core::ffi::c_int {
-    let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = write_pane;
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut sy: u_int = (*s).grid().sy;
-    if !wp.is_null() && (*wp).flags & (PANE_REDRAW | PANE_DROP) != 0 {
-        return 0 as ::core::ffi::c_int;
+unsafe fn screen_write_should_draw_lines(ctx: &mut screen_write_ctx, y: u_int, ny: u_int) -> i32 {
+    let screen = &*ctx.screen_ptr();
+    let synchronized = screen.mode & MODE_SYNC != 0;
+    let height = screen.grid().sy;
+    match ctx.wp.upgrade() {
+        Some(pane) => pane.should_draw_rows(synchronized, y, ny, height) as i32,
+        None => (!synchronized) as i32,
     }
-    if (*s).mode & MODE_SYNC != 0 {
-        if !wp.is_null() && y < sy && ny != 0 as u_int {
-            if ny > sy.wrapping_sub(y) {
-                ny = sy.wrapping_sub(y);
-            }
-            if (*wp).sync_dirty.is_none() || (*wp).sync_dirty_size != sy {
-                if (*wp).sync_dirty.is_some() && (*wp).sync_dirty_size != sy {
-                    y = 0 as u_int;
-                    ny = sy;
-                }
-                screen_write_clear_dirty(
-                    (wp as *mut window_pane)
-                        .cast::<std::cell::UnsafeCell<window_pane>>()
-                        .as_ref(),
-                );
-                let bytes = (sy.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize;
-                let mut dirty = Vec::<bitstr_t>::new();
-                if dirty.try_reserve_exact(bytes).is_err() {
-                    fatal(|out| out.write_all(b"bit_alloc failed"));
-                }
-                dirty.resize(bytes, 0);
-                (*wp).sync_dirty = Some(dirty.into_boxed_slice());
-                (*wp).sync_dirty_size = sy;
-            }
-            let dirty = (*wp).sync_dirty.as_mut().expect("dirty bitmap allocated");
-            for row in y..y + ny {
-                dirty[(row >> 3) as usize] |= 1 << (row & 7);
-            }
-        }
-        return 0 as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
 }
 unsafe fn screen_write_should_draw_line(
     ctx: &mut screen_write_ctx,
@@ -313,7 +275,7 @@ unsafe fn screen_write_should_draw_line(
 ) -> ::core::ffi::c_int {
     return screen_write_should_draw_lines(ctx, y, 1 as u_int);
 }
-unsafe fn screen_write_initctx(
+pub(crate) unsafe fn screen_write_initctx(
     ctx: &mut screen_write_ctx,
     ttyctx: &mut tty_ctx,
     mut is_sync: ::core::ffi::c_int,
@@ -1126,90 +1088,12 @@ pub unsafe fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mut mode: ::co
         ));
     }
 }
-unsafe fn screen_write_sync_callback(pane: &std::cell::UnsafeCell<window_pane>) {
-    let wp = pane.get();
-    log_debug(format_args!(
-        "{}: %{} sync timer expired",
-        "screen_write_sync_callback",
-        ((*wp).id) as u32
-    ));
-    event_del(&raw mut (*wp).sync_timer);
-    if (*wp).base.mode & MODE_SYNC != 0 {
-        (*wp).base.mode &= !MODE_SYNC;
-        screen_write_flush_dirty(
-            &*(wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>(),
-        );
-    }
-}
-pub unsafe fn screen_write_start_sync(pane: Option<&std::cell::UnsafeCell<window_pane>>) {
-    let wp = pane.map_or(std::ptr::null_mut(), |pane| pane.get());
-    let mut tv: timeval = timeval {
-        tv_sec: 1 as __time_t,
-        tv_usec: 0 as __suseconds_t,
-    };
-    if wp.is_null() {
-        return;
-    }
-    (*wp).base.mode |= MODE_SYNC;
-    if event_initialized(&(*wp).sync_timer) == 0 {
-        event_set(
-            &raw mut (*wp).sync_timer,
-            -(1 as ::core::ffi::c_int),
-            0 as ::core::ffi::c_short,
-            {
-                let observer = (*wp).observer.clone();
-                move |_, _| unsafe {
-                    if let Some(owner) = observer.upgrade() {
-                        screen_write_sync_callback(owner.as_ref());
-                    }
-                }
-            },
-        );
-    }
-    event_add(&raw mut (*wp).sync_timer, &raw mut tv);
-    log_debug(format_args!(
-        "{}: %{} started sync mode",
-        "screen_write_start_sync",
-        ((*wp).id) as u32
-    ));
-}
-// Borrow the existing UnsafeCell rather than requiring an Rc upgrade: parser
-// cleanup may reach this operation during the final pane allocation drop.
-pub unsafe fn screen_write_stop_sync(pane: Option<&std::cell::UnsafeCell<window_pane>>) {
-    let wp = pane.map_or(std::ptr::null_mut(), |pane| pane.get());
-    if wp.is_null() || !(*wp).base.mode & MODE_SYNC != 0 {
-        return;
-    }
-    if event_initialized(&(*wp).sync_timer) != 0 {
-        event_del(&raw mut (*wp).sync_timer);
-    }
-    (*wp).base.mode &= !MODE_SYNC;
-    screen_write_flush_dirty(
-        &*(wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>(),
-    );
-    log_debug(format_args!(
-        "{}: %{} stopped sync mode",
-        "screen_write_stop_sync",
-        ((*wp).id) as u32
-    ));
-}
 pub unsafe fn screen_write_end_sync(ctx: &mut screen_write_ctx) {
-    let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = write_pane;
-    if wp.is_null() {
-        return;
+    let Some(pane) = ctx.wp.upgrade() else { return };
+    if pane.is_synchronized() {
+        screen_write_collect_flush(ctx, 0, "screen_write_end_sync");
     }
-    if (*wp).base.mode & MODE_SYNC != 0 {
-        screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_end_sync");
-    }
-    screen_write_stop_sync(
-        (wp as *mut window_pane)
-            .cast::<std::cell::UnsafeCell<window_pane>>()
-            .as_ref(),
-    );
+    pane.stop_sync();
 }
 pub unsafe fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u_int) {
     let mut s: *mut screen = ctx.screen_ptr();
@@ -1314,7 +1198,7 @@ fn screen_write_cell_is_single(gc: &grid_cell) -> ::core::ffi::c_int {
         && gc.flags as ::core::ffi::c_int & (GRID_FLAG_CLEARED | GRID_FLAG_PADDING | GRID_FLAG_TAB)
             == 0) as ::core::ffi::c_int
 }
-unsafe fn screen_write_redraw_line(
+pub(crate) unsafe fn screen_write_redraw_line(
     ctx: &mut screen_write_ctx,
     ttyctx: &mut tty_ctx,
     mut yy: u_int,
@@ -1403,66 +1287,6 @@ unsafe fn screen_write_redraw_line(
             }
         }
         i = i.wrapping_add(1);
-    }
-}
-unsafe fn screen_write_flush_dirty(pane: &std::cell::UnsafeCell<window_pane>) {
-    let wp = pane.get();
-    let mut r = Vec::new();
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
-    let mut ttyctx = tty_ctx::default();
-    let mut s: *mut screen = &raw mut (*wp).base;
-    let mut y: u_int = 0;
-    let mut sy: u_int = (*s).grid().sy;
-    let mut lines: u_int = 0 as u_int;
-    if (*wp).sync_dirty.is_none() {
-        return;
-    }
-    screen_write_start_pane(
-        &mut ctx,
-        &(*wp).observer.upgrade().expect("live screen-write pane"),
-        s,
-    );
-    screen_write_initctx(
-        &mut ctx,
-        &mut ttyctx,
-        1 as ::core::ffi::c_int,
-        1 as ::core::ffi::c_int,
-    );
-    y = 0 as u_int;
-    while y < sy {
-        let dirty = (*wp).sync_dirty.as_ref().expect("dirty bitmap present");
-        if dirty[(y >> 3) as usize] & (1 << (y & 7)) != 0 {
-            screen_write_redraw_line(&mut ctx, &mut ttyctx, y, &mut r);
-            lines = lines.wrapping_add(1);
-        }
-        y = y.wrapping_add(1);
-    }
-    log_debug(format_args!(
-        "{}: %{} had {} dirty lines",
-        "screen_write_flush_dirty",
-        ((*wp).id) as u32,
-        (lines) as u32
-    ));
-    screen_write_stop(&mut ctx);
-    screen_write_clear_dirty(
-        (wp as *mut window_pane)
-            .cast::<std::cell::UnsafeCell<window_pane>>()
-            .as_ref(),
-    );
-}
-pub unsafe fn screen_write_clear_dirty(pane: Option<&std::cell::UnsafeCell<window_pane>>) {
-    let wp = pane.map_or(std::ptr::null_mut(), |pane| pane.get());
-    if let Some(wp) = wp.as_mut() {
-        wp.sync_dirty = None;
-        wp.sync_dirty_size = 0;
     }
 }
 
@@ -3706,23 +3530,10 @@ mod write_ctx_tests {
             screen_write_should_draw_lines(&mut ctx, 16, 1);
             assert_eq!(pane.sync_dirty_size, 17);
             assert_eq!(pane.sync_dirty.as_deref(), Some([0xff, 0xff, 1].as_slice()));
-            screen_write_clear_dirty(
-                (&mut *pane as *mut window_pane)
-                    .cast::<std::cell::UnsafeCell<window_pane>>()
-                    .as_ref(),
-            );
+            pane_owner.clear_sync_dirty();
             assert!(pane.sync_dirty.is_none());
             assert_eq!(pane.sync_dirty_size, 0);
-            screen_write_clear_dirty(
-                (&mut *pane as *mut window_pane)
-                    .cast::<std::cell::UnsafeCell<window_pane>>()
-                    .as_ref(),
-            );
-            screen_write_clear_dirty(
-                (std::ptr::null_mut() as *mut window_pane)
-                    .cast::<std::cell::UnsafeCell<window_pane>>()
-                    .as_ref(),
-            );
+            pane_owner.clear_sync_dirty();
 
             screen_write_should_draw_lines(&mut ctx, 0, 1);
             assert_eq!(pane.sync_dirty.as_deref(), Some([1, 0, 0].as_slice()));

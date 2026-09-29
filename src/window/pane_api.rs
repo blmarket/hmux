@@ -4,7 +4,9 @@ use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
 use crate::src::reactor::{event_pending, Interests};
 use crate::src::server_client::Client;
+use crate::src::shared::colour::colour_palette;
 use crate::src::shared::pane::PANE_ACTIVITY;
+use crate::src::shared::screen::MODE_SYNC;
 
 /// Access a pane without lending its model storage.
 ///
@@ -12,11 +14,29 @@ use crate::src::shared::pane::PANE_ACTIVITY;
 /// preconditions. Component closures must not reenter model code, destroy an
 /// owner, alter component parent links, or let component references escape.
 pub trait WindowPane {
+    /// A borrow can become Ref::map on one RefCell containing the whole pane.
+    type Palette<'a>: std::ops::Deref<Target = colour_palette>
+    where
+        Self: 'a;
+    /// Do not reenter the pane, dispatch callbacks or let component pointers
+    /// escape while the returned guard is alive.
+    unsafe fn borrow_palette(&self) -> Self::Palette<'_>;
+
     unsafe fn id(&self) -> u32;
     unsafe fn window_observer(&self) -> Weak<UnsafeCell<window>>;
     unsafe fn geometry(&self) -> (u32, u32, i32, i32);
     /// Whether the pane still has a PTY, including an exited process being drained.
     unsafe fn has_tty(&self) -> bool;
+    unsafe fn is_synchronized(&self) -> bool;
+    unsafe fn start_sync(&self);
+    /// Cancel the timer and leave sync mode before drawing the accumulated rows.
+    /// No pane reference is retained during terminal callbacks.
+    unsafe fn stop_sync(&self);
+    unsafe fn clear_sync_dirty(&self);
+    /// Decide whether a screen write draws immediately; synchronized writes
+    /// mark rows in the pane-owned bitmap, including resize invalidation.
+    unsafe fn should_draw_rows(&self, synchronized: bool, y: u32, count: u32, height: u32) -> bool;
+
     unsafe fn resize(&self, sx: u32, sy: u32);
     unsafe fn update_focus(&self, focused: bool);
     /// Return 0 for an unplaced pane, -1 for deferred drawing, or 1 after
@@ -79,6 +99,27 @@ pub trait WindowPane {
 }
 
 impl WindowPane for Rc<UnsafeCell<window_pane>> {
+    type Palette<'a> = &'a colour_palette;
+    unsafe fn borrow_palette(&self) -> Self::Palette<'_> {
+        &(*self.get()).palette
+    }
+
+    unsafe fn is_synchronized(&self) -> bool {
+        (*self.get()).base.mode & MODE_SYNC != 0
+    }
+    unsafe fn start_sync(&self) {
+        super::pane_sync::start(self);
+    }
+    unsafe fn stop_sync(&self) {
+        super::pane_sync::stop(self);
+    }
+    unsafe fn clear_sync_dirty(&self) {
+        super::pane_sync::clear_dirty(&mut *self.get());
+    }
+    unsafe fn should_draw_rows(&self, synchronized: bool, y: u32, count: u32, height: u32) -> bool {
+        super::pane_sync::should_draw_rows(&mut *self.get(), synchronized, y, count, height)
+    }
+
     unsafe fn id(&self) -> u32 {
         (*self.get()).id
     }

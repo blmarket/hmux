@@ -2,6 +2,7 @@ mod api;
 pub use api::Window;
 
 mod pane_api;
+mod pane_sync;
 pub use pane_api::WindowPane;
 
 use crate::src::alerts::alerts_queue;
@@ -49,7 +50,7 @@ use crate::src::screen::{
     screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,
 };
 use crate::src::screen_redraw::redraw_invalidate_scene;
-use crate::src::screen_write::{screen_write_clear_dirty, screen_write_stop_sync};
+
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
 use crate::src::server_client::{server_client_unref_owned, Client};
@@ -2958,11 +2959,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     (*wp).flags |= PANE_DESTROYED;
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
-    screen_write_clear_dirty(
-        (wp as *mut window_pane)
-            .cast::<std::cell::UnsafeCell<window_pane>>()
-            .as_ref(),
-    );
+    pane_owner.clear_sync_dirty();
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         utempter_remove_record((*wp).fd);
         kill(getpid(), SIGCHLD);
@@ -3004,11 +3001,7 @@ unsafe fn window_pane_free(wp_value: &mut window_pane) {
     if let Some(input) = (*wp).ictx.take() {
         drop(input);
         // The parser cannot upgrade its weak pane during the final Rc drop.
-        crate::src::screen_write::screen_write_stop_sync(
-            (wp as *mut window_pane)
-                .cast::<std::cell::UnsafeCell<window_pane>>()
-                .as_ref(),
-        );
+        pane_sync::stop_unowned(&mut *wp);
     }
     window_pane_set_searchstr(&mut *wp, None);
     if (*wp).status_screen.grid.is_some() {
@@ -3127,11 +3120,7 @@ pub unsafe fn window_pane_resize(
     if sx == (*wp).sx && sy == (*wp).sy {
         return;
     }
-    screen_write_stop_sync(
-        (wp as *mut window_pane)
-            .cast::<std::cell::UnsafeCell<window_pane>>()
-            .as_ref(),
-    );
+    pane_owner.stop_sync();
     let old_sx = (*wp).sx;
     let old_sy = (*wp).sy;
     (*wp).push_resize(window_pane_resize {

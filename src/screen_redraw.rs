@@ -8,9 +8,7 @@ use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
 use crate::src::prompt::prompt_draw;
 use crate::src::screen::{screen_free, screen_init};
-use crate::src::screen_write::{
-    screen_write_clear_dirty, screen_write_start, screen_write_stop, screen_write_stop_sync,
-};
+use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::server::{marked_pane, server_is_marked};
 use crate::src::server_client::server_client_overlay_draw;
 use crate::src::shared::abi::*;
@@ -59,6 +57,7 @@ use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
+use crate::src::window::WindowPane;
 use crate::src::window::{
     window_pane_first, window_pane_get_pane_lines, window_pane_get_pane_status,
     window_pane_is_floating, window_pane_is_visible, window_pane_mode, window_pane_next,
@@ -2038,35 +2037,14 @@ unsafe fn redraw_draw_scene(
         }
     }
     if flags & REDRAW_PANE != 0 {
-        if !wp.is_null() {
-            if (*wp).base.mode & MODE_SYNC != 0 {
-                screen_write_stop_sync(
-                    (wp as *mut window_pane)
-                        .cast::<std::cell::UnsafeCell<window_pane>>()
-                        .as_ref(),
-                );
-            }
-            screen_write_clear_dirty(
-                (wp as *mut window_pane)
-                    .cast::<std::cell::UnsafeCell<window_pane>>()
-                    .as_ref(),
-            );
+        if let Some(pane) = pane_owner {
+            pane.stop_sync();
+            pane.clear_sync_dirty();
         } else {
-            for pane_owner in (*w).panes.snapshot() {
-                let loop_0 = pane_owner.get();
-                if !(window_pane_is_visible(&pane_owner) == 0) {
-                    if (*loop_0).base.mode & MODE_SYNC != 0 {
-                        screen_write_stop_sync(
-                            (loop_0 as *mut window_pane)
-                                .cast::<std::cell::UnsafeCell<window_pane>>()
-                                .as_ref(),
-                        );
-                    }
-                    screen_write_clear_dirty(
-                        (loop_0 as *mut window_pane)
-                            .cast::<std::cell::UnsafeCell<window_pane>>()
-                            .as_ref(),
-                    );
+            for pane in (*w).panes.snapshot() {
+                if window_pane_is_visible(&pane) != 0 {
+                    pane.stop_sync();
+                    pane.clear_sync_dirty();
                 }
             }
         }

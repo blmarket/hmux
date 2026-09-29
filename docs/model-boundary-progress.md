@@ -24,3 +24,17 @@ is available only in unit tests.
 
 This checkpoint does not complete Session's remaining options, winlink, identity,
 and legacy helper boundaries.
+
+## WindowPane synchronized output and palette
+
+The pane trait owns sync-mode transitions, timer cancellation, dirty-row
+bookkeeping and palette borrows. Parser/redraw callers no longer cast a pane
+pointer to `UnsafeCell<window_pane>`. Palette borrows can become mapped Ref guards;
+terminal colour lookup releases them before further terminal operations.
+Logical pane destruction still clears dirty rows and cancels timers explicitly.
+Final parser cleanup uses the unowned implementation path when Weak cannot upgrade.
+
+Tests cover dirty-row resizing, timer cancellation without retaining the pane,
+explicit destruction, final parser cleanup, and palette-source expiration.
+The legacy screen-write target still exposes a screen pointer and is a remaining
+component-boundary migration; moving sync bookkeeping does not complete it.
