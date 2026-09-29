@@ -19,6 +19,8 @@ pub trait Session {
     /// Apply update-environment patterns without exposing either component.
     unsafe fn update_environment(&self, source: &environ);
 
+    /// Registry liveness is distinct from retained allocation liveness.
+    unsafe fn is_registered(&self) -> bool;
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
@@ -88,6 +90,9 @@ impl Session for Rc<UnsafeCell<session>> {
         );
     }
 
+    unsafe fn is_registered(&self) -> bool {
+        sessions_resolve(&sessions, &Rc::downgrade(self)).is_some()
+    }
     unsafe fn id(&self) -> u32 {
         (*self.get()).id
     }

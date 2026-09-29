@@ -68,7 +68,7 @@ a completed migration or a proof of the smallest possible interface. Imports
 and implementation bodies are omitted. Methods using legacy shared access remain
 `unsafe`; an Rc keeps the allocation alive but does not establish exclusive
 access. Logical-lifecycle and callback preconditions remain method-specific.
-The signatures below now mirror the compiled adapters in
+The signatures below record the original adapter checkpoint. For current APIs see
 [Session](../src/session/api.rs), [Window](../src/window/api.rs),
 [WindowPane](../src/window/pane_api.rs) and [Client](../src/server_client/api.rs).
 Implementation and complete encapsulation are separate:
@@ -358,7 +358,7 @@ algorithm could produce the same cursor but would lose that work bound.
 during destruction, after registry/membership removal. Those cases are stronger
 than convenience during ordinary steady-state operation.
 
-The current adapters contain **102 methods: 24 Session, 21 Window,
+The original adapter checkpoint contained **102 methods: 24 Session, 21 Window,
 23 WindowPane and 34 Client**. Each method has an implementation and a
 row below. The original three reviews supplied the initial audit; implementation
 removed derivable wrappers and added capabilities required by actual callers.
@@ -749,7 +749,10 @@ The approach follows [BufferEvent](../src/reactor/streams/api.rs) and the
 [client-file adapter](trait-clientfile.md): expose operations on existing holders,
 reuse established types, and preserve lifecycle behavior.
 
-## Verified implementation checkpoint
+## Verified original implementation checkpoint
+
+For subsequent changes and remaining boundaries, see
+[model-boundary-progress.md](model-boundary-progress.md).
 
 `cargo test --workspace` passes: 757 tests, none ignored. The checks include
 session rename/index behavior, nonmutating last-window targeting, adoption of an

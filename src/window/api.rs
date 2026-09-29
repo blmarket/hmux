@@ -23,6 +23,8 @@ pub trait Window {
     unsafe fn next_window(&self) -> Option<Rc<UnsafeCell<window>>>;
     /// Live association traversal; callbacks may change the list between calls.
     unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink>;
+    unsafe fn has_layout(&self) -> bool;
+    unsafe fn contains_pane(&self, pane: &Weak<UnsafeCell<window_pane>>) -> bool;
     /// Only alert bits, never the window's other bookkeeping flags.
     unsafe fn pending_alerts(&self) -> i32;
     unsafe fn reset_alert_timer(&self);
@@ -102,6 +104,12 @@ impl Window for Rc<UnsafeCell<window>> {
         } else {
             window_winlinks_first(Some(&*self.get()))
         }
+    }
+    unsafe fn contains_pane(&self, pane: &Weak<UnsafeCell<window_pane>>) -> bool {
+        window_has_pane(&*self.get(), pane)
+    }
+    unsafe fn has_layout(&self) -> bool {
+        (*self.get()).layout_root.is_some()
     }
     unsafe fn pending_alerts(&self) -> i32 {
         (*self.get()).flags & crate::src::shared::window::WINDOW_ALERTFLAGS

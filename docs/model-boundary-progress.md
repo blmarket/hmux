@@ -50,3 +50,22 @@ spans event delivery or status-message callbacks.
 Tests retain the queue's existing behavior when callbacks append at or before its
 tail, and cover disabled monitoring and duplicate queue membership. Layout and
 other Window consumers still require migration.
+
+## Client notifications and retained targets
+
+Control event consumers and event-payload target resolution use the four traits.
+Client now supplies notification eligibility, owned names, attachment accounting,
+and detach/exec decisions. Live registry iteration is preserved, including changes
+made by callbacks. Non-UTF-8 names remain byte-preserving.
+
+The notification, reply and guard helpers also use a mapped-borrow-compatible
+Client control-component API. Formatting happens before acquiring the component;
+immediate stream writes happen after releasing it. Reply pressure is a Client
+operation that preserves exit-message, exit-flag and discard ordering. Discard's
+component helper accepts only control state and cannot access Client storage.
+Tests cover recursive notification formatting, stopping control during formatting,
+reply-limit behavior for an already exiting client, and exact notification bytes
+and recipient order.
+
+Other control paths, command-target helpers, Client terminal/status state and
+cross-model legacy helper bodies are still outside the completed portions.

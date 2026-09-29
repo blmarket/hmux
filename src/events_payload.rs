@@ -28,6 +28,7 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::window::{
     window_has_pane, window_pane_remove_ref, window_remove_ref, winlink_find_by_index, Window,
 };
+use crate::src::{server_client::Client, session::Session, window::WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
 
@@ -164,115 +165,85 @@ pub unsafe fn event_payload_set_target(ep: &mut event_payload, fs: &cmd_find_sta
         target.wp = fs.wp.clone();
     }
 }
-pub unsafe fn event_payload_get_target(
-    ep: &event_payload,
-    fs: &mut cmd_find_state,
-) -> ::core::ffi::c_int {
-    let t = &ep.target;
-    let session_owner = t.s.upgrade();
-    let window_owner = t.w.upgrade();
-    let pane_owner = t.wp.upgrade();
-    let s = session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let w = window_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let wp = pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut flags: ::core::ffi::c_int = fs.flags;
-    if t.idx != -(1 as ::core::ffi::c_int)
-        && !s.is_null()
-        && !w.is_null()
-        && session_alive(s.as_ref()) != 0
-    {
-        wl = winlink_find_by_index(&(*s).windows, t.idx);
-        if wl.is_alive()
-            && wl
+pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_state) -> i32 {
+    let target = &ep.target;
+    let session = target.s.upgrade();
+    let window = target.w.upgrade();
+    let pane = target.wp.upgrade();
+    let flags = fs.flags;
+    let mut link = refbox::Weak::new();
+    if target.idx != -1 {
+        if let (Some(session), Some(window)) = (&session, &window) {
+            if session.is_registered() {
+                link = session.with_winlinks(|links| winlink_find_by_index(links, target.idx));
+                if link.is_alive()
+                    && !link
+                        .get_unchecked()
+                        .window_handle()
+                        .is_some_and(|owner| std::rc::Rc::ptr_eq(owner, window))
+                {
+                    link = refbox::Weak::new();
+                }
+            }
+        }
+    }
+    cmd_find_clear_state(fs, flags);
+    fs.s = target.s.clone();
+    fs.w = target.w.clone();
+    fs.wp = target.wp.clone();
+    fs.set_wl(link.clone());
+    fs.idx = if link.is_alive() {
+        link.get_unchecked().idx
+    } else {
+        -1
+    };
+    if cmd_find_valid_state(fs) != 0 {
+        return 1;
+    }
+    if let Some(pane) = pane.as_ref() {
+        if link.is_alive()
+            && link
                 .get_unchecked()
                 .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-                != w
+                .expect("linked window")
+                .contains_pane(&target.wp)
         {
-            wl = refbox::Weak::new();
+            cmd_find_from_winlink_pane(fs, link.clone(), pane, flags);
+            if cmd_find_valid_state(fs) != 0 {
+                return 1;
+            }
         }
+        if cmd_find_from_pane(fs, pane, flags) == 0 && cmd_find_valid_state(fs) != 0 {
+            return 1;
+        }
+    }
+    if link.is_alive() {
+        cmd_find_from_winlink(fs, link, flags);
+        if cmd_find_valid_state(fs) != 0 {
+            return 1;
+        }
+    }
+    if let (Some(session), Some(window)) = (&session, &window) {
+        if session.is_registered()
+            && cmd_find_from_session_window(fs, session, window, flags) == 0
+            && cmd_find_valid_state(fs) != 0
+        {
+            return 1;
+        }
+    }
+    if let Some(session) = session.as_ref() {
+        if session.is_registered() {
+            cmd_find_from_session(fs, session, flags);
+            if cmd_find_valid_state(fs) != 0 {
+                return 1;
+            }
+        }
+    }
+    if cmd_find_from_nothing(fs, flags) == 0 {
+        return 1;
     }
     cmd_find_clear_state(fs, flags);
-    fs.s = t.s.clone();
-    fs.w = t.w.clone();
-    fs.wp = t.wp.clone();
-    fs.set_wl(wl.clone());
-    fs.idx = if wl.is_alive() {
-        wl.get_unchecked().idx
-    } else {
-        -(1 as ::core::ffi::c_int)
-    };
-    if cmd_find_valid_state(&*fs) != 0 {
-        return 1 as ::core::ffi::c_int;
-    }
-    if wl.is_alive()
-        && !wp.is_null()
-        && window_has_pane(
-            &*wl.get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()),
-            &t.wp,
-        )
-    {
-        cmd_find_from_winlink_pane(
-            fs,
-            wl.clone(),
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-            flags,
-        );
-        if cmd_find_valid_state(&*fs) != 0 {
-            return 1 as ::core::ffi::c_int;
-        }
-    }
-    if !wp.is_null()
-        && cmd_find_from_pane(
-            fs,
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-            flags,
-        ) == 0 as ::core::ffi::c_int
-        && cmd_find_valid_state(&*fs) != 0
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    if wl.is_alive() {
-        cmd_find_from_winlink(fs, wl.clone(), flags);
-        if cmd_find_valid_state(&*fs) != 0 {
-            return 1 as ::core::ffi::c_int;
-        }
-    }
-    if !s.is_null()
-        && !w.is_null()
-        && session_alive(s.as_ref()) != 0
-        && cmd_find_from_session_window(
-            fs,
-            &(*(s)).observer.upgrade().expect("live session"),
-            &(*(w)).observer.upgrade().expect("live window"),
-            flags,
-        ) == 0 as ::core::ffi::c_int
-        && cmd_find_valid_state(&*fs) != 0
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    if !s.is_null() && session_alive(s.as_ref()) != 0 {
-        cmd_find_from_session(fs, &(*(s)).observer.upgrade().expect("live session"), flags);
-        if cmd_find_valid_state(&*fs) != 0 {
-            return 1 as ::core::ffi::c_int;
-        }
-    }
-    if cmd_find_from_nothing(fs, flags) == 0 as ::core::ffi::c_int {
-        return 1 as ::core::ffi::c_int;
-    }
-    cmd_find_clear_state(fs, flags);
-    return 0 as ::core::ffi::c_int;
+    0
 }
 pub unsafe fn event_payload_set_string(
     ep: &mut event_payload,
@@ -373,7 +344,9 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBu
             evbuffer_add_formatted(evb, |out| {
                 write_cstr(
                     out,
-                    ((*epi.value.client().get()).name)
+                    epi.value
+                        .client()
+                        .name()
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 )
@@ -381,18 +354,16 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBu
         }
         5 => {
             evbuffer_add_formatted(evb, |out| {
-                write!(out, "${}", ((*epi.value.session().get()).id) as u32)
+                write!(out, "${}", epi.value.session().id() as u32)
             });
         }
         6 => {
             evbuffer_add_formatted(evb, |out| {
-                write!(out, "@{}", ((*epi.value.window().get()).id) as u32)
+                write!(out, "@{}", epi.value.window().id() as u32)
             });
         }
         7 => {
-            evbuffer_add_formatted(evb, |out| {
-                write!(out, "%{}", ((*epi.value.pane().get()).id) as u32)
-            });
+            evbuffer_add_formatted(evb, |out| write!(out, "%{}", epi.value.pane().id() as u32));
         }
         8 => {
             evbuffer_add_formatted(evb, |out| {
@@ -448,11 +419,11 @@ pub unsafe fn event_payload_add_formats(
             let named = if epi.type_0() as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                Some((*epi.value.session().get()).name.as_ptr().cast_mut())
+                Some(epi.value.session().name())
             } else if epi.type_0() as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                Some((*epi.value.window().get()).name.as_ptr().cast_mut())
+                Some(epi.value.window().name())
             } else {
                 None
             };
@@ -460,7 +431,7 @@ pub unsafe fn event_payload_add_formats(
                 let mut suffixed = name.as_bytes().to_vec();
                 suffixed.extend_from_slice(b"_name");
                 let suffixed = CString::new(suffixed).expect("C string parts contain no NUL");
-                format_add(ft, suffixed.as_ptr(), |out| write_cstr(out, named));
+                format_add(ft, suffixed.as_ptr(), |out| write_cstr(out, named.as_ptr()));
             }
         }
     }

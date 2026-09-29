@@ -17,7 +17,7 @@ pub(crate) unsafe fn recalculate_size_state() {
     }
     let mut cursor = clients.first();
     while let Some(owner) = cursor {
-        if (*owner.get()).flags & CLIENT_UNATTACHEDFLAGS as u64 == 0 {
+        if owner.counts_as_attached() {
             if let Some(session) = owner.attached_session().upgrade() {
                 let state = &mut *session.get();
                 state.attached = state.attached.wrapping_add(1);

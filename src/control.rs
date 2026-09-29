@@ -15,7 +15,7 @@ use crate::src::reactor::{
     evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_read,
     evbuffer_readln,
 };
-use crate::src::server_client::server_client_set_exit_message;
+use crate::src::server_client::{server_client_set_exit_message, Client};
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -496,14 +496,52 @@ mod control_queue_tests {
     }
 
     #[test]
+    fn reply_limit_preserves_exit_message_and_discards_only_when_starting_exit() {
+        unsafe {
+            for exiting in [false, true] {
+                let owner = client::new();
+                let c = &mut *owner.get();
+                c.control_state = Some(Box::new(control_state::new()));
+                c.exit_message = Some(c"previous".to_owned());
+                if exiting {
+                    c.flags |= CLIENT_EXIT as u64;
+                }
+                let cs = c.control_state.as_deref_mut().unwrap();
+                cs.queued_reply_bytes = CONTROL_MAXIMUM_REPLY_BUFFER as usize - 1;
+                let block = control_add_block(cs, control_block::new(None, 10));
+                control_add_pane(&mut cs.panes, 7, window_pane_offset::default())
+                    .blocks
+                    .push_back(block.clone());
+                assert!(owner.accept_control_reply(0));
+                assert!(!owner.accept_control_reply(1));
+                assert_ne!((*owner.get()).flags & CLIENT_EXIT as u64, 0);
+                assert_ne!((*owner.get()).flags & CLIENT_CONTROL_DISCARD, 0);
+                assert_eq!(
+                    (*owner.get()).exit_message.as_deref(),
+                    Some(if exiting {
+                        c"previous"
+                    } else {
+                        c"too far behind"
+                    })
+                );
+                assert_eq!(block.is_alive(), exiting);
+                assert!(!owner.accept_control_reply(0));
+                control_stop(&owner);
+            }
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+
+    #[test]
     fn formatting_can_reenter_notifications_or_stop_the_owned_state() {
+        use crate::src::server_client::Client;
         unsafe {
             let owner = client::new();
             let c = owner.get();
             (*c).control_state = Some(Box::new(control_state::new()));
             (*c).control_state.as_deref_mut().unwrap().guard_depth = 1;
-            control_notify_write(&owner, |out| {
-                control_notify_write(&owner, |out| out.write_all(b"inner"));
+            owner.notify(|out| {
+                owner.notify(|out| out.write_all(b"inner"));
                 out.write_all(b"outer")
             });
             let cs = (*c).control_state.as_deref().unwrap();
@@ -520,7 +558,7 @@ mod control_queue_tests {
             });
             assert!((*c).control_state.is_none());
             (*c).control_state = Some(Box::new(control_state::new()));
-            control_notify_write(&owner, |out| {
+            owner.notify(|out| {
                 control_stop(&owner);
                 out.write_all(b"stopped while formatting notification")
             });
@@ -794,119 +832,59 @@ pub unsafe fn control_reset_pane(
         cp.queued.used = wp_owner.output_offset().used;
     }
 }
-unsafe fn control_check_reply_buffer(
-    c_owner: &Rc<UnsafeCell<client>>,
-    mut added: size_t,
-) -> ::core::ffi::c_int {
-    let c = c_owner.get();
-
-    let Some(cs) = (*c).control_state.as_deref_mut() else {
-        return 1;
-    };
-    let mut size: size_t = 0;
-    if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_DISCARD != 0 {
-        return 1 as ::core::ffi::c_int;
-    }
-    size = cs
-        .write_event
-        .with_ptr(|stream| unsafe { evbuffer_get_length(&*(*stream).output) })
-        .unwrap_or(0);
-    size = size.wrapping_add(cs.queued_reply_bytes);
-    size = size.wrapping_add(added);
-    if size < CONTROL_MAXIMUM_REPLY_BUFFER as size_t {
-        return 0 as ::core::ffi::c_int;
-    }
-    log_debug(format_args!(
-        "{}: {}: {} bytes of replies buffered",
-        "control_check_reply_buffer",
-        log_cstr(
-            (((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
-        (size) as usize
-    ));
-    if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
-        server_client_set_exit_message(&mut *c, Some(CString::new("too far behind").unwrap()));
-        (*c).flags |= CLIENT_EXIT as uint64_t;
-        control_discard(&mut *c);
-    }
-    (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_CONTROL_DISCARD) as uint64_t;
-    return 1 as ::core::ffi::c_int;
-}
 unsafe fn control_write_line(c_owner: &Rc<UnsafeCell<client>>, line: CString) {
-    let c = c_owner.get();
-
-    let mut cb = refbox::Weak::<control_block>::new();
-    let size = line.as_bytes_with_nul().len() as size_t;
-    if control_check_reply_buffer(c_owner, size) != 0 {
+    let size = line.as_bytes_with_nul().len();
+    if !c_owner.accept_control_reply(size) {
         return;
     }
-    let Some(cs) = (*c).control_state.as_deref_mut() else {
-        return;
+    let name_owner = c_owner.name();
+    let name = name_owner
+        .as_ref()
+        .map_or(std::ptr::null(), |name| name.as_ptr());
+    let (stream, immediate) = {
+        let Some(mut cs) = c_owner.borrow_control_mut() else {
+            return;
+        };
+        let stream = cs.write_event.clone();
+        if !control_first_block(&cs).is_alive() {
+            log_debug(format_args!(
+                "control_write_line: {}: writing line: {}",
+                log_cstr(name),
+                log_cstr(line.as_ptr())
+            ));
+            (stream, Some(line))
+        } else {
+            let cb = control_add_block(&mut cs, control_block::new(Some(line), 0));
+            cs.queued_reply_bytes = cs.queued_reply_bytes.wrapping_add(size);
+            cb.try_borrow_mut().expect("live control block").t = get_timer();
+            log_debug(format_args!(
+                "control_write_line: {}: storing line: {}",
+                log_cstr(name),
+                log_cstr(
+                    cb.try_borrow_mut()
+                        .expect("live control block")
+                        .line
+                        .as_ref()
+                        .map_or(std::ptr::null(), |line| line.as_ptr())
+                )
+            ));
+            (stream, None)
+        }
     };
-    if !control_first_block(cs).is_alive() {
-        log_debug(format_args!(
-            "{}: {}: writing line: {}",
-            "control_write_line",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
-            log_cstr((line.as_ptr()) as *const _)
-        ));
-        let _ = cs.write_event.with_ptr(|stream| unsafe {
-            bufferevent_write(
-                stream,
-                line.as_ptr() as *const ::core::ffi::c_void,
-                size.wrapping_sub(1 as size_t),
-            );
-            bufferevent_write(
-                stream,
-                b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-                1 as size_t,
-            );
-            bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short)
-        });
-        return;
-    }
-    cb = control_add_block(cs, control_block::new(Some(line), 0));
-    cs.queued_reply_bytes = cs.queued_reply_bytes.wrapping_add(size);
-    (*cb.try_borrow_mut().expect("live control block")).t = get_timer();
-    log_debug(format_args!(
-        "{}: {}: storing line: {}",
-        "control_write_line",
-        log_cstr(
-            (((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
-        log_cstr(
-            (((*cb.try_borrow_mut().expect("live control block")).line)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        )
-    ));
-    let _ = cs
-        .write_event
-        .with_ptr(|stream| unsafe { bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short) });
+    let _ = stream.with_ptr(|stream| {
+        if let Some(line) = immediate {
+            bufferevent_write(stream, line.as_ptr().cast(), size - 1);
+            bufferevent_write(stream, b"\n".as_ptr().cast(), 1);
+        }
+        bufferevent_enable(stream, EV_WRITE as i16)
+    });
 }
 unsafe fn control_flush_deferred(c_owner: &Rc<UnsafeCell<client>>) {
-    let c = c_owner.get();
-
     loop {
-        let line = (*c)
-            .control_state
-            .as_deref_mut()
-            .and_then(|cs| cs.deferred.pop_front());
-        let Some(line) = line else {
-            break;
-        };
+        let line = c_owner
+            .borrow_control_mut()
+            .and_then(|mut cs| cs.deferred.pop_front());
+        let Some(line) = line else { break };
         control_write_line(c_owner, line);
     }
 }
@@ -914,9 +892,7 @@ pub unsafe fn control_write(
     c_owner: &Rc<UnsafeCell<client>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let c = c_owner.get();
-
-    if (*c).control_state.is_none() {
+    if c_owner.borrow_control_mut().is_none() {
         return;
     }
     let line = format_message_with(write);
@@ -924,43 +900,37 @@ pub unsafe fn control_write(
 }
 pub unsafe fn control_write_guard(
     c_owner: &Rc<UnsafeCell<client>>,
-    mut guard: *const ::core::ffi::c_char,
-    mut t: ::core::ffi::c_long,
-    mut number: u_int,
-    mut flags: ::core::ffi::c_int,
+    guard: *const ::core::ffi::c_char,
+    t: ::core::ffi::c_long,
+    number: u_int,
+    flags: ::core::ffi::c_int,
 ) {
-    let c = c_owner.get();
-
-    let Some(cs) = (*c).control_state.as_deref_mut() else {
-        return;
-    };
-    if strcmp(guard, b"begin\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
+    let begin = CStr::from_ptr(guard) == c"begin";
     {
-        cs.guard_depth += 1;
+        let Some(mut cs) = c_owner.borrow_control_mut() else {
+            return;
+        };
+        if begin {
+            cs.guard_depth += 1;
+        }
     }
     control_write(c_owner, |out| {
         out.write_all(b"%")?;
         write_cstr(out, guard)?;
-        write!(
-            out,
-            " {} {} {}",
-            (t) as ::core::ffi::c_long,
-            (number) as u32,
-            (flags) as i32
-        )
+        write!(out, " {} {} {}", t, number, flags)
     });
-    let Some(cs) = (*c).control_state.as_deref_mut() else {
-        return;
-    };
-    if strcmp(guard, b"begin\0" as *const u8 as *const ::core::ffi::c_char)
-        != 0 as ::core::ffi::c_int
-        && cs.guard_depth > 0 as ::core::ffi::c_int
-        && {
+    let flush = {
+        let Some(mut cs) = c_owner.borrow_control_mut() else {
+            return;
+        };
+        if !begin && cs.guard_depth > 0 {
             cs.guard_depth -= 1;
-            cs.guard_depth == 0 as ::core::ffi::c_int
+            cs.guard_depth == 0
+        } else {
+            false
         }
-    {
+    };
+    if flush {
         control_flush_deferred(c_owner);
     }
 }
@@ -968,31 +938,26 @@ pub unsafe fn control_notify_write(
     c_owner: &Rc<UnsafeCell<client>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let c = c_owner.get();
-
-    if (*c).control_state.is_none() {
+    if c_owner.borrow_control_mut().is_none() {
         return;
     }
     let line = format_message_with(write);
-    let Some(cs) = (*c).control_state.as_deref_mut() else {
-        return;
-    };
-    if cs.guard_depth == 0 as ::core::ffi::c_int {
-        control_write_line(c_owner, line);
-        return;
+    let name = c_owner.name();
+    {
+        let Some(mut cs) = c_owner.borrow_control_mut() else {
+            return;
+        };
+        if cs.guard_depth != 0 {
+            log_debug(format_args!(
+                "control_notify_write: {}: deferring notification: {}",
+                log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
+                log_cstr(line.as_ptr())
+            ));
+            cs.deferred.push_back(line);
+            return;
+        }
     }
-    log_debug(format_args!(
-        "{}: {}: deferring notification: {}",
-        "control_notify_write",
-        log_cstr(
-            (((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
-        log_cstr((line.as_ptr()) as *const _)
-    ));
-    cs.deferred.push_back(line);
+    control_write_line(c_owner, line);
 }
 unsafe fn control_check_age(
     c_owner: &Rc<UnsafeCell<client>>,
@@ -1789,6 +1754,11 @@ pub unsafe fn control_discard(c: &mut client) {
         .control_state
         .as_deref_mut()
         .expect("control client state");
+    control_discard_pane_output(cs);
+}
+
+/// Component-only work: no Client access and no synchronous model callbacks.
+pub(crate) unsafe fn control_discard_pane_output(cs: &mut control_state) {
     for cp in cs.panes.values_mut() {
         while let Some(block) = cp.blocks.pop_front() {
             control_release_block(&mut cs.all_blocks, &mut cs.queued_reply_bytes, &block);

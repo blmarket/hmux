@@ -4,6 +4,7 @@
 use super::*;
 use crate::src::control::{control_get_window_size, control_write_output};
 use crate::src::session::Session;
+use crate::src::shared::control::control_state;
 use crate::src::shared::environment::environ;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_type};
 use crate::src::shared::status::status_prompt_input_cb;
@@ -16,13 +17,32 @@ use std::rc::{Rc, Weak};
 /// component borrows before callbacks. Logical client loss remains explicit;
 /// existing deferred-owner release sites must keep their deferred release duty.
 pub trait Client {
+    type ControlMut<'a>: std::ops::DerefMut<Target = control_state>
+    where
+        Self: 'a;
+    /// Release before calling models, formatting, dispatching callbacks, or
+    /// stopping control mode. No component pointer may escape the guard.
+    unsafe fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>>;
+    /// Check reply pressure and publish exit/discard state before discarding
+    /// pending pane output. Returns false for a stopped or discarding client.
+    unsafe fn accept_control_reply(&self, added: usize) -> bool;
     unsafe fn attached_session(&self) -> Weak<UnsafeCell<session>>;
     unsafe fn set_session(&self, session: Option<&Rc<UnsafeCell<session>>>);
     unsafe fn reattach_after_session_destroy(&self, target: Option<&Rc<UnsafeCell<session>>>);
     unsafe fn is_dead(&self) -> bool;
     unsafe fn is_control(&self) -> bool;
+    unsafe fn is_read_only(&self) -> bool;
+    unsafe fn exec(&self, command: &CStr);
+    /// Whether this client currently receives control protocol notifications.
+    unsafe fn receives_notifications(&self) -> bool;
+    /// Formatting runs without a client borrow and may reenter the client.
+    unsafe fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>);
+    unsafe fn name(&self) -> Option<CString>;
+    /// Attachment accounting excludes suspended, dead and exiting clients.
+    unsafe fn counts_as_attached(&self) -> bool;
     /// Deliver the audible/visual part after Session has deduplicated the alert.
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32);
+
     unsafe fn uses_legacy_layout_format(&self) -> bool;
     unsafe fn focuses_window(&self, window: &Rc<UnsafeCell<window>>) -> bool;
     unsafe fn participates_in_window_sizing(&self) -> bool;
@@ -126,6 +146,62 @@ pub trait Client {
 }
 
 impl Client for Rc<UnsafeCell<client>> {
+    type ControlMut<'a> = &'a mut control_state;
+    unsafe fn borrow_control_mut(&self) -> Option<Self::ControlMut<'_>> {
+        (*self.get()).control_state.as_deref_mut()
+    }
+    unsafe fn accept_control_reply(&self, added: usize) -> bool {
+        use crate::src::shared::client::CLIENT_CONTROL_DISCARD;
+        let state = &mut *self.get();
+        let Some(control) = state.control_state.as_deref_mut() else {
+            return false;
+        };
+        if state.flags & CLIENT_CONTROL_DISCARD != 0 {
+            return false;
+        }
+        let size = control
+            .write_event
+            .with_ptr(|stream| crate::src::reactor::evbuffer_get_length(&*(*stream).output))
+            .unwrap_or(0)
+            .wrapping_add(control.queued_reply_bytes)
+            .wrapping_add(added);
+        if size < crate::src::control::CONTROL_MAXIMUM_REPLY_BUFFER as usize {
+            return true;
+        }
+        log_debug(format_args!(
+            "control_check_reply_buffer: {}: {} bytes of replies buffered",
+            log_cstr(
+                state
+                    .name
+                    .as_ref()
+                    .map_or(std::ptr::null(), |name| name.as_ptr())
+            ),
+            size
+        ));
+        if state.flags & CLIENT_EXIT as u64 == 0 {
+            state.exit_message = Some(c"too far behind".to_owned());
+            state.flags |= CLIENT_EXIT as u64;
+            crate::src::control::control_discard_pane_output(control);
+        }
+        state.flags |= CLIENT_CONTROL_DISCARD;
+        false
+    }
+
+    unsafe fn notify(&self, write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+        crate::src::control::control_notify_write(self, write);
+    }
+    unsafe fn receives_notifications(&self) -> bool {
+        let state = &*self.get();
+        state.flags & CLIENT_CONTROL as u64 != 0
+            && state.flags & CLIENT_EXIT as u64 == 0
+            && state.control_state.is_some()
+    }
+    unsafe fn name(&self) -> Option<CString> {
+        (*self.get()).name.clone()
+    }
+    unsafe fn counts_as_attached(&self) -> bool {
+        (*self.get()).flags & crate::src::shared::client::CLIENT_UNATTACHEDFLAGS as u64 == 0
+    }
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
         use crate::src::shared::alerts::{VISUAL_BOTH, VISUAL_OFF};
         if visual == VISUAL_OFF || visual == VISUAL_BOTH {
@@ -169,6 +245,12 @@ impl Client for Rc<UnsafeCell<client>> {
         (*self.get()).flags & CLIENT_DEAD as u64 != 0
     }
 
+    unsafe fn is_read_only(&self) -> bool {
+        (*self.get()).flags & CLIENT_READONLY as u64 != 0
+    }
+    unsafe fn exec(&self, command: &CStr) {
+        server_client_exec(self, command.as_ptr());
+    }
     unsafe fn is_control(&self) -> bool {
         (*self.get()).flags & CLIENT_CONTROL as u64 != 0
     }
