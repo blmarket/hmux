@@ -588,7 +588,7 @@ unsafe fn server_destroy_session_group(s_owner: &std::rc::Rc<std::cell::UnsafeCe
         );
     } else {
         for session_owner in crate::src::session::session_group_members(sg) {
-            let s = session_owner.get();
+            let _s = session_owner.get();
             server_destroy_session(&session_owner);
             session_destroy(
                 &session_owner,

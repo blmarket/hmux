@@ -692,7 +692,7 @@ unsafe fn window_switch_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let c = client_owner.get();
+    let _c = client_owner.get();
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut current_block: u64;

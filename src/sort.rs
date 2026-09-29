@@ -196,8 +196,8 @@ unsafe fn sort_pane_cmp(
     sort_crit: &sort_criteria,
 ) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut ai: u_int = 0;
-    let mut bi: u_int = 0;
+    let _ai: u_int = 0;
+    let _bi: u_int = 0;
     match sort_crit.order as ::core::ffi::c_uint {
         0 => {
             result = (*a).active_point.wrapping_sub((*b).active_point) as ::core::ffi::c_int;

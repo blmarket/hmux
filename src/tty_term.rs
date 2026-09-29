@@ -1169,7 +1169,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
-        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
         s = (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);
@@ -1356,7 +1356,7 @@ pub unsafe fn tty_term_create(
     let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
-        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
         s = (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);

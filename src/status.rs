@@ -573,7 +573,7 @@ unsafe fn status_message_area(c: &client) -> (u_int, u_int) {
     (x, width)
 }
 unsafe fn status_message_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    let mut c = c_owner.get();
+    let _c = c_owner.get();
     status_message_clear(&mut *(c_owner).get());
 }
 pub unsafe fn status_message_redraw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::core::ffi::c_int {

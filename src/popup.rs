@@ -709,7 +709,7 @@ unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
     }
 }
 unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard, event: *mut key_event) -> i32 {
-    let mut c = c_owner.get();
+    let _c = c_owner.get();
     let pd = popup.as_ptr();
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;

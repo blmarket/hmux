@@ -78,7 +78,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
         !sg.is_null()
     } {
         for session_owner in crate::src::session::session_group_members(sg) {
-            let sloop = session_owner.get();
+            let _sloop = session_owner.get();
             server_destroy_session(&session_owner);
             session_destroy(
                 &session_owner,
@@ -128,7 +128,7 @@ unsafe fn cmd_kill_session_filter(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let item = item_handle.get();
-    let mut s = s_owner.get();
+    let _s = s_owner.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;

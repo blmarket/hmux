@@ -60,7 +60,7 @@ unsafe fn cmd_refresh_client_update_subscription(
     tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut value: *const ::core::ffi::c_char,
 ) {
-    let mut tc = tc_owner.get();
+    let _tc = tc_owner.get();
     let Some(parsed) = monitor_parse_owned(CStr::from_ptr(value)) else {
         control_remove_sub(tc_owner, value);
         return;
@@ -188,7 +188,7 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
 }
 
 unsafe fn cmd_refresh_client_update_offset(tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, value: *const ::core::ffi::c_char) {
-    let mut tc = tc_owner.get();
+    let _tc = tc_owner.get();
     let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };

@@ -872,7 +872,7 @@ fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
 }
 unsafe fn redraw_build_cells<'a>(mut bctx: *mut redraw_build_ctx<'a>, cells: &'a mut Vec<redraw_build_cell>) {
     let mut w: *mut window = (*bctx).w.get();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let _wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ncells: size_t = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -1829,7 +1829,7 @@ unsafe fn redraw_draw_scene(
     let wp = pane_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let Some(window_owner) = scene.w.upgrade() else { return; };
     let w = window_owner.get();
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let _s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut sl: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut i: u_int = 0;

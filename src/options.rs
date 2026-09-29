@@ -491,8 +491,8 @@ unsafe fn options_array_free(mut o: *mut options_entry, mut a: *mut options_arra
     drop((*o).value.array_storage().entries.remove(&key));
 }
 pub unsafe fn options_array_clear(mut o: *mut options_entry) {
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut a1: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
+    let _a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
+    let _a1: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     if !(!(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() && (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return;
     }

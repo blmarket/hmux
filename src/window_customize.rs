@@ -2916,7 +2916,7 @@ unsafe fn window_customize_init(
 ) -> *mut screen {
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
+    let _wp: *mut window_pane = mode_pane;
     let mut data: *mut window_customize_modedata =
         ::core::ptr::null_mut::<window_customize_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
@@ -4587,7 +4587,7 @@ unsafe fn window_customize_change_current_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_change_tagged_callback(
-    c: Option<&Rc<UnsafeCell<client>>>,
+    _c: Option<&Rc<UnsafeCell<client>>>,
     owner: &Rc<UnsafeCell<window_customize_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -4750,7 +4750,7 @@ unsafe fn window_customize_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let c = client_owner.get();
+    let _c = client_owner.get();
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;

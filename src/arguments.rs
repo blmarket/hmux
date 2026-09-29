@@ -837,7 +837,7 @@ pub unsafe fn args_make_commands_prepare(
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let _file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut state = Box::new(args_command_state::empty());
     if idx < (*args).count {
         value = (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;

@@ -90,7 +90,7 @@ unsafe fn cmd_new_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
     };
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let _tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let session_owner = target.session_handle().expect("new-window target session");
     let s = session_owner.get();
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();

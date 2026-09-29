@@ -94,7 +94,7 @@ unsafe fn cmd_send_keys_inject_key(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let _s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -148,7 +148,7 @@ unsafe fn cmd_send_keys_inject_string(
     mut i: ::core::ffi::c_int,
 ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
     let mut after = after_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    let item = item_handle.get();
+    let _item = item_handle.get();
     let mut s: *const ::core::ffi::c_char = args_string(&mut *(args), i as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut uc: utf8_char = 0;
     let mut key: key_code = 0;

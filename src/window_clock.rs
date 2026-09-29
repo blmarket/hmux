@@ -728,7 +728,7 @@ unsafe fn window_clock_key(
     _m: *mut mouse_event,
 ) {
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
+    let _mode_pane = mode_pane_owner.get();
     window_pane_reset_mode(&mode_pane_owner);
 }
 unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {

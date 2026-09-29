@@ -96,7 +96,7 @@ unsafe fn cmd_kill_pane_filter(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let item = item_handle.get();
-    let mut s = s_owner.get();
+    let _s = s_owner.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;

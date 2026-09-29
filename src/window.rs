@@ -1186,7 +1186,7 @@ pub unsafe fn window_set_name(
     mut new_name: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
 ) {
-    let mut w = w_owner.get();
+    let _w = w_owner.get();
     if let Some(name) = clean_name_cstring(CStr::from_ptr(new_name), untrusted) {
         // Keep the previous owner alive across synchronous rename callbacks.
         let last = window_replace_name(w_owner, name);
@@ -1733,7 +1733,7 @@ pub unsafe fn window_zoom(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn window_unzoom(w_owner: &Rc<std::cell::UnsafeCell<window>>, notify: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    let mut w = w_owner.get();
+    let _w = w_owner.get();
     window_unzoom_internal(w_owner, notify, true)
 }
 

@@ -610,7 +610,7 @@ unsafe fn window_panes_clip_floating_pane(
     mut sxp: *mut u_int,
     mut syp: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mut wp = wp_owner.get();
+    let _wp = wp_owner.get();
     let mut x: ::core::ffi::c_int = 0;
     let mut y: ::core::ffi::c_int = 0;
     let mut x2: ::core::ffi::c_int = 0;
@@ -863,7 +863,7 @@ unsafe fn window_panes_draw_borders(
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
-    let mut w = w_owner.get();
+    let _w = w_owner.get();
     let mut border_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -929,7 +929,7 @@ unsafe fn window_panes_draw_floating_border(
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
-    let mut wp = wp_owner.get();
+    let _wp = wp_owner.get();
     let mut border_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1041,7 +1041,7 @@ unsafe fn window_panes_clear_floating_area(
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
-    let mut wp = wp_owner.get();
+    let _wp = wp_owner.get();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1116,7 +1116,7 @@ unsafe fn window_panes_draw_format(
     mut sx: u_int,
     mut gc: *const grid_cell,
 ) {
-    let mut wp = wp_owner.get();
+    let _wp = wp_owner.get();
     let mut source_session_owner = None;
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
@@ -1605,7 +1605,7 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
 }
 unsafe fn window_panes_timer_callback(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
+    let _mode_pane = mode_pane_owner.get();
     window_pane_reset_mode(&mode_pane_owner);
 }
 unsafe fn window_panes_init(
@@ -1889,7 +1889,7 @@ unsafe fn window_panes_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let c = client_owner.get();
+    let _c = client_owner.get();
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;

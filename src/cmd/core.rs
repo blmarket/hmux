@@ -298,7 +298,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
-        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
         equals = strchr((*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()), '=' as i32);
         if !equals.is_null() {
             n = equals.offset_from((*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())) as ::core::ffi::c_long as size_t;

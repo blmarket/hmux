@@ -692,7 +692,7 @@ unsafe fn cmd_find_get_pane_with_window(
 ) -> ::core::ffi::c_int {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let _wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut n: u_int = 0;
     log_debug(format_args!(
         "{}: {}",
@@ -836,7 +836,7 @@ pub fn cmd_find_empty_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
 pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     // Pin the Rc allocations while checking membership. No callbacks run here,
     // so the existing window owner remains responsible for close notification.
-    let (Some(s), Some(w), Some(wp)) = (fs.s.upgrade(), fs.w.upgrade(), fs.wp.upgrade()) else {
+    let (Some(s), Some(w), Some(_wp)) = (fs.s.upgrade(), fs.w.upgrade(), fs.wp.upgrade()) else {
         return 0;
     };
     let Ok(wl) = fs.wl.try_borrow_mut() else {
@@ -1661,7 +1661,7 @@ unsafe fn cmd_find_current_client(
     let inside_pane_owner;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut found = None;
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let _s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,

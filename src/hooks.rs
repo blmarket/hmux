@@ -399,7 +399,7 @@ impl Drop for hooks_monitor {
 }
 pub unsafe fn hooks_monitor_remove(mut oo: *mut options, mut name: *const ::core::ffi::c_char) {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
+    let _hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
     o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
     if o.is_null() {
         return;
@@ -530,7 +530,7 @@ pub unsafe fn hooks_monitor_add(
     mut fs: *mut cmd_find_state,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
 ) {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let _s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
     hooks_monitor_remove(oo, name);
@@ -594,7 +594,7 @@ pub unsafe fn hooks_monitor_get(
     mut id: *mut ::core::ffi::c_int,
     mut format: *mut *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let name = (*o).name.as_ptr();
+    let _name = (*o).name.as_ptr();
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as ::core::ffi::c_int;
     };

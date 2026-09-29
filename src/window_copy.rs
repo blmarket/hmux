@@ -1013,7 +1013,7 @@ pub unsafe fn window_copy_pageup(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<
 }
 unsafe fn window_copy_pageup1(mut wme: refbox::Weak<window_mode_entry>, mut half_page: ::core::ffi::c_int) {
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
+    let _mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut n: u_int = 0;
@@ -1085,7 +1085,7 @@ unsafe fn window_copy_pagedown1(
     mut scroll_exit: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
+    let _mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut s: *mut screen = &raw mut (*data).screen;
     let mut n: u_int = 0;
@@ -2043,7 +2043,7 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
+    let _wp: *mut window_pane = mode_pane;
     let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
     let tty_oy = tty_window_offset(&(*c).tty).oy;
@@ -2143,7 +2143,7 @@ unsafe fn window_copy_cmd_history_bottom(
 ) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
+    let _mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let s = (*data).backing();
     let mut oy: u_int = 0;
@@ -2184,7 +2184,7 @@ unsafe fn window_copy_cmd_history_top(
 ) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
+    let _mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut oy: u_int = 0;
     let mut old_oy: u_int = (*data).oy;
@@ -3619,7 +3619,7 @@ unsafe fn window_copy_refresh_allowed(mut wme: refbox::Weak<window_mode_entry>) 
     let Some(source_owner) = wme.get_unchecked().swp.upgrade() else {
         return 0;
     };
-    let wp = source_owner.get();
+    let _wp = source_owner.get();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     if (*data).viewmode != 0 || !wme.get_unchecked().swp.ptr_eq(&wme.get_unchecked().wp) {
         return 0 as ::core::ffi::c_int;
@@ -5326,7 +5326,7 @@ unsafe fn window_copy_scroll_to(
     mut no_redraw: ::core::ffi::c_int,
 ) {
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
+    let _mode_pane = mode_pane_owner.get();
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut gd: *mut grid = (*data).backing_mut().grid_mut();
     let mut offset: u_int = 0;
@@ -8203,7 +8203,7 @@ unsafe fn window_copy_pipe_run(
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut cmd: *const ::core::ffi::c_char,
 ) -> Option<Vec<u8>> {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let _s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut job = refbox::Weak::new();
     let buf = window_copy_get_selection(wme.clone());
     if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
@@ -8243,7 +8243,7 @@ unsafe fn window_copy_pipe(
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut cmd: *const ::core::ffi::c_char,
 ) {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let _s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let _ = window_copy_pipe_run(wme.clone(), s_owner, cmd);
 }
 unsafe fn window_copy_copy_pipe(
@@ -8254,7 +8254,7 @@ unsafe fn window_copy_copy_pipe(
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let _s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if let Some(buf) = window_copy_pipe_run(wme.clone(), s_owner, cmd) {
         window_copy_copy_buffer(wme.clone(), prefix, buf, set_paste, set_clip);
     }

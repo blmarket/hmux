@@ -759,7 +759,7 @@ unsafe fn window_client_init(
 ) -> *mut screen {
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
+    let _wp: *mut window_pane = mode_pane;
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
@@ -895,7 +895,7 @@ unsafe fn window_client_key(
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let c = client_owner.get();
+    let _c = client_owner.get();
     let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;

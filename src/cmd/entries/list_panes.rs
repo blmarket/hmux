@@ -103,7 +103,7 @@ unsafe fn cmd_list_panes_window(
     mut type_0: ::core::ffi::c_int,
 ) {
     let item = item_handle.get();
-    let mut s = s_owner.get();
+    let _s = s_owner.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());

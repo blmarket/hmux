@@ -193,7 +193,7 @@ pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut envi
     let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
-        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
         found = 0 as ::core::ffi::c_int;
         for envent in environ_iter(src) {
             if fnmatch(

@@ -62,7 +62,7 @@ unsafe fn cmd_respawn_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
     };
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let _tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut cause: Option<std::ffi::CString> = None;
