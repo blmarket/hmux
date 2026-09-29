@@ -173,60 +173,20 @@ fn screen_write_redraw_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<window_
     let observer = observer.clone();
     Some(Box::new(move |_| unsafe {
         if let Some(owner) = observer.upgrade() {
-            (*owner.get()).flags |= PANE_REDRAW;
+            use crate::src::window::WindowPane;
+            owner.request_redraw(false);
         }
     }))
 }
 fn screen_write_set_client_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> tty_ctx_set_client_cb {
+    use crate::src::server_client::Client;
     let observer = observer.clone();
-    Some(Box::new(move |ttyctx, c| unsafe {
-        let Some(owner) = observer.upgrade() else { return 0; };
-        let wp = owner.get();
-        if (*ttyctx).flags & TTY_CTX_INVISIBLE_PANES != 0 {
-            if session_has(&*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())) != 0 {
-                return 1;
-            }
-            return 0;
-        }
-        if ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
-            return 0;
-        }
-        if (*wp).layout_cell.is_null() {
-            return 0;
-        }
-        if (*wp).flags & (PANE_REDRAW | PANE_DROP) != 0 {
-            return -1;
-        }
-        if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-            log_debug(format_args!(
-                "{}: adding %{} to deferred redraw",
-                "screen_write_set_client_cb",
-                ((*wp).id) as u32
-            ));
-            (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
-            return -1;
-        }
-        let view = tty_window_offset(&(*c).tty);
-        ttyctx.wox = view.ox;
-        ttyctx.woy = view.oy;
-        ttyctx.wsx = view.sx;
-        ttyctx.wsy = view.sy;
-        if view.bigger {
-            (*ttyctx).flags |= TTY_CTX_WINDOW_BIGGER;
-        } else {
-            (*ttyctx).flags &= !TTY_CTX_WINDOW_BIGGER;
-        }
-        (*ttyctx).rxoff = (*wp).xoff;
-        (*ttyctx).xoff = (*ttyctx).rxoff;
-        (*ttyctx).ryoff = (*wp).yoff;
-        (*ttyctx).yoff = (*ttyctx).ryoff;
-        if status_at_line(&*c) == 0 {
-            (*ttyctx).yoff =
-                ((*ttyctx).yoff as u_int).wrapping_add(status_line_size(&*c)) as ::core::ffi::c_int;
-        }
-        1
+    Some(Box::new(move |ttyctx, client| unsafe {
+        let Some(pane) = observer.upgrade() else { return 0; };
+        client.prepare_pane_render(ttyctx, &pane)
     }))
 }
+
 unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let write_pane_owner = ctx.wp.upgrade();
     let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -3615,7 +3575,7 @@ mod write_ctx_tests {
             assert!(observer.upgrade().is_none());
             redraw(&ttyctx);
             let client = client::new();
-            assert_eq!(set_client(&mut ttyctx, &mut *client.get()), 0);
+            assert_eq!(set_client(&mut ttyctx, &client), 0);
         }
     }
 

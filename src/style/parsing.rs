@@ -37,7 +37,7 @@ use crate::src::text::utf8::utf8_set;
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const STYLE_PAD_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 
-static mut style_default: style = unsafe {
+pub(super) static mut style_default: style = unsafe {
     style {
         gc: grid_cell {
             data: utf8_data {

@@ -1,3 +1,6 @@
+mod api;
+pub use api::Client;
+
 use hmux_buffer::SegmentedBuf;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::options::options_owner_ptr;
@@ -755,6 +758,17 @@ pub unsafe fn server_client_how_many() -> u_int {
     }
     return n;
 }
+unsafe fn server_client_update_overlay_focus(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    use crate::src::session::Session;
+    use crate::src::window::Window;
+    let Some(session) = owner.attached_session().upgrade() else { return };
+    let link = session.current_winlink();
+    if let Some(window) = link.get_unchecked().window_handle().cloned() {
+        window_update_focus(Some(&window));
+        window.release(c"client overlay focus");
+    }
+}
+
 pub unsafe fn server_client_set_overlay(
     c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut checkcb: overlay_check_cb,
@@ -788,8 +802,8 @@ pub unsafe fn server_client_set_overlay(
     if (*c).overlay_mode.is_none() {
         (*c).tty.flags |= TTY_NOCURSOR;
     }
-    window_update_focus((((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-    server_redraw_client(&mut *(c));
+    server_client_update_overlay_focus(c_owner);
+    c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
 pub unsafe fn server_client_clear_overlay(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let mut c = c_owner.get();
@@ -809,7 +823,7 @@ pub unsafe fn server_client_clear_overlay(c_owner: &std::rc::Rc<std::cell::Unsaf
     let overlay_resize = (*c).overlay_resize.take();
     let overlay_data = (*c).overlay_data.take();
     if let Some(free) = overlay_free {
-        free(&mut *c);
+        free(c_owner);
     }
     drop((
         overlay_check,
@@ -822,10 +836,8 @@ pub unsafe fn server_client_clear_overlay(c_owner: &std::rc::Rc<std::cell::Unsaf
     if (*c).overlay_generation == generation {
         (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
     }
-    if !(*c).session_handle().is_none() {
-        window_update_focus((((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-    }
-    server_redraw_client(&mut *(c));
+    server_client_update_overlay_focus(c_owner);
+    c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
 // A callback may clear or replace its overlay. Restore only the generation
 // that was borrowed, and discard results pointing into a retired owner.
@@ -835,7 +847,7 @@ pub(crate) unsafe fn server_client_overlay_draw(c_owner: &std::rc::Rc<std::cell:
     let Some(mut callback) = (*c).overlay_draw.take() else {
         return;
     };
-    callback(&mut *c);
+    callback(c_owner);
     if (*c).overlay_generation == generation && (*c).overlay_draw.is_none() {
         (*c).overlay_draw = Some(callback);
     }
@@ -845,7 +857,7 @@ pub(crate) unsafe fn server_client_overlay_key(c_owner: &std::rc::Rc<std::cell::
     let mut c = c_owner.get();
     let generation = (*c).overlay_generation;
     let mut callback = (*c).overlay_key.take()?;
-    let result = callback(&mut *c, event);
+    let result = callback(c_owner, event);
     if (*c).overlay_generation != generation {
         // This event was handled by the retired overlay. In particular, an
         // old close request must not close a newly installed overlay.
@@ -863,7 +875,7 @@ pub(crate) unsafe fn server_client_overlay_mode(
     let mut c = c_owner.get();
     let generation = (*c).overlay_generation;
     let mut callback = (*c).overlay_mode.take()?;
-    let result = callback(&mut *c);
+    let result = callback(c_owner);
     if (*c).overlay_generation != generation {
         return None;
     }
@@ -879,7 +891,7 @@ pub(crate) unsafe fn server_client_overlay_resize(c_owner: &std::rc::Rc<std::cel
     let Some(mut callback) = (*c).overlay_resize.take() else {
         return;
     };
-    callback(&mut *c);
+    callback(c_owner);
     if (*c).overlay_generation == generation && (*c).overlay_resize.is_none() {
         (*c).overlay_resize = Some(callback);
     }
@@ -894,7 +906,7 @@ pub(crate) unsafe fn server_client_overlay_check(
     let mut c = c_owner.get();
     let generation = (*c).overlay_generation;
     let mut callback = (*c).overlay_check.take()?;
-    let result = callback(&mut *c, px, py, nx);
+    let result = callback(c_owner, px, py, nx);
     if (*c).overlay_generation != generation {
         return None;
     }
@@ -1382,36 +1394,52 @@ unsafe fn server_client_fire_resized(c_owner: &std::rc::Rc<std::cell::UnsafeCell
     );
 }
 pub unsafe fn server_client_set_session(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
-    let mut c = c_owner.get();
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut old: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !s.is_null() && !(*c).session_handle().is_none() && (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s {
-        (*c).last_session = (*c).session.clone();
-    } else if s.is_null() {
+    use crate::src::session::Session;
+    use crate::src::window::Window;
+
+    let old = c_owner.attached_session().upgrade();
+    let c = c_owner.get();
+    if let Some(target) = s_owner {
+        if old.as_ref().is_some_and(|old| !std::rc::Rc::ptr_eq(old, target)) {
+            (*c).last_session = (*c).session.clone();
+        }
+    } else {
         (*c).last_session = std::rc::Weak::new();
     }
-    (*c).set_session((s).as_ref());
+    (*c).session = s_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
-    if !old.is_null() && (*old).current_winlink().is_alive() {
-        window_update_focus((((*old).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    if let Some(old) = old.as_ref() {
+        let link = old.current_winlink();
+        if link.is_alive() {
+            if let Some(window) = link.get_unchecked().window_handle().cloned() {
+                window_update_focus(Some(&window));
+                window.release(c"client old-session focus");
+            }
+        }
     }
-    if !s.is_null() {
-        (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+    if let Some(session) = s_owner {
+        {
+            let link = session.current_winlink();
+            let window = link.get_unchecked().window_handle().expect("attached session window");
+            window.set_latest_client(Some(c_owner));
+        }
         recalculate_sizes();
-        window_update_focus((((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-        session_update_activity(&mut *s, None);
-        session_theme_changed(s.as_ref());
-        gettimeofday(&raw mut (*s).last_attached_time, NULL);
-        ((*s).current_winlink()).get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
-        alerts_check_session(&(*(s)).observer.upgrade().expect("live session"));
-        tty_update_client_offset(&(*(c)).observer.upgrade().expect("live client"));
-        status_timer_start(&(*(c)).observer.upgrade().expect("live client"));
-        server_client_fire_session_changed(c_owner, (old).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-        server_redraw_client(&mut *(c));
+        {
+            let link = session.current_winlink();
+            let window = link.get_unchecked().window_handle().cloned().expect("attached session window");
+            window_update_focus(Some(&window));
+            window.release(c"client new-session focus");
+        }
+        session.on_attached();
+        tty_update_client_offset(c_owner);
+        status_timer_start(c_owner);
+        server_client_fire_session_changed(c_owner, old.as_ref());
+        c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     }
     server_check_unattached();
     server_update_socket();
 }
+
 pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let c = client_owner.get();
     if (&cfg_client).ptr_eq(&(*c).observer) {
@@ -1637,7 +1665,7 @@ unsafe fn server_client_update_scrollbar_hover(
         let mut cursor = window_pane_first(w.as_ref());
         while let Some(pane_owner) = cursor {
             wp = pane_owner.get();
-            if !(window_pane_is_visible(&*wp) == 0) {
+            if !(window_pane_is_visible(&pane_owner) == 0) {
                 if server_client_in_scrollbar_area(&*wp, px, py) != 0 {
                     window_pane_scrollbar_show(&pane_owner);
                 } else {
@@ -1774,7 +1802,7 @@ unsafe fn server_client_check_mouse_in_pane(
         let mut cursor = window_pane_first(w.as_ref());
         while let Some(border_pane) = cursor {
             fwp = border_pane.get();
-            if !(window_pane_is_visible(&*fwp) == 0) {
+            if !(window_pane_is_visible(&border_pane) == 0) {
                 if !(window_pane_is_floating(&*fwp) != 0
                     && window_pane_get_pane_lines(&*fwp) as ::core::ffi::c_uint
                         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
@@ -2039,7 +2067,7 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     }
                     4 => {
                         fwl = winlink_find_by_index(
-                            &raw mut (*s).windows,
+                            &(*s).windows,
                             sr.argument as ::core::ffi::c_int,
                         );
                         if !fwl.is_alive() {
@@ -2567,28 +2595,26 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn server_client_update_latest(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    let mut c = c_owner.get();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    if (*c).session_handle().is_none() {
+    use crate::src::session::Session;
+    use crate::src::window::Window;
+
+    let Some(session) = c_owner.attached_session().upgrade() else { return };
+    let link = session.current_winlink();
+    let window = link.get_unchecked().window_handle().cloned().expect("attached session window");
+    if !window.set_latest_client(Some(c_owner)) {
+        window.release(c"client latest window");
         return;
     }
-    w = ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if (*w).latest.ptr_eq(&(*c).observer) {
-        return;
+    let use_latest = window.with_options_mut(|options| {
+        options_get_number((options as *const crate::src::shared::options::options).cast_mut(), c"window-size".as_ptr()) == WINDOW_SIZE_LATEST as i64
+    });
+    if use_latest {
+        recalculate_size(&window, 0);
     }
-    (*w).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
-    if options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == WINDOW_SIZE_LATEST as ::core::ffi::c_longlong
-    {
-        recalculate_size(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int);
-    }
-    events_fire_client(
-        b"client-active\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(c)).observer.upgrade().expect("live client"),
-    );
+    window.release(c"client latest window");
+    events_fire_client(c"client-active".as_ptr(), c_owner.clone());
 }
+
 unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
     let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut repeat: u_int = 0;
@@ -3239,7 +3265,7 @@ unsafe fn server_client_handle_key0(
             prompt_pane = window_pane_first(prompt_window.as_ref());
             while let Some(pane_owner) = prompt_pane.as_ref() {
                 if window_pane_has_prompt(&*pane_owner.get()) != 0
-                    && window_pane_is_visible(&*pane_owner.get()) != 0
+                    && window_pane_is_visible(pane_owner) != 0
                 {
                     break;
                 }
@@ -3247,7 +3273,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         if let Some(pane_owner) = prompt_pane.filter(|pane| {
-            window_pane_has_prompt(&*pane.get()) != 0 && window_pane_is_visible(&*pane.get()) != 0
+            window_pane_has_prompt(&*pane.get()) != 0 && window_pane_is_visible(pane) != 0
         }) {
             match window_pane_prompt_key(&pane_owner, Some(owner), (*event).key, &raw mut (*event).m)
                 as ::core::ffi::c_uint
@@ -3359,11 +3385,7 @@ pub unsafe fn server_client_loop() {
         let mut pane_cursor = window_pane_first(Some(&*w));
         while let Some(pane_owner) = pane_cursor {
             let wp = pane_owner.get();
-            if (*wp).fd != -(1 as ::core::ffi::c_int) {
-                server_client_check_pane_resize(&pane_owner);
-                server_client_check_pane_buffer(&pane_owner);
-            }
-            (*wp).flags &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_ACTIVITY);
+            crate::src::window::WindowPane::finish_cycle(&pane_owner);
             pane_cursor = window_pane_next(Some(&*wp));
         }
         check_window_name(&(*(w)).observer.upgrade().expect("live window"));
@@ -3411,236 +3433,6 @@ unsafe fn server_client_check_window_resize(owner: &std::rc::Rc<std::cell::Unsaf
         (*w).new_xpixel as ::core::ffi::c_int,
         (*w).new_ypixel as ::core::ffi::c_int,
     );
-}
-unsafe fn server_client_resize_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-    let wp = owner.get();
-    log_debug(format_args!(
-        "{}: %{} resize timer expired",
-        "server_client_resize_timer",
-        ((*wp).id) as u32
-    ));
-    event_del(&raw mut (*wp).resize_timer);
-}
-unsafe fn server_client_check_pane_resize(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-    let wp = pane_owner.get();
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 250000 as __suseconds_t,
-    };
-    if (*wp).resize_queue.is_empty() {
-        return;
-    }
-    if event_initialized(&(*wp).resize_timer) == 0 {
-        let resize_timer_observer = std::rc::Rc::downgrade(pane_owner);
-        event_set(
-            &raw mut (*wp).resize_timer,
-            -(1 as ::core::ffi::c_int),
-            0 as ::core::ffi::c_short,
-            move |_, _| unsafe {
-                if let Some(owner) = resize_timer_observer.upgrade() {
-                    server_client_resize_timer(&owner);
-                }
-            },
-        );
-    }
-    if event_pending(
-        &raw mut (*wp).resize_timer,
-        EV_TIMEOUT as ::core::ffi::c_short,
-        ::core::ptr::null_mut::<timeval>(),
-    ) != 0
-    {
-        return;
-    }
-    log_debug(format_args!(
-        "{}: %{} needs to be resized",
-        "server_client_check_pane_resize",
-        ((*wp).id) as u32
-    ));
-    let (queue_len, first_sx, first_sy, first_osx, first_osy, last_sx, last_sy, last_ptr, previous) = {
-        let queue = (*wp).resize_queue.as_ref();
-        for resize in queue {
-            log_debug(format_args!(
-                "queued resize: {}x{} -> {}x{}",
-                (resize.osx) as u32,
-                (resize.osy) as u32,
-                (resize.sx) as u32,
-                (resize.sy) as u32
-            ));
-        }
-        let first = queue.front().expect("non-empty resize queue");
-        let last = queue.back().expect("non-empty resize queue");
-        let previous = if queue.len() > 1 {
-            Some(
-                queue
-                    .get(queue.len() - 2)
-                    .expect("resize queue has a predecessor")
-                    .as_ref(),
-            )
-        } else {
-            None
-        };
-        (
-            queue.len(),
-            first.sx,
-            first.sy,
-            first.osx,
-            first.osy,
-            last.sx,
-            last.sy,
-            (&**last) as *const window_pane_resize as *mut window_pane_resize,
-            previous.map(|resize| (resize.sx, resize.sy)),
-        )
-    };
-    if queue_len == 1 {
-        window_pane_send_resize(&*wp, first_sx, first_sy);
-        window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
-    } else if last_sx != first_osx || last_sy != first_osy {
-        window_pane_send_resize(&*wp, last_sx, last_sy);
-        window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
-    } else {
-        let (sx, sy) = previous.expect("multiple resize entries have a predecessor");
-        window_pane_send_resize(&*wp, sx, sy);
-        window_pane_clear_resizes(&mut *wp, last_ptr);
-        tv.tv_usec = 10000 as __suseconds_t;
-    }
-    event_add(&raw mut (*wp).resize_timer, &raw mut tv);
-}
-unsafe fn server_client_check_pane_buffer(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-    let wp = pane_owner.get();
-    let mut minimum: size_t = 0;
-    let mut off: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    let mut flag: ::core::ffi::c_int = 0;
-    let mut attached_clients: u_int = 0 as u_int;
-    let mut new_size: size_t = 0;
-    minimum = (*wp).offset.used;
-    if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) && (*wp).pipe_offset.used < minimum {
-        minimum = (*wp).pipe_offset.used;
-    }
-    let mut registry_c_owner = clients.first();
-    while let Some(client_owner) = registry_c_owner {
-        let c = &mut *client_owner.get();
-        if !(*c).session_handle().is_none() {
-            attached_clients = attached_clients.wrapping_add(1);
-            if !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                off = 0 as ::core::ffi::c_int;
-            } else {
-                let wpo = control_pane_offset(
-                    (*c).control_state
-                        .as_deref_mut()
-                        .expect("control client state"),
-                    (*c).flags,
-                    (*wp).id,
-                    &mut flag,
-                );
-                if wpo.is_none() {
-                    if flag == 0 {
-                        off = 0 as ::core::ffi::c_int;
-                    }
-                } else if let Some(wpo) = wpo {
-                    if flag == 0 {
-                        off = 0 as ::core::ffi::c_int;
-                    }
-                    new_size = (*wp).event.with_ptr(|event| unsafe {
-                        window_pane_get_new_data(&mut *(*event).input, (*wp).base_offset, &*wpo).len()
-                    }).unwrap_or(0);
-                    log_debug(format_args!(
-                        "{}: {} has {} bytes used and {} left for %{}",
-                        log_cstr(
-                            (b"server_client_check_pane_buffer\0" as *const u8
-                                as *const ::core::ffi::c_char)
-                                as *const _
-                        ),
-                        log_cstr(
-                            (((*c).name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                                as *const _
-                        ),
-                        ((*wpo).used.wrapping_sub((*wp).base_offset)) as usize,
-                        (new_size) as usize,
-                        ((*wp).id) as u32
-                    ));
-                    if (*wpo).used < minimum {
-                        minimum = (*wpo).used;
-                    }
-                }
-            }
-        }
-        registry_c_owner = clients.next(&client_owner);
-    }
-    if attached_clients == 0 as u_int {
-        off = 0 as ::core::ffi::c_int;
-    }
-    minimum = minimum.wrapping_sub((*wp).base_offset);
-    if !(minimum == 0 as size_t) {
-        let buffer_len = (*wp).event.with_ptr(|event| unsafe {
-            evbuffer_get_length(&*(*event).input)
-        }).unwrap_or(0);
-        log_debug(format_args!(
-            "{}: %{} has {} minimum (of {}) bytes used",
-            "server_client_check_pane_buffer",
-            ((*wp).id) as u32,
-            (minimum) as usize,
-            (buffer_len) as usize
-        ));
-        let _ = (*wp).event.with_ptr(|event| unsafe {
-            evbuffer_drain(bufferevent_get_input(&mut *event), minimum);
-        });
-        if (*wp).base_offset > (SIZE_MAX as size_t).wrapping_sub(minimum) {
-            log_debug(format_args!(
-                "{}: %{} base offset has wrapped",
-                "server_client_check_pane_buffer",
-                ((*wp).id) as u32
-            ));
-            (*wp).offset.used = (*wp).offset.used.wrapping_sub((*wp).base_offset);
-            if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-                (*wp).pipe_offset.used = (*wp).pipe_offset.used.wrapping_sub((*wp).base_offset);
-            }
-            let mut registry_c_owner = clients.first();
-            while let Some(client_owner) = registry_c_owner {
-                let c = &mut *client_owner.get();
-                if !((*c).session_handle().is_none() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-                    if let Some(wpo) = control_pane_offset(
-                        (*c).control_state
-                            .as_deref_mut()
-                            .expect("control client state"),
-                        (*c).flags,
-                        (*wp).id,
-                        &mut flag,
-                    ) {
-                        if flag == 0 {
-                            wpo.used = wpo.used.wrapping_sub((*wp).base_offset);
-                        }
-                    }
-                }
-                registry_c_owner = clients.next(&client_owner);
-            }
-            (*wp).base_offset = minimum;
-        } else {
-            (*wp).base_offset = (*wp).base_offset.wrapping_add(minimum);
-        }
-    }
-    log_debug(format_args!(
-        "{}: pane %{} is {}",
-        "server_client_check_pane_buffer",
-        ((*wp).id) as u32,
-        log_cstr(
-            (if off != 0 {
-                b"off\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"on\0" as *const u8 as *const ::core::ffi::c_char
-            }) as *const _
-        )
-    ));
-    if off != 0 {
-        let _ = (*wp).event.with_ptr(|event| unsafe {
-            bufferevent_disable(event, EV_READ as ::core::ffi::c_short);
-        });
-    } else {
-        let _ = (*wp).event.with_ptr(|event| unsafe {
-            bufferevent_enable(event, EV_READ as ::core::ffi::c_short);
-        });
-    };
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PromptCursor {
@@ -3713,7 +3505,19 @@ mod prompt_cursor_tests {
             let session = &mut *session_owner.get();
             c.set_session(Some(session));
             c.tty.sy = 24;
-            session.statuslines = 2;
+            use crate::src::session::Session;
+            let mut options = crate::src::options::options_create(std::ptr::null_mut());
+            for key in [c"status", c"status-position"] {
+                let definition = crate::src::options_table::options_table.iter()
+                    .find(|definition| definition.name == Some(key)).unwrap();
+                crate::src::options::options_default(&mut *options, definition);
+            }
+            session.options = Some(options);
+            let previous_sessions = std::mem::replace(
+                &mut crate::src::session::sessions,
+                crate::src::shared::session::sessions { storage: None },
+            );
+            crate::src::session::sessions_insert(&mut crate::src::session::sessions, session_owner.clone());
             (c.tty.oox, c.tty.ooy, c.tty.osx, c.tty.osy) = (10, 5, 80, 20);
             let incoming = PromptCursor {
                 mode: MODE_CURSOR | MODE_WRAP,
@@ -3737,7 +3541,11 @@ mod prompt_cursor_tests {
                 (22, true, 15, 8, true, Some((16, 7, 6))),
                 (0, true, 15, 8, true, Some((16, 7, 3))),
             ] {
-                session.statusat = if at == 0 { 0 } else { 1 };
+                session_owner.with_options_mut(|options| {
+                    options_set_number(options, c"status".as_ptr(), 2);
+                    options_set_number(options, c"status-position".as_ptr(), if at == 0 { 0 } else { 1 });
+                });
+                crate::src::session::recalculate_size_state();
                 c.flags = if at == -1 { CLIENT_STATUSOFF as u64 } else { 0 };
                 let window_owner = window::new();
                 let window = &mut *window_owner.get();
@@ -3773,6 +3581,8 @@ mod prompt_cursor_tests {
                 );
                 crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
             }
+            crate::src::session::sessions_remove(&mut crate::src::session::sessions, &session_owner);
+            crate::src::session::sessions = previous_sessions;
         }
     }
 }
@@ -4996,8 +4806,9 @@ unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
 /// Copy the selected directory while any observed startup client is retained.
 pub unsafe fn server_client_get_cwd(
     c: Option<&client>,
-    s: Option<&session>,
+    s: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
 ) -> Option<CString> {
+    use crate::src::session::Session;
     if cfg_finished == 0 {
         if let Some(owner) = (&cfg_client).upgrade() {
             return (*owner.get()).cwd.clone();
@@ -5009,14 +4820,14 @@ pub unsafe fn server_client_get_cwd(
         }
     }
     if let Some(session) = s {
-        if session.cwd.is_some() {
-            return session.cwd.clone();
+        if let Some(cwd) = session.cwd() {
+            return Some(cwd);
         }
     }
     if let Some(session_owner) = c.and_then(|client| client.session.upgrade()) {
-        let session = &*session_owner.get();
-        if session.cwd.is_some() {
-            return session.cwd.clone();
+        let session = session_owner;
+        if let Some(cwd) = session.cwd() {
+            return Some(cwd);
         }
     }
     Some(find_home_cstr().unwrap_or(c"/").to_owned())
@@ -5479,18 +5290,18 @@ mod overlay_dispatch_tests {
 
     unsafe fn with_client(test: impl FnOnce(&std::rc::Rc<std::cell::UnsafeCell<client>>)) {
         let session_owner = session::new();
-        let session = &mut *session_owner.get();
-        let link = crate::src::window::winlink_add(&raw mut session.windows, 0);
-        session.set_curw(link.clone());
+        let session = session_owner.get();
+        let link = crate::src::window::winlink_add(&raw mut (*session).windows, 0);
+        (*session).set_curw(link.clone());
         let client_owner = client::new();
-        let client = &mut *client_owner.get();
-        client.set_session(Some(session));
-        client.tty.client = std::rc::Rc::downgrade(&client_owner);
+        let client = client_owner.get();
+        (*client).session = Rc::downgrade(&session_owner);
+        (*client).tty.client = Rc::downgrade(&client_owner);
         test(&client_owner);
-        server_client_clear_overlay(&(*(&mut *client)).observer.upgrade().expect("live client"));
-        client.set_session(None);
-        session.set_curw(refbox::Weak::new());
-        crate::src::window::winlink_remove(&raw mut session.windows, link.clone());
+        client_owner.clear_overlay();
+        (*client).session = std::rc::Weak::new();
+        (*session).set_curw(refbox::Weak::new());
+        crate::src::window::winlink_remove(&raw mut (*session).windows, link);
     }
 
     unsafe fn install(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -5518,16 +5329,16 @@ mod overlay_dispatch_tests {
                 (*c).overlay_free = Some(Box::new(move |_| observed.set(observed.get() + 1)));
                 (*c).overlay_draw = Some(Box::new(|c| {
                     // Draw has been taken out of the client during dispatch.
-                    assert!(c.overlay_draw.is_none());
-                    server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
-                    assert!(c.overlay_data.is_none());
+                    assert!((*c.get()).overlay_draw.is_none());
+                    c.clear_overlay();
+                    assert!((*c.get()).overlay_data.is_none());
                 }));
                 server_client_overlay_draw(&(*(c)).observer.upgrade().expect("live client"));
                 assert!((*c).overlay_draw.is_none());
                 assert_eq!(freed.get(), 1);
 
                 install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay_resize = Some(Box::new(|c| server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"))));
+                (*c).overlay_resize = Some(Box::new(|c| c.clear_overlay()));
                 server_client_overlay_resize(&(*(c)).observer.upgrade().expect("live client"));
                 assert!((*c).overlay_resize.is_none());
 
@@ -5536,7 +5347,7 @@ mod overlay_dispatch_tests {
                 let screen = std::ptr::NonNull::from(&mut *owned_screen);
                 (*c).overlay_data = Some(owned_screen);
                 (*c).overlay_mode = Some(Box::new(move |c| {
-                    server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
+                    c.clear_overlay();
                     Some((screen, 1, 2))
                 }));
                 assert!(server_client_overlay_mode(&(*(c)).observer.upgrade().expect("live client")).is_none());
@@ -5544,7 +5355,7 @@ mod overlay_dispatch_tests {
 
                 install(&(*(c)).observer.upgrade().expect("live client"));
                 (*c).overlay_check = Some(Box::new(|c, _, _, _| {
-                    server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
+                    c.clear_overlay();
                     visible_ranges::default()
                 }));
                 let ranges = crate::src::tty::tty_check_overlay_range(&mut (*c).tty, 3, 4, 5);
@@ -5564,8 +5375,8 @@ mod overlay_dispatch_tests {
                 install(&(*(c)).observer.upgrade().expect("live client"));
                 let generation = (*c).overlay_generation;
                 (*c).overlay_key = Some(Box::new(|c, _| {
-                    install(&(*(c)).observer.upgrade().expect("live client"));
-                    c.overlay_key = Some(Box::new(|_, _| 42));
+                    install(c);
+                    (*c.get()).overlay_key = Some(Box::new(|_, _| 42));
                     1
                 }));
                 let mut event = key_event::new(0, mouse_event::default(), None);
@@ -5583,7 +5394,7 @@ mod overlay_dispatch_tests {
             with_client(|owner| {
                 let c = owner.get();
                 install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay_free = Some(Box::new(|c| install(&(*(c)).observer.upgrade().expect("live client"))));
+                (*c).overlay_free = Some(Box::new(|c| install(c)));
                 server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
                 assert!((*c).overlay_data.is_some());
                 assert_eq!(
@@ -5594,8 +5405,8 @@ mod overlay_dispatch_tests {
                 let nested_frees = Rc::new(Cell::new(0));
                 let observed = nested_frees.clone();
                 (*c).overlay_free = Some(Box::new(move |c| {
-                    install(&(*(c)).observer.upgrade().expect("live client"));
-                    c.overlay_free = Some(Box::new(move |_| observed.set(observed.get() + 1)));
+                    install(c);
+                    (*c.get()).overlay_free = Some(Box::new(move |_| observed.set(observed.get() + 1)));
                 }));
                 install(&(*(c)).observer.upgrade().expect("live client"));
                 assert_eq!(nested_frees.get(), 1);

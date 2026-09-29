@@ -190,14 +190,14 @@ unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
             );
         }
         server_unlink_window(&(*(src_s)).observer.upgrade().expect("live session"), wl.clone());
-        wl = winlink_find_by_window(&raw mut (*dst_s).windows, &(*(w)).observer.upgrade().expect("live window"));
+        wl = winlink_find_by_window(&(*dst_s).windows, &(*(w)).observer.upgrade().expect("live window"));
         if !wl.is_alive() {
             return CMD_RETURN_ERROR;
         }
         window_fire_pane_moved(&(*(wp)).observer.upgrade().expect("live window_pane"), &(*(old_w)).observer.upgrade().expect("live window"), old_idx, &(*(w)).observer.upgrade().expect("live window"), wl.get_unchecked().idx);
     } else {
         if idx != -(1 as ::core::ffi::c_int)
-            && winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_alive()
+            && winlink_find_by_index(&(*dst_s).windows, idx).is_alive()
         {
             cmdq_error(item_handle, |out| write!(out, "index in use: {}", (idx) as i32));
             return CMD_RETURN_ERROR;
@@ -238,7 +238,8 @@ unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                     b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
                 )) as ::core::ffi::c_int;
         }
-        wl = match session_attach(&(*dst_s).observer.upgrade().expect("live session"), &window, idx) {
+        let destination = (*target).session_handle().expect("break-pane destination session");
+        wl = match crate::src::session::Session::attach_window(&destination, &window, idx) {
             Ok(wl) => wl,
             Err(error) => {
                 cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));

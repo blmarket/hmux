@@ -96,7 +96,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
             || (*c).session_handle().is_none())
         {
             s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            wl = winlink_find_by_window_id(&raw mut (*s).windows, (*w).id);
+            wl = winlink_find_by_window_id(&(*s).windows, (*w).id);
             if wl.is_alive() {
                 let mut ft_owner = format_create(
                     (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -161,7 +161,7 @@ unsafe fn control_window_unlinked_cb(_name: &CStr, payload: &mut event_payload) 
             || (*c).session_handle().is_none())
         {
             cs = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_alive() {
+            if winlink_find_by_window_id(&(*cs).windows, (*w).id).is_alive() {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| write!(out, "%window-close @{}", ((*w).id) as u32));
             } else {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
@@ -191,7 +191,7 @@ unsafe fn control_window_linked_cb(_name: &CStr, payload: &mut event_payload) {
             || (*c).session_handle().is_none())
         {
             cs = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_alive() {
+            if winlink_find_by_window_id(&(*cs).windows, (*w).id).is_alive() {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| write!(out, "%window-add @{}", ((*w).id) as u32));
             } else {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
@@ -221,7 +221,7 @@ unsafe fn control_window_renamed_cb(_name: &CStr, payload: &mut event_payload) {
             || (*c).session_handle().is_none())
         {
             cs = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_alive() {
+            if winlink_find_by_window_id(&(*cs).windows, (*w).id).is_alive() {
                 control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
                     write!(out, "%window-renamed @{} ", ((*w).id) as u32)?;
                     write_cstr(out, (*w).name.as_ptr())

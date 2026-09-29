@@ -11,6 +11,9 @@ use super::*;
 use crate::src::format::bytes::xformat;
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use std::ffi::{CStr, CString};
+use crate::src::session::Session;
+use crate::src::server_client::Client;
+use crate::src::window::{Window, WindowPane};
 
 pub(super) unsafe fn format_strftime(
     mut s: *mut ::core::ffi::c_char,
@@ -191,14 +194,9 @@ pub(super) unsafe fn format_find(
     mut time_format: *const ::core::ffi::c_char,
 ) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_window_owner = (*ft).w.upgrade();
-    let format_window = format_window_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut current_block: u64;
-    let mut envent: Option<&environ_entry> = None;
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut found: Option<CString> = None;
     let mut s: [::core::ffi::c_char; 512] = [0; 512];
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -219,30 +217,25 @@ pub(super) unsafe fn format_find(
     let parsed_option = options_parse_owned(CStr::from_ptr(key));
     if let Some(parsed) = &parsed_option {
         let name = parsed.name.as_ptr();
-        o = options_get(global_options, name);
-        if o.is_null() && !format_pane.is_null() {
-            o = options_get(options_owner_ptr(&mut (*format_pane).options).map_or(std::ptr::null_mut(), |options| options), name);
+        let array_key = parsed.array_key.as_ref().map_or(std::ptr::null(), |key| key.as_ptr());
+        let lookup = |options: &mut options| {
+            let entry = options_get(options, name);
+            (!entry.is_null()).then(|| options_to_cstring(entry, array_key, 1))
+        };
+        found = global_options.as_mut().and_then(lookup);
+        if found.is_none() {
+            found = format_pane_owner.as_ref().and_then(|pane| pane.with_options_mut(lookup));
         }
-        if o.is_null() && !format_window.is_null() {
-            o = options_get(options_owner_ptr(&mut (*format_window).options).map_or(std::ptr::null_mut(), |options| options), name);
+        if found.is_none() {
+            found = format_window_owner.as_ref().and_then(|window| window.with_options_mut(lookup));
         }
-        if o.is_null() {
-            o = options_get(global_w_options, name);
+        if found.is_none() { found = global_w_options.as_mut().and_then(lookup); }
+        if found.is_none() {
+            found = format_session_owner.as_ref().and_then(|session| session.with_options_mut(lookup));
         }
-        if o.is_null() && !format_session.is_null() {
-            o = options_get(options_owner_ptr(&mut (*format_session).options).map_or(std::ptr::null_mut(), |options| options), name);
-        }
-        if o.is_null() {
-            o = options_get(global_s_options, name);
-        }
+        if found.is_none() { found = global_s_options.as_mut().and_then(lookup); }
     }
-    if !o.is_null() {
-        let array_key = parsed_option
-            .as_ref()
-            .and_then(|parsed| parsed.array_key.as_ref())
-            .map_or(::core::ptr::null(), |key| key.as_ptr());
-        found = Some(options_to_cstring(o, array_key, 1 as ::core::ffi::c_int));
-    } else {
+    if found.is_none() {
         if let Some(entry) = format_table_get(CStr::from_ptr(key)) {
             match entry.get(ft) {
                 Some(FormatValue::String(value)) => found = Some(value),
@@ -259,18 +252,13 @@ pub(super) unsafe fn format_find(
                 }
             } else {
                 if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
-                    envent = None;
-                    if !format_session.is_null() {
-                        envent = environ_find((*format_session).environ.as_deref().expect("environment"), key);
-                    }
-                    if envent.is_none() {
-                        envent = environ_find(global_environ.as_deref().expect("environment"), key);
-                    }
-                    if !envent.is_none() && !envent.unwrap().value.is_none() {
-                        found = Some(
-                            (envent.unwrap().value).as_deref().expect("string is present")
-                            .to_owned(),
-                        );
+                    // Distinguish an absent variable from a locally removed
+                    // one: the latter must not fall back to the global value.
+                    let entry = format_session_owner.as_ref().and_then(|session| {
+                        session.with_environment_mut(|environment| environ_find(environment, key).cloned())
+                    }).or_else(|| environ_find(global_environ.as_deref().expect("environment"), key).cloned());
+                    if let Some(value) = entry.and_then(|entry| entry.value) {
+                        found = Some(value);
                         current_block = 11739001764845178280;
                     } else {
                         current_block = 1836292691772056875;
@@ -894,21 +882,15 @@ pub(super) unsafe fn format_bool_op_n(
     };
 }
 pub(super) unsafe fn format_session_name(
-    mut es: *mut format_expand_state,
-    mut fmt: *const ::core::ffi::c_char,
+    es: *mut format_expand_state,
+    fmt: *const ::core::ffi::c_char,
 ) -> CString {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let name = format_expand1_cstring(es, fmt);
-    let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
-        if strcmp(((*s).name).as_ptr().cast_mut(), name.as_ptr()) == 0 as ::core::ffi::c_int {
-            return c"1".to_owned();
-        }
-        s_owner = sessions_next(&*s);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    if crate::src::session::session_find(&name).is_some() {
+        c"1".to_owned()
+    } else {
+        c"0".to_owned()
     }
-    return c"0".to_owned();
 }
 pub(super) unsafe fn format_loop_sessions(
     mut es: *mut format_expand_state,
@@ -943,23 +925,22 @@ pub(super) unsafe fn format_loop_sessions(
         },
     };
     let mut buffer = Vec::new();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut i: ::core::ffi::c_int = 0;
     let (all, active) = format_choose_loop(es, fmt);
     let l = sort_get_sessions(&*sc);
     let n = ::core::ffi::c_int::try_from(l.len()).expect("too many sessions to format");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        s = l[i as usize].get();
+        let session = &l[i as usize];
         format_log1(
             es,
             b"format_loop_sessions\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "session loop: ${}", ((*s).id) as u32),
+            |out| write!(out, "session loop: ${}", session.id()),
         );
         let use_0 = if active.is_some()
-            && !format_client.is_null()
-            && !(*format_client).session_handle().is_none()
-            && (*s).id == (*(*format_client).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id
+            && format_client_owner.as_ref().is_some_and(|client| {
+                client.attached_session().upgrade().is_some_and(|attached| std::rc::Rc::ptr_eq(&attached, session))
+            })
         {
             active.as_ref().unwrap().as_ptr()
         } else {
@@ -986,7 +967,7 @@ pub(super) unsafe fn format_loop_sessions(
         format_defaults(
             nft,
             (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            Some(session),
             (refbox::Weak::new()).clone(),
             None,
         );
@@ -1008,9 +989,8 @@ pub(super) unsafe fn format_window_name(
 ) -> Option<CString> {
     let mut ft: *mut format_tree = (*es).ft;
     let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    if format_session.is_null() {
+    if format_session_owner.is_none() {
         format_log1(
             es,
             b"format_window_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1019,9 +999,9 @@ pub(super) unsafe fn format_window_name(
         return None;
     }
     let name = format_expand1_cstring(es, fmt);
-    wl = winlinks_minmax(&(*format_session).windows, RB_NEGINF);
+    wl = format_session_owner.as_ref().expect("format session").with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
-        if strcmp((*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
+        if wl.get_unchecked().window_handle().expect("linked window").name() == name {
             return Some(c"1".to_owned());
         }
         wl = winlinks_next(wl.get_unchecked());
@@ -1034,7 +1014,6 @@ pub(super) unsafe fn format_add_window_neighbour(
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut prefix: *const ::core::ffi::c_char,
 ) {
-    let mut s = s_owner.get();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let prefix = CStr::from_ptr(prefix).to_bytes();
@@ -1044,7 +1023,7 @@ pub(super) unsafe fn format_add_window_neighbour(
     });
     let key = CString::new([prefix, b"_window_active"].concat()).expect("C string key");
     format_add(nft, key.as_ptr(), |out| {
-        write!(out, "{}", ((wl == (*s).current_winlink()) as ::core::ffi::c_int) as i32)
+        write!(out, "{}", ((wl == s_owner.current_winlink()) as ::core::ffi::c_int) as i32)
     });
     let o_root = options_owner_ptr(&mut (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
@@ -1071,11 +1050,9 @@ pub(super) unsafe fn format_loop_windows(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_client_owner = (*ft).c.upgrade();
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let client_owner = (*ft).client.clone();
-    let mut s: *mut session = format_session;
     let item_owner = (*ft).item.upgrade();
     let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -1103,7 +1080,7 @@ pub(super) unsafe fn format_loop_windows(
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut i: ::core::ffi::c_int = 0;
-    if s.is_null() {
+    if format_session_owner.is_none() {
         format_log1(
             es,
             b"format_loop_windows\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1111,8 +1088,9 @@ pub(super) unsafe fn format_loop_windows(
         );
         return None;
     }
+    let session = format_session_owner.as_ref().expect("format session");
     let (all, active) = format_choose_loop(es, fmt);
-    let l = sort_get_winlinks_session(&(*(s)).observer.upgrade().expect("live session"), sc);
+    let l = sort_get_winlinks_session(session, sc);
     let n = ::core::ffi::c_int::try_from(l.len()).expect("too many winlinks in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
@@ -1130,7 +1108,7 @@ pub(super) unsafe fn format_loop_windows(
                 )
             },
         );
-        let use_0 = if active.is_some() && wl == (*s).current_winlink() {
+        let use_0 = if active.is_some() && wl == session.current_winlink() {
             active.as_ref().unwrap().as_ptr()
         } else {
             all.as_ptr()
@@ -1158,7 +1136,7 @@ pub(super) unsafe fn format_loop_windows(
                 )
             },
         );
-        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == (*s).current_winlink() {
+        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == session.current_winlink() {
             format_add(
                 nft,
                 b"window_after_active\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1172,7 +1150,7 @@ pub(super) unsafe fn format_loop_windows(
             );
         }
         if (i + 1 as ::core::ffi::c_int) < n
-            && l[(i + 1 as ::core::ffi::c_int) as usize] == (*s).current_winlink()
+            && l[(i + 1 as ::core::ffi::c_int) as usize] == session.current_winlink()
         {
             format_add(
                 nft,
@@ -1190,7 +1168,7 @@ pub(super) unsafe fn format_loop_windows(
             format_add_window_neighbour(
                 nft,
                 (l[(i + 1 as ::core::ffi::c_int) as usize]).clone(),
-                &(*(s)).observer.upgrade().expect("live session"),
+                session,
                 b"next\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
@@ -1198,11 +1176,11 @@ pub(super) unsafe fn format_loop_windows(
             format_add_window_neighbour(
                 nft,
                 (l[(i - 1 as ::core::ffi::c_int) as usize]).clone(),
-                &(*(s)).observer.upgrade().expect("live session"),
+                session,
                 b"prev\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), None);
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), Some(session), wl.clone(), None);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1224,7 +1202,6 @@ pub(super) unsafe fn format_loop_panes(
     let format_window_owner = (*ft).w.upgrade();
     let format_window = format_window_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_client_owner = (*ft).c.upgrade();
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let client_owner = (*ft).client.clone();
@@ -1301,7 +1278,7 @@ pub(super) unsafe fn format_loop_panes(
                 )
             },
         );
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), format_session_owner.as_ref(), ((*ft).winlink_handle()).clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1314,553 +1291,216 @@ pub(super) unsafe fn format_loop_panes(
     Some(CString::new(buffer).expect("format loop output contains no NUL"))
 }
 
-pub(super) unsafe fn format_loop_add_option(
-    mut es: *mut format_expand_state,
-    mut fmt: *const ::core::ffi::c_char,
-    buffer: &mut Vec<u8>,
-    mut o: *mut options_entry,
-    mut n: u_int,
-    mut i: u_int,
-) {
-    let mut ft: *mut format_tree = (*es).ft;
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+// Copy one option row while its component is borrowed. Recursive formatting
+// below runs only after every entry/value reference has left this scope.
+unsafe fn format_option_loop_values(
+    option: &mut options_entry,
+    array_key: Option<&CStr>,
+    count: u_int,
+    index: u_int,
+    last_option: bool,
+) -> Vec<(&'static CStr, CString)> {
+    let is_array = options_is_array(option) != 0;
+    let is_hook = option.tableentry_ptr().is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_HOOK != 0);
+    let is_user = option.tableentry_ptr().is_none();
+    let key = array_key.unwrap_or(c"");
+    let first = match array_key {
+        None => is_array,
+        Some(key) => crate::src::options::options_array_iter(option).next().is_some_and(|item| item.key.as_c_str() == key),
     };
-    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
-    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
-    let mut is_array: ::core::ffi::c_int = options_is_array(o);
-    format_log1(
-        es,
-        b"format_loop_add_option\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            out.write_all(b"option loop: ")?;
-            write_cstr(out, name)
-        },
-    );
-    let item_owner = (*ft).item.upgrade();
-    let mut nft_owner = format_create_with_client((*ft).client.as_ref(), (item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
-    nft = &raw mut *nft_owner;
-    format_add(
-        nft,
-        b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, name),
-    );
-    let s = options_to_cstring(
-        o,
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        0 as ::core::ffi::c_int,
-    );
-    format_add(
-        nft,
-        b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, s.as_ptr()),
-    );
-    drop(s);
-    format_add(
-        nft,
-        b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (is_array) as i32),
-    );
-    format_add(
-        nft,
-        b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
-    );
-    format_add(
-        nft,
-        b"option_array_index\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
-    );
-    format_add(
-        nft,
-        b"option_array_first\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (is_array) as i32),
-    );
-    format_add(
-        nft,
-        b"option_array_last\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (is_array) as i32),
-    );
-    format_add(
-        nft,
-        b"option_array_count\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (n) as u32),
-    );
-    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
-        format_add(
-            nft,
-            b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
-    } else {
-        format_add(
-            nft,
-            b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
-    }
-    format_add(
-        nft,
-        b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                ((oe == NULL_0 as *const options_table_entry) as ::core::ffi::c_int) as i32
-            )
-        },
-    );
-    if !crate::src::options::options_iter(&*(*o).owner).any(|entry| entry.name.as_bytes() > (*o).name.as_bytes()) {
-        format_add(
-            nft,
-            b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
-    } else {
-        format_add(
-            nft,
-            b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
-    }
-    format_add(
-        nft,
-        b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (i) as u32),
-    );
-    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-    format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
-    next.ft = nft;
-    let expanded = format_expand1_cstring(&raw mut next, fmt);
-    format_free(nft_owner);
-    buffer.extend_from_slice(expanded.as_bytes());
+    let array_last = match array_key {
+        None => is_array,
+        Some(key) => !crate::src::options::options_array_iter(option).any(|item| {
+            crate::src::options::options_array_index(&item.key) > crate::src::options::options_array_index(key)
+        }),
+    };
+    let number = |value: u_int| CString::new(value.to_string()).expect("integer format");
+    vec![
+        (c"option_name", option.name.clone()),
+        (c"option_value", options_to_cstring(option, array_key.map_or(std::ptr::null(), CStr::as_ptr), 0)),
+        (c"option_is_array", number(u32::from(is_array))),
+        (c"option_array_key", key.to_owned()),
+        (c"option_array_index", key.to_owned()),
+        (c"option_array_first", number(u32::from(first))),
+        (c"option_array_last", number(u32::from(array_last))),
+        (c"option_array_count", number(count)),
+        (c"option_is_hook", number(u32::from(is_hook))),
+        (c"option_is_user", number(u32::from(is_user))),
+        (c"loop_last_flag", number(u32::from(last_option && (array_key.is_none() || array_last)))),
+        (c"loop_index", number(index)),
+    ]
 }
-pub(super) unsafe fn format_loop_add_array_item(
-    mut es: *mut format_expand_state,
-    mut fmt: *const ::core::ffi::c_char,
+
+unsafe fn format_loop_emit_option(
+    es: *mut format_expand_state,
+    fmt: *const ::core::ffi::c_char,
     buffer: &mut Vec<u8>,
-    mut o: *mut options_entry,
-    mut a: *mut options_array_item,
-    mut n: ::core::ffi::c_int,
-    mut i: u_int,
+    values: Vec<(&'static CStr, CString)>,
 ) {
-    let mut ft: *mut format_tree = (*es).ft;
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
-    };
-    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
-    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
-    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    array_key = options_array_item_key(&*(a)).as_ptr();
-    format_log1(
-        es,
-        b"format_loop_add_array_item\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            out.write_all(b"option loop: ")?;
-            write_cstr(out, name)?;
+    let ft = (*es).ft;
+    let pane = (*ft).wp.upgrade();
+    let session = (*ft).s.upgrade();
+    let client = (*ft).c.upgrade();
+    let item = (*ft).item.upgrade();
+    format_log1(es, c"format_loop_options".as_ptr(), |out| {
+        out.write_all(b"option loop: ")?;
+        write_cstr(out, values[0].1.as_ptr())?;
+        if !values[3].1.as_bytes().is_empty() {
             out.write_all(b"[")?;
-            write_cstr(out, array_key)?;
-            out.write_all(b"]")
-        },
-    );
-    let item_owner = (*ft).item.upgrade();
-    let mut nft_owner = format_create_with_client((*ft).client.as_ref(), (item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
-    nft = &raw mut *nft_owner;
-    format_add(
-        nft,
-        b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, name),
-    );
-    let s = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
-    format_add(
-        nft,
-        b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, s.as_ptr()),
-    );
-    drop(s);
-    format_add(
-        nft,
-        b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| out.write_all(b"1"),
-    );
-    format_add(
-        nft,
-        b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, array_key),
-    );
-    format_add(
-        nft,
-        b"option_array_index\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, array_key),
-    );
-    if a == crate::src::options::options_array_iter_mut(&mut *(o)).next().map_or(std::ptr::null_mut(), |item| item) {
-        format_add(
-            nft,
-            b"option_array_first\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
-    } else {
-        format_add(
-            nft,
-            b"option_array_first\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
+            write_cstr(out, values[3].1.as_ptr())?;
+            out.write_all(b"]")?;
+        }
+        Ok(())
+    });
+    let mut context = format_create_with_client((*ft).client.as_ref(), item.as_ref(), FORMAT_NONE, (*ft).flags);
+    for (key, value) in values {
+        format_add_cstr(&mut *context, key, &value);
     }
-    if !crate::src::options::options_array_iter(&*(*a).owner).any(|item| crate::src::options::options_array_index(&item.key) > crate::src::options::options_array_index(&(*a).key)) {
-        format_add(
-            nft,
-            b"option_array_last\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
-    } else {
-        format_add(
-            nft,
-            b"option_array_last\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
-    }
-    format_add(
-        nft,
-        b"option_array_count\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (n) as u32),
-    );
-    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
-        format_add(
-            nft,
-            b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
-    } else {
-        format_add(
-            nft,
-            b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
-    }
-    format_add(
-        nft,
-        b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                ((oe == NULL_0 as *const options_table_entry) as ::core::ffi::c_int) as i32
-            )
-        },
-    );
-    if !crate::src::options::options_array_iter(&*(*a).owner).any(|item| crate::src::options::options_array_index(&item.key) > crate::src::options::options_array_index(&(*a).key)) && !crate::src::options::options_iter(&*(*o).owner).any(|entry| entry.name.as_bytes() > (*o).name.as_bytes()) {
-        format_add(
-            nft,
-            b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
-    } else {
-        format_add(
-            nft,
-            b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
-    }
-    format_add(
-        nft,
-        b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (i) as u32),
-    );
-    format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-    format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
-    next.ft = nft;
-    let expanded = format_expand1_cstring(&raw mut next, fmt);
-    format_free(nft_owner);
+    format_defaults(&mut *context, client.as_ref(), session.as_ref(), (*ft).winlink_handle(), pane.as_ref());
+    let mut next = format_expand_state::default();
+    format_copy_state(&mut next, es, 0);
+    next.ft = &mut *context;
+    let expanded = format_expand1_cstring(&mut next, fmt);
+    format_free(context);
     buffer.extend_from_slice(expanded.as_bytes());
 }
+
 pub(super) unsafe fn format_loop_options(
-    mut es: *mut format_expand_state,
-    mut fmt: *const ::core::ffi::c_char,
-    mut flags: *const ::core::ffi::c_char,
+    es: *mut format_expand_state,
+    fmt: *const ::core::ffi::c_char,
+    flags: *const ::core::ffi::c_char,
 ) -> CString {
-    let mut ft: *mut format_tree = (*es).ft;
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_window_owner = (*ft).w.upgrade();
-    let format_window = format_window_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
+    let ft = (*es).ft;
+    let pane = (*ft).wp.upgrade();
+    let window = (*ft).w.upgrade();
+    let session = (*ft).s.upgrade();
+    let flags = flags.as_ref().map(|_| CStr::from_ptr(flags)).filter(|flags| !flags.to_bytes().is_empty()).unwrap_or(c"s");
+    let has = |flag| flags.to_bytes().contains(&flag);
+    let global = has(b'g');
+    let mut access = |read: &mut dyn FnMut(&mut options)| {
+        if has(b'v') {
+            if let Some(options) = global_options.as_mut() { read(options); }
+        } else if has(b'w') {
+            if global {
+                if let Some(options) = global_w_options.as_mut() { read(options); }
+            } else if let Some(window) = window.as_ref() {
+                window.with_options_mut(read);
+            }
+        } else if has(b's') {
+            if global {
+                if let Some(options) = global_s_options.as_mut() { read(options); }
+            } else if let Some(session) = session.as_ref() {
+                session.with_options_mut(read);
+            }
+        } else if has(b'p') {
+            if !global {
+                if let Some(pane) = pane.as_ref() { pane.with_options_mut(read); }
+            }
+        } else if global {
+            if let Some(options) = global_s_options.as_mut() { read(options); }
+        }
+    };
+    let mut names = Vec::new();
+    access(&mut |options| names.extend(crate::src::options::options_iter(options).map(|entry| entry.name.clone())));
     let mut buffer = Vec::new();
-    let mut i: u_int = 0 as u_int;
-    let mut n: u_int = 0;
-    let mut global: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if flags.is_null() || *flags as ::core::ffi::c_int == '\0' as i32 {
-        flags = b"s\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    if !strchr(flags, 'v' as i32).is_null() {
-        oo = global_options;
-    } else {
-        if !strchr(flags, 'g' as i32).is_null() {
-            global = 1 as ::core::ffi::c_int;
-        }
-        if !strchr(flags, 'w' as i32).is_null() {
-            if global != 0 {
-                oo = global_w_options;
-            } else if !format_window.is_null() {
-                oo = options_owner_ptr(&mut (*format_window).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut index: u_int = 0;
+    for name in names {
+        let mut keys = None;
+        access(&mut |options| {
+            if let Some(entry) = crate::src::options::options_get_only_mut(options, &name) {
+                keys = Some(if options_is_array(entry) != 0 {
+                    crate::src::options::options_array_iter(entry).map(|item| item.key.clone()).collect::<Vec<_>>()
+                } else { Vec::new() });
             }
-        } else if !strchr(flags, 's' as i32).is_null() {
-            if global != 0 {
-                oo = global_s_options;
-            } else if !format_session.is_null() {
-                oo = options_owner_ptr(&mut (*format_session).options).map_or(std::ptr::null_mut(), |options| options);
+        });
+        let Some(keys) = keys else { break };
+        let count = u_int::try_from(keys.len()).expect("option array count");
+        if keys.is_empty() {
+            let mut values = None;
+            access(&mut |options| {
+                let last_option = !crate::src::options::options_iter(options)
+                    .any(|entry| entry.name.as_bytes() > name.as_bytes());
+                values = crate::src::options::options_get_only_mut(options, &name)
+                    .map(|entry| format_option_loop_values(entry, None, 0, index, last_option));
+            });
+            if let Some(values) = values {
+                format_loop_emit_option(es, fmt, &mut buffer, values);
+                index = index.wrapping_add(1);
             }
-        } else if !strchr(flags, 'p' as i32).is_null() {
-            if !(global != 0) {
-                if !format_pane.is_null() {
-                    oo = options_owner_ptr(&mut (*format_pane).options).map_or(std::ptr::null_mut(), |options| options);
-                }
-            }
-        } else if global != 0 {
-            oo = global_s_options;
-        }
-    }
-    if oo.is_null() {
-        return c"".to_owned();
-    }
-    let o_root = oo;
-    let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
-    o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
-    while !o.is_null() {
-        n = 0 as u_int;
-        if options_is_array(o) != 0 {
-            let a_root = o;
-            let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
-            while !a.is_null() {
-                n = n.wrapping_add(1);
-                a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
-            }
-        }
-        if options_is_array(o) == 0 || n == 0 as u_int {
-            format_loop_add_option(es, fmt, &mut buffer, o, n, i);
-            i = i.wrapping_add(1);
-            o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         } else {
-            let a_root = o;
-            let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
-            while !a.is_null() {
-                format_loop_add_array_item(es, fmt, &mut buffer, o, a, n as ::core::ffi::c_int, i);
-                i = i.wrapping_add(1);
-                a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+            for key in keys {
+                let mut values = None;
+                access(&mut |options| {
+                    let last_option = !crate::src::options::options_iter(options)
+                        .any(|entry| entry.name.as_bytes() > name.as_bytes());
+                    if let Some(entry) = crate::src::options::options_get_only_mut(options, &name) {
+                        if crate::src::options::options_array_get(entry, &key).is_some() {
+                            values = Some(format_option_loop_values(entry, Some(&key), count, index, last_option));
+                        }
+                    }
+                });
+                let Some(values) = values else { break };
+                format_loop_emit_option(es, fmt, &mut buffer, values);
+                index = index.wrapping_add(1);
             }
-            o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
         }
     }
     CString::new(buffer).expect("format loop output contains no NUL")
 }
 
 pub(super) unsafe fn format_loop_environ(
-    mut es: *mut format_expand_state,
-    mut fmt: *const ::core::ffi::c_char,
-    mut flags: *const ::core::ffi::c_char,
+    es: *mut format_expand_state,
+    fmt: *const ::core::ffi::c_char,
+    flags: *const ::core::ffi::c_char,
 ) -> CString {
-    let mut ft: *mut format_tree = (*es).ft;
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let client_owner = (*ft).client.clone();
-    let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut next: format_expand_state = format_expand_state {
-        ft: ::core::ptr::null_mut::<format_tree>(),
-        loop_0: 0,
-        start_time: 0,
-        flags: 0,
-        time: 0,
-        tm: tm {
-            tm_sec: 0,
-            tm_min: 0,
-            tm_hour: 0,
-            tm_mday: 0,
-            tm_mon: 0,
-            tm_year: 0,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: 0,
-            tm_gmtoff: 0,
-            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-        },
+    let ft = (*es).ft;
+    let pane = (*ft).wp.upgrade();
+    let session = (*ft).s.upgrade();
+    let format_client = (*ft).c.upgrade();
+    let client = (*ft).client.clone();
+    let item = (*ft).item.upgrade();
+    let flags = flags.as_ref().map(|_| CStr::from_ptr(flags)).filter(|flags| !flags.to_bytes().is_empty()).unwrap_or(c"s");
+    let mut access = |read: &mut dyn FnMut(&environ)| {
+        if flags == c"s" {
+            if let Some(session) = session.as_ref() {
+                session.with_environment_mut(|environment| read(environment));
+            }
+        } else if flags == c"g" {
+            if let Some(environment) = global_environ.as_deref() { read(environment); }
+        } else if flags == c"c" {
+            if let Some(client) = client.as_ref() {
+                client.with_environment(|environment| {
+                    if let Some(environment) = environment { read(environment); }
+                });
+            }
+        }
     };
-    let mut env: Option<&environ> = None;
+    let mut names = Vec::new();
+    access(&mut |environment| names.extend(environ_iter(environment).map(|entry| entry.name.clone())));
+    let count = names.len();
     let mut buffer = Vec::new();
-    let mut i: u_int = 0 as u_int;
-    if flags.is_null()
-        || *flags as ::core::ffi::c_int == '\0' as i32
-        || strcmp(flags, b"s\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-    {
-        if !format_session.is_null() {
-            env = (*format_session).environ.as_deref();
-        }
-    } else if strcmp(flags, b"g\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        env = global_environ.as_deref();
-    } else if strcmp(flags, b"c\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        if !client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
-            env = (*client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get())).environ.as_deref();
-        }
-    }
-    let Some(env) = env else { return c"".to_owned(); };
-    let mut entries = environ_iter(env).peekable();
-    while let Some(entry) = entries.next() {
-        let envent = entry;
-        format_log1(
-            es,
-            b"format_loop_environ\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| {
-                out.write_all(b"environment loop: ")?;
-                write_cstr(out, ((*envent).name).as_ptr().cast_mut())
-            },
-        );
-        let mut nft_owner = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
-        nft = &raw mut *nft_owner;
-        format_add(
-            nft,
-            b"environ_name\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, ((*envent).name).as_ptr().cast_mut()),
-        );
-        if (*envent).value.is_none() {
-            format_add(
-                nft,
-                b"environ_value\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
-            );
-        } else {
-            format_add(
-                nft,
-                b"environ_value\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| {
-                    write_cstr(
-                        out,
-                        ((*envent).value)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
-                },
-            );
-        }
-        if (*envent).flags & ENVIRON_HIDDEN != 0 {
-            format_add(
-                nft,
-                b"environ_hidden\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| out.write_all(b"1"),
-            );
-        } else {
-            format_add(
-                nft,
-                b"environ_hidden\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| out.write_all(b"0"),
-            );
-        }
-        format_add(
-            nft,
-            b"environ_removed\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| {
-                write!(
-                    out,
-                    "{}",
-                    (((*envent).value
-                        == if (NULL_0 as *mut ::core::ffi::c_char).is_null() {
-                            None
-                        } else {
-                            Some(
-                                ::std::ffi::CStr::from_ptr(NULL_0 as *mut ::core::ffi::c_char)
-                                    .to_owned(),
-                            )
-                        }) as ::core::ffi::c_int) as i32
-                )
-            },
-        );
-        if entries.peek().is_none() {
-            format_add(
-                nft,
-                b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| out.write_all(b"1"),
-            );
-        } else {
-            format_add(
-                nft,
-                b"loop_last_flag\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| out.write_all(b"0"),
-            );
-        }
-        format_add(
-            nft,
-            b"loop_index\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (i) as u32),
-        );
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-        format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
-        next.ft = nft;
-        let expanded = format_expand1_cstring(&raw mut next, fmt);
-        format_free(nft_owner);
+    for (index, name) in names.into_iter().enumerate() {
+        let mut entry = None;
+        access(&mut |environment| entry = environ_find(environment, name.as_ptr()).cloned());
+        let Some(entry) = entry else { continue };
+        format_log1(es, c"format_loop_environ".as_ptr(), |out| {
+            out.write_all(b"environment loop: ")?;
+            write_cstr(out, entry.name.as_ptr())
+        });
+        let mut context = format_create_with_client(client.as_ref(), item.as_ref(), FORMAT_NONE, (*ft).flags);
+        format_add_cstr(&mut *context, c"environ_name", &entry.name);
+        format_add_cstr(&mut *context, c"environ_value", entry.value.as_deref().unwrap_or(c""));
+        format_add_cstr(&mut *context, c"environ_hidden", if entry.flags & ENVIRON_HIDDEN != 0 { c"1" } else { c"0" });
+        format_add_cstr(&mut *context, c"environ_removed", if entry.value.is_none() { c"1" } else { c"0" });
+        format_add_cstr(&mut *context, c"loop_last_flag", if index + 1 == count { c"1" } else { c"0" });
+        format_add(&mut *context, c"loop_index".as_ptr(), |out| write!(out, "{}", index as u_int));
+        format_defaults(&mut *context, format_client.as_ref(), session.as_ref(), (*ft).winlink_handle(), pane.as_ref());
+        let mut next = format_expand_state::default();
+        format_copy_state(&mut next, es, 0);
+        next.ft = &mut *context;
+        let expanded = format_expand1_cstring(&mut next, fmt);
+        format_free(context);
         buffer.extend_from_slice(expanded.as_bytes());
-        i = i.wrapping_add(1);
     }
     CString::new(buffer).expect("format loop output contains no NUL")
 }
@@ -1874,7 +1514,6 @@ pub(super) unsafe fn format_loop_clients(
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
-    let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let item_owner = (*ft).item.upgrade();
     let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -1938,7 +1577,7 @@ pub(super) unsafe fn format_loop_clients(
                 )
             },
         );
-        format_defaults(nft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (format_session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(nft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), format_session_owner.as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -3854,6 +3493,112 @@ mod cycle_owner_tests {
             drop(owner);
             assert!(observer.upgrade().is_none());
             callback.borrow_mut()(-1, EV_TIMEOUT as _);
+        }
+    }
+}
+
+#[cfg(test)]
+mod option_loop_reentry_tests {
+    use super::*;
+    use crate::src::options::{options_array_set, options_create, options_empty, options_free, options_get_only_mut, options_remove_or_default, options_set_string};
+    use crate::src::shared::window::{window_mode, window_mode_entry};
+    use std::cell::{Cell, UnsafeCell};
+    use std::rc::Rc;
+
+    static MUTATING_MODE: std::sync::LazyLock<window_mode> = std::sync::LazyLock::new(|| window_mode {
+        name: c"format-test",
+        formats: Some(add_mutating_format),
+        ..window_mode::default()
+    });
+
+    unsafe fn add_mutating_format(entry: refbox::Weak<window_mode_entry>, tree: *mut format_tree) {
+        let pane = entry.get_unchecked().wp.upgrade().unwrap();
+        let state = entry.get_unchecked().retained_data::<(Cell<u32>, bool)>().unwrap();
+        format_add_owned_cb(tree, c"mutate_options", move |context| {
+            assert_eq!(state.0.replace(state.0.get() + 1), 0, "removed next entry stops the outer walk");
+            pane.with_options_mut(|options| {
+                if state.1 {
+                    let array = options_get_only_mut(options, c"status-format").unwrap();
+                    assert_eq!(options_array_set(array, c"1".as_ptr(), std::ptr::null(), 0, std::ptr::null_mut()), 0);
+                    assert_eq!(options_array_set(array, c"2".as_ptr(), c"updated".as_ptr(), 0, std::ptr::null_mut()), 0);
+                    assert_eq!(options_array_set(array, c"3".as_ptr(), c"added".as_ptr(), 0, std::ptr::null_mut()), 0);
+                } else {
+                    let removed = options_get_only_mut(options, c"@b").unwrap();
+                    assert_eq!(options_remove_or_default(removed, std::ptr::null(), std::ptr::null_mut()), 0);
+                    options_set_string(options, c"@c".as_ptr(), 0, |out| out.write_all(b"updated"));
+                    options_set_string(options, c"@d".as_ptr(), 0, |out| out.write_all(b"added"));
+                }
+            });
+            // Reenter the same options component after the edit scope ends.
+            Some(format_expand_cstring(context.as_ptr(), if state.1 {
+                c"#{O/p:#{option_array_key}=#{option_value},}".as_ptr()
+            } else {
+                c"#{O/p:#{option_name}=#{option_value},}".as_ptr()
+            }))
+        });
+    }
+
+    unsafe fn fixture(array: bool) -> (Rc<UnsafeCell<window_pane>>, Rc<(Cell<u32>, bool)>) {
+        let pane = window_pane::new();
+        (*pane.get()).options = Some(options_create(std::ptr::null_mut()));
+        let state = Rc::new((Cell::new(0), array));
+        (*pane.get()).modes.storage.entries.push(refbox::RefBox::new(window_mode_entry {
+            wp: Rc::downgrade(&pane),
+            swp: Default::default(),
+            mode: &MUTATING_MODE,
+            boxed_data: None,
+            data_owner: Some(state.clone()),
+            prefix: 0,
+            kill: 0,
+        }));
+        (pane, state)
+    }
+
+    unsafe fn free_fixture(pane: Rc<UnsafeCell<window_pane>>) {
+        // The test mode has no free callback and owns no terminal resources.
+        (*pane.get()).modes.storage.entries.clear();
+        options_free((*pane.get()).options.take().unwrap());
+        drop(pane);
+    }
+
+    #[test]
+    fn option_loop_can_remove_next_entry_and_reenter_with_updated_values() {
+        unsafe {
+            let (pane, state) = fixture(false);
+            pane.with_options_mut(|options| {
+                for (name, value) in [(c"@a", c"first"), (c"@b", c"second"), (c"@c", c"third")] {
+                    options_set_string(options, name.as_ptr(), 0, |out| out.write_all(value.to_bytes()));
+                }
+            });
+            let mut tree = format_create(None, None, 0, 0);
+            tree.wp = Rc::downgrade(&pane);
+            let result = format_expand_cstring(&mut *tree, c"#{O/p:#{option_name}=#{option_value}:#{loop_index}:#{loop_last_flag}[#{mutate_options}];}".as_ptr());
+            assert_eq!(result.as_c_str(), c"@a=first:0:0[@a=first,@c=updated,@d=added,];");
+            assert_eq!(state.0.get(), 1);
+            format_free(tree);
+            free_fixture(pane);
+        }
+    }
+
+    #[test]
+    fn option_array_loop_observes_each_key_after_recursive_expansion() {
+        unsafe {
+            let (pane, state) = fixture(true);
+            pane.with_options_mut(|options| {
+                let definition = (&raw const crate::src::options_table::options_table).as_ref().unwrap()
+                    .iter().find(|entry| entry.name == Some(c"status-format")).unwrap();
+                let array = options_empty(options, definition);
+                for (key, value) in [(c"0", c"first"), (c"1", c"second"), (c"2", c"third")] {
+                    assert_eq!(options_array_set(array, key.as_ptr(), value.as_ptr(), 0, std::ptr::null_mut()), 0);
+                }
+            });
+            let mut tree = format_create(None, None, 0, 0);
+            tree.wp = Rc::downgrade(&pane);
+            let result = format_expand_cstring(&mut *tree, c"#{O/p:#{option_array_key}=#{option_value}:#{option_array_count}:#{option_array_first}:#{option_array_last}[#{mutate_options}];}".as_ptr());
+            assert_eq!(result.as_c_str(), c"0=first:3:1:0[0=first,2=updated,3=added,];");
+            assert_eq!(state.0.get(), 1);
+            format_free(tree);
+            free_fixture(pane);
         }
     }
 }

@@ -200,7 +200,7 @@ unsafe fn cmd_run_shell_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
         args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned)
     } else {
-        server_client_get_cwd(c.as_ref(), s.as_ref())
+        server_client_get_cwd(c.as_ref(), s.as_ref().and_then(|model| model.observer.upgrade()).as_ref())
     };
     let mut cdata = Box::new(cmd_run_shell_data {
         client: None,

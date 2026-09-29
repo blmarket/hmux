@@ -570,7 +570,7 @@ impl<'a> tty_command_data<'a> {
     }
 }
 
-pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &mut client) -> i32>>;
+pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &std::rc::Rc<std::cell::UnsafeCell<client>>) -> i32>>;
 
 pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
 

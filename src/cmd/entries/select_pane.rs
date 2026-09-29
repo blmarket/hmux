@@ -136,7 +136,7 @@ unsafe fn cmd_select_pane_marked_pane(
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut mwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if args_has(args, 'm' as i32 as u_char) != 0 && window_pane_is_visible(&*wp) == 0 {
+    if args_has(args, 'm' as i32 as u_char) != 0 && window_pane_is_visible(&(*wp).observer.upgrade().expect("live pane")) == 0 {
         return CMD_RETURN_NORMAL;
     }
     if server_check_marked() != 0 {
@@ -276,7 +276,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
             if (*w).modal.upgrade().is_some() && !lastwp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
-                visible = window_pane_is_visible(&*lastwp);
+                visible = window_pane_is_visible(&(*lastwp).observer.upgrade().expect("live last pane"));
             }
             if visible == 0 && window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, Zflag) != 0 {
                 server_redraw_window(&*(w));
@@ -404,7 +404,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
     if (*w).modal.upgrade().is_some() && !wp.as_ref().is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer)) {
         visible = 1 as ::core::ffi::c_int;
     } else {
-        visible = window_pane_is_visible(&*wp);
+        visible = window_pane_is_visible(&(*wp).observer.upgrade().expect("live pane"));
     }
     if visible == 0 && window_push_zoom(&(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int, Zflag) != 0 {
         server_redraw_window(&*(w));

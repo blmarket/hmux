@@ -1155,7 +1155,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                                     .expect("formatted cwd was set")
                                     .as_ptr();
                             } else {
-                                default_cwd = server_client_get_cwd(tc.as_ref(), s.as_ref());
+                                default_cwd = server_client_get_cwd(tc.as_ref(), s.as_ref().and_then(|model| model.observer.upgrade()).as_ref());
                                 cwd = default_cwd
                                     .as_ref()
                                     .expect("default cwd was copied")

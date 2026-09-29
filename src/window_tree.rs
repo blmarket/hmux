@@ -1,4 +1,5 @@
 use crate::src::options::options_owner_ptr;
+use crate::src::window::Window;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
@@ -309,7 +310,7 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
     let wl = if item.type_0 == WINDOW_TREE_SESSION {
         (*s).current_winlink()
     } else {
-        winlink_find_by_index(&raw mut (*s).windows, item.winlink)
+        winlink_find_by_index(&(*s).windows, item.winlink)
     };
     let Ok(link) = wl.try_borrow_mut() else { return WindowTreeTarget::default(); };
     let pane = if item.type_0 == WINDOW_TREE_SESSION || item.type_0 == WINDOW_TREE_WINDOW {
@@ -807,7 +808,7 @@ unsafe fn window_tree_draw_session(
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    total = winlink_count(&raw mut (*s).windows);
+    total = winlink_count(&(*s).windows);
     if sx.wrapping_div(total) < 24 as u_int {
         visible = sx.wrapping_div(24 as u_int);
         if visible == 0 as u_int {
@@ -2189,16 +2190,18 @@ unsafe fn window_tree_mouse(
             return KEYC_NONE;
         }
         let wl = target.winlink.clone();
-        let mut pane = window_pane_first((wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+        let window = wl.get_unchecked().window_handle().expect("tree target window").clone();
+        let mut pane = window.next_pane(None);
         for _ in 0..(*data).start.wrapping_add(x) {
-            pane = pane.as_ref().and_then(|owner| window_pane_next((owner.get()).as_ref()));
+            pane = pane.as_ref().and_then(|owner| window.next_pane(Some(owner)));
             if pane.is_none() {
                 break;
             }
         }
         if let Some(pane_owner) = pane {
-            mode_tree_set_current(&mut *(*data).tree_owner().get(), pane_owner.get() as uint64_t);
+            mode_tree_set_current(&mut *(*data).tree_owner().get(), std::rc::Rc::as_ptr(&pane_owner) as uint64_t);
         }
+        window.release(c"window_tree_get_target");
         return '\r' as i32 as key_code;
     }
     return KEYC_NONE as ::core::ffi::c_ulong as key_code;

@@ -1,5 +1,4 @@
 use hmux2::src::shared::pane::{window_pane, window_pane_history, window_panes};
-use hmux2::src::shared::rc;
 use hmux2::src::window::*;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -12,22 +11,28 @@ fn pane_owner() -> Rc<UnsafeCell<window_pane>> {
 #[test]
 fn removing_from_another_history_preserves_membership_and_cleanup() {
     let owner = pane_owner();
-    let pane = rc::as_ptr(&owner);
+    let observer = Rc::downgrade(&owner);
     let mut source = window_pane_history::default();
     let mut destination = window_pane_history::default();
-    source.push_front(Rc::downgrade(&owner));
+    source.push_front(observer.clone());
     unsafe {
-        (*pane).flags |= hmux2::src::shared::pane::PANE_VISITED;
         window_pane_stack_remove(&mut destination, Some(&owner));
-        assert_ne!((*pane).flags & hmux2::src::shared::pane::PANE_VISITED, 0);
+        assert!(destination.is_empty());
+        let retained = source.first().expect("removing from another history preserves the source");
+        assert!(Rc::ptr_eq(&retained, &owner));
+        assert_eq!(Rc::strong_count(&owner), 2, "histories store only weak entries");
         window_pane_stack_remove(&mut source, Some(&owner));
         assert!(source.is_empty());
-        assert_eq!((*pane).flags & hmux2::src::shared::pane::PANE_VISITED, 0);
 
-        // Cleanup must also make progress if an entry has lost its flag.
-        source.push_front(Rc::downgrade(&owner));
+        // Cleanup follows membership alone and is safe to repeat.
+        window_pane_stack_remove(&mut source, Some(&owner));
+        source.push_front(observer.clone());
         window_pane_stack_remove(&mut source, Some(&owner));
         assert!(source.is_empty());
+        drop(owner);
+        assert!(observer.upgrade().is_some(), "the traversal result still retains the pane");
+        drop(retained);
+        assert!(observer.upgrade().is_none());
     }
 }
 

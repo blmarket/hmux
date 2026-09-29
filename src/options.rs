@@ -27,7 +27,7 @@ use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
 use crate::src::session::{session_update_history, sessions_minmax, sessions_next};
 use crate::src::shared::options::options_name_map;
-use crate::src::status::{status_timer_start_all, status_update_cache};
+use crate::src::status::status_timer_start_all;
 use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
 use crate::src::style::{
     style_parse, style_parse_colour, style_set, style_set_scrollbar_style_from_option,
@@ -1894,13 +1894,6 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             s_owner = sessions_next(&*s);
             s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         }
-    }
-    let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
-        status_update_cache(&mut *(s));
-        s_owner = sessions_next(&*s);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     recalculate_sizes();
     let mut registry_loop_0_owner = clients.first();

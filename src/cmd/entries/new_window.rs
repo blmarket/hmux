@@ -149,7 +149,7 @@ unsafe fn cmd_new_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
         if idx != -(1 as ::core::ffi::c_int) {
-            new_wl = winlink_find_by_index(&raw mut (*s).windows, idx);
+            new_wl = winlink_find_by_index(&(*s).windows, idx);
         } else if !wname.is_null() {
             let expanded = format_single_cstring(
                 Some(item_handle),

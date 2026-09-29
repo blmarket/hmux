@@ -298,19 +298,19 @@ impl client {
 
 pub use crate::src::file::{client_file, client_file_cb, client_file_event, client_files};
 
-pub type overlay_resize_cb = Option<Box<dyn FnMut(&mut client)>>;
+pub type overlay_resize_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>)>>;
 
-pub type overlay_free_cb = Option<Box<dyn FnOnce(&mut client)>>;
+pub type overlay_free_cb = Option<Box<dyn FnOnce(&Rc<UnsafeCell<client>>)>>;
 
-pub type overlay_key_cb = Option<Box<dyn FnMut(&mut client, &mut key_event) -> i32>>;
+pub type overlay_key_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, &mut key_event) -> i32>>;
 
-pub type overlay_draw_cb = Option<Box<dyn FnMut(&mut client)>>;
+pub type overlay_draw_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>)>>;
 
 pub type overlay_mode_cb =
-    Option<Box<dyn FnMut(&mut client) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)>>>;
+    Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)>>>;
 
 pub type overlay_check_cb =
-    Option<Box<dyn FnMut(&mut client, u_int, u_int, u_int) -> visible_ranges>>;
+    Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, u_int, u_int, u_int) -> visible_ranges>>;
 
 /// Retain an optional live, Rc-owned client.
 /// Panics if a supplied client is not backed by a live Rc allocation.

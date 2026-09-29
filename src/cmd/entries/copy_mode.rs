@@ -13,7 +13,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 use crate::src::tty::tty_window_offset;
-use crate::src::window::{window_pane_reset_mode_all, window_pane_set_mode};
+use crate::src::window::WindowPane;
 use crate::src::window_clock::window_clock_mode;
 use crate::src::window_copy::{
     window_copy_mode, window_copy_pagedown, window_copy_pageup, window_copy_scroll,
@@ -83,7 +83,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
     let mut wp = pane_owner.get();
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(args, 'q' as i32 as u_char) != 0 {
-        window_pane_reset_mode_all(&pane_owner);
+        pane_owner.reset_all_modes();
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'M' as i32 as u_char) != 0 {
@@ -104,14 +104,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
         }
     }
     if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_clock_mode_entry) {
-        window_pane_set_mode(
-            &pane_owner,
-            None,
-            &window_clock_mode,
-            Some(item_handle),
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            ::core::ptr::null_mut::<args>(),
-        );
+        pane_owner.set_mode(None, &window_clock_mode, Some(item_handle), None, None);
         return CMD_RETURN_NORMAL;
     }
     let source_owner = if args_has(args, 's' as i32 as u_char) != 0 {
@@ -132,14 +125,7 @@ unsafe fn cmd_copy_mode_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
     {
         line_numbers = 0 as ::core::ffi::c_int;
     }
-    if window_pane_set_mode(
-        &pane_owner,
-        source_owner.as_ref(),
-        &window_copy_mode,
-        Some(item_handle),
-        ::core::ptr::null_mut::<cmd_find_state>(),
-        args,
-    ) == 0
+    if pane_owner.set_mode(source_owner.as_ref(), &window_copy_mode, Some(item_handle), None, args.as_mut()) == 0
     {
         window_copy_set_line_numbers(&pane_owner, line_numbers);
         if args_has(args, 'M' as i32 as u_char) != 0 {

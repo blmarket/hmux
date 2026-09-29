@@ -74,7 +74,7 @@ unsafe fn cmd_kill_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_session_all(item_handle, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
-        sg = session_group_contains((s).as_ref());
+        sg = crate::src::session::session_group_for(&std::rc::Rc::downgrade(&source));
         !sg.is_null()
     } {
         for session_owner in crate::src::session::session_group_members(sg) {

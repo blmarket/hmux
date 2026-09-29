@@ -5,7 +5,7 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::imsg::*;
 use crate::src::server::clients;
-use crate::src::server_client::{server_client_detach, server_client_exec, server_client_suspend};
+use crate::src::server_client::{server_client_exec, Client};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -79,7 +79,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
     let mut msgtype: msgtype = 0 as msgtype;
     let mut cmd: *const ::core::ffi::c_char = args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_suspend_client_entry) {
-        server_client_suspend(&(*(tc)).observer.upgrade().expect("live client"));
+        tc_owner.as_ref().expect("target client").suspend();
         return CMD_RETURN_NORMAL;
     }
     if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
@@ -104,11 +104,11 @@ unsafe fn cmd_detach_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if (*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == s {
+            if registry_loop_0_owner.as_ref().expect("current registry client").attached_session().as_ptr().cast::<session>() == s.cast_const() {
                 if !cmd.is_null() {
                     server_client_exec(&(*(loop_0)).observer.upgrade().expect("live client"), cmd);
                 } else {
-                    server_client_detach(&(*(loop_0)).observer.upgrade().expect("live client"), msgtype);
+                    registry_loop_0_owner.as_ref().expect("current registry client").detach(msgtype);
                 }
             }
             registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
@@ -120,11 +120,11 @@ unsafe fn cmd_detach_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if !(*loop_0).session_handle().is_none() && loop_0 != tc {
+            if registry_loop_0_owner.as_ref().expect("current registry client").attached_session().upgrade().is_some() && loop_0 != tc {
                 if !cmd.is_null() {
                     server_client_exec(&(*(loop_0)).observer.upgrade().expect("live client"), cmd);
                 } else {
-                    server_client_detach(&(*(loop_0)).observer.upgrade().expect("live client"), msgtype);
+                    registry_loop_0_owner.as_ref().expect("current registry client").detach(msgtype);
                 }
             }
             registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
@@ -135,7 +135,7 @@ unsafe fn cmd_detach_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
     if !cmd.is_null() {
         server_client_exec(&(*(tc)).observer.upgrade().expect("live client"), cmd);
     } else {
-        server_client_detach(&(*(tc)).observer.upgrade().expect("live client"), msgtype);
+        tc_owner.as_ref().expect("target client").detach(msgtype);
     }
     return CMD_RETURN_STOP;
 }

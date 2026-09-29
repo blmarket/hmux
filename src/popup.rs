@@ -1,8 +1,6 @@
 use hmux_buffer::SegmentedBuf;
 use crate::src::server_client::server_client_unref_owned;
 use std::rc::Rc;
-use crate::src::shared::client::{client_retain, client_handle};
-use crate::src::options::options_owner_ptr;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::{format_create_defaults, format_free};
@@ -22,12 +20,13 @@ use crate::src::screen_write::{
     screen_write_start, screen_write_stop,
 };
 use crate::src::server_client::{
-    server_client_clear_overlay, server_client_overlay_range, server_client_set_overlay,
+    server_client_overlay_range, Client,
 };
-use crate::src::server_fn::server_redraw_client;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_REDRAWOVERLAY;
+use crate::src::shared::client::{CLIENT_REDRAWOVERLAY, CLIENT_ALLREDRAWFLAGS};
+use crate::src::session::Session;
+use crate::src::window::Window;
 use crate::src::shared::client::{
     client, overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
@@ -64,10 +63,8 @@ pub use crate::src::shared::tty::{
 use crate::src::style::colour::{
     colour_palette_free, colour_palette_from_option, colour_palette_init,
 };
-use crate::src::style::{style_apply, style_parse, style_set};
+use crate::src::style::{style_apply_with_options, style_parse, style_set};
 use crate::src::tmux::global_w_options;
-use crate::src::tty::tty_resize;
-use crate::src::tty_draw::tty_draw_line;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
@@ -178,12 +175,11 @@ impl PopupGuard<'_> {
         self.handle.clone()
     }
 
-    fn is_current(&self, c: &client) -> bool {
-        self.handle.0.is_alive()
-            && c.overlay_data
-                .as_ref()
-                .and_then(|data| data.downcast_ref::<refbox::RefBox<PopupState>>())
+    unsafe fn is_current(&self, client: &Rc<UnsafeCell<client>>) -> bool {
+        self.handle.0.is_alive() && client.with_overlay_data(|data| {
+            data.and_then(|data| data.downcast_ref::<refbox::RefBox<PopupState>>())
                 .is_some_and(|owner| self.handle.0.is(owner))
+        })
     }
 }
 
@@ -195,13 +191,6 @@ fn popup_check_callback(handle: PopupHandle) -> overlay_check_cb {
                 popup_check(&popup, px, py, nx)
             })
     }))
-}
-
-unsafe fn popup_restore_check(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
-    let mut c = c_owner.get();
-    if popup.is_current(&*c) {
-        (*c).overlay_check = popup_check_callback(popup.handle());
-    }
 }
 
 fn popup_optional_string(value: Option<&CStr>) -> Option<CString> {
@@ -226,9 +215,10 @@ impl Drop for popup_data {
             if self.published {
                 if let Some(item) = self.item.upgrade() {
                     let c_owner = cmdq_get_client((item.get()).as_ref());
-                    let c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-                    if !c.is_null() && (*c).session_handle().is_none() {
-                        (*c).retval = self.status;
+                    if let Some(client) = c_owner.as_ref() {
+                        if client.attached_session().upgrade().is_none() {
+                            client.set_return_value(self.status);
+                        }
                     }
                     cmdq_continue(&(*(item.get())).observer.upgrade().expect("live command queue item"));
                 }
@@ -254,9 +244,10 @@ impl Drop for popup_data {
 }
 unsafe fn popup_reapply_styles(popup: &PopupGuard) {
     let pd = popup.as_ptr();
-    let mut c: *mut client = client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut o: *mut options = ::core::ptr::null_mut::<options>();
+    let client = (*pd).c.as_ref().expect("popup client");
+    let Some(session) = client.attached_session().upgrade() else { return; };
+    let link = session.current_winlink();
+    let window = link.get_unchecked().window_handle().cloned().expect("popup window");
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sytmp: style = style {
         gc: grid_cell {
@@ -287,29 +278,14 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    if s.is_null() {
-        return;
-    }
-    o = options_owner_ptr(&mut (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
-    let mut ft_owner = format_create_defaults(
-        None,
-        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        ((*s).current_winlink()).clone(),
-        None,
-    );
+    let mut ft_owner = format_create_defaults(None, Some(client), Some(&session), link, None);
     ft = &raw mut *ft_owner;
     memcpy(
         &raw mut (*pd).defaults as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut (*pd).defaults,
-        o,
-        b"popup-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
+    style_apply_with_options(&mut (*pd).defaults, c"popup-style", Some(&mut *ft), |read| window.with_options_mut(read));
     if !(*pd).style.is_none() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
         if style_parse(
@@ -330,12 +306,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut (*pd).border_cell,
-        o,
-        b"popup-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
+    style_apply_with_options(&mut (*pd).border_cell, c"popup-border-style", Some(&mut *ft), |read| window.with_options_mut(read));
     if !(*pd).border_style.is_none() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
         if style_parse(
@@ -351,6 +322,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
         }
     }
     (*pd).border_cell.attr = 0 as u_short;
+    window.release(c"popup styles");
     format_free(ft_owner);
 }
 /// Geometry and defaults are fixed for one synchronous input batch. The palette
@@ -372,11 +344,7 @@ impl PopupRenderSnapshot {
         let border = u_int::from((*pd).border_lines != BOX_LINES_NONE);
         Self {
             popup: popup.handle(),
-            client: if client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
-                Weak::new()
-            } else {
-                (*client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get())).observer.clone()
-            },
+            client: (*pd).c.as_ref().map_or_else(Weak::new, Rc::downgrade),
             palette: (*pd).palette.downgrade(),
             defaults: (*pd).defaults,
             xoff: (*pd).px.wrapping_add(border),
@@ -405,33 +373,21 @@ impl PopupRenderSnapshot {
             if redraw.popup.0.is_alive() {
                 if let Some(client) = redraw.client.upgrade() {
                     unsafe {
-                        (*client.get()).flags |= CLIENT_REDRAWOVERLAY as uint64_t;
+                        client.request_redraw(CLIENT_REDRAWOVERLAY as u64);
                     }
                 }
             }
         }));
         let set_client = self.clone();
-        ttyctx.set_client_cb = Some(Box::new(move |ttyctx, c| {
+        ttyctx.set_client_cb = Some(Box::new(move |ttyctx, c| unsafe {
             if !set_client.popup.0.is_alive() {
                 return 0;
             }
             let Some(client) = set_client.client.upgrade() else {
                 return 0;
             };
-            if client.get() != std::ptr::from_mut(c)
-                || c.flags & CLIENT_REDRAWOVERLAY as uint64_t != 0
-            {
-                return 0;
-            }
-            ttyctx.wox = 0;
-            ttyctx.woy = 0;
-            ttyctx.wsx = c.tty.sx;
-            ttyctx.wsy = c.tty.sy;
-            ttyctx.rxoff = set_client.xoff as ::core::ffi::c_int;
-            ttyctx.xoff = ttyctx.rxoff;
-            ttyctx.ryoff = set_client.yoff as ::core::ffi::c_int;
-            ttyctx.yoff = ttyctx.ryoff;
-            1
+            if !Rc::ptr_eq(&client, c) { return 0; }
+            i32::from(c.prepare_overlay_render(ttyctx, set_client.xoff, set_client.yoff))
         }));
     }
 }
@@ -468,9 +424,7 @@ unsafe fn popup_check(popup: &PopupGuard, px: u_int, py: u_int, nx: u_int) -> vi
     ranges
 }
 unsafe fn popup_draw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
-    let mut c = c_owner.get();
     let pd = popup.as_ptr();
-    let mut tty: *mut tty = &raw mut (*c).tty;
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -571,45 +525,31 @@ unsafe fn popup_draw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup
     drop(palette);
     style_ctx.dim = 0 as u_int;
     style_ctx.hyperlinks = s.hyperlinks.clone();
-    (*c).overlay_check = None;
-    i = 0 as u_int;
-    while i < (*pd).sy {
-        tty_draw_line(
-            tty,
-            &s,
-            0 as u_int,
-            i,
-            (*pd).sx,
-            px,
-            py.wrapping_add(i),
-            Some(&style_ctx),
-        );
-        i = i.wrapping_add(1);
-    }
-    screen_free(&mut s);
-    popup_restore_check(c_owner, popup);
+    c_owner.with_overlay_check_disabled(popup_check_callback(popup.handle()), || {
+        c_owner.draw_overlay_screen(&s, px, py, (*pd).sx, (*pd).sy, &style_ctx);
+        screen_free(&mut s);
+    });
 }
 unsafe fn popup_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
-    let mut c = c_owner.get();
+    let (terminal_sx, terminal_sy) = c_owner.terminal_size();
     let pd = popup.as_ptr();
-    let mut tty: *mut tty = &raw mut (*c).tty;
-    if (*pd).psy > (*tty).sy {
-        (*pd).sy = (*tty).sy;
+    if (*pd).psy > terminal_sy {
+        (*pd).sy = terminal_sy;
     } else {
         (*pd).sy = (*pd).psy;
     }
-    if (*pd).psx > (*tty).sx {
-        (*pd).sx = (*tty).sx;
+    if (*pd).psx > terminal_sx {
+        (*pd).sx = terminal_sx;
     } else {
         (*pd).sx = (*pd).psx;
     }
-    if (*pd).ppy.wrapping_add((*pd).sy) > (*tty).sy {
-        (*pd).py = (*tty).sy.wrapping_sub((*pd).sy);
+    if (*pd).ppy.wrapping_add((*pd).sy) > terminal_sy {
+        (*pd).py = terminal_sy.wrapping_sub((*pd).sy);
     } else {
         (*pd).py = (*pd).ppy;
     }
-    if (*pd).ppx.wrapping_add((*pd).sx) > (*tty).sx {
-        (*pd).px = (*tty).sx.wrapping_sub((*pd).sx);
+    if (*pd).ppx.wrapping_add((*pd).sx) > terminal_sx {
+        (*pd).px = terminal_sx.wrapping_sub((*pd).sx);
     } else {
         (*pd).px = (*pd).ppx;
     }
@@ -635,7 +575,7 @@ unsafe fn popup_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, pop
     }
 }
 unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard, mut m: *mut mouse_event) {
-    let mut c = c_owner.get();
+    let (terminal_sx, terminal_sy) = c_owner.terminal_size();
     let pd = popup.as_ptr();
     let mut px: u_int = 0;
     let mut py: u_int = 0;
@@ -646,15 +586,15 @@ unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
     {
         if (*m).x < (*pd).dx {
             px = 0 as u_int;
-        } else if (*m).x.wrapping_sub((*pd).dx).wrapping_add((*pd).sx) > (*c).tty.sx {
-            px = (*c).tty.sx.wrapping_sub((*pd).sx);
+        } else if (*m).x.wrapping_sub((*pd).dx).wrapping_add((*pd).sx) > terminal_sx {
+            px = terminal_sx.wrapping_sub((*pd).sx);
         } else {
             px = (*m).x.wrapping_sub((*pd).dx);
         }
         if (*m).y < (*pd).dy {
             py = 0 as u_int;
-        } else if (*m).y.wrapping_sub((*pd).dy).wrapping_add((*pd).sy) > (*c).tty.sy {
-            py = (*c).tty.sy.wrapping_sub((*pd).sy);
+        } else if (*m).y.wrapping_sub((*pd).dy).wrapping_add((*pd).sy) > terminal_sy {
+            py = terminal_sy.wrapping_sub((*pd).sy);
         } else {
             py = (*m).y.wrapping_sub((*pd).dy);
         }
@@ -664,7 +604,7 @@ unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
         (*pd).dy = (*m).y.wrapping_sub((*pd).py);
         (*pd).ppx = px;
         (*pd).ppy = py;
-        server_redraw_client(&mut *(c));
+        c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     } else if (*pd).dragging as ::core::ffi::c_uint
         == SIZE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -707,11 +647,10 @@ unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
                 );
             }
         }
-        server_redraw_client(&mut *(c));
+        c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     }
 }
 unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard, event: *mut key_event) -> i32 {
-    let _c = c_owner.get();
     let pd = popup.as_ptr();
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
@@ -847,7 +786,7 @@ unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup:
 unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let pd = popup.as_ptr();
     let evb: &mut SegmentedBuf = bufferevent_get_input(&mut *job_get_event(job));
-    let mut c: *mut client = client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get());
+    let client = (*pd).c.as_ref().expect("popup client");
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
@@ -856,16 +795,14 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     if size == 0 as size_t {
         return;
     }
-    (*c).overlay_check = None;
     let render = PopupRenderSnapshot::new(popup);
-    input_parse_screen(
+    client.with_overlay_check_disabled(popup_check_callback(popup.handle()), || input_parse_screen(
         (*pd).ictx.as_deref_mut().map_or(std::ptr::null_mut(), |ictx| ictx),
         s,
         Some(Box::new(move |ttyctx| render.init_ctx(ttyctx))),
         data as *const u_char,
         size,
-    );
-    popup_restore_check(&(*(c)).observer.upgrade().expect("live client"), popup);
+    ));
     evbuffer_drain(evb, size);
 }
 unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
@@ -879,17 +816,14 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
     if (*pd).flags & POPUP_CLOSEEXIT != 0
         || (*pd).flags & POPUP_CLOSEEXITZERO != 0 && (*pd).status == 0 as ::core::ffi::c_int
     {
-        if popup.is_current(&*client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get())) {
-            server_client_clear_overlay(&(*(client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live client"));
+        let client = (*pd).c.as_ref().expect("popup client");
+        if popup.is_current(client) {
+            client.clear_overlay();
         }
     }
 }
-pub unsafe fn popup_present(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::core::ffi::c_int {
-    let mut c = c_owner.get();
-    return (*c)
-        .overlay_data
-        .as_ref()
-        .is_some_and(|data| data.is::<refbox::RefBox<PopupState>>()) as ::core::ffi::c_int;
+pub unsafe fn popup_present(client: &Rc<UnsafeCell<client>>) -> i32 {
+    client.with_overlay_data(|data| data.is_some_and(|data| data.is::<refbox::RefBox<PopupState>>())) as i32
 }
 pub unsafe fn popup_modify(
     c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
@@ -899,15 +833,10 @@ pub unsafe fn popup_modify(
     mut lines: box_lines,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut c = c_owner.get();
-    let Some(handle) = (*c)
-        .overlay_data
-        .as_ref()
-        .and_then(|data| data.downcast_ref::<refbox::RefBox<PopupState>>())
-        .map(|owner| PopupHandle(owner.downgrade()))
-    else {
-        return -1;
-    };
+    let Some(handle) = c_owner.with_overlay_data(|data| {
+        data.and_then(|data| data.downcast_ref::<refbox::RefBox<PopupState>>())
+            .map(|owner| PopupHandle(owner.downgrade()))
+    }) else { return -1; };
     let Some(popup) = handle.upgrade() else {
         return -1;
     };
@@ -1001,12 +930,12 @@ pub unsafe fn popup_modify(
             );
         }
         (*pd).border_lines = lines;
-        tty_resize(&raw mut (*c).tty);
+        c_owner.refresh_terminal_size();
     }
     if flags != -(1 as ::core::ffi::c_int) {
         (*pd).flags = flags;
     }
-    server_redraw_client(&mut *(c));
+    c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn popup_display(
@@ -1028,11 +957,8 @@ pub unsafe fn popup_display(
     mut border_style: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
-    let mut c = c_owner.get();
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut jx: u_int = 0;
     let mut jy: u_int = 0;
-    let mut o: *mut options = ::core::ptr::null_mut::<options>();
     let mut sytmp: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -1062,32 +988,30 @@ pub unsafe fn popup_display(
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    if !s.is_null() {
-        o = options_owner_ptr(&mut (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
-    } else {
-        o = options_owner_ptr(&mut (*((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
-    }
-    if lines as ::core::ffi::c_int == BOX_LINES_DEFAULT as ::core::ffi::c_int {
-        lines = options_get_number(
-            o,
-            b"popup-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as box_lines;
+    let session = s_owner.cloned().or_else(|| c_owner.attached_session().upgrade()).expect("popup session");
+    let link = session.current_winlink();
+    let window = link.get_unchecked().window_handle().cloned().expect("popup window");
+    if lines == BOX_LINES_DEFAULT {
+        lines = window.with_options_mut(|options| options_get_number(options, c"popup-border-lines".as_ptr())) as box_lines;
     }
     if lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         if sx < 1 as u_int || sy < 1 as u_int {
+            window.release(c"popup invalid size");
             return -(1 as ::core::ffi::c_int);
         }
         jx = sx;
         jy = sy;
     } else {
         if sx < 3 as u_int || sy < 3 as u_int {
+            window.release(c"popup invalid size");
             return -(1 as ::core::ffi::c_int);
         }
         jx = sx.wrapping_sub(2 as u_int);
         jy = sy.wrapping_sub(2 as u_int);
     }
-    if (*c).tty.sx < sx || (*c).tty.sy < sy {
-        return -(1 as ::core::ffi::c_int);
+    if c_owner.terminal_size().0 < sx || c_owner.terminal_size().1 < sy {
+        window.release(c"popup invalid size");
+            return -(1 as ::core::ffi::c_int);
     }
     let mut data = Box::new(popup_data::empty());
     data.title = popup_optional_string((!title.is_null()).then(|| CStr::from_ptr(title)));
@@ -1100,7 +1024,7 @@ pub unsafe fn popup_display(
     let pd = popup.as_ptr();
     (*pd).item = if item.is_null() { Weak::new() } else { (*item).observer.clone() };
     (*pd).flags = flags;
-    (*pd).c = client_retain((c).as_ref());
+    (*pd).c = Some(c_owner.clone());
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;
     (*pd).border_lines = lines;
     memcpy(
@@ -1108,12 +1032,7 @@ pub unsafe fn popup_display(
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut (*pd).border_cell,
-        o,
-        b"popup-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut (*pd).border_cell, c"popup-border-style", None, |read| window.with_options_mut(read));
     if !border_style.is_null() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
         if style_parse(
@@ -1141,12 +1060,8 @@ pub unsafe fn popup_display(
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut (*pd).defaults,
-        o,
-        b"popup-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut (*pd).defaults, c"popup-style", None, |read| window.with_options_mut(read));
+    window.release(c"popup styles");
     if !style.is_null() {
         style_set(&raw mut sytmp, &raw const grid_default_cell);
         if style_parse(
@@ -1212,23 +1127,22 @@ pub unsafe fn popup_display(
     let draw = PopupHandle(owner.downgrade());
     let draw_cb: overlay_draw_cb = Some(Box::new(move |c| unsafe {
         if let Some(popup) = draw.upgrade() {
-            popup_draw(&(*(c as *mut client)).observer.upgrade().expect("live client"), &popup);
+            popup_draw(c, &popup);
         }
     }));
     let key = PopupHandle(owner.downgrade());
     let key_cb: overlay_key_cb = Some(Box::new(move |c, event| unsafe {
-        key.upgrade().map_or(0, |popup| popup_key(&(*(c)).observer.upgrade().expect("live client"), &popup, event))
+        key.upgrade().map_or(0, |popup| popup_key(c, &popup, event))
     }));
     let free_cb: overlay_free_cb = None;
     let resize = PopupHandle(owner.downgrade());
     let resize_cb: overlay_resize_cb = Some(Box::new(move |c| unsafe {
         if let Some(popup) = resize.upgrade() {
-            popup_resize(&(*(c as *mut client)).observer.upgrade().expect("live client"), &popup);
+            popup_resize(c, &popup);
         }
     }));
     drop(popup);
-    server_client_set_overlay(
-        &(*(c)).observer.upgrade().expect("live client"),
+    c_owner.set_overlay(
         check_cb,
         mode_cb,
         draw_cb,
@@ -1288,9 +1202,9 @@ mod tests {
                 first.style_ctx.palette.with_palette(|palette| crate::src::style::colour::colour_palette_get(palette, 1)),
                 7
             );
-            let mut client = client::empty();
+            let client = client::new();
             let mut set_client = first.set_client_cb.take().unwrap();
-            assert_eq!(set_client(&mut first, &mut client), 0);
+            assert_eq!(set_client(&mut first, &client), 0);
             (first.redraw_cb.as_ref().unwrap())(&first);
             let mut expired = tty_ctx::default();
             render.init_ctx(&mut expired);
@@ -1298,9 +1212,9 @@ mod tests {
         }
     }
 
-    unsafe fn close_during_dispatch<'a>(handle: &'a PopupHandle, c: &mut client) -> PopupGuard<'a> {
+    unsafe fn close_during_dispatch<'a>(handle: &'a PopupHandle, c: &Rc<UnsafeCell<client>>) -> PopupGuard<'a> {
         let popup = handle.upgrade().unwrap();
-        server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
+        c.clear_overlay();
         assert!(handle.upgrade().is_none());
         assert_eq!((*popup.as_ptr()).title.as_deref(), Some(c"active popup"));
         popup

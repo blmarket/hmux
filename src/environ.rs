@@ -1,3 +1,4 @@
+use crate::src::session::Session;
 use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
@@ -272,7 +273,6 @@ pub unsafe fn environ_for_session(
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut no_TERM: ::core::ffi::c_int,
 ) -> Box<environ> {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
     let mut env = environ_create();
@@ -280,11 +280,8 @@ pub unsafe fn environ_for_session(
         global_environ.as_deref().expect("global environment"),
         &mut env,
     );
-    if !s.is_null() {
-        environ_copy(
-            (*s).environ.as_deref().expect("session environment"),
-            &mut env,
-        );
+    if let Some(session) = s_owner {
+        session.with_environment_mut(|source| environ_copy(source, &mut env));
     }
     if no_TERM == 0 {
         value = options_get_string(
@@ -328,11 +325,7 @@ pub unsafe fn environ_for_session(
         &mut env,
         b"LISTEN_FDNAMES\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if !s.is_null() {
-        idx = (*s).id as ::core::ffi::c_int;
-    } else {
-        idx = -(1 as ::core::ffi::c_int);
-    }
+    idx = s_owner.map_or(-1, |session| session.id() as i32);
     environ_set(
         &mut env,
         b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,

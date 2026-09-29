@@ -121,9 +121,9 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
             .unwrap()
             .downgrade();
         assert_eq!(winlink_shuffle_up(&session_owner, (nodes[0]).clone(), 1), 1);
-        assert!(!winlink_find_by_index(&raw mut session.windows, 1).is_alive());
+        assert!(!winlink_find_by_index(&session.windows, 1).is_alive());
         for (node, idx) in nodes.iter().zip(2..=4) {
-            assert_eq!(winlink_find_by_index(&raw mut session.windows, idx), *node);
+            assert_eq!(winlink_find_by_index(&session.windows, idx), *node);
         }
         assert_eq!(winlink_stack_indices(&session.lastw), [3, 2]);
         assert_eq!(weak, nodes[0]);

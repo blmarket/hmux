@@ -154,13 +154,13 @@ unsafe fn window_panes_get_source(
     let mut link = refbox::Weak::new();
     *session_owner = session_find_by_id((*data).source_session);
     if let Some(session) = session_owner.as_ref() {
-        link = winlink_find_by_window(&raw mut (*session.get()).windows, &window_owner);
+        link = winlink_find_by_window(&(*session.get()).windows, &window_owner);
     }
     if !link.is_alive() {
         *session_owner = window_panes_session(data);
     }
     if let Some(session) = session_owner.as_ref() {
-        link = winlink_find_by_window(&raw mut (*session.get()).windows, &window_owner);
+        link = winlink_find_by_window(&(*session.get()).windows, &window_owner);
     }
     if !wlp.is_null() {
         *wlp = link;
@@ -233,7 +233,7 @@ unsafe fn window_panes_pane_visible(wp_owner: &std::rc::Rc<std::cell::UnsafeCell
     if !(*wp).saved_layout_cell.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    return window_pane_is_visible(&*wp);
+    return window_pane_is_visible(wp_owner);
 }
 unsafe fn window_panes_get_geometry(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,

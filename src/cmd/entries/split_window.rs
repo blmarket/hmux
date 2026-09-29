@@ -1,3 +1,4 @@
+use crate::src::window::Window;
 use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
@@ -17,7 +18,7 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_single_cstring, format_single_from_target_cstring};
 use crate::src::layout::{
-    layout_close_pane, layout_fix_panes, layout_get_floating_cell, layout_get_tiled_cell,
+    layout_close_pane, layout_fix_panes,
     layout_set_size,
 };
 use crate::src::options::{
@@ -53,7 +54,6 @@ use crate::src::shared::spawn::{
 };
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
-use crate::src::spawn::spawn_pane;
 use crate::src::window::{
     window_active_pane_is_over_zoom, window_get_pane_lines, window_pane_find_by_id,
     window_pane_get_pane_lines, window_pane_is_floating, window_pane_is_visible,
@@ -143,7 +143,6 @@ unsafe fn cmd_split_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -173,7 +172,7 @@ unsafe fn cmd_split_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_new_pane_entry) {
         is_floating = (args_has(args, 'L' as i32 as u_char) == 0) as ::core::ffi::c_int;
     } else {
-        if window_pane_is_visible(&*wp) == 0 {
+        if window_pane_is_visible(&(*target).pane_handle().expect("target pane")) == 0 {
             restore_zoom = 0 as ::core::ffi::c_int;
         }
         if restore_zoom == 0 {
@@ -262,34 +261,10 @@ unsafe fn cmd_split_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
             return CMD_RETURN_ERROR;
         }
     }
-    if flags & SPAWN_FLOATING != 0 {
-        lc = match layout_get_floating_cell(item_handle, args, lines, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), flags) {
-            Ok(cell) => cell,
-            Err(error) => {
-                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
-                if restore_zoom != 0 {
-                    window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
-                }
-                return CMD_RETURN_ERROR;
-            }
-        };
-    } else {
-        lc = match layout_get_tiled_cell(item_handle, args, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), flags) {
-            Ok(cell) => cell,
-            Err(error) => {
-                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
-                if restore_zoom != 0 {
-                    window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
-                }
-                return CMD_RETURN_ERROR;
-            }
-        };
-    }
     sc.item = (*item).observer.clone();
     sc.s = (*s).observer.clone();
     sc.set_wl(wl.clone());
     sc.wp0 = (*wp).observer.clone();
-    sc.lc = lc;
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());
@@ -303,11 +278,18 @@ unsafe fn cmd_split_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     sc.idx = -(1 as ::core::ffi::c_int);
     sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(|value| value.to_owned());
     sc.flags = flags;
-    let spawned_pane = spawn_pane(&raw mut sc, &raw mut cause);
+    let window_owner = wl.get_unchecked().window_handle().expect("target window").clone();
+    let spawned_pane = match window_owner.split_pane(&mut sc, &mut *args, lines, restore_zoom != 0,
+        |error| cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()))) {
+        Ok(pane) => Some(pane),
+        Err(_) => {
+            window_owner.release(c"cmd_split_window");
+            return CMD_RETURN_ERROR;
+        }
+    };
     new_wp = spawned_pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if new_wp.is_null() {
         cmdq_error(item_handle, |out| {
-            out.write_all(b"create pane failed: ")?;
             write_cstr(
                 out,
                 cause
@@ -542,12 +524,15 @@ unsafe fn cmd_split_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
                                         });
                                         drop(sc.environ.take());
                                         if input != 0 {
+                                            window_owner.release(c"cmd_split_window");
                                             return CMD_RETURN_WAIT;
                                         }
                                         if args_has(args, 'W' as i32 as u_char) != 0 {
                                             (*new_wp).wait_item = (*item).observer.clone();
+                                            window_owner.release(c"cmd_split_window");
                                             return CMD_RETURN_WAIT;
                                         }
+                                        window_owner.release(c"cmd_split_window");
                                         return CMD_RETURN_NORMAL;
                                     }
                                 }
@@ -570,6 +555,7 @@ unsafe fn cmd_split_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
         window_pop_zoom(&(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
     }
     drop(sc.environ.take());
+    window_owner.release(c"cmd_split_window");
     return CMD_RETURN_ERROR;
 }
 unsafe fn cmd_split_window_mouse_resize(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {

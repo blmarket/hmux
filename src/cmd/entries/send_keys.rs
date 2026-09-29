@@ -10,7 +10,7 @@ use crate::src::key_bindings::{
 };
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::options::options_get_number;
-use crate::src::server_client::{server_client_handle_key, server_client_handle_key_after};
+use crate::src::server_client::Client;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -32,7 +32,7 @@ use crate::src::shared::utf8::*;
 use crate::src::shared::window::{window_mode_entry, winlink};
 use crate::src::style::colour::colour_palette_clear;
 use crate::src::text::utf8::{utf8_from_data, utf8_fromcstr_vec};
-use crate::src::window::window_pane_key;
+use crate::src::window::WindowPane;
 pub static cmd_send_keys_entry: cmd_entry = {
     cmd_entry {
         name: c"send-keys",
@@ -109,10 +109,10 @@ unsafe fn cmd_send_keys_inject_key(
             None,
         );
         if after.strong_count() == 0 {
-            if server_client_handle_key(tc_owner.as_ref().expect("key target client"), event) != 0 as ::core::ffi::c_int {
+            if tc_owner.as_ref().expect("key target client").handle_key_after(event, None, None) != 0 as ::core::ffi::c_int {
                 return std::rc::Rc::downgrade(item_handle);
             }
-        } else if server_client_handle_key_after(tc_owner.as_ref().expect("key target client"), event, after.upgrade().as_ref(), Some(&mut new_after))
+        } else if tc_owner.as_ref().expect("key target client").handle_key_after(event, after.upgrade().as_ref(), Some(&mut new_after))
             != 0 as ::core::ffi::c_int
         {
             return new_after;
@@ -121,7 +121,7 @@ unsafe fn cmd_send_keys_inject_key(
     }
     wme = (*wp).modes.active_weak();
     if !wme.is_alive() || (*wme.get_unchecked().mode).key_table.is_none() {
-        if window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), tc_owner.as_ref(), wl.clone(), key, ::core::ptr::null_mut::<mouse_event>())
+        if (*target).pane_handle().expect("key target pane").key(tc_owner.as_ref(), wl.clone(), key, None)
             != 0 as ::core::ffi::c_int
         {
             return std::rc::Weak::new();
@@ -278,7 +278,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
             cmdq_error(item_handle, |out| out.write_all(b"no mouse target"));
             return CMD_RETURN_ERROR;
         }
-        window_pane_key(&(*wp).observer.upgrade().expect("key target pane"), tc_owner.as_ref(), wl.clone(), (*m).key, m);
+        mouse_pane_owner.as_ref().expect("mouse target pane").key(tc_owner.as_ref(), wl.clone(), (*m).key, m.as_mut());
         return CMD_RETURN_NORMAL;
     }
     if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_send_prefix_entry) {

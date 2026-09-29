@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::arguments::args_string;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
@@ -13,7 +12,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::check_name;
-use crate::src::window::window_set_name;
+use crate::src::window::Window;
 pub static cmd_rename_window_entry: cmd_entry = {
     cmd_entry {
         name: c"rename-window",
@@ -52,13 +51,13 @@ unsafe fn cmd_rename_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         });
         return CMD_RETURN_ERROR;
     }
-    window_set_name(&(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), name.as_ptr(), 0 as ::core::ffi::c_int);
-    options_set_number(
-        options_owner_ptr(&mut (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options),
-        b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
-        0 as ::core::ffi::c_longlong,
-    );
+    let window = wl.get_unchecked().window_handle().expect("target window").clone();
+    window.rename(&name, false);
+    window.with_options_mut(|options| {
+        options_set_number(options, c"automatic-rename".as_ptr(), 0);
+    });
     server_redraw_window_borders(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
     server_status_window(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    window.release(c"cmd_rename_window");
     return CMD_RETURN_NORMAL;
 }

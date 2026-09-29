@@ -137,7 +137,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
     } else {
         cdata.client = client_retain((tc).as_ref());
     }
-    let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
+    let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref().and_then(|model| model.observer.upgrade()).as_ref());
     let job = job_run(
         Some(shellcmd.as_c_str()),
         &Vec::new(),

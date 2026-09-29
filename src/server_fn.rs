@@ -23,7 +23,7 @@ use crate::src::screen_write::{
 };
 use crate::src::server::clients;
 use crate::src::server::marked_pane;
-use crate::src::server_client::{server_client_remove_pane, server_client_set_session};
+use crate::src::server_client::{server_client_remove_pane, Client};
 use crate::src::session::sessions;
 use crate::src::session::{
     session_alive, session_attach, session_destroy, session_detach, session_group_contains,
@@ -316,7 +316,7 @@ pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window
         if !(session_has(&*s, &*w) == 0) {
             server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
             loop {
-                wl = winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window"));
+                wl = winlink_find_by_window(&(*s).windows, &(*(w)).observer.upgrade().expect("live window"));
                 if !wl.is_alive() {
                     break;
                 }
@@ -385,7 +385,7 @@ pub unsafe fn server_link_window(
     }
     dstwl = refbox::Weak::new();
     if dstidx != -(1 as ::core::ffi::c_int) {
-        dstwl = winlink_find_by_index(&raw mut (*dst).windows, dstidx);
+        dstwl = winlink_find_by_index(&(*dst).windows, dstidx);
     }
     if dstwl.is_alive() {
         if dstwl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == srcwl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
@@ -669,12 +669,8 @@ pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<
                 ((*c).flags & CLIENT_NO_DETACH_ON_DESTROY != 0)
                     .then_some(fallback.as_ref()).flatten()
             });
-            (*c).set_session(None);
-            (*c).last_session = std::rc::Weak::new();
-            server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (target.map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-            if target.is_none() {
-                (*c).flags |= CLIENT_EXIT as uint64_t;
-            }
+            registry_c_owner.as_ref().expect("current registry client")
+                .reattach_after_session_destroy(target);
         }
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

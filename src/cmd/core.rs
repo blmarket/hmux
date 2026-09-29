@@ -641,7 +641,7 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<s
         if w.is_null() {
             return refbox::Weak::new();
         }
-        wl = winlink_find_by_window(&raw mut (*s).windows, &(*(w)).observer.upgrade().expect("live window"));
+        wl = winlink_find_by_window(&(*s).windows, &(*(w)).observer.upgrade().expect("live window"));
         if let Some(window) = window_owner {
             crate::src::window::window_remove_ref(window, c"cmd_mouse_window".as_ptr());
         }

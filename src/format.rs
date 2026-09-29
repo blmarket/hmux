@@ -53,7 +53,7 @@ use crate::src::session::{
     session_group_count, session_groups_minmax, session_groups_next, sessions_minmax,
     sessions_next,
 };
-use crate::src::session::{session_groups, sessions};
+use crate::src::session::{session_groups, sessions, Session};
 use crate::src::shared::session::session_group;
 use crate::src::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
@@ -177,6 +177,8 @@ mod jobs;
 use jobs::*;
 pub use jobs::{format_lost_client, format_tidy_jobs};
 mod callbacks;
+pub use callbacks::FormatValue;
+pub(crate) use callbacks::{client_format_value, pane_format_value, window_format_value};
 use callbacks::*;
 mod expression;
 pub use expression::format_expand_cstring;
@@ -414,7 +416,7 @@ pub unsafe fn format_defaults(
         log_debug(format_args!(
             "{}: s=${}",
             "format_defaults",
-            ((*s).id) as u32
+            s_owner.expect("format session").id()
         ));
     } else {
         log_debug(format_args!("{}: s=none", "format_defaults"));
@@ -456,7 +458,7 @@ pub unsafe fn format_defaults(
         c_owner.and_then(|owner| (*owner.get()).session.upgrade())
     });
     if !wl.is_alive() {
-        wl = session_owner.as_ref().map_or_else(refbox::Weak::new, |owner| (*owner.get()).current_winlink());
+        wl = session_owner.as_ref().map_or_else(refbox::Weak::new, |owner| owner.current_winlink());
     }
     let pane_owner = wp_owner.cloned().or_else(|| {
         wl.try_borrow_mut().ok()

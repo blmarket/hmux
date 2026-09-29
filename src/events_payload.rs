@@ -28,7 +28,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{
     window_has_pane, window_pane_remove_ref,
-    window_remove_ref, winlink_find_by_index,
+    window_remove_ref, winlink_find_by_index, Window,
 };
 use std::ffi::{CStr, CString};
 
@@ -60,7 +60,7 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
         );
     }
     if let Some(window) = ep.target_window.take() {
-        window_remove_ref(window, b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char);
+        window.release(c"event_payload_free_target");
     }
     if let Some(pane) = ep.target_pane.take() {
         window_pane_remove_ref(
@@ -84,7 +84,7 @@ impl Drop for event_payload_item {
                     session_remove_ref(session, c"event_payload_free_value")
                 }
                 EventPayloadValue::Window(window) => {
-                    window_remove_ref(window, c"event_payload_free_value".as_ptr())
+                    window.release(c"event_payload_free_value")
                 }
                 EventPayloadValue::Pane(pane) => {
                     window_pane_remove_ref(pane, c"event_payload_free_value".as_ptr())
@@ -181,7 +181,7 @@ pub unsafe fn event_payload_get_target(
         && !w.is_null()
         && session_alive(s.as_ref()) != 0
     {
-        wl = winlink_find_by_index(&raw mut (*s).windows, t.idx);
+        wl = winlink_find_by_index(&(*s).windows, t.idx);
         if wl.is_alive() && wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w {
             wl = refbox::Weak::new();
         }

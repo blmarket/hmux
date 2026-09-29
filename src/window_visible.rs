@@ -72,7 +72,7 @@ pub unsafe fn window_visible_ranges(
                 )
             };
             if found_self
-                && window_pane_is_visible(&*wp) != 0
+                && window_pane_is_visible(&pane_owner) != 0
                 && py >= tb
                 && py <= bb
                 && (floating || (py != tb && py != bb))

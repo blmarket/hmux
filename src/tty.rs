@@ -2027,7 +2027,7 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
     c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if tty_client_ready(ctx, &*(c)) != 0 {
-            state = set_client_cb(ctx, &mut *c);
+            state = set_client_cb(ctx, registry_c_owner.as_ref().expect("current registry client"));
             if state == -(1 as ::core::ffi::c_int) {
                 break;
             }

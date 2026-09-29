@@ -43,13 +43,13 @@ use crate::src::shared::monitor::{monitor_callback, monitor_change};
 use crate::src::shared::monitor::{monitor_type, MONITOR_NOTIFY_INITIAL};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
+use crate::src::session::Session;
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{get_timer, setblocking};
 use crate::src::window::{
-    window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
-    winlink_find_by_window,
+    window_pane_find_by_id, WindowPane, Window, winlink_find_by_window,
 };
 use std::collections::VecDeque;
 use std::cell::UnsafeCell;
@@ -140,6 +140,32 @@ fn control_add_block(
 #[cfg(test)]
 mod control_queue_tests {
     use super::*;
+
+    #[test]
+    fn pane_output_trait_keeps_binary_escaping_and_consumes_only_the_block() {
+        unsafe {
+            let client = client::new();
+            let pane = window_pane::new();
+            (*pane.get()).id = 7;
+            (*pane.get()).fd = -1;
+            (*pane.get()).pipe_fd = -1;
+            let stream = bufferevent_new(-1, None, None, None);
+            (*pane.get()).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            let input = b"a\0\\tail";
+            evbuffer_add(&mut (*stream).input, input.as_ptr().cast(), input.len());
+            let mut panes = control_panes { storage: Default::default() };
+            let consumer = control_add_pane(&mut panes, pane.id(), pane.output_offset());
+            let mut message = control_append_data(&client, consumer, 0, None, &pane, 3);
+            assert_eq!(evbuffer_pullup(&mut message, -1).unwrap(), b"%output %7 a\\000\\134");
+            let mut rest = [0; 4];
+            assert_eq!(pane.copy_output(&consumer.offset, &mut rest), 4);
+            assert_eq!(&rest, b"tail");
+            std::mem::take(&mut (*pane.get()).event).free();
+            drop(pane);
+            drop(client);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 
     #[test]
     fn subscription_callback_releases_temporary_client_guard_on_early_exit() {
@@ -267,17 +293,17 @@ mod control_queue_tests {
         let mut wp = window_pane::empty();
         wp.id = 4;
         wp.offset.used = 123;
-        let first = control_add_pane(&mut index, &wp);
+        let first = control_add_pane(&mut index, wp.id, wp.offset);
         assert_eq!((first.offset.used, first.queued.used), (123, 123));
         first.flags = CONTROL_PANE_OFF;
         let address = first as *mut control_pane as usize;
         for id in 5..100 {
             wp.id = id;
-            control_add_pane(&mut index, &wp);
+            control_add_pane(&mut index, wp.id, wp.offset);
         }
         wp.id = 4;
         wp.offset.used = 456;
-        let first = control_add_pane(&mut index, &wp);
+        let first = control_add_pane(&mut index, wp.id, wp.offset);
         assert_eq!(first as *mut control_pane as usize, address);
         assert_eq!(
             (first.offset.used, first.queued.used, first.flags),
@@ -305,7 +331,7 @@ mod control_queue_tests {
                 wp.id = id;
                 wp.offset.used = 123;
                 let block = control_add_block(owner, control_block::new(None, 10));
-                let pane = control_add_pane(&mut owner.panes, &wp);
+                let pane = control_add_pane(&mut owner.panes, wp.id, wp.offset);
                 pane.blocks.push_back(block);
                 pane.pending_flag = 1;
                 owner.pending_panes.push_back(id);
@@ -322,7 +348,7 @@ mod control_queue_tests {
             let owner = client.control_state.as_deref_mut().unwrap();
             wp.id = 4;
             wp.offset.used = 456;
-            let pane = control_add_pane(&mut owner.panes, &wp);
+            let pane = control_add_pane(&mut owner.panes, wp.id, wp.offset);
             assert_eq!(pane.offset.used, 456);
             assert_eq!(pane.pending_flag, 0);
             assert!(pane.blocks.is_empty());
@@ -433,7 +459,7 @@ mod control_queue_tests {
                 );
                 let output = control_add_block(cs, control_block::new(None, 10));
                 let wp = window_pane::empty();
-                let pane = control_add_pane(&mut cs.panes, &wp);
+                let pane = control_add_pane(&mut cs.panes, wp.id, wp.offset);
                 pane.blocks.push_back(output);
                 pane.pending_flag = 1;
                 cs.pending_panes.push_back(wp.id);
@@ -547,24 +573,15 @@ unsafe fn control_release_block(
     drop(blocks.remove(index).expect("located control block"));
 }
 
-fn control_add_pane<'a>(panes: &'a mut control_panes, wp: &window_pane) -> &'a mut control_pane {
-    let map = &mut panes.storage;
-    map.entry(wp.id)
-        .or_insert_with(|| {
-            Box::new(control_pane {
-                pane: wp.id,
-                offset: window_pane_offset {
-                    used: wp.offset.used,
-                },
-                queued: window_pane_offset {
-                    used: wp.offset.used,
-                },
-                flags: 0,
-                pending_flag: 0,
-                blocks: VecDeque::new(),
-            })
-        })
-        .as_mut()
+fn control_add_pane(panes: &mut control_panes, id: u32, offset: window_pane_offset) -> &mut control_pane {
+    panes.storage.entry(id).or_insert_with(|| Box::new(control_pane {
+        pane: id,
+        offset,
+        queued: offset,
+        flags: 0,
+        pending_flag: 0,
+        blocks: VecDeque::new(),
+    })).as_mut()
 }
 pub unsafe fn control_set_window_size(c: &mut client, window: u_int, sx: u_int, sy: u_int) {
     if let Some(cs) = c.control_state.as_mut() {
@@ -609,13 +626,16 @@ unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
     }
 }
 
+unsafe fn control_session_has_pane(session: &Rc<UnsafeCell<session>>, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
+    let parent = pane.window_observer().upgrade().expect("live pane parent");
+    let present = session.with_winlinks(|links| winlink_find_by_window(links, &parent).is_alive());
+    parent.release(c"control_session_has_pane");
+    present
+}
 unsafe fn control_window_pane(c: &client, pane: u_int) -> Option<Rc<UnsafeCell<window_pane>>> {
     let session = c.session.upgrade()?;
     let pane = window_pane_find_by_id(pane)?;
-    if !winlink_find_by_window(&raw mut (*session.get()).windows, &(*((*pane.get()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window")).is_alive() {
-        return None;
-    }
-    Some(pane)
+    control_session_has_pane(&session, &pane).then_some(pane)
 }
 pub unsafe fn control_reset_offsets(c: &mut client) {
     let cs = c
@@ -655,84 +675,79 @@ pub unsafe fn control_pane_offset<'a>(
 }
 pub unsafe fn control_set_pane_on(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &Rc<UnsafeCell<window_pane>>) {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let Some(cp) = (*c)
         .control_state
         .as_deref_mut()
         .expect("control client state")
         .panes
-        .get_mut((*wp).id)
+        .get_mut(wp_owner.id())
     else {
         return;
     };
     if cp.flags & CONTROL_PANE_OFF != 0 {
         cp.flags &= !CONTROL_PANE_OFF;
-        cp.offset.used = (*wp).offset.used;
-        cp.queued.used = (*wp).offset.used;
+        cp.offset.used = wp_owner.output_offset().used;
+        cp.queued.used = wp_owner.output_offset().used;
     }
 }
 pub unsafe fn control_set_pane_off(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &Rc<UnsafeCell<window_pane>>) {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let cs = (*c)
         .control_state
         .as_deref_mut()
         .expect("control client state");
-    control_add_pane(&mut cs.panes, &*wp);
-    control_discard_pane(cs, (*wp).id);
-    let cp = cs.panes.get_mut((*wp).id).expect("indexed control pane");
-    cp.offset.used = (*wp).offset.used;
-    cp.queued.used = (*wp).offset.used;
+    control_add_pane(&mut cs.panes, wp_owner.id(), wp_owner.output_offset());
+    control_discard_pane(cs, wp_owner.id());
+    let cp = cs.panes.get_mut(wp_owner.id()).expect("indexed control pane");
+    cp.offset.used = wp_owner.output_offset().used;
+    cp.queued.used = wp_owner.output_offset().used;
     cp.flags |= CONTROL_PANE_OFF;
 }
 pub unsafe fn control_continue_pane(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &Rc<UnsafeCell<window_pane>>) {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let Some(cp) = (*c)
         .control_state
         .as_deref_mut()
         .expect("control client state")
         .panes
-        .get_mut((*wp).id)
+        .get_mut(wp_owner.id())
     else {
         return;
     };
     if cp.flags & CONTROL_PANE_PAUSED != 0 {
         cp.flags &= !CONTROL_PANE_PAUSED;
-        cp.offset.used = (*wp).offset.used;
-        cp.queued.used = (*wp).offset.used;
-        control_notify_write(c_owner, |out| write!(out, "%continue %{}", (*wp).id));
+        cp.offset.used = wp_owner.output_offset().used;
+        cp.queued.used = wp_owner.output_offset().used;
+        control_notify_write(c_owner, |out| write!(out, "%continue %{}", wp_owner.id()));
     }
 }
 pub unsafe fn control_pause_pane(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &Rc<UnsafeCell<window_pane>>) {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let cs = (*c)
         .control_state
         .as_deref_mut()
         .expect("control client state");
-    let cp = control_add_pane(&mut cs.panes, &*wp);
+    let cp = control_add_pane(&mut cs.panes, wp_owner.id(), wp_owner.output_offset());
     if cp.flags & CONTROL_PANE_PAUSED == 0 {
         cp.flags |= CONTROL_PANE_PAUSED;
-        control_discard_pane(cs, (*wp).id);
-        control_notify_write(c_owner, |out| write!(out, "%pause %{}", (*wp).id));
+        control_discard_pane(cs, wp_owner.id());
+        control_notify_write(c_owner, |out| write!(out, "%pause %{}", wp_owner.id()));
     }
 }
 pub unsafe fn control_reset_pane(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &Rc<UnsafeCell<window_pane>>) {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let Some(cs) = (*c).control_state.as_deref_mut() else {
         return;
     };
-    control_discard_pane(cs, (*wp).id);
-    if let Some(cp) = cs.panes.get_mut((*wp).id) {
-        cp.offset.used = (*wp).offset.used;
-        cp.queued.used = (*wp).offset.used;
+    control_discard_pane(cs, wp_owner.id());
+    if let Some(cp) = cs.panes.get_mut(wp_owner.id()) {
+        cp.offset.used = wp_owner.output_offset().used;
+        cp.queued.used = wp_owner.output_offset().used;
     }
 }
 unsafe fn control_check_reply_buffer(c_owner: &Rc<UnsafeCell<client>>, mut added: size_t) -> ::core::ffi::c_int {
@@ -937,7 +952,6 @@ unsafe fn control_check_age(
     pane: u_int,
 ) -> ::core::ffi::c_int {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let mut cb = refbox::Weak::<control_block>::new();
     let mut t: uint64_t = 0;
@@ -964,7 +978,7 @@ unsafe fn control_check_age(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        ((*wp).id) as u32,
+        (wp_owner.id()) as u32,
         age as ::core::ffi::c_ulonglong
     ));
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_PAUSEAFTER != 0 {
@@ -974,7 +988,7 @@ unsafe fn control_check_age(
         let cp = cs.panes.get_mut(pane).expect("indexed control pane");
         cp.flags |= CONTROL_PANE_PAUSED;
         control_discard_pane(cs, pane);
-        control_notify_write(c_owner, |out| write!(out, "%pause %{}", ((*wp).id) as u32));
+        control_notify_write(c_owner, |out| write!(out, "%pause %{}", (wp_owner.id()) as u32));
     } else {
         if age < CONTROL_MAXIMUM_AGE as uint64_t {
             return 0 as ::core::ffi::c_int;
@@ -987,28 +1001,25 @@ unsafe fn control_check_age(
 }
 pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &Rc<UnsafeCell<window_pane>>) {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let cs = (*c)
         .control_state
         .as_deref_mut()
         .expect("control client state");
-    let pane = (*wp).id;
+    let pane = wp_owner.id();
     let mut cb = refbox::Weak::<control_block>::new();
     let mut new_size: size_t = 0;
-    if !winlink_find_by_window(
-        &raw mut (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).windows,
-        &(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
-    ).is_alive()
-    {
+    let session = (*c).session.upgrade().expect("attached control client");
+    if !control_session_has_pane(&session, wp_owner) {
         return;
     }
+    drop(session);
     if (*c).flags & (CONTROL_IGNORE_FLAGS | CLIENT_EXIT) as uint64_t != 0 {
         if cs.panes.get(pane).is_none() {
             return;
         }
     } else {
-        let cp = control_add_pane(&mut cs.panes, &*wp);
+        let cp = control_add_pane(&mut cs.panes, wp_owner.id(), wp_owner.output_offset());
         if !(cp.flags & (CONTROL_PANE_OFF | CONTROL_PANE_PAUSED) != 0) {
             if control_check_age(c_owner, wp_owner, pane) != 0 {
                 return;
@@ -1018,13 +1029,12 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
                 .as_deref_mut()
                 .expect("control client state");
             let cp = cs.panes.get_mut(pane).expect("indexed control pane");
-            new_size = (*wp).event.with_ptr(|event| unsafe {
-                window_pane_get_new_data(&mut *(*event).input, (*wp).base_offset, &cp.queued).len()
-            }).unwrap_or(0);
+            let previous = cp.queued.used;
+            wp_owner.advance_output(&mut cp.queued, usize::MAX);
+            new_size = cp.queued.used.wrapping_sub(previous);
             if new_size == 0 as size_t {
                 return;
             }
-            window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.queued, new_size);
             cb = control_add_block(cs, control_block::new(None, new_size));
             (*cb.try_borrow_mut().expect("live control block")).t = get_timer();
             let cp = cs.panes.get_mut(pane).expect("indexed control pane");
@@ -1039,7 +1049,7 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
                         as *const _
                 ),
                 ((*cb.try_borrow_mut().expect("live control block")).size) as usize,
-                ((*wp).id) as u32
+                (wp_owner.id()) as u32
             ));
             if cp.pending_flag == 0 {
                 log_debug(format_args!(
@@ -1051,7 +1061,7 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                             as *const _
                     ),
-                    ((*wp).id) as u32
+                    (wp_owner.id()) as u32
                 ));
                 cs.pending_panes.push_back(pane);
                 cp.pending_flag = 1 as ::core::ffi::c_int;
@@ -1071,11 +1081,11 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        ((*wp).id) as u32
+        (wp_owner.id()) as u32
     ));
     let cp = cs.panes.get_mut(pane).expect("indexed control pane");
-    window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.offset, SIZE_MAX as size_t);
-    window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.queued, SIZE_MAX as size_t);
+    wp_owner.advance_output(&mut cp.offset, usize::MAX);
+    wp_owner.advance_output(&mut cp.queued, usize::MAX);
 }
 unsafe fn control_error(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, error: Option<CString>) -> cmd_retval {
     let item = item_handle.get();
@@ -1260,7 +1270,6 @@ unsafe fn control_append_data(
     mut size: size_t,
 ) -> Box<SegmentedBuf> {
     let c = c_owner.get();
-    let wp = wp_owner.get();
 
     let mut new_data: *mut u_char = ::core::ptr::null_mut::<u_char>();
     let mut new_size: size_t = 0;
@@ -1273,21 +1282,19 @@ unsafe fn control_append_data(
                 write!(
                     out,
                     "%extended-output %{} {} : ",
-                    ((*wp).id) as u32,
+                    (wp_owner.id()) as u32,
                     (age as ::core::ffi::c_ulonglong) as u64
                 )
             });
         } else {
             evbuffer_add_formatted(&mut *message, |out| {
-                write!(out, "%output %{} ", ((*wp).id) as u32)
+                write!(out, "%output %{} ", (wp_owner.id()) as u32)
             });
         }
         message
     });
-    let data = (*wp).event.with_ptr(|event| unsafe {
-        window_pane_get_new_data(&mut *(*event).input, (*wp).base_offset, &cp.offset).to_vec()
-    }).unwrap_or_default();
-    new_size = data.len();
+    let mut data = vec![0; size];
+    new_size = wp_owner.copy_output(&cp.offset, &mut data);
     new_data = data.as_ptr().cast_mut();
     if new_size < size {
         fatalx(|out| {
@@ -1329,7 +1336,7 @@ unsafe fn control_append_data(
         }
         i = i.wrapping_add(1);
     }
-    window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.offset, size);
+    wp_owner.advance_output(&mut cp.offset, size);
     return message;
 }
 unsafe fn control_write_data(c_owner: &Rc<UnsafeCell<client>>, mut message: Box<SegmentedBuf>) {
@@ -1370,7 +1377,6 @@ unsafe fn control_write_pending(
 ) -> ::core::ffi::c_int {
     let c = c_owner.get();
 
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut message: Option<Box<SegmentedBuf>> = None;
     let mut used: size_t = 0 as size_t;
     let mut size: size_t = 0;
@@ -1378,8 +1384,7 @@ unsafe fn control_write_pending(
     let mut age: uint64_t = 0;
     let mut t: uint64_t = get_timer();
     let pane_owner = control_window_pane(&*c, pane);
-    wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() || (*wp).fd == -(1 as ::core::ffi::c_int) {
+    if pane_owner.as_ref().is_none_or(|pane| !pane.has_tty()) {
         control_discard_pane(
             (*c).control_state
                 .as_deref_mut()
@@ -1454,7 +1459,7 @@ unsafe fn control_write_pending(
                 control_free_block(cs, &cb);
                 cb = control_first_block(cs);
                 if cb.is_alive() && (*cb.try_borrow_mut().expect("live control block")).size == 0 as size_t {
-                    if !wp.is_null() {
+                    if pane_owner.is_some() {
                         if let Some(message) = message.take() {
                             control_write_data(c_owner, message);
                         }
@@ -1554,7 +1559,6 @@ unsafe fn control_sub_change(change: &monitor_change) {
         drop(client_owner);
         return;
     };
-    let s = crate::src::shared::rc::as_ptr(&session_owner);
     let mut link = change.wl.try_borrow_mut().ok();
     if !change.wl.is_empty() && link.is_none() {
         drop(session_owner);
@@ -1568,45 +1572,28 @@ unsafe fn control_sub_change(change: &monitor_change) {
         drop(client_owner);
         return;
     }
-    let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    if !wp.is_null() && !wl.is_null() {
-        w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
-            out.write_all(b"%subscription-changed ")?;
-            out.write_all(change.name.to_bytes())?;
-            write!(
-                out,
-                " ${} @{} {} %{} : ",
-                ((*s).id) as u32,
-                ((*w).id) as u32,
-                ((*wl).idx) as u32,
-                ((*wp).id) as u32
-            )?;
-            out.write_all(change.value.to_bytes())
-        });
-    } else if !wl.is_null() {
-        w = (*wl).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
-            out.write_all(b"%subscription-changed ")?;
-            out.write_all(change.name.to_bytes())?;
-            write!(
-                out,
-                " ${} @{} {} - : ",
-                ((*s).id) as u32,
-                ((*w).id) as u32,
-                ((*wl).idx) as u32
-            )?;
-            out.write_all(change.value.to_bytes())
-        });
-    } else {
-        control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
-            out.write_all(b"%subscription-changed ")?;
-            out.write_all(change.name.to_bytes())?;
-            write!(out, " ${} - - - : ", ((*s).id) as u32)?;
-            out.write_all(change.value.to_bytes())
-        });
-    };
+    let session_id = session_owner.id();
+    let location = if !wl.is_null() {
+        let (window_id, pane_id) = if let Some(pane) = pane_owner.as_ref() {
+            let window = pane.window_observer().upgrade().expect("live subscription pane parent");
+            let id = window.id();
+            window.release(c"control_sub_change");
+            (id, Some(pane.id()))
+        } else {
+            ((*wl).window_handle().expect("live subscription window").id(), None)
+        };
+        Some((window_id, (*wl).idx as u32, pane_id))
+    } else { None };
+    control_notify_write(&client_owner, |out| {
+        out.write_all(b"%subscription-changed ")?;
+        out.write_all(change.name.to_bytes())?;
+        match location {
+            Some((window, index, Some(pane))) => write!(out, " ${session_id} @{window} {index} %{pane} : ")?,
+            Some((window, index, None)) => write!(out, " ${session_id} @{window} {index} - : ")?,
+            None => write!(out, " ${session_id} - - - : ")?,
+        }
+        out.write_all(change.value.to_bytes())
+    });
     drop(session_owner);
     drop(client_owner);
 }

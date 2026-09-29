@@ -135,46 +135,27 @@ pub unsafe fn status_timer_start_all() {
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
-pub unsafe fn status_update_cache(s_value: &mut session) {
-    let s: *mut session = s_value as *mut _;
-    (*s).statuslines = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
-    if (*s).statuslines == 0 as u_int {
-        (*s).statusat = -(1 as ::core::ffi::c_int);
-    } else if options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_longlong
-    {
-        (*s).statusat = 0 as ::core::ffi::c_int;
-    } else {
-        (*s).statusat = 1 as ::core::ffi::c_int;
-    };
-}
 pub unsafe fn status_at_line(c: &client) -> ::core::ffi::c_int {
-    let mut s: *mut session = c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    use crate::src::session::Session;
     if c.flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
-        return -(1 as ::core::ffi::c_int);
+        return -1;
     }
-    if (*s).statusat != 1 as ::core::ffi::c_int {
-        return (*s).statusat;
+    let session = c.session_handle().expect("status client session");
+    let (position, _) = session.status_layout();
+    if position != 1 {
+        return position;
     }
-    return c.tty.sy.wrapping_sub(status_line_size(c)) as ::core::ffi::c_int;
+    c.tty.sy.wrapping_sub(status_line_size(c)) as ::core::ffi::c_int
 }
 pub unsafe fn status_line_size(c: &client) -> u_int {
-    let mut s: *mut session = c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    use crate::src::session::Session;
     if c.flags & (CLIENT_STATUSOFF | CLIENT_CONTROL) as uint64_t != 0 {
-        return 0 as u_int;
+        return 0;
     }
-    if s.is_null() {
-        return options_get_number(
-            global_s_options,
-            b"status\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as u_int;
+    match c.session_handle() {
+        Some(session) => session.status_layout().1,
+        None => options_get_number(global_s_options, c"status".as_ptr()) as u_int,
     }
-    return (*s).statuslines;
 }
 pub unsafe fn status_prompt_line_at(c: &client) -> u_int {
     let mut s: *mut session = c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -951,6 +932,11 @@ mod status_screen_tests {
             let session_owner = session::new();
             let session = &mut *session_owner.get();
             session.options = Some(oo_owner);
+            let previous_sessions = std::mem::replace(
+                &mut crate::src::session::sessions,
+                crate::src::shared::session::sessions { storage: None },
+            );
+            crate::src::session::sessions_insert(&mut crate::src::session::sessions, session_owner.clone());
             let mut c = client::empty();
             c.set_session(Some(session));
             c.tty.sx = 80;
@@ -981,14 +967,14 @@ mod status_screen_tests {
                 (1, 3, 1, 24, 0, (21, 22)),
                 (1, 3, 9, 24, 0, (21, 23)),
                 (1, 3, 0, 1, 0, (-2, 0)),
-                (1, 0, 0, 24, 0, (24, 24)),
+                (1, 0, 0, 24, 0, (-1, 24)),
                 (0, 3, 1, 24, CLIENT_STATUSOFF, (-1, 0)),
                 (1, 3, 1, 24, CLIENT_CONTROL, (-1, 24)),
             ] {
-                session.statusat = position;
-                session.statuslines = lines;
+                options_set_number(oo, c"status".as_ptr(), lines);
                 options_set_number(oo, c"status-position".as_ptr(), position as i64);
                 options_set_number(oo, c"message-line".as_ptr(), message_line);
+                crate::src::session::recalculate_size_state();
                 c.tty.sy = height;
                 c.flags = flags as u64;
                 assert_eq!(status_at_line(&c), expected.0);
@@ -1002,6 +988,8 @@ mod status_screen_tests {
             assert_eq!(status_line_size(&c), 4);
             global_s_options = saved;
             // The session owns and releases its option table.
+            crate::src::session::sessions_remove(&mut crate::src::session::sessions, &session_owner);
+            crate::src::session::sessions = previous_sessions;
         }
     }
 
