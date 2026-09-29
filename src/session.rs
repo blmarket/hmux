@@ -39,7 +39,7 @@ use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_THEMECHANGED;
 use crate::src::shared::session::session_entry;
-use crate::src::shared::session::{session_group, session_group_entry, session_groups, sessions};
+use crate::src::shared::session::{session_group, session_groups, sessions};
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
@@ -170,7 +170,7 @@ impl session_group {
     pub fn new(name: &std::ffi::CStr) -> Box<Self> {
         let mut owner = Box::new(session_group {
             name: name.to_owned(),
-            entry: session_group_entry { owner: refbox::Weak::new() },
+            owner: refbox::Weak::new(),
             members: Vec::new(),
         });
 
@@ -199,7 +199,7 @@ pub unsafe fn session_groups_insert(
         std::collections::btree_map::Entry::Vacant(entry) => {
             let elm = owner.node_ptr();
             entry.insert(owner);
-            (*elm).entry.owner = observer;
+            (*elm).owner = observer;
         }
     }
     std::ptr::null_mut()
@@ -222,7 +222,7 @@ pub unsafe fn session_groups_remove(head: *mut session_groups, elm: *mut session
         if map.get(key).map(|owner| owner.node_ptr()) != Some(elm) {
             return false;
         }
-        (*elm).entry.owner = refbox::Weak::new();
+        (*elm).owner = refbox::Weak::new();
         (
             map.remove(key).expect("indexed session group disappeared"),
             map.is_empty(),
@@ -245,7 +245,7 @@ pub fn session_groups_minmax(head: &session_groups) -> *mut session_group {
     pair.map_or(std::ptr::null_mut(), |(_, owner)| owner.node_ptr())
 }
 pub unsafe fn session_groups_next(elm: &session_group) -> *mut session_group {
-    let owner = &elm.entry.owner;
+    let owner = &elm.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return std::ptr::null_mut(),
@@ -791,7 +791,7 @@ pub unsafe fn session_group_for(target: &std::rc::Weak<UnsafeCell<session>>) -> 
 pub unsafe fn session_group_find(mut name: *const ::core::ffi::c_char) -> *mut session_group {
     let mut sg: session_group = session_group {
         name: Default::default(),
-        entry: session_group_entry { owner: refbox::Weak::new() },
+        owner: refbox::Weak::new(),
         ..session_group::empty()
     };
     sg.name = ::std::ffi::CStr::from_ptr(name).to_owned();
@@ -1124,12 +1124,12 @@ mod session_index_tests {
             assert!(session_groups_insert(&mut head, first_owner).is_null());
             assert!(session_groups_insert(&mut head, second_owner).is_null());
 
-            let index_observer = (*second).entry.owner.clone();
+            let index_observer = (*second).owner.clone();
             let duplicate = session_group::new(c"alpha");
             assert_eq!(session_groups_insert(&mut head, duplicate), first);
-            assert!(!(*second).entry.owner.is_empty());
+            assert!(!(*second).owner.is_empty());
             assert!(!session_groups_remove(&mut other, second));
-            assert!(!(*second).entry.owner.is_empty());
+            assert!(!(*second).owner.is_empty());
 
             let mut moved = head;
             assert_eq!(session_groups_next(&*first), second);
