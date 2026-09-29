@@ -6,6 +6,7 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::server_redraw_session;
+use crate::src::session::Session;
 use crate::src::session::{session_last, session_next, session_previous, session_select};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -129,10 +130,7 @@ unsafe fn cmd_select_window_exec(
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;
@@ -161,85 +159,72 @@ unsafe fn cmd_select_window_exec(
     if next != 0 || previous != 0 || last != 0 {
         activity = args_has(args, 'a' as i32 as u_char);
         if next != 0 {
-            if session_next(&(*s).observer.upgrade().expect("live session"), activity)
-                != 0 as ::core::ffi::c_int
+            if session_next(s.as_ref().expect("live session"), activity) != 0 as ::core::ffi::c_int
             {
                 cmdq_error(item_handle, |out| out.write_all(b"no next window"));
                 return CMD_RETURN_ERROR;
             }
         } else if previous != 0 {
-            if session_previous(&(*s).observer.upgrade().expect("live session"), activity)
+            if session_previous(s.as_ref().expect("live session"), activity)
                 != 0 as ::core::ffi::c_int
             {
                 cmdq_error(item_handle, |out| out.write_all(b"no previous window"));
                 return CMD_RETURN_ERROR;
             }
-        } else if session_last(&(*s).observer.upgrade().expect("live session"))
-            != 0 as ::core::ffi::c_int
-        {
+        } else if session_last(s.as_ref().expect("live session")) != 0 as ::core::ffi::c_int {
             cmdq_error(item_handle, |out| out.write_all(b"no last window"));
             return CMD_RETURN_ERROR;
         }
         cmd_find_from_session(
             &mut *current.current.borrow_mut(),
-            &(*(s)).observer.upgrade().expect("live session"),
+            s.as_ref().expect("live session"),
             0 as ::core::ffi::c_int,
         );
-        server_redraw_session(&*(s));
+        server_redraw_session(s.as_ref().expect("live session"));
         cmdq_insert_hook(
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            s.as_ref(),
             item_handle,
             &mut current.current_snapshot(),
             |out| out.write_all(b"after-select-window"),
         );
     } else {
-        if args_has(args, 'T' as i32 as u_char) != 0 && wl == (*s).current_winlink() {
-            if session_last(&(*s).observer.upgrade().expect("live session"))
-                != 0 as ::core::ffi::c_int
-            {
+        if args_has(args, 'T' as i32 as u_char) != 0
+            && wl == s.as_ref().expect("live session").current_winlink()
+        {
+            if session_last(s.as_ref().expect("live session")) != 0 as ::core::ffi::c_int {
                 cmdq_error(item_handle, |out| out.write_all(b"no last window"));
                 return CMD_RETURN_ERROR;
             }
-            if current
-                .current
-                .borrow()
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-                == s
-            {
+            if crate::src::shared::rc::same(
+                current.current.borrow().session_handle().as_ref(),
+                s.as_ref(),
+            ) {
                 cmd_find_from_session(
                     &mut *current.current.borrow_mut(),
-                    &(*(s)).observer.upgrade().expect("live session"),
+                    s.as_ref().expect("live session"),
                     0 as ::core::ffi::c_int,
                 );
             }
-            server_redraw_session(&*(s));
-        } else if session_select(
-            &(*s).observer.upgrade().expect("live session"),
-            wl.get_unchecked().idx,
-        ) == 0 as ::core::ffi::c_int
+            server_redraw_session(s.as_ref().expect("live session"));
+        } else if session_select(s.as_ref().expect("live session"), wl.get_unchecked().idx)
+            == 0 as ::core::ffi::c_int
         {
             cmd_find_from_session(
                 &mut *current.current.borrow_mut(),
-                &(*(s)).observer.upgrade().expect("live session"),
+                s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );
-            server_redraw_session(&*(s));
+            server_redraw_session(s.as_ref().expect("live session"));
         }
         cmdq_insert_hook(
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            s.as_ref(),
             item_handle,
             &mut current.current_snapshot(),
             |out| out.write_all(b"after-select-window"),
         );
     }
     if !c.is_null() && !(*c).session_handle().is_none() {
-        (*((*s).current_winlink())
+        (*(s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()

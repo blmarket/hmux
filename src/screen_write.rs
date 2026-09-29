@@ -21,7 +21,6 @@ use crate::src::screen::{
     screen_reset_tabs, screen_select_cell,
 };
 use crate::src::server_fn::server_redraw_window_borders;
-use crate::src::session::session_has;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{

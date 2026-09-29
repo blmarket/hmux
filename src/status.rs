@@ -29,6 +29,7 @@ use crate::src::server::server_add_message;
 use crate::src::server_client::{
     server_client_clear_overlay, server_client_set_message, server_client_set_status_expanded,
 };
+use crate::src::session::Session as _;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::style::{
     style_apply, style_ranges_clear, style_ranges_free, style_ranges_get_range, style_ranges_init,
@@ -69,16 +70,13 @@ use crate::src::shared::window::winlink;
 
 unsafe fn status_timer_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
     };
     event_del(&raw mut (*c).status.timer);
-    if s.is_null() {
+    if s.is_none() {
         return;
     }
     if (*c).message_string.is_none() && (*c).prompt.is_none() {
@@ -86,10 +84,15 @@ unsafe fn status_timer_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<clie
     }
     tv.tv_usec = 0 as __suseconds_t;
     tv.tv_sec = tv.tv_usec as __time_t;
-    tv.tv_sec = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-interval\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as __time_t;
+    tv.tv_sec = s
+        .as_ref()
+        .expect("live session")
+        .with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"status-interval\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) as __time_t;
     if tv.tv_sec != 0 as __time_t {
         event_add(&raw mut (*c).status.timer, &raw mut tv);
     }
@@ -101,10 +104,7 @@ unsafe fn status_timer_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<clie
 }
 pub unsafe fn status_timer_start(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     if event_initialized(&(*c).status.timer) != 0 {
         event_del(&raw mut (*c).status.timer);
     } else {
@@ -122,11 +122,16 @@ pub unsafe fn status_timer_start(c_owner: &std::rc::Rc<std::cell::UnsafeCell<cli
             },
         );
     }
-    if !s.is_null()
-        && options_get_number(
-            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-            b"status\0" as *const u8 as *const ::core::ffi::c_char,
-        ) != 0
+    if !s.is_none()
+        && s.as_ref()
+            .expect("live session")
+            .with_options_mut(|options| {
+                options_get_number(
+                    options,
+                    b"status\0" as *const u8 as *const ::core::ffi::c_char,
+                )
+            })
+            != 0
     {
         status_timer_callback(c_owner);
     }
@@ -169,20 +174,22 @@ pub unsafe fn status_line_size(c: &client) -> u_int {
     }
 }
 pub unsafe fn status_prompt_line_at(c: &client) -> u_int {
-    let mut s: *mut session = c
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c.session_handle();
     let mut line: u_int = 0;
     let mut lines: u_int = 0;
     lines = status_line_size(c);
     if lines == 0 as u_int {
         return 0 as u_int;
     }
-    line = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"message-line\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
+    line = s
+        .as_ref()
+        .expect("live session")
+        .with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"message-line\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) as u_int;
     if line >= lines {
         return lines.wrapping_sub(1 as u_int);
     }
@@ -266,10 +273,7 @@ pub unsafe fn status_redraw(
     let mut c = c_owner.get();
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut sle: *mut style_line_entry = ::core::ptr::null_mut::<style_line_entry>();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         target: Default::default(),
@@ -320,23 +324,30 @@ pub unsafe fn status_redraw(
     let mut ft_owner = format_create(Some(c_owner), None, FORMAT_NONE, flags);
     ft = &raw mut *ft_owner;
     format_defaults(ft, Some(c_owner), None, (refbox::Weak::new()).clone(), None);
-    style_apply(
-        &raw mut gc,
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
-    fg = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-fg\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    crate::src::style::style_apply_with_options(&mut gc, c"status-style", ft.as_mut(), |visit| {
+        s.as_ref().expect("live session").with_options_mut(visit)
+    });
+    fg = s
+        .as_ref()
+        .expect("live session")
+        .with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"status-fg\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
     }
-    bg = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-bg\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    bg = s
+        .as_ref()
+        .expect("live session")
+        .with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"status-bg\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) as ::core::ffi::c_int;
     if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
         gc.bg = bg;
     }
@@ -354,11 +365,21 @@ pub unsafe fn status_redraw(
         changed = force;
     }
     screen_write_start(&mut ctx, &raw mut (*sl).screen);
-    o = options_get(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-format\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if o.is_null() {
+    let format_depth = s.as_ref().expect("live session").with_options_mut(|root| {
+        let mut options = root;
+        let mut depth = 0;
+        loop {
+            if crate::src::options::options_get_only_mut(options, c"status-format").is_some() {
+                break Some(depth);
+            }
+            let Some(parent) = options.parent.as_mut() else {
+                break None;
+            };
+            options = parent;
+            depth += 1;
+        }
+    });
+    if format_depth.is_none() {
         n = 0 as u_int;
         while n < width.wrapping_mul(lines) {
             screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
@@ -373,9 +394,17 @@ pub unsafe fn status_redraw(
                 i as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            ov = crate::src::options::options_array_get_index_mut(&mut *(o), i)
-                .map_or(std::ptr::null_mut(), |value| value);
-            if ov.is_null() {
+            let line_format = s.as_ref().expect("live session").with_options_mut(|root| {
+                let mut options = root;
+                for _ in 0..format_depth.expect("resolved format") {
+                    options = options.parent.as_mut().expect("format parent stays live");
+                }
+                let entry = crate::src::options::options_get_only_mut(options, c"status-format")
+                    .expect("status format stays live during expansion");
+                crate::src::options::options_array_get_index_mut(entry, i)
+                    .map(|value| value.string_ptr().map(|text| text.to_owned()))
+            });
+            if line_format.is_none() {
                 n = 0 as u_int;
                 while n < width {
                     screen_write_putc(&mut ctx, &gc, ' ' as i32 as u_char);
@@ -386,9 +415,10 @@ pub unsafe fn status_redraw(
                     as *mut style_line_entry;
                 let expanded = format_expand_time_cstring(
                     ft,
-                    (*ov)
-                        .string_ptr()
-                        .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    line_format
+                        .as_ref()
+                        .and_then(|value| value.as_ref())
+                        .map_or(std::ptr::null(), |value| value.as_ptr()),
                 );
                 if force != 0
                     || (*c).status.entries[i as usize].expanded.as_ref() != Some(&expanded)
@@ -500,17 +530,11 @@ pub unsafe fn status_message_set(
         )
     });
     if delay == -(1 as ::core::ffi::c_int) {
-        delay = options_get_number(
-            options_owner_ptr(
-                &mut (*(*c)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options),
-            b"display-time\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as ::core::ffi::c_int;
+        delay = (*c)
+            .session_handle()
+            .expect("live session")
+            .with_options_mut(|options| options_get_number(options, c"display-time".as_ptr()))
+            as ::core::ffi::c_int;
     }
     if delay > 0 as ::core::ffi::c_int {
         tv.tv_sec = (delay / 1000 as ::core::ffi::c_int) as __time_t;
@@ -557,19 +581,11 @@ pub unsafe fn status_message_clear(c: &mut client) {
     status_pop_screen(&mut *(c));
 }
 unsafe fn status_message_area(c: &client) -> (u_int, u_int) {
-    let sy = options_string_to_style(
-        options_owner_ptr(
-            &mut (*c
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
-        c"message-style".as_ptr(),
-        std::ptr::null_mut(),
-    )
-    .as_ref();
+    let sy = crate::src::style::style_resolve_with_options(c"message-style", None, |visit| {
+        c.session_handle()
+            .expect("live session")
+            .with_options_mut(visit)
+    });
     let mut width = match sy.filter(|style| style.width >= 0) {
         Some(style) if style.width_percentage != 0 => {
             c.tty.sx.wrapping_mul(style.width as u_int) / 100
@@ -594,6 +610,8 @@ unsafe fn status_message_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<cl
 pub unsafe fn status_message_redraw(
     c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
 ) -> ::core::ffi::c_int {
+    let mut msgfmt_session_value: Option<std::ffi::CString> = None;
+
     let mut c = c_owner.get();
     let mut sl: *mut status_line = &raw mut (*c).status;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -605,10 +623,7 @@ pub unsafe fn status_message_redraw(
         scrolled: 0,
         bg: 0,
     };
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut old_screen: screen = screen::empty();
     let mut lines: u_int = 0;
     let mut messageline: u_int = 0;
@@ -650,12 +665,9 @@ pub unsafe fn status_message_redraw(
         None,
     );
     ft = &raw mut *ft_owner;
-    style_apply(
-        &raw mut gc,
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"message-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
+    crate::src::style::style_apply_with_options(&mut gc, c"message-style", ft.as_mut(), |visit| {
+        s.as_ref().expect("live session").with_options_mut(visit)
+    });
     if (*c).message_ignore_styles != 0 {
         let msg = status_message_escape((*c).message_string.as_deref().unwrap_or(c""));
         format_add(
@@ -682,10 +694,21 @@ pub unsafe fn status_message_redraw(
         b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
     );
-    msgfmt = options_get_string(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
+    msgfmt_session_value = Some(
+        s.as_ref()
+            .expect("live session")
+            .with_options_mut(|options| {
+                std::ffi::CStr::from_ptr(options_get_string(
+                    options,
+                    b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
+                ))
+                .to_owned()
+            }),
     );
+    msgfmt = msgfmt_session_value
+        .as_ref()
+        .expect("option snapshot")
+        .as_ptr();
     let expanded = format_expand_time_cstring(ft, msgfmt);
     format_free(ft_owner);
     screen_write_start(&mut ctx, (*sl).active_screen());
@@ -746,14 +769,7 @@ pub unsafe fn status_prompt_set(
     status_message_clear(&mut *(c_owner).get());
     status_prompt_clear(c_owner);
     status_push_screen(&mut *(c));
-    prompt_set_options(
-        &mut pd,
-        ((*c)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_mut(),
-    );
+    prompt_set_options(&mut pd, (*c).session_handle().as_ref());
     pd.fs = fs.as_ref();
     pd.prompt = CStr::from_ptr(msg);
     pd.input = if input.is_null() {
@@ -834,17 +850,10 @@ pub unsafe fn status_prompt_update(
 unsafe fn status_prompt_screen_line(c: &client) -> u_int {
     let tty = &c.tty;
     let mut n: u_int = 0;
-    if options_get_number(
-        options_owner_ptr(
-            &mut (*c
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
-        b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_longlong
+    if c.session_handle()
+        .expect("live session")
+        .with_options_mut(|options| options_get_number(options, c"status-position".as_ptr()))
+        == 0 as ::core::ffi::c_longlong
     {
         return status_prompt_line_at(c);
     }
@@ -1022,7 +1031,7 @@ mod status_screen_tests {
                 session_owner.clone(),
             );
             let mut c = client::empty();
-            c.set_session(Some(session));
+            c.set_session(Some(&session_owner));
             c.tty.sx = 80;
             for (style, expected) in [
                 ("default", (0, 80)),

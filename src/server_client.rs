@@ -1,3 +1,4 @@
+use crate::src::session::Session as _;
 mod api;
 pub use api::Client;
 
@@ -61,7 +62,7 @@ use crate::src::server_fn::{
     server_check_unattached, server_destroy_pane, server_kill_pane, server_redraw_client,
     server_redraw_window_borders, server_status_client, server_status_window,
 };
-use crate::src::session::{session_find_by_id, session_theme_changed, session_update_activity};
+use crate::src::session::session_find_by_id;
 use crate::src::shared::command::unpack_argv;
 use crate::src::shared::events::event_payload;
 use crate::src::status::{
@@ -1066,8 +1067,10 @@ pub unsafe fn server_client_set_key_table(
     mut name: *const ::core::ffi::c_char,
 ) {
     let mut c = c_owner.get();
+    let default_name;
     if name.is_null() {
-        name = server_client_get_key_table(&*(c));
+        default_name = server_client_get_key_table(&*c);
+        name = default_name.as_ptr();
     }
     drop((*c).keytable.take());
     (*c).keytable = key_bindings_get_table(std::ffi::CStr::from_ptr(name), 1);
@@ -1116,28 +1119,23 @@ unsafe fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
                 .wrapping_div(1000 as ::core::ffi::c_ulonglong),
         ) as uint64_t;
 }
-pub unsafe fn server_client_get_key_table(c: &client) -> *const ::core::ffi::c_char {
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if s.is_null() {
-        return b"root\0" as *const u8 as *const ::core::ffi::c_char;
+pub unsafe fn server_client_get_key_table(c: &client) -> std::ffi::CString {
+    let Some(session) = c.session_handle() else {
+        return c"root".to_owned();
+    };
+    let name = session.with_options_mut(|options| {
+        std::ffi::CStr::from_ptr(options_get_string(options, c"key-table".as_ptr())).to_owned()
+    });
+    if name.as_bytes().is_empty() {
+        c"root".to_owned()
+    } else {
+        name
     }
-    name = options_get_string(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"key-table\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if *name as ::core::ffi::c_int == '\0' as i32 {
-        return b"root\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    return name;
 }
 unsafe fn server_client_is_default_key_table(c: &client, table: &key_table) -> ::core::ffi::c_int {
     return (strcmp(
         (table.name).as_ptr().cast_mut(),
-        server_client_get_key_table(&*(c)),
+        server_client_get_key_table(&*(c)).as_ptr(),
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
 unsafe fn server_client_init_timers(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -1296,7 +1294,7 @@ pub unsafe fn server_client_open(
 }
 unsafe fn server_client_attached_lost(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let mut c = c_owner.get();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut found: *mut client = ::core::ptr::null_mut::<client>();
@@ -1314,13 +1312,10 @@ unsafe fn server_client_attached_lost(c_owner: &std::rc::Rc<std::cell::UnsafeCel
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get());
             while !loop_0.is_null() {
-                s = (*loop_0)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get());
+                s = (*loop_0).session_handle();
                 if !(loop_0 == c
-                    || s.is_null()
-                    || ((*s).current_winlink())
+                    || s.is_none()
+                    || (s.as_ref().expect("live session").current_winlink())
                         .get_unchecked()
                         .window_handle()
                         .as_ref()
@@ -1378,31 +1373,19 @@ unsafe fn server_client_fire_session_changed(
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
+            fs.session_handle().expect("live session"),
         );
         event_payload_set_session(
             &mut *ep,
             b"new_session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
+            fs.session_handle().expect("live session"),
         );
     }
     if !old.is_null() {
         event_payload_set_session(
             &mut *ep,
             b"old_session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(old)).observer.upgrade().expect("live session"),
+            old_owner.expect("live session").clone(),
         );
     }
     if !fs.window_handle().is_none() {
@@ -1471,13 +1454,7 @@ unsafe fn server_client_fire_resized(
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
+            fs.session_handle().expect("live session"),
         );
     }
     if !fs.window_handle().is_none() {
@@ -1720,11 +1697,8 @@ unsafe fn server_client_free(c_value: &mut client) {
 }
 pub unsafe fn server_client_suspend(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return;
     }
     tty_stop_tty(&raw mut (*c).tty);
@@ -1742,36 +1716,46 @@ pub unsafe fn server_client_detach(
     mut msgtype: msgtype,
 ) {
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if s.is_null() || (*c).flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    if s.is_none() || (*c).flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
         return;
     }
     (*c).flags |= CLIENT_EXIT as uint64_t;
     (*c).exit_type = CLIENT_EXIT_DETACH;
     (*c).exit_msgtype = msgtype;
-    server_client_set_exit_session(&mut *c, Some((*s).name.clone()));
+    server_client_set_exit_session(
+        &mut *c,
+        Some(s.as_ref().expect("live session").name().clone()),
+    );
 }
 pub unsafe fn server_client_exec(
     c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     mut cmd: *const ::core::ffi::c_char,
 ) {
+    let mut shell_session_value: Option<std::ffi::CString> = None;
+
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if *cmd as ::core::ffi::c_int == '\0' as i32 {
         return;
     }
-    if !s.is_null() {
-        shell = options_get_string(
-            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-            b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
+    if !s.is_none() {
+        shell_session_value = Some(
+            s.as_ref()
+                .expect("live session")
+                .with_options_mut(|options| {
+                    std::ffi::CStr::from_ptr(options_get_string(
+                        options,
+                        b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
+                    ))
+                    .to_owned()
+                }),
         );
+        shell = shell_session_value
+            .as_ref()
+            .expect("option snapshot")
+            .as_ptr();
     } else {
         shell = options_get_string(
             global_s_options,
@@ -1839,7 +1823,7 @@ unsafe fn server_client_update_scrollbar_hover(
     let Some(session_owner) = (*c).session.upgrade() else {
         return;
     };
-    let window_owner = ((*session_owner.get()).current_winlink())
+    let window_owner = (session_owner.current_winlink())
         .get_unchecked()
         .window_owner
         .as_ref()
@@ -2067,8 +2051,8 @@ unsafe fn server_client_check_mouse(
     let Some(session_owner) = (*c).session.upgrade() else {
         return KEYC_UNKNOWN;
     };
-    let s = session_owner.get();
-    let window_owner = ((*s).current_winlink())
+    let s = Some(session_owner.clone());
+    let window_owner = (s.as_ref().expect("live session").current_winlink())
         .get_unchecked()
         .window_owner
         .as_ref()
@@ -2239,7 +2223,7 @@ unsafe fn server_client_check_mouse(
         {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
         }
-        (*m).s = (*s).id as ::core::ffi::c_int;
+        (*m).s = s.as_ref().expect("live session").id() as ::core::ffi::c_int;
         (*m).w = -(1 as ::core::ffi::c_int);
         (*m).wp = -(1 as ::core::ffi::c_int);
         (*m).ignore = ignore;
@@ -2269,8 +2253,9 @@ unsafe fn server_client_check_mouse(
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     4 => {
-                        fwl =
-                            winlink_find_by_index(&(*s).windows, sr.argument as ::core::ffi::c_int);
+                        fwl = s.as_ref().expect("live session").with_winlinks(|links| {
+                            winlink_find_by_index(links, sr.argument as ::core::ffi::c_int)
+                        });
                         if !fwl.is_alive() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
@@ -2577,11 +2562,15 @@ unsafe fn server_client_check_mouse(
                         .active_pane()
                         .as_ref()
                         .map_or(std::ptr::null_mut(), |owner| owner.get())
-                && options_get_number(
-                    options_owner_ptr(&mut (*s).options)
-                        .map_or(std::ptr::null_mut(), |options| options),
-                    b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
-                ) != 0
+                && s.as_ref()
+                    .expect("live session")
+                    .with_options_mut(|options| {
+                        options_get_number(
+                            options,
+                            b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
+                        )
+                    })
+                    != 0
             {
                 window_redraw_active_switch(
                     &(*(w)).observer.upgrade().expect("live window"),
@@ -2773,10 +2762,7 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> :
         as ::core::ffi::c_int;
 }
 unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -2785,10 +2771,15 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_BRACKETPASTING != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    t = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"assume-paste-time\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    t = s
+        .as_ref()
+        .expect("live session")
+        .with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"assume-paste-time\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) as ::core::ffi::c_int;
     if t == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -2868,27 +2859,34 @@ unsafe fn server_client_update_latest(c_owner: &std::rc::Rc<std::cell::UnsafeCel
 }
 
 unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut repeat: u_int = 0;
     let mut initial: u_int = 0;
     if !bd.flags & KEY_BINDING_REPEAT != 0 {
         return 0 as u_int;
     }
-    repeat = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
+    repeat = s
+        .as_ref()
+        .expect("live session")
+        .with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) as u_int;
     if repeat == 0 as u_int {
         return 0 as u_int;
     }
     if !(*c).flags & CLIENT_REPEAT as uint64_t != 0 || bd.key != (*c).last_key {
-        initial = options_get_number(
-            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-            b"initial-repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as u_int;
+        initial = s
+            .as_ref()
+            .expect("live session")
+            .with_options_mut(|options| {
+                options_get_number(
+                    options,
+                    b"initial-repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
+                )
+            }) as u_int;
         if initial != 0 as u_int {
             repeat = initial;
         }
@@ -2949,7 +2947,7 @@ unsafe fn server_client_key_callback(
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut key: key_code = (*event).key;
     let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -2980,12 +2978,9 @@ unsafe fn server_client_key_callback(
         return CMD_RETURN_NORMAL;
     };
     c = crate::src::shared::rc::as_ptr(&c_owner);
-    s = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !(s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-        wl = (*s).current_winlink();
+    s = (*c).session_handle();
+    if !(s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
+        wl = s.as_ref().expect("live session").current_winlink();
         memcpy(
             &raw mut (*c).last_activity_time as *mut ::core::ffi::c_void,
             &raw mut (*c).activity_time as *const ::core::ffi::c_void,
@@ -2994,7 +2989,9 @@ unsafe fn server_client_key_callback(
         if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
             fatal(|out| out.write_all(b"gettimeofday failed"));
         }
-        session_update_activity(&mut *s, Some((*c).activity_time));
+        s.as_ref()
+            .expect("live session")
+            .update_activity(Some((*c).activity_time));
         (*m).valid = 0 as ::core::ffi::c_int;
         if key == KEYC_MOUSE as ::core::ffi::c_ulong as key_code
             || key == KEYC_DOUBLECLICK as ::core::ffi::c_ulong as key_code
@@ -3062,11 +3059,15 @@ unsafe fn server_client_key_callback(
                             <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int)
-                    && options_get_number(
-                        options_owner_ptr(&mut (*s).options)
-                            .map_or(std::ptr::null_mut(), |options| options),
-                        b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
-                    ) == 0
+                    && s.as_ref()
+                        .expect("live session")
+                        .with_options_mut(|options| {
+                            options_get_number(
+                                options,
+                                b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
+                            )
+                        })
+                        == 0
                 {
                     current_block = 15469183920764600035;
                 } else {
@@ -3134,16 +3135,24 @@ unsafe fn server_client_key_callback(
                         table = table_owner.as_ref().expect("key table").clone();
                         first = table.clone();
                         '_table_changed: loop {
-                            prefix = options_get_number(
-                                options_owner_ptr(&mut (*s).options)
-                                    .map_or(std::ptr::null_mut(), |options| options),
-                                b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
-                            ) as key_code;
-                            prefix2 = options_get_number(
-                                options_owner_ptr(&mut (*s).options)
-                                    .map_or(std::ptr::null_mut(), |options| options),
-                                b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
-                            ) as key_code;
+                            prefix = s
+                                .as_ref()
+                                .expect("live session")
+                                .with_options_mut(|options| {
+                                    options_get_number(
+                                        options,
+                                        b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
+                                    )
+                                }) as key_code;
+                            prefix2 =
+                                s.as_ref()
+                                    .expect("live session")
+                                    .with_options_mut(|options| {
+                                        options_get_number(
+                                            options,
+                                            b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
+                                        )
+                                    }) as key_code;
                             key0 = (key as ::core::ffi::c_ulonglong
                                 & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
                                 as key_code;
@@ -3422,7 +3431,7 @@ unsafe fn server_client_key_callback(
             }
         }
     }
-    if !s.is_null() && key != KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
+    if !s.is_none() && key != KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
         server_client_update_latest(&(*(c)).observer.upgrade().expect("live client"));
     }
     return CMD_RETURN_NORMAL;
@@ -3446,11 +3455,10 @@ unsafe fn server_client_handle_menu_key(
     mut event: *mut key_event,
 ) -> ::core::ffi::c_int {
     let c = owner.get();
-    let mut w: *mut window = ((*(*c)
+    let mut w: *mut window = ((*c)
         .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .current_winlink())
+        .expect("live session")
+        .current_winlink())
     .get_unchecked()
     .window_handle()
     .as_ref()
@@ -3503,14 +3511,11 @@ unsafe fn server_client_handle_key0(
     let after = after_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let c = owner.get();
     let event: *mut key_event = &raw mut *owned;
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let item_allocation;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    if s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
+    if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
     if (*event).key == KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code {
@@ -3545,7 +3550,7 @@ unsafe fn server_client_handle_key0(
             }
         }
         server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
-        wp = (*((*s).current_winlink())
+        wp = (*(s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()
@@ -3588,7 +3593,7 @@ unsafe fn server_client_handle_key0(
                 window_pane_key(
                     active_pane_owner.as_ref().expect("key target pane"),
                     Some(owner),
-                    ((*s).current_winlink()).clone(),
+                    (s.as_ref().expect("live session").current_winlink()).clone(),
                     (*event).key,
                     &raw mut (*event).m,
                 );
@@ -3609,7 +3614,7 @@ unsafe fn server_client_handle_key0(
                 0 | 3 | _ => {}
             }
         }
-        let prompt_window = ((*s).current_winlink())
+        let prompt_window = (s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()
@@ -3729,12 +3734,11 @@ pub unsafe fn server_client_loop() {
         let c = client_owner.get();
         server_client_check_exit(&client_owner, 0 as ::core::ffi::c_int);
         if !(*c).session_handle().is_none()
-            && (*(*c)
+            && (*c)
                 .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .current_winlink()
-            .is_alive()
+                .expect("live session")
+                .current_winlink()
+                .is_alive()
         {
             server_client_check_modes(&client_owner);
             server_client_check_redraw(&client_owner);
@@ -3776,9 +3780,12 @@ unsafe fn server_client_check_window_resize(owner: &std::rc::Rc<std::cell::Unsaf
     }
     wl = window_winlinks_first((w).as_ref());
     while wl.is_alive() {
-        if wl.get_unchecked().session.upgrade().is_some_and(|owner| {
-            (*owner.get()).attached != 0 && (*owner.get()).current_winlink() == wl
-        }) {
+        if wl
+            .get_unchecked()
+            .session
+            .upgrade()
+            .is_some_and(|owner| owner.is_attached() && owner.current_winlink() == wl)
+        {
             break;
         }
         wl = window_winlinks_next((w).as_ref(), wl.clone());
@@ -3868,7 +3875,7 @@ mod prompt_cursor_tests {
             let mut c = client::empty();
             let session_owner = session::new();
             let session = &mut *session_owner.get();
-            c.set_session(Some(session));
+            c.set_session(Some(&session_owner));
             c.tty.sy = 24;
             use crate::src::session::Session;
             let mut options = crate::src::options::options_create(std::ptr::null_mut());
@@ -3969,7 +3976,8 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
     let Some(session_owner) = (*c).session.upgrade() else {
         return;
     };
-    let Ok(link) = (*session_owner.get()).curw.try_borrow_mut() else {
+    let current_link = session_owner.current_winlink();
+    let Ok(link) = current_link.try_borrow_mut() else {
         return;
     };
     let window_owner = link
@@ -3987,8 +3995,7 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         let mut s: *const screen = std::ptr::null();
-        let mut oo: *mut options = options_owner_ptr(&mut (*session_owner.get()).options)
-            .map_or(std::ptr::null_mut(), |options| options);
+
         let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut cursor: ::core::ffi::c_int = 0;
         let mut flags: ::core::ffi::c_int = 0;
@@ -4129,7 +4136,13 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
             mode |= (*tty).mode & CURSOR_MODES;
             s = std::ptr::null();
         }
-        if options_get_number(oo, b"mouse\0" as *const u8 as *const ::core::ffi::c_char) != 0 {
+        if session_owner.with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) != 0
+        {
             if (*c).overlay_draw.is_none() && (*w).menu.is_none() {
                 mode &= !ALL_MOUSE_MODES;
                 let mut cursor = window_pane_first(Some(&*w));
@@ -4141,10 +4154,12 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
                     cursor = window_pane_next(Some(pane));
                 }
             }
-            if options_get_number(
-                oo,
-                b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
-            ) != 0
+            if session_owner.with_options_mut(|options| {
+                options_get_number(
+                    options,
+                    b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
+                )
+            }) != 0
                 || (*w).sb == PANE_SCROLLBARS_MODAL
                 || (*w).sb == PANE_SCROLLBARS_AUTOHIDE
             {
@@ -4313,7 +4328,8 @@ unsafe fn server_client_check_modes(client_owner: &std::rc::Rc<std::cell::Unsafe
     let Some(session_owner) = (*c).session.upgrade() else {
         return;
     };
-    let Ok(link) = (*session_owner.get()).curw.try_borrow_mut() else {
+    let current_link = session_owner.current_winlink();
+    let Ok(link) = current_link.try_borrow_mut() else {
         return;
     };
     let window_owner = link
@@ -4360,7 +4376,8 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
     let Some(session_owner) = (*c).session.upgrade() else {
         return;
     };
-    let Ok(link) = (*session_owner.get()).curw.try_borrow_mut() else {
+    let current_link = session_owner.current_winlink();
+    let Ok(link) = current_link.try_borrow_mut() else {
         return;
     };
     let window_owner = link
@@ -4370,7 +4387,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
         .clone();
     drop(link);
     let result = (|| {
-        let s = session_owner.get();
+        let s = Some(session_owner.clone());
         let w = window_owner.get();
         let mut tty: *mut tty = &raw mut (*c).tty;
         let mut needed: ::core::ffi::c_int = 0;
@@ -4536,11 +4553,15 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
             }
         }
         if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
-            if options_get_number(
-                options_owner_ptr(&mut (*s).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-                b"set-titles\0" as *const u8 as *const ::core::ffi::c_char,
-            ) != 0
+            if s.as_ref()
+                .expect("live session")
+                .with_options_mut(|options| {
+                    options_get_number(
+                        options,
+                        b"set-titles\0" as *const u8 as *const ::core::ffi::c_char,
+                    )
+                })
+                != 0
             {
                 server_client_set_title(client_owner);
                 server_client_set_path(&mut *c);
@@ -4571,17 +4592,30 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
     result
 }
 unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+    let mut template_session_value: Option<std::ffi::CString> = None;
+
     let c = client_owner.get();
     let Some(session_owner) = (*c).session.upgrade() else {
         return;
     };
-    let s = session_owner.get();
+    let s = Some(session_owner.clone());
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    template = options_get_string(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"set-titles-string\0" as *const u8 as *const ::core::ffi::c_char,
+    template_session_value = Some(
+        s.as_ref()
+            .expect("live session")
+            .with_options_mut(|options| {
+                std::ffi::CStr::from_ptr(options_get_string(
+                    options,
+                    b"set-titles-string\0" as *const u8 as *const ::core::ffi::c_char,
+                ))
+                .to_owned()
+            }),
     );
+    template = template_session_value
+        .as_ref()
+        .expect("option snapshot")
+        .as_ptr();
     let mut ft_owner = crate::src::format::format_create_with_client(
         Some(client_owner),
         None,
@@ -4614,8 +4648,8 @@ unsafe fn server_client_active_pane(
     c: &client,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let session_owner = c.session.upgrade()?;
-    let session = &*session_owner.get();
-    let link = session.curw.try_borrow_mut().ok()?;
+    let current = session_owner.current_winlink();
+    let link = current.try_borrow_mut().ok()?;
     let window = &*link.window_owner.as_ref()?.get();
     window.active.upgrade()
 }
@@ -4651,7 +4685,7 @@ unsafe fn server_client_dispatch(
     let c = owner.get();
     let mut current_block: u64;
     let mut datalen: ssize_t = 0;
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut old_sx: u_int = 0;
     let mut old_sy: u_int = 0;
     if (*c).flags & CLIENT_DEAD as uint64_t != 0 {
@@ -4746,18 +4780,17 @@ unsafe fn server_client_dispatch(
                 if (*c).fd == -(1 as ::core::ffi::c_int) || (*c).session_handle().is_none() {
                     current_block = 14945149239039849694;
                 } else {
-                    s = (*c)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get());
+                    s = (*c).session_handle();
                     if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
                         fatal(|out| out.write_all(b"gettimeofday failed"));
                     }
                     tty_start_tty(&raw mut (*c).tty);
                     server_redraw_client(&mut *(c));
                     recalculate_sizes();
-                    if !s.is_null() {
-                        session_update_activity(&mut *s, Some((*c).activity_time));
+                    if !s.is_none() {
+                        s.as_ref()
+                            .expect("live session")
+                            .update_activity(Some((*c).activity_time));
                     }
                     current_block = 14945149239039849694;
                 }
@@ -5598,11 +5631,10 @@ pub unsafe fn server_client_print(
                 });
             }
         } else {
-            wp = (*((*(*c)
+            wp = (*((*c)
                 .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .current_winlink())
+                .expect("live session")
+                .current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()
@@ -5768,9 +5800,9 @@ mod overlay_dispatch_tests {
 
     unsafe fn with_client(test: impl FnOnce(&std::rc::Rc<std::cell::UnsafeCell<client>>)) {
         let session_owner = session::new();
-        let session = session_owner.get();
-        let link = crate::src::window::winlink_add(&raw mut (*session).windows, 0);
-        (*session).set_curw(link.clone());
+        let session = Some(session_owner.clone());
+        let link = crate::src::session::test_support::add_link(&session_owner, 0);
+        crate::src::session::test_support::current(&session_owner, link.clone());
         let client_owner = client::new();
         let client = client_owner.get();
         (*client).session = Rc::downgrade(&session_owner);
@@ -5778,8 +5810,8 @@ mod overlay_dispatch_tests {
         test(&client_owner);
         client_owner.clear_overlay();
         (*client).session = std::rc::Weak::new();
-        (*session).set_curw(refbox::Weak::new());
-        crate::src::window::winlink_remove(&raw mut (*session).windows, link);
+        crate::src::session::test_support::current(&session_owner, refbox::Weak::new());
+        crate::src::session::test_support::remove_link(&session_owner, link);
     }
 
     unsafe fn install(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {

@@ -14,6 +14,7 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
 use crate::src::server_client::server_client_get_cwd;
 use crate::src::server_client::server_client_unref_owned;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
@@ -91,10 +92,7 @@ unsafe fn cmd_if_shell_exec(
     let mut tc: *mut client = tc_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -161,19 +159,12 @@ unsafe fn cmd_if_shell_exec(
     } else {
         cdata.client = client_retain((tc).as_ref());
     }
-    let cwd = server_client_get_cwd(
-        queue_client_ptr.as_ref(),
-        s.as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-    );
+    let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
     let job = job_run(
         Some(shellcmd.as_c_str()),
         &Vec::new(),
         None,
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        s.as_ref(),
         cwd.as_deref(),
         None,
         None,

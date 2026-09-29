@@ -11,6 +11,15 @@ pub fn as_ptr<T>(owner: &Rc<UnsafeCell<T>>) -> *mut T {
     owner.get()
 }
 
+/// Compare optional retained handles by allocation identity, including absent targets.
+pub fn same<T>(a: Option<&Rc<T>>, b: Option<&Rc<T>>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 /// Defer one ordinary Rc drop. Cancellation or a scheduling failure drops the
 /// capture normally, so cleanup still happens even without callback dispatch.
 pub fn release_later<T: 'static>(owner: Rc<T>) {

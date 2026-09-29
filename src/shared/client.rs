@@ -206,8 +206,8 @@ impl client {
     }
 
     /// The caller supplies a live Rc-backed session.
-    pub fn set_session(&mut self, session: Option<&session>) {
-        self.session = session.map_or_else(std::rc::Weak::new, |session| session.observer.clone());
+    pub fn set_session(&mut self, session: Option<&Rc<UnsafeCell<session>>>) {
+        self.session = session.map_or_else(std::rc::Weak::new, Rc::downgrade);
     }
 
     pub fn pan_window_is(&self, window: &super::window::window) -> bool {
@@ -334,7 +334,7 @@ mod retained_client_tests {
         let session = super::super::session::session::new();
         let observer = Rc::downgrade(&session);
         unsafe {
-            client.set_session((session.get()).as_ref());
+            client.set_session(Some(&session));
         }
         assert_eq!(
             client

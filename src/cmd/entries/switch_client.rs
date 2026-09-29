@@ -91,7 +91,7 @@ unsafe fn cmd_switch_client_exec(
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut selected_session;
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -122,9 +122,7 @@ unsafe fn cmd_switch_client_exec(
         return CMD_RETURN_ERROR;
     }
     selected_session = target.session_handle();
-    s = selected_session
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    s = selected_session.clone();
     wl = target.winlink_handle();
     wp = target
         .pane_handle()
@@ -170,34 +168,16 @@ unsafe fn cmd_switch_client_exec(
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
-        selected_session = session_next_session(
-            (*tc)
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-                .as_ref(),
-            &sort_crit,
-        );
-        s = selected_session
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if s.is_null() {
+        selected_session = session_next_session((*tc).session_handle().as_ref(), &sort_crit);
+        s = selected_session.clone();
+        if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        selected_session = session_previous_session(
-            (*tc)
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-                .as_ref(),
-            &sort_crit,
-        );
-        s = selected_session
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if s.is_null() {
+        selected_session = session_previous_session((*tc).session_handle().as_ref(), &sort_crit);
+        s = selected_session.clone();
+        if s.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"can't find previous session")
             });
@@ -208,10 +188,8 @@ unsafe fn cmd_switch_client_exec(
             &crate::src::session::sessions,
             &(*tc).last_session,
         );
-        s = selected_session
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if s.is_null() {
+        s = selected_session.clone();
+        if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find last session"));
             return CMD_RETURN_ERROR;
         }
@@ -272,10 +250,10 @@ unsafe fn cmd_switch_client_exec(
             }
         }
         if wl.is_alive() {
-            session_set_current(&(*s).observer.upgrade().expect("live session"), wl.clone());
+            session_set_current(s.as_ref().expect("live session"), wl.clone());
             cmd_find_from_session(
                 &mut *current.current.borrow_mut(),
-                &(*(s)).observer.upgrade().expect("live session"),
+                s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );
         }
@@ -292,9 +270,7 @@ unsafe fn cmd_switch_client_exec(
     }
     server_client_set_session(
         &(*(tc)).observer.upgrade().expect("live client"),
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        s.as_ref(),
     );
     if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
         server_client_set_key_table(

@@ -356,8 +356,13 @@ mod tests {
         unsafe {
             let old_registry = std::mem::replace(&mut clients, ClientRegistry::new());
             let session = session::new();
-            (*session.get()).id = 7;
-            (*session.get()).name = std::ffi::CString::new(b"session-\xff".to_vec()).unwrap();
+            crate::src::session::test_support::metadata(&session, None, Some(7), None);
+            crate::src::session::test_support::metadata(
+                &session,
+                Some(std::ffi::CString::new(b"session-\xff".to_vec()).unwrap()),
+                None,
+                None,
+            );
             let changed = recipient(c"changed", Some(&session), CLIENT_CONTROL as u64);
             let other = recipient(c"other", Some(&session), CLIENT_CONTROL as u64);
             let detached = recipient(c"detached", None, CLIENT_CONTROL as u64);

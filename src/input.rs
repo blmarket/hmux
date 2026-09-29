@@ -51,7 +51,7 @@ use crate::src::screen_write::{
 };
 use crate::src::server::clients;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
-use crate::src::session::session_has;
+use crate::src::session::Session as _;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 use crate::src::style::colour::{
@@ -5665,13 +5665,7 @@ unsafe fn input_fire_command_event(
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
+            fs.session_handle().expect("live session"),
         );
     }
     if fs.winlink_handle().is_alive() {
@@ -6197,13 +6191,12 @@ unsafe fn input_add_request(
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session_handle().is_none()
-                || session_has(
-                    &*(*loop_0)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                    &*w,
-                ) == 0)
+                || ((*loop_0)
+                    .session_handle()
+                    .expect("live session")
+                    .contains_window(&(*w).observer.upgrade().expect("live window"))
+                    as i32)
+                    == 0)
             {
                 if !(!(*loop_0).tty.flags & TTY_STARTED != 0) {
                     if c.is_null() {

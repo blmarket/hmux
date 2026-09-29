@@ -79,10 +79,7 @@ unsafe fn cmd_display_message_exec(
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let s = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
@@ -150,15 +147,14 @@ unsafe fn cmd_display_message_exec(
     }
     let best_client_owner;
     if !tc.is_null()
-        && (*tc)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            == s
+        && (*tc).session.ptr_eq(
+            &s.as_ref()
+                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+        )
     {
         c = tc;
-    } else if !s.is_null() {
-        best_client_owner = cmd_find_best_client(&*s);
+    } else if s.is_some() {
+        best_client_owner = cmd_find_best_client(s.as_ref().unwrap());
         c = best_client_owner
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -178,9 +174,7 @@ unsafe fn cmd_display_message_exec(
         (c).as_ref()
             .and_then(|model| model.observer.upgrade())
             .as_ref(),
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        s.as_ref(),
         wl.clone(),
         (wp).as_ref()
             .and_then(|model| model.observer.upgrade())

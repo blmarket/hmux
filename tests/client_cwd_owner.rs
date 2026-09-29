@@ -1,5 +1,6 @@
 use hmux2::src::cfg::{cfg_client, cfg_finished};
 use hmux2::src::server_client::server_client_get_cwd;
+use hmux2::src::session::Session;
 use hmux2::src::shared::{client::client, session::session};
 use std::rc::{Rc, Weak};
 
@@ -13,7 +14,7 @@ fn startup_observer_and_owned_directory_preserve_lifetime_and_precedence() {
         let other = client::new();
         (*other.get()).cwd = Some(c"/other".to_owned());
         let session = session::new();
-        (*session.get()).cwd = Some(c"/session".to_owned());
+        session.set_cwd(Some(c"/session".to_owned()));
         let saved = server_client_get_cwd(Some(&*other.get()), Some(&session)).unwrap();
         assert_eq!(saved.as_c_str(), c"/startup");
         (*startup.get()).cwd = None;

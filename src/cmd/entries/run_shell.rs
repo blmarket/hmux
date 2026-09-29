@@ -22,6 +22,7 @@ use crate::src::reactor::{
 use crate::src::server_client::server_client_get_cwd;
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::session::session_remove_ref;
+use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
@@ -136,12 +137,10 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
                 .session_handle()
                 .is_none()
         {
-            wp = (*((*(*client_handle(&cdata.client)
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .current_winlink())
+            wp = (*((*client_handle(&cdata.client).expect("live client").get())
+                .session_handle()
+                .expect("live session")
+                .current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()
@@ -206,10 +205,7 @@ unsafe fn cmd_run_shell_exec(
     let mut tc: *mut client = tc_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
         .as_ref()
@@ -244,12 +240,7 @@ unsafe fn cmd_run_shell_exec(
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
         args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned)
     } else {
-        server_client_get_cwd(
-            c.as_ref(),
-            s.as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        )
+        server_client_get_cwd(c.as_ref(), s.as_ref())
     };
     let mut cdata = Box::new(cmd_run_shell_data {
         client: None,
@@ -309,11 +300,7 @@ unsafe fn cmd_run_shell_exec(
     if args_has(args, 'E' as i32 as u_char) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
     }
-    cdata.s = if s.is_null() {
-        None
-    } else {
-        (*s).observer.upgrade()
-    };
+    cdata.s = if s.is_none() { None } else { s.clone() };
     if !delay.is_null() {
         // The pinned tmux build treats negative, nonfinite and out-of-range
         // delays as expired. Rust's saturating float casts would instead turn
@@ -363,10 +350,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             cmd,
             &Vec::new(),
             None,
-            (cdata.s.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr))
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            cdata.s.as_ref(),
             Some(cdata.cwd.as_c_str()),
             None,
             None,

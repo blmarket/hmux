@@ -80,7 +80,7 @@ unsafe fn alerts_check_bell(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_
         s = session_owner.get();
         if (*s).current_winlink() != wl || (*s).attached == 0 as u_int {
             wl.get_mut_unchecked().flags |= WINLINK_BELL;
-            server_status_session(&*(s));
+            server_status_session(&session_owner);
         }
         if !(alerts_action_applies(
             wl.clone(),
@@ -137,7 +137,7 @@ unsafe fn alerts_check_activity(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi
             s = session_owner.get();
             if (*s).current_winlink() != wl || (*s).attached == 0 as u_int {
                 wl.get_mut_unchecked().flags |= WINLINK_ACTIVITY;
-                server_status_session(&*(s));
+                server_status_session(&session_owner);
             }
             if !(alerts_action_applies(
                 wl.clone(),
@@ -195,7 +195,7 @@ unsafe fn alerts_check_silence(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi:
             s = session_owner.get();
             if (*s).current_winlink() != wl || (*s).attached == 0 as u_int {
                 wl.get_mut_unchecked().flags |= WINLINK_SILENCE;
-                server_status_session(&*(s));
+                server_status_session(&session_owner);
             }
             if !(alerts_action_applies(
                 wl.clone(),

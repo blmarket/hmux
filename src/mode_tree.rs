@@ -27,6 +27,7 @@ use crate::src::screen_write::{
     screen_write_stop,
 };
 use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
+use crate::src::session::Session as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -1560,14 +1561,7 @@ pub unsafe fn mode_tree_set_prompt(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = client_owner.and_then(|client| (*client.get()).session.upgrade());
-    let s = session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let oo = if let Some(session) = s.as_mut() {
-        options_owner_ptr(&mut session.options).map_or(std::ptr::null_mut(), |options| options)
-    } else {
-        global_s_options
-    };
+    let s = session_owner.clone();
     let mut pd = prompt_create_data::default();
     mode_tree_clear_prompt(&tree);
     let mtp = refbox::RefBox::new(mode_tree_prompt {
@@ -1576,11 +1570,13 @@ pub unsafe fn mode_tree_set_prompt(
         inputcb,
         freecb,
     });
-    (*mtd).prompt_top = (options_get_number(
-        oo,
-        b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_longlong) as ::core::ffi::c_int;
-    prompt_set_options(&mut pd, s.as_mut());
+    let position = if let Some(session) = session_owner.as_ref() {
+        session.with_options_mut(|options| options_get_number(options, c"status-position".as_ptr()))
+    } else {
+        options_get_number(global_s_options, c"status-position".as_ptr())
+    };
+    (*mtd).prompt_top = (position == 0) as i32;
+    prompt_set_options(&mut pd, session_owner.as_ref());
     pd.prompt = prompt;
     pd.input = input;
     pd.type_0 = type_0;

@@ -306,3 +306,57 @@ fn model_traits_do_not_return_raw_components_or_whole_models() {
         }
     }
 }
+
+#[test]
+fn session_state_visibility_cannot_widen_silently() {
+    let source = std::fs::read_to_string("src/session/model.rs").unwrap();
+    let syntax = syn::parse_file(&source).unwrap();
+    let model = syntax
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Struct(model) if model.ident == "session" => Some(model),
+            _ => None,
+        })
+        .unwrap();
+    for field in &model.fields {
+        let name = field.ident.as_ref().unwrap();
+        // Explicit unfinished migration: option selectors and customization
+        // retain component pointers. The inventory must continue reporting them.
+        let expected = if name == "options" { "crate" } else { "super" };
+        assert!(
+            matches!(&field.vis, syn::Visibility::Restricted(vis)
+            if vis.path.is_ident(expected)),
+            "Session::{name} visibility widened"
+        );
+    }
+    let syntax = syn::parse_file(&std::fs::read_to_string("src/session/mod.rs").unwrap()).unwrap();
+    for item in &syntax.items {
+        let Item::Fn(function) = item else { continue };
+        if matches!(function.vis, syn::Visibility::Inherited) {
+            continue;
+        }
+        struct References;
+        impl<'ast> Visit<'ast> for References {
+            fn visit_type_reference(&mut self, ty: &'ast syn::TypeReference) {
+                if let Type::Path(path) = &*ty.elem {
+                    assert!(
+                        !path.path.is_ident("session"),
+                        "public helper bypasses Session"
+                    );
+                }
+                visit::visit_type_reference(self, ty);
+            }
+            fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
+                if let Type::Path(path) = &*ty.elem {
+                    assert!(
+                        !path.path.is_ident("session"),
+                        "public helper exposes Session pointer"
+                    );
+                }
+                visit::visit_type_ptr(self, ty);
+            }
+        }
+        References.visit_signature(&function.sig);
+    }
+}

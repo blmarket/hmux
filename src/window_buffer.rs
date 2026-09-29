@@ -22,6 +22,7 @@ use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
     screen_write_start, screen_write_stop,
 };
+use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -221,7 +222,7 @@ unsafe fn window_buffer_build(
 ) {
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     window_buffer_clear_items(&mut (*data).item_list);
@@ -237,11 +238,7 @@ unsafe fn window_buffer_build(
         );
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {
-        s = (*data)
-            .fs
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = (*data).fs.session_handle();
         wl = (*data).fs.winlink_handle();
         wp = (*data)
             .fs
@@ -262,9 +259,7 @@ unsafe fn window_buffer_build(
             format_defaults(
                 ft,
                 None,
-                (s).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                s.as_ref(),
                 wl.clone(),
                 (wp).as_ref()
                     .and_then(|model| model.observer.upgrade())
@@ -405,16 +400,12 @@ unsafe fn window_buffer_get_key(
     mut line: u_int,
 ) -> key_code {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut key: key_code = 0;
     if cmd_find_valid_state(&(*data).fs) != 0 {
-        s = (*data)
-            .fs
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = (*data).fs.session_handle();
         wl = (*data).fs.winlink_handle();
         wp = (*data)
             .fs
@@ -431,9 +422,7 @@ unsafe fn window_buffer_get_key(
     format_defaults(
         ft,
         None,
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        s.as_ref(),
         wl.clone(),
         (wp).as_ref()
             .and_then(|model| model.observer.upgrade())

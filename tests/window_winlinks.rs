@@ -20,7 +20,7 @@ unsafe fn window_indices(w: &window) -> Vec<i32> {
 fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
         let session_owner = session::new();
-        let owner = &mut *session_owner.get();
+        let mut links = None;
         let first_owner = window::new();
         let second_owner = window::new();
         let first_window = hmux2::src::shared::rc::as_ptr(&first_owner);
@@ -30,9 +30,9 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         // These synthetic windows retain one external reference so moving the
         // test links never destroys a window before the assertions finish.
 
-        let first = winlink_add(&raw mut owner.windows, 12);
-        let second = winlink_add(&raw mut owner.windows, 3);
-        let third = winlink_add(&raw mut owner.windows, 18);
+        let first = winlink_add(&raw mut links, 12);
+        let second = winlink_add(&raw mut links, 3);
+        let third = winlink_add(&raw mut links, 18);
         let initial = [first.clone(), second.clone(), third.clone()];
         for mut link in initial {
             link.get_mut_unchecked().session = std::rc::Rc::downgrade(&session_owner);
@@ -40,8 +40,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         }
         assert_eq!(window_indices(&*first_window), [12, 3, 18]);
 
-        let weak = owner
-            .windows
+        let weak = links
             .as_ref()
             .unwrap()
             .try_borrow_mut()
@@ -49,8 +48,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
             .get(&12)
             .unwrap()
             .downgrade();
-        let weak_second = owner
-            .windows
+        let weak_second = links
             .as_ref()
             .unwrap()
             .try_borrow_mut()
@@ -61,7 +59,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         let stable_first = first.clone();
         let mut added = vec![first.clone(), second.clone(), third.clone()];
         for idx in 100..228 {
-            let mut link = winlink_add(&raw mut owner.windows, idx);
+            let mut link = winlink_add(&raw mut links, idx);
             link.get_mut_unchecked().session = std::rc::Rc::downgrade(&session_owner);
             winlink_set_window(link.clone(), &first_owner);
             added.push(link);
@@ -74,7 +72,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
 
         // Reindexing changes the session lookup key without changing either
         // the handle address or its position in the window's association order.
-        winlinks_reindex(&raw mut owner.windows, (second).clone(), 30);
+        winlinks_reindex(&raw mut links, (second).clone(), 30);
         assert_eq!(weak_second, second);
         assert_eq!(window_indices(&*first_window)[..3], [12, 30, 18]);
 
@@ -92,7 +90,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         assert_eq!(window_indices(&*first_window).last(), Some(&30));
 
         for link in added {
-            winlink_remove(&raw mut owner.windows, link.clone());
+            winlink_remove(&raw mut links, link.clone());
         }
         assert!(!window_winlinks_first((first_window).as_ref()).is_alive());
         assert!(!window_winlinks_first((second_window).as_ref()).is_alive());
@@ -198,7 +196,7 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
 
 #[test]
 fn session_membership_uses_allocation_identity_and_tolerates_expired_back_references() {
-    use hmux2::src::session::session_has;
+    use hmux2::src::session::Session;
     use std::rc::Rc;
     unsafe {
         let first = session::new();
@@ -208,14 +206,14 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
         let mut link = winlink_add(&mut links, 0);
         link.get_mut_unchecked().session = Rc::downgrade(&first);
         winlink_set_window(link.clone(), &window_owner);
-        assert_eq!(session_has(&*first.get(), &*window_owner.get()), 1);
-        assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
+        assert!(first.contains_window(&window_owner));
+        assert!(!other.contains_window(&window_owner));
         let observer = Rc::downgrade(&first);
         drop(first);
         assert!(observer.upgrade().is_none());
-        assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
+        assert!(!other.contains_window(&window_owner));
         winlink_remove(&mut links, link.clone());
-        assert_eq!(session_has(&*other.get(), &*window_owner.get()), 0);
+        assert!(!other.contains_window(&window_owner));
         hmux2::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
     }
 }

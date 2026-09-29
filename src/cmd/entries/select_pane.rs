@@ -23,7 +23,7 @@ use crate::src::server::{
 use crate::src::server_fn::{
     server_redraw_client, server_redraw_window, server_redraw_window_borders, server_status_window,
 };
-use crate::src::session::session_has;
+use crate::src::session::Session;
 use crate::src::shared::events::event_payload;
 use crate::src::tty::tty_window_bigger;
 use crate::src::window::{
@@ -103,11 +103,10 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !((*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-            if ((*(*c)
+            if ((*c)
                 .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .current_winlink())
+                .expect("live session")
+                .current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()
@@ -117,11 +116,10 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
             {
                 server_redraw_client(&mut *(c));
             } else {
-                if ((*(*c)
+                if ((*c)
                     .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .current_winlink())
+                    .expect("live session")
+                    .current_winlink())
                 .get_unchecked()
                 .window_handle()
                 .as_ref()
@@ -130,13 +128,12 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
                 {
                     (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
                 }
-                if session_has(
-                    &*(*c)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                    &*w,
-                ) != 0
+                if ((*c)
+                    .session_handle()
+                    .expect("live session")
+                    .contains_window(&(*w).observer.upgrade().expect("live window"))
+                    as i32)
+                    != 0
                 {
                     (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
                 }
@@ -172,10 +169,7 @@ unsafe fn cmd_select_pane_marked_pane(
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut mwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     if args_has(args, 'm' as i32 as u_char) != 0
         && window_pane_is_visible(&(*wp).observer.upgrade().expect("live pane")) == 0
     {
@@ -189,9 +183,7 @@ unsafe fn cmd_select_pane_marked_pane(
     }
     if args_has(args, 'M' as i32 as u_char) != 0
         || server_is_marked(
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            s.as_ref(),
             wl.clone(),
             (wp).as_ref()
                 .and_then(|model| model.observer.upgrade())
@@ -201,9 +193,7 @@ unsafe fn cmd_select_pane_marked_pane(
         server_clear_marked();
     } else {
         server_set_marked(
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            s.as_ref(),
             wl.clone(),
             (wp).as_ref()
                 .and_then(|model| model.observer.upgrade())
@@ -389,10 +379,7 @@ unsafe fn cmd_select_pane_exec(
         .window_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
         .as_ref()
@@ -731,9 +718,7 @@ unsafe fn cmd_select_pane_exec(
         );
     }
     cmdq_insert_hook(
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        s.as_ref(),
         item_handle,
         &mut current.current_snapshot(),
         |out| out.write_all(b"after-select-pane"),

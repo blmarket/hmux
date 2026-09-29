@@ -20,6 +20,7 @@ use crate::src::server_fn::{
     server_link_window, server_redraw_session, server_redraw_window, server_status_session_group,
     server_unlink_window, server_unzoom_window,
 };
+use crate::src::session::Session;
 use crate::src::session::{session_attach, session_select};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -140,14 +141,8 @@ unsafe fn cmd_break_pane_exec(
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
-    let mut src_s: *mut session = (*source)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut dst_s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut src_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*source).session_handle();
+    let mut dst_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wp: *mut window_pane = (*source)
         .pane_handle()
         .as_ref()
@@ -188,14 +183,14 @@ unsafe fn cmd_break_pane_exec(
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
         if (*target).winlink_handle().is_alive() {
             idx = winlink_shuffle_up(
-                &(*(dst_s)).observer.upgrade().expect("live session"),
+                dst_s.as_ref().expect("live session"),
                 ((*target).winlink_handle()).clone(),
                 before,
             );
         } else {
             idx = winlink_shuffle_up(
-                &(*(dst_s)).observer.upgrade().expect("live session"),
-                ((*dst_s).current_winlink()).clone(),
+                dst_s.as_ref().expect("live session"),
+                (dst_s.as_ref().expect("live session").current_winlink()).clone(),
                 before,
             );
         }
@@ -206,9 +201,9 @@ unsafe fn cmd_break_pane_exec(
     server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
     if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
         if let Err(link_error) = server_link_window(
-            &(*(src_s)).observer.upgrade().expect("live session"),
+            src_s.as_ref().expect("live session"),
             wl.clone(),
-            &(*(dst_s)).observer.upgrade().expect("live session"),
+            dst_s.as_ref().expect("live session"),
             idx,
             0 as ::core::ffi::c_int,
             (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
@@ -229,14 +224,13 @@ unsafe fn cmd_break_pane_exec(
                 0 as ::core::ffi::c_longlong,
             );
         }
-        server_unlink_window(
-            &(*(src_s)).observer.upgrade().expect("live session"),
-            wl.clone(),
-        );
-        wl = winlink_find_by_window(
-            &(*dst_s).windows,
-            &(*(w)).observer.upgrade().expect("live window"),
-        );
+        server_unlink_window(src_s.as_ref().expect("live session"), wl.clone());
+        wl = dst_s
+            .as_ref()
+            .expect("live session")
+            .with_winlinks(|links| {
+                winlink_find_by_window(links, &(*(w)).observer.upgrade().expect("live window"))
+            });
         if !wl.is_alive() {
             return CMD_RETURN_ERROR;
         }
@@ -249,7 +243,11 @@ unsafe fn cmd_break_pane_exec(
         );
     } else {
         if idx != -(1 as ::core::ffi::c_int)
-            && winlink_find_by_index(&(*dst_s).windows, idx).is_alive()
+            && dst_s
+                .as_ref()
+                .expect("live session")
+                .with_winlinks(|links| winlink_find_by_index(links, idx))
+                .is_alive()
         {
             cmdq_error(item_handle, |out| {
                 write!(out, "index in use: {}", (idx) as i32)
@@ -305,11 +303,15 @@ unsafe fn cmd_break_pane_exec(
         window_set_fill_cells(&(*(w)).observer.upgrade().expect("live window"));
         if idx == -(1 as ::core::ffi::c_int) {
             idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
-                - options_get_number(
-                    options_owner_ptr(&mut (*dst_s).options)
-                        .map_or(std::ptr::null_mut(), |options| options),
-                    b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
-                )) as ::core::ffi::c_int;
+                - dst_s
+                    .as_ref()
+                    .expect("live session")
+                    .with_options_mut(|options| {
+                        options_get_number(
+                            options,
+                            b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
+                        )
+                    })) as ::core::ffi::c_int;
         }
         let destination = (*target)
             .session_handle()
@@ -345,22 +347,22 @@ unsafe fn cmd_break_pane_exec(
         );
         if args_has(args, 'd' as i32 as u_char) == 0 {
             session_select(
-                &(*dst_s).observer.upgrade().expect("live session"),
+                dst_s.as_ref().expect("live session"),
                 wl.get_unchecked().idx,
             );
             cmd_find_from_session(
                 &mut *current.current.borrow_mut(),
-                &(*(dst_s)).observer.upgrade().expect("live session"),
+                dst_s.as_ref().expect("live session"),
                 0 as ::core::ffi::c_int,
             );
         }
-        server_redraw_session(&*(src_s));
-        if src_s != dst_s {
-            server_redraw_session(&*(dst_s));
+        server_redraw_session(src_s.as_ref().expect("live session"));
+        if !crate::src::shared::rc::same(src_s.as_ref(), dst_s.as_ref()) {
+            server_redraw_session(dst_s.as_ref().expect("live session"));
         }
-        server_status_session_group(&*(src_s));
-        if src_s != dst_s {
-            server_status_session_group(&*(dst_s));
+        server_status_session_group(src_s.as_ref().expect("live session"));
+        if !crate::src::shared::rc::same(src_s.as_ref(), dst_s.as_ref()) {
+            server_status_session_group(dst_s.as_ref().expect("live session"));
         }
     }
     if args_has(args, 'P' as i32 as u_char) != 0 {
@@ -375,10 +377,7 @@ unsafe fn cmd_break_pane_exec(
             (tc).as_ref()
                 .and_then(|model| model.observer.upgrade())
                 .as_ref(),
-            (dst_s)
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            dst_s.as_ref(),
             wl.clone(),
             (wp).as_ref()
                 .and_then(|model| model.observer.upgrade())

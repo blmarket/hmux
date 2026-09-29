@@ -21,6 +21,7 @@ use crate::src::screen_write::{
 };
 use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
 use crate::src::session::session_find_by_id;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
@@ -150,7 +151,7 @@ unsafe fn window_switch_add_session(
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut order: *mut u_int,
 ) {
-    let mut s = s_owner.get();
+    let s = Some(s_owner.clone());
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
@@ -158,7 +159,7 @@ unsafe fn window_switch_add_session(
     format_defaults(ft, None, Some(s_owner), (refbox::Weak::new()).clone(), None);
     item = window_switch_add_item(data);
     (*item).type_0 = WINDOW_SWITCH_TYPE_SESSION;
-    (*item).session = (*s).id as ::core::ffi::c_int;
+    (*item).session = s.as_ref().expect("live session").id() as ::core::ffi::c_int;
     (*item).winlink = -(1 as ::core::ffi::c_int);
     let fresh7 = *order;
     *order = (*order).wrapping_add(1);
@@ -178,19 +179,10 @@ unsafe fn window_switch_add_window(
     };
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
     ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        None,
-        (session_owner.get())
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        wl.clone(),
-        None,
-    );
+    format_defaults(ft, None, Some(&session_owner), wl.clone(), None);
     item = window_switch_add_item(data);
     (*item).type_0 = WINDOW_SWITCH_TYPE_WINDOW;
-    (*item).session = (*session_owner.get()).id as ::core::ffi::c_int;
+    (*item).session = session_owner.id() as ::core::ffi::c_int;
     (*item).winlink = wl.get_unchecked().idx;
     let fresh4 = *order;
     *order = (*order).wrapping_add(1);
@@ -514,14 +506,7 @@ unsafe fn window_switch_init(
     } else {
         (*data).type_0 = WINDOW_SWITCH_TYPE_SESSION;
     }
-    prompt_set_options(
-        &mut pd,
-        ((*fs)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_mut(),
-    );
+    prompt_set_options(&mut pd, (*fs).session_handle().as_ref());
     pd.fs = fs.as_ref();
     pd.prompt = c"(search) ";
     pd.input = Some(c"");
@@ -628,7 +613,7 @@ unsafe fn window_switch_run_command(
         wp: Default::default(),
         idx: 0,
     };
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut target: Option<CString> = None;
     let state;
@@ -640,30 +625,29 @@ unsafe fn window_switch_run_command(
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
-            s = session_find_by_id((*item).session as u_int)
-                .as_ref()
-                .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-            if !s.is_null() {
+            s = session_find_by_id((*item).session as u_int);
+            if !s.is_none() {
                 let mut bytes = Vec::from(b"=".as_slice());
-                bytes.extend_from_slice((*s).name.as_bytes());
+                bytes.extend_from_slice(s.as_ref().expect("live session").name().as_bytes());
                 bytes.push(b':');
                 target = Some(CString::new(bytes).expect("session target contains no NUL"));
                 cmd_find_from_session(
                     &raw mut fs,
-                    &(*(s)).observer.upgrade().expect("live session"),
+                    s.as_ref().expect("live session"),
                     0 as ::core::ffi::c_int,
                 );
             }
         }
         1 => {
-            s = session_find_by_id((*item).session as u_int)
-                .as_ref()
-                .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-            if !s.is_null() {
-                wl = winlink_find_by_index(&(*s).windows, (*item).winlink);
-                if !s.is_null() && wl.is_alive() {
+            s = session_find_by_id((*item).session as u_int);
+            if !s.is_none() {
+                wl = s
+                    .as_ref()
+                    .expect("live session")
+                    .with_winlinks(|links| winlink_find_by_index(links, (*item).winlink));
+                if !s.is_none() && wl.is_alive() {
                     let mut bytes = Vec::from(b"=".as_slice());
-                    bytes.extend_from_slice((*s).name.as_bytes());
+                    bytes.extend_from_slice(s.as_ref().expect("live session").name().as_bytes());
                     bytes.push(b':');
                     bytes.extend_from_slice((wl.get_unchecked().idx as u32).to_string().as_bytes());
                     bytes.push(b'.');

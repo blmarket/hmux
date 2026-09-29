@@ -1,6 +1,7 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_event, cmdq_get_source, cmdq_get_target};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -84,7 +85,7 @@ unsafe fn cmd_copy_mode_exec(
     let mut c: *mut client = c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
     let mut wp = pane_owner.get();
     let mut line_numbers: ::core::ffi::c_int = 0;
@@ -99,9 +100,7 @@ unsafe fn cmd_copy_mode_exec(
             Some(&mut mouse_session_owner),
             ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
         );
-        s = mouse_session_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = mouse_session_owner.clone();
         wp = mouse_pane_owner
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -109,12 +108,7 @@ unsafe fn cmd_copy_mode_exec(
             return CMD_RETURN_NORMAL;
         }
         pane_owner = mouse_pane_owner.expect("mouse pane was resolved");
-        if c.is_null()
-            || (*c)
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-                != s
+        if c.is_null() || !crate::src::shared::rc::same((*c).session_handle().as_ref(), s.as_ref())
         {
             return CMD_RETURN_NORMAL;
         }

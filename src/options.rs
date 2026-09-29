@@ -25,7 +25,8 @@ use crate::src::server::current_time;
 use crate::src::server_client::{server_client_set_key_table, server_client_update_theme_colours};
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
-use crate::src::session::{session_update_history, sessions_minmax, sessions_next};
+use crate::src::session::sessions_minmax;
+use crate::src::session::Session;
 use crate::src::shared::options::options_name_map;
 use crate::src::status::status_timer_start_all;
 use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
@@ -1307,10 +1308,7 @@ pub unsafe fn options_scope_from_name(
     mut oo: *mut *mut options,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*fs)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*fs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*fs).winlink_handle();
     let mut wp: *mut window_pane = (*fs)
         .pane_handle()
@@ -1349,19 +1347,19 @@ pub unsafe fn options_scope_from_name(
             if args_has(args, 'g' as i32 as u_char) != 0 {
                 *oo = global_s_options;
                 scope = OPTIONS_TABLE_SESSION;
-            } else if s.is_null() && !target.is_null() {
+            } else if s.is_none() && !target.is_null() {
                 format_options_cause!(
                     cause,
                     b"no such session: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     target,
                 );
-            } else if s.is_null() {
+            } else if s.is_none() {
                 format_options_cause!(
                     cause,
                     b"no current session\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             } else {
-                *oo = options_owner_ptr(&mut (*s).options)
+                *oo = options_owner_ptr(&mut (*s.as_ref().expect("live session").get()).options)
                     .map_or(std::ptr::null_mut(), |options| options);
                 scope = OPTIONS_TABLE_SESSION;
             }
@@ -1437,10 +1435,7 @@ pub unsafe fn options_scope_from_flags(
     mut oo: *mut *mut options,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*fs)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*fs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*fs).winlink_handle();
     let mut wp: *mut window_pane = (*fs)
         .pane_handle()
@@ -1505,7 +1500,7 @@ pub unsafe fn options_scope_from_flags(
             *oo = global_s_options;
             return 0x2 as ::core::ffi::c_int;
         }
-        if s.is_null() {
+        if s.is_none() {
             if !target.is_null() {
                 format_options_cause!(
                     cause,
@@ -1520,7 +1515,8 @@ pub unsafe fn options_scope_from_flags(
             }
             return 0 as ::core::ffi::c_int;
         }
-        *oo = options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options);
+        *oo = options_owner_ptr(&mut (*s.as_ref().expect("live session").get()).options)
+            .map_or(std::ptr::null_mut(), |options| options);
         return 0x2 as ::core::ffi::c_int;
     };
 }
@@ -1880,7 +1876,7 @@ pub unsafe fn options_from_string(
 }
 pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     log_debug(format_args!(
@@ -2250,15 +2246,11 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     ) == 0 as ::core::ffi::c_int
     {
         let mut s_owner = sessions_minmax(&sessions);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        while !s.is_null() {
-            session_update_history(&*s);
-            s_owner = sessions_next(&*s);
-            s = s_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s = s_owner.clone();
+        while !s.is_none() {
+            s.as_ref().expect("live session").update_history();
+            s_owner = s.as_ref().expect("live session").next_session();
+            s = s_owner.clone();
         }
     }
     recalculate_sizes();

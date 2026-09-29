@@ -13,6 +13,7 @@ use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
 use crate::src::server_client::server_client_set_flags;
 use crate::src::server_fn::{server_redraw_client, server_status_client};
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
@@ -304,11 +305,10 @@ unsafe fn cmd_refresh_client_exec(
         if args_has(args, 'c' as i32 as u_char) != 0 {
             (*tc).pan_window = std::rc::Weak::new();
         } else {
-            w = ((*(*tc)
+            w = ((*tc)
                 .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .current_winlink())
+                .expect("live session")
+                .current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()

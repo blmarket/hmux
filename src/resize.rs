@@ -12,7 +12,7 @@ use crate::src::options::{options_get_number, options_get_string};
 use crate::src::server::clients;
 use crate::src::server_client::Client;
 use crate::src::server_fn::server_redraw_window;
-use crate::src::session::{session_has, sessions_minmax, sessions_next};
+use crate::src::session::sessions_minmax;
 use crate::src::session::{sessions, Session};
 use crate::src::shared::events::event_payload;
 use crate::src::status::status_line_size;
@@ -64,13 +64,12 @@ unsafe fn clients_with_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window
             .as_ref()
             .expect("current registry client")
             .participates_in_window_sizing()
-            || session_has(
-                &*(*loop_0)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                &*w,
-            ) == 0)
+            || ((*loop_0)
+                .session_handle()
+                .expect("live session")
+                .contains_window(&(*w).observer.upgrade().expect("live window"))
+                as i32)
+                == 0)
         {
             n = n.wrapping_add(1);
             if n > 1 as u_int {
@@ -310,7 +309,7 @@ pub unsafe fn default_window_size(
     mut type_0: ::core::ffi::c_int,
 ) {
     let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s = s_owner.get();
+    let s = Some(s_owner.clone());
     let mut w = w_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if type_0 == -(1 as ::core::ffi::c_int) {
         type_0 = options_get_number(
@@ -350,19 +349,17 @@ pub unsafe fn default_window_size(
             w_owner,
             |candidate| unsafe {
                 (!w.is_null()
-                    && session_has(
-                        &*candidate
-                            .session_handle()
-                            .as_ref()
-                            .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                        &*w,
-                    ) == 0)
+                    && (candidate
+                        .session_handle()
+                        .expect("live session")
+                        .contains_window(&(*w).observer.upgrade().expect("live window"))
+                        as i32)
+                        == 0)
                     || (w.is_null()
-                        && candidate
-                            .session_handle()
-                            .as_ref()
-                            .map_or(std::ptr::null_mut(), |owner| owner.get())
-                            != s)
+                        && !crate::src::shared::rc::same(
+                            candidate.session_handle().as_ref(),
+                            s.as_ref(),
+                        ))
             },
             sx,
             sy,
@@ -453,7 +450,7 @@ pub unsafe fn recalculate_size(
                     .map_or(std::ptr::null_mut(), |owner| owner.get())
                     != w
             } else {
-                session_has(&*session.get(), &*w) == 0
+                !session.contains_window(&(*w).observer.upgrade().expect("live window"))
             }
         },
         &raw mut sx,
@@ -505,7 +502,7 @@ pub unsafe fn recalculate_sizes() {
     recalculate_sizes_now(0 as ::core::ffi::c_int);
 }
 pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     crate::src::session::recalculate_size_state();
@@ -514,10 +511,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        s = (*c)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = (*c).session_handle();
         if !(!registry_c_owner
             .as_ref()
             .expect("current registry client")

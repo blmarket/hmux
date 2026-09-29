@@ -16,8 +16,8 @@ use crate::src::server_client::{
     server_client_check_nested, server_client_detach, server_client_open, server_client_set_flags,
     server_client_set_key_table, server_client_set_session,
 };
+use crate::src::session::session_set_current;
 use crate::src::session::sessions;
-use crate::src::session::{session_set_current, session_set_cwd};
 use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -87,7 +87,7 @@ pub unsafe fn cmd_attach_session(
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c_loop: *mut client = ::core::ptr::null_mut::<client>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut msgtype: msgtype = 0 as msgtype;
@@ -122,10 +122,7 @@ pub unsafe fn cmd_attach_session(
     {
         return CMD_RETURN_ERROR;
     }
-    s = target
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    s = target.session_handle();
     wl = target.winlink_handle();
     wp = target
         .pane_handle()
@@ -145,7 +142,7 @@ pub unsafe fn cmd_attach_session(
                 1 as ::core::ffi::c_int,
             );
         }
-        session_set_current(&(*s).observer.upgrade().expect("live session"), wl.clone());
+        session_set_current(s.as_ref().expect("live session"), wl.clone());
         if !wp.is_null() {
             cmd_find_from_winlink_pane(
                 &mut *current.current.borrow_mut(),
@@ -162,23 +159,20 @@ pub unsafe fn cmd_attach_session(
         }
     }
     if !cflag.is_null() {
-        session_set_cwd(
-            &mut *s,
-            Some(format_single_cstring(
+        s.as_ref()
+            .expect("target session")
+            .set_cwd(Some(format_single_cstring(
                 Some(item_handle),
                 cflag,
                 (c).as_ref()
                     .and_then(|model| model.observer.upgrade())
                     .as_ref(),
-                (s).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                s.as_ref(),
                 wl.clone(),
                 (wp).as_ref()
                     .and_then(|model| model.observer.upgrade())
                     .as_ref(),
-            )),
-        );
+            )));
     }
     if !fflag.is_null() {
         server_client_set_flags(&(*(c)).observer.upgrade().expect("live client"), fflag);
@@ -206,11 +200,7 @@ pub unsafe fn cmd_attach_session(
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
-                    != s
+                if !(!crate::src::shared::rc::same((*c_loop).session_handle().as_ref(), s.as_ref())
                     || c == c_loop)
                 {
                     server_client_detach(
@@ -238,12 +228,7 @@ pub unsafe fn cmd_attach_session(
                 .expect("target session")
                 .update_environment(&source);
         }
-        server_client_set_session(
-            &(*(c)).observer.upgrade().expect("live client"),
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
+        server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), s.as_ref());
         if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
             server_client_set_key_table(
                 &(*(c)).observer.upgrade().expect("live client"),
@@ -269,11 +254,7 @@ pub unsafe fn cmd_attach_session(
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
-                    != s
+                if !(!crate::src::shared::rc::same((*c_loop).session_handle().as_ref(), s.as_ref())
                     || c == c_loop)
                 {
                     server_client_detach(
@@ -301,12 +282,7 @@ pub unsafe fn cmd_attach_session(
                 .expect("target session")
                 .update_environment(&source);
         }
-        server_client_set_session(
-            &(*(c)).observer.upgrade().expect("live client"),
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
+        server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), s.as_ref());
         server_client_set_key_table(
             &(*(c)).observer.upgrade().expect("live client"),
             ::core::ptr::null::<::core::ffi::c_char>(),
@@ -327,11 +303,7 @@ pub unsafe fn cmd_attach_session(
         (*c).flags |= CLIENT_ATTACHED as uint64_t;
     }
     if cfg_finished != 0 {
-        cfg_show_causes(
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
+        cfg_show_causes(s.as_ref());
     }
     return CMD_RETURN_NORMAL;
 }

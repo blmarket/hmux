@@ -1,5 +1,5 @@
-use hmux2::src::shared::session::session;
-use hmux2::src::window::*;
+use crate::src::shared::session::session;
+use crate::src::window::*;
 use refbox::BorrowError;
 
 #[test]

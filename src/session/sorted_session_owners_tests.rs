@@ -1,9 +1,9 @@
-use hmux2::src::session::{
+use crate::src::session::{
     session_next_session, session_previous_session, sessions, sessions_insert, sessions_remove,
 };
-use hmux2::src::shared::session::session;
-use hmux2::src::shared::sort::{sort_criteria, SORT_NAME};
-use hmux2::src::sort::sort_get_sessions;
+use crate::src::shared::session::session;
+use crate::src::shared::sort::{sort_criteria, SORT_NAME};
+use crate::src::sort::sort_get_sessions;
 use std::rc::Rc;
 
 #[test]
@@ -26,14 +26,14 @@ fn sorted_and_adjacent_results_survive_session_removal() {
         let sorted = sort_get_sessions(&criteria);
         assert!(Rc::ptr_eq(&sorted[0], &first));
         assert!(Rc::ptr_eq(&sorted[1], &last));
-        let next = session_next_session(Some(&*last.get()), &criteria).unwrap();
-        let previous = session_previous_session(Some(&*first.get()), &criteria).unwrap();
+        let next = session_next_session(Some(&last), &criteria).unwrap();
+        let previous = session_previous_session(Some(&first), &criteria).unwrap();
         assert!(Rc::ptr_eq(&next, &first));
         assert!(Rc::ptr_eq(&previous, &last));
         sessions_remove(&mut *head, &first);
-        assert!(session_next_session(Some(&*first.get()), &criteria).is_none());
+        assert!(session_next_session(Some(&first), &criteria).is_none());
         assert!(Rc::ptr_eq(
-            &session_previous_session(Some(&*last.get()), &criteria).unwrap(),
+            &session_previous_session(Some(&last), &criteria).unwrap(),
             &last,
         ));
         sessions_remove(&mut *head, &last);

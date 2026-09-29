@@ -542,13 +542,7 @@ unsafe fn window_customize_scope_text(
         }
         4 | 9 => {
             let mut bytes = b"session ".to_vec();
-            bytes.extend_from_slice(
-                (*fs.session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .name
-                .as_bytes(),
-            );
+            bytes.extend_from_slice(fs.session_handle().expect("live session").name().as_bytes());
             CString::new(bytes).expect("session name contains no NUL")
         }
         6 => CString::new(format!(

@@ -21,6 +21,9 @@ pub trait Session {
 
     /// Registry liveness is distinct from retained allocation liveness.
     unsafe fn is_registered(&self) -> bool;
+    /// Advance in the live containing registry; destructive walks use sessions_after.
+    unsafe fn next_session(&self) -> Option<Rc<UnsafeCell<session>>>;
+    unsafe fn contains_window(&self, window: &Rc<UnsafeCell<window>>) -> bool;
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
@@ -31,6 +34,12 @@ pub trait Session {
     unsafe fn last_winlink(&self) -> refbox::Weak<winlink>;
     /// Read only. Do not mutate entries, reenter, or let references/pointers escape.
     unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R;
+    /// Remove only MRU membership, before releasing a link's window.
+    unsafe fn forget_winlink(&self, link: refbox::Weak<winlink>);
+    /// Reserve an index adjacent to a link by shifting consecutive indices.
+    unsafe fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32;
+    /// Remove a replaced link without selecting a successor; return whether it was current.
+    unsafe fn remove_replaced_window(&self, link: refbox::Weak<winlink>) -> bool;
     unsafe fn select_winlink(&self, link: refbox::Weak<winlink>) -> i32;
     unsafe fn detach_window(&self, link: refbox::Weak<winlink>) -> i32;
     /// Adopt an existing window, including break-pane's already-running pane.
@@ -53,13 +62,16 @@ pub trait Session {
     ) -> Result<refbox::Weak<winlink>, CString>;
     unsafe fn renumber_windows(&self);
     unsafe fn update_activity(&self, from: Option<timeval>);
+    unsafe fn update_history(&self);
     unsafe fn on_attached(&self);
+    unsafe fn theme_changed(&self);
     unsafe fn status_layout(&self) -> (i32, u32);
     unsafe fn join_group(&self, name: &CStr);
     /// Scopes cannot reenter model code, run callbacks, change component parents,
     /// free components, or allow references/pointers to escape.
     unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R;
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R;
+    unsafe fn set_cwd(&self, cwd: Option<CString>);
     unsafe fn cwd(&self) -> Option<CString>;
     unsafe fn termios(&self) -> Option<termios>;
     /// Evaluate a session builtin in a context already targeting this holder.
@@ -92,6 +104,21 @@ impl Session for Rc<UnsafeCell<session>> {
 
     unsafe fn is_registered(&self) -> bool {
         sessions_resolve(&sessions, &Rc::downgrade(self)).is_some()
+    }
+    unsafe fn next_session(&self) -> Option<Rc<UnsafeCell<session>>> {
+        sessions_next(&*self.get())
+    }
+    unsafe fn contains_window(&self, window: &Rc<UnsafeCell<window>>) -> bool {
+        use crate::src::window::Window;
+        let observer = Rc::downgrade(self);
+        let mut link = window.next_winlink(None);
+        while link.is_alive() {
+            if link.get_unchecked().session.ptr_eq(&observer) {
+                return true;
+            }
+            link = window.next_winlink(Some(link));
+        }
+        false
     }
     unsafe fn id(&self) -> u32 {
         (*self.get()).id
@@ -138,7 +165,7 @@ impl Session for Rc<UnsafeCell<session>> {
         let owner = sessions_remove(&mut sessions, self).expect("registered session owner");
         drop(session_replace_name(&mut *self.get(), new_name));
         sessions_insert(&mut sessions, owner);
-        crate::src::server_fn::server_status_session(&*self.get());
+        crate::src::server_fn::server_status_session(self);
         events_fire(c"session-renamed".as_ptr(), payload);
         Ok(())
     }
@@ -157,6 +184,41 @@ impl Session for Rc<UnsafeCell<session>> {
     }
     unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R {
         read(&(*self.get()).windows)
+    }
+    unsafe fn forget_winlink(&self, link: refbox::Weak<winlink>) {
+        winlink_stack_remove(&raw mut (*self.get()).lastw, link);
+    }
+    unsafe fn shuffle_window(&self, link: refbox::Weak<winlink>, before: bool) -> i32 {
+        if !link.is_alive() {
+            return -1;
+        }
+        let index = link.get_unchecked().idx + if before { 0 } else { 1 };
+        let state = &mut *self.get();
+        let mut last = index;
+        while last < i32::MAX && winlink_find_by_index(&state.windows, last).is_alive() {
+            last += 1;
+        }
+        if last == i32::MAX {
+            return -1;
+        }
+        while last > index {
+            let link = winlink_find_by_index(&state.windows, last - 1);
+            crate::src::window::winlinks_reindex(&mut state.windows, link, last);
+            last -= 1;
+        }
+        index
+    }
+    unsafe fn remove_replaced_window(&self, mut link: refbox::Weak<winlink>) -> bool {
+        // Notification precedes alert/history clearing and explicit window release.
+        events_fire_winlink(c"window-unlinked".as_ptr(), link.clone());
+        link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+        self.forget_winlink(link.clone());
+        winlink_remove(&raw mut (*self.get()).windows, link.clone());
+        let was_current = link == self.current_winlink();
+        if was_current {
+            (*self.get()).curw = refbox::Weak::new();
+        }
+        was_current
     }
     unsafe fn select_winlink(&self, link: refbox::Weak<winlink>) -> i32 {
         session_set_current(self, link)
@@ -207,8 +269,14 @@ impl Session for Rc<UnsafeCell<session>> {
     unsafe fn renumber_windows(&self) {
         session_renumber_windows(self);
     }
+    unsafe fn update_history(&self) {
+        session_update_history(&*self.get());
+    }
     unsafe fn update_activity(&self, from: Option<timeval>) {
         session_update_activity(&mut *self.get(), from);
+    }
+    unsafe fn theme_changed(&self) {
+        session_theme_changed(Some(&*self.get()));
     }
     unsafe fn on_attached(&self) {
         self.update_activity(None);
@@ -239,6 +307,9 @@ impl Session for Rc<UnsafeCell<session>> {
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R {
         let mut environment = self.borrow_environment_mut().expect("session environment");
         edit(&mut environment)
+    }
+    unsafe fn set_cwd(&self, cwd: Option<CString>) {
+        session_set_cwd(&mut *self.get(), cwd);
     }
     unsafe fn cwd(&self) -> Option<CString> {
         (*self.get()).cwd.clone()
@@ -348,4 +419,83 @@ pub(crate) unsafe fn replace_test_environment(
     environment: Option<Box<environ>>,
 ) {
     (*owner.get()).environ = environment;
+}
+
+#[cfg(test)]
+mod index_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn shifting_indices_preserves_link_identity_and_history() {
+        unsafe {
+            let owner = session::new();
+            let first = super::super::test_support::add_link(&owner, 4);
+            let second = super::super::test_support::add_link(&owner, 5);
+            (*owner.get()).curw = first.clone();
+            winlink_stack_push(&mut (*owner.get()).lastw, second.clone());
+            assert_eq!(owner.shuffle_window(first.clone(), true), 4);
+            assert_eq!(first.get_unchecked().idx, 5);
+            assert_eq!(second.get_unchecked().idx, 6);
+            assert_eq!(owner.current_winlink(), first);
+            assert_eq!(owner.last_winlink(), second);
+            assert_eq!(owner.shuffle_window(refbox::Weak::new(), false), -1);
+            super::super::test_support::remove_link(&owner, first);
+            super::super::test_support::remove_link(&owner, second);
+            assert!(!owner.last_winlink().is_alive());
+        }
+    }
+
+    #[test]
+    fn replacement_notifies_before_clearing_history_and_releasing_window() {
+        use crate::src::events::{events_add_sink, events_remove_sink};
+        use crate::src::window::{window_remove_ref, winlink_set_window};
+        use std::cell::RefCell;
+        unsafe {
+            let owner = session::new();
+            let window = window::new();
+            let mut link = super::super::test_support::add_link(&owner, 1);
+            (*owner.get()).curw = link.clone();
+            link.get_mut_unchecked().flags |= WINLINK_ALERTFLAGS;
+            winlink_stack_push(&mut (*owner.get()).lastw, link.clone());
+            winlink_set_window(link.clone(), &window);
+            window_remove_ref(window, c"fixture creator".as_ptr());
+            let order = Rc::new(RefCell::new(Vec::new()));
+            let callback_owner = Rc::downgrade(&owner);
+            let calls = order.clone();
+            let before = link.clone();
+            let unlinked = events_add_sink(
+                c"window-unlinked",
+                Rc::new(move |_, _| {
+                    let owner = callback_owner.upgrade().unwrap();
+                    assert_eq!(owner.current_winlink(), before);
+                    assert_eq!(owner.last_winlink(), before);
+                    assert_ne!(before.get_unchecked().flags & WINLINK_ALERTFLAGS, 0);
+                    assert!(owner
+                        .with_winlinks(|links| winlink_find_by_index(links, 1))
+                        .is_alive());
+                    calls.borrow_mut().push("unlinked");
+                }),
+            );
+            let callback_owner = Rc::downgrade(&owner);
+            let calls = order.clone();
+            let before = link.clone();
+            let closed = events_add_sink(
+                c"window-closed",
+                Rc::new(move |_, _| {
+                    let owner = callback_owner.upgrade().unwrap();
+                    assert_eq!(owner.current_winlink(), before);
+                    assert!(!owner.last_winlink().is_alive());
+                    assert_eq!(before.get_unchecked().flags & WINLINK_ALERTFLAGS, 0);
+                    calls.borrow_mut().push("closed");
+                }),
+            );
+            assert!(owner.remove_replaced_window(link.clone()));
+            assert_eq!(&*order.borrow(), &["unlinked", "closed"]);
+            assert!(!link.is_alive());
+            assert!(!owner.current_winlink().is_alive());
+            events_remove_sink(unlinked);
+            events_remove_sink(closed);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 }

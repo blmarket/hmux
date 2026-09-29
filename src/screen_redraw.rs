@@ -11,6 +11,7 @@ use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::server::{marked_pane, server_is_marked};
 use crate::src::server_client::server_client_overlay_draw;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{CELL_NONE, CELL_UD};
 use crate::src::shared::client::client;
@@ -943,11 +944,8 @@ unsafe fn redraw_make_scene(
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
 ) -> Option<Box<redraw_scene>> {
     let c = client_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut w: *mut window = ((*s).current_winlink())
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut w: *mut window = (s.as_ref().expect("live session").current_winlink())
         .get_unchecked()
         .window_handle()
         .as_ref()
@@ -1067,11 +1065,10 @@ unsafe fn redraw_get_scene(
     client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
 ) -> Option<Box<redraw_scene>> {
     let c = client_owner.get();
-    let w = ((*(*c)
+    let w = ((*c)
         .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .current_winlink())
+        .expect("live session")
+        .current_winlink())
     .get_unchecked()
     .window_handle()
     .as_ref()
@@ -1172,10 +1169,7 @@ unsafe fn redraw_get_default_border_style(
         return;
     };
     let c = client_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
@@ -1189,10 +1183,8 @@ unsafe fn redraw_get_default_border_style(
             (c).as_ref()
                 .and_then(|model| model.observer.upgrade())
                 .as_ref(),
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-            ((*s).current_winlink()).clone(),
+            s.as_ref(),
+            (s.as_ref().expect("live session").current_winlink()).clone(),
             None,
         );
         ft = &raw mut *ft_owner;
@@ -1772,10 +1764,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     let window_owner = scene.w.upgrade()?;
     let client_owner = scene.c.upgrade()?;
     let c = client_owner.get();
-    let s = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let s = (*c).session_handle();
     let mut dctx = redraw_draw_ctx {
         scene,
         active: (*window_owner.get()).active.clone(),
@@ -1786,10 +1775,8 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
         flags: 0,
     };
     if server_is_marked(
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        ((*s).current_winlink()).clone(),
+        s.as_ref(),
+        (s.as_ref().expect("live session").current_winlink()).clone(),
         (marked_pane
             .pane_handle()
             .as_ref()
@@ -1801,10 +1788,10 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     {
         dctx.marked = marked_pane.wp.clone();
     }
-    if options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        c"status-position".as_ptr(),
-    ) == 0
+    if s.as_ref()
+        .expect("live session")
+        .with_options_mut(|options| options_get_number(options, c"status-position".as_ptr()))
+        == 0
     {
         dctx.flags |= REDRAW_STATUS_TOP;
     }
@@ -1916,11 +1903,8 @@ unsafe fn redraw_draw(
     mut flags: ::core::ffi::c_int,
 ) {
     let c = client_owner.get();
-    let s = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let w = ((*s).current_winlink())
+    let s = (*c).session_handle();
+    let w = (s.as_ref().expect("live session").current_winlink())
         .get_unchecked()
         .window_handle()
         .as_ref()
@@ -1976,10 +1960,7 @@ unsafe fn redraw_draw_scene(
         return;
     };
     let w = window_owner.get();
-    let _s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut tty: *mut tty = &raw mut (*c).tty;
     let mut sl: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut i: u_int = 0;
@@ -2197,11 +2178,10 @@ pub unsafe fn redraw_screen(client_owner: &std::rc::Rc<std::cell::UnsafeCell<cli
         if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;
         }
-        if (*((*(*c)
+        if (*((*c)
             .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .current_winlink())
+            .expect("live session")
+            .current_winlink())
         .get_unchecked()
         .window_handle()
         .as_ref()
@@ -2226,11 +2206,10 @@ pub unsafe fn redraw_pane(
         Some(pane_owner),
         REDRAW_PANE | REDRAW_PANE_SCROLLBAR,
     );
-    if (*((*(*c)
+    if (*((*c)
         .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .current_winlink())
+        .expect("live session")
+        .current_winlink())
     .get_unchecked()
     .window_handle()
     .as_ref()

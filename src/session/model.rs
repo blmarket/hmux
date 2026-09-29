@@ -1,5 +1,4 @@
-//! Session state. Migrated fields are private to the owner; legacy callers
-//! retain their existing access until their holder paths are converted.
+//! Session state is private to its implementation. Other models use Session.
 use crate::src::shared::abi::{timeval, u_int};
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::event;
@@ -11,24 +10,25 @@ use crate::src::shared::window::{winlink, winlink_stack, winlinks};
 #[repr(C)]
 pub struct session {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<session>>,
-    pub id: u_int,
-    pub name: std::ffi::CString,
-    pub cwd: Option<std::ffi::CString>,
+    pub(super) observer: std::rc::Weak<std::cell::UnsafeCell<session>>,
+    pub(super) id: u_int,
+    pub(super) name: std::ffi::CString,
+    pub(super) cwd: Option<std::ffi::CString>,
     pub(super) creation_time: timeval,
     pub(super) last_attached_time: timeval,
-    pub activity_time: timeval,
+    pub(super) activity_time: timeval,
     pub(super) last_activity_time: timeval,
     pub(super) lock_timer: event,
-    pub curw: refbox::Weak<winlink>,
-    pub lastw: winlink_stack,
-    pub windows: winlinks,
+    pub(super) curw: refbox::Weak<winlink>,
+    pub(super) lastw: winlink_stack,
+    pub(super) windows: winlinks,
     pub(super) statusat: ::core::ffi::c_int,
     pub(super) statuslines: u_int,
-    pub options: Option<Box<options>>,
+    // Transitional: options-scope and customization callbacks still store this pointer.
+    pub(crate) options: Option<Box<options>>,
     pub(super) flags: ::core::ffi::c_int,
-    pub attached: u_int,
-    pub tio: Option<Box<termios>>,
+    pub(super) attached: u_int,
+    pub(super) tio: Option<Box<termios>>,
     pub(super) environ: Option<Box<environ>>,
     /// Weak traversal handle into the containing index.
     pub(super) owner: refbox::Weak<
@@ -38,12 +38,12 @@ pub struct session {
 
 impl session {
     /// Observe the current session-index winlink.
-    pub fn current_winlink(&self) -> refbox::Weak<winlink> {
+    pub(super) fn current_winlink(&self) -> refbox::Weak<winlink> {
         self.curw.clone()
     }
 
     /// The supplied winlink must be live in a session index.
-    pub fn set_curw(&mut self, wl: refbox::Weak<winlink>) {
+    pub(super) fn set_curw(&mut self, wl: refbox::Weak<winlink>) {
         self.curw = wl;
     }
 

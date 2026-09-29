@@ -49,9 +49,8 @@ use crate::src::server_client::{
 };
 use crate::src::server_fn::server_status_client;
 use crate::src::session::{
-    next_session_id, session_alive, session_group_attached_count, session_group_contains,
-    session_group_count, session_groups_minmax, session_groups_next, sessions_minmax,
-    sessions_next,
+    next_session_id, session_group_attached_count, session_group_count, session_groups_minmax,
+    session_groups_next, sessions_minmax,
 };
 use crate::src::session::{session_groups, sessions, Session};
 use crate::src::shared::session::session_group;
@@ -418,7 +417,6 @@ pub unsafe fn format_defaults(
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
     let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if !c.is_null() && !(*c).name.is_none() {
         log_debug(format_args!(
@@ -434,7 +432,7 @@ pub unsafe fn format_defaults(
     } else {
         log_debug(format_args!("{}: c=none", "format_defaults"));
     }
-    if !s.is_null() {
+    if s_owner.is_some() {
         log_debug(format_args!(
             "{}: s=${}",
             "format_defaults",
@@ -462,12 +460,8 @@ pub unsafe fn format_defaults(
         log_debug(format_args!("{}: wp=none", "format_defaults"));
     }
     if !c.is_null()
-        && !s.is_null()
-        && (*c)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            != s
+        && s_owner.is_some()
+        && !crate::src::shared::rc::same((*c).session_handle().as_ref(), s_owner)
     {
         log_debug(format_args!(
             "{}: session does not match",
@@ -478,7 +472,7 @@ pub unsafe fn format_defaults(
         (*ft).type_0 = FORMAT_TYPE_PANE;
     } else if wl.is_alive() {
         (*ft).type_0 = FORMAT_TYPE_WINDOW;
-    } else if !s.is_null() {
+    } else if s_owner.is_some() {
         (*ft).type_0 = FORMAT_TYPE_SESSION;
     } else {
         (*ft).type_0 = FORMAT_TYPE_UNKNOWN;

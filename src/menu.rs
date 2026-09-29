@@ -16,6 +16,7 @@ use crate::src::screen_write::{
     screen_write_stop,
 };
 use crate::src::server_fn::{server_redraw_window, server_redraw_window_menu};
+use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
@@ -167,13 +168,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let mut ft_owner = format_create_defaults(
         None,
         None,
-        (md.fs
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_ref()
-        .and_then(|model| model.observer.upgrade())
-        .as_ref(),
+        md.fs.session_handle().as_ref(),
         (md.fs.winlink_handle()).clone(),
         (md.fs
             .pane_handle()
@@ -644,11 +639,10 @@ pub unsafe fn menu_display(
         let client = &*client_owner
             .expect("menu without a target requires a client")
             .get();
-        let link_handle = (*client
+        let link_handle = client
             .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .current_winlink();
+            .expect("live session")
+            .current_winlink();
         let link = link_handle.try_borrow_mut().expect("current menu link");
         link.window_owner
             .as_ref()

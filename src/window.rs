@@ -1,3 +1,4 @@
+use crate::src::session::Session;
 mod alerts;
 mod api;
 pub use api::Window;
@@ -59,7 +60,6 @@ use crate::src::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_status_window,
 };
-use crate::src::session::session_has;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::pane::window_pane_tree;
 use crate::src::shared::prompt::prompt_create_data;
@@ -836,7 +836,7 @@ pub unsafe fn winlink_set_window(
 }
 pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlink>) {
     if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
-        winlink_stack_remove(&raw mut (*session_owner.get()).lastw, wl.clone());
+        session_owner.forget_winlink(wl.clone());
     }
     let mut w: *mut window = wl
         .get_unchecked()
@@ -879,11 +879,14 @@ pub unsafe fn winlink_next_by_number(
     s_owner: &Rc<std::cell::UnsafeCell<session>>,
     mut n: ::core::ffi::c_int,
 ) -> refbox::Weak<winlink> {
-    let mut s = s_owner.get();
+    let s = Some(s_owner.clone());
     while n > 0 as ::core::ffi::c_int {
         wl = winlinks_next(wl.get_unchecked());
         if !wl.is_alive() {
-            wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+            wl = s
+                .as_ref()
+                .expect("live session")
+                .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         }
         n -= 1;
     }
@@ -894,11 +897,14 @@ pub unsafe fn winlink_previous_by_number(
     s_owner: &Rc<std::cell::UnsafeCell<session>>,
     mut n: ::core::ffi::c_int,
 ) -> refbox::Weak<winlink> {
-    let mut s = s_owner.get();
+    let s = Some(s_owner.clone());
     while n > 0 as ::core::ffi::c_int {
         wl = winlinks_prev(wl.get_unchecked());
         if !wl.is_alive() {
-            wl = winlinks_minmax(&(*s).windows, RB_INF);
+            wl = s
+                .as_ref()
+                .expect("live session")
+                .with_winlinks(|links| winlinks_minmax(links, RB_INF));
         }
         n -= 1;
     }
@@ -2266,7 +2272,7 @@ pub unsafe fn window_printable_flags(
     }
     if session_owner
         .as_ref()
-        .is_some_and(|owner| wl == (*owner.get()).current_winlink())
+        .is_some_and(|owner| wl == owner.current_winlink())
     {
         let fresh7 = pos;
         pos = pos.wrapping_add(1);
@@ -2274,7 +2280,7 @@ pub unsafe fn window_printable_flags(
     }
     if session_owner
         .as_ref()
-        .is_some_and(|owner| wl == winlink_stack_first(&(*owner.get()).lastw))
+        .is_some_and(|owner| wl == owner.last_winlink())
     {
         let fresh8 = pos;
         pos = pos.wrapping_add(1);
@@ -3450,10 +3456,7 @@ pub unsafe fn window_pane_set_prompt(
         freecb,
         type_0,
     });
-    prompt_set_options(
-        &mut pd,
-        session_owner.as_ref().map(|owner| &mut *owner.get()),
-    );
+    prompt_set_options(&mut pd, session_owner.as_ref());
     pd.fs = fs.as_ref();
     pd.prompt = CStr::from_ptr(msg);
     pd.input = if input.is_null() {
@@ -4158,44 +4161,18 @@ pub unsafe fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
         if loop_0.get_unchecked().flags & WINLINK_ALERTFLAGS != 0 as ::core::ffi::c_int {
             loop_0.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
             if let Some(session_owner) = loop_0.get_unchecked().session.upgrade() {
-                server_status_session(&*(session_owner.get()));
+                server_status_session(&session_owner);
             }
         }
         loop_0 = window_winlinks_next((w).as_ref(), (loop_0).clone());
     }
 }
 pub unsafe fn winlink_shuffle_up(
-    s_owner: &Rc<std::cell::UnsafeCell<session>>,
-    mut wl: refbox::Weak<winlink>,
-    mut before: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut s = s_owner.get();
-    let mut idx: ::core::ffi::c_int = 0;
-    let mut last: ::core::ffi::c_int = 0;
-    if !wl.is_alive() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if before != 0 {
-        idx = wl.get_unchecked().idx;
-    } else {
-        idx = wl.get_unchecked().idx + 1 as ::core::ffi::c_int;
-    }
-    last = idx;
-    while last < INT_MAX {
-        if !winlink_find_by_index(&(*s).windows, last).is_alive() {
-            break;
-        }
-        last += 1;
-    }
-    if last == INT_MAX {
-        return -(1 as ::core::ffi::c_int);
-    }
-    while last > idx {
-        wl = winlink_find_by_index(&(*s).windows, last - 1 as ::core::ffi::c_int);
-        winlinks_reindex(&raw mut (*s).windows, wl.clone(), last);
-        last -= 1;
-    }
-    return idx;
+    session: &Rc<UnsafeCell<session>>,
+    link: refbox::Weak<winlink>,
+    before: i32,
+) -> i32 {
+    session.shuffle_window(link, before != 0)
 }
 unsafe fn window_pane_input_callback(
     cdata: &window_pane_input_data,
@@ -4477,13 +4454,12 @@ pub unsafe fn window_get_bg_client(
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session_handle().is_none()
-                || session_has(
-                    &*(*loop_0)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                    &*w,
-                ) == 0)
+                || ((*loop_0)
+                    .session_handle()
+                    .expect("live session")
+                    .contains_window(&(*w).observer.upgrade().expect("live window"))
+                    as i32)
+                    == 0)
             {
                 if !((*loop_0).tty.bg == -(1 as ::core::ffi::c_int)) {
                     return (*loop_0).tty.bg;
@@ -4533,13 +4509,12 @@ pub unsafe fn window_pane_get_fg(
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session_handle().is_none()
-                || session_has(
-                    &*(*loop_0)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                    &*w,
-                ) == 0)
+                || ((*loop_0)
+                    .session_handle()
+                    .expect("live session")
+                    .contains_window(&(*w).observer.upgrade().expect("live window"))
+                    as i32)
+                    == 0)
             {
                 if !((*loop_0).tty.fg == -(1 as ::core::ffi::c_int)) {
                     return (*loop_0).tty.fg;
@@ -4595,13 +4570,12 @@ pub unsafe fn window_pane_get_theme(
     while !loop_0.is_null() {
         if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
             if !((*loop_0).session_handle().is_none()
-                || session_has(
-                    &*(*loop_0)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                    &*w,
-                ) == 0)
+                || ((*loop_0)
+                    .session_handle()
+                    .expect("live session")
+                    .contains_window(&(*w).observer.upgrade().expect("live window"))
+                    as i32)
+                    == 0)
             {
                 match (*loop_0).theme as ::core::ffi::c_uint {
                     1 => {

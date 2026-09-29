@@ -1,5 +1,5 @@
-use hmux2::src::session::*;
-use hmux2::src::shared::session::{session, sessions};
+use crate::src::session::*;
+use crate::src::shared::session::{session, sessions};
 use std::ffi::CStr;
 
 fn node(name: &CStr) -> std::rc::Rc<std::cell::UnsafeCell<session>> {

@@ -23,9 +23,10 @@ use crate::src::server_client::{
     server_client_check_nested, server_client_get_cwd, server_client_open, server_client_set_flags,
     server_client_set_key_table, server_client_set_session,
 };
+use crate::src::session::Session;
 use crate::src::session::{
-    session_create, session_destroy, session_find, session_group_add, session_group_contains,
-    session_group_find, session_group_new, session_group_synchronize_to, session_select,
+    session_create, session_destroy, session_find, session_group_add, session_group_find,
+    session_group_new, session_group_synchronize_to, session_select,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
@@ -125,9 +126,9 @@ unsafe fn cmd_new_session_exec(
     let mut c: *mut client = c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut as_0: *mut session = ::core::ptr::null_mut::<session>();
-    let mut groupwith: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut as_0: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut groupwith: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut groupwith_owner = None;
     let mut env: Option<Box<environ>> = None;
     let mut oo: Option<Box<options>> = None;
@@ -264,19 +265,16 @@ unsafe fn cmd_new_session_exec(
         10043043949733653460 => {
             if args_has(args, 'A' as i32 as u_char) != 0 {
                 if !sname.is_null() {
-                    as_0 = session_find(std::ffi::CStr::from_ptr(sname))
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+                    as_0 = session_find(std::ffi::CStr::from_ptr(sname));
                 } else {
-                    as_0 = (*target)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get());
+                    as_0 = (*target).session_handle();
                 }
-                if !as_0.is_null() {
+                if !as_0.is_none() {
                     retval = cmd_attach_session(
                         item_handle,
-                        ((*as_0).name).as_ptr().cast_mut(),
+                        (as_0.as_ref().expect("live session").name())
+                            .as_ptr()
+                            .cast_mut(),
                         args_has(args, 'D' as i32 as u_char),
                         args_has(args, 'X' as i32 as u_char),
                         0 as ::core::ffi::c_int,
@@ -304,19 +302,21 @@ unsafe fn cmd_new_session_exec(
                     .map_or(std::ptr::null(), |value| value.as_ptr());
                 if !group.is_null() {
                     groupwith_owner = (*target).s.upgrade();
-                    groupwith = groupwith_owner
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get());
-                    if groupwith.is_null() {
+                    groupwith = groupwith_owner.clone();
+                    if groupwith.is_none() {
                         sg = session_group_find(group);
                     } else {
-                        sg = session_group_contains((groupwith).as_ref());
+                        sg = crate::src::session::session_group_for(
+                            &groupwith
+                                .as_ref()
+                                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+                        );
                     }
                     if !sg.is_null() {
                         prefix = Some((*sg).name.clone());
                         current_block = 6717214610478484138;
-                    } else if !groupwith.is_null() {
-                        prefix = Some((*groupwith).name.clone());
+                    } else if !groupwith.is_none() {
+                        prefix = Some(groupwith.as_ref().expect("live session").name().clone());
                         current_block = 6717214610478484138;
                     } else if !check_name(CStr::from_ptr(group)) {
                         cmdq_error(item_handle, |out| {
@@ -611,7 +611,7 @@ unsafe fn cmd_new_session_exec(
                                                             oo.take(),
                                                             tiop.as_ref(),
                                                         );
-                                                        s = session_owner.get();
+                                                        s = Some(session_owner.clone());
                                                         sc.item = (*item).observer.clone();
                                                         sc.s =
                                                             std::rc::Rc::downgrade(&session_owner);
@@ -640,10 +640,7 @@ unsafe fn cmd_new_session_exec(
                                                         .is_alive()
                                                         {
                                                             session_destroy(
-                                                                &(*s)
-                                                                    .observer
-                                                                    .upgrade()
-                                                                    .expect("live session"),
+                                                                &s.clone().expect("live session"),
                                                                 0 as ::core::ffi::c_int,
                                                                 b"cmd_new_session_exec\0"
                                                                     as *const u8
@@ -664,11 +661,16 @@ unsafe fn cmd_new_session_exec(
                                                         } else {
                                                             if !group.is_null() {
                                                                 if sg.is_null() {
-                                                                    if !groupwith.is_null() {
+                                                                    if !groupwith.is_none() {
                                                                         sg = session_group_new(
-                                                                            ((*groupwith).name)
-                                                                                .as_ptr()
-                                                                                .cast_mut(),
+                                                                            (groupwith
+                                                                                .as_ref()
+                                                                                .expect(
+                                                                                    "live session",
+                                                                                )
+                                                                                .name())
+                                                                            .as_ptr()
+                                                                            .cast_mut(),
                                                                         );
                                                                         session_group_add(
                                                                             sg, groupwith_owner.as_ref().expect("retained group session"),
@@ -684,20 +686,19 @@ unsafe fn cmd_new_session_exec(
                                                                     &session_owner,
                                                                 );
                                                                 session_group_synchronize_to(
-                                                                    &(*s)
-                                                                        .observer
-                                                                        .upgrade()
+                                                                    &s.clone()
                                                                         .expect("live session"),
                                                                 );
                                                                 session_select(
-                                                                    &(*s)
-                                                                        .observer
-                                                                        .upgrade()
+                                                                    &s.clone()
                                                                         .expect("live session"),
-                                                                    (winlinks_minmax(
-                                                                        &(*s).windows,
-                                                                        RB_NEGINF,
-                                                                    ))
+                                                                    (s.as_ref()
+                                                                        .expect("live session")
+                                                                        .with_winlinks(|links| {
+                                                                            winlinks_minmax(
+                                                                                links, RB_NEGINF,
+                                                                            )
+                                                                        }))
                                                                     .get_unchecked()
                                                                     .idx,
                                                                 );
@@ -705,10 +706,7 @@ unsafe fn cmd_new_session_exec(
                                                             events_fire_session(
                                                                 b"session-created\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
-                                                                (*(s))
-                                                                    .observer
-                                                                    .upgrade()
-                                                                    .expect("live session"),
+                                                                s.clone().expect("live session"),
                                                             );
                                                             if detached == 0 {
                                                                 if args_has(
@@ -756,11 +754,7 @@ unsafe fn cmd_new_session_exec(
                                                                         .observer
                                                                         .upgrade()
                                                                         .expect("live client"),
-                                                                    (s).as_ref()
-                                                                        .and_then(|model| {
-                                                                            model.observer.upgrade()
-                                                                        })
-                                                                        .as_ref(),
+                                                                    s.as_ref(),
                                                                 );
                                                                 if !cmdq_get_flags(&*(item))
                                                                     & CMDQ_STATE_REPEAT
@@ -800,13 +794,11 @@ unsafe fn cmd_new_session_exec(
                                                                             model.observer.upgrade()
                                                                         })
                                                                         .as_ref(),
-                                                                    (s).as_ref()
-                                                                        .and_then(|model| {
-                                                                            model.observer.upgrade()
-                                                                        })
-                                                                        .as_ref(),
-                                                                    ((*s).current_winlink())
-                                                                        .clone(),
+                                                                    s.as_ref(),
+                                                                    (s.as_ref()
+                                                                        .expect("live session")
+                                                                        .current_winlink())
+                                                                    .clone(),
                                                                     None,
                                                                 );
                                                                 cmdq_print(item_handle, |out| {
@@ -824,27 +816,18 @@ unsafe fn cmd_new_session_exec(
                                                                     &mut *current
                                                                         .current
                                                                         .borrow_mut(),
-                                                                    &(*(s))
-                                                                        .observer
-                                                                        .upgrade()
+                                                                    &s.clone()
                                                                         .expect("live session"),
                                                                     0 as ::core::ffi::c_int,
                                                                 );
                                                             }
                                                             cmd_find_from_session(
                                                                 &raw mut fs,
-                                                                &(*(s))
-                                                                    .observer
-                                                                    .upgrade()
-                                                                    .expect("live session"),
+                                                                &s.clone().expect("live session"),
                                                                 0 as ::core::ffi::c_int,
                                                             );
                                                             cmdq_insert_hook(
-                                                                (s).as_ref()
-                                                                    .and_then(|model| {
-                                                                        model.observer.upgrade()
-                                                                    })
-                                                                    .as_ref(),
+                                                                s.as_ref(),
                                                                 item_handle,
                                                                 &raw mut fs,
                                                                 |out| {
@@ -854,13 +837,7 @@ unsafe fn cmd_new_session_exec(
                                                                 },
                                                             );
                                                             if cfg_finished != 0 {
-                                                                cfg_show_causes(
-                                                                    (s).as_ref()
-                                                                        .and_then(|model| {
-                                                                            model.observer.upgrade()
-                                                                        })
-                                                                        .as_ref(),
-                                                                );
+                                                                cfg_show_causes(s.as_ref());
                                                             }
                                                             return CMD_RETURN_NORMAL;
                                                         }

@@ -4,7 +4,7 @@ pub mod attributes;
 pub mod colour;
 mod parsing;
 mod scoped;
-pub use scoped::style_apply_with_options;
+pub use scoped::{style_apply_with_options, style_resolve_with_options};
 
 // Preserve the established family API without glob exports.
 pub use self::parsing::{

@@ -28,9 +28,8 @@ use crate::src::server_client::{
 };
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::sessions;
-use crate::src::session::{
-    session_destroy, sessions_after, sessions_key, sessions_minmax, sessions_next,
-};
+use crate::src::session::Session;
+use crate::src::session::{session_destroy, sessions_after, sessions_minmax};
 use crate::src::shared::status::message_list;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::text::utf8::utf8_update_width_cache;
@@ -127,10 +126,9 @@ pub unsafe fn server_set_marked(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
-    marked_pane.set_s((s).as_ref());
+    marked_pane.set_s(s_owner);
     marked_pane.set_wl(wl.clone());
     if wl.is_alive() {
         marked_pane.set_w(
@@ -151,16 +149,13 @@ pub unsafe fn server_is_marked(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> ::core::ffi::c_int {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    if s.is_null() || !wl.is_alive() || wp.is_null() {
+    if s_owner.is_none() || !wl.is_alive() || wp.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get())
-        != s
+    if !marked_pane
+        .s
+        .ptr_eq(&std::rc::Rc::downgrade(s_owner.unwrap()))
         || marked_pane.winlink_handle() != wl
     {
         return 0 as ::core::ffi::c_int;
@@ -450,7 +445,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_send_exit() {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     cmd_wait_for_flush();
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
@@ -465,24 +460,20 @@ unsafe fn server_send_exit() {
         (*c).set_session(None);
     }
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
-        let name = sessions_key(&*s);
+    s = s_owner.clone();
+    while !s.is_none() {
+        let name = s.as_ref().expect("live session").name().into_bytes();
         session_destroy(
             s_owner.as_ref().expect("registered session"),
             1 as ::core::ffi::c_int,
             b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
         );
         s_owner = sessions_after(&sessions, &name);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s = s_owner.clone();
     }
 }
 pub unsafe fn server_update_socket() {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     static mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut n: ::core::ffi::c_int = 0;
     let mut mode: ::core::ffi::c_int = 0;
@@ -514,18 +505,14 @@ pub unsafe fn server_update_socket() {
     };
     n = 0 as ::core::ffi::c_int;
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
-        if (*s).attached != 0 as u_int {
+    s = s_owner.clone();
+    while !s.is_none() {
+        if s.as_ref().expect("live session").is_attached() {
             n += 1;
             break;
         } else {
-            s_owner = sessions_next(&*s);
-            s = s_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+            s_owner = s.as_ref().expect("live session").next_session();
+            s = s_owner.clone();
         }
     }
     if n != last {

@@ -66,18 +66,18 @@ pub static mut next_session_id: u_int = 0;
 pub static mut session_groups: session_groups = session_groups { storage: None };
 
 /// `session.cwd` borrows this value until replacement or early destruction.
-pub(crate) fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
+fn session_set_cwd(s: &mut session, cwd: Option<CString>) {
     s.cwd = cwd;
 }
 
 /// Replace the borrowed public name after callers remove the old map key.
-pub(crate) fn session_replace_name(s: &mut session, name: CString) -> CString {
+fn session_replace_name(s: &mut session, name: CString) -> CString {
     std::mem::replace(&mut s.name, name)
 }
-pub(crate) fn sessions_key(elm: &session) -> Vec<u8> {
+fn sessions_key(elm: &session) -> Vec<u8> {
     elm.name.as_bytes().to_vec()
 }
-pub fn sessions_find(head: &sessions, elm: &session) -> Option<Rc<UnsafeCell<session>>> {
+fn sessions_find(head: &sessions, elm: &session) -> Option<Rc<UnsafeCell<session>>> {
     let owner = head.storage.as_ref()?;
     let map = owner
         .try_borrow_mut()
@@ -153,7 +153,7 @@ pub fn sessions_after(head: &sessions, name: &[u8]) -> Option<Rc<UnsafeCell<sess
 }
 
 /// The session must still belong to its index. Destructive walks use sessions_after.
-pub unsafe fn sessions_next(elm: &session) -> Option<Rc<UnsafeCell<session>>> {
+unsafe fn sessions_next(elm: &session) -> Option<Rc<UnsafeCell<session>>> {
     let owner = &elm.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
@@ -282,7 +282,7 @@ pub fn sessions_resolve(
         .then_some(owner)
 }
 
-pub unsafe fn session_alive(s: Option<&session>) -> ::core::ffi::c_int {
+unsafe fn session_alive(s: Option<&session>) -> ::core::ffi::c_int {
     s.is_some_and(|s| sessions_resolve(&sessions, &s.observer).is_some()) as ::core::ffi::c_int
 }
 pub unsafe fn session_find(name: &CStr) -> Option<Rc<UnsafeCell<session>>> {
@@ -383,7 +383,7 @@ pub unsafe fn session_create(
     session_update_activity(&mut *s, Some(created));
     owner
 }
-pub unsafe fn session_add_ref(
+unsafe fn session_add_ref(
     s: &session,
     from: *const ::core::ffi::c_char,
 ) -> Rc<UnsafeCell<session>> {
@@ -476,7 +476,7 @@ unsafe fn session_lock_timer(owner: &Rc<UnsafeCell<session>>) {
     server_lock_session(owner);
     recalculate_sizes();
 }
-pub unsafe fn session_update_activity(session: &mut session, from: Option<timeval>) {
+unsafe fn session_update_activity(session: &mut session, from: Option<timeval>) {
     if let Some(from) = from {
         session.activity_time = from;
     } else {
@@ -513,27 +513,25 @@ pub unsafe fn session_update_activity(session: &mut session, from: Option<timeva
     }
 }
 pub unsafe fn session_next_session(
-    s: Option<&session>,
+    s: Option<&Rc<UnsafeCell<session>>>,
     sort_crit: &sort_criteria,
 ) -> Option<Rc<UnsafeCell<session>>> {
     session_adjacent(s, sort_crit, false)
 }
 pub unsafe fn session_previous_session(
-    s: Option<&session>,
+    s: Option<&Rc<UnsafeCell<session>>>,
     sort_crit: &sort_criteria,
 ) -> Option<Rc<UnsafeCell<session>>> {
     session_adjacent(s, sort_crit, true)
 }
 unsafe fn session_adjacent(
-    s: Option<&session>,
+    s: Option<&Rc<UnsafeCell<session>>>,
     sort_crit: &sort_criteria,
     previous: bool,
 ) -> Option<Rc<UnsafeCell<session>>> {
     let s = s?;
     let sorted = sort_get_sessions(sort_crit);
-    let index = sorted
-        .iter()
-        .position(|owner| Rc::downgrade(owner).ptr_eq(&s.observer))?;
+    let index = sorted.iter().position(|owner| Rc::ptr_eq(owner, s))?;
     let selected = if previous {
         if index == 0 {
             sorted.len() - 1
@@ -594,7 +592,7 @@ pub unsafe fn session_detach(
     session_group_synchronize_from(s_owner);
     return 0 as ::core::ffi::c_int;
 }
-pub fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
+fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
     if s.observer.strong_count() == 0 {
         return 0;
     }
@@ -613,9 +611,12 @@ pub fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
     }
     0
 }
-pub unsafe fn session_is_linked(s: Option<&session>, w: &window) -> ::core::ffi::c_int {
+pub unsafe fn session_is_linked(
+    s: Option<&Rc<UnsafeCell<session>>>,
+    w: &window,
+) -> ::core::ffi::c_int {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_group_contains(s);
+    sg = session_group_for(&s.map_or_else(std::rc::Weak::new, Rc::downgrade));
     if !sg.is_null() {
         return (w.observer.strong_count() != session_group_count(sg) as usize)
             as ::core::ffi::c_int;
@@ -857,7 +858,7 @@ pub unsafe fn session_set_current(
     session_fire_window_changed(s_owner, wl.clone(), (old).clone());
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn session_group_contains(target: Option<&session>) -> *mut session_group {
+unsafe fn session_group_contains(target: Option<&session>) -> *mut session_group {
     let Some(target) = target else {
         return std::ptr::null_mut();
     };
@@ -1200,7 +1201,7 @@ pub unsafe fn session_renumber_windows(s_owner: &Rc<UnsafeCell<session>>) {
         wl = wl1;
     }
 }
-pub unsafe fn session_theme_changed(session: Option<&session>) {
+unsafe fn session_theme_changed(session: Option<&session>) {
     let Some(session) = session else {
         return;
     };
@@ -1221,7 +1222,7 @@ pub unsafe fn session_theme_changed(session: Option<&session>) {
         link = winlinks_next(wl);
     }
 }
-pub unsafe fn session_update_history(session: &session) {
+unsafe fn session_update_history(session: &session) {
     let limit = crate::src::options::options_get_number_ref(
         session.options.as_deref().expect("session options"),
         c"history-limit",
@@ -1312,3 +1313,18 @@ impl Drop for session {
         unsafe { session_free(self) }
     }
 }
+
+#[cfg(test)]
+mod sorted_session_owners_tests;
+
+#[cfg(test)]
+mod winlink_storage_tests;
+
+#[cfg(test)]
+mod session_lastw_queue_tests;
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
+#[cfg(test)]
+mod storage_tests;

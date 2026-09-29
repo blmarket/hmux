@@ -510,7 +510,7 @@ pub unsafe fn cmdq_insert_hook(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let item = item_handle.get();
-    let mut _s = _s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+
     let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
     let mut args_0: *mut args =
         cmd_get_args_mut(cmd.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -902,13 +902,7 @@ unsafe fn cmdq_fire_command(
                                 7379054416801212160 => {}
                                 _ => {
                                     cmdq_insert_hook(
-                                        ((*fsp)
-                                            .session_handle()
-                                            .as_ref()
-                                            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                                        .as_ref()
-                                        .and_then(|model| model.observer.upgrade())
-                                        .as_ref(),
+                                        (*fsp).session_handle().as_ref(),
                                         item_handle,
                                         fsp,
                                         |out| {
@@ -946,15 +940,10 @@ unsafe fn cmdq_fire_command(
         }
         cmdq_insert_hook(
             (if !fsp.is_null() {
-                (*fsp)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
+                (*fsp).session_handle()
             } else {
-                ::core::ptr::null_mut::<session>()
+                None
             })
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
             .as_ref(),
             item_handle,
             fsp,

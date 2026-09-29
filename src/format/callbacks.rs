@@ -1213,7 +1213,8 @@ unsafe fn format_cb_client_prefix(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !format_client.is_null() {
-        name = server_client_get_key_table(&*(format_client));
+        let default_name = server_client_get_key_table(&*format_client);
+        name = default_name.as_ptr();
         if strcmp(
             ((*format_client)
                 .keytable
@@ -2781,18 +2782,14 @@ unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CStr
     return None;
 }
 unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut n: u_int = 0 as u_int;
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
+    s = s_owner.clone();
+    while !s.is_none() {
         n = n.wrapping_add(1);
-        s_owner = sessions_next(&*s);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s_owner = s.as_ref().expect("live session").next_session();
+        s = s_owner.clone();
     }
     return Some(
         CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),
@@ -3146,14 +3143,12 @@ unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString
 }
 unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*ft).winlink_handle().is_alive() {
         let mut s_owner = sessions_minmax(&sessions);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        while !s.is_null() {
+        s = s_owner.clone();
+        while !s.is_none() {
             wl = s_owner
                 .as_ref()
                 .expect("session registry entry")
@@ -3177,10 +3172,8 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
                 }
                 wl = winlinks_next(wl.get_unchecked());
             }
-            s_owner = sessions_next(&*s);
-            s = s_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+            s_owner = s.as_ref().expect("live session").next_session();
+            s = s_owner.clone();
         }
         return Some(c"0".to_owned());
     }
@@ -3189,7 +3182,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut n: u_int = 0 as u_int;
     if !(*ft).winlink_handle().is_alive() {
         return None;
@@ -3202,9 +3195,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
     sg = session_groups_minmax(&session_groups);
     while !sg.is_null() {
         let group_members = crate::src::session::session_group_members(sg);
-        s = group_members
-            .first()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = group_members.first().cloned();
         if group_members.first().is_some_and(|session| {
             session.with_winlinks(|links| {
                 winlink_find_by_window(links, &(*(w)).observer.upgrade().expect("live window"))
@@ -3216,10 +3207,8 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         sg = session_groups_next(&*sg);
     }
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
+    s = s_owner.clone();
+    while !s.is_none() {
         if crate::src::session::session_group_for(&Rc::downgrade(
             s_owner.as_ref().expect("registered session"),
         ))
@@ -3236,10 +3225,8 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
                 n = n.wrapping_add(1);
             }
         }
-        s_owner = sessions_next(&*s);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s_owner = s.as_ref().expect("live session").next_session();
+        s = s_owner.clone();
     }
     return Some(
         CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),

@@ -9,6 +9,7 @@ use crate::src::key_string::key_string_parse_cstr;
 use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -94,10 +95,7 @@ unsafe fn cmd_send_keys_inject_key(
     let mut tc: *mut client = tc_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let _s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
@@ -253,10 +251,7 @@ unsafe fn cmd_send_keys_exec(
     let mut tc: *mut client = tc_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
@@ -330,9 +325,7 @@ unsafe fn cmd_send_keys_exec(
             Some(&mut mouse_session_owner),
             ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
         );
-        s = mouse_session_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = mouse_session_owner.clone();
         wp = mouse_pane_owner
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -353,17 +346,25 @@ unsafe fn cmd_send_keys_exec(
         &cmd_send_prefix_entry,
     ) {
         if args_has(args, '2' as i32 as u_char) != 0 {
-            key = options_get_number(
-                options_owner_ptr(&mut (*s).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-                b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
-            ) as key_code;
+            key = s
+                .as_ref()
+                .expect("live session")
+                .with_options_mut(|options| {
+                    options_get_number(
+                        options,
+                        b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
+                    )
+                }) as key_code;
         } else {
-            key = options_get_number(
-                options_owner_ptr(&mut (*s).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-                b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
-            ) as key_code;
+            key = s
+                .as_ref()
+                .expect("live session")
+                .with_options_mut(|options| {
+                    options_get_number(
+                        options,
+                        b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
+                    )
+                }) as key_code;
         }
         cmd_send_keys_inject_key(item_handle, Some(item_handle), args, key);
         return CMD_RETURN_NORMAL;

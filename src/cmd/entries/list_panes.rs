@@ -7,7 +7,8 @@ use crate::src::format::{
     format_true,
 };
 use crate::src::session::sessions;
-use crate::src::session::{sessions_minmax, sessions_next};
+use crate::src::session::sessions_minmax;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -57,10 +58,7 @@ unsafe fn cmd_list_panes_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(
@@ -77,14 +75,14 @@ unsafe fn cmd_list_panes_exec(
     } else if args_has(args, 's' as i32 as u_char) != 0 {
         cmd_list_panes_session(
             self_0.clone(),
-            &(*(s)).observer.upgrade().expect("live session"),
+            s.as_ref().expect("live session"),
             item_handle,
             1 as ::core::ffi::c_int,
         );
     } else {
         cmd_list_panes_window(
             self_0.clone(),
-            &(*(s)).observer.upgrade().expect("live session"),
+            s.as_ref().expect("live session"),
             wl.clone(),
             item_handle,
             0 as ::core::ffi::c_int,
@@ -96,22 +94,18 @@ unsafe fn cmd_list_panes_server(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
+    s = s_owner.clone();
+    while !s.is_none() {
         cmd_list_panes_session(
             self_0.clone(),
-            &(*(s)).observer.upgrade().expect("live session"),
+            s.as_ref().expect("live session"),
             item_handle,
             2 as ::core::ffi::c_int,
         );
-        s_owner = sessions_next(&*s);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s_owner = s.as_ref().expect("live session").next_session();
+        s = s_owner.clone();
     }
 }
 unsafe fn cmd_list_panes_session(
@@ -120,9 +114,12 @@ unsafe fn cmd_list_panes_session(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut type_0: ::core::ffi::c_int,
 ) {
-    let mut s = s_owner.get();
+    let s = Some(s_owner.clone());
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+    wl = s
+        .as_ref()
+        .expect("live session")
+        .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
         cmd_list_panes_window(self_0.clone(), s_owner, wl.clone(), item_handle, type_0);
         wl = winlinks_next(wl.get_unchecked());
@@ -136,7 +133,7 @@ unsafe fn cmd_list_panes_window(
     mut type_0: ::core::ffi::c_int,
 ) {
     let item = item_handle.get();
-    let _s = s_owner.get();
+
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);

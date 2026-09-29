@@ -13,6 +13,7 @@ use crate::src::layout::{
 use crate::src::server_fn::{
     server_redraw_window, server_redraw_window_borders, server_unzoom_window,
 };
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -324,10 +325,7 @@ unsafe fn cmd_resize_pane_mouse_update(
     let mut c: *mut client = c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }
@@ -337,19 +335,13 @@ unsafe fn cmd_resize_pane_mouse_update(
         Some(&mut mouse_session_owner),
         ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
-    s = mouse_session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    s = mouse_session_owner.clone();
     wp = mouse_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null()
         || c.is_null()
-        || (*c)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            != s
+        || !crate::src::shared::rc::same((*c).session_handle().as_ref(), s.as_ref())
     {
         return CMD_RETURN_NORMAL;
     }

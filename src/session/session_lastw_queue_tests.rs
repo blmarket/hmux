@@ -1,5 +1,5 @@
-use hmux2::src::shared::session::session;
-use hmux2::src::window::{
+use crate::src::shared::session::session;
+use crate::src::window::{
     winlink_add, winlink_remove, winlink_stack_clear, winlink_stack_first, winlink_stack_indices,
     winlink_stack_next, winlink_stack_push, winlink_stack_remove, winlinks_reindex,
 };

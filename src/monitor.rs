@@ -7,6 +7,7 @@ use crate::src::reactor::{event_add, event_del, event_initialized, event_pending
 use crate::src::server::current_time;
 use crate::src::session::session_remove_ref;
 use crate::src::session::sessions;
+use crate::src::session::Session as _;
 use crate::src::session::{session_find_by_id, sessions_minmax};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{client, client_handle, CLIENT_DEAD};
@@ -73,7 +74,7 @@ unsafe fn monitor_get_session(
     let Some(session) = (*ms).session.as_ref() else {
         return sessions_minmax(&sessions);
     };
-    let indexed = session_find_by_id((*session.get()).id)?;
+    let indexed = session_find_by_id(session.id())?;
     Rc::ptr_eq(session, &indexed).then_some(indexed)
 }
 
@@ -84,7 +85,7 @@ unsafe fn monitor_create_formats(
     wp_owner: Option<&Rc<UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
     let c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+
     let wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut ft_owner = format_create(None, None, 0 as ::core::ffi::c_int, FORMAT_NOJOBS);
@@ -94,9 +95,7 @@ unsafe fn monitor_create_formats(
         (c).as_ref()
             .and_then(|model| model.observer.upgrade())
             .as_ref(),
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        s_owner,
         wl.clone(),
         (wp).as_ref()
             .and_then(|model| model.observer.upgrade())
@@ -239,7 +238,7 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
+
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -269,7 +268,11 @@ unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     wl = window_winlinks_first((w).as_ref());
     while wl.is_alive() {
-        if wl.get_unchecked().session.ptr_eq(&(*s).observer) {
+        if wl
+            .get_unchecked()
+            .session
+            .ptr_eq(&Rc::downgrade(&session_owner))
+        {
             let mut ft_owner = monitor_create_formats(
                 client_owner.as_ref(),
                 Some(&session_owner),
@@ -391,7 +394,7 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
+
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -416,7 +419,11 @@ unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_it
     }
     wl = window_winlinks_first((w).as_ref());
     while wl.is_alive() {
-        if wl.get_unchecked().session.ptr_eq(&(*s).observer) {
+        if wl
+            .get_unchecked()
+            .session
+            .ptr_eq(&Rc::downgrade(&session_owner))
+        {
             let mut ft_owner = monitor_create_formats(
                 client_owner.as_ref(),
                 Some(&session_owner),
@@ -603,7 +610,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
+
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -613,7 +620,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     if (*ms).generation == 0 as u_int {
         (*ms).generation = 1 as u_int;
     }
-    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+    wl = session_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
         wp = window_pane_first(
             (wl.get_unchecked()
@@ -691,7 +698,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
         }
         return;
     };
-    let mut s = rc::as_ptr(&session_owner);
+
     let mut me: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut me1: *mut monitor_item = ::core::ptr::null_mut::<monitor_item>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -700,7 +707,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     if (*ms).generation == 0 as u_int {
         (*ms).generation = 1 as u_int;
     }
-    wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+    wl = session_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
         let mut ft_owner = monitor_create_formats(
             client_owner.as_ref(),
@@ -1373,16 +1380,16 @@ mod last_owner_tests {
             );
             let owner = session::new();
             let session = rc::as_ptr(&owner);
-            (*session).name = c"monitor-release-test".to_owned();
-            sessions_insert(&mut sessions, owner);
-            let observer = (*session).observer.clone();
-            let mut set_owner = monitor_create_session(
-                (session)
-                    .as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
-                std::rc::Rc::new(|_| {}),
+            crate::src::session::test_support::metadata(
+                &owner,
+                Some(c"monitor-release-test".to_owned()),
+                None,
+                None,
             );
+            let observer = std::rc::Rc::downgrade(&owner);
+            sessions_insert(&mut sessions, owner);
+            let mut set_owner =
+                monitor_create_session(observer.upgrade().as_ref(), std::rc::Rc::new(|_| {}));
             let set = &raw mut *set_owner;
             let mut item = monitor_item::empty();
             item.id = u32::MAX;
@@ -1397,10 +1404,7 @@ mod last_owner_tests {
             event_loop();
             assert_eq!(observer.strong_count(), 2);
 
-            sessions_remove(
-                &mut sessions,
-                &(*session).observer.upgrade().expect("indexed session"),
-            );
+            sessions_remove(&mut sessions, &observer.upgrade().expect("indexed session"));
             monitor_destroy(set_owner);
             assert_eq!(observer.strong_count(), 1);
             shutdown_runtime();

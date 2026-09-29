@@ -159,8 +159,8 @@ impl cmd_find_state {
         self.s.upgrade()
     }
 
-    pub fn set_s(&mut self, value: Option<&session>) {
-        self.s = value.map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    pub fn set_s(&mut self, value: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
+        self.s = value.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 
     /// Retain the target allocation; callbacks may still invalidate it logically.

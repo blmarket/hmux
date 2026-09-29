@@ -8,6 +8,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_link_window, server_status_session, server_unlink_window};
 use crate::src::session::session_renumber_windows;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
@@ -85,11 +86,8 @@ unsafe fn cmd_move_window_exec(
     };
     let mut tflag: *const ::core::ffi::c_char =
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut src: *mut session = (*source)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut dst: *mut session = ::core::ptr::null_mut::<session>();
+    let mut src: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*source).session_handle();
+    let mut dst: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut idx: ::core::ffi::c_int = 0;
     let mut kflag: ::core::ffi::c_int = 0;
@@ -107,22 +105,9 @@ unsafe fn cmd_move_window_exec(
         {
             return CMD_RETURN_ERROR;
         }
-        session_renumber_windows(
-            &(*(target
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
-        );
+        session_renumber_windows(&target.session_handle().expect("live session"));
         recalculate_sizes();
-        server_status_session(
-            &*(target
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())),
-        );
+        server_status_session(&target.session_handle().expect("live session"));
         return CMD_RETURN_NORMAL;
     }
     if cmd_find_target(
@@ -135,10 +120,7 @@ unsafe fn cmd_move_window_exec(
     {
         return CMD_RETURN_ERROR;
     }
-    dst = target
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    dst = target.session_handle();
     idx = target.idx;
     kflag = args_has(args, 'k' as i32 as u_char);
     dflag = args_has(args, 'd' as i32 as u_char);
@@ -147,14 +129,14 @@ unsafe fn cmd_move_window_exec(
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
         if target.winlink_handle().is_alive() {
             idx = winlink_shuffle_up(
-                &(*(dst)).observer.upgrade().expect("live session"),
+                dst.as_ref().expect("live session"),
                 (target.winlink_handle()).clone(),
                 before,
             );
         } else {
             idx = winlink_shuffle_up(
-                &(*(dst)).observer.upgrade().expect("live session"),
-                ((*dst).current_winlink()).clone(),
+                dst.as_ref().expect("live session"),
+                (dst.as_ref().expect("live session").current_winlink()).clone(),
                 before,
             );
         }
@@ -163,9 +145,9 @@ unsafe fn cmd_move_window_exec(
         }
     }
     if let Err(cause) = server_link_window(
-        &(*(src)).observer.upgrade().expect("live session"),
+        src.as_ref().expect("live session"),
         wl.clone(),
-        &(*(dst)).observer.upgrade().expect("live session"),
+        dst.as_ref().expect("live session"),
         idx,
         kflag,
         (dflag == 0) as ::core::ffi::c_int,
@@ -177,18 +159,21 @@ unsafe fn cmd_move_window_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_move_window_entry,
     ) {
-        server_unlink_window(
-            &(*(src)).observer.upgrade().expect("live session"),
-            wl.clone(),
-        );
+        server_unlink_window(src.as_ref().expect("live session"), wl.clone());
     }
     if sflag == 0
-        && options_get_number(
-            options_owner_ptr(&mut (*src).options).map_or(std::ptr::null_mut(), |options| options),
-            b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
-        ) != 0
+        && src
+            .as_ref()
+            .expect("live session")
+            .with_options_mut(|options| {
+                options_get_number(
+                    options,
+                    b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
+                )
+            })
+            != 0
     {
-        session_renumber_windows(&(*src).observer.upgrade().expect("live session"));
+        session_renumber_windows(src.as_ref().expect("live session"));
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

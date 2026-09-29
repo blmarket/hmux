@@ -4,6 +4,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::format::bytes::write_cstr;
 use crate::src::server_fn::server_redraw_window;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
@@ -69,14 +70,11 @@ unsafe fn cmd_respawn_window_exec(
     let _tc: *mut client = tc_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = (*item).observer.clone();
-    sc.s = (*s).observer.clone();
+    sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
     sc.tc = tc_owner
         .as_ref()

@@ -6,6 +6,7 @@ use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
     format_true,
 };
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -68,7 +69,7 @@ unsafe fn cmd_list_windows_exec(
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut i: u_int = 0;
     let mut n: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -103,13 +104,7 @@ unsafe fn cmd_list_windows_exec(
         links
     } else {
         let links = sort_get_winlinks_session(
-            &(*((*target)
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
+            &(*target).session_handle().expect("live session"),
             &raw mut sort_crit,
         );
         if template.is_null() {
@@ -126,7 +121,7 @@ unsafe fn cmd_list_windows_exec(
             i += 1;
             continue;
         };
-        s = session_owner.get();
+        s = Some(session_owner.clone());
         let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
             Some(item_handle),
@@ -144,9 +139,7 @@ unsafe fn cmd_list_windows_exec(
             (c).as_ref()
                 .and_then(|model| model.observer.upgrade())
                 .as_ref(),
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            s.as_ref(),
             wl.clone(),
             None,
         );

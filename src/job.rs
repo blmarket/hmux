@@ -18,6 +18,7 @@ use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
+use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::environment::environ;
@@ -100,7 +101,8 @@ pub unsafe fn job_run(
     mut sx: ::core::ffi::c_int,
     mut sy: ::core::ffi::c_int,
 ) -> Weak<job> {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut shell_value: Option<CString> = None;
+
     let mut current_block: u64;
     let mut pid: pid_t = 0;
     let mut nullfd: ::core::ffi::c_int = 0;
@@ -138,16 +140,18 @@ pub unsafe fn job_run(
     if !flags & JOB_DEFAULTSHELL != 0 {
         shell = _PATH_BSHELL.as_ptr();
     } else {
-        if !s.is_null() {
-            oo = options_owner_ptr(&mut (*s).options)
-                .map_or(std::ptr::null_mut(), |options| options);
+        shell_value = Some(if let Some(session) = s_owner {
+            session.with_options_mut(|options| {
+                CStr::from_ptr(options_get_string(options, c"default-shell".as_ptr())).to_owned()
+            })
         } else {
-            oo = global_s_options;
-        }
-        shell = options_get_string(
-            oo,
-            b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+            CStr::from_ptr(options_get_string(
+                global_s_options,
+                c"default-shell".as_ptr(),
+            ))
+            .to_owned()
+        });
+        shell = shell_value.as_ref().expect("shell snapshot").as_ptr();
         if checkshell(shell) == 0 {
             shell = _PATH_BSHELL.as_ptr();
         }

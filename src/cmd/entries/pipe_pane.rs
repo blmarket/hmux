@@ -20,6 +20,7 @@ use crate::src::reactor::{
 };
 use crate::src::server::server_proc;
 use crate::src::server_fn::server_destroy_pane;
+use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -82,10 +83,7 @@ unsafe fn cmd_pipe_pane_exec(
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
     let wp = pane_owner.get();
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let mut old_fd: ::core::ffi::c_int = 0;
@@ -152,9 +150,7 @@ unsafe fn cmd_pipe_pane_exec(
         (tc).as_ref()
             .and_then(|model| model.observer.upgrade())
             .as_ref(),
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        s.as_ref(),
         wl.clone(),
         (wp).as_ref()
             .and_then(|model| model.observer.upgrade())

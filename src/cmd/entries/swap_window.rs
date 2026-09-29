@@ -4,7 +4,8 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::marked_pane;
 use crate::src::server_fn::server_redraw_session_group;
-use crate::src::session::{session_group_contains, session_group_synchronize_from, session_select};
+use crate::src::session::Session;
+use crate::src::session::{session_group_synchronize_from, session_select};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
@@ -48,23 +49,27 @@ unsafe fn cmd_swap_window_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut src: *mut session = (*source)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut dst: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut src: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*source).session_handle();
+    let mut dst: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut sg_src: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut sg_dst: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl_src: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut wl_dst: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut w_src: *mut window = ::core::ptr::null_mut::<window>();
     let mut w_dst: *mut window = ::core::ptr::null_mut::<window>();
-    sg_src = session_group_contains((src).as_ref());
-    sg_dst = session_group_contains((dst).as_ref());
-    if src != dst && !sg_src.is_null() && !sg_dst.is_null() && sg_src == sg_dst {
+    sg_src = crate::src::session::session_group_for(
+        &src.as_ref()
+            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+    );
+    sg_dst = crate::src::session::session_group_for(
+        &dst.as_ref()
+            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+    );
+    if !crate::src::shared::rc::same(src.as_ref(), dst.as_ref())
+        && !sg_src.is_null()
+        && !sg_dst.is_null()
+        && sg_src == sg_dst
+    {
         cmdq_error(item_handle, |out| {
             out.write_all(b"can't move window, sessions are grouped")
         });
@@ -108,21 +113,21 @@ unsafe fn cmd_swap_window_exec(
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
         session_select(
-            &(*dst).observer.upgrade().expect("live session"),
+            dst.as_ref().expect("live session"),
             wl_dst.get_unchecked().idx,
         );
-        if src != dst {
+        if !crate::src::shared::rc::same(src.as_ref(), dst.as_ref()) {
             session_select(
-                &(*src).observer.upgrade().expect("live session"),
+                src.as_ref().expect("live session"),
                 wl_src.get_unchecked().idx,
             );
         }
     }
-    session_group_synchronize_from(&(*src).observer.upgrade().expect("live session"));
-    server_redraw_session_group(&*(src));
-    if src != dst {
-        session_group_synchronize_from(&(*dst).observer.upgrade().expect("live session"));
-        server_redraw_session_group(&*(dst));
+    session_group_synchronize_from(src.as_ref().expect("live session"));
+    server_redraw_session_group(src.as_ref().expect("live session"));
+    if !crate::src::shared::rc::same(src.as_ref(), dst.as_ref()) {
+        session_group_synchronize_from(dst.as_ref().expect("live session"));
+        server_redraw_session_group(dst.as_ref().expect("live session"));
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

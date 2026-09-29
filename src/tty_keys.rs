@@ -18,7 +18,7 @@ use crate::src::reactor::{
 use crate::src::server_client::{
     server_client_handle_key, server_client_set_term_type, server_client_update_theme_colours,
 };
-use crate::src::session::session_theme_changed;
+use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -1818,13 +1818,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                 .as_ref(),
                                                         );
                                                     }
-                                                    session_theme_changed(
-                                                        ((*c).session_handle().as_ref().map_or(
-                                                            std::ptr::null_mut(),
-                                                            |owner| owner.get(),
-                                                        ))
-                                                        .as_ref(),
-                                                    );
+                                                    if let Some(session) = (*c).session_handle() {
+                                                        session.theme_changed();
+                                                    }
                                                     current_block = 5025795842197473417;
                                                 }
                                                 -1 => {
@@ -1840,13 +1836,9 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                 .as_ref(),
                                                         );
                                                     }
-                                                    session_theme_changed(
-                                                        ((*c).session_handle().as_ref().map_or(
-                                                            std::ptr::null_mut(),
-                                                            |owner| owner.get(),
-                                                        ))
-                                                        .as_ref(),
-                                                    );
+                                                    if let Some(session) = (*c).session_handle() {
+                                                        session.theme_changed();
+                                                    }
                                                     current_block = 16977559109335092698;
                                                 }
                                                 _ => {
@@ -2152,11 +2144,10 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     (*c).flags &= !CLIENT_FOCUSED as uint64_t;
                     window_update_focus(
-                        (((*(*c)
+                        (((*c)
                             .session_handle()
-                            .as_ref()
-                            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                        .current_winlink())
+                            .expect("live session")
+                            .current_winlink())
                         .get_unchecked()
                         .window_handle()
                         .as_ref()
@@ -2176,11 +2167,10 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         (*(c)).observer.upgrade().expect("live client"),
                     );
                     window_update_focus(
-                        (((*(*c)
+                        (((*c)
                             .session_handle()
-                            .as_ref()
-                            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                        .current_winlink())
+                            .expect("live session")
+                            .current_winlink())
                         .get_unchecked()
                         .window_handle()
                         .as_ref()

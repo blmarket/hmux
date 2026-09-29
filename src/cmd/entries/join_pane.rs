@@ -23,6 +23,7 @@ use crate::src::server_fn::{
     server_status_session, server_unzoom_window,
 };
 use crate::src::session::session_select;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -509,10 +510,7 @@ unsafe fn cmd_join_pane_mouse_update(
     let mut c: *mut client = c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -525,19 +523,13 @@ unsafe fn cmd_join_pane_mouse_update(
         Some(&mut mouse_session_owner),
         &raw mut wl,
     );
-    s = mouse_session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    s = mouse_session_owner.clone();
     wp = mouse_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null()
         || c.is_null()
-        || (*c)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            != s
+        || !crate::src::shared::rc::same((*c).session_handle().as_ref(), s.as_ref())
     {
         return CMD_RETURN_NORMAL;
     }
@@ -733,7 +725,7 @@ unsafe fn cmd_join_pane_exec(
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let mut dst_s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut dst_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut src_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut dst_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut src_w: *mut window = ::core::ptr::null_mut::<window>();
@@ -744,10 +736,7 @@ unsafe fn cmd_join_pane_exec(
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut dst_idx: ::core::ffi::c_int = 0;
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    dst_s = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    dst_s = (*target).session_handle();
     dst_wl = (*target).winlink_handle();
     dst_wp = (*target)
         .pane_handle()
@@ -899,15 +888,15 @@ unsafe fn cmd_join_pane_exec(
             &(*(src_wp)).observer.upgrade().expect("live window_pane"),
             1 as ::core::ffi::c_int,
         );
-        session_select(&(*dst_s).observer.upgrade().expect("live session"), dst_idx);
+        session_select(dst_s.as_ref().expect("live session"), dst_idx);
         cmd_find_from_session(
             &mut *current.current.borrow_mut(),
-            &(*(dst_s)).observer.upgrade().expect("live session"),
+            dst_s.as_ref().expect("live session"),
             0 as ::core::ffi::c_int,
         );
-        server_redraw_session(&*(dst_s));
+        server_redraw_session(dst_s.as_ref().expect("live session"));
     } else {
-        server_status_session(&*(dst_s));
+        server_status_session(dst_s.as_ref().expect("live session"));
     }
     window_fire_pane_moved(
         &(*(src_wp)).observer.upgrade().expect("live window_pane"),

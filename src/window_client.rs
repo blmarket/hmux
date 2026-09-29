@@ -21,6 +21,7 @@ use crate::src::screen_write::{
 use crate::src::server_client::{
     server_client_detach, server_client_how_many, server_client_suspend, server_client_unref_owned,
 };
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
@@ -451,11 +452,10 @@ unsafe fn window_client_draw_info(
 ) {
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut w: *mut window = ((*(*c)
+    let mut w: *mut window = ((*c)
         .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .current_winlink())
+        .expect("live session")
+        .current_winlink())
     .get_unchecked()
     .window_handle()
     .as_ref()
@@ -569,10 +569,7 @@ unsafe fn window_client_draw(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
-    let mut session: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut s: *mut screen = (*ctx).screen_ptr();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -594,14 +591,14 @@ unsafe fn window_client_draw(
     let mut cy: u_int = (*s).cy;
     let mut lines: u_int = 0;
     let mut at: u_int = 0;
-    if session.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
+    if session.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return;
     }
     if (*data).preview_is_info != 0 {
         window_client_draw_info(item, ctx, sx, sy);
         return;
     }
-    w = ((*session).current_winlink())
+    w = (session.as_ref().expect("live session").current_winlink())
         .get_unchecked()
         .window_handle()
         .as_ref()

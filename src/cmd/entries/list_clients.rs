@@ -6,6 +6,7 @@ use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
     format_true,
 };
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
@@ -62,7 +63,7 @@ unsafe fn cmd_list_clients_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut filter: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -74,12 +75,9 @@ unsafe fn cmd_list_clients_exec(
         order_seq: &[],
     };
     if args_has(args, 't' as i32 as u_char) != 0 {
-        s = (*target)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = (*target).session_handle();
     } else {
-        s = ::core::ptr::null_mut::<session>();
+        s = None;
     }
     template =
         args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -104,11 +102,8 @@ unsafe fn cmd_list_clients_exec(
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize].get();
         if !((*c).session_handle().is_none()
-            || !s.is_null()
-                && s != (*c)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            || !s.is_none()
+                && !crate::src::shared::rc::same(s.as_ref(), (*c).session_handle().as_ref()))
         {
             let mut ft_owner = format_create_with_client(
                 queue_client.as_ref(),

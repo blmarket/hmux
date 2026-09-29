@@ -13,6 +13,7 @@ use crate::src::screen_redraw::redraw_get_status_border_cell_type;
 use crate::src::screen_write::{
     screen_write_cell, screen_write_cursormove, screen_write_start, screen_write_stop,
 };
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{CELL_BORDERS, CELL_NONE, SIMPLE_BORDERS};
 use crate::src::shared::client::client;
@@ -238,20 +239,16 @@ pub unsafe fn window_pane_get_border_style(
 ) {
     let mut wp = wp_owner.get();
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut option: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
     if wp
-        == (*((*(*c)
+        == (*((*c)
             .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .current_winlink())
+            .expect("live session")
+            .current_winlink())
         .get_unchecked()
         .window_handle()
         .as_ref()
@@ -272,10 +269,8 @@ pub unsafe fn window_pane_get_border_style(
         let mut ft_owner = format_create_defaults(
             None,
             Some(c_owner),
-            (s).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-            ((*s).current_winlink()).clone(),
+            s.as_ref(),
+            (s.as_ref().expect("live session").current_winlink()).clone(),
             Some(wp_owner),
         );
         ft = &raw mut *ft_owner;
@@ -348,18 +343,11 @@ pub unsafe fn window_make_pane_status(
     format_defaults(
         ft,
         Some(c_owner),
+        (*c).session_handle().as_ref(),
         ((*c)
             .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_ref()
-        .and_then(|model| model.observer.upgrade())
-        .as_ref(),
-        ((*(*c)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .current_winlink())
+            .expect("live session")
+            .current_winlink())
         .clone(),
         Some(wp_owner),
     );

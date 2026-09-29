@@ -20,6 +20,7 @@ use crate::src::options::{
     options_set_string, OptionMatchFailure,
 };
 use crate::src::session::sessions;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -164,13 +165,7 @@ unsafe fn cmd_set_hook_event_exec(
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*((*target)
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
+            (*target).session_handle().expect("live session"),
         );
     }
     if !(*target).window_handle().is_none() {
@@ -232,7 +227,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     };
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut cause: Option<CString> = None;
     let mut expanded: Option<CString> = None;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -320,26 +315,12 @@ unsafe fn cmd_set_hook_monitor_exec(
                     }
                 }
                 if oo != global_options && oo != global_s_options && oo != global_w_options {
-                    s = (*target)
-                        .session_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get());
+                    s = (*target).session_handle();
                 }
                 if args_has(args, 'T' as i32 as u_char) != 0 {
                     flags |= MONITOR_NOTIFY_TRUE;
                 }
-                hooks_monitor_add(
-                    oo,
-                    name,
-                    type_0,
-                    id,
-                    format,
-                    flags,
-                    &raw mut fs,
-                    (s).as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
-                );
+                hooks_monitor_add(oo, name, type_0, id, format, flags, &raw mut fs, s.as_ref());
             }
             return CMD_RETURN_NORMAL;
         }

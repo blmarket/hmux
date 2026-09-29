@@ -23,6 +23,7 @@ use crate::src::server_client::{
     server_client_ranges_is_empty,
 };
 use crate::src::server_fn::server_redraw_client;
+use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -1561,11 +1562,10 @@ pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
         .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    let mut w: *mut window = ((*(*c)
+    let mut w: *mut window = ((*c)
         .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .current_winlink())
+        .expect("live session")
+        .current_winlink())
     .get_unchecked()
     .window_handle()
     .as_ref()
@@ -1583,15 +1583,11 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
     }
 }
 unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
-    let w = ((*c
-        .session_handle()
+    let w = (c.session_handle().expect("live session").current_winlink())
+        .get_unchecked()
+        .window_handle()
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .current_winlink())
-    .get_unchecked()
-    .window_handle()
-    .as_ref()
-    .map_or(std::ptr::null_mut(), |owner| owner.get());
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let wp = (*w)
         .active_pane()
         .as_ref()
@@ -1659,17 +1655,15 @@ pub unsafe fn tty_update_window_offset(w_owner: &std::rc::Rc<std::cell::UnsafeCe
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session_handle().is_none()
-            && (*(*c)
+            && (*c)
                 .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .current_winlink()
-            .is_alive()
-            && ((*(*c)
+                .expect("live session")
+                .current_winlink()
+                .is_alive()
+            && ((*c)
                 .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .current_winlink())
+                .expect("live session")
+                .current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()

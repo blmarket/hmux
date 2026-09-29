@@ -742,8 +742,8 @@ mod tests {
     fn holder_overlay_callback_can_close_itself_during_dispatch() {
         unsafe {
             let session = session::new();
-            let link = crate::src::window::winlink_add(&raw mut (*session.get()).windows, 0);
-            (*session.get()).set_curw(link.clone());
+            let link = crate::src::session::test_support::add_link(&session, 0);
+            crate::src::session::test_support::current(&session, link.clone());
             let client = client::new();
             (*client.get()).session = Rc::downgrade(&session);
             (*client.get()).tty.client = Rc::downgrade(&client);
@@ -775,8 +775,8 @@ mod tests {
             server_client_overlay_draw(&client);
             assert_eq!(called.get(), 1);
             (*client.get()).session = Weak::new();
-            (*session.get()).set_curw(refbox::Weak::new());
-            crate::src::window::winlink_remove(&raw mut (*session.get()).windows, link);
+            crate::src::session::test_support::current(&session, refbox::Weak::new());
+            crate::src::session::test_support::remove_link(&session, link);
         }
     }
 }

@@ -25,7 +25,8 @@ use crate::src::screen_write::{
 use crate::src::server_fn::{
     server_redraw_window, server_redraw_window_borders, server_status_window, server_unzoom_window,
 };
-use crate::src::session::{session_alive, session_find_by_id};
+use crate::src::session::session_find_by_id;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
@@ -140,7 +141,7 @@ unsafe fn window_panes_session(
     data: *mut window_panes_modedata,
 ) -> Option<Rc<UnsafeCell<session>>> {
     let owner = (*data).session.upgrade()?;
-    if session_alive(Some(&*owner.get())) == 0 {
+    if !owner.is_registered() {
         drop(owner);
         return None;
     }
@@ -158,13 +159,13 @@ unsafe fn window_panes_get_source(
     let mut link = refbox::Weak::new();
     *session_owner = session_find_by_id((*data).source_session);
     if let Some(session) = session_owner.as_ref() {
-        link = winlink_find_by_window(&(*session.get()).windows, &window_owner);
+        link = session.with_winlinks(|links| winlink_find_by_window(links, &window_owner));
     }
     if !link.is_alive() {
         *session_owner = window_panes_session(data);
     }
     if let Some(session) = session_owner.as_ref() {
-        link = winlink_find_by_window(&(*session.get()).windows, &window_owner);
+        link = session.with_winlinks(|links| winlink_find_by_window(links, &window_owner));
     }
     if !wlp.is_null() {
         *wlp = link;
@@ -341,9 +342,7 @@ unsafe fn window_panes_get_border_cell(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut wp: *mut window_pane = mode_pane;
     let session_owner = window_panes_session(data);
-    let mut s = session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), rc::as_ptr);
+    let mut s = session_owner.clone();
     memcpy(
         gc as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,
@@ -352,13 +351,11 @@ unsafe fn window_panes_get_border_cell(
     let mut ft_owner = format_create_defaults(
         None,
         None,
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        (if s.is_null() {
+        s.as_ref(),
+        (if s.is_none() {
             refbox::Weak::new()
         } else {
-            (*s).current_winlink()
+            s.as_ref().expect("live session").current_winlink()
         })
         .clone(),
         (wp).as_ref()
@@ -1159,13 +1156,11 @@ unsafe fn window_panes_draw_format(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = window_panes_session(data);
-    let mut s = session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), rc::as_ptr);
-    let mut wl: refbox::Weak<winlink> = if s.is_null() {
+    let mut s = session_owner.clone();
+    let mut wl: refbox::Weak<winlink> = if s.is_none() {
         refbox::Weak::new()
     } else {
-        (*s).current_winlink()
+        s.as_ref().expect("live session").current_winlink()
     };
     let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if sx == 0 as u_int {
@@ -1192,11 +1187,9 @@ unsafe fn window_panes_draw_format(
         return;
     }
     if window_panes_get_source(data, &raw mut wl, &mut source_session_owner).is_some() {
-        s = source_session_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = source_session_owner.clone();
     }
-    if s.is_null() {
+    if s.is_none() {
         if let Some(owner) = session_owner {
             drop(owner);
         }
@@ -1205,16 +1198,8 @@ unsafe fn window_panes_draw_format(
         }
         return;
     }
-    let expanded = format_single_cstring(
-        None,
-        format,
-        None,
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        wl.clone(),
-        Some(wp_owner),
-    );
+    let expanded =
+        format_single_cstring(None, format, None, s.as_ref(), wl.clone(), Some(wp_owner));
     if !expanded.is_empty() {
         screen_write_cursormove(
             &mut *ctx,
@@ -1255,17 +1240,15 @@ unsafe fn window_panes_draw_number(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = window_panes_session(data);
-    let mut s = session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), rc::as_ptr);
+    let mut s = session_owner.clone();
     let mut w: *mut window = (*wp)
         .window_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: refbox::Weak<winlink> = if s.is_null() {
+    let mut wl: refbox::Weak<winlink> = if s.is_none() {
         refbox::Weak::new()
     } else {
-        (*s).current_winlink()
+        s.as_ref().expect("live session").current_winlink()
     };
     let mut oo: *mut options = options_owner_ptr(
         &mut (*(*mode_pane)
@@ -1351,13 +1334,11 @@ unsafe fn window_panes_draw_number(
         return;
     }
     if window_panes_get_source(data, &raw mut wl, &mut source_session_owner).is_some() {
-        s = source_session_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = source_session_owner.clone();
     }
-    if !s.is_null() {
+    if !s.is_none() {
         if !wl.is_alive() {
-            wl = (*s).current_winlink();
+            wl = s.as_ref().expect("live session").current_winlink();
         }
     }
     if (*w)
@@ -1370,15 +1351,7 @@ unsafe fn window_panes_draw_number(
     } else {
         name = b"display-panes-colour\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    let mut ft_owner = format_create_defaults(
-        None,
-        None,
-        (s).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        wl.clone(),
-        Some(wp_owner),
-    );
+    let mut ft_owner = format_create_defaults(None, None, s.as_ref(), wl.clone(), Some(wp_owner));
     ft = &raw mut *ft_owner;
     style_apply(&raw mut fgc, oo, name, ft);
     format_free(ft_owner);
@@ -1772,7 +1745,7 @@ unsafe fn window_panes_init(
     let mut self_0: refbox::Weak<cmd> = refbox::Weak::new();
     let mut source: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut target: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -1789,10 +1762,7 @@ unsafe fn window_panes_init(
     }
     source = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    s = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    s = (*target).session_handle();
     if args_has(args, 'd' as i32 as u_char) == 0 {
         delay = options_get_number(
             options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
@@ -1832,7 +1802,7 @@ unsafe fn window_panes_init(
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
     (*data).wp = window_pane_weak(&*(wp));
-    (*data).session = (*s).observer.clone();
+    (*data).session = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     screen_init(&mut (*data).screen, sx, sy, 0 as u_int);
     (*data).screen.mode &= !MODE_CURSOR;
     (*data).state = Some(args_make_commands_prepare(
@@ -1844,22 +1814,14 @@ unsafe fn window_panes_init(
         0 as ::core::ffi::c_int,
     ));
     if args_has(args, 's' as i32 as u_char) != 0 {
-        (*data).source_session = (*(*source)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .id;
+        (*data).source_session = (*source).session_handle().expect("live session").id();
         (*data).source_window = (*(*source)
             .window_handle()
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get()))
         .id;
     } else {
-        (*data).source_session = (*(*target)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .id;
+        (*data).source_session = (*target).session_handle().expect("live session").id();
         (*data).source_window = (*(*target)
             .window_handle()
             .as_ref()
@@ -2151,9 +2113,14 @@ mod session_observer_tests {
             );
             let owner = session::new();
             let session = rc::as_ptr(&owner);
-            (*session).name = c"panes-mode-session".to_owned();
+            crate::src::session::test_support::metadata(
+                &owner,
+                Some(c"panes-mode-session".to_owned()),
+                None,
+                None,
+            );
+            let observer = std::rc::Rc::downgrade(&owner);
             sessions_insert(&mut sessions, owner);
-            let observer = (*session).observer.clone();
             let mut mode = window_panes_modedata {
                 wp: Weak::new(),
                 session: observer.clone(),
@@ -2168,14 +2135,12 @@ mod session_observer_tests {
                 zoomed: 0,
                 areas: Vec::new(),
             };
-            assert_eq!((*session).observer.strong_count(), 1);
+            assert_eq!(observer.strong_count(), 1);
             let guard = window_panes_session(&mut mode).unwrap();
             assert_eq!(rc::as_ptr(&guard), session);
-            let owner = sessions_remove(
-                &mut sessions,
-                &(*session).observer.upgrade().expect("indexed session"),
-            )
-            .unwrap();
+            let owner =
+                sessions_remove(&mut sessions, &observer.upgrade().expect("indexed session"))
+                    .unwrap();
             assert!(window_panes_session(&mut mode).is_none());
             assert_eq!(observer.strong_count(), 2);
             drop(owner);

@@ -7,6 +7,7 @@ use crate::src::format::{
 use crate::src::layout::layout_close_pane;
 use crate::src::server_client::server_client_remove_pane;
 use crate::src::server_fn::{server_kill_pane, server_redraw_window, server_unzoom_window};
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -75,10 +76,7 @@ unsafe fn cmd_kill_pane_all(
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
@@ -106,7 +104,7 @@ unsafe fn cmd_kill_pane_all(
         if pane_owner.get() != wp
             && cmd_kill_pane_filter(
                 item_handle,
-                &(*(s)).observer.upgrade().expect("live session"),
+                s.as_ref().expect("live session"),
                 wl.clone(),
                 &pane_owner,
                 filter,
@@ -144,7 +142,7 @@ unsafe fn cmd_kill_pane_filter(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let item = item_handle.get();
-    let _s = s_owner.get();
+
     let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;

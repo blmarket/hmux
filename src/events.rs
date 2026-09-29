@@ -9,7 +9,7 @@ use crate::src::events_payload::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_get_level;
-use crate::src::session::session_alive;
+use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::command::cmd_find_state;
@@ -146,13 +146,7 @@ pub unsafe fn events_fire_client(
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live session"),
+            fs.session_handle().expect("live session"),
         );
     }
     if !fs.window_handle().is_none() {
@@ -210,12 +204,8 @@ pub unsafe fn events_fire_session(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    if session_alive(s.as_ref()) != 0 {
-        cmd_find_from_session(
-            &raw mut fs,
-            &(*(s)).observer.upgrade().expect("live session"),
-            0 as ::core::ffi::c_int,
-        );
+    if owner.is_registered() {
+        cmd_find_from_session(&raw mut fs, &owner, 0 as ::core::ffi::c_int);
         event_payload_set_target(&mut *ep, &fs);
     }
     event_payload_set_session(

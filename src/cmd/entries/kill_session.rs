@@ -6,9 +6,8 @@ use crate::src::format::{
 };
 use crate::src::server_fn::{server_destroy_session, server_redraw_session};
 use crate::src::session::sessions;
-use crate::src::session::{
-    session_destroy, session_group_contains, sessions_after, sessions_key, sessions_minmax,
-};
+use crate::src::session::Session;
+use crate::src::session::{session_destroy, sessions_after, sessions_minmax};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -69,7 +68,7 @@ unsafe fn cmd_kill_session_exec(
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {
-        wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+        wl = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
             (*wl.get_unchecked()
                 .window_handle()
@@ -79,7 +78,7 @@ unsafe fn cmd_kill_session_exec(
             wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
             wl = winlinks_next(wl.get_unchecked());
         }
-        server_redraw_session(&*(s));
+        server_redraw_session(&source);
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
         return cmd_kill_session_all(item_handle, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
@@ -87,7 +86,6 @@ unsafe fn cmd_kill_session_exec(
         !sg.is_null()
     } {
         for session_owner in crate::src::session::session_group_members(sg) {
-            let _sloop = session_owner.get();
             server_destroy_session(&session_owner);
             session_destroy(
                 &session_owner,
@@ -110,21 +108,17 @@ unsafe fn cmd_kill_session_all(
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> =
+        (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
+    let mut sloop: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut sloop_owner = sessions_minmax(&sessions);
-    sloop = sloop_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !sloop.is_null() {
-        let name = sessions_key(&*sloop);
-        if !(sloop == s) {
+    sloop = sloop_owner.clone();
+    while !sloop.is_none() {
+        let name = sloop.as_ref().expect("live session").name().into_bytes();
+        if !(crate::src::shared::rc::same(sloop.as_ref(), s.as_ref())) {
             if !(cmd_kill_session_filter(
                 item_handle,
-                &(*(sloop)).observer.upgrade().expect("live session"),
+                sloop.as_ref().expect("live session"),
                 filter,
             ) == 0)
             {
@@ -137,9 +131,7 @@ unsafe fn cmd_kill_session_all(
             }
         }
         sloop_owner = sessions_after(&sessions, &name);
-        sloop = sloop_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        sloop = sloop_owner.clone();
     }
     return CMD_RETURN_NORMAL;
 }
@@ -149,7 +141,7 @@ unsafe fn cmd_kill_session_filter(
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let item = item_handle.get();
-    let _s = s_owner.get();
+
     let queue_client = cmdq_get_client((item).as_ref());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;

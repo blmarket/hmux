@@ -2,8 +2,8 @@ use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::paste::paste_walk;
 use crate::src::server::clients;
 use crate::src::session::sessions;
+use crate::src::session::sessions_minmax;
 use crate::src::session::Session;
-use crate::src::session::{sessions_minmax, sessions_next};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
@@ -441,10 +441,7 @@ pub unsafe fn sort_get_panes_window(
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::Weak<winlink>> {
     let mut links = Vec::new();
     let mut s_owner = sessions_minmax(&sessions);
-    let mut s = s_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    while !s.is_null() {
+    while s_owner.is_some() {
         let mut wl = s_owner
             .as_ref()
             .expect("session traversal owner")
@@ -453,10 +450,7 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::We
             links.push(wl.clone());
             wl = winlinks_next(wl.get_unchecked());
         }
-        s_owner = sessions_next(&*s);
-        s = s_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s_owner = s_owner.as_ref().expect("live session").next_session();
     }
     sort_by_criteria(&mut links, &*sort_crit, |a, b, criteria| unsafe {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)

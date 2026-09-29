@@ -21,6 +21,7 @@ use crate::src::options::{
 };
 use crate::src::popup::{popup_display, popup_modify, popup_present};
 use crate::src::server_client::{server_client_clear_overlay, server_client_get_cwd};
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
@@ -150,10 +151,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: *mut session = (*tc)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*tc).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
@@ -225,10 +223,15 @@ unsafe fn cmd_display_menu_get_popup_pos(
         } else {
             top = 0 as ::core::ffi::c_int;
         }
-        position = options_get_number(
-            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-            b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as u_int;
+        position = s
+            .as_ref()
+            .expect("live session")
+            .with_options_mut(|options| {
+                options_get_number(
+                    options,
+                    b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
+                )
+            }) as u_int;
         line = 0 as u_int;
         while line < lines {
             ranges = &raw mut (*(&raw mut (*tc).status.entries as *mut style_line_entry)
@@ -565,10 +568,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: *mut session = (*tc)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*tc).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut window: *mut window = (*target)
         .window_handle()
@@ -645,10 +645,15 @@ unsafe fn cmd_display_menu_get_menu_pos(
         |out| write!(out, "{}", ((*window).menu_last_py.wrapping_add(h)) as u32),
     );
     lines = status_line_size(&*tc);
-    position = options_get_number(
-        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
+    position = s
+        .as_ref()
+        .expect("live session")
+        .with_options_mut(|options| {
+            options_get_number(
+                options,
+                b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+        }) as u_int;
     if status_at_line(&*tc) != -(1 as ::core::ffi::c_int) && lines != 0 as u_int {
         line = 0 as u_int;
         while line < lines {
@@ -969,11 +974,10 @@ unsafe fn cmd_display_menu_exec(
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
     let o = options_owner_ptr(
-        &mut (*((*(*target)
+        &mut (*((*target)
             .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .current_winlink())
+            .expect("live session")
+            .current_winlink())
         .get_unchecked()
         .window_handle()
         .as_ref()
@@ -1109,15 +1113,15 @@ unsafe fn cmd_display_popup_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
+    let mut shellcmd_session_value: Option<std::ffi::CString> = None;
+    let mut shell_session_value: Option<std::ffi::CString> = None;
+
     let item = item_handle.get();
     let mut current_block: u64;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: *mut client = tc_owner
         .as_ref()
@@ -1148,7 +1152,7 @@ unsafe fn cmd_display_popup_exec(
     let mut count: u_int = args_count(args);
     let mut env: Option<Box<environ>> = None;
     let mut o: *mut options = options_owner_ptr(
-        &mut (*((*s).current_winlink())
+        &mut (*(s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()
@@ -1250,23 +1254,28 @@ unsafe fn cmd_display_popup_exec(
                                     .expect("formatted cwd was set")
                                     .as_ptr();
                             } else {
-                                default_cwd = server_client_get_cwd(
-                                    tc.as_ref(),
-                                    s.as_ref()
-                                        .and_then(|model| model.observer.upgrade())
-                                        .as_ref(),
-                                );
+                                default_cwd = server_client_get_cwd(tc.as_ref(), s.as_ref());
                                 cwd = default_cwd
                                     .as_ref()
                                     .expect("default cwd was copied")
                                     .as_ptr();
                             }
                             if count == 0 as u_int {
-                                shellcmd = options_get_string(
-                                    options_owner_ptr(&mut (*s).options)
-                                        .map_or(std::ptr::null_mut(), |options| options),
-                                    b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                shellcmd_session_value =
+                                    Some(s.as_ref().expect("live session").with_options_mut(
+                                        |options| {
+                                            std::ffi::CStr::from_ptr(options_get_string(
+                                                options,
+                                                b"default-command\0" as *const u8
+                                                    as *const ::core::ffi::c_char,
+                                            ))
+                                            .to_owned()
+                                        },
+                                    ));
+                                shellcmd = shellcmd_session_value
+                                    .as_ref()
+                                    .expect("option snapshot")
+                                    .as_ptr();
                             } else if count == 1 as u_int {
                                 shellcmd = args_string(&mut *(args), 0 as u_int)
                                     .map_or(std::ptr::null(), |value| value.as_ptr());
@@ -1276,11 +1285,21 @@ unsafe fn cmd_display_popup_exec(
                                     || *shellcmd as ::core::ffi::c_int == '\0' as i32)
                             {
                                 shellcmd = ::core::ptr::null::<::core::ffi::c_char>();
-                                shell = options_get_string(
-                                    options_owner_ptr(&mut (*s).options)
-                                        .map_or(std::ptr::null_mut(), |options| options),
-                                    b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
-                                );
+                                shell_session_value =
+                                    Some(s.as_ref().expect("live session").with_options_mut(
+                                        |options| {
+                                            std::ffi::CStr::from_ptr(options_get_string(
+                                                options,
+                                                b"default-shell\0" as *const u8
+                                                    as *const ::core::ffi::c_char,
+                                            ))
+                                            .to_owned()
+                                        },
+                                    ));
+                                shell = shell_session_value
+                                    .as_ref()
+                                    .expect("option snapshot")
+                                    .as_ptr();
                                 if checkshell(shell) == 0 {
                                     shell = _PATH_BSHELL.as_ptr();
                                 }
@@ -1397,9 +1416,7 @@ unsafe fn cmd_display_popup_exec(
                         cwd,
                         title,
                         &(*(tc)).observer.upgrade().expect("live client"),
-                        (s).as_ref()
-                            .and_then(|model| model.observer.upgrade())
-                            .as_ref(),
+                        s.as_ref(),
                         style,
                         border_style,
                     ) != 0 as ::core::ffi::c_int)

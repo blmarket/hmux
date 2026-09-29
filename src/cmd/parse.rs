@@ -194,13 +194,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
                     .as_ref()
                     .and_then(|model| model.observer.upgrade())
                     .as_ref(),
-                ((*fsp)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+                (*fsp).session_handle().as_ref(),
                 ((*fsp).winlink_handle()).clone(),
                 ((*fsp)
                     .pane_handle()

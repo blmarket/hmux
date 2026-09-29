@@ -14,6 +14,7 @@ use crate::src::prompt_history::prompt_load_history;
 use crate::src::server::clients;
 use crate::src::session::sessions;
 use crate::src::session::sessions_minmax;
+use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
@@ -316,7 +317,7 @@ pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<c
     });
 }
 pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s = s_owner.cloned();
     let mut registry_c_owner = clients.first();
     let mut c: *mut client = registry_c_owner
         .as_ref()
@@ -334,23 +335,18 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell
             });
         });
     } else {
-        if s.is_null() {
+        if s.is_none() {
             if !c.is_null() && !(*c).session_handle().is_none() {
-                s = (*c)
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get());
+                s = (*c).session_handle();
             } else {
                 let mut s_owner = sessions_minmax(&sessions);
-                s = s_owner
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+                s = s_owner;
             }
         }
-        if s.is_null() || (*s).attached == 0 as u_int {
+        if s.is_none() || !s.as_ref().expect("live session").is_attached() {
             return;
         }
-        wp = (*((*s).current_winlink())
+        wp = (*(s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref()

@@ -25,6 +25,7 @@ use crate::src::server_client::server_client_remove_pane;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_window, server_redraw_window_borders,
 };
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
@@ -141,10 +142,7 @@ unsafe fn cmd_split_window_exec(
     let mut tc: *mut client = tc_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut w: *mut window = wl
         .get_unchecked()
@@ -290,7 +288,7 @@ unsafe fn cmd_split_window_exec(
         }
     }
     sc.item = (*item).observer.clone();
-    sc.s = (*s).observer.clone();
+    sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
     sc.wp0 = (*wp).observer.clone();
     argv_owner = args_to_vector(&*args);
@@ -589,7 +587,7 @@ unsafe fn cmd_split_window_exec(
                                                     })),
                                             );
                                         }
-                                        server_redraw_session(&*(s));
+                                        server_redraw_session(s.as_ref().expect("live session"));
                                         if args_has(args, 'M' as i32 as u_char) != 0
                                             && is_floating != 0
                                         {
@@ -618,9 +616,7 @@ unsafe fn cmd_split_window_exec(
                                                 (tc).as_ref()
                                                     .and_then(|model| model.observer.upgrade())
                                                     .as_ref(),
-                                                (s).as_ref()
-                                                    .and_then(|model| model.observer.upgrade())
-                                                    .as_ref(),
+                                                s.as_ref(),
                                                 wl.clone(),
                                                 (new_wp)
                                                     .as_ref()
@@ -641,9 +637,7 @@ unsafe fn cmd_split_window_exec(
                                             0 as ::core::ffi::c_int,
                                         );
                                         cmdq_insert_hook(
-                                            (s).as_ref()
-                                                .and_then(|model| model.observer.upgrade())
-                                                .as_ref(),
+                                            s.as_ref(),
                                             item_handle,
                                             &raw mut fs,
                                             |out| out.write_all(b"after-split-window"),

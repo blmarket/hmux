@@ -4,6 +4,58 @@ The four traits are still being migrated. A passing test suite is not evidence
 that every external projection has been removed. The compiled trait definitions
 are authoritative; `trait-models.md` describes the original adapter design.
 
+## Session visibility checkpoint (partial)
+
+`session.rs` is now `session/mod.rs`. Session state and methods that expose a
+whole Session reference are private to that module, **except `options`**, which
+remains explicitly `pub(crate)` while its pointer consumers are migrated. This
+exception is visible in the model and in the boundary test; it is not a new
+pointer-returning trait adapter. This checkpoint does not complete Session or
+the four-model migration.
+
+Command target lookup, selection/ranking, registry traversal, identity checks,
+status notifications and history/index operations use retained holders and
+Session operations. Target setters accept holders and derive Weak identity
+without projecting storage. Shifting indices and removing a replacement link
+are operations rather than mutable index or whole-model accessors.
+
+Option number reads finish within a component scope. Strings used by jobs,
+copy mode, menus and title formatting are owned snapshots. The client key-table
+helper now returns an owned string. Prompt/style evaluation releases option
+access before format callbacks and revisits the original inherited entry to
+publish the parsed cache. Status rendering likewise preserves the original
+entry's parent depth while copying each line before expansion. No RefCell
+conversion or per-field RefCell was introduced.
+
+New tests lock field/helper visibility and verify stable winlink identity,
+history ordering, and reentrant notification state during replacement: unlink
+notification, alert/history clearing, window release, then current-link clearing.
+The style callback test now checks that a simulated whole-model RefCell borrow
+has ended before reentry. Tests that exercise private Session index ownership
+live inside Session; other modules use small, cfg(test)-only fixture operations.
+Production helper bodies were not moved into Session merely to exempt them.
+
+A fresh Session-only private-field probe reports eight external diagnostics:
+five in customization, two in options-scope selection and one in hook insertion.
+There is also one follow-up inference error in the probe, so eight is an
+inventory count, not proof of exactly eight independent changes. These consumers
+retain options/entry pointers through later operations or callbacks. Completing
+them requires target identity plus bounded component access, with snapshots or
+reacquisition around formatting, editing and hook delivery. Their direct access
+remains visible; wrapping it in a raw-pointer trait method would not solve it.
+The broader non-Session boundaries remain unfinished.
+
+Validation for this checkpoint:
+
+- `cargo test --workspace`: 771 passed, none failed or ignored.
+- Python boundary inventory unit tests: 4 passed.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- Isolated daemon smoke test: session/window creation, ambiguous and glob targets,
+  linking/replacement, insertion with index shifting, rename/selection, options,
+  environment and destruction with a shared window. The test server was stopped.
+- Default Clippy still fails at the pre-existing `mut_from_ref` denial in
+  `hmux-refbox/src/internals.rs:161`; `-- --cap-lints warn` completes with warnings.
+
 ## Session environment
 
 Session owns its environment field. Consumers use associated borrow types so a
@@ -87,14 +139,14 @@ helpers are not exempt from Pane boundaries, or vice versa. This conservative
 inventory is intentionally nonzero while migration remains incomplete; there is
 no baseline allowlist silently accepting the remaining field accesses.
 
-The latest all-model probe still reports 3,271 candidate external field accesses:
+The previous checkpoint's all-model probe reported 3,271 candidate external field accesses:
 287 Session, 821 Window, 1,341 WindowPane and 822 Client. Five additional type
 inference errors in the private-field probe mean these counts are not an
 exhaustive proof. They count field-access diagnostics, not independent changes.
 The full migration is not complete. Remaining work includes:
 
-- Session identity observers, options ownership, mutable winlink/index operations,
-  and helpers still accepting `&session`.
+- Session options ownership and pointers retained by option selectors,
+  customization and hook insertion (see the newer visibility checkpoint above).
 - Window layout/scene state and cross-model legacy helpers.
 - Pane base/current-screen pointers, input/parser and mode state, output paths.
 - Client terminal/status/prompt state and other control-mode helpers.
@@ -105,7 +157,7 @@ Those paths need actual component borrow lifetimes and callback restructuring;
 a pointer-returning adapter or a source-file move would not finish them. No
 RefCell conversion or per-field RefCell has been made in these checkpoints.
 
-Validation at this checkpoint:
+Validation at the previous checkpoint:
 
 - `cargo fmt --all -- --check` and `git diff --check`.
 - `cargo test --workspace`: 768 passed, none failed or ignored.

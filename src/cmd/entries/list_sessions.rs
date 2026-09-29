@@ -114,10 +114,7 @@ unsafe fn cmd_list_sessions_exec(
             (c).as_ref()
                 .and_then(|model| model.observer.upgrade())
                 .as_ref(),
-            (l[i as usize].get())
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            Some(&l[i as usize]),
             (refbox::Weak::new()).clone(),
             None,
         );

@@ -105,85 +105,62 @@ fn prompt_write_flags(
     }
     Ok(())
 }
-pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&mut session>) {
-    let oo = s.map_or(global_s_options, |s| {
-        options_owner_ptr(&mut s.options).map_or(std::ptr::null_mut(), |options| options)
-    });
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
+pub unsafe fn prompt_set_options(
+    pd: &mut prompt_create_data<'_>,
+    session: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+) {
+    use crate::src::session::Session;
+    let mut access = |visit: &mut dyn FnMut(&mut options)| {
+        if let Some(session) = session {
+            session.with_options_mut(visit);
+        } else {
+            visit(&mut *global_s_options);
+        }
     };
-    let mut n: u_int = 0;
-    style_apply(
-        &raw mut pd.style,
-        oo,
-        b"message-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
+    let read_string = |key: &CStr| {
+        if let Some(session) = session {
+            session.with_options_mut(|options| {
+                CStr::from_ptr(options_get_string(options, key.as_ptr())).to_owned()
+            })
+        } else {
+            CStr::from_ptr(options_get_string(global_s_options, key.as_ptr())).to_owned()
+        }
+    };
+    let read_number = |key: &CStr| {
+        if let Some(session) = session {
+            session.with_options_mut(|options| options_get_number(options, key.as_ptr()))
+        } else {
+            options_get_number(global_s_options, key.as_ptr())
+        }
+    };
+    use crate::src::style::style_apply_with_options;
+    style_apply_with_options(&mut pd.style, c"message-style", None, &mut access);
+    style_apply_with_options(
+        &mut pd.command_style,
+        c"message-command-style",
+        None,
+        &mut access,
     );
-    style_apply(
-        &raw mut pd.command_style,
-        oo,
-        b"message-command-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
+    pd.style_str = read_string(c"message-style");
+    pd.command_style_str = read_string(c"message-command-style");
+    screen_set_cursor_style(
+        read_number(c"prompt-cursor-style") as u_int,
+        &mut pd.cstyle,
+        &mut pd.cmode,
     );
-    pd.style_str = CStr::from_ptr(options_get_string(
-        oo,
-        b"message-style\0" as *const u8 as *const ::core::ffi::c_char,
-    ))
-    .to_owned();
-    pd.command_style_str = CStr::from_ptr(options_get_string(
-        oo,
-        b"message-command-style\0" as *const u8 as *const ::core::ffi::c_char,
-    ))
-    .to_owned();
-    n = options_get_number(
-        oo,
-        b"prompt-cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
-    screen_set_cursor_style(n, &mut pd.cstyle, &mut pd.cmode);
-    n = options_get_number(
-        oo,
-        b"prompt-command-cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as u_int;
-    screen_set_cursor_style(n, &mut pd.command_cstyle, &mut pd.command_cmode);
-    style_apply(
-        &raw mut gc,
-        oo,
-        b"prompt-cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
+    screen_set_cursor_style(
+        read_number(c"prompt-command-cursor-style") as u_int,
+        &mut pd.command_cstyle,
+        &mut pd.command_cmode,
     );
+    let mut gc = grid_cell::default();
+    style_apply_with_options(&mut gc, c"prompt-cursor-colour", None, &mut access);
     pd.ccolour = gc.fg;
-    style_apply(
-        &raw mut gc,
-        oo,
-        b"prompt-command-cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut gc, c"prompt-command-cursor-colour", None, &mut access);
     pd.command_ccolour = gc.fg;
-    pd.message_format = CStr::from_ptr(options_get_string(
-        oo,
-        b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
-    ))
-    .to_owned();
-    pd.keys = options_get_number(
-        oo,
-        b"status-keys\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
-    pd.word_separators = CStr::from_ptr(options_get_string(
-        oo,
-        b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
-    ))
-    .to_owned();
+    pd.message_format = read_string(c"message-format");
+    pd.keys = read_number(c"status-keys") as i32;
+    pd.word_separators = read_string(c"word-separators");
 }
 pub unsafe fn prompt_create(
     pd: prompt_create_data<'_>,
@@ -204,12 +181,7 @@ pub unsafe fn prompt_create(
         format_create_defaults(
             None,
             None,
-            (fs.session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+            fs.session_handle().as_ref(),
             (fs.winlink_handle()).clone(),
             (fs.pane_handle()
                 .as_ref()

@@ -31,6 +31,29 @@ pub unsafe fn style_apply_with_options(
         Some(context) => context,
         None => owned_context.insert(format_create(None, None, 0, FORMAT_NOJOBS)),
     };
+    let parsed = style_resolve_with_options(key, Some(context), access)
+        .unwrap_or(crate::src::style::parsing::style_default);
+    if parsed.gc.fg != 8 {
+        cell.fg = parsed.gc.fg;
+    }
+    if parsed.gc.bg != 8 {
+        cell.bg = parsed.gc.bg;
+    }
+    if parsed.gc.us != 8 {
+        cell.us = parsed.gc.us;
+    }
+    cell.attr |= parsed.gc.attr;
+    if let Some(context) = owned_context {
+        format_free(context);
+    }
+}
+
+/// Resolve a style to a value, releasing option access before format evaluation.
+pub unsafe fn style_resolve_with_options(
+    key: &CStr,
+    context: Option<&mut format_tree>,
+    mut access: impl FnMut(&mut dyn FnMut(&mut options)),
+) -> Option<style> {
     let mut resolved: Option<Result<style, (usize, CString, bool, bool)>> = None;
     access(&mut |root| {
         let mut current = root;
@@ -67,7 +90,7 @@ pub unsafe fn style_apply_with_options(
         None => None,
         Some(Ok(style)) => Some(style),
         Some(Err((depth, value, colour, expand))) => {
-            let text = if expand {
+            let text = if let Some(context) = context.filter(|_| expand) {
                 format_expand_cstring(context, value.as_ptr())
             } else {
                 value
@@ -94,20 +117,7 @@ pub unsafe fn style_apply_with_options(
             parsed
         }
     };
-    let parsed = parsed.unwrap_or(crate::src::style::parsing::style_default);
-    if parsed.gc.fg != 8 {
-        cell.fg = parsed.gc.fg;
-    }
-    if parsed.gc.bg != 8 {
-        cell.bg = parsed.gc.bg;
-    }
-    if parsed.gc.us != 8 {
-        cell.us = parsed.gc.us;
-    }
-    cell.attr |= parsed.gc.attr;
-    if let Some(context) = owned_context {
-        format_free(context);
-    }
+    parsed
 }
 
 #[cfg(test)]
@@ -116,16 +126,20 @@ mod tests {
     use crate::src::format::format_add_owned_cb;
     use crate::src::options::{options_create, options_set_string};
     use crate::src::tmux::{global_options, global_s_options, global_w_options};
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::ptr::NonNull;
 
     thread_local! {
+        static MODEL_BORROW: RefCell<()> = const { RefCell::new(()) };
         static EVALUATING: Cell<(*mut options, *mut options, bool)> = const {
             Cell::new((std::ptr::null_mut(), std::ptr::null_mut(), false))
         };
     }
 
     fn shadow_during_expansion(_: NonNull<format_tree>) -> Option<CString> {
+        MODEL_BORROW.with(|model| {
+            let _reentrant = model.borrow_mut();
+        });
         EVALUATING.with(|slot| unsafe {
             let (parent, child, _) = slot.get();
             let entry = options_get_only_mut(&mut *parent, c"@style").unwrap();
@@ -166,7 +180,10 @@ mod tests {
             format_add_owned_cb(&mut *context, c"zz_scoped_style", shadow_during_expansion);
             let mut cell = grid_default_cell;
             style_apply_with_options(&mut cell, c"@style", Some(&mut context), |visit| {
-                visit(&mut *child_pointer)
+                MODEL_BORROW.with(|model| {
+                    let _guard = model.borrow_mut();
+                    visit(&mut *child_pointer);
+                });
             });
             assert!(EVALUATING.with(|slot| slot.get().2));
             assert_eq!(cell.fg, 1, "the in-flight inherited style resolves red");
@@ -180,7 +197,10 @@ mod tests {
                 "write parsed cache back to the originally resolved parent"
             );
             style_apply_with_options(&mut cell, c"@style", Some(&mut context), |visit| {
-                visit(&mut *child_pointer)
+                MODEL_BORROW.with(|model| {
+                    let _guard = model.borrow_mut();
+                    visit(&mut *child_pointer);
+                });
             });
             assert_eq!(
                 cell.fg, 4,

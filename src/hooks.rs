@@ -140,12 +140,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
             .as_ref()
             .and_then(|model| model.observer.upgrade())
             .as_ref(),
-        (fs.session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_ref()
-        .and_then(|model| model.observer.upgrade())
-        .as_ref(),
+        fs.session_handle().as_ref(),
         (fs.winlink_handle()).clone(),
         (fs.pane_handle()
             .as_ref()
@@ -503,9 +498,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let client_owner = change.c.upgrade();
     let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     let session_owner = change.s.upgrade();
-    let s = session_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), rc::as_ptr);
+    let s = session_owner.clone();
     let pane_owner = window_pane_upgrade(&change.wp);
     let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
     let mut fs: cmd_find_state = cmd_find_state {
@@ -549,10 +542,10 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
             &(*(wp)).observer.upgrade().expect("live window_pane"),
             0 as ::core::ffi::c_int,
         );
-    } else if !s.is_null() {
+    } else if !s.is_none() {
         cmd_find_from_session(
             &raw mut fs,
-            &(*(s)).observer.upgrade().expect("live session"),
+            &s.clone().expect("live session"),
             0 as ::core::ffi::c_int,
         );
     } else {
@@ -577,15 +570,15 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     if !c.is_null() {
         event_payload_set_client(&mut *ep, (*(c)).observer.upgrade().expect("live client"));
     }
-    if !s.is_null() {
+    if !s.is_none() {
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(s)).observer.upgrade().expect("live session"),
+            s.clone().expect("live session"),
         );
     }
     if wl.is_alive() {
-        if s.is_null() {
+        if s.is_none() {
             if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
                 event_payload_set_session(
                     &mut *ep,
@@ -648,7 +641,6 @@ pub unsafe fn hooks_monitor_add(
     mut fs: *mut cmd_find_state,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
 ) {
-    let _s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
     hooks_monitor_remove(oo, name);
@@ -760,8 +752,8 @@ mod CStrings_tests {
             let window_owner = window::new();
             let s = rc::as_ptr(&session_owner);
             let w = rc::as_ptr(&window_owner);
-            let mut wl = winlink_add(&raw mut (*s).windows, 2);
-            wl.get_mut_unchecked().session = (*s).observer.clone();
+            let mut wl = crate::src::session::test_support::add_link(&session_owner, 2);
+            wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);
             winlink_set_window(wl.clone(), &(*(w)).observer.upgrade().expect("live window"));
             let change = monitor_change {
                 name: c"test-monitor-unlink",
@@ -775,6 +767,7 @@ mod CStrings_tests {
             let observer = change.wl.clone();
             let calls = Rc::new(Cell::new(0));
             let called = calls.clone();
+            let callback_session = session_owner.clone();
             let sink = events_add_sink(
                 change.name,
                 Rc::new(move |_, payload| {
@@ -782,7 +775,7 @@ mod CStrings_tests {
                     assert!(payload.target_window.is_some());
                     assert!(payload.target_session.is_some());
                     assert!(!observer.is_borrowed());
-                    winlink_remove(&raw mut (*s).windows, wl.clone());
+                    crate::src::session::test_support::remove_link(&callback_session, wl.clone());
                     assert!(!observer.is_alive());
                     called.set(called.get() + 1);
                 }),

@@ -16,6 +16,7 @@ use crate::src::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
 use crate::src::session::session_set_current;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
@@ -100,7 +101,7 @@ unsafe fn cmd_new_window_exec(
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let session_owner = target.session_handle().expect("new-window target session");
-    let s = session_owner.get();
+    let s = Some(session_owner.clone());
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
     let mut new_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut idx: ::core::ffi::c_int = target.idx;
@@ -161,7 +162,10 @@ unsafe fn cmd_new_window_exec(
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
         if idx != -(1 as ::core::ffi::c_int) {
-            new_wl = winlink_find_by_index(&(*s).windows, idx);
+            new_wl = s
+                .as_ref()
+                .expect("live session")
+                .with_winlinks(|links| winlink_find_by_index(links, idx));
         } else if !wname.is_null() {
             let expanded = format_single_cstring(
                 Some(item_handle),
@@ -171,7 +175,10 @@ unsafe fn cmd_new_window_exec(
                 (refbox::Weak::new()).clone(),
                 None,
             );
-            wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+            wl = s
+                .as_ref()
+                .expect("live session")
+                .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
             while wl.is_alive() {
                 if !(strcmp(
                     (*wl.get_unchecked()
@@ -201,15 +208,13 @@ unsafe fn cmd_new_window_exec(
         if args_has(args, 'd' as i32 as u_char) != 0 {
             return CMD_RETURN_NORMAL;
         }
-        if session_set_current(
-            &(*s).observer.upgrade().expect("live session"),
-            (new_wl).clone(),
-        ) == 0 as ::core::ffi::c_int
+        if session_set_current(s.as_ref().expect("live session"), (new_wl).clone())
+            == 0 as ::core::ffi::c_int
         {
-            server_redraw_session(&*(s));
+            server_redraw_session(s.as_ref().expect("live session"));
         }
         if !c.is_null() && !(*c).session_handle().is_none() {
-            (*((*s).current_winlink())
+            (*(s.as_ref().expect("live session").current_winlink())
                 .get_unchecked()
                 .window_handle()
                 .as_ref()
@@ -229,7 +234,7 @@ unsafe fn cmd_new_window_exec(
         }
     }
     sc.item = std::rc::Rc::downgrade(item_handle);
-    sc.s = (*s).observer.clone();
+    sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.tc = tc_owner
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -276,15 +281,17 @@ unsafe fn cmd_new_window_exec(
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     } else {
-        if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).current_winlink() {
+        if args_has(args, 'd' as i32 as u_char) == 0
+            || new_wl == s.as_ref().expect("live session").current_winlink()
+        {
             cmd_find_from_winlink(
                 &mut *current.current.borrow_mut(),
                 (new_wl).clone(),
                 0 as ::core::ffi::c_int,
             );
-            server_redraw_session_group(&*(s));
+            server_redraw_session_group(s.as_ref().expect("live session"));
         } else {
-            server_status_session_group(&*(s));
+            server_status_session_group(s.as_ref().expect("live session"));
         }
         if args_has(args, 'P' as i32 as u_char) != 0 {
             template = args_get(&*(args), 'F' as i32 as u_char)

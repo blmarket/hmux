@@ -6,6 +6,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::options_set_number;
 use crate::src::resize::{default_window_size, recalculate_size};
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -59,10 +60,7 @@ unsafe fn cmd_resize_window_exec(
         .window_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s: *mut session = (*target)
-        .session_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;
     let mut sx: u_int = 0;
@@ -138,7 +136,7 @@ unsafe fn cmd_resize_window_exec(
     if args_has(args, 'A' as i32 as u_char) != 0 {
         default_window_size(
             None,
-            &(*(s)).observer.upgrade().expect("live session"),
+            s.as_ref().expect("live session"),
             (w).as_ref()
                 .and_then(|model| model.observer.upgrade())
                 .as_ref(),
@@ -151,7 +149,7 @@ unsafe fn cmd_resize_window_exec(
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
         default_window_size(
             None,
-            &(*(s)).observer.upgrade().expect("live session"),
+            s.as_ref().expect("live session"),
             (w).as_ref()
                 .and_then(|model| model.observer.upgrade())
                 .as_ref(),

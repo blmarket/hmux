@@ -82,6 +82,7 @@ use crate::src::ffi::libc::{strchr, strcmp, strlcat, strlcpy, strlen, strncmp};
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::{options_array_item_value, options_get_only};
 use crate::src::session::session_find_by_id;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::ArgumentValue;
 use crate::src::shared::arguments::*;
@@ -658,7 +659,7 @@ pub unsafe fn cmd_mouse_window(
     mut m: *mut mouse_event,
     sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
 ) -> refbox::Weak<winlink> {
-    let mut s: *mut session = ::core::ptr::null_mut::<session>();
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if (*m).valid == 0 {
@@ -670,9 +671,9 @@ pub unsafe fn cmd_mouse_window(
     let Some(session_owner) = session_find_by_id((*m).s as u_int) else {
         return refbox::Weak::new();
     };
-    s = session_owner.get();
+    s = Some(session_owner.clone());
     if (*m).w == -(1 as ::core::ffi::c_int) {
-        wl = (*s).current_winlink();
+        wl = s.as_ref().expect("live session").current_winlink();
     } else {
         let window_owner = window_find_by_id((*m).w as u_int);
         w = window_owner
@@ -681,10 +682,9 @@ pub unsafe fn cmd_mouse_window(
         if w.is_null() {
             return refbox::Weak::new();
         }
-        wl = winlink_find_by_window(
-            &(*s).windows,
-            &(*(w)).observer.upgrade().expect("live window"),
-        );
+        wl = s.as_ref().expect("live session").with_winlinks(|links| {
+            winlink_find_by_window(links, &(*(w)).observer.upgrade().expect("live window"))
+        });
         if let Some(window) = window_owner {
             crate::src::window::window_remove_ref(window, c"cmd_mouse_window".as_ptr());
         }
