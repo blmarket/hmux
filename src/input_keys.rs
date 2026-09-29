@@ -25,8 +25,8 @@ use crate::src::shared::utf8::*;
 use crate::src::text::utf8::{utf8_to_data, utf8_towc};
 use crate::src::tmux::global_options;
 use crate::src::window::window_pane_is_visible;
-use std::ffi::{CStr, CString};
 use std::borrow::Cow;
+use std::ffi::{CStr, CString};
 
 #[derive(Clone)]
 #[repr(C)]
@@ -511,9 +511,10 @@ pub unsafe fn input_key_pane(
         }
         return 0 as ::core::ffi::c_int;
     }
-    return (*wp).event.with_ptr(|event| unsafe {
-        input_key((*wp).screen_ptr(), event, key)
-    }).unwrap_or(0);
+    return (*wp)
+        .event
+        .with_ptr(|event| unsafe { input_key((*wp).screen_ptr(), event, key) })
+        .unwrap_or(0);
 }
 unsafe fn input_key_write(
     mut from: *const ::core::ffi::c_char,
@@ -1002,7 +1003,10 @@ pub unsafe fn input_key_get_mouse(
     }
     Some(len)
 }
-unsafe fn input_key_mouse(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>, mut m: *mut mouse_event) {
+unsafe fn input_key_mouse(
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    mut m: *mut mouse_event,
+) {
     let wp = pane_owner.get();
     let mut s: *mut screen = (*wp).screen_ptr();
     let mut x: u_int = 0;

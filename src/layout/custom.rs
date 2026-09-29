@@ -6,8 +6,8 @@ use crate::src::json::{
 };
 use crate::src::layout::{
     layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
-    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_take_leaf, layout_make_leaf,
-    layout_print_cell, layout_replace_with_node, layout_set_size,
+    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_make_leaf, layout_print_cell,
+    layout_replace_with_node, layout_set_size, layout_take_leaf,
 };
 use crate::src::resize::recalculate_sizes;
 use crate::src::window::{
@@ -203,17 +203,39 @@ unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core
             return -1;
         };
         wp = pane_owner.get();
-        if wp == (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+        if wp
+            == (*(*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .active_pane()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+        {
             ls.extend_from_slice(b",\"a\":true");
-        } else if window_pane_last_index(&*wp).map(|value| { i = value; }).is_some() {
+        } else if window_pane_last_index(&*wp)
+            .map(|value| {
+                i = value;
+            })
+            .is_some()
+        {
             ls.extend_from_slice(format!(",\"l\":{}", i).as_bytes());
         }
-        if !window_pane_index(&*wp).map(|value| { i = value; }).is_some() {
+        if !window_pane_index(&*wp)
+            .map(|value| {
+                i = value;
+            })
+            .is_some()
+        {
             return -(1 as ::core::ffi::c_int);
         }
         ls.extend_from_slice(format!(",\"i\":{}", i).as_bytes());
         if (*lc).flags & LAYOUT_CELL_FLOATING != 0
-            && window_pane_zindex(&*wp).map(|value| { i = value; }).is_some()
+            && window_pane_zindex(&*wp)
+                .map(|value| {
+                    i = value;
+                })
+                .is_some()
         {
             ls.extend_from_slice(format!(",\"z\":{}", i).as_bytes());
         }
@@ -302,7 +324,7 @@ unsafe fn layout_custom_copy_layout(lc: *mut layout_cell) -> Option<Box<layout_c
             }
             child = layout_cell_next(child);
         }
-        match owner.cells.children.len() {
+        match owner.cells.len() {
             0 => return None,
             1 => return layout_cells_remove(copy, layout_cells_first(&owner)),
             _ => {}
@@ -353,7 +375,12 @@ unsafe fn layout_append(
             return -(1 as ::core::ffi::c_int);
         }
         let mut lccompat = layout_custom_create_compat(lcroot);
-        result = layout_append_v1(lccompat.as_deref_mut().map_or(std::ptr::null_mut(), |root| root), ls);
+        result = layout_append_v1(
+            lccompat
+                .as_deref_mut()
+                .map_or(std::ptr::null_mut(), |root| root),
+            ls,
+        );
         layout_custom_free_compat(lccompat);
     } else {
         result = layout_append_v2(lcroot, ls);
@@ -438,12 +465,21 @@ pub unsafe fn layout_parse(
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
     npanes = window_count_panes(&*w, with_floating);
     if npanes == 0 as u_int {
-        layout_format_cause!(pctx.cause.as_deref_mut(), "window @{} has no panes", (*w).id,);
+        layout_format_cause!(
+            pctx.cause.as_deref_mut(),
+            "window @{} has no panes",
+            (*w).id,
+        );
     } else {
         loop {
             ncells = layout_count_cells(pctx.root_ptr(), with_floating);
             if npanes > ncells {
-                layout_format_cause!(pctx.cause.as_deref_mut(), "have {} panes but need {}", npanes, ncells,);
+                layout_format_cause!(
+                    pctx.cause.as_deref_mut(),
+                    "have {} panes but need {}",
+                    npanes,
+                    ncells,
+                );
                 current_block = 4277046812173491162;
                 break;
             } else {
@@ -463,11 +499,7 @@ pub unsafe fn layout_parse(
                     current_block = 4277046812173491162;
                     break;
                 } else {
-                    layout_destroy_cell(
-                        Some(w_owner),
-                        lcchild,
-                        &mut pctx.root,
-                    );
+                    layout_destroy_cell(Some(w_owner), lcchild, &mut pctx.root);
                 }
             }
         }
@@ -535,14 +567,21 @@ pub unsafe fn layout_parse(
                     }
                     let mut floating = Vec::new();
                     if pctx.version == 1 as int64_t {
-                        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                        wp = window_pane_first(w.as_ref())
+                            .as_ref()
+                            .map_or(std::ptr::null_mut(), |owner| owner.get());
                         while !wp.is_null() {
                             if !(window_pane_is_floating(&*wp) == 0) {
                                 lcchild = (*wp).layout_cell as *mut layout_cell;
-                                floating.push(layout_cells_remove((*lcchild).parent, lcchild).expect("floating cell is owned"));
+                                floating.push(
+                                    layout_cells_remove((*lcchild).parent, lcchild)
+                                        .expect("floating cell is owned"),
+                                );
                                 (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
                             }
-                            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                            wp = window_pane_next(wp.as_ref())
+                                .as_ref()
+                                .map_or(std::ptr::null_mut(), |owner| owner.get());
                         }
                     }
                     drop((*w).layout_root.take());
@@ -576,11 +615,17 @@ pub unsafe fn layout_parse(
     layout_parse_free_ctx(&raw mut pctx);
     return -(1 as ::core::ffi::c_int);
 }
-unsafe fn layout_assign_from_ctx(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_assign_from_ctx(
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    mut pctx: *mut layout_parse_ctx,
+) {
     let mut w = w_owner.get();
     (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
     let panes = (*w).panes.snapshot();
-    assert!(panes.len() >= (*pctx).cctxs.len(), "layout requires enough live panes");
+    assert!(
+        panes.len() >= (*pctx).cctxs.len(),
+        "layout requires enough live panes"
+    );
     for (cctx, pane_owner) in (*pctx).cctxs.iter().zip(&panes) {
         layout_make_leaf(cctx.lc, pane_owner);
     }
@@ -611,7 +656,11 @@ unsafe fn layout_assign_fallback_tiled(
         _ => {}
     };
 }
-unsafe fn layout_assign_fallback(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut lcroot: *mut layout_cell, floating: &mut Vec<Box<layout_cell>>) {
+unsafe fn layout_assign_fallback(
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    mut lcroot: *mut layout_cell,
+    floating: &mut Vec<Box<layout_cell>>,
+) {
     let mut w = w_owner.get();
     let panes = (*w).panes.snapshot();
     layout_assign_fallback_tiled(&mut panes.iter().cloned(), lcroot);
@@ -629,12 +678,21 @@ unsafe fn layout_assign_fallback(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
         }
     }
 }
-unsafe fn layout_assign(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut pctx: *mut layout_parse_ctx, floating: &mut Vec<Box<layout_cell>>) {
+unsafe fn layout_assign(
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    mut pctx: *mut layout_parse_ctx,
+    floating: &mut Vec<Box<layout_cell>>,
+) {
     let mut w = w_owner.get();
     if !(*pctx).cctxs.is_empty() {
         layout_assign_from_ctx(w_owner, pctx);
     } else {
-        layout_assign_fallback(w_owner, (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root), floating);
+        layout_assign_fallback(
+            w_owner,
+            (*w).layout_root_ptr()
+                .map_or(std::ptr::null_mut(), |root| root),
+            floating,
+        );
     };
 }
 unsafe fn layout_construct_cell(
@@ -915,10 +973,7 @@ unsafe fn layout_construct(
             );
             return -(1 as ::core::ffi::c_int);
         }
-        (*pctx).root = layout_construct_v1(
-            &raw mut input,
-            0 as u_int,
-        );
+        (*pctx).root = layout_construct_v1(&raw mut input, 0 as u_int);
         if (*pctx).root.is_none() {
             layout_set_static_cause(
                 (*pctx).cause.as_deref_mut(),
@@ -968,7 +1023,10 @@ unsafe fn layout_construct(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn layout_parse_apply_ctx(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut pctx: *mut layout_parse_ctx) {
+unsafe fn layout_parse_apply_ctx(
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    mut pctx: *mut layout_parse_ctx,
+) {
     let mut w = w_owner.get();
     let mut wp: *mut window_pane;
     for pane_owner in (*w).z_index.snapshot() {
@@ -981,7 +1039,9 @@ unsafe fn layout_parse_apply_ctx(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
         .cctxs
         .sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
     for cctx in &(*pctx).cctxs {
-        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else { continue; };
+        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else {
+            continue;
+        };
         wp = pane_owner.get();
         if window_pane_is_floating(&*wp) != 0 {
             window_pane_z_insert_front(&mut *w, &*wp);
@@ -990,21 +1050,37 @@ unsafe fn layout_parse_apply_ctx(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
     for cctx in &(*pctx).cctxs {
         if cctx.active == 1 as ::core::ffi::c_int {
             if let Some(pane_owner) = (*cctx.lc).wp.upgrade() {
-                window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &pane_owner, 1 as ::core::ffi::c_int);
+                window_set_active_pane(
+                    &(*(w)).observer.upgrade().expect("live window"),
+                    &pane_owner,
+                    1 as ::core::ffi::c_int,
+                );
             }
             break;
         }
     }
     while let Some(pane_owner) = window_pane_stack_first(w.as_ref()) {
         wp = pane_owner.get();
-        window_pane_stack_remove(&raw mut (*w).last_panes, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        window_pane_stack_remove(
+            &raw mut (*w).last_panes,
+            (wp).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
     }
     (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));
     for cctx in &(*pctx).cctxs {
-        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else { continue; };
+        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else {
+            continue;
+        };
         wp = pane_owner.get();
         if !(cctx.last < 0 as ::core::ffi::c_int || cctx.active == 1 as ::core::ffi::c_int) {
-            window_pane_stack_push(&raw mut (*w).last_panes, (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            window_pane_stack_push(
+                &raw mut (*w).last_panes,
+                (wp).as_ref()
+                    .and_then(|model| model.observer.upgrade())
+                    .as_ref(),
+            );
         }
     }
 }

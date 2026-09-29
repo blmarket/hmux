@@ -3,7 +3,7 @@ use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_flags, cmdq_get_target,
+    cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target,
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
@@ -107,16 +107,24 @@ pub static cmd_has_session_entry: cmd_entry = {
         exec: Some(cmd_new_session_exec),
     }
 };
-unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_new_session_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let queue_client_ptr = queue_client
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut as_0: *mut session = ::core::ptr::null_mut::<session>();
     let mut groupwith: *mut session = ::core::ptr::null_mut::<session>();
@@ -179,7 +187,10 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
         wp: Default::default(),
         idx: 0,
     };
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_has_session_entry) {
+    if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_has_session_entry,
+    ) {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 't' as i32 as u_char) != 0
@@ -195,7 +206,9 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
         let ename = format_single_cstring(
             Some(item_handle),
             tmp,
-            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (c).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
             None,
             (refbox::Weak::new()).clone(),
             None,
@@ -220,7 +233,9 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
         let ename = format_single_cstring(
             Some(item_handle),
             tmp,
-            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (c).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
             None,
             (refbox::Weak::new()).clone(),
             None,
@@ -249,9 +264,14 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
         10043043949733653460 => {
             if args_has(args, 'A' as i32 as u_char) != 0 {
                 if !sname.is_null() {
-                    as_0 = session_find(std::ffi::CStr::from_ptr(sname)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+                    as_0 = session_find(std::ffi::CStr::from_ptr(sname))
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
                 } else {
-                    as_0 = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                    as_0 = (*target)
+                        .session_handle()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get());
                 }
                 if !as_0.is_null() {
                     retval = cmd_attach_session(
@@ -260,23 +280,33 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                         args_has(args, 'D' as i32 as u_char),
                         args_has(args, 'X' as i32 as u_char),
                         0 as ::core::ffi::c_int,
-                        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+                        args_get(&*(args), 'c' as i32 as u_char)
+                            .map_or(std::ptr::null(), |value| value.as_ptr()),
                         args_has(args, 'E' as i32 as u_char),
-                        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+                        args_get(&*(args), 'f' as i32 as u_char)
+                            .map_or(std::ptr::null(), |value| value.as_ptr()),
                     );
                     return retval;
                 }
             }
-            if !sname.is_null() && !session_find(std::ffi::CStr::from_ptr(sname)).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr).is_null() {
+            if !sname.is_null()
+                && !session_find(std::ffi::CStr::from_ptr(sname))
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
+                    .is_null()
+            {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"duplicate session: ")?;
                     write_cstr(out, sname)
                 });
             } else {
-                group = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+                group = args_get(&*(args), 't' as i32 as u_char)
+                    .map_or(std::ptr::null(), |value| value.as_ptr());
                 if !group.is_null() {
                     groupwith_owner = (*target).s.upgrade();
-                    groupwith = groupwith_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                    groupwith = groupwith_owner
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get());
                     if groupwith.is_null() {
                         sg = session_group_find(group);
                     } else {
@@ -317,12 +347,15 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                         if !c.is_null() && !(*c).session_handle().is_none() {
                             already_attached = 1 as ::core::ffi::c_int;
                         }
-                        tmp = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+                        tmp = args_get(&*(args), 'c' as i32 as u_char)
+                            .map_or(std::ptr::null(), |value| value.as_ptr());
                         if !tmp.is_null() {
                             formatted_cwd = Some(format_single_cstring(
                                 Some(item_handle),
                                 tmp,
-                                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                                (c).as_ref()
+                                    .and_then(|model| model.observer.upgrade())
+                                    .as_ref(),
                                 None,
                                 (refbox::Weak::new()).clone(),
                                 None,
@@ -334,7 +367,9 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                         } else {
                             // session_create copies this borrowed cwd into session.
                             formatted_cwd = server_client_get_cwd(c.as_ref(), None);
-                            cwd = formatted_cwd.as_ref().map_or(std::ptr::null(), |value| value.as_ptr());
+                            cwd = formatted_cwd
+                                .as_ref()
+                                .map_or(std::ptr::null(), |value| value.as_ptr());
                         }
                         if detached == 0
                             && already_attached == 0
@@ -361,7 +396,9 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                             5193972633326621385 => {}
                             _ => {
                                 if detached == 0 && already_attached == 0 {
-                                    if let Err(open_error) = server_client_open(c_owner.as_ref().expect("terminal client")) {
+                                    if let Err(open_error) = server_client_open(
+                                        c_owner.as_ref().expect("terminal client"),
+                                    ) {
                                         cmdq_error(item_handle, |out| {
                                             out.write_all(b"open terminal failed: ")?;
                                             out.write_all(open_error.as_bytes())
@@ -377,7 +414,8 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                     5193972633326621385 => {}
                                     _ => {
                                         if args_has(args, 'x' as i32 as u_char) != 0 {
-                                            tmp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+                                            tmp = args_get(&*(args), 'x' as i32 as u_char)
+                                                .map_or(std::ptr::null(), |value| value.as_ptr());
                                             if strcmp(
                                                 tmp,
                                                 b"-\0" as *const u8 as *const ::core::ffi::c_char,
@@ -415,7 +453,10 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                             5193972633326621385 => {}
                                             _ => {
                                                 if args_has(args, 'y' as i32 as u_char) != 0 {
-                                                    tmp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+                                                    tmp = args_get(&*(args), 'y' as i32 as u_char)
+                                                        .map_or(std::ptr::null(), |value| {
+                                                            value.as_ptr()
+                                                        });
                                                     if strcmp(
                                                         tmp,
                                                         b"-\0" as *const u8
@@ -519,7 +560,9 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                 dsy = sy;
                                                             }
                                                             options_set_string(
-                                                                &mut **oo.as_mut().expect("new session options"),
+                                                                &mut **oo
+                                                                    .as_mut()
+                                                                    .expect("new session options"),
                                                                 b"default-size\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
                                                                 0 as ::core::ffi::c_int,
@@ -558,24 +601,49 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                 0 as ::core::ffi::c_int,
                                                             );
                                                         }
-                                                        let session_owner = session_create(prefix.as_deref(), (!sname.is_null()).then(|| CStr::from_ptr(sname)), CStr::from_ptr(cwd), env.take()
-                                                                .expect("new session environment"), oo.take(), tiop.as_ref());
+                                                        let session_owner = session_create(
+                                                            prefix.as_deref(),
+                                                            (!sname.is_null())
+                                                                .then(|| CStr::from_ptr(sname)),
+                                                            CStr::from_ptr(cwd),
+                                                            env.take()
+                                                                .expect("new session environment"),
+                                                            oo.take(),
+                                                            tiop.as_ref(),
+                                                        );
                                                         s = session_owner.get();
                                                         sc.item = (*item).observer.clone();
-                                                        sc.s = std::rc::Rc::downgrade(&session_owner);
+                                                        sc.s =
+                                                            std::rc::Rc::downgrade(&session_owner);
                                                         if detached == 0 {
-                                                            sc.tc = c_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+                                                            sc.tc = c_owner.as_ref().map_or_else(
+                                                                std::rc::Weak::new,
+                                                                std::rc::Rc::downgrade,
+                                                            );
                                                         }
-                                                        sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
+                                                        sc.name = (!wname.is_null()).then(|| {
+                                                            CStr::from_ptr(wname).to_owned()
+                                                        });
                                                         argv_owner = args_to_vector(&*args);
                                                         sc.argv = argv_owner;
                                                         sc.idx = -(1 as ::core::ffi::c_int);
-                                                        sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned);
+                                                        sc.cwd = args_get(
+                                                            &*(args),
+                                                            'c' as i32 as u_char,
+                                                        )
+                                                        .map(CStr::to_owned);
                                                         sc.flags = 0 as ::core::ffi::c_int;
-                                                        if !spawn_window(&raw mut sc, &raw mut cause).is_alive()
+                                                        if !spawn_window(
+                                                            &raw mut sc,
+                                                            &raw mut cause,
+                                                        )
+                                                        .is_alive()
                                                         {
                                                             session_destroy(
-                                                                &(*s).observer.upgrade().expect("live session"),
+                                                                &(*s)
+                                                                    .observer
+                                                                    .upgrade()
+                                                                    .expect("live session"),
                                                                 0 as ::core::ffi::c_int,
                                                                 b"cmd_new_session_exec\0"
                                                                     as *const u8
@@ -611,21 +679,36 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                         );
                                                                     }
                                                                 }
-                                                                session_group_add(sg, &session_owner);
-                                                                session_group_synchronize_to(&(*s).observer.upgrade().expect("live session"));
+                                                                session_group_add(
+                                                                    sg,
+                                                                    &session_owner,
+                                                                );
+                                                                session_group_synchronize_to(
+                                                                    &(*s)
+                                                                        .observer
+                                                                        .upgrade()
+                                                                        .expect("live session"),
+                                                                );
                                                                 session_select(
-                                                                    &(*s).observer.upgrade().expect("live session"),
+                                                                    &(*s)
+                                                                        .observer
+                                                                        .upgrade()
+                                                                        .expect("live session"),
                                                                     (winlinks_minmax(
                                                                         &(*s).windows,
                                                                         RB_NEGINF,
-                                                                    )).get_unchecked()
+                                                                    ))
+                                                                    .get_unchecked()
                                                                     .idx,
                                                                 );
                                                             }
                                                             events_fire_session(
                                                                 b"session-created\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
-                                                                (*(s)).observer.upgrade().expect("live session"),
+                                                                (*(s))
+                                                                    .observer
+                                                                    .upgrade()
+                                                                    .expect("live session"),
                                                             );
                                                             if detached == 0 {
                                                                 if args_has(
@@ -634,8 +717,18 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                 ) != 0
                                                                 {
                                                                     server_client_set_flags(
-                                                                        &(*(c)).observer.upgrade().expect("live client"),
-                                                                        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+                                                                        &(*(c))
+                                                                            .observer
+                                                                            .upgrade()
+                                                                            .expect("live client"),
+                                                                        args_get(
+                                                                            &*(args),
+                                                                            'f' as i32 as u_char,
+                                                                        )
+                                                                        .map_or(
+                                                                            std::ptr::null(),
+                                                                            |value| value.as_ptr(),
+                                                                        ),
                                                                     );
                                                                 }
                                                                 if already_attached == 0 {
@@ -651,16 +744,33 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                             0 as size_t,
                                                                         );
                                                                     }
-                                                                } else if !(*c).session_handle().is_none() {
-                                                                    (*c).last_session = (*c).session.clone();
+                                                                } else if !(*c)
+                                                                    .session_handle()
+                                                                    .is_none()
+                                                                {
+                                                                    (*c).last_session =
+                                                                        (*c).session.clone();
                                                                 }
-                                                                server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                                                                server_client_set_session(
+                                                                    &(*(c))
+                                                                        .observer
+                                                                        .upgrade()
+                                                                        .expect("live client"),
+                                                                    (s).as_ref()
+                                                                        .and_then(|model| {
+                                                                            model.observer.upgrade()
+                                                                        })
+                                                                        .as_ref(),
+                                                                );
                                                                 if !cmdq_get_flags(&*(item))
                                                                     & CMDQ_STATE_REPEAT
                                                                     != 0
                                                                 {
                                                                     server_client_set_key_table(
-                                                                        &(*(c)).observer.upgrade().expect("live client"),
+                                                                        &(*(c))
+                                                                            .observer
+                                                                            .upgrade()
+                                                                            .expect("live client"),
                                                                         ::core::ptr::null::<
                                                                             ::core::ffi::c_char,
                                                                         >(
@@ -671,7 +781,13 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                             if args_has(args, 'P' as i32 as u_char)
                                                                 != 0
                                                             {
-                                                                template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+                                                                template = args_get(
+                                                                    &*(args),
+                                                                    'F' as i32 as u_char,
+                                                                )
+                                                                .map_or(std::ptr::null(), |value| {
+                                                                    value.as_ptr()
+                                                                });
                                                                 if template.is_null() {
                                                                     template = NEW_SESSION_TEMPLATE
                                                                         .as_ptr();
@@ -679,9 +795,18 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                 let cp = format_single_cstring(
                                                                     Some(item_handle),
                                                                     template,
-                                                                    (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                                                                    (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                                                                    ((*s).current_winlink()).clone(),
+                                                                    (c).as_ref()
+                                                                        .and_then(|model| {
+                                                                            model.observer.upgrade()
+                                                                        })
+                                                                        .as_ref(),
+                                                                    (s).as_ref()
+                                                                        .and_then(|model| {
+                                                                            model.observer.upgrade()
+                                                                        })
+                                                                        .as_ref(),
+                                                                    ((*s).current_winlink())
+                                                                        .clone(),
                                                                     None,
                                                                 );
                                                                 cmdq_print(item_handle, |out| {
@@ -696,18 +821,30 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                 == 0
                                                             {
                                                                 cmd_find_from_session(
-                                                                    &mut *current.current.borrow_mut(),
-                                                                    &(*(s)).observer.upgrade().expect("live session"),
+                                                                    &mut *current
+                                                                        .current
+                                                                        .borrow_mut(),
+                                                                    &(*(s))
+                                                                        .observer
+                                                                        .upgrade()
+                                                                        .expect("live session"),
                                                                     0 as ::core::ffi::c_int,
                                                                 );
                                                             }
                                                             cmd_find_from_session(
                                                                 &raw mut fs,
-                                                                &(*(s)).observer.upgrade().expect("live session"),
+                                                                &(*(s))
+                                                                    .observer
+                                                                    .upgrade()
+                                                                    .expect("live session"),
                                                                 0 as ::core::ffi::c_int,
                                                             );
                                                             cmdq_insert_hook(
-                                                                (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                                                                (s).as_ref()
+                                                                    .and_then(|model| {
+                                                                        model.observer.upgrade()
+                                                                    })
+                                                                    .as_ref(),
                                                                 item_handle,
                                                                 &raw mut fs,
                                                                 |out| {
@@ -717,7 +854,13 @@ unsafe fn cmd_new_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                                                                 },
                                                             );
                                                             if cfg_finished != 0 {
-                                                                cfg_show_causes((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                                                                cfg_show_causes(
+                                                                    (s).as_ref()
+                                                                        .and_then(|model| {
+                                                                            model.observer.upgrade()
+                                                                        })
+                                                                        .as_ref(),
+                                                                );
                                                             }
                                                             return CMD_RETURN_NORMAL;
                                                         }

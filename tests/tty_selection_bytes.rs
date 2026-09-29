@@ -31,14 +31,16 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
             |_, _| {},
         );
         let capability = c"\x1b]52;%p1%s;%p2%s\x07";
-        terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] = tty_code::String(capability.to_owned());
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] =
+            tty_code::String(capability.to_owned());
         tty_set_selection(&raw mut terminal, c"c", b"ignored while stopped");
         assert!(evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).is_none());
         terminal.flags = TTY_STARTED;
         terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] = tty_code::None;
         tty_set_selection(&raw mut terminal, c"c", b"ignored without capability");
         assert!(evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).is_none());
-        terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] = tty_code::String(capability.to_owned());
+        terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] =
+            tty_code::String(capability.to_owned());
         for (selector, input, expected) in [
             (c"c", b"A\0B".as_slice(), b"\x1b]52;c;QQBC\x07".as_slice()),
             (c"", b"hi".as_slice(), b"\x1b]52;;aGk=\x07".as_slice()),

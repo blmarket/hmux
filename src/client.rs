@@ -51,8 +51,8 @@ use crate::src::shared::socket::{
 };
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
-    find_cwd, find_home_cstr, global_environ,
-    ptm_fd, setblocking, shell_argv0_cstring, shell_command, socket_path,
+    find_cwd, find_home_cstr, global_environ, ptm_fd, setblocking, shell_argv0_cstring,
+    shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
 use std::ffi::{CStr, CString};
@@ -82,7 +82,7 @@ static mut client_exitsession: Option<CString> = None;
 static mut client_exitmessage: Option<Vec<u8>> = None;
 static mut client_exec_payload: Option<(CString, CString)> = None;
 static mut client_attached: ::core::ffi::c_int = 0;
-static mut client_files: client_files = client_files::new();
+static mut client_files: client_files = None;
 unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut lockfd: ::core::ffi::c_int = 0;
     log_debug(format_args!(
@@ -439,7 +439,8 @@ pub unsafe fn client_main(
                 i += 1;
             }
             if size
-                > (MAX_IMSGSIZE as usize).wrapping_sub(::core::mem::size_of::<msg_command>() as usize)
+                > (MAX_IMSGSIZE as usize)
+                    .wrapping_sub(::core::mem::size_of::<msg_command>() as usize)
             {
                 fprintf(
                     stderr,
@@ -448,7 +449,8 @@ pub unsafe fn client_main(
                 return 1 as ::core::ffi::c_int;
             }
             const _: () = assert!(
-                ::core::mem::size_of::<msg_command>() == ::core::mem::size_of::<::core::ffi::c_int>()
+                ::core::mem::size_of::<msg_command>()
+                    == ::core::mem::size_of::<::core::ffi::c_int>()
             );
             let header_size = ::core::mem::size_of::<msg_command>();
             let mut data = vec![0u8; header_size + size];
@@ -480,7 +482,9 @@ pub unsafe fn client_main(
                 );
                 return 1 as ::core::ffi::c_int;
             }
-        } else if msg as ::core::ffi::c_uint == MSG_SHELL as ::core::ffi::c_int as ::core::ffi::c_uint {
+        } else if msg as ::core::ffi::c_uint
+            == MSG_SHELL as ::core::ffi::c_int as ::core::ffi::c_uint
+        {
             proc_send(
                 client_peer,
                 msg,

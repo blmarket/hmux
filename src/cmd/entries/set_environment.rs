@@ -38,13 +38,18 @@ pub static cmd_set_environment_entry: cmd_entry = {
         exec: Some(cmd_set_environment_exec),
     }
 };
-unsafe fn cmd_set_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_set_environment_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let env: &mut environ;
-    let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut name: *const ::core::ffi::c_char =
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut expanded: Option<std::ffi::CString> = None;
@@ -54,13 +59,16 @@ unsafe fn cmd_set_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: &
         return CMD_RETURN_ERROR;
     }
     if !strchr(name, '=' as i32).is_null() {
-        cmdq_error(item_handle, |out| out.write_all(b"variable name contains ="));
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"variable name contains =")
+        });
         return CMD_RETURN_ERROR;
     }
     if args_count(args) < 2 as u_int {
         value = ::core::ptr::null::<::core::ffi::c_char>();
     } else {
-        value = args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+        value =
+            args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     }
     if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
         expanded = Some(format_single_from_target_cstring(item_handle, value));
@@ -70,7 +78,8 @@ unsafe fn cmd_set_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: &
         env = global_environ.as_deref_mut().expect("environment");
         current_block = 224731115979188411;
     } else if (*target).session_handle().is_none() {
-        tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        tflag = args_get(&*(args), 't' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
         if !tflag.is_null() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"no such session: ")?;
@@ -81,21 +90,31 @@ unsafe fn cmd_set_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: &
         }
         return CMD_RETURN_ERROR;
     } else {
-        env = (*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).environ.as_deref_mut().expect("environment");
+        env = (*(*target)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .environ
+        .as_deref_mut()
+        .expect("environment");
         current_block = 224731115979188411;
     }
     match current_block {
         224731115979188411 => {
             if args_has(args, 'u' as i32 as u_char) != 0 {
                 if !value.is_null() {
-                    cmdq_error(item_handle, |out| out.write_all(b"can't specify a value with -u"));
+                    cmdq_error(item_handle, |out| {
+                        out.write_all(b"can't specify a value with -u")
+                    });
                     retval = CMD_RETURN_ERROR;
                 } else {
                     environ_unset(env, name);
                 }
             } else if args_has(args, 'r' as i32 as u_char) != 0 {
                 if !value.is_null() {
-                    cmdq_error(item_handle, |out| out.write_all(b"can't specify a value with -r"));
+                    cmdq_error(item_handle, |out| {
+                        out.write_all(b"can't specify a value with -r")
+                    });
                     retval = CMD_RETURN_ERROR;
                 } else {
                     environ_clear(env, name);

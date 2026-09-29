@@ -23,8 +23,8 @@ pub struct control_state {
 impl control_state {
     pub fn empty() -> Self {
         Self {
-            panes: control_panes { storage: Default::default() },
-            windows: control_windows { storage: Default::default() },
+            panes: Default::default(),
+            windows: Default::default(),
             queued_reply_bytes: Default::default(),
             read_event: Default::default(),
             write_event: Default::default(),
@@ -57,10 +57,7 @@ pub struct control_pane {
     pub blocks: VecDeque<refbox::Weak<control_block>>,
 }
 
-#[repr(C)]
-pub struct control_windows {
-    pub storage: std::collections::BTreeMap<u32, Box<control_window>>,
-}
+pub type control_windows = std::collections::BTreeMap<u32, Box<control_window>>;
 
 #[repr(C)]
 /// Owned by the control client's window-ID index.
@@ -70,8 +67,5 @@ pub struct control_window {
     pub sy: u_int,
 }
 
-#[repr(C)]
-pub struct control_panes {
-    /// The index owns each stable pane box.
-    pub storage: std::collections::BTreeMap<u32, Box<control_pane>>,
-}
+/// The index owns each stable pane box.
+pub type control_panes = std::collections::BTreeMap<u32, Box<control_pane>>;

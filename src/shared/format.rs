@@ -143,17 +143,12 @@ impl format_tree {
 
 // Jobs live in stable Rust allocations because process callbacks retain their addresses.
 // Keys own the original command bytes, ordered exactly like tag followed by strcmp.
-#[derive(Default)]
-pub struct format_job_tree {
-    pub(crate) entries: std::collections::BTreeMap<(u_int, Vec<u8>), Box<format_job>>,
-}
+
+pub type format_job_tree = std::collections::BTreeMap<(u_int, Vec<u8>), Box<format_job>>;
 
 /// Ordered owners for a format tree's heap-allocated entries.
 /// Keys retain the original C string bytes so ordering matches `strcmp`.
-#[derive(Default)]
-pub struct format_entry_tree {
-    pub(crate) entries: BTreeMap<Vec<u8>, Box<format_entry>>,
-}
+pub type format_entry_tree = BTreeMap<Vec<u8>, Box<format_entry>>;
 
 pub struct format_entry {
     pub key: std::ffi::CString,

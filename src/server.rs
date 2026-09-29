@@ -133,7 +133,13 @@ pub unsafe fn server_set_marked(
     marked_pane.set_s((s).as_ref());
     marked_pane.set_wl(wl.clone());
     if wl.is_alive() {
-        marked_pane.set_w((wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+        marked_pane.set_w(
+            (wl.get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .as_ref(),
+        );
     }
     marked_pane.set_wp((wp).as_ref());
 }
@@ -150,10 +156,21 @@ pub unsafe fn server_is_marked(
     if s.is_null() || !wl.is_alive() || wp.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || marked_pane.winlink_handle() != wl {
+    if marked_pane
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get())
+        != s
+        || marked_pane.winlink_handle() != wl
+    {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != wp {
+    if marked_pane
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get())
+        != wp
+    {
         return 0 as ::core::ffi::c_int;
     }
     return server_check_marked();
@@ -374,13 +391,18 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     loop {
         items = cmdq_next(None);
         let mut registry_c_owner = clients.first();
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         while !c.is_null() {
             if (*c).flags & CLIENT_IDENTIFIED as uint64_t != 0 {
                 items = items.wrapping_add(cmdq_next(registry_c_owner.as_ref()));
             }
-            registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-            c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            registry_c_owner =
+                clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            c = registry_c_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if !(items != 0 as u_int) {
             break;
@@ -405,13 +427,18 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
         }
     }
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session_handle().is_none() {
             return 0 as ::core::ffi::c_int;
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     cmd_wait_for_flush();
     if clients.first().is_some() {
@@ -438,7 +465,9 @@ unsafe fn server_send_exit() {
         (*c).set_session(None);
     }
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    s = s_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         let name = sessions_key(&*s);
         session_destroy(
@@ -447,7 +476,9 @@ unsafe fn server_send_exit() {
             b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
         );
         s_owner = sessions_after(&sessions, &name);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s = s_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
 }
 pub unsafe fn server_update_socket() {
@@ -483,14 +514,18 @@ pub unsafe fn server_update_socket() {
     };
     n = 0 as ::core::ffi::c_int;
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    s = s_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if (*s).attached != 0 as u_int {
             n += 1;
             break;
         } else {
             s_owner = sessions_next(&*s);
-            s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+            s = s_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         }
     }
     if n != last {
@@ -663,7 +698,9 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 (*wp).flags |= PANE_EXITED;
                 window_pane_wait_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
                 spawn_editor_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
-                if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
+                if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane"))
+                    != 0
+                {
                     server_destroy_pane(&pane_owner, 1);
                 }
                 break;
@@ -686,14 +723,18 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
-        wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_first(w.as_ref())
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
             if (*wp).pid == pid {
                 if killpg(pid as __pid_t, SIGCONT) != 0 as ::core::ffi::c_int {
                     kill(pid as __pid_t, SIGCONT);
                 }
             }
-            wp = window_pane_next(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = window_pane_next(wp.as_ref())
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         window_cursor = windows_next(&*w);
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());

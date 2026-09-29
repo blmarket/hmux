@@ -28,7 +28,10 @@ unsafe fn events_free_dead() {
     loop {
         let removed = {
             let sinks = &mut *(&raw mut events_sinks);
-            sinks.iter().position(|sink| sink.dead != 0).map(|index| sinks.remove(index))
+            sinks
+                .iter()
+                .position(|sink| sink.dead != 0)
+                .map(|index| sinks.remove(index))
         };
         let Some(owner) = removed else { break };
         drop(owner);
@@ -36,7 +39,9 @@ unsafe fn events_free_dead() {
 }
 pub unsafe fn events_add_sink(name: &CStr, cb: events_cb) -> EventSinkId {
     events_generation = events_generation.wrapping_add(1);
-    events_next_sink_id = events_next_sink_id.checked_add(1).expect("event sink IDs exhausted");
+    events_next_sink_id = events_next_sink_id
+        .checked_add(1)
+        .expect("event sink IDs exhausted");
     let id = EventSinkId(events_next_sink_id);
     let owner = Box::new(events_sink {
         id,
@@ -114,7 +119,10 @@ pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<even
     }
     drop(ep);
 }
-pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: std::rc::Rc<std::cell::UnsafeCell<client>>) {
+pub unsafe fn events_fire_client(
+    mut name: *const ::core::ffi::c_char,
+    owner: std::rc::Rc<std::cell::UnsafeCell<client>>,
+) {
     let c = owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -125,21 +133,39 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: st
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_client(&raw mut fs, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int);
+    cmd_find_from_client(
+        &raw mut fs,
+        (c).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+        0 as ::core::ffi::c_int,
+    );
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_client(&mut *ep, owner);
     if !fs.session_handle().is_none() {
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"),
+            (*(fs
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live session"),
         );
     }
     if !fs.window_handle().is_none() {
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+            (*(fs
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
         );
     }
     if fs.winlink_handle().is_alive() {
@@ -159,12 +185,21 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: st
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"),
+            (*(fs
+                .pane_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window_pane"),
         );
     }
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, owner: std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn events_fire_session(
+    mut name: *const ::core::ffi::c_char,
+    owner: std::rc::Rc<std::cell::UnsafeCell<session>>,
+) {
     let s = owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -176,7 +211,11 @@ pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, owner: s
     };
     let mut ep = event_payload_create();
     if session_alive(s.as_ref()) != 0 {
-        cmd_find_from_session(&raw mut fs, &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
+        cmd_find_from_session(
+            &raw mut fs,
+            &(*(s)).observer.upgrade().expect("live session"),
+            0 as ::core::ffi::c_int,
+        );
         event_payload_set_target(&mut *ep, &fs);
     }
     event_payload_set_session(
@@ -186,7 +225,10 @@ pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, owner: s
     );
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_window(mut name: *const ::core::ffi::c_char, owner: std::rc::Rc<std::cell::UnsafeCell<window>>) {
+pub unsafe fn events_fire_window(
+    mut name: *const ::core::ffi::c_char,
+    owner: std::rc::Rc<std::cell::UnsafeCell<window>>,
+) {
     let w = owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -197,7 +239,11 @@ pub unsafe fn events_fire_window(mut name: *const ::core::ffi::c_char, owner: st
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_window(&raw mut fs, &(*(w)).observer.upgrade().expect("live window"), 0 as ::core::ffi::c_int);
+    cmd_find_from_window(
+        &raw mut fs,
+        &(*(w)).observer.upgrade().expect("live window"),
+        0 as ::core::ffi::c_int,
+    );
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_window(
         &mut *ep,
@@ -206,7 +252,10 @@ pub unsafe fn events_fire_window(mut name: *const ::core::ffi::c_char, owner: st
     );
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+pub unsafe fn events_fire_pane(
+    mut name: *const ::core::ffi::c_char,
+    owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
     let wp = owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -217,7 +266,11 @@ pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, owner: std:
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(&raw mut fs, &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
+    cmd_find_from_pane(
+        &raw mut fs,
+        &(*(wp)).observer.upgrade().expect("live window_pane"),
+        0 as ::core::ffi::c_int,
+    );
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_pane(
         &mut *ep,
@@ -227,11 +280,20 @@ pub unsafe fn events_fire_pane(mut name: *const ::core::ffi::c_char, owner: std:
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+        (*((*wp)
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())))
+        .observer
+        .upgrade()
+        .expect("live window"),
     );
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: refbox::Weak<winlink>) {
+pub unsafe fn events_fire_winlink(
+    mut name: *const ::core::ffi::c_char,
+    mut wl: refbox::Weak<winlink>,
+) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -253,7 +315,14 @@ pub unsafe fn events_fire_winlink(mut name: *const ::core::ffi::c_char, mut wl: 
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+        (*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())))
+        .observer
+        .upgrade()
+        .expect("live window"),
     );
     event_payload_set_int(
         &mut *ep,

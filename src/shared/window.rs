@@ -37,14 +37,10 @@ pub const WINDOW_MODE_HIDE_PANE_STATUS: ::core::ffi::c_int = 0x1 as ::core::ffi:
 pub const WINDOW_MODE_NO_STACK: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 
-#[repr(C)]
-pub struct winlinks {
-    /// The session owns the index allocation. The index itself owns the
-    /// `RefBox` allocations for winlinks created by `winlink_add`.
-    pub storage: Option<
-        refbox::RefBox<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
-    >,
-}
+/// The session owns the index allocation. The index itself owns the
+/// `RefBox` allocations for winlinks created by `winlink_add`.
+pub type winlinks =
+    Option<refbox::RefBox<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>>;
 
 #[derive(Default)]
 #[repr(C)]
@@ -53,13 +49,9 @@ pub struct winlink {
     pub session: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub window_owner: Option<std::rc::Rc<std::cell::UnsafeCell<window>>>,
     pub flags: ::core::ffi::c_int,
-    pub entry: winlink_entry,
-}
-
-#[derive(Default)]
-#[repr(C)]
-pub struct winlink_entry {
-    pub owner: refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
+    /// Weak traversal handle into the containing index.
+    pub owner:
+        refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
 }
 
 /// Explicit cleanup is separate from the lifetime of retained Rc allocations.
@@ -127,28 +119,16 @@ pub struct window {
     pub alerts_queued: ::core::ffi::c_int,
     pub options: Option<Box<options>>,
     pub winlinks: window_winlinks,
-    pub entry: window_entry,
-}
-
-/// The global index observes windows; winlinks and callbacks own them.
-pub type WindowIndex = std::collections::BTreeMap<
-    u_int,
-    std::rc::Weak<std::cell::UnsafeCell<window>>,
->;
-
-#[derive(Default)]
-#[repr(C)]
-pub struct window_entry {
-    /// Weak traversal handle into the index; cleared when this window is removed.
+    /// Weak traversal handle into the containing index.
     pub owner: refbox::Weak<WindowIndex>,
 }
 
-#[derive(Default)]
-#[repr(C)]
-pub struct window_winlinks {
-    /// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.
-    pub storage: super::inefficient_list::InefficientList<refbox::Weak<winlink>>,
-}
+/// The global index observes windows; winlinks and callbacks own them.
+pub type WindowIndex =
+    std::collections::BTreeMap<u_int, std::rc::Weak<std::cell::UnsafeCell<window>>>;
+
+/// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.
+pub type window_winlinks = Vec<refbox::Weak<winlink>>;
 
 #[repr(C)]
 pub struct window_mode_entry {
@@ -182,9 +162,9 @@ impl window_mode_entry {
 
     /// Retain an Rc-backed payload across callbacks that may remove this entry.
     pub fn retained_data<T: std::any::Any>(&self) -> Option<std::rc::Rc<T>> {
-        self.data_owner.as_ref().map(|owner| {
-            owner.clone().downcast::<T>().expect("mode payload type")
-        })
+        self.data_owner
+            .as_ref()
+            .map(|owner| owner.clone().downcast::<T>().expect("mode payload type"))
     }
 }
 
@@ -252,12 +232,9 @@ impl Default for window_mode {
     }
 }
 
-#[repr(C)]
-pub struct winlink_stack {
-    /// Weak visit history; the session owns the deque and the ordered index
-    /// owns each link.
-    pub storage: std::collections::VecDeque<refbox::Weak<winlink>>,
-}
+/// Weak visit history; the session owns the deque and the ordered index
+/// owns each link.
+pub type winlink_stack = std::collections::VecDeque<refbox::Weak<winlink>>;
 
 #[repr(C)]
 pub struct windows {

@@ -1,4 +1,3 @@
-use std::ffi::CStr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
@@ -14,6 +13,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::key::*;
+use std::ffi::CStr;
 pub static cmd_bind_key_entry: cmd_entry = {
     cmd_entry {
         name: c"bind-key",
@@ -45,27 +45,38 @@ fn cmd_bind_key_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_bind_key_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+unsafe fn cmd_bind_key_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut key: key_code = 0;
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut note: *const ::core::ffi::c_char = args_get(&*(args), 'N' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut note: *const ::core::ffi::c_char =
+        args_get(&*(args), 'N' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
     let mut count: u_int = args_count(args);
-    key = key_string_parse_cstr(args_string(&mut *(args), 0 as u_int).expect("argument is present"))
-        .unwrap_or(KEYC_UNKNOWN);
+    key =
+        key_string_parse_cstr(args_string(&mut *(args), 0 as u_int).expect("argument is present"))
+            .unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown key: ")?;
-            write_cstr(out, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()))
+            write_cstr(
+                out,
+                args_string(&mut *(args), 0 as u_int)
+                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+            )
         });
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'T' as i32 as u_char) != 0 {
-        tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        tablename = args_get(&*(args), 'T' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
     } else if args_has(args, 'n' as i32 as u_char) != 0 {
         tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
     } else {
@@ -73,12 +84,30 @@ unsafe fn cmd_bind_key_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
     }
     repeat = args_has(args, 'r' as i32 as u_char);
     if count == 1 as u_int {
-        key_bindings_add(CStr::from_ptr(tablename), key, { let note: *const ::core::ffi::c_char = note; (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, repeat, None);
+        key_bindings_add(
+            CStr::from_ptr(tablename),
+            key,
+            {
+                let note: *const ::core::ffi::c_char = note;
+                (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
+            },
+            repeat,
+            None,
+        );
         return CMD_RETURN_NORMAL;
     }
     if count == 2 {
         if let Some(commands) = (&(*args).values)[1].as_commands() {
-            key_bindings_add(CStr::from_ptr(tablename), key, { let note: *const ::core::ffi::c_char = note; (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, repeat, Some(commands.clone()));
+            key_bindings_add(
+                CStr::from_ptr(tablename),
+                key,
+                {
+                    let note: *const ::core::ffi::c_char = note;
+                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
+                },
+                repeat,
+                Some(commands.clone()),
+            );
             return CMD_RETURN_NORMAL;
         }
     }
@@ -107,6 +136,15 @@ unsafe fn cmd_bind_key_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
         }
         1 | _ => {}
     }
-    key_bindings_add(CStr::from_ptr(tablename), key, { let note: *const ::core::ffi::c_char = note; (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, repeat, pr.take_cmdlist());
+    key_bindings_add(
+        CStr::from_ptr(tablename),
+        key,
+        {
+            let note: *const ::core::ffi::c_char = note;
+            (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
+        },
+        repeat,
+        pr.take_cmdlist(),
+    );
     return CMD_RETURN_NORMAL;
 }

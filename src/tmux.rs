@@ -507,9 +507,11 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
         let mut expanded = if value.unwrap().value.is_none() {
             b"(null)".to_vec()
         } else {
-            (value.unwrap().value).as_deref().expect("string is present")
-            .to_bytes()
-            .to_vec()
+            (value.unwrap().value)
+                .as_deref()
+                .expect("string is present")
+                .to_bytes()
+                .to_vec()
         };
         if let Some(slash) = slash {
             expanded.extend_from_slice(&path_bytes[slash..]);

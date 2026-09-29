@@ -3,9 +3,9 @@
 //! Scheduling and registration ownership live in the reactor's Rust collections.
 //! Event handles can be zero initialized by translated callers. Streams own
 //! their buffers; neither layout is tied to libevent.
-use hmux_buffer::SegmentedBuf;
 use super::abi::*;
 pub use crate::src::reactor::{bufferevent_ops, event_base};
+use hmux_buffer::SegmentedBuf;
 
 pub type EventCallback = Option<
     std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(::core::ffi::c_int, ::core::ffi::c_short)>>>,

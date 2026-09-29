@@ -198,9 +198,7 @@ fn update_borrows_sources_and_accepts_owned_snapshots() {
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
             .iter()
-            .find(|entry| {
-                entry.name == Some(c"update-environment")
-            })
+            .find(|entry| entry.name == Some(c"update-environment"))
             .unwrap();
         let array = options_empty(options, definition);
         for (index, pattern) in [(c"0", c"a*"), (c"1", c"missing")] {

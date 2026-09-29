@@ -1,15 +1,14 @@
-mod api;
 mod alerts;
+mod api;
 pub(crate) use alerts::alerts_check_all;
 mod model;
-mod spawn;
 mod size;
 mod sort;
+mod spawn;
 pub use model::session;
 mod format;
 pub use api::Session;
 
-use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
@@ -22,6 +21,7 @@ use crate::src::ffi::libc::{gettimeofday, memcpy, strcmp};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_debug};
+use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_free, options_get_number};
 use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
 use crate::src::resize::recalculate_sizes;
@@ -38,16 +38,12 @@ use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_THEMECHANGED;
-use crate::src::shared::session::session_entry;
 use crate::src::shared::session::{session_group, session_groups, sessions};
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::window::{window, winlink, winlink_stack, winlinks};
 use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
-pub use sort::sort_get_sessions;
-use size::status_update_cache;
-pub(crate) use size::recalculate_size_state;
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::{
@@ -57,6 +53,9 @@ use crate::src::window::{
     winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
     winlinks_minmax, winlinks_next,
 };
+pub(crate) use size::recalculate_size_state;
+use size::status_update_cache;
+pub use sort::sort_get_sessions;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
@@ -78,7 +77,9 @@ pub(crate) fn sessions_key(elm: &session) -> Vec<u8> {
 }
 pub fn sessions_find(head: &sessions, elm: &session) -> Option<Rc<UnsafeCell<session>>> {
     let owner = head.storage.as_ref()?;
-    let map = owner.try_borrow_mut().expect("session index already borrowed");
+    let map = owner
+        .try_borrow_mut()
+        .expect("session index already borrowed");
     map.get(elm.name.as_bytes()).cloned()
 }
 pub unsafe fn sessions_insert(
@@ -89,12 +90,14 @@ pub unsafe fn sessions_insert(
     let key = (*elm).name.as_bytes();
     let owner = head.storage.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
-    let mut map = owner.try_borrow_mut().expect("session index already borrowed");
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("session index already borrowed");
     match map.entry(key.to_vec()) {
         std::collections::btree_map::Entry::Occupied(entry) => Some(entry.get().clone()),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(session);
-            (*elm).entry.owner = observer;
+            (*elm).owner = observer;
             None
         }
     }
@@ -106,13 +109,18 @@ pub unsafe fn sessions_remove(
     let key = (*elm.get()).name.as_bytes();
     let owner = head.storage.as_ref()?;
     let (session, empty) = {
-        let mut map = owner.try_borrow_mut().expect("session index already borrowed");
-        if !map.get(key).is_some_and(|candidate| Rc::ptr_eq(candidate, elm)) {
+        let mut map = owner
+            .try_borrow_mut()
+            .expect("session index already borrowed");
+        if !map
+            .get(key)
+            .is_some_and(|candidate| Rc::ptr_eq(candidate, elm))
+        {
             return None;
         }
         (map.remove(key).expect("matching session"), map.is_empty())
     };
-    (*session.get()).entry.owner = refbox::Weak::new();
+    (*session.get()).owner = refbox::Weak::new();
     if empty {
         head.storage = None;
     }
@@ -144,7 +152,7 @@ pub fn sessions_after(head: &sessions, name: &[u8]) -> Option<Rc<UnsafeCell<sess
 
 /// The session must still belong to its index. Destructive walks use sessions_after.
 pub unsafe fn sessions_next(elm: &session) -> Option<Rc<UnsafeCell<session>>> {
-    let owner = &elm.entry.owner;
+    let owner = &elm.owner;
     let map = match owner.try_borrow_mut() {
         Ok(map) => map,
         Err(refbox::BorrowError::Dropped) => return None,
@@ -264,8 +272,12 @@ pub fn sessions_resolve(
 ) -> Option<Rc<UnsafeCell<session>>> {
     let owner = observer.upgrade()?;
     let index = head.storage.as_ref()?;
-    let map = index.try_borrow_mut().expect("session index already borrowed");
-    map.values().any(|candidate| Rc::ptr_eq(candidate, &owner)).then_some(owner)
+    let map = index
+        .try_borrow_mut()
+        .expect("session index already borrowed");
+    map.values()
+        .any(|candidate| Rc::ptr_eq(candidate, &owner))
+        .then_some(owner)
 }
 
 pub unsafe fn session_alive(s: Option<&session>) -> ::core::ffi::c_int {
@@ -273,7 +285,9 @@ pub unsafe fn session_alive(s: Option<&session>) -> ::core::ffi::c_int {
 }
 pub unsafe fn session_find(name: &CStr) -> Option<Rc<UnsafeCell<session>>> {
     let index = sessions.storage.as_ref()?;
-    let map = index.try_borrow_mut().expect("session index already borrowed");
+    let map = index
+        .try_borrow_mut()
+        .expect("session index already borrowed");
     map.get(name.to_bytes()).cloned()
 }
 pub unsafe fn session_find_by_id_str(s: &CStr) -> Option<Rc<UnsafeCell<session>>> {
@@ -296,13 +310,17 @@ pub unsafe fn session_find_by_id_str(s: &CStr) -> Option<Rc<UnsafeCell<session>>
 pub unsafe fn session_find_by_id(mut id: u_int) -> Option<Rc<UnsafeCell<session>>> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    s = s_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if (*s).id == id {
             return (*s).observer.upgrade();
         }
         s_owner = sessions_next(&*s);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s = s_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return None;
 }
@@ -320,16 +338,13 @@ pub unsafe fn session_create(
     (*s).cwd = Some(cwd.to_owned());
 
     (*s).flags = 0 as ::core::ffi::c_int;
-    (*s).lastw.storage.clear();
-    (*s).windows.storage = None;
+    (*s).lastw.clear();
+    (*s).windows = None;
     (*s).environ = Some(env);
     (*s).options = oo;
     status_update_cache(&mut *(s));
     if let Some(name) = name {
-        drop(session_replace_name(
-            &mut *s,
-            name.to_owned(),
-        ));
+        drop(session_replace_name(&mut *s, name.to_owned()));
         let fresh0 = next_session_id;
         next_session_id = next_session_id.wrapping_add(1);
         (*s).id = fresh0;
@@ -366,7 +381,10 @@ pub unsafe fn session_create(
     session_update_activity(&mut *s, Some(created));
     owner
 }
-pub unsafe fn session_add_ref(s: &session, from: *const ::core::ffi::c_char) -> Rc<UnsafeCell<session>> {
+pub unsafe fn session_add_ref(
+    s: &session,
+    from: *const ::core::ffi::c_char,
+) -> Rc<UnsafeCell<session>> {
     let owner = s.observer.upgrade().expect("live Rc session");
     log_debug(format_args!(
         "{}: {} {}, now {}",
@@ -432,7 +450,7 @@ pub unsafe fn session_destroy(
         winlink_stack_remove(&raw mut (*s).lastw, (first).clone());
     }
     crate::src::window::winlink_stack_clear(&mut (*s).lastw);
-    while (*s).windows.storage.is_some() {
+    while (*s).windows.is_some() {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         events_fire_winlink(
             b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -473,21 +491,17 @@ pub unsafe fn session_update_activity(session: &mut session, from: Option<timeva
         event_del(&raw mut session.lock_timer);
     } else {
         let observer = session.observer.clone();
-        event_set(
-            &raw mut session.lock_timer,
-            -1,
-            0,
-            move |_, _| unsafe {
-                if let Some(owner) = observer.upgrade() {
-                    session_lock_timer(&owner);
-                }
-            },
-        );
+        event_set(&raw mut session.lock_timer, -1, 0, move |_, _| unsafe {
+            if let Some(owner) = observer.upgrade() {
+                session_lock_timer(&owner);
+            }
+        });
     }
     if session.attached != 0 {
         let mut timeout = timeval {
             tv_sec: crate::src::options::options_get_number_ref(
-                session.options.as_deref().expect("session options"), c"lock-after-time",
+                session.options.as_deref().expect("session options"),
+                c"lock-after-time",
             ) as __time_t,
             tv_usec: 0,
         };
@@ -515,9 +529,15 @@ unsafe fn session_adjacent(
 ) -> Option<Rc<UnsafeCell<session>>> {
     let s = s?;
     let sorted = sort_get_sessions(sort_crit);
-    let index = sorted.iter().position(|owner| Rc::downgrade(owner).ptr_eq(&s.observer))?;
+    let index = sorted
+        .iter()
+        .position(|owner| Rc::downgrade(owner).ptr_eq(&s.observer))?;
     let selected = if previous {
-        if index == 0 { sorted.len() - 1 } else { index - 1 }
+        if index == 0 {
+            sorted.len() - 1
+        } else {
+            index - 1
+        }
     } else {
         (index + 1) % sorted.len()
     };
@@ -545,7 +565,10 @@ pub unsafe fn session_attach(
     session_group_synchronize_from(s_owner);
     Ok(wl)
 }
-pub unsafe fn session_detach(s_owner: &Rc<UnsafeCell<session>>, mut wl: refbox::Weak<winlink>) -> ::core::ffi::c_int {
+pub unsafe fn session_detach(
+    s_owner: &Rc<UnsafeCell<session>>,
+    mut wl: refbox::Weak<winlink>,
+) -> ::core::ffi::c_int {
     let s = s_owner.get();
 
     if winlinks_minmax(&(*s).windows, RB_NEGINF) == wl
@@ -570,13 +593,17 @@ pub unsafe fn session_detach(s_owner: &Rc<UnsafeCell<session>>, mut wl: refbox::
     return 0 as ::core::ffi::c_int;
 }
 pub fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
-    if s.observer.strong_count() == 0 { return 0; }
-    let links = &w.winlinks.storage;
+    if s.observer.strong_count() == 0 {
+        return 0;
+    }
+    let links = &w.winlinks;
     for observer in links.iter() {
         let link = match observer.try_borrow_mut() {
             Ok(link) => link,
             Err(refbox::BorrowError::Dropped) => continue,
-            Err(refbox::BorrowError::Borrowed) => panic!("winlink already borrowed during session membership check"),
+            Err(refbox::BorrowError::Borrowed) => {
+                panic!("winlink already borrowed during session membership check")
+            }
         };
         if link.session.ptr_eq(&s.observer) {
             return 1;
@@ -707,12 +734,26 @@ unsafe fn session_fire_window_changed(
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+        (*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())))
+        .observer
+        .upgrade()
+        .expect("live window"),
     );
     event_payload_set_window(
         &mut *ep,
         b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+        (*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())))
+        .observer
+        .upgrade()
+        .expect("live window"),
     );
     event_payload_set_int(
         &mut *ep,
@@ -728,7 +769,14 @@ unsafe fn session_fire_window_changed(
         event_payload_set_window(
             &mut *ep,
             b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(old.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+            (*(old
+                .get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
         );
         event_payload_set_int(
             &mut *ep,
@@ -741,7 +789,10 @@ unsafe fn session_fire_window_changed(
         ep,
     );
 }
-pub unsafe fn session_set_current(s_owner: &Rc<UnsafeCell<session>>, mut wl: refbox::Weak<winlink>) -> ::core::ffi::c_int {
+pub unsafe fn session_set_current(
+    s_owner: &Rc<UnsafeCell<session>>,
+    mut wl: refbox::Weak<winlink>,
+) -> ::core::ffi::c_int {
     let s = s_owner.get();
 
     let mut old: refbox::Weak<winlink> = (*s).current_winlink();
@@ -760,18 +811,54 @@ pub unsafe fn session_set_current(s_owner: &Rc<UnsafeCell<session>>, mut wl: ref
     ) != 0
     {
         if old.is_alive() {
-            window_update_focus((old.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            window_update_focus(
+                (old.get_unchecked()
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            );
         }
-        window_update_focus((wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        window_update_focus(
+            (wl.get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+        );
     }
     winlink_clear_flags(wl.clone());
-    window_update_activity(&(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
-    tty_update_window_offset(&(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
+    window_update_activity(
+        &(*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())))
+        .observer
+        .upgrade()
+        .expect("live window"),
+    );
+    tty_update_window_offset(
+        &(*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())))
+        .observer
+        .upgrade()
+        .expect("live window"),
+    );
     session_fire_window_changed(s_owner, wl.clone(), (old).clone());
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn session_group_contains(target: Option<&session>) -> *mut session_group {
-    let Some(target) = target else { return std::ptr::null_mut(); };
+    let Some(target) = target else {
+        return std::ptr::null_mut();
+    };
     session_group_for(&target.observer)
 }
 
@@ -824,7 +911,11 @@ unsafe fn session_group_fire(
     };
     let mut ep = event_payload_create();
     if session_alive(s.as_ref()) != 0 {
-        cmd_find_from_session(&raw mut fs, &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
+        cmd_find_from_session(
+            &raw mut fs,
+            &(*(s)).observer.upgrade().expect("live session"),
+            0 as ::core::ffi::c_int,
+        );
         event_payload_set_target(&mut *ep, &fs);
     }
     event_payload_set_session(
@@ -884,15 +975,26 @@ pub unsafe fn session_group_members(sg: *mut session_group) -> Vec<Rc<UnsafeCell
     if sg.is_null() {
         return Vec::new();
     }
-    (*sg).members.iter().filter_map(std::rc::Weak::upgrade).collect()
+    (*sg)
+        .members
+        .iter()
+        .filter_map(std::rc::Weak::upgrade)
+        .collect()
 }
 pub unsafe fn session_group_count(mut sg: *mut session_group) -> u_int {
-    return u_int::try_from((*sg).members.iter().filter(|member| member.strong_count() != 0).count()).expect("session group has too many members");
+    return u_int::try_from(
+        (*sg)
+            .members
+            .iter()
+            .filter(|member| member.strong_count() != 0)
+            .count(),
+    )
+    .expect("session group has too many members");
 }
 pub unsafe fn session_group_attached_count(mut sg: *mut session_group) -> u_int {
-    session_group_members(sg)
-        .iter()
-        .fold(0, |count, member| count.wrapping_add((*member.get()).attached))
+    session_group_members(sg).iter().fold(0, |count, member| {
+        count.wrapping_add((*member.get()).attached)
+    })
 }
 pub unsafe fn session_group_synchronize_to(s_owner: &Rc<UnsafeCell<session>>) {
     let s = s_owner.get();
@@ -902,7 +1004,9 @@ pub unsafe fn session_group_synchronize_to(s_owner: &Rc<UnsafeCell<session>>) {
     if sg.is_null() {
         return;
     }
-    let target = session_group_members(sg).into_iter().find(|target| target.get() != s);
+    let target = session_group_members(sg)
+        .into_iter()
+        .find(|target| target.get() != s);
     if let Some(target) = target {
         session_group_synchronize1(&target, s_owner);
     }
@@ -921,7 +1025,10 @@ pub unsafe fn session_group_synchronize_from(target_owner: &Rc<UnsafeCell<sessio
         }
     }
 }
-unsafe fn session_group_synchronize1(target_owner: &Rc<UnsafeCell<session>>, s_owner: &Rc<UnsafeCell<session>>) {
+unsafe fn session_group_synchronize1(
+    target_owner: &Rc<UnsafeCell<session>>,
+    s_owner: &Rc<UnsafeCell<session>>,
+) {
     let target = target_owner.get();
     let s = s_owner.get();
 
@@ -931,7 +1038,7 @@ unsafe fn session_group_synchronize1(target_owner: &Rc<UnsafeCell<session>>, s_o
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl2: refbox::Weak<winlink> = refbox::Weak::new();
     ww = &raw mut (*target).windows;
-    if (*ww).storage.is_none() {
+    if (*ww).is_none() {
         return;
     }
     if (*s).current_winlink().is_alive()
@@ -941,12 +1048,22 @@ unsafe fn session_group_synchronize1(target_owner: &Rc<UnsafeCell<session>>, s_o
     {
         session_next(s_owner, 0 as ::core::ffi::c_int);
     }
-    old_windows = std::ptr::replace(&mut (*s).windows, winlinks { storage: None });
+    old_windows = std::ptr::replace(&mut (*s).windows, None);
     wl = winlinks_minmax(&*ww, RB_NEGINF);
     while wl.is_alive() {
         wl2 = winlink_add(&raw mut (*s).windows, wl.get_unchecked().idx);
         wl2.get_mut_unchecked().session = (*s).observer.clone();
-        winlink_set_window((wl2).clone(), &(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
+        winlink_set_window(
+            (wl2).clone(),
+            &(*(wl
+                .get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
+        );
         events_fire_winlink(
             b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
             (wl2).clone(),
@@ -955,17 +1072,23 @@ unsafe fn session_group_synchronize1(target_owner: &Rc<UnsafeCell<session>>, s_o
         wl = winlinks_next(wl.get_unchecked());
     }
     if (*s).current_winlink().is_alive() {
-        (*s).set_curw((winlink_find_by_index(&(*s).windows, ((*s).current_winlink()).get_unchecked().idx)).clone());
+        (*s).set_curw(
+            (winlink_find_by_index(&(*s).windows, ((*s).current_winlink()).get_unchecked().idx))
+                .clone(),
+        );
     } else if (*target).current_winlink().is_alive() {
-        (*s).set_curw((winlink_find_by_index(&(*s).windows, ((*target).current_winlink()).get_unchecked().idx)).clone());
+        (*s).set_curw(
+            (winlink_find_by_index(
+                &(*s).windows,
+                ((*target).current_winlink()).get_unchecked().idx,
+            ))
+            .clone(),
+        );
     }
     if !(*s).current_winlink().is_alive() {
         (*s).set_curw((winlinks_minmax(&(*s).windows, RB_NEGINF)).clone());
     }
-    old_lastw = std::ptr::replace(
-        &raw mut (*s).lastw,
-        winlink_stack { storage: Default::default() },
-    );
+    old_lastw = std::ptr::replace(&raw mut (*s).lastw, Default::default());
     for old_idx in crate::src::window::winlink_stack_indices(&old_lastw) {
         wl2 = winlink_find_by_index(&(*s).windows, old_idx);
         if wl2.is_alive() {
@@ -973,9 +1096,16 @@ unsafe fn session_group_synchronize1(target_owner: &Rc<UnsafeCell<session>>, s_o
         }
     }
     crate::src::window::winlink_stack_clear(&mut old_lastw);
-    while old_windows.storage.is_some() {
+    while old_windows.is_some() {
         wl = winlinks_minmax(&old_windows, RB_NEGINF);
-        wl2 = winlink_find_by_window_id(&(*s).windows, (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id);
+        wl2 = winlink_find_by_window_id(
+            &(*s).windows,
+            (*wl.get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .id,
+        );
         if !wl2.is_alive() {
             events_fire_winlink(
                 b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -991,7 +1121,7 @@ pub unsafe fn session_renumber_windows(s_owner: &Rc<UnsafeCell<session>>) {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl1: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl_new: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut old_wins: winlinks = std::ptr::replace(&mut (*s).windows, winlinks { storage: None });
+    let mut old_wins: winlinks = std::ptr::replace(&mut (*s).windows, None);
     let mut old_lastw: winlink_stack;
     let mut new_idx: ::core::ffi::c_int = 0;
     let mut new_curw_idx: ::core::ffi::c_int = 0;
@@ -1005,7 +1135,17 @@ pub unsafe fn session_renumber_windows(s_owner: &Rc<UnsafeCell<session>>) {
     while wl.is_alive() {
         wl_new = winlink_add(&raw mut (*s).windows, new_idx);
         wl_new.get_mut_unchecked().session = (*s).observer.clone();
-        winlink_set_window((wl_new).clone(), &(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
+        winlink_set_window(
+            (wl_new).clone(),
+            &(*(wl
+                .get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
+        );
         wl_new.get_mut_unchecked().flags |= wl.get_unchecked().flags & WINLINK_ALERTFLAGS;
         if wl == marked_pane.winlink_handle() {
             marked_idx = wl_new.get_unchecked().idx;
@@ -1019,17 +1159,24 @@ pub unsafe fn session_renumber_windows(s_owner: &Rc<UnsafeCell<session>>) {
             new_idx += 1;
         }
     }
-    old_lastw = std::ptr::replace(
-        &raw mut (*s).lastw,
-        winlink_stack { storage: Default::default() },
-    );
+    old_lastw = std::ptr::replace(&raw mut (*s).lastw, Default::default());
     for old_idx in crate::src::window::winlink_stack_indices(&old_lastw) {
         wl = winlink_find_by_index(&old_wins, old_idx);
         if !wl.is_alive() {
             continue;
         }
         wl.get_mut_unchecked().flags &= !WINLINK_VISITED;
-        wl_new = winlink_find_by_window(&(*s).windows, &(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
+        wl_new = winlink_find_by_window(
+            &(*s).windows,
+            &(*(wl
+                .get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
+        );
         if wl_new.is_alive() {
             crate::src::window::winlink_stack_append(&mut (*s).lastw, (wl_new).clone());
         }
@@ -1052,11 +1199,18 @@ pub unsafe fn session_renumber_windows(s_owner: &Rc<UnsafeCell<session>>) {
     }
 }
 pub unsafe fn session_theme_changed(session: Option<&session>) {
-    let Some(session) = session else { return; };
+    let Some(session) = session else {
+        return;
+    };
     let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
     while link.is_alive() {
         let wl = link.get_unchecked();
-        let mut next = window_pane_first(wl.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref());
+        let mut next = window_pane_first(
+            wl.window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())
+                .as_ref(),
+        );
         while let Some(owner) = next {
             let pane = &mut *owner.get();
             pane.flags |= PANE_THEMECHANGED;
@@ -1067,12 +1221,18 @@ pub unsafe fn session_theme_changed(session: Option<&session>) {
 }
 pub unsafe fn session_update_history(session: &session) {
     let limit = crate::src::options::options_get_number_ref(
-        session.options.as_deref().expect("session options"), c"history-limit",
+        session.options.as_deref().expect("session options"),
+        c"history-limit",
     ) as u_int;
     let mut link = winlinks_minmax(&session.windows, RB_NEGINF);
     while link.is_alive() {
         let wl = link.get_unchecked();
-        let mut next = window_pane_first(wl.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref());
+        let mut next = window_pane_first(
+            wl.window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())
+                .as_ref(),
+        );
         while let Some(owner) = next {
             let pane = &mut *owner.get();
             let id = pane.id;

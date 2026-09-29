@@ -1,10 +1,7 @@
 mod model;
 mod stream;
 pub use model::{client_file, client_file_cb, client_file_event, client_files};
-use model::client_file_entry;
 
-use crate::src::reactor::BufferEvent;
-use crate::src::server_client::server_client_unref_owned;
 use crate::src::cmd::queue::{cmdq_clear_wait_file, cmdq_set_wait_file};
 use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::*;
@@ -15,12 +12,13 @@ use crate::src::ffi::libc::{
 };
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
+use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
-    bufferevent_get_input,
-    bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_add,
+    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_once,
 };
 use crate::src::server_client::server_client_get_cwd;
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -186,7 +184,8 @@ unsafe fn file_create_with_client(
     stream: ::core::ffi::c_int,
     cb: client_file_cb,
 ) -> Rc<UnsafeCell<client_file>> {
-    let client_owner = client_owner.filter(|owner| (*owner.get()).flags & CLIENT_ATTACHED as uint64_t == 0);
+    let client_owner =
+        client_owner.filter(|owner| (*owner.get()).flags & CLIENT_ATTACHED as uint64_t == 0);
     let owner = client_file::new();
     let cf = &mut *owner.get();
     cf.c = client_owner.cloned();
@@ -212,13 +211,22 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         (
             file.c.clone(),
             (!Weak::ptr_eq(&file.wait_client, &Weak::new())).then(|| file.wait_client.upgrade()),
-            file.wait_active && file.wait_item.upgrade().is_none_or(|item| (*item.get()).is_removed()),
+            file.wait_active
+                && file
+                    .wait_item
+                    .upgrade()
+                    .is_none_or(|item| (*item.get()).is_removed()),
         )
     };
-    let dead = expired_wait || client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
-        || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
-            (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
-        }));
+    let dead = expired_wait
+        || client_owner
+            .as_ref()
+            .is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
+        || wait_client.as_ref().is_some_and(|owner| {
+            owner
+                .as_ref()
+                .is_none_or(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
+        });
     if dead {
         file_cancel_cmdq_wait(owner);
     } else {
@@ -257,7 +265,9 @@ struct FileCompletion(Rc<UnsafeCell<client_file>>);
 
 impl Drop for FileCompletion {
     fn drop(&mut self) {
-        unsafe { client_files_remove(&mut *self.0.get()); }
+        unsafe {
+            client_files_remove(&mut *self.0.get());
+        }
     }
 }
 
@@ -279,11 +289,17 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let client_owner = cf.c.clone();
     let wait_client =
         (!Weak::ptr_eq(&cf.wait_client, &Weak::new())).then(|| cf.wait_client.upgrade());
-    let dead = client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
-        || wait_client.as_ref().is_some_and(|owner| owner.as_ref().is_none_or(|owner| {
-            (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0
-        }));
-    if dead || cf.cb.is_none() { return; }
+    let dead = client_owner
+        .as_ref()
+        .is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
+        || wait_client.as_ref().is_some_and(|owner| {
+            owner
+                .as_ref()
+                .is_none_or(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
+        });
+    if dead || cf.cb.is_none() {
+        return;
+    }
     stream::collect_for_callback(cf);
     let mut callback = cf.cb.take().unwrap();
     let mut buffer = std::mem::take(&mut cf.buffer);
@@ -293,22 +309,30 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     // The listener may cancel the file. Keep its buffer outside the model so
     // that cancellation does not overlap a mutable borrow of the whole file.
     callback(client_file_event {
-        client: client_owner.as_ref(), path: path.as_deref(), error,
-        closed: false, buffer: Some(&mut buffer),
+        client: client_owner.as_ref(),
+        path: path.as_deref(),
+        error,
+        closed: false,
+        buffer: Some(&mut buffer),
     });
     let cf = &mut *file_owner.get();
     cf.buffer = buffer;
-    if !was_waiting || cf.wait_active { cf.cb = Some(callback); }
+    if !was_waiting || cf.wait_active {
+        cf.cb = Some(callback);
+    }
 }
 
 pub fn file_can_print(c: Option<&client>) -> ::core::ffi::c_int {
-    c.is_some_and(|c| c.flags & (CLIENT_ATTACHED | CLIENT_DEAD | CLIENT_CONTROL) as uint64_t == 0) as ::core::ffi::c_int
+    c.is_some_and(|c| c.flags & (CLIENT_ATTACHED | CLIENT_DEAD | CLIENT_CONTROL) as uint64_t == 0)
+        as ::core::ffi::c_int
 }
 pub unsafe fn file_print(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let Some(client_owner) = client_owner else { return; };
+    let Some(client_owner) = client_owner else {
+        return;
+    };
     let mut find: client_file = client_file::empty();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -321,7 +345,8 @@ pub unsafe fn file_print(
     find.stream = 1 as ::core::ffi::c_int;
     let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
     if file_owner.is_none() {
-        let transfer_owner = file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
+        let transfer_owner =
+            file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
@@ -341,11 +366,10 @@ pub unsafe fn file_print(
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
-pub unsafe fn file_print_buffer(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
-    data: &[u8],
-) {
-    let Some(client_owner) = client_owner else { return; };
+pub unsafe fn file_print_buffer(client_owner: Option<&Rc<UnsafeCell<client>>>, data: &[u8]) {
+    let Some(client_owner) = client_owner else {
+        return;
+    };
     let mut find: client_file = client_file::empty();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -358,7 +382,8 @@ pub unsafe fn file_print_buffer(
     find.stream = 1 as ::core::ffi::c_int;
     let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
     if file_owner.is_none() {
-        let transfer_owner = file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
+        let transfer_owner =
+            file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add(&mut *(*cf).buffer, data.as_ptr().cast(), data.len());
@@ -382,7 +407,9 @@ pub unsafe fn file_error(
     client_owner: Option<&Rc<UnsafeCell<client>>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let Some(client_owner) = client_owner else { return; };
+    let Some(client_owner) = client_owner else {
+        return;
+    };
     let mut find: client_file = client_file::empty();
     let mut msg: msg_write_open = msg_write_open {
         stream: 0,
@@ -395,7 +422,8 @@ pub unsafe fn file_error(
     find.stream = 2 as ::core::ffi::c_int;
     let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
     if file_owner.is_none() {
-        let transfer_owner = file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
+        let transfer_owner =
+            file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
         evbuffer_add_formatted(&mut *(*cf).buffer, write);
@@ -426,7 +454,15 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
     let cancel_cb: Option<Box<dyn FnOnce()>> = None;
-    file_write_impl(client_owner, path, flags, bdata, bsize, cb, Some((item_handle, cancel_cb)));
+    file_write_impl(
+        client_owner,
+        path,
+        flags,
+        bdata,
+        bsize,
+        cb,
+        Some((item_handle, cancel_cb)),
+    );
 }
 
 unsafe fn file_write_impl(
@@ -466,7 +502,10 @@ unsafe fn file_write_impl(
     } else {
         file_set_path(
             cf,
-            file_get_path(client_owner.map(|owner| &*owner.get()), CStr::from_ptr(path)),
+            file_get_path(
+                client_owner.map(|owner| &*owner.get()),
+                CStr::from_ptr(path),
+            ),
         );
         if client_owner.is_none_or(|owner| {
             let client = &*owner.get();
@@ -601,7 +640,10 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     } else {
         file_set_path(
             cf,
-            file_get_path(client_owner.map(|owner| &*owner.get()), CStr::from_ptr(path)),
+            file_get_path(
+                client_owner.map(|owner| &*owner.get()),
+                CStr::from_ptr(path),
+            ),
         );
         if client_owner.is_none_or(|owner| {
             let client = &*owner.get();
@@ -697,7 +739,6 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     }
     drop(file_owner);
     file_fire_done(&transfer_owner);
-
 }
 pub unsafe fn file_cancel(cf: &mut client_file) {
     let mut msg: msg_read_cancel = msg_read_cancel { stream: 0 };
@@ -746,9 +787,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         }
         let msglen = header_len + sent;
         msg.resize(msglen, 0);
-        let header = msg_write_data {
-            stream: cf.stream,
-        };
+        let header = msg_write_data { stream: cf.stream };
         memcpy(
             msg.as_mut_ptr().cast(),
             (&raw const header).cast(),
@@ -757,7 +796,8 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         memcpy(
             msg.as_mut_ptr().add(header_len).cast(),
             evbuffer_pullup(&mut *cf.buffer, sent as ssize_t)
-                .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *const ::core::ffi::c_void,
+                .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+                as *const ::core::ffi::c_void,
             sent,
         );
         if proc_send(
@@ -802,11 +842,12 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
 pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    for file in files.iter() {
+    for file in client_files_iter(files) {
         let cf = &*file.get();
-        if let Some(remaining) = cf.event.with_ptr(|stream| unsafe {
-            evbuffer_get_length(&*(*stream).output)
-        }) {
+        if let Some(remaining) = cf
+            .event
+            .with_ptr(|stream| unsafe { evbuffer_get_length(&*(*stream).output) })
+        {
             left = remaining;
             if left != 0 as size_t {
                 waiting += 1;
@@ -887,9 +928,10 @@ unsafe fn file_write_error_callback(
 unsafe fn file_write_callback(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *owner.get();
     log_debug(format_args!("write check file {}", (cf.stream) as i32));
-    let remaining = cf.event.with_ptr(|stream| unsafe {
-        evbuffer_get_length(&*(*stream).output)
-    }).unwrap_or(0);
+    let remaining = cf
+        .event
+        .with_ptr(|stream| unsafe { evbuffer_get_length(&*(*stream).output) })
+        .unwrap_or(0);
     if cf.closed != 0 && remaining == 0 as size_t {
         file_write_finished(owner);
     } else if let Some(callback) = cf.cb.as_mut() {
@@ -966,10 +1008,14 @@ pub unsafe fn file_write_open(
                     cf.fd,
                     None,
                     bufferevent_data_callback(move |_| unsafe {
-                        if let Some(owner) = data_observer.upgrade() { file_write_callback(&owner); }
+                        if let Some(owner) = data_observer.upgrade() {
+                            file_write_callback(&owner);
+                        }
                     }),
                     bufferevent_event_callback(move |_, flags| unsafe {
-                        if let Some(owner) = error_observer.upgrade() { file_write_error_callback(flags, &owner); }
+                        if let Some(owner) = error_observer.upgrade() {
+                            file_write_error_callback(flags, &owner);
+                        }
                     }),
                 );
                 if stream.is_null() {
@@ -1032,9 +1078,10 @@ pub unsafe fn file_write_close(files: &client_files, imsg: &imsg) {
     let cf = &mut *file_owner.get();
     log_debug(format_args!("close file {}", (cf.stream) as i32));
     cf.closed = 1 as ::core::ffi::c_int;
-    let remaining = cf.event.with_ptr(|stream| unsafe {
-        evbuffer_get_length(&*(*stream).output)
-    }).unwrap_or(0);
+    let remaining = cf
+        .event
+        .with_ptr(|stream| unsafe { evbuffer_get_length(&*(*stream).output) })
+        .unwrap_or(0);
     if remaining == 0 as size_t {
         file_write_finished(&file_owner);
     }
@@ -1080,9 +1127,13 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
             );
             evbuffer_pullup(input, bsize as ssize_t)
                 .map_or_else(Vec::new, |bytes| bytes[..bsize].to_vec())
-        }) else { break };
+        }) else {
+            break;
+        };
         let bsize = chunk.len();
-        if bsize == 0 { break; }
+        if bsize == 0 {
+            break;
+        }
         log_debug(format_args!(
             "read {} from file {}",
             (bsize) as usize,
@@ -1090,9 +1141,7 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
         ));
         let msglen = header_len + bsize;
         msg.resize(msglen, 0);
-        let header = msg_read_data {
-            stream: cf.stream,
-        };
+        let header = msg_read_data { stream: cf.stream };
         memcpy(
             msg.as_mut_ptr().cast(),
             (&raw const header).cast(),
@@ -1174,11 +1223,15 @@ pub unsafe fn file_read_open(
                 let stream = bufferevent_new(
                     (*cf).fd,
                     bufferevent_data_callback(move |_| unsafe {
-                        if let Some(owner) = data_observer.upgrade() { file_read_callback(&owner); }
+                        if let Some(owner) = data_observer.upgrade() {
+                            file_read_callback(&owner);
+                        }
                     }),
                     None,
                     bufferevent_event_callback(move |_, flags| unsafe {
-                        if let Some(owner) = error_observer.upgrade() { file_read_error_callback(flags, &owner); }
+                        if let Some(owner) = error_observer.upgrade() {
+                            file_read_error_callback(flags, &owner);
+                        }
                     }),
                 );
                 if stream.is_null() {
@@ -1316,7 +1369,7 @@ fn client_files_find(
     head: &client_files,
     elm: &client_file,
 ) -> Option<Rc<UnsafeCell<client_file>>> {
-    let owner = head.storage.as_ref()?;
+    let owner = head.as_ref()?;
     let map = owner
         .try_borrow_mut()
         .expect("client file index already borrowed");
@@ -1328,7 +1381,7 @@ unsafe fn client_files_insert(
     file: Rc<UnsafeCell<client_file>>,
 ) -> Option<Rc<UnsafeCell<client_file>>> {
     let key = client_files_key(&*file.get());
-    let owner = head.storage.get_or_insert_with(refbox::RefBox::default);
+    let owner = head.get_or_insert_with(refbox::RefBox::default);
     let observer = owner.downgrade();
     let mut map = owner
         .try_borrow_mut()
@@ -1336,7 +1389,7 @@ unsafe fn client_files_insert(
     if let Some(existing) = map.get(&key).cloned() {
         return Some(existing);
     }
-    (&mut *file.get()).entry.owner = observer;
+    (&mut *file.get()).owner = observer;
     map.insert(key, file);
     None
 }
@@ -1344,7 +1397,7 @@ unsafe fn client_files_insert(
 /// Unlink by identity, including during final Rc Drop when upgrade cannot work.
 /// The head retains its empty index until it is dropped or replaced.
 fn client_files_remove(elm: &mut client_file) {
-    let owner = std::mem::take(&mut elm.entry.owner);
+    let owner = std::mem::take(&mut elm.owner);
     if owner.is_empty() {
         return;
     }
@@ -1364,41 +1417,43 @@ fn client_files_remove(elm: &mut client_file) {
     }
 }
 
-impl client_files {
-    pub fn is_empty(&self) -> bool { self.iter().next().is_none() }
+pub fn client_files_is_empty(files: &client_files) -> bool {
+    client_files_iter(files).next().is_none()
+}
 
-    pub(crate) unsafe fn has_pending_data(&self) -> bool {
-        self.iter().any(|owner| {
-            let file = &*owner.get();
-            evbuffer_get_length(&file.buffer) != 0 || evbuffer_get_length(&file.read.input) != 0
-        })
-    }
+pub(crate) unsafe fn client_files_has_pending_data(files: &client_files) -> bool {
+    client_files_iter(files).any(|owner| {
+        let file = &*owner.get();
+        evbuffer_get_length(&file.buffer) != 0 || evbuffer_get_length(&file.read.input) != 0
+    })
+}
 
-    pub(crate) unsafe fn interrupt(&self, error: i32) {
-        for file in self.iter() {
-            (*file.get()).error = error;
-            file_fire_done(&file);
-        }
+pub(crate) unsafe fn client_files_interrupt(files: &client_files, error: i32) {
+    for file in client_files_iter(files) {
+        (*file.get()).error = error;
+        file_fire_done(&file);
     }
+}
 
-    /// Iterate in stream order, retaining each file only when it is yielded.
-    /// No index or collection borrow is held across loop bodies. Removing the
-    /// current file does not interrupt traversal; dropping the index ends it.
-    pub fn iter(&self) -> impl Iterator<Item = Rc<UnsafeCell<client_file>>> + use<> {
-        let owner = self.storage.as_ref().map(|index| index.downgrade());
-        let mut after = std::ops::Bound::Unbounded;
-        std::iter::from_fn(move || {
-            let map = match owner.as_ref()?.try_borrow_mut() {
-                Ok(map) => map,
-                Err(refbox::BorrowError::Dropped) => return None,
-                Err(refbox::BorrowError::Borrowed) => panic!("client file index already borrowed"),
-            };
-            let (&key, file) = map.range((after, std::ops::Bound::Unbounded)).next()?;
-            after = std::ops::Bound::Excluded(key);
-            Some(file.clone())
-        })
-        .fuse()
-    }
+/// Iterate in stream order, retaining each file only when it is yielded.
+/// No index or collection borrow is held across loop bodies. Removing the
+/// current file does not interrupt traversal; dropping the index ends it.
+pub fn client_files_iter(
+    files: &client_files,
+) -> impl Iterator<Item = Rc<UnsafeCell<client_file>>> + use<> {
+    let owner = files.as_ref().map(|index| index.downgrade());
+    let mut after = std::ops::Bound::Unbounded;
+    std::iter::from_fn(move || {
+        let map = match owner.as_ref()?.try_borrow_mut() {
+            Ok(map) => map,
+            Err(refbox::BorrowError::Dropped) => return None,
+            Err(refbox::BorrowError::Borrowed) => panic!("client file index already borrowed"),
+        };
+        let (&key, file) = map.range((after, std::ops::Bound::Unbounded)).next()?;
+        after = std::ops::Bound::Excluded(key);
+        Some(file.clone())
+    })
+    .fuse()
 }
 
 impl Drop for client_file {
@@ -1419,7 +1474,7 @@ mod file_index_ownership_tests {
             let last = file_create_with_peer(std::ptr::null_mut(), &mut files, 9, None);
             let first = file_create_with_peer(std::ptr::null_mut(), &mut files, 3, None);
             let middle = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
-            let mut iter = files.iter();
+            let mut iter = client_files_iter(&files);
             let current = iter.next().unwrap();
             assert!(Rc::ptr_eq(&current, &first));
             client_files_remove(&mut *current.get());
@@ -1427,7 +1482,7 @@ mod file_index_ownership_tests {
             assert!(Rc::ptr_eq(&iter.next().unwrap(), &last));
             assert!(iter.next().is_none());
 
-            let mut iter = files.iter();
+            let mut iter = client_files_iter(&files);
             assert!(iter.next().is_some());
             drop(files);
             assert!(iter.next().is_none());
@@ -1459,15 +1514,19 @@ mod file_index_ownership_tests {
             let mut files = client_files::default();
             let file = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
             let observed = Rc::downgrade(&file);
-            assert_eq!(Rc::strong_count(&file), 2, "caller and index each own the file");
-            let guard = files.iter().next().unwrap();
+            assert_eq!(
+                Rc::strong_count(&file),
+                2,
+                "caller and index each own the file"
+            );
+            let guard = client_files_iter(&files).next().unwrap();
             file_fire_done(&file);
             drop(file);
             event_loop();
 
             assert!(observed.upgrade().is_some());
-            assert!(files.iter().next().is_none());
-            assert!((&*guard.get()).entry.owner.is_empty());
+            assert!(client_files_iter(&files).next().is_none());
+            assert!((&*guard.get()).owner.is_empty());
             drop(guard);
             assert!(observed.upgrade().is_none());
             shutdown_runtime();
@@ -1481,28 +1540,20 @@ mod file_index_ownership_tests {
             let first = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
             client_files_remove(&mut *first.get());
             drop(first);
-            assert!(
-                files
-                    .storage
-                    .as_ref()
-                    .unwrap()
-                    .try_borrow_mut()
-                    .unwrap()
-                    .is_empty()
-            );
+            assert!(files.as_ref().unwrap().try_borrow_mut().unwrap().is_empty());
 
             let old = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
-            let old_index = files.storage.as_ref().unwrap().downgrade();
-            files.storage = None;
+            let old_index = files.as_ref().unwrap().downgrade();
+            files = None;
             assert!(!old_index.is_alive());
             let replacement = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
             drop(old);
-            let found = files.iter().next().unwrap();
+            let found = client_files_iter(&files).next().unwrap();
             assert!(Rc::ptr_eq(&found, &replacement));
             drop(found);
             client_files_remove(&mut *replacement.get());
             drop(replacement);
-            assert!(files.iter().next().is_none());
+            assert!(client_files_iter(&files).next().is_none());
         }
     }
 }
@@ -1510,7 +1561,7 @@ mod file_index_ownership_tests {
 #[cfg(test)]
 mod completion_cancellation_tests {
     use super::*;
-    use crate::src::cmd::queue::{cmdq_get_callback_owned};
+    use crate::src::cmd::queue::cmdq_get_callback_owned;
     use crate::src::reactor::event_loop;
 
     #[test]
@@ -1540,20 +1591,26 @@ mod completion_cancellation_tests {
             let observed = Rc::downgrade(&client);
             let saved = Rc::new(std::cell::RefCell::new(None));
             let callback_saved = saved.clone();
-            let file = file_create_with_client(Some(&client), 7, Some(Box::new(move |event| {
-                assert!(event.closed);
-                *callback_saved.borrow_mut() = event.client.cloned();
-            })));
+            let file = file_create_with_client(
+                Some(&client),
+                7,
+                Some(Box::new(move |event| {
+                    assert!(event.closed);
+                    *callback_saved.borrow_mut() = event.client.cloned();
+                })),
+            );
             let file_observed = Rc::downgrade(&file);
             file_fire_done(&file);
             drop(file);
             drop(client);
             event_loop();
             assert!(file_observed.upgrade().is_none());
-            assert!(Rc::ptr_eq(saved.borrow().as_ref().unwrap(), &observed.upgrade().unwrap()));
+            assert!(Rc::ptr_eq(
+                saved.borrow().as_ref().unwrap(),
+                &observed.upgrade().unwrap()
+            ));
             drop(saved.borrow_mut().take());
             assert!(observed.upgrade().is_none());
         }
     }
-
 }

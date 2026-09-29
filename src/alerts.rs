@@ -1,23 +1,20 @@
-use std::{cell::UnsafeCell, rc::Rc};
-use crate::src::options::options_owner_ptr;
-use crate::src::session::{alerts_check_all, Session};
 use crate::src::log::{log_debug, log_hex};
 use crate::src::options::options_get_number;
+use crate::src::options::options_owner_ptr;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
+use crate::src::session::{alerts_check_all, Session};
 use crate::src::shared::abi::*;
 use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::session::session;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::window;
-use crate::src::shared::window::{
-    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE,
-};
+use crate::src::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
 use crate::src::window::windows;
 use crate::src::window::{
-    window_remove_ref, windows_minmax,
-    windows_next, winlinks_minmax, winlinks_next,
+    window_remove_ref, windows_minmax, windows_next, winlinks_minmax, winlinks_next,
 };
 use std::collections::VecDeque;
+use std::{cell::UnsafeCell, rc::Rc};
 
 static mut alerts_fired: ::core::ffi::c_int = 0;
 static mut alerts_list: VecDeque<std::rc::Rc<std::cell::UnsafeCell<window>>> = VecDeque::new();
@@ -62,7 +59,10 @@ unsafe fn alerts_callback() {
         ));
         (*w).alerts_queued = 0 as ::core::ffi::c_int;
         (*w).flags &= !WINDOW_ALERTFLAGS;
-        window_remove_ref(owner, b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char);
+        window_remove_ref(
+            owner,
+            b"alerts_callback\0" as *const u8 as *const ::core::ffi::c_char,
+        );
         if !has_next {
             break;
         }
@@ -73,11 +73,23 @@ unsafe fn alerts_callback() {
 pub unsafe fn alerts_check_session(s_owner: &Rc<UnsafeCell<session>>) {
     let mut wl = s_owner.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
-        alerts_check_all(&(*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"));
+        alerts_check_all(
+            &(*(wl
+                .get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
+        );
         wl = winlinks_next(wl.get_unchecked());
     }
 }
-unsafe fn alerts_enabled(w_owner: &Rc<UnsafeCell<window>>, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
+unsafe fn alerts_enabled(
+    w_owner: &Rc<UnsafeCell<window>>,
+    mut flags: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
     let w = w_owner.get();
     if flags & WINDOW_BELL != 0 {
         if options_get_number(

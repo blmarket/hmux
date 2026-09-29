@@ -4,9 +4,9 @@ use crate::src::shared::abi::{timeval, u_int};
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::event;
 use crate::src::shared::options::options;
+use crate::src::shared::session::session_group;
 use crate::src::shared::terminal::termios;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};
-use crate::src::shared::session::{session_entry, session_group};
 
 #[repr(C)]
 pub struct session {
@@ -30,7 +30,10 @@ pub struct session {
     pub attached: u_int,
     pub tio: Option<Box<termios>>,
     pub environ: Option<Box<environ>>,
-    pub(super) entry: session_entry,
+    /// Weak traversal handle into the containing index.
+    pub(super) owner: refbox::Weak<
+        std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    >,
 }
 
 impl session {
@@ -64,8 +67,8 @@ impl session {
             last_activity_time: Default::default(),
             lock_timer: Default::default(),
             curw: Default::default(),
-            lastw: winlink_stack { storage: Default::default() },
-            windows: winlinks { storage: None },
+            lastw: Default::default(),
+            windows: None,
             statusat: Default::default(),
             statuslines: Default::default(),
             options: Default::default(),
@@ -73,7 +76,7 @@ impl session {
             attached: Default::default(),
             tio: Default::default(),
             environ: Default::default(),
-            entry: session_entry { owner: refbox::Weak::new() },
+            owner: refbox::Weak::new(),
         }
     }
 }
@@ -85,7 +88,9 @@ mod retained_session_tests {
 
     #[test]
     fn group_membership_is_weak_but_traversal_retains_live_sessions() {
-        use crate::src::session::{session_group_attached_count, session_group_count, session_group_members};
+        use crate::src::session::{
+            session_group_attached_count, session_group_count, session_group_members,
+        };
         use std::rc::Rc;
 
         unsafe {
@@ -97,7 +102,11 @@ mod retained_session_tests {
             let first_weak = Rc::downgrade(&first);
             let last_weak = Rc::downgrade(&last);
             let mut group = session_group::empty();
-            group.members = vec![first_weak.clone(), Rc::downgrade(&expired), last_weak.clone()];
+            group.members = vec![
+                first_weak.clone(),
+                Rc::downgrade(&expired),
+                last_weak.clone(),
+            ];
             assert_eq!(Rc::strong_count(&first), 1);
             drop(expired);
             assert_eq!(session_group_count(&mut group), 2);

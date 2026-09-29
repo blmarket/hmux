@@ -519,20 +519,33 @@ mod ownership_tests {
             event_set(&raw mut (*tp).ev_sigint, -1, 0, move |_, _| {
                 observed.set(observed.get() + 1);
             });
-            let timeout = timeval { tv_sec: 0, tv_usec: 0 };
+            let timeout = timeval {
+                tv_sec: 0,
+                tv_usec: 0,
+            };
             event_add(&raw mut (*tp).ev_sigint, &timeout);
 
             let mut pair = [0; 2];
-            assert_eq!(::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()), 0);
+            assert_eq!(
+                ::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()),
+                0
+            );
             let capture = refbox::RefBox::new(());
             let observer = capture.downgrade();
-            proc_add_peer(tp, pair[0], Box::new(move |_| {
-                let _keep_capture = &capture;
-                panic!("peer callback must be cancelled before freeing its owner");
-            }));
+            proc_add_peer(
+                tp,
+                pair[0],
+                Box::new(move |_| {
+                    let _keep_capture = &capture;
+                    panic!("peer callback must be cancelled before freeing its owner");
+                }),
+            );
             proc_free(owner);
             assert_eq!(::libc::fcntl(pair[0], ::libc::F_GETFD), -1);
-            assert!(matches!(observer.try_borrow_mut(), Err(refbox::BorrowError::Dropped)));
+            assert!(matches!(
+                observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
             close(pair[1]);
             event_loop();
             assert_eq!(calls.get(), 0);

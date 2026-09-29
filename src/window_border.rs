@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
@@ -8,6 +7,7 @@ use crate::src::format_draw::format_draw;
 use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_compare, grid_default_cell};
 use crate::src::options::options_get_string;
+use crate::src::options::options_owner_ptr;
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_redraw::redraw_get_status_border_cell_type;
 use crate::src::screen_write::{
@@ -87,7 +87,13 @@ unsafe fn window_set_fill_cell(
         None,
         None,
         (refbox::Weak::new()).clone(),
-        ((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        ((*w)
+            .active_pane()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .as_ref()
+        .and_then(|model| model.observer.upgrade())
+        .as_ref(),
     );
     format_add(
         ft,
@@ -164,7 +170,8 @@ pub unsafe fn window_get_border_cell(
     mut cell_type: ::core::ffi::c_int,
     gc: &mut grid_cell,
 ) {
-    let wp: *mut window_pane = wp_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
+    let wp: *mut window_pane =
+        wp_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
     let mut idx: u_int = 0;
     match pane_lines as ::core::ffi::c_uint {
         4 => {
@@ -173,7 +180,13 @@ pub unsafe fn window_get_border_cell(
                 utf8_set(&mut gc.data, CELL_BORDERS[CELL_NONE as usize] as u_char);
             } else {
                 gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-                if !wp.is_null() && window_pane_index(&*wp).map(|value| { idx = value; }).is_some() {
+                if !wp.is_null()
+                    && window_pane_index(&*wp)
+                        .map(|value| {
+                            idx = value;
+                        })
+                        .is_some()
+                {
                     utf8_set(
                         &mut gc.data,
                         ('0' as i32 as u_int).wrapping_add(idx.wrapping_rem(10 as u_int)) as u_char,
@@ -225,12 +238,28 @@ pub unsafe fn window_pane_get_border_style(
 ) {
     let mut wp = wp_owner.get();
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut option: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
-    if wp == (*((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+    if wp
+        == (*((*(*c)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .current_winlink())
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .active_pane()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get())
+    {
         flag = &raw mut (*wp).active_border_gc_set;
         saved = &raw mut (*wp).active_border_gc;
         option = b"pane-active-border-style\0" as *const u8 as *const ::core::ffi::c_char;
@@ -240,9 +269,22 @@ pub unsafe fn window_pane_get_border_style(
         option = b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if *flag == 0 {
-        let mut ft_owner = format_create_defaults(None, Some(c_owner), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*s).current_winlink()).clone(), Some(wp_owner));
+        let mut ft_owner = format_create_defaults(
+            None,
+            Some(c_owner),
+            (s).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            ((*s).current_winlink()).clone(),
+            Some(wp_owner),
+        );
         ft = &raw mut *ft_owner;
-        style_apply(saved, options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), option, ft);
+        style_apply(
+            saved,
+            options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+            option,
+            ft,
+        );
         format_free(ft_owner);
         *flag = 1 as ::core::ffi::c_int;
     }
@@ -303,7 +345,24 @@ pub unsafe fn window_make_pane_status(
         FORMAT_STATUS,
     );
     ft = &raw mut *ft_owner;
-    format_defaults(ft, Some(c_owner), ((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).clone(), Some(wp_owner));
+    format_defaults(
+        ft,
+        Some(c_owner),
+        ((*c)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .as_ref()
+        .and_then(|model| model.observer.upgrade())
+        .as_ref(),
+        ((*(*c)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .current_winlink())
+        .clone(),
+        Some(wp_owner),
+    );
     fmt = options_get_string(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-border-format\0" as *const u8 as *const ::core::ffi::c_char,

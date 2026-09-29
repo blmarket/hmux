@@ -1,4 +1,3 @@
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
@@ -51,6 +50,7 @@ use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open
 use crate::src::tmux::global_options;
 use crate::src::tty::{tty_invalidate, tty_set_size, tty_update_features};
 use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;
 use crate::src::window::window_update_focus;
 use std::ffi::CStr;
@@ -1340,7 +1340,11 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     {
         tdkc = (&raw const tty_default_code_keys as *const tty_default_key_code).offset(i as isize)
             as *const tty_default_key_code;
-        s = tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), (*tdkc).code).as_ptr();
+        s = tty_term_string(
+            &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+            (*tdkc).code,
+        )
+        .as_ptr();
         if *s as ::core::ffi::c_int != '\0' as i32 {
             tty_keys_add(tty, s, (*tdkc).key);
         }
@@ -1353,11 +1357,14 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     if !o.is_null() {
         i = 0 as u_int;
         while i <= KEYC_NUSER as u_int {
-            ov = crate::src::options::options_array_get_index_mut(&mut *(o), i).map_or(std::ptr::null_mut(), |value| value);
+            ov = crate::src::options::options_array_get_index_mut(&mut *(o), i)
+                .map_or(std::ptr::null_mut(), |value| value);
             if !ov.is_null() {
                 tty_keys_add(
                     tty,
-                    (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    (*ov)
+                        .string_ptr()
+                        .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(i as ::core::ffi::c_ulong)
                         as key_code,
                 );
@@ -1424,7 +1431,10 @@ unsafe fn tty_keys_next1(
     mut size: *mut size_t,
     mut expired: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut ud: utf8_data = utf8_data {
@@ -1525,7 +1535,10 @@ unsafe fn tty_keys_winsz(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut end: size_t = 0;
@@ -1628,7 +1641,10 @@ unsafe fn tty_keys_winsz(
     return -(1 as ::core::ffi::c_int);
 }
 pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut current_block: u64;
     let mut c: *mut client = terminal_client;
@@ -1794,9 +1810,21 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                     key = KEYC_UNKNOWN as ::core::ffi::c_ulong
                                                         as key_code;
                                                     if (*tty).bg != bg {
-                                                        server_client_update_theme_colours((c).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                                                        server_client_update_theme_colours(
+                                                            (c).as_ref()
+                                                                .and_then(|model| {
+                                                                    model.observer.upgrade()
+                                                                })
+                                                                .as_ref(),
+                                                        );
                                                     }
-                                                    session_theme_changed(((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+                                                    session_theme_changed(
+                                                        ((*c).session_handle().as_ref().map_or(
+                                                            std::ptr::null_mut(),
+                                                            |owner| owner.get(),
+                                                        ))
+                                                        .as_ref(),
+                                                    );
                                                     current_block = 5025795842197473417;
                                                 }
                                                 -1 => {
@@ -1804,9 +1832,21 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                 }
                                                 1 => {
                                                     if (*tty).bg != bg {
-                                                        server_client_update_theme_colours((c).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                                                        server_client_update_theme_colours(
+                                                            (c).as_ref()
+                                                                .and_then(|model| {
+                                                                    model.observer.upgrade()
+                                                                })
+                                                                .as_ref(),
+                                                        );
                                                     }
-                                                    session_theme_changed(((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref());
+                                                    session_theme_changed(
+                                                        ((*c).session_handle().as_ref().map_or(
+                                                            std::ptr::null_mut(),
+                                                            |owner| owner.get(),
+                                                        ))
+                                                        .as_ref(),
+                                                    );
                                                     current_block = 16977559109335092698;
                                                 }
                                                 _ => {
@@ -1877,7 +1917,12 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                         log_hex((key) as u64)
                                                                     ));
                                                                     evbuffer_drain(
-                                                                        (*tty).in_0.as_deref_mut().expect("open TTY buffer"),
+                                                                        (*tty)
+                                                                            .in_0
+                                                                            .as_deref_mut()
+                                                                            .expect(
+                                                                                "open TTY buffer",
+                                                                            ),
                                                                         size,
                                                                     );
                                                                     return 1 as ::core::ffi::c_int;
@@ -2106,7 +2151,20 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                 }
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     (*c).flags &= !CLIENT_FOCUSED as uint64_t;
-                    window_update_focus((((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                    window_update_focus(
+                        (((*(*c)
+                            .session_handle()
+                            .as_ref()
+                            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                        .current_winlink())
+                        .get_unchecked()
+                        .window_handle()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                        .as_ref()
+                        .and_then(|model| model.observer.upgrade())
+                        .as_ref(),
+                    );
                     events_fire_client(
                         b"client-focus-out\0" as *const u8 as *const ::core::ffi::c_char,
                         (*(c)).observer.upgrade().expect("live client"),
@@ -2117,7 +2175,20 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         b"client-focus-in\0" as *const u8 as *const ::core::ffi::c_char,
                         (*(c)).observer.upgrade().expect("live client"),
                     );
-                    window_update_focus((((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                    window_update_focus(
+                        (((*(*c)
+                            .session_handle()
+                            .as_ref()
+                            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                        .current_winlink())
+                        .get_unchecked()
+                        .window_handle()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                        .as_ref()
+                        .and_then(|model| model.observer.upgrade())
+                        .as_ref(),
+                    );
                 }
                 if key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                     let bytes = if size == 0 {
@@ -2217,7 +2288,10 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         &raw mut (*tty).key_timer,
                         -(1 as ::core::ffi::c_int),
                         0 as ::core::ffi::c_short,
-                        crate::src::tty::tty_client_callback(&terminal_client_owner, tty_keys_callback),
+                        crate::src::tty::tty_client_callback(
+                            &terminal_client_owner,
+                            tty_keys_callback,
+                        ),
                     );
                     event_add(&raw mut (*tty).key_timer, &raw mut tv);
                     (*tty).flags |= TTY_TIMER;
@@ -2240,7 +2314,10 @@ unsafe fn tty_keys_extended_key(
     mut size: *mut size_t,
     mut key: *mut key_code,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut end: size_t = 0;
@@ -2397,7 +2474,10 @@ unsafe fn tty_keys_mouse(
     mut size: *mut size_t,
     mut m: *mut mouse_event,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
@@ -2564,7 +2644,10 @@ unsafe fn tty_keys_clipboard(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut end: size_t = 0;
@@ -2670,7 +2753,10 @@ unsafe fn tty_keys_clipboard(
         )
     ));
     let cd = input_request_clipboard_data { data: out, clip };
-    input_request_reply(&(*(c)).observer.upgrade().expect("live client"), InputRequestReply::Clipboard(&cd));
+    input_request_reply(
+        &(*(c)).observer.upgrade().expect("live client"),
+        InputRequestReply::Clipboard(&cd),
+    );
     if (*tty).flags & TTY_OSC52QUERY != 0 {
         paste_add_owned(None, cd.data.into_boxed_slice());
         event_del(&raw mut (*tty).clipboard_timer);
@@ -2684,7 +2770,10 @@ unsafe fn tty_keys_device_attributes(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
@@ -2860,7 +2949,10 @@ unsafe fn tty_keys_sync(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let prefix = b"\x1B[?2026;\0";
@@ -2940,7 +3032,10 @@ unsafe fn tty_keys_device_attributes2(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
@@ -3051,10 +3146,16 @@ unsafe fn tty_keys_device_attributes2(
     }
     match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
         77 => {
-            tty_default_features(&mut *(c), b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
+            tty_default_features(
+                &mut *(c),
+                b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
+            );
         }
         84 => {
-            tty_default_features(&mut *(c), b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
+            tty_default_features(
+                &mut *(c),
+                b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
+            );
         }
         85 => {
             tty_default_features(
@@ -3084,7 +3185,10 @@ unsafe fn tty_keys_extended_device_attributes(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
@@ -3151,56 +3255,80 @@ unsafe fn tty_keys_extended_device_attributes(
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"tmux \0" as *const u8 as *const ::core::ffi::c_char,
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"tmux\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"XTerm(\0" as *const u8 as *const ::core::ffi::c_char,
         6 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"XTerm\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"XTerm\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"mintty \0" as *const u8 as *const ::core::ffi::c_char,
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"mintty\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"foot(\0" as *const u8 as *const ::core::ffi::c_char,
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"foot\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"foot\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"WezTerm \0" as *const u8 as *const ::core::ffi::c_char,
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"ghostty \0" as *const u8 as *const ::core::ffi::c_char,
         8 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"ghostty\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"ghostty\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
         b"Rio \0" as *const u8 as *const ::core::ffi::c_char,
         4 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(&mut *(c), b"Rio\0" as *const u8 as *const ::core::ffi::c_char);
+        tty_default_features(
+            &mut *(c),
+            b"Rio\0" as *const u8 as *const ::core::ffi::c_char,
+        );
     }
     log_debug(format_args!(
         "{}: received extended DA {}",
@@ -3360,7 +3488,10 @@ unsafe fn tty_keys_palette(
     mut len: size_t,
     mut size: *mut size_t,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
@@ -3449,7 +3580,10 @@ unsafe fn tty_keys_palette(
         return 0 as ::core::ffi::c_int;
     }
     pd.idx = idx;
-    input_request_reply(&(*(c)).observer.upgrade().expect("live client"), InputRequestReply::Palette(&pd));
+    input_request_reply(
+        &(*(c)).observer.upgrade().expect("live client"),
+        InputRequestReply::Palette(&pd),
+    );
     return 0 as ::core::ffi::c_int;
 }
 
@@ -3463,7 +3597,9 @@ mod key_tree_tests {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
             event_set(
-                &raw mut (*owner.get()).tty.key_timer, -1, 0,
+                &raw mut (*owner.get()).tty.key_timer,
+                -1,
+                0,
                 crate::src::tty::tty_client_callback(&owner, tty_keys_callback),
             );
             let callback = (*owner.get()).tty.key_timer.callback.clone().unwrap();
@@ -3475,7 +3611,6 @@ mod key_tree_tests {
             callback.borrow_mut()(-1, 0);
         }
     }
-
 
     fn lookup(tree: &Option<Box<tty_key>>, bytes: &[u8]) -> (Option<key_code>, size_t) {
         let mut size = 0;
@@ -3532,7 +3667,9 @@ mod key_tree_tests {
     #[test]
     fn ambiguous_key_waits_until_timeout_or_completion() {
         let owner = unsafe { client::new() };
-        unsafe { (*owner.get()).name = Some(c"key-tree-test".to_owned()); }
+        unsafe {
+            (*owner.get()).name = Some(c"key-tree-test".to_owned());
+        }
         let mut terminal = tty {
             client: std::rc::Rc::downgrade(&owner),
             ..Default::default()

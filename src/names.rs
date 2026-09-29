@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::cmd::cmd_stringify_argv_cstring;
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, gettimeofday, memcpy, strchr, strcmp, strcspn, strlen, strncmp,
@@ -7,6 +6,7 @@ use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring, format_free,
 };
 use crate::src::log::{log_cstr, log_debug};
+use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
@@ -67,7 +67,14 @@ pub unsafe fn check_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<wind
     {
         return;
     }
-    if !(*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags & PANE_CHANGED != 0 {
+    if !(*(*w)
+        .active_pane()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+    .flags
+        & PANE_CHANGED
+        != 0
+    {
         log_debug(format_args!(
             "@{} active pane not changed",
             ((*w).id) as u32
@@ -84,13 +91,13 @@ pub unsafe fn check_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<wind
                 -(1 as ::core::ffi::c_int),
                 0 as ::core::ffi::c_short,
                 {
-                let observer = std::rc::Rc::downgrade(w_owner);
-                move |_, _| unsafe {
-                    if let Some(owner) = observer.upgrade() {
-                        name_time_callback(&owner);
+                    let observer = std::rc::Rc::downgrade(w_owner);
+                    move |_, _| unsafe {
+                        if let Some(owner) = observer.upgrade() {
+                            name_time_callback(&owner);
+                        }
                     }
-                }
-            },
+                },
             );
         }
         if event_pending(
@@ -125,7 +132,11 @@ pub unsafe fn check_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<wind
     if event_initialized(&(*w).name_event) != 0 {
         event_del(&raw mut (*w).name_event);
     }
-    (*(*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags &= !PANE_CHANGED;
+    (*(*w)
+        .active_pane()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+    .flags &= !PANE_CHANGED;
     let name = format_window_name(w_owner);
     if strcmp(name.as_ptr().cast_mut(), (*w).name.as_ptr().cast_mut()) != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
@@ -170,7 +181,16 @@ unsafe fn format_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>
     );
     ft = &raw mut *ft_owner;
     format_defaults_window(ft, Some(w_owner));
-    format_defaults_pane(ft, &(*((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"));
+    format_defaults_pane(
+        ft,
+        &(*((*w)
+            .active_pane()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())))
+        .observer
+        .upgrade()
+        .expect("live window_pane"),
+    );
     fmt = options_get_string(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"automatic-rename-format\0" as *const u8 as *const ::core::ffi::c_char,

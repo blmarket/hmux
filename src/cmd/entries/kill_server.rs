@@ -55,8 +55,14 @@ pub static cmd_start_server_entry: cmd_entry = {
         exec: Some(cmd_kill_server_exec),
     }
 };
-unsafe fn cmd_kill_server_exec(mut self_0: refbox::Weak<cmd>, _item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_kill_server_entry) {
+unsafe fn cmd_kill_server_exec(
+    mut self_0: refbox::Weak<cmd>,
+    _item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_kill_server_entry,
+    ) {
         kill(getpid(), SIGTERM);
     }
     return CMD_RETURN_NORMAL;

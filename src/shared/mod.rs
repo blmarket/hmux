@@ -23,7 +23,6 @@ pub mod events;
 pub mod format;
 pub mod grid;
 pub mod hyperlinks;
-pub mod inefficient_list;
 pub mod input;
 pub mod job;
 pub mod json;

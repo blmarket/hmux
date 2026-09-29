@@ -1,13 +1,9 @@
 //! Session registry ordering; comparison keys stay inside the Session owner.
 use super::*;
-use std::cmp::Ordering;
 use crate::src::sort::{sort_by_criteria, sort_ordering};
+use std::cmp::Ordering;
 
-unsafe fn sort_session_cmp(
-    sa: &session,
-    sb: &session,
-    sort_crit: &sort_criteria,
-) -> Ordering {
+unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
@@ -63,7 +59,9 @@ unsafe fn sort_session_cmp(
     }
     return sort_ordering(result, sort_crit.reversed);
 }
-pub unsafe fn sort_get_sessions(sort_crit: &sort_criteria) -> Vec<std::rc::Rc<std::cell::UnsafeCell<session>>> {
+pub unsafe fn sort_get_sessions(
+    sort_crit: &sort_criteria,
+) -> Vec<std::rc::Rc<std::cell::UnsafeCell<session>>> {
     let mut sessions_sorted = Vec::new();
     let mut current = sessions_minmax(&sessions);
     while let Some(owner) = current {

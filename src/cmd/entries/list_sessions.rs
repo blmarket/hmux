@@ -3,7 +3,8 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
+    format_true,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -52,12 +53,18 @@ pub static cmd_list_sessions_entry: cmd_entry = {
         exec: Some(cmd_list_sessions_exec),
     }
 };
-unsafe fn cmd_list_sessions_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_list_sessions_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -68,12 +75,16 @@ unsafe fn cmd_list_sessions_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         reversed: 0,
         order_seq: &[],
     };
-    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    template =
+        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         template = LIST_SESSIONS_TEMPLATE.as_ptr();
     }
-    filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+    filter =
+        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    sort_crit.order = sort_order_from_string(
+        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
@@ -100,8 +111,13 @@ unsafe fn cmd_list_sessions_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         );
         format_defaults(
             ft,
-            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-            (l[i as usize].get()).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (c).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            (l[i as usize].get())
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
             (refbox::Weak::new()).clone(),
             None,
         );

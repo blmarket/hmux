@@ -90,11 +90,7 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
     let internal_id = utf8_stravis_cstring(internal_id_in.unwrap_or(c""), VIS_OCTAL | VIS_CSTYLE);
     if !internal_id.is_empty() {
         let key = hyperlink_key(&internal_id, &uri, 0);
-        if let Some(&inner) =
-            hl.0.borrow()
-                .by_uri
-                .get(&key)
-        {
+        if let Some(&inner) = hl.0.borrow().by_uri.get(&key) {
             return inner;
         }
     }
@@ -116,12 +112,8 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
                 .expect("generated hyperlink ID contains no NUL"),
             uri,
         });
-        table
-            .by_uri
-            .insert(key, inner);
-        table
-            .by_inner
-            .insert(inner, node);
+        table.by_uri.insert(key, inner);
+        table.by_inner.insert(inner, node);
         inner
     };
     let oldest = HYPERLINK_HISTORY.with(|history| {

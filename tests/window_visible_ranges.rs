@@ -52,7 +52,11 @@ impl Scene {
         pane.sx = width;
         pane.sy = height;
         let owner = pane.into_shared();
-        unsafe { (*self.window.get()).z_index.push_front(Rc::downgrade(&owner)); }
+        unsafe {
+            (*self.window.get())
+                .z_index
+                .push_front(Rc::downgrade(&owner));
+        }
         self.panes.push(owner.clone());
         owner
     }
@@ -114,10 +118,22 @@ fn clips_to_window_and_preserves_split_ranges_and_border_rules() {
             );
         }
         // Non-floating panes do not obscure their horizontal border rows.
-        assert_eq!(segments(&calculate_ranges((base).as_ref(), 10, 4, 20)), [(10, 20)]);
-        assert_eq!(segments(&calculate_ranges((base).as_ref(), 10, 6, 20)), [(10, 20)]);
-        assert_eq!(segments(&calculate_ranges((base).as_ref(), -3, 0, 8)), [(0, 5)]);
-        assert_eq!(segments(&calculate_ranges((base).as_ref(), 78, 0, 8)), [(78, 2)]);
+        assert_eq!(
+            segments(&calculate_ranges((base).as_ref(), 10, 4, 20)),
+            [(10, 20)]
+        );
+        assert_eq!(
+            segments(&calculate_ranges((base).as_ref(), 10, 6, 20)),
+            [(10, 20)]
+        );
+        assert_eq!(
+            segments(&calculate_ranges((base).as_ref(), -3, 0, 8)),
+            [(0, 5)]
+        );
+        assert_eq!(
+            segments(&calculate_ranges((base).as_ref(), 78, 0, 8)),
+            [(78, 2)]
+        );
         for (x, y, width) in [(80, 0, 1), (0, 24, 1), (0, -1, 1), (-3, 0, 3), (0, 0, 0)] {
             assert!(calculate_ranges((base).as_ref(), x, y, width).is_empty());
         }

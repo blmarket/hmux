@@ -1,6 +1,6 @@
+use crate::src::options::options_owner_ptr;
 use crate::src::shared::client::client_handle;
 use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::options::options_owner_ptr;
 // Private expression parser/evaluator.  The modifier parser, loops,
 // conditionals, escaping, job expansion, and recursive expansion routines
 // remain in their original order. The
@@ -10,10 +10,10 @@ use super::bytes::format_cstring;
 use super::*;
 use crate::src::format::bytes::xformat;
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
-use std::ffi::{CStr, CString};
-use crate::src::session::Session;
 use crate::src::server_client::Client;
+use crate::src::session::Session;
 use crate::src::window::{Window, WindowPane};
+use std::ffi::{CStr, CString};
 
 pub(super) unsafe fn format_strftime(
     mut s: *mut ::core::ffi::c_char,
@@ -217,23 +217,36 @@ pub(super) unsafe fn format_find(
     let parsed_option = options_parse_owned(CStr::from_ptr(key));
     if let Some(parsed) = &parsed_option {
         let name = parsed.name.as_ptr();
-        let array_key = parsed.array_key.as_ref().map_or(std::ptr::null(), |key| key.as_ptr());
+        let array_key = parsed
+            .array_key
+            .as_ref()
+            .map_or(std::ptr::null(), |key| key.as_ptr());
         let lookup = |options: &mut options| {
             let entry = options_get(options, name);
             (!entry.is_null()).then(|| options_to_cstring(entry, array_key, 1))
         };
         found = global_options.as_mut().and_then(lookup);
         if found.is_none() {
-            found = format_pane_owner.as_ref().and_then(|pane| pane.with_options_mut(lookup));
+            found = format_pane_owner
+                .as_ref()
+                .and_then(|pane| pane.with_options_mut(lookup));
         }
         if found.is_none() {
-            found = format_window_owner.as_ref().and_then(|window| window.with_options_mut(lookup));
+            found = format_window_owner
+                .as_ref()
+                .and_then(|window| window.with_options_mut(lookup));
         }
-        if found.is_none() { found = global_w_options.as_mut().and_then(lookup); }
         if found.is_none() {
-            found = format_session_owner.as_ref().and_then(|session| session.with_options_mut(lookup));
+            found = global_w_options.as_mut().and_then(lookup);
         }
-        if found.is_none() { found = global_s_options.as_mut().and_then(lookup); }
+        if found.is_none() {
+            found = format_session_owner
+                .as_ref()
+                .and_then(|session| session.with_options_mut(lookup));
+        }
+        if found.is_none() {
+            found = global_s_options.as_mut().and_then(lookup);
+        }
     }
     if found.is_none() {
         if let Some(entry) = format_table_get(CStr::from_ptr(key)) {
@@ -254,9 +267,17 @@ pub(super) unsafe fn format_find(
                 if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
                     // Distinguish an absent variable from a locally removed
                     // one: the latter must not fall back to the global value.
-                    let entry = format_session_owner.as_ref().and_then(|session| {
-                        session.with_environment_mut(|environment| environ_find(environment, key).cloned())
-                    }).or_else(|| environ_find(global_environ.as_deref().expect("environment"), key).cloned());
+                    let entry = format_session_owner
+                        .as_ref()
+                        .and_then(|session| {
+                            session.with_environment_mut(|environment| {
+                                environ_find(environment, key).cloned()
+                            })
+                        })
+                        .or_else(|| {
+                            environ_find(global_environ.as_deref().expect("environment"), key)
+                                .cloned()
+                        });
                     if let Some(value) = entry.and_then(|entry| entry.value) {
                         found = Some(value);
                         current_block = 11739001764845178280;
@@ -790,11 +811,7 @@ pub(super) fn format_sub(
     regsub_cstring(pattern, with, text, flags).unwrap_or_else(|| text.to_owned())
 }
 
-pub(super) unsafe fn format_search(
-    fm: &format_modifier,
-    wp: &window_pane,
-    s: &CStr,
-) -> CString {
+pub(super) unsafe fn format_search(fm: &format_modifier, wp: &window_pane, s: &CStr) -> CString {
     let options = fm.argv.first().map_or(&[][..], |s| s.as_bytes());
     let ignore = options.contains(&b'i') as i32;
     let regex = options.contains(&b'r') as i32;
@@ -899,10 +916,14 @@ pub(super) unsafe fn format_loop_sessions(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let format_client = format_client_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut item: *mut cmdq_item = item_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -939,14 +960,24 @@ pub(super) unsafe fn format_loop_sessions(
         );
         let use_0 = if active.is_some()
             && format_client_owner.as_ref().is_some_and(|client| {
-                client.attached_session().upgrade().is_some_and(|attached| std::rc::Rc::ptr_eq(&attached, session))
-            })
-        {
+                client
+                    .attached_session()
+                    .upgrade()
+                    .is_some_and(|attached| std::rc::Rc::ptr_eq(&attached, session))
+            }) {
             active.as_ref().unwrap().as_ptr()
         } else {
             all.as_ptr()
         };
-        let mut nft_owner = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, (*ft).flags);
+        let mut nft_owner = format_create_with_client(
+            client_owner.as_ref(),
+            (item)
+                .as_ref()
+                .and_then(|item| item.observer.upgrade())
+                .as_ref(),
+            FORMAT_NONE,
+            (*ft).flags,
+        );
         nft = &raw mut *nft_owner;
         format_add(
             nft,
@@ -966,7 +997,10 @@ pub(super) unsafe fn format_loop_sessions(
         );
         format_defaults(
             nft,
-            (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (format_client)
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
             Some(session),
             (refbox::Weak::new()).clone(),
             None,
@@ -999,9 +1033,18 @@ pub(super) unsafe fn format_window_name(
         return None;
     }
     let name = format_expand1_cstring(es, fmt);
-    wl = format_session_owner.as_ref().expect("format session").with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
+    wl = format_session_owner
+        .as_ref()
+        .expect("format session")
+        .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while wl.is_alive() {
-        if wl.get_unchecked().window_handle().expect("linked window").name() == name {
+        if wl
+            .get_unchecked()
+            .window_handle()
+            .expect("linked window")
+            .name()
+            == name
+        {
             return Some(c"1".to_owned());
         }
         wl = winlinks_next(wl.get_unchecked());
@@ -1023,11 +1066,29 @@ pub(super) unsafe fn format_add_window_neighbour(
     });
     let key = CString::new([prefix, b"_window_active"].concat()).expect("C string key");
     format_add(nft, key.as_ptr(), |out| {
-        write!(out, "{}", ((wl == s_owner.current_winlink()) as ::core::ffi::c_int) as i32)
+        write!(
+            out,
+            "{}",
+            ((wl == s_owner.current_winlink()) as ::core::ffi::c_int) as i32
+        )
     });
-    let o_root = options_owner_ptr(&mut (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
-    let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
-    o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
+    let o_root = options_owner_ptr(
+        &mut (*wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .options,
+    )
+    .map_or(std::ptr::null_mut(), |options| options);
+    let mut o_names = crate::src::options::options_iter(&*o_root)
+        .map(|entry| entry.name.clone())
+        .collect::<Vec<_>>()
+        .into_iter();
+    o = o_names
+        .next()
+        .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
+        .map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
         oname = options_name(&*(o)).as_ptr();
         if *oname as ::core::ffi::c_int == '@' as i32 {
@@ -1040,7 +1101,10 @@ pub(super) unsafe fn format_add_window_neighbour(
             );
             format_add_cstr(nft, &prefixed, &oval);
         }
-        o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
+        o = o_names
+            .next()
+            .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
+            .map_or(std::ptr::null_mut(), |entry| entry);
     }
 }
 pub(super) unsafe fn format_loop_windows(
@@ -1051,10 +1115,14 @@ pub(super) unsafe fn format_loop_windows(
     let mut ft: *mut format_tree = (*es).ft;
     let format_session_owner = (*ft).s.upgrade();
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let format_client = format_client_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut item: *mut cmdq_item = item_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -1095,7 +1163,11 @@ pub(super) unsafe fn format_loop_windows(
     i = 0 as ::core::ffi::c_int;
     while i < n {
         wl = l[i as usize].clone();
-        w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        w = wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         format_log1(
             es,
             b"format_loop_windows\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1115,7 +1187,10 @@ pub(super) unsafe fn format_loop_windows(
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
-            (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
+            (item)
+                .as_ref()
+                .and_then(|item| item.observer.upgrade())
+                .as_ref(),
             (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
             (*ft).flags,
         );
@@ -1136,7 +1211,9 @@ pub(super) unsafe fn format_loop_windows(
                 )
             },
         );
-        if i > 0 as ::core::ffi::c_int && l[(i - 1 as ::core::ffi::c_int) as usize] == session.current_winlink() {
+        if i > 0 as ::core::ffi::c_int
+            && l[(i - 1 as ::core::ffi::c_int) as usize] == session.current_winlink()
+        {
             format_add(
                 nft,
                 b"window_after_active\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1180,7 +1257,16 @@ pub(super) unsafe fn format_loop_windows(
                 b"prev\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), Some(session), wl.clone(), None);
+        format_defaults(
+            nft,
+            (format_client)
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            Some(session),
+            wl.clone(),
+            None,
+        );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1200,13 +1286,19 @@ pub(super) unsafe fn format_loop_panes(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_window_owner = (*ft).w.upgrade();
-    let format_window = format_window_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let format_window = format_window_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let format_client = format_client_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut item: *mut cmdq_item = item_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -1250,14 +1342,23 @@ pub(super) unsafe fn format_loop_panes(
             b"format_loop_panes\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "pane loop: %{}", ((*wp).id) as u32),
         );
-        let use_0 = if active.is_some() && wp == (*format_window).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) {
+        let use_0 = if active.is_some()
+            && wp
+                == (*format_window)
+                    .active_pane()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get())
+        {
             active.as_ref().unwrap().as_ptr()
         } else {
             all.as_ptr()
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
-            (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
+            (item)
+                .as_ref()
+                .and_then(|item| item.observer.upgrade())
+                .as_ref(),
             (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
             (*ft).flags,
         );
@@ -1278,7 +1379,18 @@ pub(super) unsafe fn format_loop_panes(
                 )
             },
         );
-        format_defaults(nft, (format_client).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), format_session_owner.as_ref(), ((*ft).winlink_handle()).clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(
+            nft,
+            (format_client)
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            format_session_owner.as_ref(),
+            ((*ft).winlink_handle()).clone(),
+            (wp).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1301,23 +1413,31 @@ unsafe fn format_option_loop_values(
     last_option: bool,
 ) -> Vec<(&'static CStr, CString)> {
     let is_array = options_is_array(option) != 0;
-    let is_hook = option.tableentry_ptr().is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_HOOK != 0);
+    let is_hook = option
+        .tableentry_ptr()
+        .is_some_and(|entry| entry.flags & OPTIONS_TABLE_IS_HOOK != 0);
     let is_user = option.tableentry_ptr().is_none();
     let key = array_key.unwrap_or(c"");
     let first = match array_key {
         None => is_array,
-        Some(key) => crate::src::options::options_array_iter(option).next().is_some_and(|item| item.key.as_c_str() == key),
+        Some(key) => crate::src::options::options_array_iter(option)
+            .next()
+            .is_some_and(|item| item.key.as_c_str() == key),
     };
     let array_last = match array_key {
         None => is_array,
         Some(key) => !crate::src::options::options_array_iter(option).any(|item| {
-            crate::src::options::options_array_index(&item.key) > crate::src::options::options_array_index(key)
+            crate::src::options::options_array_index(&item.key)
+                > crate::src::options::options_array_index(key)
         }),
     };
     let number = |value: u_int| CString::new(value.to_string()).expect("integer format");
     vec![
         (c"option_name", option.name.clone()),
-        (c"option_value", options_to_cstring(option, array_key.map_or(std::ptr::null(), CStr::as_ptr), 0)),
+        (
+            c"option_value",
+            options_to_cstring(option, array_key.map_or(std::ptr::null(), CStr::as_ptr), 0),
+        ),
         (c"option_is_array", number(u32::from(is_array))),
         (c"option_array_key", key.to_owned()),
         (c"option_array_index", key.to_owned()),
@@ -1326,7 +1446,12 @@ unsafe fn format_option_loop_values(
         (c"option_array_count", number(count)),
         (c"option_is_hook", number(u32::from(is_hook))),
         (c"option_is_user", number(u32::from(is_user))),
-        (c"loop_last_flag", number(u32::from(last_option && (array_key.is_none() || array_last)))),
+        (
+            c"loop_last_flag",
+            number(u32::from(
+                last_option && (array_key.is_none() || array_last),
+            )),
+        ),
         (c"loop_index", number(index)),
     ]
 }
@@ -1352,11 +1477,22 @@ unsafe fn format_loop_emit_option(
         }
         Ok(())
     });
-    let mut context = format_create_with_client((*ft).client.as_ref(), item.as_ref(), FORMAT_NONE, (*ft).flags);
+    let mut context = format_create_with_client(
+        (*ft).client.as_ref(),
+        item.as_ref(),
+        FORMAT_NONE,
+        (*ft).flags,
+    );
     for (key, value) in values {
         format_add_cstr(&mut *context, key, &value);
     }
-    format_defaults(&mut *context, client.as_ref(), session.as_ref(), (*ft).winlink_handle(), pane.as_ref());
+    format_defaults(
+        &mut *context,
+        client.as_ref(),
+        session.as_ref(),
+        (*ft).winlink_handle(),
+        pane.as_ref(),
+    );
     let mut next = format_expand_state::default();
     format_copy_state(&mut next, es, 0);
     next.ft = &mut *context;
@@ -1374,34 +1510,50 @@ pub(super) unsafe fn format_loop_options(
     let pane = (*ft).wp.upgrade();
     let window = (*ft).w.upgrade();
     let session = (*ft).s.upgrade();
-    let flags = flags.as_ref().map(|_| CStr::from_ptr(flags)).filter(|flags| !flags.to_bytes().is_empty()).unwrap_or(c"s");
+    let flags = flags
+        .as_ref()
+        .map(|_| CStr::from_ptr(flags))
+        .filter(|flags| !flags.to_bytes().is_empty())
+        .unwrap_or(c"s");
     let has = |flag| flags.to_bytes().contains(&flag);
     let global = has(b'g');
     let mut access = |read: &mut dyn FnMut(&mut options)| {
         if has(b'v') {
-            if let Some(options) = global_options.as_mut() { read(options); }
+            if let Some(options) = global_options.as_mut() {
+                read(options);
+            }
         } else if has(b'w') {
             if global {
-                if let Some(options) = global_w_options.as_mut() { read(options); }
+                if let Some(options) = global_w_options.as_mut() {
+                    read(options);
+                }
             } else if let Some(window) = window.as_ref() {
                 window.with_options_mut(read);
             }
         } else if has(b's') {
             if global {
-                if let Some(options) = global_s_options.as_mut() { read(options); }
+                if let Some(options) = global_s_options.as_mut() {
+                    read(options);
+                }
             } else if let Some(session) = session.as_ref() {
                 session.with_options_mut(read);
             }
         } else if has(b'p') {
             if !global {
-                if let Some(pane) = pane.as_ref() { pane.with_options_mut(read); }
+                if let Some(pane) = pane.as_ref() {
+                    pane.with_options_mut(read);
+                }
             }
         } else if global {
-            if let Some(options) = global_s_options.as_mut() { read(options); }
+            if let Some(options) = global_s_options.as_mut() {
+                read(options);
+            }
         }
     };
     let mut names = Vec::new();
-    access(&mut |options| names.extend(crate::src::options::options_iter(options).map(|entry| entry.name.clone())));
+    access(&mut |options| {
+        names.extend(crate::src::options::options_iter(options).map(|entry| entry.name.clone()))
+    });
     let mut buffer = Vec::new();
     let mut index: u_int = 0;
     for name in names {
@@ -1409,8 +1561,12 @@ pub(super) unsafe fn format_loop_options(
         access(&mut |options| {
             if let Some(entry) = crate::src::options::options_get_only_mut(options, &name) {
                 keys = Some(if options_is_array(entry) != 0 {
-                    crate::src::options::options_array_iter(entry).map(|item| item.key.clone()).collect::<Vec<_>>()
-                } else { Vec::new() });
+                    crate::src::options::options_array_iter(entry)
+                        .map(|item| item.key.clone())
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                });
             }
         });
         let Some(keys) = keys else { break };
@@ -1435,7 +1591,13 @@ pub(super) unsafe fn format_loop_options(
                         .any(|entry| entry.name.as_bytes() > name.as_bytes());
                     if let Some(entry) = crate::src::options::options_get_only_mut(options, &name) {
                         if crate::src::options::options_array_get(entry, &key).is_some() {
-                            values = Some(format_option_loop_values(entry, Some(&key), count, index, last_option));
+                            values = Some(format_option_loop_values(
+                                entry,
+                                Some(&key),
+                                count,
+                                index,
+                                last_option,
+                            ));
                         }
                     }
                 });
@@ -1459,24 +1621,34 @@ pub(super) unsafe fn format_loop_environ(
     let format_client = (*ft).c.upgrade();
     let client = (*ft).client.clone();
     let item = (*ft).item.upgrade();
-    let flags = flags.as_ref().map(|_| CStr::from_ptr(flags)).filter(|flags| !flags.to_bytes().is_empty()).unwrap_or(c"s");
+    let flags = flags
+        .as_ref()
+        .map(|_| CStr::from_ptr(flags))
+        .filter(|flags| !flags.to_bytes().is_empty())
+        .unwrap_or(c"s");
     let mut access = |read: &mut dyn FnMut(&environ)| {
         if flags == c"s" {
             if let Some(session) = session.as_ref() {
                 session.with_environment_mut(|environment| read(environment));
             }
         } else if flags == c"g" {
-            if let Some(environment) = global_environ.as_deref() { read(environment); }
+            if let Some(environment) = global_environ.as_deref() {
+                read(environment);
+            }
         } else if flags == c"c" {
             if let Some(client) = client.as_ref() {
                 client.with_environment(|environment| {
-                    if let Some(environment) = environment { read(environment); }
+                    if let Some(environment) = environment {
+                        read(environment);
+                    }
                 });
             }
         }
     };
     let mut names = Vec::new();
-    access(&mut |environment| names.extend(environ_iter(environment).map(|entry| entry.name.clone())));
+    access(&mut |environment| {
+        names.extend(environ_iter(environment).map(|entry| entry.name.clone()))
+    });
     let count = names.len();
     let mut buffer = Vec::new();
     for (index, name) in names.into_iter().enumerate() {
@@ -1487,14 +1659,43 @@ pub(super) unsafe fn format_loop_environ(
             out.write_all(b"environment loop: ")?;
             write_cstr(out, entry.name.as_ptr())
         });
-        let mut context = format_create_with_client(client.as_ref(), item.as_ref(), FORMAT_NONE, (*ft).flags);
+        let mut context =
+            format_create_with_client(client.as_ref(), item.as_ref(), FORMAT_NONE, (*ft).flags);
         format_add_cstr(&mut *context, c"environ_name", &entry.name);
-        format_add_cstr(&mut *context, c"environ_value", entry.value.as_deref().unwrap_or(c""));
-        format_add_cstr(&mut *context, c"environ_hidden", if entry.flags & ENVIRON_HIDDEN != 0 { c"1" } else { c"0" });
-        format_add_cstr(&mut *context, c"environ_removed", if entry.value.is_none() { c"1" } else { c"0" });
-        format_add_cstr(&mut *context, c"loop_last_flag", if index + 1 == count { c"1" } else { c"0" });
-        format_add(&mut *context, c"loop_index".as_ptr(), |out| write!(out, "{}", index as u_int));
-        format_defaults(&mut *context, format_client.as_ref(), session.as_ref(), (*ft).winlink_handle(), pane.as_ref());
+        format_add_cstr(
+            &mut *context,
+            c"environ_value",
+            entry.value.as_deref().unwrap_or(c""),
+        );
+        format_add_cstr(
+            &mut *context,
+            c"environ_hidden",
+            if entry.flags & ENVIRON_HIDDEN != 0 {
+                c"1"
+            } else {
+                c"0"
+            },
+        );
+        format_add_cstr(
+            &mut *context,
+            c"environ_removed",
+            if entry.value.is_none() { c"1" } else { c"0" },
+        );
+        format_add_cstr(
+            &mut *context,
+            c"loop_last_flag",
+            if index + 1 == count { c"1" } else { c"0" },
+        );
+        format_add(&mut *context, c"loop_index".as_ptr(), |out| {
+            write!(out, "{}", index as u_int)
+        });
+        format_defaults(
+            &mut *context,
+            format_client.as_ref(),
+            session.as_ref(),
+            (*ft).winlink_handle(),
+            pane.as_ref(),
+        );
         let mut next = format_expand_state::default();
         format_copy_state(&mut next, es, 0);
         next.ft = &mut *context;
@@ -1512,11 +1713,15 @@ pub(super) unsafe fn format_loop_clients(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let format_pane = format_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut item: *mut cmdq_item = item_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -1559,7 +1764,15 @@ pub(super) unsafe fn format_loop_clients(
                 )
             },
         );
-        let mut nft_owner = format_create_with_client(Some(&clients_sorted[i as usize]), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int, (*ft).flags);
+        let mut nft_owner = format_create_with_client(
+            Some(&clients_sorted[i as usize]),
+            (item)
+                .as_ref()
+                .and_then(|item| item.observer.upgrade())
+                .as_ref(),
+            0 as ::core::ffi::c_int,
+            (*ft).flags,
+        );
         nft = &raw mut *nft_owner;
         format_add(
             nft,
@@ -1577,7 +1790,18 @@ pub(super) unsafe fn format_loop_clients(
                 )
             },
         );
-        format_defaults(nft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), format_session_owner.as_ref(), ((*ft).winlink_handle()).clone(), (format_pane).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(
+            nft,
+            (c).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            format_session_owner.as_ref(),
+            ((*ft).winlink_handle()).clone(),
+            (format_pane)
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, fmt);
@@ -1890,7 +2114,9 @@ pub(super) unsafe fn format_cycle_callback(c_owner: &std::rc::Rc<std::cell::Unsa
         (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
 }
-pub(super) unsafe fn format_cycle_start_timer(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+pub(super) unsafe fn format_cycle_start_timer(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+) {
     let mut c = c_owner.get();
     let mut tv: timeval = timeval {
         tv_sec: 0,
@@ -1953,7 +2179,11 @@ pub(super) unsafe fn format_cycle(
         .start_time
         .wrapping_div(count.wrapping_mul(FORMAT_CYCLE_PERIOD as u_int) as uint64_t)
         .wrapping_rem(n as uint64_t) as u_int;
-    if n > 1 as u_int && !client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+    if n > 1 as u_int
+        && !client_handle(&(*ft).client)
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+            .is_null()
+    {
         format_cycle_start_timer((*ft).client.as_ref().expect("format client"));
     }
     start = frames;
@@ -1982,9 +2212,13 @@ pub(super) unsafe fn format_replace(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let format_pane = format_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let format_client = format_client_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut copy: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2370,30 +2604,47 @@ pub(super) unsafe fn format_replace(
         || modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0
     {
         if format_client.is_null()
-            || tty_term_owner_ptr(&(*format_client).tty.term).map_or(std::ptr::null(), |term| term).is_null()
+            || tty_term_owner_ptr(&(*format_client).tty.term)
+                .map_or(std::ptr::null(), |term| term)
+                .is_null()
             || (*format_client).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0
         {
             value = c"".to_owned();
         } else {
             if modifiers & FORMAT_CLIENT_TERMCAP as uint64_t != 0 {
-                if tty_term_has_name(tty_term_owner_ptr(&(*format_client).tty.term).map_or(std::ptr::null(), |term| term), copy) != 0 {
+                if tty_term_has_name(
+                    tty_term_owner_ptr(&(*format_client).tty.term)
+                        .map_or(std::ptr::null(), |term| term),
+                    copy,
+                ) != 0
+                {
                     value = c"1".to_owned();
                 } else {
                     value = c"0".to_owned();
                 }
             }
             if modifiers & FORMAT_CLIENT_TERMFEAT as uint64_t != 0 {
-                if tty_feature_present(tty_term_owner_ptr(&(*format_client).tty.term).map_or(std::ptr::null(), |term| term), copy) != 0 {
+                if tty_feature_present(
+                    tty_term_owner_ptr(&(*format_client).tty.term)
+                        .map_or(std::ptr::null(), |term| term),
+                    copy,
+                ) != 0
+                {
                     value = c"1".to_owned();
                 } else {
                     value = c"0".to_owned();
                 }
             }
             if modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0 {
-                envent = environ_find((*format_client).environ.as_deref().expect("environment"), copy);
+                envent = environ_find(
+                    (*format_client).environ.as_deref().expect("environment"),
+                    copy,
+                );
                 if !envent.is_none() && !envent.unwrap().value.is_none() {
-                    value = (envent.unwrap().value).as_deref().expect("string is present")
-                    .to_owned();
+                    value = (envent.unwrap().value)
+                        .as_deref()
+                        .expect("string is present")
+                        .to_owned();
                 } else {
                     value = c"".to_owned();
                 }
@@ -2528,7 +2779,11 @@ pub(super) unsafe fn format_replace(
                         write!(out, "' pane %{}", ((*wp).id) as u32)
                     },
                 );
-                value = format_search(&*search, &*format_pane_owner.as_ref().expect("search pane owner").get(), &new);
+                value = format_search(
+                    &*search,
+                    &*format_pane_owner.as_ref().expect("search pane owner").get(),
+                    &new,
+                );
             }
             current_block = 1803726662341650892;
         } else if modifiers & FORMAT_REPEAT as uint64_t != 0 {
@@ -3294,7 +3549,14 @@ pub(crate) unsafe fn format_single_from_state_cstring(
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: *mut cmd_find_state,
 ) -> CString {
-    format_single_cstring(item_handle, fmt, c_owner, (*fs).s.upgrade().as_ref(), ((*fs).winlink_handle()).clone(), (*fs).wp.upgrade().as_ref())
+    format_single_cstring(
+        item_handle,
+        fmt,
+        c_owner,
+        (*fs).s.upgrade().as_ref(),
+        ((*fs).winlink_handle()).clone(),
+        (*fs).wp.upgrade().as_ref(),
+    )
 }
 pub(crate) unsafe fn format_single_from_target_cstring(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -3302,8 +3564,17 @@ pub(crate) unsafe fn format_single_from_target_cstring(
 ) -> CString {
     let item = item_handle.get();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    format_single_from_state_cstring(Some(item_handle), fmt, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
+    let tc = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    format_single_from_state_cstring(
+        Some(item_handle),
+        fmt,
+        (tc).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+        crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
+    )
 }
 
 #[cfg(test)]
@@ -3482,7 +3753,12 @@ mod cycle_owner_tests {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
             format_cycle_start_timer(&owner);
-            let callback = (*owner.get()).cycle_timer.callback.as_ref().unwrap().clone();
+            let callback = (*owner.get())
+                .cycle_timer
+                .callback
+                .as_ref()
+                .unwrap()
+                .clone();
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
             callback.borrow_mut()(-1, EV_TIMEOUT as _);
             assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
@@ -3500,41 +3776,85 @@ mod cycle_owner_tests {
 #[cfg(test)]
 mod option_loop_reentry_tests {
     use super::*;
-    use crate::src::options::{options_array_set, options_create, options_empty, options_free, options_get_only_mut, options_remove_or_default, options_set_string};
+    use crate::src::options::{
+        options_array_set, options_create, options_empty, options_free, options_get_only_mut,
+        options_remove_or_default, options_set_string,
+    };
     use crate::src::shared::window::{window_mode, window_mode_entry};
     use std::cell::{Cell, UnsafeCell};
     use std::rc::Rc;
 
-    static MUTATING_MODE: std::sync::LazyLock<window_mode> = std::sync::LazyLock::new(|| window_mode {
-        name: c"format-test",
-        formats: Some(add_mutating_format),
-        ..window_mode::default()
-    });
+    static MUTATING_MODE: std::sync::LazyLock<window_mode> =
+        std::sync::LazyLock::new(|| window_mode {
+            name: c"format-test",
+            formats: Some(add_mutating_format),
+            ..window_mode::default()
+        });
 
     unsafe fn add_mutating_format(entry: refbox::Weak<window_mode_entry>, tree: *mut format_tree) {
         let pane = entry.get_unchecked().wp.upgrade().unwrap();
-        let state = entry.get_unchecked().retained_data::<(Cell<u32>, bool)>().unwrap();
+        let state = entry
+            .get_unchecked()
+            .retained_data::<(Cell<u32>, bool)>()
+            .unwrap();
         format_add_owned_cb(tree, c"mutate_options", move |context| {
-            assert_eq!(state.0.replace(state.0.get() + 1), 0, "removed next entry stops the outer walk");
+            assert_eq!(
+                state.0.replace(state.0.get() + 1),
+                0,
+                "removed next entry stops the outer walk"
+            );
             pane.with_options_mut(|options| {
                 if state.1 {
                     let array = options_get_only_mut(options, c"status-format").unwrap();
-                    assert_eq!(options_array_set(array, c"1".as_ptr(), std::ptr::null(), 0, std::ptr::null_mut()), 0);
-                    assert_eq!(options_array_set(array, c"2".as_ptr(), c"updated".as_ptr(), 0, std::ptr::null_mut()), 0);
-                    assert_eq!(options_array_set(array, c"3".as_ptr(), c"added".as_ptr(), 0, std::ptr::null_mut()), 0);
+                    assert_eq!(
+                        options_array_set(
+                            array,
+                            c"1".as_ptr(),
+                            std::ptr::null(),
+                            0,
+                            std::ptr::null_mut()
+                        ),
+                        0
+                    );
+                    assert_eq!(
+                        options_array_set(
+                            array,
+                            c"2".as_ptr(),
+                            c"updated".as_ptr(),
+                            0,
+                            std::ptr::null_mut()
+                        ),
+                        0
+                    );
+                    assert_eq!(
+                        options_array_set(
+                            array,
+                            c"3".as_ptr(),
+                            c"added".as_ptr(),
+                            0,
+                            std::ptr::null_mut()
+                        ),
+                        0
+                    );
                 } else {
                     let removed = options_get_only_mut(options, c"@b").unwrap();
-                    assert_eq!(options_remove_or_default(removed, std::ptr::null(), std::ptr::null_mut()), 0);
+                    assert_eq!(
+                        options_remove_or_default(removed, std::ptr::null(), std::ptr::null_mut()),
+                        0
+                    );
                     options_set_string(options, c"@c".as_ptr(), 0, |out| out.write_all(b"updated"));
                     options_set_string(options, c"@d".as_ptr(), 0, |out| out.write_all(b"added"));
                 }
             });
             // Reenter the same options component after the edit scope ends.
-            Some(format_expand_cstring(context.as_ptr(), if state.1 {
-                c"#{O/p:#{option_array_key}=#{option_value},}".as_ptr()
-            } else {
-                c"#{O/p:#{option_name}=#{option_value},}".as_ptr()
-            }))
+            Some(format_expand_cstring(
+                context.as_ptr(),
+                if state.1 {
+                    c"#{O/p:#{option_array_key}=#{option_value},}".as_ptr()
+                } else {
+                    c"#{O/p:#{option_name}=#{option_value},}".as_ptr()
+                },
+            ))
         });
     }
 
@@ -3542,21 +3862,23 @@ mod option_loop_reentry_tests {
         let pane = window_pane::new();
         (*pane.get()).options = Some(options_create(std::ptr::null_mut()));
         let state = Rc::new((Cell::new(0), array));
-        (*pane.get()).modes.storage.entries.push(refbox::RefBox::new(window_mode_entry {
-            wp: Rc::downgrade(&pane),
-            swp: Default::default(),
-            mode: &MUTATING_MODE,
-            boxed_data: None,
-            data_owner: Some(state.clone()),
-            prefix: 0,
-            kill: 0,
-        }));
+        (*pane.get())
+            .modes
+            .push(refbox::RefBox::new(window_mode_entry {
+                wp: Rc::downgrade(&pane),
+                swp: Default::default(),
+                mode: &MUTATING_MODE,
+                boxed_data: None,
+                data_owner: Some(state.clone()),
+                prefix: 0,
+                kill: 0,
+            }));
         (pane, state)
     }
 
     unsafe fn free_fixture(pane: Rc<UnsafeCell<window_pane>>) {
         // The test mode has no free callback and owns no terminal resources.
-        (*pane.get()).modes.storage.entries.clear();
+        (*pane.get()).modes.clear();
         options_free((*pane.get()).options.take().unwrap());
         drop(pane);
     }
@@ -3567,13 +3889,18 @@ mod option_loop_reentry_tests {
             let (pane, state) = fixture(false);
             pane.with_options_mut(|options| {
                 for (name, value) in [(c"@a", c"first"), (c"@b", c"second"), (c"@c", c"third")] {
-                    options_set_string(options, name.as_ptr(), 0, |out| out.write_all(value.to_bytes()));
+                    options_set_string(options, name.as_ptr(), 0, |out| {
+                        out.write_all(value.to_bytes())
+                    });
                 }
             });
             let mut tree = format_create(None, None, 0, 0);
             tree.wp = Rc::downgrade(&pane);
             let result = format_expand_cstring(&mut *tree, c"#{O/p:#{option_name}=#{option_value}:#{loop_index}:#{loop_last_flag}[#{mutate_options}];}".as_ptr());
-            assert_eq!(result.as_c_str(), c"@a=first:0:0[@a=first,@c=updated,@d=added,];");
+            assert_eq!(
+                result.as_c_str(),
+                c"@a=first:0:0[@a=first,@c=updated,@d=added,];"
+            );
             assert_eq!(state.0.get(), 1);
             format_free(tree);
             free_fixture(pane);
@@ -3585,17 +3912,33 @@ mod option_loop_reentry_tests {
         unsafe {
             let (pane, state) = fixture(true);
             pane.with_options_mut(|options| {
-                let definition = (&raw const crate::src::options_table::options_table).as_ref().unwrap()
-                    .iter().find(|entry| entry.name == Some(c"status-format")).unwrap();
+                let definition = (&raw const crate::src::options_table::options_table)
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .find(|entry| entry.name == Some(c"status-format"))
+                    .unwrap();
                 let array = options_empty(options, definition);
                 for (key, value) in [(c"0", c"first"), (c"1", c"second"), (c"2", c"third")] {
-                    assert_eq!(options_array_set(array, key.as_ptr(), value.as_ptr(), 0, std::ptr::null_mut()), 0);
+                    assert_eq!(
+                        options_array_set(
+                            array,
+                            key.as_ptr(),
+                            value.as_ptr(),
+                            0,
+                            std::ptr::null_mut()
+                        ),
+                        0
+                    );
                 }
             });
             let mut tree = format_create(None, None, 0, 0);
             tree.wp = Rc::downgrade(&pane);
             let result = format_expand_cstring(&mut *tree, c"#{O/p:#{option_array_key}=#{option_value}:#{option_array_count}:#{option_array_first}:#{option_array_last}[#{mutate_options}];}".as_ptr());
-            assert_eq!(result.as_c_str(), c"0=first:3:1:0[0=first,2=updated,3=added,];");
+            assert_eq!(
+                result.as_c_str(),
+                c"0=first:3:1:0[0=first,2=updated,3=added,];"
+            );
             assert_eq!(state.0.get(), 1);
             format_free(tree);
             free_fixture(pane);

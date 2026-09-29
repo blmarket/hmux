@@ -3,9 +3,8 @@ use hmux2::src::arguments::{
     args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
 };
 use hmux2::src::cmd::{
-    cmd, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_move,
-    cmd_list_new, cmd_list_print, cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED,
-    CMD_LIST_PRINT_NO_GROUPS,
+    cmd, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_move, cmd_list_new,
+    cmd_list_print, cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::shared::arguments::ArgumentValue;
 use std::ffi::CString;
@@ -147,7 +146,10 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
         cmd_list_append(&source, second);
         cmd_list_append_all(&destination, &source);
         assert!(source.borrow_mut().list.is_empty());
-        assert_eq!(addresses(&destination.borrow()), [first_address, second_address]);
+        assert_eq!(
+            addresses(&destination.borrow()),
+            [first_address, second_address]
+        );
 
         let tail = cmd_list_new();
         let third = display_message_command();

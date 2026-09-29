@@ -4,12 +4,8 @@ use hmux_buffer::SegmentedBuf;
 type ClientFileIndex =
     std::collections::BTreeMap<i32, std::rc::Rc<std::cell::UnsafeCell<client_file>>>;
 
-#[derive(Default)]
-#[repr(C)]
-pub struct client_files {
-    /// The stream index owns active file records until completion unlinks them.
-    pub(super) storage: Option<refbox::RefBox<ClientFileIndex>>,
-}
+/// The stream index owns active file records until completion unlinks them.
+pub type client_files = Option<refbox::RefBox<ClientFileIndex>>;
 
 pub struct client_file {
     pub(super) c: Option<Rc<UnsafeCell<client>>>,
@@ -22,7 +18,8 @@ pub struct client_file {
     pub(super) error: ::core::ffi::c_int,
     pub(super) closed: ::core::ffi::c_int,
     pub(super) cb: client_file_cb,
-    pub(super) entry: client_file_entry,
+    /// Weak traversal handle into the containing index.
+    pub(super) owner: refbox::Weak<ClientFileIndex>,
     pub(super) wait_item:
         std::rc::Weak<std::cell::UnsafeCell<crate::src::shared::command::cmdq_item>>,
     pub(super) wait_active: bool,
@@ -39,12 +36,6 @@ pub struct client_file_event<'a> {
     pub error: i32,
     pub closed: bool,
     pub buffer: Option<&'a mut SegmentedBuf>,
-}
-
-impl client_files {
-    pub const fn new() -> Self {
-        Self { storage: None }
-    }
 }
 
 impl client_file {
@@ -64,9 +55,7 @@ impl client_file {
             error: Default::default(),
             closed: Default::default(),
             cb: Default::default(),
-            entry: client_file_entry {
-                owner: refbox::Weak::new(),
-            },
+            owner: refbox::Weak::new(),
             wait_item: Default::default(),
             wait_active: false,
             wait_client: Default::default(),
@@ -75,12 +64,6 @@ impl client_file {
             read: Default::default(),
         }
     }
-}
-
-#[repr(C)]
-pub(super) struct client_file_entry {
-    /// Weak traversal handle into the client file index.
-    pub(super) owner: refbox::Weak<ClientFileIndex>,
 }
 
 pub type client_file_cb = Option<Box<dyn for<'a> FnMut(client_file_event<'a>)>>;

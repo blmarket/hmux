@@ -1,6 +1,6 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
-use hmux_buffer::SegmentedBuf;
 use crate::src::server_client::server_client_unref_owned;
+use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
@@ -306,8 +306,9 @@ pub type overlay_key_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, &mut key
 
 pub type overlay_draw_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>)>>;
 
-pub type overlay_mode_cb =
-    Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)>>>;
+pub type overlay_mode_cb = Option<
+    Box<dyn FnMut(&Rc<UnsafeCell<client>>) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)>>,
+>;
 
 pub type overlay_check_cb =
     Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, u_int, u_int, u_int) -> visible_ranges>>;
@@ -335,7 +336,13 @@ mod retained_client_tests {
         unsafe {
             client.set_session((session.get()).as_ref());
         }
-        assert_eq!(client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), session.get());
+        assert_eq!(
+            client
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()),
+            session.get()
+        );
         assert_eq!(Rc::strong_count(&session), 1);
         drop(session);
         assert!(observer.upgrade().is_none());

@@ -3,7 +3,8 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
+    format_true,
 };
 use crate::src::session::sessions;
 use crate::src::session::{sessions_minmax, sessions_next};
@@ -48,14 +49,23 @@ pub static cmd_list_panes_entry: cmd_entry = {
         exec: Some(cmd_list_panes_exec),
     }
 };
-unsafe fn cmd_list_panes_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_list_panes_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*target)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
-    order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+    order = sort_order_from_string(
+        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
@@ -65,20 +75,43 @@ unsafe fn cmd_list_panes_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
     if args_has(args, 'a' as i32 as u_char) != 0 {
         cmd_list_panes_server(self_0.clone(), item_handle);
     } else if args_has(args, 's' as i32 as u_char) != 0 {
-        cmd_list_panes_session(self_0.clone(), &(*(s)).observer.upgrade().expect("live session"), item_handle, 1 as ::core::ffi::c_int);
+        cmd_list_panes_session(
+            self_0.clone(),
+            &(*(s)).observer.upgrade().expect("live session"),
+            item_handle,
+            1 as ::core::ffi::c_int,
+        );
     } else {
-        cmd_list_panes_window(self_0.clone(), &(*(s)).observer.upgrade().expect("live session"), wl.clone(), item_handle, 0 as ::core::ffi::c_int);
+        cmd_list_panes_window(
+            self_0.clone(),
+            &(*(s)).observer.upgrade().expect("live session"),
+            wl.clone(),
+            item_handle,
+            0 as ::core::ffi::c_int,
+        );
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_list_panes_server(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
+unsafe fn cmd_list_panes_server(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut s_owner = sessions_minmax(&sessions);
-    s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    s = s_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
-        cmd_list_panes_session(self_0.clone(), &(*(s)).observer.upgrade().expect("live session"), item_handle, 2 as ::core::ffi::c_int);
+        cmd_list_panes_session(
+            self_0.clone(),
+            &(*(s)).observer.upgrade().expect("live session"),
+            item_handle,
+            2 as ::core::ffi::c_int,
+        );
         s_owner = sessions_next(&*s);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s = s_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
 }
 unsafe fn cmd_list_panes_session(
@@ -105,9 +138,12 @@ unsafe fn cmd_list_panes_window(
     let item = item_handle.get();
     let _s = s_owner.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -119,7 +155,8 @@ unsafe fn cmd_list_panes_window(
         reversed: 0,
         order_seq: &[],
     };
-    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    template =
+        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         match type_0 {
             0 => {
@@ -137,10 +174,19 @@ unsafe fn cmd_list_panes_window(
             _ => {}
         }
     }
-    filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+    filter =
+        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    sort_crit.order = sort_order_from_string(
+        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    let l = sort_get_panes_window(&*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &sort_crit);
+    let l = sort_get_panes_window(
+        &*wl.get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()),
+        &sort_crit,
+    );
     let n = u_int::try_from(l.len()).expect("too many panes to list");
     i = 0 as u_int;
     while i < n {
@@ -157,7 +203,17 @@ unsafe fn cmd_list_panes_window(
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (n) as u32),
         );
-        format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), Some(s_owner), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        format_defaults(
+            ft,
+            (c).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            Some(s_owner),
+            wl.clone(),
+            (wp).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

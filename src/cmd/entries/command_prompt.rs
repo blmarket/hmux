@@ -28,8 +28,8 @@ use crate::src::shared::prompt::{
 use crate::src::shared::rc;
 use crate::src::status::{status_prompt_set, status_prompt_update};
 use crate::src::window::{
-    window_pane_has_prompt, window_pane_set_prompt, window_pane_update_prompt,
-    window_pane_upgrade, window_pane_weak,
+    window_pane_has_prompt, window_pane_set_prompt, window_pane_update_prompt, window_pane_upgrade,
+    window_pane_weak,
 };
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -124,16 +124,25 @@ fn cmd_command_prompt_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_command_prompt_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_command_prompt_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt_bytes = Vec::<u8>::new();
-    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target)
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -198,7 +207,8 @@ unsafe fn cmd_command_prompt_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
         Some(CStr::from_ptr(s).to_bytes())
     };
     cdata.prompts = cmd_command_prompt_rows(&prompt_bytes, input_bytes, literal, space != 0);
-    type_0 = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    type_0 =
+        args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !type_0.is_null() {
         cdata.prompt_type = prompt_type(CStr::from_ptr(type_0));
         if cdata.prompt_type as ::core::ffi::c_uint
@@ -275,7 +285,9 @@ unsafe fn cmd_command_prompt_callback(
     if cdata.wait && item_owner.is_none() {
         return PROMPT_CLOSE;
     }
-    let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let item = item_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
     if !(s.is_none()
         || key as ::core::ffi::c_uint
@@ -298,7 +310,11 @@ unsafe fn cmd_command_prompt_callback(
                         };
                         window_pane_update_prompt(&pane, prompt_ptr, input_ptr);
                     } else {
-                        status_prompt_update(&(*(c)).observer.upgrade().expect("live client"), prompt_ptr, input_ptr);
+                        status_prompt_update(
+                            &(*(c)).observer.upgrade().expect("live client"),
+                            prompt_ptr,
+                            input_ptr,
+                        );
                     }
                     return PROMPT_CONTINUE;
                 }
@@ -333,15 +349,19 @@ unsafe fn cmd_command_prompt_callback(
                         );
                     }
                     Ok(cmdlist) if !cdata.wait => {
-                        new_item_allocation = cmdq_get_command(
-                            &cmdlist, None,
-                        );
+                        new_item_allocation = cmdq_get_command(&cmdlist, None);
                         cmdq_append(c_owner, new_item_allocation);
                         drop(cmdlist);
                     }
                     Ok(cmdlist) => {
                         new_item_allocation = cmdq_get_command(&cmdlist, (*item).state.as_ref());
-                        cmdq_insert_after(&(*(item)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
+                        cmdq_insert_after(
+                            &(*(item))
+                                .observer
+                                .upgrade()
+                                .expect("queued insertion anchor"),
+                            new_item_allocation,
+                        );
                         drop(cmdlist);
                     }
                 }
@@ -353,19 +373,19 @@ unsafe fn cmd_command_prompt_callback(
     }
     if cdata.wait {
         cdata.item = Weak::new();
-        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
+        cmdq_continue(
+            &(*(item))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+        );
     }
     return PROMPT_CLOSE;
 }
 impl cmd_command_prompt_cdata {
     fn into_callback(mut self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, key| unsafe {
-            cmd_command_prompt_callback(
-                client,
-                &mut self,
-                text,
-                key,
-            )
+            cmd_command_prompt_callback(client, &mut self, text, key)
         }))
     }
 }
@@ -374,7 +394,12 @@ impl Drop for cmd_command_prompt_cdata {
     fn drop(&mut self) {
         unsafe {
             if let Some(item) = self.item.upgrade() {
-                cmdq_continue(&(*(item.get())).observer.upgrade().expect("live command queue item"));
+                cmdq_continue(
+                    &(*(item.get()))
+                        .observer
+                        .upgrade()
+                        .expect("live command queue item"),
+                );
             }
             self.prompts.clear();
             drop(self.state.take());
@@ -386,7 +411,7 @@ impl Drop for cmd_command_prompt_cdata {
 mod tests {
     use super::*;
     use crate::src::cmd::cmd_list_new;
-    use crate::src::cmd::queue::{cmdq_get_callback_owned};
+    use crate::src::cmd::queue::cmdq_get_callback_owned;
     use crate::src::prompt::{prompt_free, prompt_key};
     use crate::src::shared::rc;
     use crate::src::text::utf8::utf8_fromcstr_vec;
@@ -405,9 +430,10 @@ mod tests {
             current: 0,
             argv: Vec::new(),
         };
-        assert_eq!(unsafe {
-            cmd_command_prompt_callback(None, &mut data, None, PROMPT_KEY_CLOSE)
-        }, PROMPT_CLOSE);
+        assert_eq!(
+            unsafe { cmd_command_prompt_callback(None, &mut data, None, PROMPT_KEY_CLOSE) },
+            PROMPT_CLOSE
+        );
     }
 
     #[test]

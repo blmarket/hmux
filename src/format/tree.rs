@@ -1,5 +1,5 @@
-use crate::src::server_client::server_client_unref_owned;
 use crate::src::log::log_cstr;
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::format::FormatEntryState;
 // Private tree-storage implementation.  It owns the format-entry tree and
 // format-tree CRUD operations.
@@ -12,7 +12,7 @@ pub(super) fn format_entry_tree_find<'a>(
     tree: &'a format_entry_tree,
     key: &CStr,
 ) -> Option<&'a format_entry> {
-    tree.entries.get(key.to_bytes()).map(Box::as_ref)
+    tree.get(key.to_bytes()).map(Box::as_ref)
 }
 
 /// Evaluate without retaining an entry borrow: callbacks may replace or remove
@@ -21,7 +21,7 @@ unsafe fn format_entry_ensure_value(ft: *mut format_tree, key: &CStr) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT_EVALUATION: AtomicU64 = AtomicU64::new(0);
     let (evaluation, callback) = {
-        let Some(entry) = (*ft).tree.entries.get_mut(key.to_bytes()) else {
+        let Some(entry) = (*ft).tree.get_mut(key.to_bytes()) else {
             return;
         };
         if !matches!(entry.state, FormatEntryState::Lazy(_)) {
@@ -43,7 +43,7 @@ unsafe fn format_entry_ensure_value(ft: *mut format_tree, key: &CStr) {
 
     // Resolve both the key and evaluation identity after the callback. Even a
     // removed/reinserted entry at the same address must not receive this result.
-    if let Some(entry) = (*ft).tree.entries.get_mut(key.to_bytes()) {
+    if let Some(entry) = (*ft).tree.get_mut(key.to_bytes()) {
         if matches!(entry.state, FormatEntryState::Evaluating(id) if id == evaluation) {
             entry.state = FormatEntryState::Cached { value, callback };
         }
@@ -70,7 +70,7 @@ unsafe fn format_entry_set(ft: *mut format_tree, key: &CStr, state: FormatEntryS
     use std::collections::btree_map::Entry;
 
     let key = key.to_owned();
-    let old = match (*ft).tree.entries.entry(key.as_bytes().to_vec()) {
+    let old = match (*ft).tree.entry(key.as_bytes().to_vec()) {
         Entry::Occupied(mut entry) => Some(std::mem::replace(&mut entry.get_mut().state, state)),
         Entry::Vacant(entry) => {
             entry.insert(Box::new(format_entry { key, state }));
@@ -87,7 +87,6 @@ pub unsafe fn format_merge(ft: *mut format_tree, from: *mut format_tree) {
     // replacing callback captures may in turn modify the source tree.
     let values: Vec<_> = (*from)
         .tree
-        .entries
         .values()
         .filter_map(|entry| {
             entry
@@ -100,10 +99,15 @@ pub unsafe fn format_merge(ft: *mut format_tree, from: *mut format_tree) {
         format_add_value(ft, &key, value);
     }
 }
-pub fn format_get_pane(ft: &format_tree) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+pub fn format_get_pane(
+    ft: &format_tree,
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     ft.wp.upgrade()
 }
-pub(super) unsafe fn format_create_add_item(mut ft: *mut format_tree, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
+pub(super) unsafe fn format_create_add_item(
+    mut ft: *mut format_tree,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) {
     let item = item_handle.get();
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
@@ -174,7 +178,7 @@ pub unsafe fn format_create_owned(
 unsafe fn format_clear(ft: *mut format_tree) {
     // Capture destructors may add entries to this same tree. End each map
     // borrow before dispatch, and never hold a whole-tree reference here.
-    while let Some((_, entry)) = (*ft).tree.entries.pop_first() {
+    while let Some((_, entry)) = (*ft).tree.pop_first() {
         drop(entry);
     }
     if let Some(client) = (*ft).client.take() {
@@ -188,7 +192,9 @@ pub unsafe fn format_free(mut owner: Box<format_tree>) {
 }
 
 pub fn format_owner_ptr(owner: &mut Option<Box<format_tree>>) -> *mut format_tree {
-    owner.as_mut().map_or(std::ptr::null_mut(), |tree| &raw mut **tree)
+    owner
+        .as_mut()
+        .map_or(std::ptr::null_mut(), |tree| &raw mut **tree)
 }
 
 pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::core::ffi::c_char) {
@@ -215,12 +221,7 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         };
         cb(entry.key, value.as_c_str());
     }
-    let keys: Vec<_> = (*ft)
-        .tree
-        .entries
-        .values()
-        .map(|entry| entry.key.clone())
-        .collect();
+    let keys: Vec<_> = (*ft).tree.values().map(|entry| entry.key.clone()).collect();
     let mut values = Vec::new();
     for key in keys {
         let Some(value) = format_entry_get_value(ft, &key) else {
@@ -393,7 +394,7 @@ mod tests {
                 format_entry_tree_find(&(*ft).tree, &key).unwrap() as *const _ as usize,
                 address
             );
-            let entry = (*ft).tree.entries.remove(key.as_bytes()).unwrap();
+            let entry = (*ft).tree.remove(key.as_bytes()).unwrap();
             format_free(ft_owner);
             assert_eq!(entry.key, key);
             assert_eq!(entry.state.text().unwrap().to_bytes(), b"first\xff-next");
@@ -412,7 +413,7 @@ mod tests {
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"replacement");
 
             format_add_owned_cb(ft, c"owned", |ft| {
-                let removed = (*ft.as_ptr()).tree.entries.remove(b"owned".as_slice());
+                let removed = (*ft.as_ptr()).tree.remove(b"owned".as_slice());
                 drop(removed);
                 Some(c"stale".to_owned())
             });
@@ -422,7 +423,7 @@ mod tests {
             let replacement_calls = Rc::new(Cell::new(0));
             let observed = replacement_calls.clone();
             format_add_owned_cb(ft, c"owned", move |ft| {
-                let removed = (*ft.as_ptr()).tree.entries.remove(b"owned".as_slice());
+                let removed = (*ft.as_ptr()).tree.remove(b"owned".as_slice());
                 drop(removed);
                 let observed = observed.clone();
                 format_add_owned_cb(ft.as_ptr(), c"owned", move |_| {
@@ -460,9 +461,11 @@ mod tests {
             let mut ft_owner = tree();
             let ft = &raw mut *ft_owner;
             format_add_owned_cb(ft, c"owned", |ft| {
-                drop((*ft.as_ptr()).tree.entries.remove(b"owned".as_slice()));
+                drop((*ft.as_ptr()).tree.remove(b"owned".as_slice()));
                 format_add_owned_cb(ft.as_ptr(), c"owned", |_| panic!("replacement callback"));
-                assert!(catch_unwind(AssertUnwindSafe(|| text_value(ft.as_ptr(), c"owned"))).is_err());
+                assert!(
+                    catch_unwind(AssertUnwindSafe(|| text_value(ft.as_ptr(), c"owned"))).is_err()
+                );
                 Some(c"stale".to_owned())
             });
             assert!(text_value(ft, c"owned").is_none());
@@ -493,13 +496,13 @@ mod tests {
                 drop(
                     (*ft.as_ptr())
                         .tree
-                        .entries
                         .remove(b"custom_removed_entry".as_slice()),
                 );
                 Some(c"stale".to_owned())
             });
             assert_eq!(
-                format_expand_cstring(ft, c"before#{custom_removed_entry}after".as_ptr()).as_c_str(),
+                format_expand_cstring(ft, c"before#{custom_removed_entry}after".as_ptr())
+                    .as_c_str(),
                 c"beforeafter"
             );
             format_free(ft_owner);

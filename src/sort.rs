@@ -1,8 +1,8 @@
-use crate::src::session::Session;
 use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::paste::paste_walk;
 use crate::src::server::clients;
 use crate::src::session::sessions;
+use crate::src::session::Session;
 use crate::src::session::{sessions_minmax, sessions_next};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -131,11 +131,7 @@ unsafe fn sort_client_cmp(ca: &client, cb: &client, sort_crit: &sort_criteria) -
     }
     return sort_ordering(result, sort_crit.reversed);
 }
-unsafe fn sort_pane_cmp(
-    a: &window_pane,
-    b: &window_pane,
-    sort_crit: &sort_criteria,
-) -> Ordering {
+unsafe fn sort_pane_cmp(a: &window_pane, b: &window_pane, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let _ai: u_int = 0;
     let _bi: u_int = 0;
@@ -159,7 +155,10 @@ unsafe fn sort_pane_cmp(
             result = (ai.is_none(), ai).cmp(&(bi.is_none(), bi)) as ::core::ffi::c_int;
         }
         4 => {
-            result = strcmp((*(*a).screen_ptr()).title.as_ptr(), (*(*b).screen_ptr()).title.as_ptr());
+            result = strcmp(
+                (*(*a).screen_ptr()).title.as_ptr(),
+                (*(*b).screen_ptr()).title.as_ptr(),
+            );
         }
         7 => {
             let ai = window_pane_zindex(a);
@@ -169,7 +168,10 @@ unsafe fn sort_pane_cmp(
         3 | 5 | 8 | _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*(*a).screen_ptr()).title.as_ptr(), (*(*b).screen_ptr()).title.as_ptr());
+        result = strcmp(
+            (*(*a).screen_ptr()).title.as_ptr(),
+            (*(*b).screen_ptr()).title.as_ptr(),
+        );
     }
     return sort_ordering(result, sort_crit.reversed);
 }
@@ -178,8 +180,16 @@ unsafe fn sort_winlink_cmp(
     wlb: refbox::Weak<winlink>,
     sort_crit: &sort_criteria,
 ) -> Ordering {
-    let mut wa: *mut window = wla.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wb: *mut window = wlb.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wa: *mut window = wla
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wb: *mut window = wlb
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
@@ -379,7 +389,8 @@ pub unsafe fn sort_would_window_tree_swap(
     {
         return 0 as ::core::ffi::c_int;
     }
-    return (sort_winlink_cmp((wla).clone(), (wlb).clone(), &*sort_crit) != Ordering::Equal) as ::core::ffi::c_int;
+    return (sort_winlink_cmp((wla).clone(), (wlb).clone(), &*sort_crit) != Ordering::Equal)
+        as ::core::ffi::c_int;
 }
 pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     let mut buffers = Vec::new();
@@ -397,7 +408,9 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     });
     buffers
 }
-pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+pub unsafe fn sort_get_clients(
+    sort_crit: *mut sort_criteria,
+) -> Vec<std::rc::Rc<std::cell::UnsafeCell<client>>> {
     let mut clients_sorted = Vec::new();
     let mut current = clients.first();
     while let Some(owner) = current {
@@ -428,15 +441,22 @@ pub unsafe fn sort_get_panes_window(
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::Weak<winlink>> {
     let mut links = Vec::new();
     let mut s_owner = sessions_minmax(&sessions);
-    let mut s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut s = s_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
-        let mut wl = s_owner.as_ref().expect("session traversal owner").with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
+        let mut wl = s_owner
+            .as_ref()
+            .expect("session traversal owner")
+            .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
             links.push(wl.clone());
             wl = winlinks_next(wl.get_unchecked());
         }
         s_owner = sessions_next(&*s);
-        s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        s = s_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     sort_by_criteria(&mut links, &*sort_crit, |a, b, criteria| unsafe {
         sort_winlink_cmp((*a).clone(), (*b).clone(), criteria)
@@ -464,11 +484,7 @@ pub unsafe fn sort_get_key_bindings<'a>(
 ) -> Vec<&'a key_binding> {
     let mut bindings: Vec<_> = tables
         .iter()
-        .flat_map(|table| {
-            table
-                .key_bindings
-                .iter()
-        })
+        .flat_map(|table| table.key_bindings.iter())
         .collect();
     sort_by_criteria(&mut bindings, sort_crit, |a, b, criteria| unsafe {
         sort_key_binding_cmp(a, b, criteria)

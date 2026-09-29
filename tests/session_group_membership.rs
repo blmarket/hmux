@@ -111,13 +111,27 @@ fn trait_rename_rekeys_session_without_changing_its_pane_and_rejects_duplicates(
     server.success(&["new-session", "-d", "-s", "alpha", "sleep 30"]);
     server.success(&["new-session", "-d", "-s", "beta", "sleep 30"]);
     let identity = server.success(&[
-        "display-message", "-p", "-t", "alpha", "#{session_id}:#{pane_id}",
+        "display-message",
+        "-p",
+        "-t",
+        "alpha",
+        "#{session_id}:#{pane_id}",
     ]);
     server.success(&["rename-session", "-t", "alpha", "gamma"]);
-    assert!(!server.run(&["has-session", "-t", "=alpha"]).status.success());
-    assert_eq!(server.success(&[
-        "display-message", "-p", "-t", "gamma", "#{session_id}:#{pane_id}",
-    ]), identity);
+    assert!(!server
+        .run(&["has-session", "-t", "=alpha"])
+        .status
+        .success());
+    assert_eq!(
+        server.success(&[
+            "display-message",
+            "-p",
+            "-t",
+            "gamma",
+            "#{session_id}:#{pane_id}",
+        ]),
+        identity
+    );
     let duplicate = server.run(&["rename-session", "-t", "gamma", "beta"]);
     assert!(!duplicate.status.success());
     assert!(String::from_utf8_lossy(&duplicate.stderr).contains("duplicate session: beta"));
@@ -130,16 +144,25 @@ fn last_window_target_observes_history_without_selecting_it() {
     server.success(&["new-session", "-d", "-s", "history", "sleep 30"]);
     server.success(&["new-window", "-t", "history:1", "sleep 30"]);
     server.success(&["select-window", "-t", "history:0"]);
-    assert_eq!(server.success(&[
-        "display-message", "-p", "-t", "history:!", "#{window_index}",
-    ]), "1\n");
-    assert_eq!(server.success(&[
-        "display-message", "-p", "-t", "history", "#{window_index}",
-    ]), "0\n");
+    assert_eq!(
+        server.success(&[
+            "display-message",
+            "-p",
+            "-t",
+            "history:!",
+            "#{window_index}",
+        ]),
+        "1\n"
+    );
+    assert_eq!(
+        server.success(&["display-message", "-p", "-t", "history", "#{window_index}",]),
+        "0\n"
+    );
     server.success(&["last-window", "-t", "history"]);
-    assert_eq!(server.success(&[
-        "display-message", "-p", "-t", "history", "#{window_index}",
-    ]), "1\n");
+    assert_eq!(
+        server.success(&["display-message", "-p", "-t", "history", "#{window_index}",]),
+        "1\n"
+    );
 }
 
 #[test]
@@ -147,15 +170,26 @@ fn break_pane_adopts_existing_process_instead_of_spawning_a_replacement() {
     let server = Server::new();
     server.success(&["new-session", "-d", "-s", "adopt", "sleep 30"]);
     let pane = server.success(&[
-        "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", "adopt:0", "sleep 30",
+        "split-window",
+        "-d",
+        "-P",
+        "-F",
+        "#{pane_id}",
+        "-t",
+        "adopt:0",
+        "sleep 30",
     ]);
     let pane = pane.trim();
     let pid = server.success(&["display-message", "-p", "-t", pane, "#{pane_pid}"]);
     server.success(&["break-pane", "-d", "-s", pane, "-t", "adopt:4"]);
-    assert_eq!(server.success(&[
-        "display-message", "-p", "-t", "adopt:4", "#{pane_id}",
-    ]).trim(), pane);
-    assert_eq!(server.success(&[
-        "display-message", "-p", "-t", "adopt:4", "#{pane_pid}",
-    ]), pid);
+    assert_eq!(
+        server
+            .success(&["display-message", "-p", "-t", "adopt:4", "#{pane_id}",])
+            .trim(),
+        pane
+    );
+    assert_eq!(
+        server.success(&["display-message", "-p", "-t", "adopt:4", "#{pane_pid}",]),
+        pid
+    );
 }

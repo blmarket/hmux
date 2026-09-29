@@ -1,8 +1,8 @@
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::cmd::{
-    cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move,
-    cmd_list_new, cmd_list_print_cstring, cmd_parse,
+    cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move, cmd_list_new,
+    cmd_list_print_cstring, cmd_parse,
 };
 use crate::src::environ::environ_put;
 use crate::src::format::bytes::write_cstr;
@@ -46,9 +46,7 @@ struct cmd_parse_command {
 }
 
 /// Inline in a command, owning each separately allocated argument.
-struct cmd_parse_arguments {
-    items: VecDeque<Box<cmd_parse_argument>>,
-}
+type cmd_parse_arguments = VecDeque<Box<cmd_parse_argument>>;
 
 /// Each variant owns exactly the payload that its parser argument needs.
 enum cmd_parse_argument {
@@ -104,28 +102,40 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_l
     if !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
         return;
     }
-    let Some(item_owner) = (*pi).item.upgrade() else { return };
+    let Some(item_owner) = (*pi).item.upgrade() else {
+        return;
+    };
     let item = item_owner.get();
     let s = cmd_list_print_cstring(cmdlist, 0);
     if (*pi).file.is_some() {
-        cmdq_print(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
-            write_cstr(out, (*pi).file_ptr())?;
-            write!(out, ":{}: ", ((*pi).line) as u32)?;
-            out.write_all(s.as_bytes())
-        });
+        cmdq_print(
+            &(*(item))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+            |out| {
+                write_cstr(out, (*pi).file_ptr())?;
+                write!(out, ":{}: ", ((*pi).line) as u32)?;
+                out.write_all(s.as_bytes())
+            },
+        );
     } else {
-        cmdq_print(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
-            write!(out, "{}: ", ((*pi).line) as u32)?;
-            out.write_all(s.as_bytes())
-        });
+        cmdq_print(
+            &(*(item))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+            |out| {
+                write!(out, "{}: ", ((*pi).line) as u32)?;
+                out.write_all(s.as_bytes())
+            },
+        );
     }
 }
 fn cmd_parse_new_command(line: u_int) -> Box<cmd_parse_command> {
     Box::new(cmd_parse_command {
         line,
-        arguments: cmd_parse_arguments {
-            items: VecDeque::new(),
-        },
+        arguments: VecDeque::new(),
     })
 }
 
@@ -147,19 +157,59 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let mut session = self.0.borrow_mut();
             let pi = &mut *session.input;
             let client_owner = pi.c.upgrade();
-            let client_ptr = client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            let client_ptr = client_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
             let mut fs: cmd_find_state = Default::default();
             let fsp = if cmd_find_valid_state(&(*pi).fs) != 0 {
                 &raw mut (*pi).fs
             } else {
-                cmd_find_from_client(&raw mut fs, (client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), 0);
+                cmd_find_from_client(
+                    &raw mut fs,
+                    (client_ptr)
+                        .as_ref()
+                        .and_then(|model| model.observer.upgrade())
+                        .as_ref(),
+                    0,
+                );
                 &raw mut fs
             };
             let item_owner = pi.item.upgrade();
-            let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            let mut ft_owner = format_create_with_client(client_owner.as_ref(), (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(), FORMAT_NONE, FORMAT_NOJOBS);
+            let item = item_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            let mut ft_owner = format_create_with_client(
+                client_owner.as_ref(),
+                (item)
+                    .as_ref()
+                    .and_then(|item| item.observer.upgrade())
+                    .as_ref(),
+                FORMAT_NONE,
+                FORMAT_NOJOBS,
+            );
             let ft = &raw mut *ft_owner;
-            format_defaults(ft, (client_ptr).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*fsp).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), ((*fsp).winlink_handle()).clone(), ((*fsp).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            format_defaults(
+                ft,
+                (client_ptr)
+                    .as_ref()
+                    .and_then(|model| model.observer.upgrade())
+                    .as_ref(),
+                ((*fsp)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+                ((*fsp).winlink_handle()).clone(),
+                ((*fsp)
+                    .pane_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            );
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(ft_owner);
             take_parser_token(expanded)
@@ -212,7 +262,7 @@ fn build_parser_commands(commands: Vec<hmux_cmdparse::ParseCommand>) -> Box<cmd_
                     cmd_parse_argument::Commands(build_parser_commands(commands))
                 }
             };
-            cmd.arguments.items.push_back(Box::new(arg));
+            cmd.arguments.push_back(Box::new(arg));
         }
         output.items.push(cmd);
     }
@@ -256,7 +306,7 @@ fn cmd_parse_do_buffer(
 
 unsafe fn cmd_parse_log_commands(cmds: &cmd_parse_commands, prefix: &CStr) {
     for (i, cmd) in cmds.items.iter().enumerate() {
-        for (j, arg) in cmd.arguments.items.iter().enumerate() {
+        for (j, arg) in cmd.arguments.iter().enumerate() {
             match arg.as_ref() {
                 cmd_parse_argument::String(text) => {
                     log_debug(format_args!(
@@ -297,8 +347,7 @@ unsafe fn cmd_parse_expand_alias(
         return false;
     }
     *pr = cmd_parse_result::empty();
-    let Some(cmd_parse_argument::String(name)) = cmd.arguments.items.front().map(Box::as_ref)
-    else {
+    let Some(cmd_parse_argument::String(name)) = cmd.arguments.front().map(Box::as_ref) else {
         pr.status = CMD_PARSE_SUCCESS;
         pr.cmdlist = Some(cmd_list_new());
         return true;
@@ -328,11 +377,10 @@ unsafe fn cmd_parse_expand_alias(
     };
     drop(
         cmd.arguments
-            .items
             .pop_front()
             .expect("alias command has a first argument"),
     );
-    last.arguments.items.append(&mut cmd.arguments.items);
+    last.arguments.append(&mut cmd.arguments);
     cmd_parse_log_commands(&cmds, c"cmd_parse_expand_alias");
     pi.flags |= CMD_PARSE_NOALIAS;
     cmd_parse_build_commands(&mut cmds, pi, pr);
@@ -350,7 +398,7 @@ unsafe fn cmd_parse_build_command(
         return;
     }
     let mut values = Vec::<ArgumentValue>::new();
-    for arg in &mut cmd.arguments.items {
+    for arg in &mut cmd.arguments {
         let value = match arg.as_mut() {
             cmd_parse_argument::String(text) => ArgumentValue::borrowed_string(text),
             cmd_parse_argument::Commands(commands) => {
@@ -499,7 +547,10 @@ pub unsafe fn cmd_parse_and_append(
     if pr.status == CMD_PARSE_ERROR {
         return Err(pr.error.take());
     }
-    item_allocation = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), state);
+    item_allocation = cmdq_get_command(
+        pr.cmdlist.as_ref().expect("successful command parse"),
+        state,
+    );
     cmdq_append(owner, item_allocation);
     drop(pr.cmdlist.take());
     Ok(pr.status)
@@ -599,16 +650,13 @@ pub unsafe fn cmd_parse_from_arguments(
                     }
                 }
                 if !end || !bytes.is_empty() {
-                    cmd.arguments
-                        .items
-                        .push_back(Box::new(cmd_parse_argument::String(
-                            CString::new(bytes).expect("argument contains no NUL"),
-                        )));
+                    cmd.arguments.push_back(Box::new(cmd_parse_argument::String(
+                        CString::new(bytes).expect("argument contains no NUL"),
+                    )));
                 }
             }
             ARGS_COMMANDS => {
                 cmd.arguments
-                    .items
                     .push_back(Box::new(cmd_parse_argument::ParsedCommands(
                         value.as_commands().expect("command argument").clone(),
                     )));
@@ -620,7 +668,7 @@ pub unsafe fn cmd_parse_from_arguments(
             cmd = cmd_parse_new_command(pi.line);
         }
     }
-    if !cmd.arguments.items.is_empty() {
+    if !cmd.arguments.is_empty() {
         cmds.items.push(cmd);
     }
     cmd_parse_build_commands(&mut cmds, pi, &mut pr);
@@ -639,7 +687,6 @@ mod parser_collection_tests {
             .iter()
             .map(|cmd| {
                 cmd.arguments
-                    .items
                     .iter()
                     .map(|arg| {
                         let cmd_parse_argument::String(text) = arg.as_ref() else {
@@ -655,7 +702,7 @@ mod parser_collection_tests {
 
     fn string_command(line: u_int, strings: &[&CStr]) -> Box<cmd_parse_command> {
         let mut cmd = cmd_parse_new_command(line);
-        cmd.arguments.items.extend(
+        cmd.arguments.extend(
             strings
                 .iter()
                 .map(|text| Box::new(cmd_parse_argument::String((*text).to_owned()))),
@@ -700,17 +747,14 @@ mod parser_collection_tests {
             let mut inner = cmd_parse_new_command(1);
             inner
                 .arguments
-                .items
                 .push_back(Box::new(cmd_parse_argument::ParsedCommands(first)));
             nested.items.push(inner);
             let mut outer = cmd_parse_new_command(2);
             outer
                 .arguments
-                .items
                 .push_back(Box::new(cmd_parse_argument::Commands(nested)));
             outer
                 .arguments
-                .items
                 .push_back(Box::new(cmd_parse_argument::ParsedCommands(second)));
             let mut source = cmd_parse_new_commands();
             source.items.push(outer);
@@ -739,7 +783,6 @@ mod parser_collection_tests {
                 let mut command = string_command(1, &[c"if-shell", c"-F", c"1"]);
                 command
                     .arguments
-                    .items
                     .push_back(Box::new(cmd_parse_argument::ParsedCommands(compiled)));
                 if fail_nested {
                     let mut nested = cmd_parse_new_commands();
@@ -748,7 +791,6 @@ mod parser_collection_tests {
                         .push(string_command(7, &[c"unknown-parser-owner-command"]));
                     command
                         .arguments
-                        .items
                         .push_back(Box::new(cmd_parse_argument::Commands(nested)));
                 }
                 let mut commands = cmd_parse_new_commands();
@@ -782,7 +824,15 @@ mod parser_collection_tests {
                         "built command must retain its nested command list"
                     );
                     assert_eq!(
-                        cmd_list_print_cstring(&result.cmdlist.as_ref().expect("parsed command list").borrow(), 0).as_bytes(),
+                        cmd_list_print_cstring(
+                            &result
+                                .cmdlist
+                                .as_ref()
+                                .expect("parsed command list")
+                                .borrow(),
+                            0
+                        )
+                        .as_bytes(),
                         b"if-shell -F 1 { display-message -p nested }"
                     );
                     drop(result.cmdlist.take());
@@ -925,16 +975,14 @@ mod parser_collection_tests {
             let mut first_cmd = cmd_parse_new_command(1);
             first_cmd
                 .arguments
-                .items
                 .push_back(Box::new(cmd_parse_argument::String(CString::default())));
             cmds.items.push(first_cmd);
             let command_address = cmds.items[0].as_ref() as *const cmd_parse_command as usize;
             let argument_address =
-                cmds.items[0].arguments.items[0].as_ref() as *const cmd_parse_argument as usize;
+                cmds.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize;
             for _ in 0..128 {
                 let mut cmd = cmd_parse_new_command(1);
                 cmd.arguments
-                    .items
                     .push_back(Box::new(cmd_parse_argument::String(CString::default())));
                 cmds.items.push(cmd);
             }
@@ -943,7 +991,7 @@ mod parser_collection_tests {
                 command_address
             );
             assert_eq!(
-                cmds.items[0].arguments.items[0].as_ref() as *const cmd_parse_argument as usize,
+                cmds.items[0].arguments[0].as_ref() as *const cmd_parse_argument as usize,
                 argument_address
             );
         }

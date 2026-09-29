@@ -223,9 +223,7 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
         write!(
             &mut row,
             "[{:x}] {}/{}",
-            gl.flags as u32,
-            gl.cellused as u32,
-            gl.cellsize as u32
+            gl.flags as u32, gl.cellused as u32, gl.cellsize as u32
         )
         .expect("writing to a byte vector succeeds");
         if gl.flags as ::core::ffi::c_int & GRID_LINE_OSC133_FLAGS != 0 {
@@ -259,9 +257,8 @@ unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &mut window_pane) -> Vec
     let mut linelen: size_t = 0;
     let mut i: u_int = 0;
     let pending = input_pending(wp.ictx.as_deref_mut().expect("pane input context"));
-    line =
-        evbuffer_pullup(pending, -1)
-            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
+    line = evbuffer_pullup(pending, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+        as *mut ::core::ffi::c_char;
     linelen = evbuffer_get_length(&*pending);
     if args_has(args, 'C' as i32 as u_char) != 0 {
         i = 0 as u_int;
@@ -374,7 +371,7 @@ unsafe fn cmd_capture_pane_history(
         };
         (saved, &wp.base)
     } else {
-        let active = wp.modes.active_weak();
+        let active = wp.active_mode_entry();
         let s = if args_has(args, b'M') != 0 && active.is_alive() {
             match (*(active).get_unchecked().mode).get_screen {
                 Some(get_screen) => &*get_screen(active),
@@ -385,7 +382,8 @@ unsafe fn cmd_capture_pane_history(
         };
         (s.grid(), s)
     };
-    Sflag = args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    Sflag =
+        args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !Sflag.is_null()
         && strcmp(Sflag, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
@@ -415,7 +413,8 @@ unsafe fn cmd_capture_pane_history(
             top = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
         }
     }
-    Eflag = args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    Eflag =
+        args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !Eflag.is_null()
         && strcmp(Eflag, b"-\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
@@ -570,23 +569,40 @@ unsafe fn cmd_capture_pane_history(
     }
     Some(buf)
 }
-unsafe fn cmd_capture_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_capture_pane_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let pane_owner = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).wp.upgrade().expect("capture target pane");
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let pane_owner = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
+        .wp
+        .upgrade()
+        .expect("capture target pane");
     let wp = pane_owner.get();
     let mut buf: Vec<u8>;
     let mut cause: Option<CString> = None;
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_clear_history_entry) {
+    if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_clear_history_entry,
+    ) {
         window_pane_reset_mode_all(&pane_owner);
         grid_clear_history((*wp).base.grid_mut());
         if args_has(args, 'H' as i32 as u_char) != 0 {
             screen_reset_hyperlinks(&mut *(*wp).screen_ptr());
         }
-        server_redraw_window(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+        server_redraw_window(
+            &*((*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())),
+        );
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
@@ -628,7 +644,8 @@ unsafe fn cmd_capture_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     } else {
         bufname = ::core::ptr::null::<::core::ffi::c_char>();
         if args_has(args, 'b' as i32 as u_char) != 0 {
-            bufname = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+            bufname = args_get(&*(args), 'b' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr());
         }
         if paste_set_owned(
             buf.into_boxed_slice(),

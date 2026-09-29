@@ -1,4 +1,3 @@
-use crate::src::reactor::BufferEvent;
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
@@ -9,12 +8,14 @@ use crate::src::ffi::libc::{
     sigfillset, sigprocmask, socketpair, strerror,
 };
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create_with_client, format_defaults, format_expand_time_cstring, format_free};
+use crate::src::format::{
+    format_create_with_client, format_defaults, format_expand_time_cstring, format_free,
+};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
+use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
-    bufferevent_get_input,
-    bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
+    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
@@ -66,16 +67,25 @@ pub static cmd_pipe_pane_entry: cmd_entry = {
         exec: Some(cmd_pipe_pane_exec),
     }
 };
-unsafe fn cmd_pipe_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_pipe_pane_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
     let wp = pane_owner.get();
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*target)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let mut old_fd: ::core::ffi::c_int = 0;
@@ -101,7 +111,9 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
         }
     }
     if args_count(args) == 0 as u_int
-        || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int == '\0' as i32
+        || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
+            as ::core::ffi::c_int
+            == '\0' as i32
     {
         return CMD_RETURN_NORMAL;
     }
@@ -135,8 +147,23 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
         0 as ::core::ffi::c_int,
     );
     ft = &raw mut *ft_owner;
-    format_defaults(ft, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-    let cmd = format_expand_time_cstring(ft, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    format_defaults(
+        ft,
+        (tc).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+        (s).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+        wl.clone(),
+        (wp).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+    );
+    let cmd = format_expand_time_cstring(
+        ft,
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     format_free(ft_owner);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
@@ -255,18 +282,22 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
         }
     };
 }
-unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+unsafe fn cmd_pipe_pane_read_callback(
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
     let wp = pane_owner.get();
     let mut available: size_t = 0;
     if !(*wp).pipe_event.is_alive() {
         return;
     }
-    let data = (*wp).pipe_event.with_ptr(|event| unsafe {
-        let evb = &mut *(*event).input;
-        let available = evbuffer_get_length(evb);
-        evbuffer_pullup(evb, -1)
-            .map_or_else(Vec::new, |bytes| bytes[..available].to_vec())
-    }).unwrap_or_default();
+    let data = (*wp)
+        .pipe_event
+        .with_ptr(|event| unsafe {
+            let evb = &mut *(*event).input;
+            let available = evbuffer_get_length(evb);
+            evbuffer_pullup(evb, -1).map_or_else(Vec::new, |bytes| bytes[..available].to_vec())
+        })
+        .unwrap_or_default();
     available = data.len();
     log_debug(format_args!(
         "%{} pipe read {}",
@@ -283,14 +314,18 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::Unsafe
         server_destroy_pane(&pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+unsafe fn cmd_pipe_pane_write_callback(
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
     let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe empty", ((*wp).id) as u32));
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(&pane_owner, 1);
     }
 }
-unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+unsafe fn cmd_pipe_pane_error_callback(
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
     let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe error", ((*wp).id) as u32));
     std::mem::take(&mut (*wp).pipe_event).free();
@@ -324,9 +359,12 @@ mod pipe_stream_tests {
 
             cmd_pipe_pane_read_callback(&pane_owner);
 
-            assert_eq!((*wp).event.with_ptr(|event| unsafe {
-                evbuffer_get_length(&(*event).output)
-            }), Some(bytes.len()));
+            assert_eq!(
+                (*wp)
+                    .event
+                    .with_ptr(|event| unsafe { evbuffer_get_length(&(*event).output) }),
+                Some(bytes.len())
+            );
             assert_eq!(evbuffer_get_length(&(*pipe).input), 0);
             std::mem::take(&mut (*wp).pipe_event).free();
             assert!(!stale.is_alive());

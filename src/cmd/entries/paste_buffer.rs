@@ -47,11 +47,18 @@ unsafe fn cmd_paste_buffer_paste(wp: &window_pane, buf: &[u8]) {
         bufferevent_write(event, escaped.as_ptr().cast(), escaped.len());
     });
 }
-unsafe fn cmd_paste_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_paste_buffer_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target)
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let pb;
     let mut sepstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -62,7 +69,8 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     }
     bufname = ::core::ptr::null::<::core::ffi::c_char>();
     if args_has(args, 'b' as i32 as u_char) != 0 {
-        bufname = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        bufname = args_get(&*(args), 'b' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
     }
     if bufname.is_null() {
         pb = paste_get_top(None);
@@ -80,7 +88,8 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
         return CMD_RETURN_NORMAL;
     };
     if !(*wp).flags & PANE_INPUTOFF != 0 {
-        sepstr = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        sepstr = args_get(&*(args), 's' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
         if sepstr.is_null() {
             if args_has(args, 'r' as i32 as u_char) != 0 {
                 sepstr = b"\n\0" as *const u8 as *const ::core::ffi::c_char;
@@ -90,12 +99,14 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
         }
         let separator = CStr::from_ptr(sepstr).to_bytes();
         if bracket != 0 && (*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
-            let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
-                event,
-                b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char
-                    as *const ::core::ffi::c_void,
-                6 as size_t,
-            ) });
+            let _ = (*wp).event.with_ptr(|event| unsafe {
+                bufferevent_write(
+                    event,
+                    b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char
+                        as *const ::core::ffi::c_void,
+                    6 as size_t,
+                )
+            });
         }
         let buffer = pb.borrow();
         let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
@@ -115,12 +126,14 @@ unsafe fn cmd_paste_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
             }
         }
         if bracket != 0 && (*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
-            let _ = (*wp).event.with_ptr(|event| unsafe { bufferevent_write(
-                event,
-                b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char
-                    as *const ::core::ffi::c_void,
-                6 as size_t,
-            ) });
+            let _ = (*wp).event.with_ptr(|event| unsafe {
+                bufferevent_write(
+                    event,
+                    b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char
+                        as *const ::core::ffi::c_void,
+                    6 as size_t,
+                )
+            });
         }
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {

@@ -83,13 +83,22 @@ pub static cmd_lock_client_entry: cmd_entry = {
         exec: Some(cmd_lock_server_exec),
     }
 };
-unsafe fn cmd_lock_server_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_lock_server_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_lock_server_entry) {
+    if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_lock_server_entry,
+    ) {
         server_lock();
-    } else if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_lock_session_entry) {
+    } else if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_lock_session_entry,
+    ) {
         server_lock_session(&(*target).s.upgrade().expect("live target session"));
     } else {
         server_lock_client(tc_owner.as_ref().expect("lock target client"));

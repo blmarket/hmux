@@ -48,15 +48,20 @@ pub static cmd_kill_session_entry: cmd_entry = {
         exec: Some(cmd_kill_session_exec),
     }
 };
-unsafe fn cmd_kill_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_kill_session_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let source = (*target).s.upgrade().expect("live target session");
     let s = source.get();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut filter: *const ::core::ffi::c_char =
+        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null()
         && (args_has(args, 'a' as i32 as u_char) == 0 || args_has(args, 'C' as i32 as u_char) != 0)
     {
@@ -66,7 +71,11 @@ unsafe fn cmd_kill_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         while wl.is_alive() {
-            (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).flags &= !WINDOW_ALERTFLAGS;
+            (*wl.get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .flags &= !WINDOW_ALERTFLAGS;
             wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
             wl = winlinks_next(wl.get_unchecked());
         }
@@ -101,14 +110,24 @@ unsafe fn cmd_kill_session_all(
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sloop_owner = sessions_minmax(&sessions);
-    sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    sloop = sloop_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !sloop.is_null() {
         let name = sessions_key(&*sloop);
         if !(sloop == s) {
-            if !(cmd_kill_session_filter(item_handle, &(*(sloop)).observer.upgrade().expect("live session"), filter) == 0) {
+            if !(cmd_kill_session_filter(
+                item_handle,
+                &(*(sloop)).observer.upgrade().expect("live session"),
+                filter,
+            ) == 0)
+            {
                 server_destroy_session(sloop_owner.as_ref().expect("registered session"));
                 session_destroy(
                     sloop_owner.as_ref().expect("registered session"),
@@ -118,7 +137,9 @@ unsafe fn cmd_kill_session_all(
             }
         }
         sloop_owner = sessions_after(&sessions, &name);
-        sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        sloop = sloop_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return CMD_RETURN_NORMAL;
 }
@@ -142,13 +163,7 @@ unsafe fn cmd_kill_session_filter(
         0 as ::core::ffi::c_int,
     );
     ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        None,
-        Some(s_owner),
-        (refbox::Weak::new()).clone(),
-        None,
-    );
+    format_defaults(ft, None, Some(s_owner), (refbox::Weak::new()).clone(), None);
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
     format_free(ft_owner);

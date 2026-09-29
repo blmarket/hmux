@@ -1,6 +1,5 @@
 //! Authoritative terminal capability-code values.
 
-use hmux_buffer::SegmentedBuf;
 use super::abi::{size_t, time_t, u_int};
 use super::client::client;
 use super::colour::colour_palette;
@@ -11,6 +10,7 @@ use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::terminal::termios;
+use hmux_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;
 pub const TTYC_VPA: tty_code_code = 232;
@@ -491,7 +491,9 @@ impl PaletteSource {
     pub fn resolve(&self) -> PaletteGuard<'_> {
         match self {
             Self::None => PaletteGuard::None,
-            Self::Pane(pane) => pane.upgrade().map_or(PaletteGuard::None, PaletteGuard::Pane),
+            Self::Pane(pane) => pane
+                .upgrade()
+                .map_or(PaletteGuard::None, PaletteGuard::Pane),
             Self::Popup(palette) => match palette.try_borrow_mut() {
                 Ok(borrowed) => PaletteGuard::Popup(borrowed),
                 Err(refbox::BorrowError::Dropped) => PaletteGuard::None,
@@ -520,7 +522,10 @@ mod palette_source_tests {
         drop(pane);
         assert!(pane_source.with_palette(|palette| palette.is_none()));
 
-        let popup = refbox::RefBox::new(colour_palette { fg: 5, ..Default::default() });
+        let popup = refbox::RefBox::new(colour_palette {
+            fg: 5,
+            ..Default::default()
+        });
         let popup_source = PaletteSource::Popup(popup.downgrade());
         let snapshot = PaletteSource::Snapshot(Box::new(popup.try_borrow_mut().unwrap().clone()));
         assert_eq!(popup_source.with_palette(|palette| palette.unwrap().fg), 5);
@@ -570,7 +575,8 @@ impl<'a> tty_command_data<'a> {
     }
 }
 
-pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &std::rc::Rc<std::cell::UnsafeCell<client>>) -> i32>>;
+pub type tty_ctx_set_client_cb =
+    Option<Box<dyn FnMut(&mut tty_ctx, &std::rc::Rc<std::cell::UnsafeCell<client>>) -> i32>>;
 
 pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
 

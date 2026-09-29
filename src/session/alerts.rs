@@ -6,7 +6,9 @@ use crate::src::server_fn::server_status_session;
 use crate::src::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER, VISUAL_BOTH, VISUAL_OFF};
 use crate::src::shared::client::{client, CLIENT_CONTROL};
 use crate::src::shared::tty::TTYC_BEL;
-use crate::src::shared::window::{WINDOW_ACTIVITY, WINDOW_BELL, WINDOW_SILENCE, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
+use crate::src::shared::window::{
+    WINDOW_ACTIVITY, WINDOW_BELL, WINDOW_SILENCE, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
+};
 use crate::src::status::status_message_set;
 use crate::src::tty::tty_putcode;
 
@@ -16,10 +18,15 @@ unsafe fn alerts_action_applies(
     mut wl: refbox::Weak<winlink>,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let Some(session_owner) = wl.get_unchecked().session.upgrade() else { return 0; };
+    let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+        return 0;
+    };
     let s = session_owner.get();
     let mut action: ::core::ffi::c_int = 0;
-    action = options_get_number(options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options), name) as ::core::ffi::c_int;
+    action = options_get_number(
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+        name,
+    ) as ::core::ffi::c_int;
     if action == ALERT_ANY {
         return 1 as ::core::ffi::c_int;
     }
@@ -214,22 +221,43 @@ unsafe fn alerts_set_message(
     mut type_0: *const ::core::ffi::c_char,
     mut option: *const ::core::ffi::c_char,
 ) {
-    let Some(session_owner) = wl.get_unchecked().session.upgrade() else { return; };
+    let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+        return;
+    };
     let s = session_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut visual: ::core::ffi::c_int = 0;
-    visual = options_get_number(options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options), option) as ::core::ffi::c_int;
+    visual = options_get_number(
+        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+        option,
+    ) as ::core::ffi::c_int;
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !((*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
+        if !((*c)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+            != s
+            || (*c).flags & CLIENT_CONTROL as uint64_t != 0)
+        {
             if visual == VISUAL_OFF || visual == VISUAL_BOTH {
                 tty_putcode(&raw mut (*c).tty, TTYC_BEL);
             }
             if !(visual == VISUAL_OFF) {
-                if (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink() == wl {
+                if (*(*c)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .current_winlink()
+                    == wl
+                {
                     status_message_set(
-                        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                        (c).as_ref()
+                            .and_then(|model| model.observer.upgrade())
+                            .as_ref(),
                         -(1 as ::core::ffi::c_int),
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -241,7 +269,9 @@ unsafe fn alerts_set_message(
                     );
                 } else {
                     status_message_set(
-                        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                        (c).as_ref()
+                            .and_then(|model| model.observer.upgrade())
+                            .as_ref(),
                         -(1 as ::core::ffi::c_int),
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -254,7 +284,10 @@ unsafe fn alerts_set_message(
                 }
             }
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }

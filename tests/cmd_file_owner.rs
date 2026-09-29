@@ -17,12 +17,30 @@ fn filename_survives_input_mutation_and_original_command_free() {
         let copied = cmd_copy(&command.try_borrow_mut().unwrap(), &Vec::new());
 
         assert_ne!(
-            command.try_borrow_mut().unwrap().file.as_ref().unwrap().as_ptr(),
+            command
+                .try_borrow_mut()
+                .unwrap()
+                .file
+                .as_ref()
+                .unwrap()
+                .as_ptr(),
             filename.as_ptr().cast()
         );
         assert_ne!(
-            copied.try_borrow_mut().unwrap().file.as_ref().unwrap().as_ptr(),
-            command.try_borrow_mut().unwrap().file.as_ref().unwrap().as_ptr()
+            copied
+                .try_borrow_mut()
+                .unwrap()
+                .file
+                .as_ref()
+                .unwrap()
+                .as_ptr(),
+            command
+                .try_borrow_mut()
+                .unwrap()
+                .file
+                .as_ref()
+                .unwrap()
+                .as_ptr()
         );
 
         // The parser must retain its own bytes, including non-UTF-8 bytes.

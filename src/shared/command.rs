@@ -243,7 +243,9 @@ pub struct cmd_entry {
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,
     // The dispatching queue item retains the command-list owner through this call.
-    pub exec: Option<unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>,
+    pub exec: Option<
+        unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval,
+    >,
 }
 
 #[repr(C)]
@@ -262,7 +264,8 @@ impl cmdq_state {
     }
 }
 
-pub type cmdq_cb = Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>>;
+pub type cmdq_cb =
+    Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>>;
 
 pub type cmdq_type = ::core::ffi::c_uint;
 

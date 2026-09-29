@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_from_window};
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_error, cmdq_new_state};
@@ -9,6 +8,7 @@ use crate::src::format_draw::{format_trim_right_bytes, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::options::options_get_number;
+use crate::src::options::options_owner_ptr;
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_redraw::redraw_invalidate_scene;
 use crate::src::screen_write::{
@@ -34,7 +34,7 @@ use crate::src::shared::mouse::{
 use crate::src::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::*;
-use crate::src::shared::window::{window};
+use crate::src::shared::window::window;
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::window::window_update_focus;
 use std::cell::UnsafeCell;
@@ -54,15 +54,13 @@ impl menu {
         index
     }
 }
-pub unsafe fn menu_add_items(menu: &mut menu, items: &[menu_item<'_>], client_owner: Option<&Rc<UnsafeCell<client>>>) {
+pub unsafe fn menu_add_items(
+    menu: &mut menu,
+    items: &[menu_item<'_>],
+    client_owner: Option<&Rc<UnsafeCell<client>>>,
+) {
     for item in items {
-        menu_add_item(
-            menu,
-            Some(item),
-            None,
-            client_owner,
-            std::ptr::null_mut(),
-        );
+        menu_add_item(menu, Some(item), None, client_owner, std::ptr::null_mut());
     }
 }
 pub unsafe fn menu_add_item(
@@ -164,13 +162,26 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let Some(window) = md.w.upgrade() else {
         return;
     };
-    let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options).map_or(std::ptr::null_mut(), |options| options);
+    let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options)
+        .map_or(std::ptr::null_mut(), |options| options);
     let mut ft_owner = format_create_defaults(
         None,
         None,
-        (md.fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        (md.fs
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .as_ref()
+        .and_then(|model| model.observer.upgrade())
+        .as_ref(),
         (md.fs.winlink_handle()).clone(),
-        (md.fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        (md.fs
+            .pane_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .as_ref()
+        .and_then(|model| model.observer.upgrade())
+        .as_ref(),
     );
     let ft = &raw mut *ft_owner;
     let mut parsed = style::default();
@@ -248,18 +259,18 @@ fn menu_free_data(owner: refbox::RefBox<crate::src::shared::menu::menu_data>) {
     }
 }
 
-pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&refbox::Weak<crate::src::shared::menu::menu_data>>) {
+pub unsafe fn menu_close(
+    window: &Weak<UnsafeCell<window>>,
+    expected: Option<&refbox::Weak<crate::src::shared::menu::menu_data>>,
+) {
     let menu = {
         let Some(owner) = window.upgrade() else {
             return;
         };
         let w = &mut *owner.get();
-        if expected.is_some_and(|expected| {
-            !w
-                .menu
-                .as_ref()
-                .is_some_and(|current| expected.is(current))
-        }) {
+        if expected
+            .is_some_and(|expected| !w.menu.as_ref().is_some_and(|current| expected.is(current)))
+        {
             return;
         }
         w.menu.take()
@@ -272,7 +283,11 @@ pub unsafe fn menu_close(window: &Weak<UnsafeCell<window>>, expected: Option<&re
     if let Some(owner) = window.upgrade() {
         let w = crate::src::shared::rc::as_ptr(&owner);
         redraw_invalidate_scene(&mut *(w));
-        window_update_focus((w).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        window_update_focus(
+            (w).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
         server_redraw_window(&*(w));
     }
 }
@@ -511,7 +526,11 @@ fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
     MenuKeyAction::Redraw
 }
 
-pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>, owner: &refbox::Weak<crate::src::shared::menu::menu_data>, event: &key_event) -> ::core::ffi::c_int {
+pub unsafe fn menu_key(
+    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    owner: &refbox::Weak<crate::src::shared::menu::menu_data>,
+    event: &key_event,
+) -> ::core::ffi::c_int {
     let action = {
         let mut md = match owner.try_borrow_mut() {
             Ok(md) => md,
@@ -526,7 +545,11 @@ pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<c
     let (index, key) = match action {
         MenuKeyAction::Unchanged => return 0,
         MenuKeyAction::Redraw => {
-            let window = owner.try_borrow_mut().expect("live unborrowed menu").w.upgrade();
+            let window = owner
+                .try_borrow_mut()
+                .expect("live unborrowed menu")
+                .w
+                .upgrade();
             if let Some(window) = window {
                 server_redraw_window_menu(&window);
             }
@@ -565,7 +588,8 @@ pub unsafe fn menu_key(client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<c
             .command
             .as_deref()
             .expect("menu command row has a command"),
-        client_owner, Some(&state),
+        client_owner,
+        Some(&state),
     ) {
         cmdq_append(
             client_owner,
@@ -617,10 +641,19 @@ pub unsafe fn menu_display(
     cb: menu_choice_cb,
 ) {
     let setup_window = if fs.is_null() {
-        let client = &*client_owner.expect("menu without a target requires a client").get();
-        let link_handle = (*client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink();
+        let client = &*client_owner
+            .expect("menu without a target requires a client")
+            .get();
+        let link_handle = (*client
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .current_winlink();
         let link = link_handle.try_borrow_mut().expect("current menu link");
-        link.window_owner.as_ref().expect("current link has a window").clone()
+        link.window_owner
+            .as_ref()
+            .expect("current link has a window")
+            .clone()
     } else {
         (*fs).w.upgrade().expect("live menu target window")
     };
@@ -641,7 +674,10 @@ pub unsafe fn menu_display(
     w.menu_last_px = px;
     w.menu_last_py = py;
     if lines == BOX_LINES_DEFAULT {
-        lines = options_get_number(options_owner_ptr(&mut w.options).map_or(std::ptr::null_mut(), |options| options), c"menu-border-lines".as_ptr()) as box_lines;
+        lines = options_get_number(
+            options_owner_ptr(&mut w.options).map_or(std::ptr::null_mut(), |options| options),
+            c"menu-border-lines".as_ptr(),
+        ) as box_lines;
     }
     let owner = refbox::RefBox::new(menu_data {
         w: window.clone(),
@@ -691,7 +727,11 @@ pub unsafe fn menu_display(
     if let Some(retained) = window.upgrade() {
         let w = crate::src::shared::rc::as_ptr(&retained);
         redraw_invalidate_scene(&mut *(w));
-        window_update_focus((w).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        window_update_focus(
+            (w).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
         server_redraw_window(&*(w));
     }
 }
@@ -860,7 +900,9 @@ mod tests {
 
     #[test]
     fn selected_callback_can_close_and_release_its_menu() {
-        let slot = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::menu::menu_data>>));
+        let slot = Rc::new(RefCell::new(
+            None::<refbox::RefBox<crate::src::shared::menu::menu_data>>,
+        ));
         let callback_slot = Rc::clone(&slot);
         let called = Rc::new(Cell::new(false));
         let callback_called = Rc::clone(&called);
@@ -911,13 +953,7 @@ mod tests {
                 borrowed.choice = -1;
             }
             assert_eq!(
-                unsafe {
-                    menu_key(
-                        None,
-                        &callback_observer,
-                        &event(b'a' as key_code),
-                    )
-                },
+                unsafe { menu_key(None, &callback_observer, &event(b'a' as key_code),) },
                 1
             );
         }));
@@ -929,8 +965,7 @@ mod tests {
     #[test]
     fn cancellation_preserves_a_replacement_and_windows_do_not_form_cycles() {
         unsafe {
-            let window =
-                window::new();
+            let window = window::new();
             let weak_window = Rc::downgrade(&window);
             let w = crate::src::shared::rc::as_ptr(&window);
             let first = refbox::RefBox::new(state(&[Some(c"first")]));
@@ -978,9 +1013,7 @@ mod tests {
             global_options = &raw mut *global_options_owner;
             let definition = (&options_table)
                 .iter()
-                .find(|entry| {
-                    entry.name == Some(c"extended-keys")
-                })
+                .find(|entry| entry.name == Some(c"extended-keys"))
                 .unwrap();
             options_default(global_options, definition);
             for destroy_window in [false, true] {
@@ -1042,12 +1075,21 @@ mod tests {
                     assert_eq!(intermediate_cancelled.get(), 1);
                     assert_eq!(cancelled.get(), 0);
                     assert_eq!(
-                        (*w).menu.as_ref().unwrap().try_borrow_mut().unwrap().menu.items[0]
+                        (*w).menu
+                            .as_ref()
+                            .unwrap()
+                            .try_borrow_mut()
+                            .unwrap()
+                            .menu
+                            .items[0]
                             .name
                             .as_deref(),
                         Some(c"new")
                     );
-                    crate::src::window::window_remove_ref(slot.borrow_mut().take().unwrap(), c"test slot".as_ptr());
+                    crate::src::window::window_remove_ref(
+                        slot.borrow_mut().take().unwrap(),
+                        c"test slot".as_ptr(),
+                    );
                 }
                 assert_eq!(cancelled.get(), 1);
                 assert!(observer.upgrade().is_none());

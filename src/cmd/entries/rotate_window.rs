@@ -9,7 +9,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::layout::layout_cell;
-use crate::src::shared::window::{winlink};
+use crate::src::shared::window::winlink;
 use crate::src::window::window_pane_resize;
 use crate::src::window::{
     window_pane_first, window_pane_last, window_pane_list_insert_back,
@@ -41,9 +41,13 @@ pub static cmd_rotate_window_entry: cmd_entry = {
         exec: Some(cmd_rotate_window_exec),
     }
 };
-unsafe fn cmd_rotate_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_rotate_window_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
@@ -94,8 +98,14 @@ unsafe fn cmd_rotate_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
             (*wp).xoff = xoff as ::core::ffi::c_int;
             (*wp).yoff = yoff as ::core::ffi::c_int;
             window_pane_resize(&cursor, sx, sy);
-            window_pane_previous(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref())
-                .or_else(|| window_pane_last(Some(&*w)))
+            window_pane_previous(
+                ((*w)
+                    .active_pane()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .as_ref(),
+            )
+            .or_else(|| window_pane_last(Some(&*w)))
         } else {
             let moved_owner = window_pane_first(Some(&*w)).expect("rotation window has panes");
             let wp = moved_owner.get();
@@ -120,7 +130,8 @@ unsafe fn cmd_rotate_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                 (*wp).xoff = (*wp2).xoff;
                 (*wp).yoff = (*wp2).yoff;
                 window_pane_resize(&cursor, (*wp2).sx, (*wp2).sy);
-                cursor = window_pane_previous(Some(&*wp)).expect("rotation neighbor remains in order");
+                cursor =
+                    window_pane_previous(Some(&*wp)).expect("rotation neighbor remains in order");
             }
             let wp = cursor.get();
             (*wp).layout_cell = lc as *mut layout_cell;
@@ -130,12 +141,28 @@ unsafe fn cmd_rotate_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
             (*wp).xoff = xoff as ::core::ffi::c_int;
             (*wp).yoff = yoff as ::core::ffi::c_int;
             window_pane_resize(&cursor, sx, sy);
-            window_pane_next(((*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref())
-                .or_else(|| window_pane_first(Some(&*w)))
-        }.expect("rotation window has an active candidate");
+            window_pane_next(
+                ((*w)
+                    .active_pane()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .as_ref(),
+            )
+            .or_else(|| window_pane_first(Some(&*w)))
+        }
+        .expect("rotation window has an active candidate");
         let wp = selected_pane.get();
-        window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
-        cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl.clone(), &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
+        window_set_active_pane(
+            &(*(w)).observer.upgrade().expect("live window"),
+            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            1 as ::core::ffi::c_int,
+        );
+        cmd_find_from_winlink_pane(
+            &mut *current.current.borrow_mut(),
+            wl.clone(),
+            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            0 as ::core::ffi::c_int,
+        );
         window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
         redraw_invalidate_scene(&mut *(w));
         server_redraw_window(&*(w));

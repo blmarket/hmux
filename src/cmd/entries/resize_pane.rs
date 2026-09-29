@@ -62,14 +62,22 @@ pub static cmd_resize_pane_entry: cmd_entry = {
         exec: Some(cmd_resize_pane_exec),
     }
 };
-unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_resize_pane_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
     let wp = pane_owner.get();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lc: *mut layout_cell = (*wp).layout_cell as *mut layout_cell;
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -92,7 +100,9 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
         if !(*wp).modes.is_empty() {
             return CMD_RETURN_NORMAL;
         }
-        adjust = (*wp).base.grid()
+        adjust = (*wp)
+            .base
+            .grid()
             .sy
             .wrapping_sub(1 as u_int)
             .wrapping_sub((*wp).base.cy) as ::core::ffi::c_int;
@@ -109,7 +119,10 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
     }
     if args_has(args, 'Z' as i32 as u_char) != 0 {
         if (*w).flags & WINDOW_ZOOMED != 0 {
-            window_unzoom(&(*(w)).observer.upgrade().expect("live window"), 1 as ::core::ffi::c_int);
+            window_unzoom(
+                &(*(w)).observer.upgrade().expect("live window"),
+                1 as ::core::ffi::c_int,
+            );
         } else {
             window_zoom(&pane_owner);
         }
@@ -136,7 +149,11 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
             }
         };
         if window_pane_is_floating(&*wp) != 0 {
-            if let Err(cause) = layout_resize_floating_pane_to(&(*(wp)).observer.upgrade().expect("live window_pane"), LAYOUT_LEFTRIGHT, x as u_int) {
+            if let Err(cause) = layout_resize_floating_pane_to(
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                LAYOUT_LEFTRIGHT,
+                x as u_int,
+            ) {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"size ")?;
                     write_cstr(out, cause.as_ptr())
@@ -144,7 +161,11 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                 return CMD_RETURN_ERROR;
             }
         } else {
-            layout_resize_pane_to(&(*(wp)).observer.upgrade().expect("live window_pane"), LAYOUT_LEFTRIGHT, x as u_int);
+            layout_resize_pane_to(
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                LAYOUT_LEFTRIGHT,
+                x as u_int,
+            );
         }
     }
     if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -182,7 +203,11 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
             _ => {}
         }
         if window_pane_is_floating(&*wp) != 0 {
-            if let Err(cause) = layout_resize_floating_pane_to(&(*(wp)).observer.upgrade().expect("live window_pane"), LAYOUT_TOPBOTTOM, y as u_int) {
+            if let Err(cause) = layout_resize_floating_pane_to(
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                LAYOUT_TOPBOTTOM,
+                y as u_int,
+            ) {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"size ")?;
                     write_cstr(out, cause.as_ptr())
@@ -190,7 +215,11 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                 return CMD_RETURN_ERROR;
             }
         } else {
-            layout_resize_pane_to(&(*(wp)).observer.upgrade().expect("live window_pane"), LAYOUT_TOPBOTTOM, y as u_int);
+            layout_resize_pane_to(
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                LAYOUT_TOPBOTTOM,
+                y as u_int,
+            );
         }
     }
     i = 0 as ::core::ffi::c_ulong;
@@ -200,12 +229,14 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
     {
         flag = flags[i as usize];
         if !(args_has(args, flag as u_char) == 0) {
-            argval = args_get(&*(args), flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+            argval =
+                args_get(&*(args), flag as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
             if argval.is_null() {
                 if args_count(args) == 0 as u_int {
                     argval = b"1\0" as *const u8 as *const ::core::ffi::c_char;
                 } else {
-                    argval = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+                    argval = args_string(&mut *(args), 0 as u_int)
+                        .map_or(std::ptr::null(), |value| value.as_ptr());
                 }
             }
             adjust = strtonum(
@@ -232,7 +263,12 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                 {
                     opposite = 1 as ::core::ffi::c_int;
                 }
-                if let Err(cause) = layout_resize_floating_pane(&(*(wp)).observer.upgrade().expect("live window_pane"), type_0, adjust, opposite) {
+                if let Err(cause) = layout_resize_floating_pane(
+                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    type_0,
+                    adjust,
+                    opposite,
+                ) {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"adjustment ")?;
                         write_cstr(out, cause.as_ptr())
@@ -246,7 +282,11 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
                     // Preserve tmux's signed adjustment at the i32 boundary.
                     adjust = adjust.wrapping_neg();
                 }
-                layout_resize_pane(&(*(wp)).observer.upgrade().expect("live window_pane"), type_0, adjust);
+                layout_resize_pane(
+                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    type_0,
+                    adjust,
+                );
             }
         }
         i = i.wrapping_add(1);
@@ -262,18 +302,32 @@ unsafe fn cmd_resize_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_resize_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_resize_pane_mouse_update(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let mouse_pane_owner;
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target)
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut s: *mut session = (*target)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }
@@ -283,9 +337,20 @@ unsafe fn cmd_resize_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsa
         Some(&mut mouse_session_owner),
         ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
-    s = mouse_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() || c.is_null() || (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s {
+    s = mouse_session_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = mouse_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    if wp.is_null()
+        || c.is_null()
+        || (*c)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+            != s
+    {
         return CMD_RETURN_NORMAL;
     }
     if window_pane_is_floating(&*wp) == 0 {
@@ -293,19 +358,37 @@ unsafe fn cmd_resize_pane_mouse_update(item_handle: &std::rc::Rc<std::cell::Unsa
             c_owner.as_ref().expect("live drag client"),
             cmd_resize_pane_mouse_resize_tiled,
         )));
-        cmd_resize_pane_mouse_resize_tiled(c_owner.as_ref().expect("live drag client"), &raw mut (*event).m);
+        cmd_resize_pane_mouse_resize_tiled(
+            c_owner.as_ref().expect("live drag client"),
+            &raw mut (*event).m,
+        );
         return CMD_RETURN_NORMAL;
     }
-    window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-    window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
+    window_redraw_active_switch(
+        &(*(w)).observer.upgrade().expect("live window"),
+        (wp).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+    );
+    window_set_active_pane(
+        &(*(w)).observer.upgrade().expect("live window"),
+        &(*(wp)).observer.upgrade().expect("live window_pane"),
+        1 as ::core::ffi::c_int,
+    );
     (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
         c_owner.as_ref().expect("live drag client"),
         cmd_resize_pane_mouse_resize_move_floating,
     )));
-    cmd_resize_pane_mouse_resize_move_floating(c_owner.as_ref().expect("live drag client"), &raw mut (*event).m);
+    cmd_resize_pane_mouse_resize_move_floating(
+        c_owner.as_ref().expect("live drag client"),
+        &raw mut (*event).m,
+    );
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
+unsafe fn cmd_resize_pane_mouse_resize_move_floating(
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut m: *mut mouse_event,
+) {
     let c = client_owner.get();
     let mouse_pane_owner;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -326,12 +409,18 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<
     let mut new_yoff: ::core::ffi::c_int = 0;
     let mut resizes: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     mouse_pane_owner = cmd_mouse_pane(m, None, &raw mut wl);
-    wp = mouse_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = mouse_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = wl
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     lc = (*wp).layout_cell as *mut layout_cell;
     sx = (*wp).sx as ::core::ffi::c_int;
     sy = (*wp).sy as ::core::ffi::c_int;
@@ -449,7 +538,10 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(client_owner: &std::rc::Rc<
         server_redraw_window_borders(&*(w));
     }
 }
-unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut m: *mut mouse_event) {
+unsafe fn cmd_resize_pane_mouse_resize_tiled(
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut m: *mut mouse_event,
+) {
     let c = client_owner.get();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -476,7 +568,11 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cel
         (*c).tty.mouse_drag_update = None;
         return;
     }
-    w = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = wl
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     y = (*m).y.wrapping_add((*m).oy);
     x = (*m).x.wrapping_add((*m).ox);
     if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {
@@ -497,7 +593,8 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &std::rc::Rc<std::cel
             .wrapping_div(::core::mem::size_of::<*mut layout_cell>() as usize)
     {
         lc = layout_search_by_border(
-            (*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root),
+            (*w).layout_root_ptr()
+                .map_or(std::ptr::null_mut(), |root| root),
             lx.wrapping_add(offsets[i as usize][0 as ::core::ffi::c_int as usize] as u_int),
             ly.wrapping_add(offsets[i as usize][1 as ::core::ffi::c_int as usize] as u_int),
         );

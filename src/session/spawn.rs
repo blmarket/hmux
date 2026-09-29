@@ -94,7 +94,9 @@ pub(super) unsafe fn spawn_window(
         return refbox::Weak::new();
     }
     if (*sc).flags & SPAWN_RESPAWN == 0 {
-        let window = created_window.upgrade().expect("spawned window remains live");
+        let window = created_window
+            .upgrade()
+            .expect("spawned window remains live");
         initialize_spawned_window(sc, &window);
         window.release(c"spawn_window initialization");
     }
@@ -104,7 +106,9 @@ pub(super) unsafe fn spawn_window(
     if (*sc).flags & SPAWN_RESPAWN == 0 {
         // Pane and selection callbacks can change the link's association. The
         // creation notification still describes the originally created window.
-        let window = created_window.upgrade().expect("spawned window remains live");
+        let window = created_window
+            .upgrade()
+            .expect("spawned window remains live");
         events_fire_window(c"window-created".as_ptr(), window);
         events_fire_winlink(c"window-linked".as_ptr(), (*sc).winlink_handle());
     }

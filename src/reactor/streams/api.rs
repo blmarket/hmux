@@ -316,8 +316,14 @@ mod tests {
         let stream = buffer_only();
         stream
             .access(|inner| {
-                inner.input.as_mut().put(SegmentedBuf::from(b"abc".to_vec()));
-                inner.input.as_mut().put(SegmentedBuf::from(b"def".to_vec()));
+                inner
+                    .input
+                    .as_mut()
+                    .put(SegmentedBuf::from(b"abc".to_vec()));
+                inner
+                    .input
+                    .as_mut()
+                    .put(SegmentedBuf::from(b"def".to_vec()));
                 Ok(())
             })
             .unwrap();

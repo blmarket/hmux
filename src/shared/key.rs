@@ -1522,7 +1522,10 @@ pub struct key_table {
     pub activity_time: timeval,
     pub key_bindings: key_bindings,
     pub default_key_bindings: key_bindings,
-    pub entry: key_table_entry,
+    /// Weak traversal handle into the containing index.
+    pub owner: refbox::Weak<
+        std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>,
+    >,
 }
 
 impl key_table {
@@ -1540,15 +1543,9 @@ impl key_table {
             activity_time: Default::default(),
             key_bindings: key_bindings::default(),
             default_key_bindings: key_bindings::default(),
-            entry: key_table_entry { owner: refbox::Weak::new() },
+            owner: refbox::Weak::new(),
         }
     }
-}
-
-#[repr(C)]
-pub struct key_table_entry {
-    /// Weak traversal handle into the key table index.
-    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>>,
 }
 
 /// Each table owns its map directly; bindings keep their stable allocations.

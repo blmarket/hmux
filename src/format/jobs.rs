@@ -1,6 +1,6 @@
-use hmux_buffer::SegmentedBuf;
-use crate::src::shared::client::client_handle;
 use crate::src::log::{log_cstr, log_pointer};
+use crate::src::shared::client::client_handle;
+use hmux_buffer::SegmentedBuf;
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
 // lifecycle.  It calls the parent facade for expansion, logging, and allocation.
@@ -37,11 +37,10 @@ fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
     CString::new(bytes).expect("C command and literal suffix contain no NUL")
 }
 
-static mut format_jobs: format_job_tree = format_job_tree {
-    entries: std::collections::BTreeMap::new(),
-};
+static mut format_jobs: format_job_tree = std::collections::BTreeMap::new();
 pub(super) unsafe fn format_job_update(job: &refbox::Weak<job>, mut fj: *mut format_job) {
-    let evb: &mut SegmentedBuf = crate::src::reactor::bufferevent_get_input(&mut *job_get_event(job));
+    let evb: &mut SegmentedBuf =
+        crate::src::reactor::bufferevent_get_input(&mut *job_get_event(job));
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {
@@ -146,12 +145,23 @@ pub(super) unsafe fn format_job_get(
             tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         },
     };
-    if client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+    if client_handle(&(*ft).client)
+        .map_or(std::ptr::null_mut(), |owner| owner.get())
+        .is_null()
+    {
         jobs = &raw mut format_jobs as *mut format_job_tree;
     } else {
-        jobs = &mut **(*client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get())).jobs.get_or_insert_with(Default::default);
+        jobs = &mut **(*client_handle(&(*ft).client)
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .jobs
+        .get_or_insert_with(Default::default);
     }
-    fj = format_job_find_or_insert(&mut *jobs, (*ft).client.as_ref(), (*ft).tag, CStr::from_ptr(cmd));
+    fj = format_job_find_or_insert(
+        &mut *jobs,
+        (*ft).client.as_ref(),
+        (*ft).tag,
+        CStr::from_ptr(cmd),
+    );
     format_copy_state(
         &raw mut next,
         es,
@@ -224,7 +234,7 @@ unsafe fn format_job_find_or_insert(
     cmd: &CStr,
 ) -> *mut format_job {
     let key = (tag, cmd.to_bytes().to_vec());
-    &mut **jobs.entries.entry(key).or_insert_with(|| {
+    &mut **jobs.entry(key).or_insert_with(|| {
         let command = cmd.to_owned();
         let node = format_job {
             client: client.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
@@ -254,7 +264,6 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
     // Snapshot keys in tree order, then remove before cleanup, just like the
     // old traversal. No iterator or map borrow survives a call to job_free.
     let expired: Vec<_> = (*jobs)
-        .entries
         .iter()
         .filter_map(|(key, fj)| {
             if force == 0 && ((*fj).last > now || now - (*fj).last < 3600) {
@@ -265,10 +274,7 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
         })
         .collect();
     for key in expired {
-        let fj = (*jobs)
-            .entries
-            .remove(&key)
-            .expect("format job still cached");
+        let fj = (*jobs).remove(&key).expect("format job still cached");
         log_debug(format_args!(
             "{}: {}",
             "format_job_tidy",
@@ -284,19 +290,30 @@ pub unsafe fn format_tidy_jobs() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     format_job_tidy(&raw mut format_jobs, 0 as ::core::ffi::c_int);
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        let jobs = (*c).jobs.as_deref_mut().map(|jobs| jobs as *mut format_job_tree);
+        let jobs = (*c)
+            .jobs
+            .as_deref_mut()
+            .map(|jobs| jobs as *mut format_job_tree);
         if let Some(jobs) = jobs {
             format_job_tidy(jobs, 0);
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn format_lost_client(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let mut c = c_owner.get();
-    let jobs = (*c).jobs.as_deref_mut().map(|jobs| jobs as *mut format_job_tree);
+    let jobs = (*c)
+        .jobs
+        .as_deref_mut()
+        .map(|jobs| jobs as *mut format_job_tree);
     if let Some(jobs) = jobs {
         // Keep the cache installed through job cancellation, as before.
         format_job_tidy(jobs, 1);
@@ -320,14 +337,17 @@ mod tests {
             (*job).status = 1;
             drop(client);
             assert!((*job).client.upgrade().is_none());
-            format_job_complete(JobCompletion {
-                status: crate::src::shared::job::JobExitStatus::Exited(0),
-                output: b"completed\n".to_vec(),
-            }, job);
+            format_job_complete(
+                JobCompletion {
+                    status: crate::src::shared::job::JobExitStatus::Exited(0),
+                    output: b"completed\n".to_vec(),
+                },
+                job,
+            );
             assert_eq!((*job).out.as_deref(), Some(c"completed"));
             assert_eq!((*job).status, 0);
             format_job_tidy_at(&mut cache, 1, 0);
-            assert!(cache.entries.is_empty());
+            assert!(cache.is_empty());
         }
     }
 
@@ -365,7 +385,7 @@ mod tests {
                 format_job_find_or_insert(&mut cache, None, 7, command.as_c_str())
             );
             assert_eq!((*original).updated, 42);
-            let jobs: Vec<_> = cache.entries.values().map(Box::as_ref).collect();
+            let jobs: Vec<_> = cache.values().map(Box::as_ref).collect();
             for pair in jobs.windows(2) {
                 let (a, b) = (pair[0], pair[1]);
                 assert!(
@@ -379,8 +399,8 @@ mod tests {
             }
             format_job_tidy_at(&mut cache, 1, 0);
             format_job_tidy_at(&mut other, 1, 0);
-            assert!(cache.entries.is_empty());
-            assert!(other.entries.is_empty());
+            assert!(cache.is_empty());
+            assert!(other.is_empty());
         }
     }
 
@@ -391,7 +411,12 @@ mod tests {
             let c = &mut *owner.get();
             c.jobs = Some(Box::default());
             let cmd = CString::new("job").unwrap();
-            let fj = format_job_find_or_insert(c.jobs.as_deref_mut().unwrap(), Some(&owner), 0, cmd.as_c_str());
+            let fj = format_job_find_or_insert(
+                c.jobs.as_deref_mut().unwrap(),
+                Some(&owner),
+                0,
+                cmd.as_c_str(),
+            );
             (*fj).last = time(std::ptr::null_mut()) + 3600;
             format_lost_client(&(*(c)).observer.upgrade().expect("live client"));
             assert!(c.jobs.is_none());
@@ -420,17 +445,24 @@ mod tests {
                 }
             }
             format_job_tidy_at(&mut cache, 0, now);
-            assert_eq!(cache.entries.len(), 3);
+            assert_eq!(cache.len(), 3);
             for (cmd, fj) in survivors {
-                assert_eq!(cache.entries.get(&(0, cmd.as_bytes().to_vec())).map(|job| &**job as *const format_job), Some(fj as *const format_job));
                 assert_eq!(
-                    ((*fj).out).as_deref().expect("string is present")
-                    .to_bytes(),
+                    cache
+                        .get(&(0, cmd.as_bytes().to_vec()))
+                        .map(|job| &**job as *const format_job),
+                    Some(fj as *const format_job)
+                );
+                assert_eq!(
+                    ((*fj).out)
+                        .as_deref()
+                        .expect("string is present")
+                        .to_bytes(),
                     cmd.as_bytes()
                 );
             }
             format_job_tidy_at(&mut cache, 1, now);
-            assert!(cache.entries.is_empty());
+            assert!(cache.is_empty());
             format_job_tidy_at(&mut cache, 0, now);
         }
     }
@@ -443,21 +475,27 @@ mod tests {
             let fj = format_job_find_or_insert(&mut cache, None, 1, cmd.as_c_str());
             format_job_set_out_from_line(&mut *fj, b"first\0ignored");
             assert_eq!(
-                ((*fj).out).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*fj).out)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"first"
             );
             format_job_set_expanded(&mut *fj, CString::new(b"expanded\xff".to_vec()).unwrap());
             let message = format_job_message(&*fj, b"' not ready>");
             format_job_set_out(&mut *fj, message);
             assert_eq!(
-                ((*fj).out).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*fj).out)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"<'printf '\xff'' not ready>"
             );
             assert_eq!(
-                ((*fj).expanded).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*fj).expanded)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"expanded\xff"
             );
             assert_eq!(
@@ -465,7 +503,7 @@ mod tests {
                 format_job_find_or_insert(&mut cache, None, 1, cmd.as_c_str())
             );
             format_job_tidy_at(&mut cache, 1, 0);
-            assert!(cache.entries.is_empty());
+            assert!(cache.is_empty());
         }
     }
 }

@@ -1,8 +1,8 @@
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
-    cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state,
-    cmdq_get_callback_owned, cmdq_get_client, cmdq_get_command, cmdq_get_state, cmdq_insert_after,
-    cmdq_new_state, cmdq_print,
+    cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_get_callback_owned,
+    cmdq_get_client, cmdq_get_command, cmdq_get_state, cmdq_insert_after, cmdq_new_state,
+    cmdq_print,
 };
 use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
@@ -77,8 +77,12 @@ pub unsafe fn start_cfg() {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    cfg_client = registry_c_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    cfg_client = registry_c_owner
+        .as_ref()
+        .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     if !c.is_null() {
         let item = cmdq_get_callback_owned(
             c"cfg_client_done",
@@ -95,10 +99,7 @@ pub unsafe fn start_cfg() {
     }
     cmdq_append(
         None,
-        cmdq_get_callback_owned(
-            c"cfg_done",
-            Some(Box::new(|_| unsafe { cfg_done() })),
-        ),
+        cmdq_get_callback_owned(c"cfg_done", Some(Box::new(|_| unsafe { cfg_done() }))),
     );
 }
 pub unsafe fn load_cfg(
@@ -106,7 +107,6 @@ pub unsafe fn load_cfg(
     c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
     let mut pi: cmd_parse_input = cmd_parse_input {
         flags: 0,
@@ -177,12 +177,14 @@ pub unsafe fn load_cfg(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    let new_item0_allocation = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
+    let new_item0_allocation = cmdq_get_command(
+        pr.cmdlist.as_ref().expect("successful command parse"),
+        Some(&state),
+    );
 
     cmdq_append(None, new_item0_allocation);
 
     drop(pr.cmdlist.take());
-
 
     return 0 as ::core::ffi::c_int;
 }
@@ -242,7 +244,10 @@ pub unsafe fn load_cfg_from_buffer(
         return 0 as ::core::ffi::c_int;
     }
     if !item.is_null() {
-        state = cmdq_copy_state(cmdq_get_state(&*item).expect("command queue state"), current);
+        state = cmdq_copy_state(
+            cmdq_get_state(&*item).expect("command queue state"),
+            current,
+        );
     } else {
         state = cmdq_new_state(
             ::core::ptr::null_mut::<cmd_find_state>(),
@@ -256,7 +261,10 @@ pub unsafe fn load_cfg_from_buffer(
         // Preserve libc's former %s rendering when the filename is absent.
         pi.file.as_deref().unwrap_or(c"(null)"),
     );
-    let new_item0_allocation = cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), Some(&state));
+    let new_item0_allocation = cmdq_get_command(
+        pr.cmdlist.as_ref().expect("successful command parse"),
+        Some(&state),
+    );
     let last = if let Some(item) = item_handle {
         cmdq_insert_after(item, new_item0_allocation)
     } else {
@@ -293,7 +301,9 @@ pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
 pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     cfg_drain_causes(|cause| {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
@@ -308,7 +318,9 @@ pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<c
 pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
     let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut registry_c_owner = clients.first();
-    let mut c: *mut client = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: *mut client = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if CFG_CAUSES.lock().unwrap().is_empty() {
@@ -324,18 +336,30 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell
     } else {
         if s.is_null() {
             if !c.is_null() && !(*c).session_handle().is_none() {
-                s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                s = (*c)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get());
             } else {
                 let mut s_owner = sessions_minmax(&sessions);
-                s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+                s = s_owner
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
             }
         }
         if s.is_null() || (*s).attached == 0 as u_int {
             return;
         }
-        wp = (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = (*((*s).current_winlink())
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .active_pane()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
         let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-        wme = (*wp).modes.active_weak();
+        wme = (*wp).active_mode_entry();
         if !wme.is_alive() || !std::ptr::eq(wme.get_unchecked().mode, &window_view_mode) {
             window_pane_set_mode(
                 &pane_owner,

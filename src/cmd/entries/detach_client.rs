@@ -66,19 +66,31 @@ pub static cmd_suspend_client_entry: cmd_entry = {
         exec: Some(cmd_detach_client_exec),
     }
 };
-unsafe fn cmd_detach_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_detach_client_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut msgtype: msgtype = 0 as msgtype;
-    let mut cmd: *const ::core::ffi::c_char = args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_suspend_client_entry) {
+    let mut cmd: *const ::core::ffi::c_char =
+        args_get(&*(args), 'E' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_suspend_client_entry,
+    ) {
         tc_owner.as_ref().expect("target client").suspend();
         return CMD_RETURN_NORMAL;
     }
@@ -97,38 +109,77 @@ unsafe fn cmd_detach_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         msgtype = MSG_DETACH;
     }
     if args_has(args, 's' as i32 as u_char) != 0 {
-        s = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = (*source)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
             return CMD_RETURN_NORMAL;
         }
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if registry_loop_0_owner.as_ref().expect("current registry client").attached_session().as_ptr().cast::<session>() == s.cast_const() {
+            if registry_loop_0_owner
+                .as_ref()
+                .expect("current registry client")
+                .attached_session()
+                .as_ptr()
+                .cast::<session>()
+                == s.cast_const()
+            {
                 if !cmd.is_null() {
                     server_client_exec(&(*(loop_0)).observer.upgrade().expect("live client"), cmd);
                 } else {
-                    registry_loop_0_owner.as_ref().expect("current registry client").detach(msgtype);
+                    registry_loop_0_owner
+                        .as_ref()
+                        .expect("current registry client")
+                        .detach(msgtype);
                 }
             }
-            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
-            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            registry_loop_0_owner = clients.next(
+                registry_loop_0_owner
+                    .as_ref()
+                    .expect("current registry client"),
+            );
+            loop_0 = registry_loop_0_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         return CMD_RETURN_STOP;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if registry_loop_0_owner.as_ref().expect("current registry client").attached_session().upgrade().is_some() && loop_0 != tc {
+            if registry_loop_0_owner
+                .as_ref()
+                .expect("current registry client")
+                .attached_session()
+                .upgrade()
+                .is_some()
+                && loop_0 != tc
+            {
                 if !cmd.is_null() {
                     server_client_exec(&(*(loop_0)).observer.upgrade().expect("live client"), cmd);
                 } else {
-                    registry_loop_0_owner.as_ref().expect("current registry client").detach(msgtype);
+                    registry_loop_0_owner
+                        .as_ref()
+                        .expect("current registry client")
+                        .detach(msgtype);
                 }
             }
-            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
-            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            registry_loop_0_owner = clients.next(
+                registry_loop_0_owner
+                    .as_ref()
+                    .expect("current registry client"),
+            );
+            loop_0 = registry_loop_0_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         return CMD_RETURN_NORMAL;
     }

@@ -1,12 +1,9 @@
-use crate::src::session::Session;
 use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::{
-    options_array_item_value, options_get,
-    options_get_string,
-};
+use crate::src::options::{options_array_item_value, options_get, options_get_string};
+use crate::src::session::Session;
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
 use crate::src::xmalloc::xcalloc;
 use std::ffi::{CStr, CString, NulError};
@@ -191,14 +188,22 @@ pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut envi
         return;
     }
     let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
+        .map(|item| item.key.clone())
+        .collect::<Vec<_>>()
+        .into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+        crate::src::options::options_array_item(a_root, key.as_ptr())
+    });
     while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
+            as *mut crate::src::shared::options::options_value;
         found = 0 as ::core::ffi::c_int;
         for envent in environ_iter(src) {
             if fnmatch(
-                (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                (*ov)
+                    .string_ptr()
+                    .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 ((*envent).name).as_ptr().cast_mut(),
                 0 as ::core::ffi::c_int,
             ) == 0 as ::core::ffi::c_int
@@ -220,9 +225,16 @@ pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut envi
             }
         }
         if found == 0 {
-            environ_clear(dst, (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+            environ_clear(
+                dst,
+                (*ov)
+                    .string_ptr()
+                    .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            );
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+            crate::src::options::options_array_item(a_root, key.as_ptr())
+        });
     }
 }
 pub unsafe fn environ_push(env: &environ) {

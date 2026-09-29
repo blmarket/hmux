@@ -1,6 +1,4 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::cmd_find_from_window;
-use crate::src::server_client::Client;
 use crate::src::events::{events_fire, events_fire_window};
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_target, event_payload_set_uint,
@@ -9,11 +7,13 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::sscanf;
 use crate::src::layout::layout_resize;
 use crate::src::log::{log_cstr, log_debug};
+use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::server::clients;
+use crate::src::server_client::Client;
 use crate::src::server_fn::server_redraw_window;
-use crate::src::session::{sessions, Session};
 use crate::src::session::{session_has, sessions_minmax, sessions_next};
+use crate::src::session::{sessions, Session};
 use crate::src::shared::events::event_payload;
 use crate::src::status::status_line_size;
 use crate::src::tmux::global_w_options;
@@ -43,7 +43,10 @@ use crate::src::shared::window::{
 
 pub unsafe fn resize_window(
     window: &std::rc::Rc<std::cell::UnsafeCell<window>>,
-    sx: u_int, sy: u_int, xpixel: i32, ypixel: i32,
+    sx: u_int,
+    sy: u_int,
+    xpixel: i32,
+    ypixel: i32,
 ) {
     use crate::src::window::Window;
     window.resize(sx, sy, xpixel, ypixel);
@@ -53,16 +56,35 @@ unsafe fn clients_with_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0 as u_int;
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    loop_0 = registry_loop_0_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !loop_0.is_null() {
-        if !(!registry_loop_0_owner.as_ref().expect("current registry client").participates_in_window_sizing() || session_has(&*(*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*w) == 0) {
+        if !(!registry_loop_0_owner
+            .as_ref()
+            .expect("current registry client")
+            .participates_in_window_sizing()
+            || session_has(
+                &*(*loop_0)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()),
+                &*w,
+            ) == 0)
+        {
             n = n.wrapping_add(1);
             if n > 1 as u_int {
                 break;
             }
         }
-        registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
-        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_loop_0_owner = clients.next(
+            registry_loop_0_owner
+                .as_ref()
+                .expect("current registry client"),
+        );
+        loop_0 = registry_loop_0_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return n;
 }
@@ -105,9 +127,16 @@ unsafe fn clients_calculate_size(
     }
     if !(type_0 == WINDOW_SIZE_MANUAL) {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if loop_0 != c && !registry_loop_0_owner.as_ref().expect("current registry client").participates_in_window_sizing() {
+            if loop_0 != c
+                && !registry_loop_0_owner
+                    .as_ref()
+                    .expect("current registry client")
+                    .participates_in_window_sizing()
+            {
                 log_debug(format_args!(
                     "{}: ignoring {} (1)",
                     "clients_calculate_size",
@@ -145,7 +174,9 @@ unsafe fn clients_calculate_size(
                 ));
             } else {
                 let (client_sx, client_sy, client_xpixel, client_ypixel) = registry_loop_0_owner
-                    .as_ref().expect("current registry client").window_size(w_owner);
+                    .as_ref()
+                    .expect("current registry client")
+                    .window_size(w_owner);
                 cx = client_sx;
                 cy = client_sy;
                 if type_0 == WINDOW_SIZE_LARGEST {
@@ -182,8 +213,14 @@ unsafe fn clients_calculate_size(
                     (*sy) as u32
                 ));
             }
-            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
-            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            registry_loop_0_owner = clients.next(
+                registry_loop_0_owner
+                    .as_ref()
+                    .expect("current registry client"),
+            );
+            loop_0 = registry_loop_0_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
         if *sx != UINT_MAX && *sy != UINT_MAX {
             log_debug(format_args!(
@@ -201,16 +238,31 @@ unsafe fn clients_calculate_size(
     }
     if !w.is_null() {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         while !loop_0.is_null() {
-            if !(loop_0 != c && !registry_loop_0_owner.as_ref().expect("current registry client").participates_in_window_sizing()) {
+            if !(loop_0 != c
+                && !registry_loop_0_owner
+                    .as_ref()
+                    .expect("current registry client")
+                    .participates_in_window_sizing())
+            {
                 if !(loop_0 != c && skip_client(&*loop_0)) {
-                    registry_loop_0_owner.as_ref().expect("current registry client")
+                    registry_loop_0_owner
+                        .as_ref()
+                        .expect("current registry client")
                         .constrain_window_size(w_owner.expect("sized window"), &mut *sx, &mut *sy);
                 }
             }
-            registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
-            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            registry_loop_0_owner = clients.next(
+                registry_loop_0_owner
+                    .as_ref()
+                    .expect("current registry client"),
+            );
+            loop_0 = registry_loop_0_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
     }
     if *sx != UINT_MAX && *sy != UINT_MAX {
@@ -266,7 +318,12 @@ pub unsafe fn default_window_size(
             b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
         ) as ::core::ffi::c_int;
     }
-    if type_0 == WINDOW_SIZE_LATEST && !c.is_null() && c_owner.expect("sizing client").participates_in_window_sizing() {
+    if type_0 == WINDOW_SIZE_LATEST
+        && !c.is_null()
+        && c_owner
+            .expect("sizing client")
+            .participates_in_window_sizing()
+    {
         let dimensions = c_owner.expect("latest sizing client").window_size(None);
         (*sx, *sy, *xpixel, *ypixel) = dimensions;
         log_debug(format_args!(
@@ -287,11 +344,25 @@ pub unsafe fn default_window_size(
         }
         if clients_calculate_size(
             type_0,
-            (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (c).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
             w_owner,
             |candidate| unsafe {
-                (!w.is_null() && session_has(&*candidate.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &*w) == 0)
-                    || (w.is_null() && candidate.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s)
+                (!w.is_null()
+                    && session_has(
+                        &*candidate
+                            .session_handle()
+                            .as_ref()
+                            .map_or(std::ptr::null_mut(), |owner| owner.get()),
+                        &*w,
+                    ) == 0)
+                    || (w.is_null()
+                        && candidate
+                            .session_handle()
+                            .as_ref()
+                            .map_or(std::ptr::null_mut(), |owner| owner.get())
+                            != s)
             },
             sx,
             sy,
@@ -333,7 +404,10 @@ pub unsafe fn default_window_size(
         (*sy) as u32
     ));
 }
-pub unsafe fn recalculate_size(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>, mut now: ::core::ffi::c_int) {
+pub unsafe fn recalculate_size(
+    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    mut now: ::core::ffi::c_int,
+) {
     let mut w = w_owner.get();
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
@@ -365,12 +439,19 @@ pub unsafe fn recalculate_size(w_owner: &std::rc::Rc<std::cell::UnsafeCell<windo
         None,
         Some(w_owner),
         |candidate| unsafe {
-            let Some(session) = candidate.session_handle() else { return true; };
+            let Some(session) = candidate.session_handle() else {
+                return true;
+            };
             if !session.current_winlink().is_alive() {
                 return true;
             }
             if current != 0 {
-                (session.current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w
+                (session.current_winlink())
+                    .get_unchecked()
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get())
+                    != w
             } else {
                 session_has(&*session.get(), &*w) == 0
             }
@@ -429,18 +510,40 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     crate::src::session::recalculate_size_state();
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-        if !(!registry_c_owner.as_ref().expect("current registry client").participates_in_window_sizing()) {
-            if (*c).tty.sy <= registry_c_owner.as_ref().expect("sizing client").attached_session().upgrade().expect("attached sizing client").status_layout().1 || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+        s = (*c)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        if !(!registry_c_owner
+            .as_ref()
+            .expect("current registry client")
+            .participates_in_window_sizing())
+        {
+            if (*c).tty.sy
+                <= registry_c_owner
+                    .as_ref()
+                    .expect("sizing client")
+                    .attached_session()
+                    .upgrade()
+                    .expect("attached sizing client")
+                    .status_layout()
+                    .1
+                || (*c).flags & CLIENT_CONTROL as uint64_t != 0
+            {
                 (*c).flags |= CLIENT_STATUSOFF as uint64_t;
             } else {
                 (*c).flags &= !CLIENT_STATUSOFF as uint64_t;
             }
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {

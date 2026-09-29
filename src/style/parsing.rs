@@ -974,12 +974,7 @@ pub unsafe fn style_add(
     let mut sy: *mut style = ::core::ptr::null_mut::<style>();
     let mut ft0_owner = None;
     if ft.is_null() {
-        let mut owner = format_create(
-            None,
-            None,
-            0 as ::core::ffi::c_int,
-            FORMAT_NOJOBS,
-        );
+        let mut owner = format_create(None, None, 0 as ::core::ffi::c_int, FORMAT_NOJOBS);
         ft = &raw mut *owner;
         ft0_owner = Some(owner);
     }
@@ -1072,7 +1067,9 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     if o.is_null() {
         fatalx(|out| out.write_all(b"missing pane-scrollbars-style"));
     }
-    oe = crate::src::options::options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
+    oe = crate::src::options::options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| {
+        entry as *const crate::src::shared::options::options_table_entry
+    });
     let style = format_single_cstring(
         None,
         (*oe).default_str_ptr(),
@@ -1091,14 +1088,8 @@ pub unsafe fn style_set_scrollbar_style_from_option(
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     );
     if !s.is_null() {
-        let expanded = format_single_cstring(
-            None,
-            s,
-            None,
-            None,
-            (refbox::Weak::new()).clone(),
-            None,
-        );
+        let expanded =
+            format_single_cstring(None, s, None, None, (refbox::Weak::new()).clone(), None);
         if style_parse(sb_style, &raw const grid_default_cell, expanded.as_ptr())
             != 0 as ::core::ffi::c_int
         {
@@ -1120,7 +1111,7 @@ pub unsafe fn style_ranges_init(mut srs: *mut style_ranges) {
     if srs.is_null() {
         return;
     }
-    (*srs).release_storage();
+    *srs = Vec::new();
 }
 pub unsafe fn style_ranges_clear(mut srs: *mut style_ranges) {
     if !srs.is_null() {
@@ -1129,7 +1120,7 @@ pub unsafe fn style_ranges_clear(mut srs: *mut style_ranges) {
 }
 pub unsafe fn style_ranges_free(mut srs: *mut style_ranges) {
     if !srs.is_null() {
-        (*srs).release_storage();
+        *srs = Vec::new();
     }
 }
 pub unsafe fn style_ranges_get_range(mut srs: *mut style_ranges, mut x: u_int) -> *mut style_range {
@@ -1198,8 +1189,8 @@ mod style_ranges_tests {
             assert_eq!(style_ranges_get_range(&mut ranges, 32), after_clear_ptr);
 
             style_ranges_free(&mut ranges);
-            assert!(ranges.ranges.is_empty());
-            assert_eq!(ranges.ranges.capacity(), 0);
+            assert!(ranges.is_empty());
+            assert_eq!(ranges.capacity(), 0);
             assert!(style_ranges_get_range(&mut ranges, 32).is_null());
 
             style_ranges_init(&mut ranges);

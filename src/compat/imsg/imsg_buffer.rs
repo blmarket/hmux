@@ -10,51 +10,19 @@ use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
 pub(super) struct ibufqueue {
-    bufs: ibufqueue_bufs,
-}
-
-struct ibufqueue_bufs {
-    entries: VecDeque<Box<OwnedIbuf>>,
-}
-
-impl ibufqueue_bufs {
-    fn new() -> Self {
-        Self {
-            entries: VecDeque::new(),
-        }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &OwnedIbuf> + '_ {
-        self.entries.iter().map(Box::as_ref)
-    }
-
-    fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    fn push_back_owned(&mut self, buf: Box<OwnedIbuf>) -> Result<(), ::core::ffi::c_int> {
-        self.entries.try_reserve(1).map_err(|_| ENOMEM)?;
-        self.entries.push_back(buf);
-        Ok(())
-    }
-
-    fn pop_front_owned(&mut self) -> Option<Box<OwnedIbuf>> {
-        self.entries.pop_front()
-    }
-
-    fn front(&self) -> Option<&OwnedIbuf> {
-        self.entries.front().map(Box::as_ref)
-    }
-
-    fn front_mut(&mut self) -> Option<&mut OwnedIbuf> {
-        self.entries.front_mut().map(Box::as_mut)
-    }
+    bufs: VecDeque<Box<OwnedIbuf>>,
 }
 
 impl ibufqueue {
+    fn push_back_owned(&mut self, buf: Box<OwnedIbuf>) -> Result<(), ::core::ffi::c_int> {
+        self.bufs.try_reserve(1).map_err(|_| ENOMEM)?;
+        self.bufs.push_back(buf);
+        Ok(())
+    }
+
     fn new() -> Self {
         Self {
-            bufs: ibufqueue_bufs::new(),
+            bufs: VecDeque::new(),
         }
     }
 }
@@ -224,7 +192,7 @@ pub(super) fn ibuf_close(
     msgbuf: &mut msgbuf,
     buf: Box<OwnedIbuf>,
 ) -> Result<(), ::core::ffi::c_int> {
-    msgbuf.bufs.bufs.push_back_owned(buf)
+    msgbuf.bufs.push_back_owned(buf)
 }
 pub(super) fn ibuf_fd_avail(buf: &OwnedIbuf) -> bool {
     buf.fd.is_some()
@@ -341,7 +309,7 @@ pub(super) fn msgbuf_write(
     }; 1024];
     let mut fd_buf_index = None;
     let mut i = 0usize;
-    for (index, queued_buf) in msgbuf.bufs.bufs.entries.iter().enumerate() {
+    for (index, queued_buf) in msgbuf.bufs.bufs.iter().enumerate() {
         if i >= IOV_MAX as usize {
             break;
         }
@@ -367,7 +335,7 @@ pub(super) fn msgbuf_write(
     msg.msg_iov = iov.as_mut_ptr();
     msg.msg_iovlen = i as size_t;
     if let Some(index) = fd_buf_index {
-        let Some(fd) = msgbuf.bufs.bufs.entries[index].fd.as_ref() else {
+        let Some(fd) = msgbuf.bufs.bufs[index].fd.as_ref() else {
             return Err(EINVAL);
         };
         msg.msg_control = (&mut cmsgbuf as *mut C2RustUnnamed_2).cast();
@@ -403,7 +371,7 @@ pub(super) fn msgbuf_write(
         break n;
     };
     if let Some(index) = fd_buf_index {
-        drop(msgbuf.bufs.bufs.entries[index].fd.take());
+        drop(msgbuf.bufs.bufs[index].fd.take());
     }
     msgbuf_drain(msgbuf, n as size_t);
     Ok(())
@@ -561,7 +529,7 @@ fn msgbuf_drain(msgbuf: &mut msgbuf, mut n: size_t) {
         let size = ibuf_size(buf);
         if n >= size {
             n -= size;
-            drop(msgbuf.bufs.bufs.pop_front_owned());
+            drop(msgbuf.bufs.bufs.pop_front());
         } else {
             let Some(buf) = msgbuf.bufs.bufs.front_mut() else {
                 return;
@@ -573,11 +541,11 @@ fn msgbuf_drain(msgbuf: &mut msgbuf, mut n: size_t) {
 }
 
 fn ibufq_pop(bufq: &mut ibufqueue) -> Option<Box<OwnedIbuf>> {
-    bufq.bufs.pop_front_owned()
+    bufq.bufs.pop_front()
 }
 
 fn ibufq_push(bufq: &mut ibufqueue, buf: Box<OwnedIbuf>) -> Result<(), ::core::ffi::c_int> {
-    bufq.bufs.push_back_owned(buf)
+    bufq.push_back_owned(buf)
 }
 
 fn ibufq_queuelen(bufq: &ibufqueue) -> usize {

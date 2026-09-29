@@ -1,5 +1,3 @@
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::__useconds_t;
 use crate::src::ffi::libc::{
     __errno_location, abs, fcntl, getpid, ioctl, isatty, memcpy, memset, open, strcmp, strerror,
@@ -12,10 +10,11 @@ use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
+use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, evbuffer_read,
-    evbuffer_write, event_add, event_del, event_initialized, event_pending, event_set,
+    evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, evbuffer_read, evbuffer_write,
+    event_add, event_del, event_initialized, event_pending, event_set,
 };
 use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
@@ -27,7 +26,6 @@ use crate::src::server_fn::server_redraw_client;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
-use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED,
     CLIENT_TERMINAL, CLIENT_UTF8,
@@ -45,6 +43,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
 use crate::src::shared::grid::*;
 use crate::src::shared::limits::UINT_MAX;
+use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_STYLECHANGED;
@@ -83,6 +82,7 @@ use crate::src::tty_acs::{tty_acs_get, tty_acs_needed, tty_acs_reverse_get};
 use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_features::tty_apply_features;
 use crate::src::tty_keys::{tty_keys_build, tty_keys_free, tty_keys_next};
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::{
     tty_term_apply_overrides, tty_term_create, tty_term_flag, tty_term_free, tty_term_has,
     tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii,
@@ -166,7 +166,10 @@ pub unsafe fn tty_init(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> ::
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn tty_resize(mut tty: *mut tty) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut ws: winsize = winsize {
@@ -198,7 +201,9 @@ pub unsafe fn tty_resize(mut tty: *mut tty) {
         if (xpixel == 0 as u_int || ypixel == 0 as u_int)
             && (*tty).out.is_some()
             && (*tty).flags & TTY_WINSIZEQUERY == 0
-            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0
+            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_VT100LIKE
+                != 0
         {
             tty_puts(tty, c"\x1B[18t\x1B[14t");
             (*tty).flags |= TTY_WINSIZEQUERY;
@@ -307,7 +312,10 @@ unsafe fn tty_timer_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>)
     event_add(&raw mut (*tty).timer, &raw mut tv);
 }
 unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
@@ -413,7 +421,9 @@ pub(crate) fn tty_mouse_client_callback(
     }
 }
 
-pub unsafe fn tty_open(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Result<(), std::ffi::CString> {
+pub unsafe fn tty_open(
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+) -> Result<(), std::ffi::CString> {
     let c = owner.get();
     let tty = &raw mut (*c).tty;
     // The synchronous terminfo constructor borrows these string pointers.
@@ -493,7 +503,10 @@ unsafe fn tty_start_timer_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<cli
     (*tty).flags &= !(TTY_WAITBG | TTY_WAITFG);
 }
 unsafe fn tty_start_start_timer(mut tty: *mut tty) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut tv: timeval = timeval {
@@ -513,7 +526,10 @@ unsafe fn tty_start_start_timer(mut tty: *mut tty) {
     event_add(&raw mut (*tty).start_timer, &raw mut tv);
 }
 pub unsafe fn tty_start_tty(mut tty: *mut tty) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut tio: termios = termios {
@@ -564,13 +580,21 @@ pub unsafe fn tty_start_tty(mut tty: *mut tty) {
             0 as ::core::ffi::c_int,
             (*tty).sy.wrapping_sub(1 as u_int) as ::core::ffi::c_int,
         );
-        if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_INDN) != 0 {
+        if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_INDN,
+        ) != 0
+        {
             tty_putcode_i(
                 tty,
                 TTYC_INDN,
                 (*tty).sy.wrapping_add(1 as u_int) as ::core::ffi::c_int,
             );
-        } else if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_IND) != 0 {
+        } else if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_IND,
+        ) != 0
+        {
             i = 0 as u_int;
             while i < (*tty).sy.wrapping_add(1 as u_int) {
                 tty_putcode(tty, TTYC_IND);
@@ -604,14 +628,25 @@ pub unsafe fn tty_start_tty(mut tty: *mut tty) {
         ));
     }
     tty_putcode(tty, TTYC_CNORM);
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_KMOUS) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_KMOUS,
+    ) != 0
+    {
         tty_puts(tty, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l");
         tty_puts(tty, c"\x1B[?1006l\x1B[?1005l");
     }
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_ENBP) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_ENBP,
+    ) != 0
+    {
         tty_putcode(tty, TTYC_ENBP);
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_VT100LIKE
+        != 0
+    {
         tty_puts(tty, c"\x1B[?2031h\x1B[?996n");
     }
     tty_start_start_timer(tty);
@@ -628,7 +663,10 @@ pub unsafe fn tty_send_requests(mut tty: *mut tty) {
     if !(*tty).flags & TTY_STARTED != 0 {
         return;
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_VT100LIKE
+        != 0
+    {
         if !(*tty).flags & TTY_HAVEDA != 0 {
             tty_puts(tty, c"\x1B[c");
         }
@@ -649,7 +687,10 @@ pub unsafe fn tty_send_requests(mut tty: *mut tty) {
     (*tty).last_requests = time(::core::ptr::null_mut::<time_t>());
 }
 pub unsafe fn tty_repeat_requests(mut tty: *mut tty, mut force: ::core::ffi::c_int) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut t: time_t = time(::core::ptr::null_mut::<time_t>());
@@ -688,7 +729,10 @@ pub unsafe fn tty_repeat_requests(mut tty: *mut tty, mut force: ::core::ffi::c_i
         (n) as u32
     ));
     (*tty).last_requests = t;
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_VT100LIKE
+        != 0
+    {
         tty_puts(tty, c"\x1B]10;?\x1B\\\x1B]11;?\x1B\\");
         (*tty).flags |= TTY_WAITBG | TTY_WAITFG;
     }
@@ -699,7 +743,10 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
         return;
     }
 
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut ws: winsize = winsize {
@@ -724,37 +771,109 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
     }
     tty_raw(
         tty,
-        tty_term_string_ii(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR, 0 as ::core::ffi::c_int, ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int).as_ptr(),
+        tty_term_string_ii(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_CSR,
+            0 as ::core::ffi::c_int,
+            ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
+        )
+        .as_ptr(),
     );
     if tty_acs_needed(tty.as_ref()) != 0 {
-        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_RMACS).as_ptr());
+        tty_raw(
+            tty,
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_RMACS,
+            )
+            .as_ptr(),
+        );
     }
-    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_SGR0).as_ptr());
-    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_RMKX).as_ptr());
+    tty_raw(
+        tty,
+        tty_term_string(
+            &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+            TTYC_SGR0,
+        )
+        .as_ptr(),
+    );
+    tty_raw(
+        tty,
+        tty_term_string(
+            &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+            TTYC_RMKX,
+        )
+        .as_ptr(),
+    );
     if options_get_number(
         global_options,
         b"clear-on-attach\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_CLEAR).as_ptr());
+        tty_raw(
+            tty,
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_CLEAR,
+            )
+            .as_ptr(),
+        );
     }
     if (*tty).cstyle as ::core::ffi::c_uint
         != SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SE) != 0 {
-            tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_SE).as_ptr());
-        } else if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SS) != 0 {
+        if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_SE,
+        ) != 0
+        {
             tty_raw(
                 tty,
-                tty_term_string_i(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SS, 0 as ::core::ffi::c_int).as_ptr(),
+                tty_term_string(
+                    &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                    TTYC_SE,
+                )
+                .as_ptr(),
+            );
+        } else if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_SS,
+        ) != 0
+        {
+            tty_raw(
+                tty,
+                tty_term_string_i(
+                    tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                    TTYC_SS,
+                    0 as ::core::ffi::c_int,
+                )
+                .as_ptr(),
             );
         }
     }
     if (*tty).ccolour != -(1 as ::core::ffi::c_int) {
-        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_CR).as_ptr());
+        tty_raw(
+            tty,
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_CR,
+            )
+            .as_ptr(),
+        );
     }
-    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_CNORM).as_ptr());
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_KMOUS) != 0 {
+    tty_raw(
+        tty,
+        tty_term_string(
+            &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+            TTYC_CNORM,
+        )
+        .as_ptr(),
+    );
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_KMOUS,
+    ) != 0
+    {
         tty_raw(
             tty,
             b"\x1B[?1000l\x1B[?1002l\x1B[?1003l\0" as *const u8 as *const ::core::ffi::c_char,
@@ -764,30 +883,85 @@ pub unsafe fn tty_stop_tty(mut tty: *mut tty) {
             b"\x1B[?1006l\x1B[?1005l\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_DSBP) != 0 {
-        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_DSBP).as_ptr());
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_DSBP,
+    ) != 0
+    {
+        tty_raw(
+            tty,
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_DSBP,
+            )
+            .as_ptr(),
+        );
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_VT100LIKE
+        != 0
+    {
         tty_raw(
             tty,
             b"\x1B[?7727l\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_DSFCS).as_ptr());
-    tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_DSEKS).as_ptr());
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM != 0 {
-        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_DSMG).as_ptr());
+    tty_raw(
+        tty,
+        tty_term_string(
+            &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+            TTYC_DSFCS,
+        )
+        .as_ptr(),
+    );
+    tty_raw(
+        tty,
+        tty_term_string(
+            &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+            TTYC_DSEKS,
+        )
+        .as_ptr(),
+    );
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_DECSLRM
+        != 0
+    {
+        tty_raw(
+            tty,
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_DSMG,
+            )
+            .as_ptr(),
+        );
     }
     if options_get_number(
         global_options,
         b"clear-on-attach\0" as *const u8 as *const ::core::ffi::c_char,
     ) != 0
     {
-        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_RMCUP).as_ptr());
+        tty_raw(
+            tty,
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_RMCUP,
+            )
+            .as_ptr(),
+        );
     } else {
-        tty_raw(tty, tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_CLEAR).as_ptr());
+        tty_raw(
+            tty,
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_CLEAR,
+            )
+            .as_ptr(),
+        );
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_VT100LIKE
+        != 0
+    {
         tty_raw(
             tty,
             b"\x1B[?2031l\0" as *const u8 as *const ::core::ffi::c_char,
@@ -817,13 +991,19 @@ pub unsafe fn tty_free(mut tty: *mut tty) {
     (*tty).r.clear();
 }
 pub unsafe fn tty_update_features(mut tty: *mut tty) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     if tty_apply_features((*tty).term.as_deref_mut().expect("open terminal")) != 0 {
         tty_term_apply_overrides((*tty).term.as_deref_mut().expect("open terminal"));
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_DECSLRM
+        != 0
+    {
         tty_putcode(tty, TTYC_ENMG);
     }
     if options_get_number(
@@ -833,7 +1013,10 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     {
         tty_puts(
             tty,
-            tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_ENEKS),
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_ENEKS,
+            ),
         );
     }
     if options_get_number(
@@ -843,17 +1026,26 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     {
         tty_puts(
             tty,
-            tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_ENFCS),
+            tty_term_string(
+                &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+                TTYC_ENFCS,
+            ),
         );
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_VT100LIKE
+        != 0
+    {
         tty_puts(tty, c"\x1B[?7727h");
     }
     server_redraw_client(&mut *(c));
     tty_invalidate(tty);
 }
 pub unsafe fn tty_raw(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut n: ssize_t = 0;
@@ -879,7 +1071,10 @@ pub unsafe fn tty_raw(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
 pub unsafe fn tty_putcode(mut tty: *mut tty, mut code: tty_code_code) {
     tty_puts(
         tty,
-        tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), code),
+        tty_term_string(
+            &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
+            code,
+        ),
     );
 }
 pub unsafe fn tty_putcode_i(mut tty: *mut tty, mut code: tty_code_code, mut a: ::core::ffi::c_int) {
@@ -888,7 +1083,11 @@ pub unsafe fn tty_putcode_i(mut tty: *mut tty, mut code: tty_code_code, mut a: :
     }
     tty_puts(
         tty,
-        &tty_term_string_i(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a),
+        &tty_term_string_i(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            code,
+            a,
+        ),
     );
 }
 pub unsafe fn tty_putcode_ii(
@@ -902,7 +1101,12 @@ pub unsafe fn tty_putcode_ii(
     }
     tty_puts(
         tty,
-        &tty_term_string_ii(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b),
+        &tty_term_string_ii(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            code,
+            a,
+            b,
+        ),
     );
 }
 pub unsafe fn tty_putcode_iii(
@@ -917,7 +1121,13 @@ pub unsafe fn tty_putcode_iii(
     }
     tty_puts(
         tty,
-        &tty_term_string_iii(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b, c),
+        &tty_term_string_iii(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            code,
+            a,
+            b,
+            c,
+        ),
     );
 }
 pub unsafe fn tty_putcode_s(mut tty: *mut tty, mut a: *const ::core::ffi::c_char) {
@@ -925,7 +1135,11 @@ pub unsafe fn tty_putcode_s(mut tty: *mut tty, mut a: *const ::core::ffi::c_char
     if !a.is_null() {
         tty_puts(
             tty,
-            &tty_term_string_s(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a),
+            &tty_term_string_s(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                code,
+                a,
+            ),
         );
     }
 }
@@ -938,12 +1152,20 @@ pub unsafe fn tty_putcode_ss(
     if !a.is_null() && !b.is_null() {
         tty_puts(
             tty,
-            &tty_term_string_ss(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b),
+            &tty_term_string_ss(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                code,
+                a,
+                b,
+            ),
         );
     }
 }
 unsafe fn tty_add(mut tty: *mut tty, buf: &[u8]) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let len = buf.len();
     let mut c: *mut client = terminal_client;
@@ -986,7 +1208,8 @@ pub unsafe fn tty_puts(tty: *mut tty, text: &CStr) {
     }
 }
 pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM != 0
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM
+        != 0
         && ch as ::core::ffi::c_int >= 0x20 as ::core::ffi::c_int
         && ch as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
         && (*tty).cy == (*tty).sy.wrapping_sub(1 as u_int)
@@ -1011,7 +1234,10 @@ pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
             if (*tty).cy != (*tty).rlower {
                 (*tty).cy = (*tty).cy.wrapping_add(1);
             }
-            if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM != 0 {
+            if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_NOAM
+                != 0
+            {
                 tty_putcode_ii(
                     tty,
                     TTYC_CUP,
@@ -1026,7 +1252,8 @@ pub unsafe fn tty_putc(mut tty: *mut tty, mut ch: u_char) {
 }
 pub unsafe fn tty_putn(mut tty: *mut tty, buf: &[u8], mut width: u_int) {
     let mut len = buf.len();
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM != 0
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM
+        != 0
         && (*tty).cy == (*tty).sy.wrapping_sub(1 as u_int)
         && ((*tty).cx as size_t).wrapping_add(len) >= (*tty).sx as size_t
     {
@@ -1047,7 +1274,11 @@ pub unsafe fn tty_putn(mut tty: *mut tty, buf: &[u8], mut width: u_int) {
 }
 unsafe fn tty_set_italics(mut tty: *mut tty) {
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SITM) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_SITM,
+    ) != 0
+    {
         s = options_get_string(
             global_options,
             b"default-terminal\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1067,7 +1298,15 @@ unsafe fn tty_set_italics(mut tty: *mut tty) {
     tty_putcode(tty, TTYC_SMSO);
 }
 pub unsafe fn tty_set_title(mut tty: *mut tty, title: &CStr) {
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_TSL) == 0 || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_FSL) == 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_TSL,
+    ) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_FSL,
+        ) == 0
+    {
         return;
     }
     tty_putcode(tty, TTYC_TSL);
@@ -1075,7 +1314,15 @@ pub unsafe fn tty_set_title(mut tty: *mut tty, title: &CStr) {
     tty_putcode(tty, TTYC_FSL);
 }
 pub unsafe fn tty_set_path(mut tty: *mut tty, title: &CStr) {
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SWD) == 0 || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_FSL) == 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_SWD,
+    ) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_FSL,
+        ) == 0
+    {
         return;
     }
     tty_putcode(tty, TTYC_SWD);
@@ -1154,7 +1401,11 @@ unsafe fn tty_update_cursor(
             if (*tty).cstyle as ::core::ffi::c_uint
                 != SCREEN_CURSOR_DEFAULT as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SE) != 0 {
+                if tty_term_has(
+                    tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                    TTYC_SE,
+                ) != 0
+                {
                     tty_putcode(tty, TTYC_SE);
                 } else {
                     tty_putcode_i(tty, TTYC_SS, 0 as ::core::ffi::c_int);
@@ -1165,7 +1416,11 @@ unsafe fn tty_update_cursor(
             }
         }
         1 => {
-            if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SS) != 0 {
+            if tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_SS,
+            ) != 0
+            {
                 if cmode & MODE_CURSOR_BLINKING != 0 {
                     tty_putcode_i(tty, TTYC_SS, 1 as ::core::ffi::c_int);
                 } else {
@@ -1176,7 +1431,11 @@ unsafe fn tty_update_cursor(
             }
         }
         2 => {
-            if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SS) != 0 {
+            if tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_SS,
+            ) != 0
+            {
                 if cmode & MODE_CURSOR_BLINKING != 0 {
                     tty_putcode_i(tty, TTYC_SS, 3 as ::core::ffi::c_int);
                 } else {
@@ -1187,7 +1446,11 @@ unsafe fn tty_update_cursor(
             }
         }
         3 => {
-            if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SS) != 0 {
+            if tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_SS,
+            ) != 0
+            {
                 if cmode & MODE_CURSOR_BLINKING != 0 {
                     tty_putcode_i(tty, TTYC_SS, 5 as ::core::ffi::c_int);
                 } else {
@@ -1203,9 +1466,13 @@ unsafe fn tty_update_cursor(
     return cmode;
 }
 pub unsafe fn tty_update_mode(mut tty: *mut tty, mut mode: ::core::ffi::c_int, s: Option<&screen>) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
-    let mut term: *const tty_term = tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term);
+    let mut term: *const tty_term =
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term);
     let mut c: *mut client = terminal_client;
     let mut changed: ::core::ffi::c_int = 0;
     if (*tty).flags & TTY_NOCURSOR != 0 {
@@ -1260,7 +1527,11 @@ unsafe fn tty_emulate_repeat(
     mut code1: tty_code_code,
     mut n: u_int,
 ) {
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        code,
+    ) != 0
+    {
         tty_putcode_i(tty, code, n as ::core::ffi::c_int);
     } else {
         loop {
@@ -1284,10 +1555,21 @@ pub unsafe fn tty_repeat_space(tty: *mut tty, mut n: u_int) {
     }
 }
 pub unsafe fn tty_window_bigger(mut tty: *mut tty) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    let mut w: *mut window = ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = ((*(*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+    .current_winlink())
+    .get_unchecked()
+    .window_handle()
+    .as_ref()
+    .map_or(std::ptr::null_mut(), |owner| owner.get());
     return ((*tty).sx < (*w).sx || (*tty).sy.wrapping_sub(status_line_size(&*c)) < (*w).sy)
         as ::core::ffi::c_int;
 }
@@ -1301,8 +1583,19 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
     }
 }
 unsafe fn tty_window_offset1(c: &mut client) -> tty_window_view {
-    let w = ((*c.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let wp = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let w = ((*c
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+    .current_winlink())
+    .get_unchecked()
+    .window_handle()
+    .as_ref()
+    .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = (*w)
+        .active_pane()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let lines = status_line_size(c);
     if c.tty.sx >= (*w).sx && c.tty.sy.wrapping_sub(lines) >= (*w).sy {
         c.pan_window = std::rc::Weak::new();
@@ -1361,16 +1654,35 @@ pub unsafe fn tty_update_window_offset(w_owner: &std::rc::Rc<std::cell::UnsafeCe
     let mut w = w_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if !(*c).session_handle().is_none()
-            && (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink().is_alive()
-            && ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) == w
+            && (*(*c)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .current_winlink()
+            .is_alive()
+            && ((*(*c)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .current_winlink())
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+                == w
         {
             tty_update_client_offset(&(*(c)).observer.upgrade().expect("live client"));
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn tty_update_client_offset(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -1418,7 +1730,11 @@ fn tty_large_region(ctx: &tty_ctx) -> ::core::ffi::c_int {
         as ::core::ffi::c_int;
 }
 pub unsafe fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::ffi::c_int {
-    if tty_term_flag(tty_term_owner_ptr(&tty.term).map_or(std::ptr::null(), |term| term), TTYC_BCE) != 0 {
+    if tty_term_flag(
+        tty_term_owner_ptr(&tty.term).map_or(std::ptr::null(), |term| term),
+        TTYC_BCE,
+    ) != 0
+    {
         return 0 as ::core::ffi::c_int;
     }
     if !(bg == 8 as u_int || bg == 9 as u_int)
@@ -1429,7 +1745,10 @@ pub unsafe fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn tty_redraw_region(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
@@ -1534,7 +1853,10 @@ unsafe fn tty_clear_line(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
@@ -1557,17 +1879,31 @@ unsafe fn tty_clear_line(
         return;
     }
     if (*c).overlay_check.is_none() && tty_fake_bce(&*tty, defaults, bg) == 0 {
-        if px.wrapping_add(nx) >= (*tty).sx && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_EL) != 0 {
+        if px.wrapping_add(nx) >= (*tty).sx
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_EL,
+            ) != 0
+        {
             tty_cursor(tty, px, py);
             tty_putcode(tty, TTYC_EL);
             return;
         }
-        if px == 0 as u_int && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_EL1) != 0 {
+        if px == 0 as u_int
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_EL1,
+            ) != 0
+        {
             tty_cursor(tty, px.wrapping_add(nx).wrapping_sub(1 as u_int), py);
             tty_putcode(tty, TTYC_EL1);
             return;
         }
-        if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_ECH) != 0 {
+        if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_ECH,
+        ) != 0
+        {
             tty_cursor(tty, px, py);
             tty_putcode_i(tty, TTYC_ECH, nx as ::core::ffi::c_int);
             return;
@@ -1592,7 +1928,10 @@ unsafe fn tty_clear_pane_line(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
@@ -1703,7 +2042,10 @@ unsafe fn tty_clear_area(
     mut nx: u_int,
     mut bg: u_int,
 ) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let defaults = &ctx.style_ctx.defaults;
@@ -1730,13 +2072,20 @@ unsafe fn tty_clear_area(
         if px == 0 as u_int
             && px.wrapping_add(nx) >= (*tty).sx
             && py.wrapping_add(ny) >= (*tty).sy
-            && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_ED) != 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_ED,
+            ) != 0
         {
             tty_cursor(tty, 0 as u_int, py);
             tty_putcode(tty, TTYC_ED);
             return;
         }
-        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECFRA != 0 && !(bg == 8 as u_int || bg == 9 as u_int) {
+        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_DECFRA
+            != 0
+            && !(bg == 8 as u_int || bg == 9 as u_int)
+        {
             xformat(
                 &mut tmp,
                 format_args!(
@@ -1753,8 +2102,14 @@ unsafe fn tty_clear_area(
         if px == 0 as u_int
             && px.wrapping_add(nx) >= (*tty).sx
             && ny > 2 as u_int
-            && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) != 0
-            && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_INDN) != 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_CSR,
+            ) != 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_INDN,
+            ) != 0
         {
             tty_region(tty, py, py.wrapping_add(ny).wrapping_sub(1 as u_int));
             tty_margin_off(tty);
@@ -1763,9 +2118,17 @@ unsafe fn tty_clear_area(
         }
         if nx > 2 as u_int
             && ny > 2 as u_int
-            && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) != 0
-            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM != 0
-            && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_INDN) != 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_CSR,
+            ) != 0
+            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_DECSLRM
+                != 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_INDN,
+            ) != 0
         {
             tty_region(tty, py, py.wrapping_add(ny).wrapping_sub(1 as u_int));
             tty_margin(tty, px, px.wrapping_add(nx).wrapping_sub(1 as u_int));
@@ -1793,7 +2156,10 @@ unsafe fn tty_clear_pane_area(
     }
 }
 unsafe fn tty_draw_pane(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, mut py: u_int) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut nx: u_int = ctx.sx;
     let mut j: u_int = 0;
@@ -1907,7 +2273,10 @@ pub unsafe fn tty_check_codeset(tty: &tty, gc: &grid_cell) -> grid_cell {
         return *gc;
     }
 
-    let terminal_client_owner = tty.client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = tty
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     if (*terminal_client).flags & CLIENT_UTF8 as uint64_t != 0 {
         return *gc;
@@ -1939,10 +2308,15 @@ pub unsafe fn tty_check_overlay_range(
     mut py: u_int,
     mut nx: u_int,
 ) -> *mut visible_ranges {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    if let Some(ranges) = server_client_overlay_check(&(*(c)).observer.upgrade().expect("live client"), px, py, nx) {
+    if let Some(ranges) =
+        server_client_overlay_check(&(*(c)).observer.upgrade().expect("live client"), px, py, nx)
+    {
         (*tty).r = ranges;
     } else {
         server_client_ensure_ranges(&raw mut (*tty).r, 1 as u_int);
@@ -1953,7 +2327,10 @@ pub unsafe fn tty_check_overlay_range(
     &raw mut (*tty).r
 }
 pub unsafe fn tty_sync_start(mut tty: *mut tty) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     if (*tty).flags & TTY_BLOCK != 0 {
         return;
@@ -1962,7 +2339,11 @@ pub unsafe fn tty_sync_start(mut tty: *mut tty) {
         return;
     }
     (*tty).flags |= TTY_SYNCING;
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SYNC) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_SYNC,
+    ) != 0
+    {
         log_debug(format_args!(
             "{} sync start",
             log_cstr(
@@ -1976,7 +2357,10 @@ pub unsafe fn tty_sync_start(mut tty: *mut tty) {
     }
 }
 pub unsafe fn tty_sync_end(mut tty: *mut tty) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     if (*tty).flags & TTY_BLOCK != 0 {
         return;
@@ -1985,7 +2369,11 @@ pub unsafe fn tty_sync_end(mut tty: *mut tty) {
         return;
     }
     (*tty).flags &= !TTY_SYNCING;
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SYNC) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_SYNC,
+    ) != 0
+    {
         log_debug(format_args!(
             "{} sync end",
             log_cstr(
@@ -2000,7 +2388,11 @@ pub unsafe fn tty_sync_end(mut tty: *mut tty) {
 }
 unsafe fn tty_client_ready(ctx: &tty_ctx, c_value: &client) -> ::core::ffi::c_int {
     let c: *mut client = c_value as *const _ as *mut _;
-    if (*c).session_handle().is_none() || tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term).is_null() {
+    if (*c).session_handle().is_none()
+        || tty_term_owner_ptr(&(*c).tty.term)
+            .map_or(std::ptr::null(), |term| term)
+            .is_null()
+    {
         return 0 as ::core::ffi::c_int;
     }
     if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
@@ -2024,10 +2416,15 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
         return;
     };
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if tty_client_ready(ctx, &*(c)) != 0 {
-            state = set_client_cb(ctx, registry_c_owner.as_ref().expect("current registry client"));
+            state = set_client_cb(
+                ctx,
+                registry_c_owner.as_ref().expect("current registry client"),
+            );
             if state == -(1 as ::core::ffi::c_int) {
                 break;
             }
@@ -2035,21 +2432,34 @@ pub unsafe fn tty_write(mut cmdfn: impl FnMut(*mut tty, &tty_ctx), ctx: &mut tty
                 cmdfn(&raw mut (*c).tty, ctx);
             }
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if ctx.set_client_cb.is_none() {
         ctx.set_client_cb = Some(set_client_cb);
     }
 }
 pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_ICH) == 0 && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_ICH1) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_ICH,
+        ) == 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_ICH1,
+            ) == 0
         || (*c).overlay_check.is_some()
     {
         tty_draw_pane(tty, ctx, s, ctx.ocy);
@@ -2060,13 +2470,23 @@ pub unsafe fn tty_cmd_insertcharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &scre
     tty_emulate_repeat(tty, TTYC_ICH, TTYC_ICH1, ctx.data.count());
 }
 pub unsafe fn tty_cmd_deletecharacter(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_DCH) == 0 && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_DCH1) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_DCH,
+        ) == 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_DCH1,
+            ) == 0
         || (*c).overlay_check.is_some()
     {
         tty_draw_pane(tty, ctx, s, ctx.ocy);
@@ -2081,14 +2501,23 @@ pub unsafe fn tty_cmd_clearcharacter(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_clear_pane_line(tty, ctx, ctx.ocy, ctx.ocx, ctx.data.count(), ctx.bg);
 }
 pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) == 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_IL1) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_CSR,
+        ) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_IL1,
+        ) == 0
         || ctx.sx == 1 as u_int
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
@@ -2105,14 +2534,23 @@ pub unsafe fn tty_cmd_insertline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     (*tty).cx = (*tty).cy;
 }
 pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, ctx.bg) != 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) == 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_DL1) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_CSR,
+        ) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_DL1,
+        ) == 0
         || ctx.sx == 1 as u_int
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
@@ -2129,7 +2567,10 @@ pub unsafe fn tty_cmd_deleteline(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     (*tty).cx = (*tty).cy;
 }
 pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     if ctx.ocy != ctx.orupper {
@@ -2137,10 +2578,22 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx, s: &screen)
     }
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0
+            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_DECSLRM
+                == 0
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, 8 as u_int) != 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) == 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_RI) == 0 && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_RIN) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_CSR,
+        ) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_RI,
+        ) == 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_RIN,
+            ) == 0
         || ctx.sx == 1 as u_int
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
@@ -2152,22 +2605,34 @@ pub unsafe fn tty_cmd_reverseindex(mut tty: *mut tty, ctx: &tty_ctx, s: &screen)
     tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
     tty_margin_pane(tty, ctx);
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.orupper);
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_RI) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_RI,
+    ) != 0
+    {
         tty_putcode(tty, TTYC_RI);
     } else {
         tty_putcode_i(tty, TTYC_RIN, 1 as ::core::ffi::c_int);
     };
 }
 pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0
+            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_DECSLRM
+                == 0
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, 8 as u_int) != 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_CSR,
+        ) == 0
         || ctx.sx == 1 as u_int
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
@@ -2178,8 +2643,16 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     tty_default_attributes(tty, ctx.bg, Some(&ctx.style_ctx));
     tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
     tty_margin_pane(tty, ctx);
-    if ctx.data.count() == 1 as u_int || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_INDN) == 0 {
-        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0 {
+    if ctx.data.count() == 1 as u_int
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_INDN,
+        ) == 0
+    {
+        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_DECSLRM
+            == 0
+        {
             tty_cursor(tty, 0 as u_int, (*tty).rlower);
         } else {
             tty_cursor(tty, (*tty).rright, (*tty).rlower);
@@ -2199,16 +2672,31 @@ pub unsafe fn tty_cmd_scrollup(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     };
 }
 pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut i: u_int = 0;
     let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0
+            && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_DECSLRM
+                == 0
         || tty_fake_bce(&*tty, &ctx.style_ctx.defaults, 8 as u_int) != 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) == 0
-        || tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_RI) == 0 && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_RIN) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_CSR,
+        ) == 0
+        || tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_RI,
+        ) == 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_RIN,
+            ) == 0
         || ctx.sx == 1 as u_int
         || ctx.sy == 1 as u_int
         || (*c).overlay_check.is_some()
@@ -2220,7 +2708,11 @@ pub unsafe fn tty_cmd_scrolldown(mut tty: *mut tty, ctx: &tty_ctx, s: &screen) {
     tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
     tty_margin_pane(tty, ctx);
     tty_cursor_pane(tty, ctx, ctx.ocx, ctx.orupper);
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_RIN) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_RIN,
+    ) != 0
+    {
         tty_putcode_i(tty, TTYC_RIN, ctx.data.count() as ::core::ffi::c_int);
     } else {
         i = 0 as u_int;
@@ -2281,7 +2773,10 @@ pub unsafe fn tty_cmd_clearscreen(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_clear_pane_area(tty, ctx, py, ny, px, nx, ctx.bg);
 }
 pub unsafe fn tty_cmd_alignmenttest(mut tty: *mut tty, ctx: &tty_ctx) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut i: u_int = 0;
@@ -2383,7 +2878,9 @@ pub unsafe fn tty_cmd_cells(mut tty: *mut tty, ctx: &tty_ctx, s: &screen, gc: &g
     {
         if !ctx.flags & TTY_CTX_WRAPPED != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-            || (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM != 0
+            || (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_NOAM
+                != 0
             || (ctx.xoff as u_int).wrapping_add(ctx.ocx) != 0 as u_int
             || (ctx.yoff as u_int).wrapping_add(ctx.ocy) != (*tty).cy.wrapping_add(1 as u_int)
             || (*tty).cx < (*tty).sx
@@ -2432,7 +2929,11 @@ pub unsafe fn tty_set_selection(mut tty: *mut tty, clip: &CStr, data: &[u8]) {
     if !(*tty).flags & TTY_STARTED != 0 {
         return;
     }
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_MS) == 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_MS,
+    ) == 0
+    {
         return;
     }
     size = (4 as size_t)
@@ -2453,7 +2954,10 @@ pub unsafe fn tty_cmd_rawstring(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_invalidate(tty);
 }
 pub unsafe fn tty_cmd_syncstart(mut tty: *mut tty, ctx: &tty_ctx) {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     if ctx.flags & TTY_CTX_OVERLAY_SYNC != 0 && ctx.flags & TTY_CTX_SYNC != 0 {
@@ -2465,7 +2969,8 @@ pub unsafe fn tty_cmd_syncstart(mut tty: *mut tty, ctx: &tty_ctx) {
     }
 }
 pub unsafe fn tty_cell(tty: *mut tty, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM != 0
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM
+        != 0
         && (*tty).cy == (*tty).sy.wrapping_sub(1)
         && (*tty).cx == (*tty).sx.wrapping_sub(1)
     {
@@ -2504,7 +3009,9 @@ pub unsafe fn tty_reset(mut tty: *mut tty) {
                 b"\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        if (*gc).attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 && tty_acs_needed(tty.as_ref()) != 0 {
+        if (*gc).attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0
+            && tty_acs_needed(tty.as_ref()) != 0
+        {
             tty_putcode(tty, TTYC_RMACS);
         }
         tty_putcode(tty, TTYC_SGR0);
@@ -2538,7 +3045,10 @@ pub unsafe fn tty_invalidate(mut tty: *mut tty) {
     (*tty).rright = UINT_MAX as u_int;
     (*tty).rlower = (*tty).rright;
     if (*tty).flags & TTY_STARTED != 0 {
-        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM != 0 {
+        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_DECSLRM
+            != 0
+        {
             tty_putcode(tty, TTYC_ENMG);
         }
         tty_putcode(tty, TTYC_SGR0);
@@ -2569,7 +3079,11 @@ unsafe fn tty_region(mut tty: *mut tty, mut rupper: u_int, mut rlower: u_int) {
     if (*tty).rlower == rlower && (*tty).rupper == rupper {
         return;
     }
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_CSR) == 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_CSR,
+    ) == 0
+    {
         return;
     }
     (*tty).rupper = rupper;
@@ -2616,7 +3130,10 @@ unsafe fn tty_margin_pane(mut tty: *mut tty, ctx: &tty_ctx) {
     tty_margin(tty, l as u_int, r as u_int);
 }
 unsafe fn tty_margin(mut tty: *mut tty, mut rleft: u_int, mut rright: u_int) {
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_DECSLRM
+        == 0
+    {
         return;
     }
     if (*tty).rleft == rleft && (*tty).rright == rright {
@@ -2651,7 +3168,9 @@ unsafe fn tty_cursor_pane_unless_wrap(
 ) {
     if !ctx.flags & TTY_CTX_WRAPPED != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= (*tty).sx)
-        || (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_NOAM != 0
+        || (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_NOAM
+            != 0
         || (ctx.xoff as u_int).wrapping_add(cx) != 0 as u_int
         || (ctx.yoff as u_int).wrapping_add(cy) != (*tty).cy.wrapping_add(1 as u_int)
         || (*tty).cx < (*tty).sx
@@ -2676,7 +3195,8 @@ unsafe fn tty_cursor_pane(mut tty: *mut tty, ctx: &tty_ctx, mut cx: u_int, mut c
 }
 pub unsafe fn tty_cursor(mut tty: *mut tty, mut cx: u_int, mut cy: u_int) {
     let mut current_block: u64;
-    let mut term: *const tty_term = tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term);
+    let mut term: *const tty_term =
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term);
     let mut thisx: u_int = 0;
     let mut thisy: u_int = 0;
     let mut change: ::core::ffi::c_int = 0;
@@ -2708,14 +3228,20 @@ pub unsafe fn tty_cursor(mut tty: *mut tty, mut cx: u_int, mut cy: u_int) {
     } else if cx == 0 as u_int
         && cy == thisy.wrapping_add(1 as u_int)
         && thisy != (*tty).rlower
-        && ((*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0 || (*tty).rleft == 0 as u_int)
+        && ((*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_DECSLRM
+            == 0
+            || (*tty).rleft == 0 as u_int)
     {
         tty_putc(tty, '\r' as i32 as u_char);
         tty_putc(tty, '\n' as i32 as u_char);
         current_block = 5411263895410993842;
     } else if cy == thisy {
         if cx == 0 as u_int
-            && ((*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0 || (*tty).rleft == 0 as u_int)
+            && ((*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                & TERM_DECSLRM
+                == 0
+                || (*tty).rleft == 0 as u_int)
         {
             tty_putc(tty, '\r' as i32 as u_char);
             current_block = 5411263895410993842;
@@ -2732,7 +3258,9 @@ pub unsafe fn tty_cursor(mut tty: *mut tty, mut cx: u_int, mut cy: u_int) {
                 current_block = 5411263895410993842;
             } else if change > 0 as ::core::ffi::c_int
                 && tty_term_has(term, TTYC_CUB) != 0
-                && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0
+                && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                    & TERM_DECSLRM
+                    == 0
             {
                 if change == 2 as ::core::ffi::c_int && tty_term_has(term, TTYC_CUB1) != 0 {
                     tty_putcode(tty, TTYC_CUB1);
@@ -2743,7 +3271,9 @@ pub unsafe fn tty_cursor(mut tty: *mut tty, mut cx: u_int, mut cy: u_int) {
                 current_block = 5411263895410993842;
             } else if change < 0 as ::core::ffi::c_int
                 && tty_term_has(term, TTYC_CUF) != 0
-                && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_DECSLRM == 0
+                && (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+                    & TERM_DECSLRM
+                    == 0
             {
                 tty_putcode_i(tty, TTYC_CUF, -change);
                 current_block = 5411263895410993842;
@@ -2833,7 +3363,10 @@ unsafe fn tty_dim_default_colour(
     mut c: ::core::ffi::c_int,
     mut foreground: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut theme: client_theme = THEME_UNKNOWN;
     if !(c == 8 as ::core::ffi::c_int || c == 9 as ::core::ffi::c_int) {
@@ -2909,7 +3442,11 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
     {
         return;
     }
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETAB) == 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_SETAB,
+    ) == 0
+    {
         if gc2.attr as ::core::ffi::c_int & GRID_ATTR_REVERSE != 0 {
             if gc2.fg != 7 as ::core::ffi::c_int
                 && !(gc2.fg == 8 as ::core::ffi::c_int || gc2.fg == 9 as ::core::ffi::c_int)
@@ -2959,9 +3496,17 @@ pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Optio
         tty_putcode(tty, TTYC_BLINK);
     }
     if changed & GRID_ATTR_REVERSE != 0 {
-        if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_REV) != 0 {
+        if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_REV,
+        ) != 0
+        {
             tty_putcode(tty, TTYC_REV);
-        } else if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SMSO) != 0 {
+        } else if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_SMSO,
+        ) != 0
+        {
             tty_putcode(tty, TTYC_SMSO);
         }
     }
@@ -2988,7 +3533,11 @@ unsafe fn tty_colours(mut tty: *mut tty, gc: &grid_cell) {
         || gc.fg == 9 as ::core::ffi::c_int
         || (gc.bg == 8 as ::core::ffi::c_int || gc.bg == 9 as ::core::ffi::c_int)
     {
-        if tty_term_flag(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_AX) == 0 {
+        if tty_term_flag(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_AX,
+        ) == 0
+        {
             tty_reset(tty);
         } else {
             if (gc.fg == 8 as ::core::ffi::c_int || gc.fg == 9 as ::core::ffi::c_int)
@@ -3025,7 +3574,10 @@ unsafe fn tty_map_theme_colour(
     mut tty: *mut tty,
     mut colour: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0;
@@ -3059,7 +3611,10 @@ unsafe fn tty_check_fg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: 
         c = gc.fg;
         if c < 8 as ::core::ffi::c_int
             && gc.attr as ::core::ffi::c_int & GRID_ATTR_BRIGHT != 0
-            && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_NOBR) == 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_NOBR,
+            ) == 0
         {
             c += 90 as ::core::ffi::c_int;
         }
@@ -3070,16 +3625,25 @@ unsafe fn tty_check_fg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: 
     }
     gc.fg = tty_map_theme_colour(tty, gc.fg);
     if gc.fg & COLOUR_FLAG_RGB != 0 {
-        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_RGBCOLOURS != 0 {
+        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_RGBCOLOURS
+            != 0
+        {
             return;
         }
         (r, g, b) = colour_split_rgb(gc.fg);
         gc.fg = colour_find_rgb(r, g, b);
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_256COLOURS != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_256COLOURS
+        != 0
+    {
         colours = 256 as u_int;
     } else {
-        colours = tty_term_number(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_COLORS) as u_int;
+        colours = tty_term_number(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_COLORS,
+        ) as u_int;
     }
     if gc.fg & COLOUR_FLAG_256 != 0 {
         if colours >= 256 as u_int {
@@ -3121,16 +3685,25 @@ unsafe fn tty_check_bg(mut tty: *mut tty, palette: Option<&colour_palette>, gc: 
     }
     gc.bg = tty_map_theme_colour(tty, gc.bg);
     if gc.bg & COLOUR_FLAG_RGB != 0 {
-        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_RGBCOLOURS != 0 {
+        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_RGBCOLOURS
+            != 0
+        {
             return;
         }
         (r, g, b) = colour_split_rgb(gc.bg);
         gc.bg = colour_find_rgb(r, g, b);
     }
-    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_256COLOURS != 0 {
+    if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+        & TERM_256COLOURS
+        != 0
+    {
         colours = 256 as u_int;
     } else {
-        colours = tty_term_number(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_COLORS) as u_int;
+        colours = tty_term_number(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_COLORS,
+        ) as u_int;
     }
     if gc.bg & COLOUR_FLAG_256 != 0 {
         if colours >= 256 as u_int {
@@ -3162,7 +3735,11 @@ unsafe fn tty_check_us(mut tty: *mut tty, palette: Option<&colour_palette>, gc: 
         }
     }
     gc.us = tty_map_theme_colour(tty, gc.us);
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETULC1) == 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_SETULC1,
+    ) == 0
+    {
         c = colour_force_rgb(gc.us);
         if c == -(1 as ::core::ffi::c_int) {
             gc.us = 8 as ::core::ffi::c_int;
@@ -3184,7 +3761,10 @@ unsafe fn tty_colours_fg(mut tty: *mut tty, gc: &grid_cell) {
             return;
         }
     } else if gc.fg >= 90 as ::core::ffi::c_int && gc.fg <= 97 as ::core::ffi::c_int {
-        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_256COLOURS != 0 {
+        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_256COLOURS
+            != 0
+        {
             xformat(&mut s, format_args!("\x1B[{}m", (gc.fg) as i32));
             tty_puts(tty, std::ffi::CStr::from_ptr(s.as_ptr()));
         } else {
@@ -3206,7 +3786,10 @@ unsafe fn tty_colours_bg(mut tty: *mut tty, gc: &grid_cell) {
             return;
         }
     } else if gc.bg >= 90 as ::core::ffi::c_int && gc.bg <= 97 as ::core::ffi::c_int {
-        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_256COLOURS != 0 {
+        if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags
+            & TERM_256COLOURS
+            != 0
+        {
             xformat(
                 &mut s,
                 format_args!("\x1B[{}m", (gc.bg + 10 as ::core::ffi::c_int) as i32),
@@ -3248,10 +3831,20 @@ unsafe fn tty_colours_us(mut tty: *mut tty, gc: &grid_cell) {
         c = (65536 as ::core::ffi::c_int * r as ::core::ffi::c_int
             + 256 as ::core::ffi::c_int * g as ::core::ffi::c_int
             + b as ::core::ffi::c_int) as u_int;
-        if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETULC) != 0 {
+        if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_SETULC,
+        ) != 0
+        {
             tty_putcode_i(tty, TTYC_SETULC, c as ::core::ffi::c_int);
-        } else if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETAL) != 0
-            && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_RGB) != 0
+        } else if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_SETAL,
+        ) != 0
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_RGB,
+            ) != 0
         {
             tty_putcode_i(tty, TTYC_SETAL, c as ::core::ffi::c_int);
         }
@@ -3267,16 +3860,30 @@ unsafe fn tty_try_colour(
     let mut g: u_char = 0;
     let mut b: u_char = 0;
     if colour & COLOUR_FLAG_256 != 0 {
-        if foreground && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETAF) != 0 {
+        if foreground
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_SETAF,
+            ) != 0
+        {
             tty_putcode_i(tty, TTYC_SETAF, colour & 0xff as ::core::ffi::c_int);
-        } else if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETAB) != 0 {
+        } else if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_SETAB,
+        ) != 0
+        {
             tty_putcode_i(tty, TTYC_SETAB, colour & 0xff as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
     }
     if colour & COLOUR_FLAG_RGB != 0 {
         (r, g, b) = colour_split_rgb(colour & 0xffffff as ::core::ffi::c_int);
-        if foreground && tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETRGBF) != 0 {
+        if foreground
+            && tty_term_has(
+                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+                TTYC_SETRGBF,
+            ) != 0
+        {
             tty_putcode_iii(
                 tty,
                 TTYC_SETRGBF,
@@ -3284,7 +3891,11 @@ unsafe fn tty_try_colour(
                 g as ::core::ffi::c_int,
                 b as ::core::ffi::c_int,
             );
-        } else if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SETRGBB) != 0 {
+        } else if tty_term_has(
+            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+            TTYC_SETRGBB,
+        ) != 0
+        {
             tty_putcode_iii(
                 tty,
                 TTYC_SETRGBB,
@@ -3306,7 +3917,8 @@ fn tty_window_default_style(palette: &colour_palette) -> grid_cell {
 }
 unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let mut wp = wp_owner.get();
-    let mut oo: *mut options = options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut oo: *mut options =
+        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sy: *mut style = ::core::ptr::null_mut::<style>();
     log_debug(format_args!("%{}: style changed", ((*wp).id) as u32));
@@ -3343,12 +3955,21 @@ unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
     (*wp).cached_dim = (*sy).dim as u_int;
     format_free(ft_owner);
 }
-pub unsafe fn tty_default_colours(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) -> (grid_cell, u_int) {
+pub unsafe fn tty_default_colours(
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) -> (grid_cell, u_int) {
     let mut wp = wp_owner.get();
     if (*wp).flags & PANE_STYLECHANGED != 0 {
         tty_style_changed(wp_owner);
     }
-    let active = wp == (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let active = wp
+        == (*(*wp)
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .active_pane()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut gc = grid_default_cell;
     gc.fg = if active && (*wp).cached_active_gc.fg != 8 {
         (*wp).cached_active_gc.fg
@@ -3394,7 +4015,11 @@ pub unsafe fn tty_clipboard_query(mut tty: *mut tty) {
     }
 }
 pub unsafe fn tty_set_progress_bar(mut tty: *mut tty, mut pb: *mut progress_bar) {
-    if tty_term_has(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), TTYC_SPB) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
+        TTYC_SPB,
+    ) != 0
+    {
         tty_putcode_ii(
             tty,
             TTYC_SPB,
@@ -3486,11 +4111,16 @@ mod initialization_owner_tests {
             let owner = client::new();
             let observer = Rc::downgrade(&owner);
             let callbacks: [unsafe fn(&Rc<std::cell::UnsafeCell<client>>); 5] = [
-                tty_read_callback, tty_write_callback, tty_timer_callback,
-                tty_start_timer_callback, tty_clipboard_query_callback,
+                tty_read_callback,
+                tty_write_callback,
+                tty_timer_callback,
+                tty_start_timer_callback,
+                tty_clipboard_query_callback,
             ];
-            let mut callbacks: Vec<_> = callbacks.into_iter()
-                .map(|callback| tty_client_callback(&owner, callback)).collect();
+            let mut callbacks: Vec<_> = callbacks
+                .into_iter()
+                .map(|callback| tty_client_callback(&owner, callback))
+                .collect();
             assert_eq!(Rc::strong_count(&owner), 1);
             (*owner.get()).tty.flags |= TTY_OSC52QUERY;
             callbacks[4](-1, 0);
@@ -3508,10 +4138,16 @@ mod initialization_owner_tests {
         unsafe {
             let mut master = -1;
             let mut slave = -1;
-            assert_eq!(libc::openpty(
-                &mut master, &mut slave, std::ptr::null_mut(),
-                std::ptr::null(), std::ptr::null(),
-            ), 0);
+            assert_eq!(
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                ),
+                0
+            );
             let _master = OwnedFd::from_raw_fd(master);
             let slave = OwnedFd::from_raw_fd(slave);
             let owner = client::new();
@@ -3523,7 +4159,10 @@ mod initialization_owner_tests {
             assert_eq!(tty_init(&owner), 0);
             assert_eq!(Rc::weak_count(&owner), weak_count);
             assert_eq!((*owner.get()).tty.sx, 0);
-            assert!(Rc::ptr_eq(&(*owner.get()).tty.client.upgrade().unwrap(), &owner));
+            assert!(Rc::ptr_eq(
+                &(*owner.get()).tty.client.upgrade().unwrap(),
+                &owner
+            ));
             (*owner.get()).fd = -1;
             // A failed initialization must leave the existing terminal intact.
             (*owner.get()).tty.sx = 42;

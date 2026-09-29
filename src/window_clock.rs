@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::{
     clock_gettime, gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time,
 };
@@ -6,6 +5,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::options::options_get_number;
+use crate::src::options::options_owner_ptr;
 use crate::src::reactor::{event_add, event_del, event_set};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
@@ -53,7 +53,9 @@ pub static window_clock_mode: window_mode = {
                 ) -> *mut screen,
         ),
         free: Some(window_clock_free as unsafe fn(refbox::Weak<window_mode_entry>) -> ()),
-        resize: Some(window_clock_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> ()),
+        resize: Some(
+            window_clock_resize as unsafe fn(refbox::Weak<window_mode_entry>, u_int, u_int) -> (),
+        ),
         update: None,
         style_changed: None,
         key: Some(
@@ -622,7 +624,11 @@ unsafe fn window_clock_start_timer(mut wme: refbox::Weak<window_mode_entry>) {
     event_add(&raw mut (*data).timer, &raw mut tv);
 }
 unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
-    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme
+        .get_unchecked()
+        .wp
+        .upgrade()
+        .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
@@ -670,7 +676,11 @@ unsafe fn window_clock_init(
     _fs: *mut cmd_find_state,
     _args: *mut args,
 ) -> *mut screen {
-    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme
+        .get_unchecked()
+        .wp
+        .upgrade()
+        .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
@@ -698,13 +708,20 @@ unsafe fn window_clock_init(
     );
     window_clock_start_timer(wme.clone());
     s = &raw mut (*data).screen;
-    screen_init(&mut *s, (*wp).base.grid().sx, (*wp).base.grid().sy, 0 as u_int);
+    screen_init(
+        &mut *s,
+        (*wp).base.grid().sx,
+        (*wp).base.grid().sy,
+        0 as u_int,
+    );
     (*s).mode &= !MODE_CURSOR;
     window_clock_draw_screen(wme.clone());
     return s;
 }
 unsafe fn window_clock_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
-    let data = wme.get_unchecked().boxed_data_ptr::<window_clock_mode_data>();
+    let data = wme
+        .get_unchecked()
+        .boxed_data_ptr::<window_clock_mode_data>();
     data.map_or(std::ptr::null_mut(), |data| &raw mut (*data).screen)
 }
 
@@ -714,7 +731,11 @@ unsafe fn window_clock_free(mut wme: refbox::Weak<window_mode_entry>) {
     screen_free(&mut (*data).screen);
     drop(wme.get_mut_unchecked().boxed_data.take());
 }
-unsafe fn window_clock_resize(mut wme: refbox::Weak<window_mode_entry>, mut sx: u_int, mut sy: u_int) {
+unsafe fn window_clock_resize(
+    mut wme: refbox::Weak<window_mode_entry>,
+    mut sx: u_int,
+    mut sy: u_int,
+) {
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     let mut s: *mut screen = &raw mut (*data).screen;
     screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
@@ -727,15 +748,26 @@ unsafe fn window_clock_key(
     _key: key_code,
     _m: *mut mouse_event,
 ) {
-    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme
+        .get_unchecked()
+        .wp
+        .upgrade()
+        .expect("mode belongs to a live pane");
     let _mode_pane = mode_pane_owner.get();
     window_pane_reset_mode(&mode_pane_owner);
 }
 unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
-    let mode_pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
+    let mode_pane_owner = wme
+        .get_unchecked()
+        .wp
+        .upgrade()
+        .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = (*wp)
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -778,7 +810,9 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         None,
         None,
         (refbox::Weak::new()).clone(),
-        (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        (wp).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
     );
     ft = &raw mut *ft_owner;
     style_apply(
@@ -875,7 +909,8 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     x = ((*s).grid().sx.wrapping_div(2 as u_int) as size_t)
         .wrapping_sub((3 as size_t).wrapping_mul(strlen(&raw mut tim as *mut ::core::ffi::c_char)))
         as u_int;
-    y = (*s).grid()
+    y = (*s)
+        .grid()
         .sy
         .wrapping_div(2 as u_int)
         .wrapping_sub(3 as u_int);

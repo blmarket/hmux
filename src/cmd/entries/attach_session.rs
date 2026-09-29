@@ -1,15 +1,15 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_get_flags};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
 use crate::src::compat::imsg::*;
 use crate::src::environ::environ_update;
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{getuid, strcspn};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
+use crate::src::options::options_owner_ptr;
 use crate::src::proc::{proc_get_peer_uid, proc_send};
 use crate::src::server::clients;
 use crate::src::server_client::{
@@ -82,7 +82,9 @@ pub unsafe fn cmd_attach_session(
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut c_loop: *mut client = ::core::ptr::null_mut::<client>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -114,27 +116,67 @@ pub unsafe fn cmd_attach_session(
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if cmd_find_target(&raw mut target, Some(item_handle), tflag, type_0, flags) != 0 as ::core::ffi::c_int {
+    if cmd_find_target(&raw mut target, Some(item_handle), tflag, type_0, flags)
+        != 0 as ::core::ffi::c_int
+    {
         return CMD_RETURN_ERROR;
     }
-    s = target.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    s = target
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     wl = target.winlink_handle();
-    wp = target.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = target
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wl.is_alive() {
         if !wp.is_null() {
-            window_set_active_pane(&(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
+            window_set_active_pane(
+                &(*((*wp)
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get())))
+                .observer
+                .upgrade()
+                .expect("live window"),
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                1 as ::core::ffi::c_int,
+            );
         }
         session_set_current(&(*s).observer.upgrade().expect("live session"), wl.clone());
         if !wp.is_null() {
-            cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), wl.clone(), &(*(wp)).observer.upgrade().expect("live window_pane"), 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink_pane(
+                &mut *current.current.borrow_mut(),
+                wl.clone(),
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                0 as ::core::ffi::c_int,
+            );
         } else {
-            cmd_find_from_winlink(&mut *current.current.borrow_mut(), wl.clone(), 0 as ::core::ffi::c_int);
+            cmd_find_from_winlink(
+                &mut *current.current.borrow_mut(),
+                wl.clone(),
+                0 as ::core::ffi::c_int,
+            );
         }
     }
     if !cflag.is_null() {
         session_set_cwd(
             &mut *s,
-            Some(format_single_cstring(Some(item_handle), cflag, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref())),
+            Some(format_single_cstring(
+                Some(item_handle),
+                cflag,
+                (c).as_ref()
+                    .and_then(|model| model.observer.upgrade())
+                    .as_ref(),
+                (s).as_ref()
+                    .and_then(|model| model.observer.upgrade())
+                    .as_ref(),
+                wl.clone(),
+                (wp).as_ref()
+                    .and_then(|model| model.observer.upgrade())
+                    .as_ref(),
+            )),
         );
     }
     if !fflag.is_null() {
@@ -159,25 +201,51 @@ pub unsafe fn cmd_attach_session(
                 msgtype = MSG_DETACH;
             }
             let mut registry_c_loop_owner = clients.first();
-            c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            c_loop = registry_c_loop_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || c == c_loop) {
-                    server_client_detach(&(*(c_loop)).observer.upgrade().expect("live client"), msgtype);
+                if !((*c_loop)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get())
+                    != s
+                    || c == c_loop)
+                {
+                    server_client_detach(
+                        &(*(c_loop)).observer.upgrade().expect("live client"),
+                        msgtype,
+                    );
                 }
-                registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));
-                c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                registry_c_loop_owner = clients.next(
+                    registry_c_loop_owner
+                        .as_ref()
+                        .expect("current registry client"),
+                );
+                c_loop = registry_c_loop_owner
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if Eflag == 0 {
             environ_update(
-                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                options_owner_ptr(&mut (*s).options)
+                    .map_or(std::ptr::null_mut(), |options| options),
                 (*c).environ.as_deref().expect("client environment"),
                 (*s).environ.as_deref_mut().expect("session environment"),
             );
         }
-        server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        server_client_set_session(
+            &(*(c)).observer.upgrade().expect("live client"),
+            (s).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
         if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
-            server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
+            server_client_set_key_table(
+                &(*(c)).observer.upgrade().expect("live client"),
+                ::core::ptr::null::<::core::ffi::c_char>(),
+            );
         }
     } else {
         if let Err(cause) = server_client_open(c_owner.as_ref().expect("terminal client")) {
@@ -194,24 +262,50 @@ pub unsafe fn cmd_attach_session(
                 msgtype = MSG_DETACH;
             }
             let mut registry_c_loop_owner = clients.first();
-            c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            c_loop = registry_c_loop_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
             while !c_loop.is_null() {
-                if !((*c_loop).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s || c == c_loop) {
-                    server_client_detach(&(*(c_loop)).observer.upgrade().expect("live client"), msgtype);
+                if !((*c_loop)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get())
+                    != s
+                    || c == c_loop)
+                {
+                    server_client_detach(
+                        &(*(c_loop)).observer.upgrade().expect("live client"),
+                        msgtype,
+                    );
                 }
-                registry_c_loop_owner = clients.next(registry_c_loop_owner.as_ref().expect("current registry client"));
-                c_loop = registry_c_loop_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                registry_c_loop_owner = clients.next(
+                    registry_c_loop_owner
+                        .as_ref()
+                        .expect("current registry client"),
+                );
+                c_loop = registry_c_loop_owner
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get());
             }
         }
         if Eflag == 0 {
             environ_update(
-                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                options_owner_ptr(&mut (*s).options)
+                    .map_or(std::ptr::null_mut(), |options| options),
                 (*c).environ.as_deref().expect("client environment"),
                 (*s).environ.as_deref_mut().expect("session environment"),
             );
         }
-        server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-        server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
+        server_client_set_session(
+            &(*(c)).observer.upgrade().expect("live client"),
+            (s).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
+        server_client_set_key_table(
+            &(*(c)).observer.upgrade().expect("live client"),
+            ::core::ptr::null::<::core::ffi::c_char>(),
+        );
         if !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             proc_send(
                 (*c).peer,
@@ -228,12 +322,20 @@ pub unsafe fn cmd_attach_session(
         (*c).flags |= CLIENT_ATTACHED as uint64_t;
     }
     if cfg_finished != 0 {
-        cfg_show_causes((s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        cfg_show_causes(
+            (s).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_attach_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+unsafe fn cmd_attach_session_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     return cmd_attach_session(
         item_handle,
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),

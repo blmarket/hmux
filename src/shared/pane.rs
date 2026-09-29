@@ -25,41 +25,10 @@ use super::window::{window, window_mode, window_mode_entry};
 pub struct window_pane_offset {
     pub used: size_t,
 }
-#[derive(Default)]
-#[repr(C)]
-pub struct window_pane_resizes {
-    pub storage: window_pane_resize_storage,
-}
 
-/// Each entry remains separately boxed so pointers used by cancellation keep
-/// their address when the deque grows or other entries are removed.
-pub type window_pane_resize_storage = VecDeque<Box<window_pane_resize>>;
+/// Boxes preserve resize addresses while the queue grows or removes entries.
+pub type window_pane_resizes = VecDeque<Box<window_pane_resize>>;
 
-impl window_pane_resizes {
-    pub fn as_ref(&self) -> &window_pane_resize_storage {
-        &self.storage
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.storage.is_empty()
-    }
-
-    pub fn push_back(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
-        let resize = Box::new(resize);
-        let pointer = (&*resize) as *const window_pane_resize as *mut window_pane_resize;
-        self.storage.push_back(resize);
-        pointer
-    }
-
-    /// Retain only `except`; any removed entry pointer is invalid after return.
-    pub fn clear_except(&mut self, except: *mut window_pane_resize) {
-        if except.is_null() {
-            self.storage = Default::default();
-            return;
-        }
-        self.storage.retain(|resize| std::ptr::eq(&**resize, except));
-    }
-}
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct window_pane_resize {
@@ -199,7 +168,10 @@ pub struct window_pane {
     pub control_bg: ::core::ffi::c_int,
     pub control_fg: ::core::ffi::c_int,
     pub scrollbar_style: style,
-    pub tree_entry: window_pane_tree_entry,
+    /// Weak traversal handle into the containing index.
+    pub owner: refbox::Weak<
+        std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    >,
 }
 
 impl window_pane {
@@ -246,38 +218,24 @@ pub enum PaneScreenSource {
     Mode(refbox::Weak<window_mode_entry>),
 }
 
-#[derive(Default)]
-#[repr(C)]
-pub struct window_pane_tree_entry {
-    pub owner: refbox::Weak<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>,
-}
+/// Pane-owned mode entries stay allocated until explicit mode cleanup removes them.
+pub type window_pane_modes = Vec<refbox::RefBox<window_mode_entry>>;
 
-/// Ordered mode stack owned by a pane. Weak handles observe stable entries
-/// while the stack moves and expire when an entry is removed and freed.
-#[derive(Default)]
-pub struct WindowPaneModesStorage {
-    pub(crate) entries: Vec<refbox::RefBox<window_mode_entry>>,
-}
-
-#[derive(Default)]
-#[repr(C)]
-pub struct window_pane_modes {
-    pub storage: WindowPaneModesStorage,
-}
-
-impl window_pane_modes {
-    pub fn is_empty(&self) -> bool {
-        self.storage.entries.is_empty()
-    }
-
+impl window_pane {
     pub fn active_mode(&self) -> Option<&'static window_mode> {
-        let entry = self.storage.entries.first()?;
-        Some(entry.try_borrow_mut().expect("active pane mode already borrowed").mode)
+        let entry = self.modes.first()?;
+        Some(
+            entry
+                .try_borrow_mut()
+                .expect("active pane mode already borrowed")
+                .mode,
+        )
     }
 
     /// Observe the current entry without retaining the pane-owned allocation.
-    pub fn active_weak(&self) -> refbox::Weak<window_mode_entry> {
-        self.storage.entries.first()
+    pub fn active_mode_entry(&self) -> refbox::Weak<window_mode_entry> {
+        self.modes
+            .first()
             .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
     }
 }
@@ -292,22 +250,24 @@ pub struct window_panes {
 impl window_panes {
     /// Retain every pane in display order for operations that may outlive membership.
     pub fn snapshot(&self) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage.iter()
+        self.storage
+            .iter()
             .map(|observer| observer.upgrade().expect("live pane in ordering"))
             .collect()
     }
 
     pub fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage.first()
+        self.storage
+            .first()
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub fn next(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub fn next(
+        &self,
+        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         let storage = &self.storage;
-        let Some(position) = storage
-            .iter()
-            .position(|weak| weak.ptr_eq(pane))
-        else {
+        let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
             return None;
         };
         storage
@@ -316,35 +276,38 @@ impl window_panes {
     }
 
     pub fn last(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage.last()
+        self.storage
+            .last()
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub fn previous(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub fn previous(
+        &self,
+        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         self.position(pane)
             .and_then(|position| position.checked_sub(1))
             .and_then(|position| self.storage.get(position))
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub fn position(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<usize> {
-        self.storage
-            .iter()
-            .position(|weak| weak.ptr_eq(pane))
+    pub fn position(
+        &self,
+        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    ) -> Option<usize> {
+        self.storage.iter().position(|weak| weak.ptr_eq(pane))
     }
 
     pub fn push_front(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         assert!(pane.strong_count() != 0, "live pane for insertion");
         self.remove(&pane);
-        self.storage
-            .insert(0, pane);
+        self.storage.insert(0, pane);
     }
 
     pub fn push_back(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         assert!(pane.strong_count() != 0, "live pane for insertion");
         self.remove(&pane);
-        self.storage
-            .push(pane);
+        self.storage.push(pane);
     }
 
     pub fn insert_before(
@@ -357,8 +320,7 @@ impl window_panes {
         let position = self
             .position(before)
             .expect("insertion point is not in pane collection");
-        self.storage
-            .insert(position, pane);
+        self.storage.insert(position, pane);
     }
 
     pub fn insert_after(
@@ -371,31 +333,30 @@ impl window_panes {
         let position = self
             .position(after)
             .expect("insertion point is not in pane collection");
-        self.storage
-            .insert(position + 1, pane);
+        self.storage.insert(position + 1, pane);
     }
 
     pub fn remove(&mut self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> bool {
         let storage = &mut self.storage;
-        let Some(position) = storage
-            .iter()
-            .position(|weak| weak.ptr_eq(pane))
-        else {
+        let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
             return false;
         };
         storage.remove(position);
         true
     }
 
-    pub fn swap(&mut self, first: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>, second: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
+    pub fn swap(
+        &mut self,
+        first: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+        second: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    ) {
         let first_position = self
             .position(first)
             .expect("first pane is not in collection");
         let second_position = self
             .position(second)
             .expect("second pane is not in collection");
-        self.storage
-            .swap(first_position, second_position);
+        self.storage.swap(first_position, second_position);
     }
 
     pub fn remove_at(
@@ -403,8 +364,7 @@ impl window_panes {
         pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     ) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
         let position = self.position(pane).expect("pane is not in collection");
-        self.storage
-            .remove(position)
+        self.storage.remove(position)
     }
 
     pub fn insert_at(
@@ -412,57 +372,70 @@ impl window_panes {
         position: usize,
         pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     ) {
-        self.storage
-            .insert(position, pane);
+        self.storage.insert(position, pane);
     }
 }
 
 /// Most-recently-visited pane handles, with the newest pane at the front.
-#[derive(Default)]
-pub struct window_pane_history {
-    pub storage: VecDeque<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>,
-}
-
-impl window_pane_history {
-    pub fn is_empty(&self) -> bool {
-        self.storage.is_empty()
-    }
-
-    pub fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage.front()
-            .map(|weak| weak.upgrade().expect("live pane in ordering"))
-    }
-
-    pub fn next(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        let storage = &self.storage;
-        let Some(position) = storage
-            .iter()
-            .position(|weak| weak.ptr_eq(pane))
-        else {
-            return None;
-        };
-        storage
-            .get(position + 1)
-            .map(|weak| weak.upgrade().expect("live pane in ordering"))
-    }
-
-    pub fn remove(&mut self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> bool {
-        let storage = &mut self.storage;
-        let old_len = storage.len();
-        storage.retain(|weak| !weak.ptr_eq(pane));
-        old_len != storage.len()
-    }
-
-    pub fn push_front(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
-        assert!(pane.strong_count() != 0, "live pane for insertion");
-        self.remove(&pane);
-        self.storage
-            .push_front(pane);
-    }
-}
+pub type window_pane_history = VecDeque<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>;
 
 #[repr(C)]
 pub struct window_pane_tree {
     /// The global pane index owns both its map and the Rc pane records.
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>>,
+    pub storage: Option<
+        refbox::RefBox<
+            std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+        >,
+    >,
+}
+
+impl window_pane {
+    /// Append a separately allocated resize and return its stable address.
+    pub fn push_resize(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
+        let resize = Box::new(resize);
+        let pointer = (&*resize) as *const window_pane_resize as *mut window_pane_resize;
+        self.resize_queue.push_back(resize);
+        pointer
+    }
+
+    /// Retain only `except`; removed entry pointers are invalid after return.
+    pub fn clear_resizes_except(&mut self, except: *mut window_pane_resize) {
+        if except.is_null() {
+            self.resize_queue = Default::default();
+            return;
+        }
+        self.resize_queue
+            .retain(|resize| std::ptr::eq(&**resize, except));
+    }
+}
+
+pub fn pane_history_first(history: &window_pane_history) -> Option<Rc<UnsafeCell<window_pane>>> {
+    history
+        .front()
+        .map(|weak| weak.upgrade().expect("live pane in ordering"))
+}
+
+pub fn pane_history_next(
+    history: &window_pane_history,
+    pane: &Weak<UnsafeCell<window_pane>>,
+) -> Option<Rc<UnsafeCell<window_pane>>> {
+    let position = history.iter().position(|weak| weak.ptr_eq(pane))?;
+    history
+        .get(position + 1)
+        .map(|weak| weak.upgrade().expect("live pane in ordering"))
+}
+
+pub fn pane_history_remove(
+    history: &mut window_pane_history,
+    pane: &Weak<UnsafeCell<window_pane>>,
+) -> bool {
+    let old_len = history.len();
+    history.retain(|weak| !weak.ptr_eq(pane));
+    old_len != history.len()
+}
+
+pub fn pane_history_push(history: &mut window_pane_history, pane: Weak<UnsafeCell<window_pane>>) {
+    assert!(pane.strong_count() != 0, "live pane for insertion");
+    pane_history_remove(history, &pane);
+    history.push_front(pane);
 }

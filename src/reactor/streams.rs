@@ -1,8 +1,8 @@
 mod api;
-pub use api::*;
 use super::{descriptor, handle};
 use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
+pub use api::*;
 use hmux_buffer::{Buf, BufMut, SegmentedBuf};
 use hmux_rt::Handle as _;
 use std::cell::{Cell, RefCell};

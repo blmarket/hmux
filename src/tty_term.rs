@@ -10,9 +10,7 @@ use crate::src::ffi::ncurses::{
 };
 use crate::src::format::bytes::{format_message_with, xformat};
 use crate::src::log::{fatalx, log_cstr, log_debug};
-use crate::src::options::{
-    options_array_item_value, options_get_only,
-};
+use crate::src::options::{options_array_item_value, options_get_only};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::environment::environ_entry;
@@ -1164,13 +1162,27 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
-    o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"terminal-overrides\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
+    o = crate::src::options::options_get_only_mut(
+        &mut *(global_options),
+        std::ffi::CStr::from_ptr(
+            b"terminal-overrides\0" as *const u8 as *const ::core::ffi::c_char,
+        ),
+    )
+    .map_or(std::ptr::null_mut(), |entry| entry);
     let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
+        .map(|item| item.key.clone())
+        .collect::<Vec<_>>()
+        .into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+        crate::src::options::options_array_item(a_root, key.as_ptr())
+    });
     while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
-        s = (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
+            as *mut crate::src::shared::options::options_value;
+        s = (*ov)
+            .string_ptr()
+            .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);
         if first.as_ref().is_some_and(|first| {
@@ -1182,7 +1194,9 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         }) {
             tty_term_apply(term, s.offset(offset as isize), 0 as ::core::ffi::c_int);
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+            crate::src::options::options_array_item(a_root, key.as_ptr())
+        });
     }
     log_debug(format_args!(
         "SIXEL flag is {}",
@@ -1239,7 +1253,13 @@ unsafe fn tty_term_validate(mut term: *mut tty_term) {
     if !matches!((&(*term).codes)[TTYC_MS as usize], tty_code::String(_)) {
         return;
     }
-    if *tty_term_string_ss(term, TTYC_MS, b"c\0" as *const u8 as *const ::core::ffi::c_char, b"?\0" as *const u8 as *const ::core::ffi::c_char).as_ptr() as ::core::ffi::c_int
+    if *tty_term_string_ss(
+        term,
+        TTYC_MS,
+        b"c\0" as *const u8 as *const ::core::ffi::c_char,
+        b"?\0" as *const u8 as *const ::core::ffi::c_char,
+    )
+    .as_ptr() as ::core::ffi::c_int
         != '\0' as i32
     {
         (*term).flags &= !TERM_INVALIDMS;
@@ -1255,7 +1275,10 @@ pub unsafe fn tty_term_create(
     mut caps: *mut *mut ::core::ffi::c_char,
     mut ncaps: u_int,
 ) -> Result<Box<tty_term>, CString> {
-    let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
+    let terminal_client_owner = (*tty)
+        .client
+        .upgrade()
+        .expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
@@ -1351,13 +1374,25 @@ pub unsafe fn tty_term_create(
         }
         i = i.wrapping_add(1);
     }
-    o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"terminal-features\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
+    o = crate::src::options::options_get_only_mut(
+        &mut *(global_options),
+        std::ffi::CStr::from_ptr(b"terminal-features\0" as *const u8 as *const ::core::ffi::c_char),
+    )
+    .map_or(std::ptr::null_mut(), |entry| entry);
     let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
+        .map(|item| item.key.clone())
+        .collect::<Vec<_>>()
+        .into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+        crate::src::options::options_array_item(a_root, key.as_ptr())
+    });
     while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
-        s = (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
+            as *mut crate::src::shared::options::options_value;
+        s = (*ov)
+            .string_ptr()
+            .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         offset = 0 as size_t;
         let first = tty_term_override_next(s, &raw mut offset);
         if first.as_ref().is_some_and(|first| {
@@ -1373,7 +1408,9 @@ pub unsafe fn tty_term_create(
                 b":\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+            crate::src::options::options_array_item(a_root, key.as_ptr())
+        });
     }
     del_curterm(cur_term);
     envent = environ_find(
@@ -1593,7 +1630,10 @@ pub fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> Option<&tty_term> {
     owner.as_deref()
 }
 
-pub unsafe fn tty_term_has(mut term: *const tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
+pub unsafe fn tty_term_has(
+    mut term: *const tty_term,
+    mut code: tty_code_code,
+) -> ::core::ffi::c_int {
     (!matches!((&(*term).codes)[code as usize], tty_code::None)) as ::core::ffi::c_int
 }
 pub unsafe fn tty_term_has_name(
@@ -1610,10 +1650,7 @@ pub unsafe fn tty_term_has_name(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn tty_term_string(
-    term: &tty_term,
-    code: tty_code_code,
-) -> &std::ffi::CStr {
+pub unsafe fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi::CStr {
     match &term.codes[code as usize] {
         tty_code::None => c"",
         tty_code::String(value) => value.as_c_str(),
@@ -1723,19 +1760,14 @@ pub unsafe fn tty_term_flag(term: *const tty_term, code: tty_code_code) -> ::cor
         _ => fatalx(|out| write!(out, "not a flag: {}", (code) as i32)),
     }
 }
-pub unsafe fn tty_term_describe(
-    term: *const tty_term,
-    code: tty_code_code,
-) -> CString {
+pub unsafe fn tty_term_describe(term: *const tty_term, code: tty_code_code) -> CString {
     let mut escaped: [::core::ffi::c_char; 128] = [0; 128];
     match &(&(*term).codes)[code as usize] {
-        tty_code::None => {
-            format_message_with(|out| {
-                write!(out, "{:4}: ", code as u32)?;
-                out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
-                out.write_all(b": [missing]")
-            })
-        }
+        tty_code::None => format_message_with(|out| {
+            write!(out, "{:4}: ", code as u32)?;
+            out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
+            out.write_all(b": [missing]")
+        }),
         tty_code::String(value) => {
             strnvis(
                 &raw mut escaped as *mut ::core::ffi::c_char,
@@ -1750,21 +1782,17 @@ pub unsafe fn tty_term_describe(
                 out.write_all(CStr::from_ptr(escaped.as_ptr()).to_bytes())
             })
         }
-        tty_code::Number(value) => {
-            format_message_with(|out| {
-                write!(out, "{:4}: ", code as u32)?;
-                out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
-                write!(out, ": (number) {}", (*value) as i32)
-            })
-        }
-        tty_code::Flag(value) => {
-            format_message_with(|out| {
-                write!(out, "{:4}: ", code as u32)?;
-                out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
-                out.write_all(b": (flag) ")?;
-                out.write_all(if *value != 0 { b"true" } else { b"false" })
-            })
-        }
+        tty_code::Number(value) => format_message_with(|out| {
+            write!(out, "{:4}: ", code as u32)?;
+            out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
+            write!(out, ": (number) {}", (*value) as i32)
+        }),
+        tty_code::Flag(value) => format_message_with(|out| {
+            write!(out, "{:4}: ", code as u32)?;
+            out.write_all(tty_term_codes[code as usize].name.to_bytes())?;
+            out.write_all(b": (flag) ")?;
+            out.write_all(if *value != 0 { b"true" } else { b"false" })
+        }),
     }
 }
 
@@ -1781,7 +1809,10 @@ mod term_string_owner_tests {
             let mut options = options_create_owned(std::ptr::null_mut());
             global_options = &raw mut *options;
             for name in [c"terminal-features", c"terminal-overrides"] {
-                options_empty(global_options, options_search(name.as_ptr()).expect("terminal option definition"));
+                options_empty(
+                    global_options,
+                    options_search(name.as_ptr()).expect("terminal option definition"),
+                );
             }
             let client_owner = client::new();
             let client = &mut *client_owner.get();
@@ -1792,7 +1823,10 @@ mod term_string_owner_tests {
 
             // A failed constructor must remove its already-published address.
             let failed = tty_term_create(&mut terminal, name, std::ptr::null_mut(), 0);
-            assert_eq!(failed.err().unwrap().as_c_str(), c"terminal does not support clear");
+            assert_eq!(
+                failed.err().unwrap().as_c_str(),
+                c"terminal does not support clear"
+            );
             assert_eq!(tty_terms.lh_first, initial_head);
 
             let mut caps = [c"clear=C".as_ptr().cast_mut(), c"cup=P".as_ptr().cast_mut()];
@@ -1883,10 +1917,7 @@ mod term_string_owner_tests {
                 CString::new(b"clear=first:colors=256:am:bel=high\xff".as_slice()).unwrap();
             tty_term_apply(&mut term, overrides.as_ptr(), 1);
             drop(overrides);
-            assert_eq!(
-                tty_term_string(&*(&mut term), TTYC_CLEAR),
-                c"first"
-            );
+            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"first");
             assert_eq!(
                 tty_term_string(&*(&mut term), TTYC_BEL).to_bytes(),
                 b"high\xff"
@@ -1895,10 +1926,7 @@ mod term_string_owner_tests {
             assert_eq!(tty_term_flag(&mut term, TTYC_AM), 1);
 
             tty_term_apply(&mut term, c"clear=second:colors=invalid".as_ptr(), 1);
-            assert_eq!(
-                tty_term_string(&*(&mut term), TTYC_CLEAR),
-                c"second"
-            );
+            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"second");
             assert_eq!(tty_term_number(&mut term, TTYC_COLORS), 256);
             tty_term_apply(&mut term, c"clear=:colors@:am@".as_ptr(), 1);
             assert_eq!(tty_term_has(&mut term, TTYC_CLEAR), 1);
@@ -1908,10 +1936,7 @@ mod term_string_owner_tests {
             tty_term_apply(&mut term, c"clear@".as_ptr(), 1);
             assert_eq!(tty_term_has(&mut term, TTYC_CLEAR), 0);
             tty_term_apply(&mut term, c"clear=restored".as_ptr(), 1);
-            assert_eq!(
-                tty_term_string(&*(&mut term), TTYC_CLEAR),
-                c"restored"
-            );
+            assert_eq!(tty_term_string(&*(&mut term), TTYC_CLEAR), c"restored");
         }
     }
 

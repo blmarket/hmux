@@ -3,7 +3,8 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
+    format_true,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -53,13 +54,19 @@ pub static cmd_list_windows_entry: cmd_entry = {
         exec: Some(cmd_list_windows_exec),
     }
 };
-unsafe fn cmd_list_windows_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_list_windows_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut i: u_int = 0;
@@ -73,9 +80,13 @@ unsafe fn cmd_list_windows_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
         reversed: 0,
         order_seq: &[],
     };
-    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+    template =
+        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    filter =
+        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    sort_crit.order = sort_order_from_string(
+        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
@@ -91,7 +102,16 @@ unsafe fn cmd_list_windows_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
         }
         links
     } else {
-        let links = sort_get_winlinks_session(&(*((*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"), &raw mut sort_crit);
+        let links = sort_get_winlinks_session(
+            &(*((*target)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live session"),
+            &raw mut sort_crit,
+        );
         if template.is_null() {
             template = b"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}\0"
                 as *const u8 as *const ::core::ffi::c_char;
@@ -102,7 +122,10 @@ unsafe fn cmd_list_windows_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     i = 0 as u_int;
     while i < n {
         wl = winlinks[i as usize].clone();
-        let Some(session_owner) = wl.get_unchecked().session.upgrade() else { i += 1; continue; };
+        let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
+            i += 1;
+            continue;
+        };
         s = session_owner.get();
         let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
@@ -116,7 +139,17 @@ unsafe fn cmd_list_windows_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (n) as u32),
         );
-        format_defaults(ft, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), None);
+        format_defaults(
+            ft,
+            (c).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            (s).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            wl.clone(),
+            None,
+        );
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

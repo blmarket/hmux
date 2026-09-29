@@ -21,26 +21,10 @@ pub struct redraw_scene {
     pub oy: u_int,
 }
 
-#[derive(Default)]
-pub struct redraw_line {
-    pub spans: [redraw_spans; 7],
-}
+pub type redraw_line = [redraw_spans; 7];
 
-#[derive(Default)]
-pub struct redraw_spans {
-    /// Preserve stable heap allocation while drawing helpers borrow spans.
-    pub entries: Vec<Box<redraw_span>>,
-}
-
-impl redraw_spans {
-    pub fn push(&mut self, span: redraw_span) {
-        self.entries.push(Box::new(span));
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &redraw_span> {
-        self.entries.iter().map(Box::as_ref)
-    }
-}
+/// Preserve stable heap allocation while drawing helpers borrow spans.
+pub type redraw_spans = Vec<Box<redraw_span>>;
 
 #[repr(C)]
 pub struct redraw_span {
@@ -206,7 +190,9 @@ impl Eq for RedrawPaneSpan {}
 
 impl PartialEq for RedrawStatusSpan {
     fn eq(&self, other: &Self) -> bool {
-        self.wp.ptr_eq(&other.wp) && self.offset == other.offset && self.cell_type == other.cell_type
+        self.wp.ptr_eq(&other.wp)
+            && self.offset == other.offset
+            && self.cell_type == other.cell_type
     }
 }
 impl Eq for RedrawStatusSpan {}
@@ -244,17 +230,17 @@ mod tests {
     #[test]
     fn span_addresses_and_order_survive_vector_growth() {
         let mut spans = redraw_spans::default();
-        spans.push(span(10));
-        let first = spans.entries[0].as_ref() as *const redraw_span;
+        spans.push(Box::new(span(10)));
+        let first = spans[0].as_ref() as *const redraw_span;
 
         for x in 11..128 {
-            spans.push(span(x));
+            spans.push(Box::new(span(x)));
         }
 
-        assert_eq!(spans.entries[0].as_ref() as *const redraw_span, first);
+        assert_eq!(spans[0].as_ref() as *const redraw_span, first);
         assert_eq!(unsafe { (*first).x }, 10);
-        assert_eq!(spans.entries.first().unwrap().x, 10);
-        assert_eq!(spans.entries.last().unwrap().x, 127);
+        assert_eq!(spans.first().unwrap().x, 10);
+        assert_eq!(spans.last().unwrap().x, 127);
         let xs = spans.iter().map(|span| span.x).collect::<Vec<_>>();
         assert_eq!(xs.len(), 118);
         assert_eq!(xs.first(), Some(&10));

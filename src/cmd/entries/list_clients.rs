@@ -3,7 +3,8 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
+    format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
+    format_true,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -52,10 +53,14 @@ pub static cmd_list_clients_entry: cmd_entry = {
         exec: Some(cmd_list_clients_exec),
     }
 };
-unsafe fn cmd_list_clients_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_list_clients_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -69,16 +74,23 @@ unsafe fn cmd_list_clients_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
         order_seq: &[],
     };
     if args_has(args, 't' as i32 as u_char) != 0 {
-        s = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        s = (*target)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
         s = ::core::ptr::null_mut::<session>();
     }
-    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    template =
+        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if template.is_null() {
         template = LIST_CLIENTS_TEMPLATE.as_ptr();
     }
-    filter = args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+    filter =
+        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    sort_crit.order = sort_order_from_string(
+        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
@@ -91,7 +103,13 @@ unsafe fn cmd_list_clients_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
         let c = clients_sorted[i as usize].get();
-        if !((*c).session_handle().is_none() || !s.is_null() && s != (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())) {
+        if !((*c).session_handle().is_none()
+            || !s.is_null()
+                && s != (*c)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        {
             let mut ft_owner = format_create_with_client(
                 queue_client.as_ref(),
                 Some(item_handle),
@@ -106,7 +124,9 @@ unsafe fn cmd_list_clients_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
             );
             format_defaults(
                 ft,
-                (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                (c).as_ref()
+                    .and_then(|model| model.observer.upgrade())
+                    .as_ref(),
                 None,
                 (refbox::Weak::new()).clone(),
                 None,

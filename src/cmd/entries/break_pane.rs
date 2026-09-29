@@ -1,9 +1,8 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_state_owned, cmdq_get_source, cmdq_get_target, cmdq_get_target_client,
+    cmdq_error, cmdq_get_source, cmdq_get_state_owned, cmdq_get_target, cmdq_get_target_client,
     cmdq_print,
 };
 use crate::src::events::events_fire_window;
@@ -14,6 +13,7 @@ use crate::src::layout::{
     layout_init, layout_remove_tile, layout_set_size,
 };
 use crate::src::names::default_window_name_cstring;
+use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
 use crate::src::server_client::server_client_remove_pane;
 use crate::src::server_fn::{
@@ -90,7 +90,9 @@ unsafe fn cmd_break_pane_float(
     let mut lines: pane_lines = window_get_pane_lines(&*w);
     let mut fg: *mut layout_geometry = &raw mut (*lc).fg;
     if window_pane_is_floating(&*wp) != 0 {
-        cmdq_error(item_handle, |out| out.write_all(b"pane is already floating"));
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"pane is already floating")
+        });
         return CMD_RETURN_ERROR;
     }
     if (*w).flags & WINDOW_ZOOMED != 0 {
@@ -123,32 +125,57 @@ unsafe fn cmd_break_pane_float(
     server_redraw_window(&*(w));
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_break_pane_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
-    let mut src_s: *mut session = (*source).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut dst_s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = (*source).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut src_s: *mut session = (*source)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut dst_s: *mut session = (*target)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*source)
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut old_w: *mut window = w;
     let _cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = (*target).idx;
     let mut before: ::core::ffi::c_int = 0;
     let mut old_idx: ::core::ffi::c_int = wl.get_unchecked().idx;
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut name: *const ::core::ffi::c_char =
+        args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if (*w).modal.ptr_eq(&(*wp).observer) {
         cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'W' as i32 as u_char) != 0 {
-        return cmd_break_pane_float(item_handle, args, &(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"));
+        return cmd_break_pane_float(
+            item_handle,
+            args,
+            &(*(w)).observer.upgrade().expect("live window"),
+            &(*(wp)).observer.upgrade().expect("live window_pane"),
+        );
     }
     if !name.is_null() && !check_name(CStr::from_ptr(name)) {
         cmdq_error(item_handle, |out| {
@@ -160,9 +187,17 @@ unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
     before = args_has(args, 'b' as i32 as u_char);
     if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
         if (*target).winlink_handle().is_alive() {
-            idx = winlink_shuffle_up(&(*(dst_s)).observer.upgrade().expect("live session"), ((*target).winlink_handle()).clone(), before);
+            idx = winlink_shuffle_up(
+                &(*(dst_s)).observer.upgrade().expect("live session"),
+                ((*target).winlink_handle()).clone(),
+                before,
+            );
         } else {
-            idx = winlink_shuffle_up(&(*(dst_s)).observer.upgrade().expect("live session"), ((*dst_s).current_winlink()).clone(), before);
+            idx = winlink_shuffle_up(
+                &(*(dst_s)).observer.upgrade().expect("live session"),
+                ((*dst_s).current_winlink()).clone(),
+                before,
+            );
         }
         if idx == -(1 as ::core::ffi::c_int) {
             return CMD_RETURN_ERROR;
@@ -182,50 +217,87 @@ unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
             return CMD_RETURN_ERROR;
         }
         if !name.is_null() {
-            window_set_name(&(*(w)).observer.upgrade().expect("live window"), name, 0 as ::core::ffi::c_int);
+            window_set_name(
+                &(*(w)).observer.upgrade().expect("live window"),
+                name,
+                0 as ::core::ffi::c_int,
+            );
             options_set_number(
-                options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
+                options_owner_ptr(&mut (*w).options)
+                    .map_or(std::ptr::null_mut(), |options| options),
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_longlong,
             );
         }
-        server_unlink_window(&(*(src_s)).observer.upgrade().expect("live session"), wl.clone());
-        wl = winlink_find_by_window(&(*dst_s).windows, &(*(w)).observer.upgrade().expect("live window"));
+        server_unlink_window(
+            &(*(src_s)).observer.upgrade().expect("live session"),
+            wl.clone(),
+        );
+        wl = winlink_find_by_window(
+            &(*dst_s).windows,
+            &(*(w)).observer.upgrade().expect("live window"),
+        );
         if !wl.is_alive() {
             return CMD_RETURN_ERROR;
         }
-        window_fire_pane_moved(&(*(wp)).observer.upgrade().expect("live window_pane"), &(*(old_w)).observer.upgrade().expect("live window"), old_idx, &(*(w)).observer.upgrade().expect("live window"), wl.get_unchecked().idx);
+        window_fire_pane_moved(
+            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            &(*(old_w)).observer.upgrade().expect("live window"),
+            old_idx,
+            &(*(w)).observer.upgrade().expect("live window"),
+            wl.get_unchecked().idx,
+        );
     } else {
         if idx != -(1 as ::core::ffi::c_int)
             && winlink_find_by_index(&(*dst_s).windows, idx).is_alive()
         {
-            cmdq_error(item_handle, |out| write!(out, "index in use: {}", (idx) as i32));
+            cmdq_error(item_handle, |out| {
+                write!(out, "index in use: {}", (idx) as i32)
+            });
             return CMD_RETURN_ERROR;
         }
         server_client_remove_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
         // Select a replacement while the departing pane still has neighbors.
-        window_lost_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"));
+        window_lost_pane(
+            &(*(w)).observer.upgrade().expect("live window"),
+            &(*(wp)).observer.upgrade().expect("live window_pane"),
+        );
         window_pane_list_remove(&mut *w, &*wp);
         window_pane_z_remove(&mut *w, &*wp);
         layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
         let window = window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel);
         (*wp).window = (*window.get()).observer.clone();
-        w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        w = (*wp)
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         // window_create supplied the temporary reference released after attach.
-        options_set_parent(options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options), options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options));
+        options_set_parent(
+            options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
+        );
         (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         window_pane_list_insert_front(&mut *w, &*wp);
         window_pane_z_insert_front(&mut *w, &*wp);
         (*w).set_active((wp).as_ref());
-        (*w).latest = tc.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+        (*w).latest = tc
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, |client| client.observer.clone());
         if name.is_null() {
-            drop(window_replace_name(&(*(w)).observer.upgrade().expect("live window"), default_window_name_cstring(&*w)));
+            drop(window_replace_name(
+                &(*(w)).observer.upgrade().expect("live window"),
+                default_window_name_cstring(&*w),
+            ));
         } else {
             let cleaned = clean_name_cstring(std::ffi::CStr::from_ptr(name), 0)
                 .expect("check_name validated the explicit window name");
-            drop(window_replace_name(&(*(w)).observer.upgrade().expect("live window"), cleaned));
+            drop(window_replace_name(
+                &(*(w)).observer.upgrade().expect("live window"),
+                cleaned,
+            ));
             options_set_number(
-                options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
+                options_owner_ptr(&mut (*w).options)
+                    .map_or(std::ptr::null_mut(), |options| options),
                 b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
                 0 as ::core::ffi::c_longlong,
             );
@@ -234,11 +306,14 @@ unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
         if idx == -(1 as ::core::ffi::c_int) {
             idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
                 - options_get_number(
-                    options_owner_ptr(&mut (*dst_s).options).map_or(std::ptr::null_mut(), |options| options),
+                    options_owner_ptr(&mut (*dst_s).options)
+                        .map_or(std::ptr::null_mut(), |options| options),
                     b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
                 )) as ::core::ffi::c_int;
         }
-        let destination = (*target).session_handle().expect("break-pane destination session");
+        let destination = (*target)
+            .session_handle()
+            .expect("break-pane destination session");
         wl = match crate::src::session::Session::attach_window(&destination, &window, idx) {
             Ok(wl) => wl,
             Err(error) => {
@@ -247,18 +322,37 @@ unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                 return CMD_RETURN_ERROR;
             }
         };
-        layout_init(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"));
+        layout_init(
+            &(*(w)).observer.upgrade().expect("live window"),
+            &(*(wp)).observer.upgrade().expect("live window_pane"),
+        );
         (*wp).flags |= PANE_CHANGED;
-        colour_palette_from_option(Some(&mut (*wp).palette), options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options));
+        colour_palette_from_option(
+            Some(&mut (*wp).palette),
+            options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
+        );
         crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec".as_ptr());
         events_fire_window(
             b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
             (*(w)).observer.upgrade().expect("live window"),
         );
-        window_fire_pane_moved(&(*(wp)).observer.upgrade().expect("live window_pane"), &(*(old_w)).observer.upgrade().expect("live window"), old_idx, &(*(w)).observer.upgrade().expect("live window"), wl.get_unchecked().idx);
+        window_fire_pane_moved(
+            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            &(*(old_w)).observer.upgrade().expect("live window"),
+            old_idx,
+            &(*(w)).observer.upgrade().expect("live window"),
+            wl.get_unchecked().idx,
+        );
         if args_has(args, 'd' as i32 as u_char) == 0 {
-            session_select(&(*dst_s).observer.upgrade().expect("live session"), wl.get_unchecked().idx);
-            cmd_find_from_session(&mut *current.current.borrow_mut(), &(*(dst_s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
+            session_select(
+                &(*dst_s).observer.upgrade().expect("live session"),
+                wl.get_unchecked().idx,
+            );
+            cmd_find_from_session(
+                &mut *current.current.borrow_mut(),
+                &(*(dst_s)).observer.upgrade().expect("live session"),
+                0 as ::core::ffi::c_int,
+            );
         }
         server_redraw_session(&*(src_s));
         if src_s != dst_s {
@@ -270,11 +364,26 @@ unsafe fn cmd_break_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
         }
     }
     if args_has(args, 'P' as i32 as u_char) != 0 {
-        template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        template = args_get(&*(args), 'F' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
         if template.is_null() {
             template = BREAK_PANE_TEMPLATE.as_ptr();
         }
-        let cp = format_single_cstring(Some(item_handle), template, (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), (dst_s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), wl.clone(), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+        let cp = format_single_cstring(
+            Some(item_handle),
+            template,
+            (tc).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            (dst_s)
+                .as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            wl.clone(),
+            (wp).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+        );
         cmdq_print(item_handle, |out| write_cstr(out, cp.as_ptr()));
     }
     return CMD_RETURN_NORMAL;

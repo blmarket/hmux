@@ -30,7 +30,10 @@ pub static cmd_rename_session_entry: cmd_entry = {
         exec: Some(cmd_rename_session_exec),
     }
 };
-unsafe fn cmd_rename_session_exec(mut command: refbox::Weak<cmd>, item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_rename_session_exec(
+    mut command: refbox::Weak<cmd>,
+    item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     use crate::src::session::Session;
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("command arguments");
     let name = args_string(arguments, 0).expect("rename-session argument");

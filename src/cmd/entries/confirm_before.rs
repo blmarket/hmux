@@ -59,11 +59,17 @@ fn cmd_confirm_before_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_confirm_before_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_confirm_before_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -83,7 +89,8 @@ unsafe fn cmd_confirm_before_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
         cdata.item = (*item).observer.clone();
     }
     cdata.default_yes = args_has(args, 'y' as i32 as u_char);
-    confirm_key = args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    confirm_key =
+        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !confirm_key.is_null() {
         if *confirm_key.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
             == '\0' as i32
@@ -100,7 +107,8 @@ unsafe fn cmd_confirm_before_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
     } else {
         cdata.confirm_key = 'y' as i32 as u_char;
     }
-    prompt = args_get(&*(args), 'p' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    prompt =
+        args_get(&*(args), 'p' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let new_prompt = if !prompt.is_null() {
         let mut bytes = CStr::from_ptr(prompt).to_bytes().to_vec();
         bytes.push(b' ');
@@ -142,7 +150,9 @@ unsafe fn cmd_confirm_before_callback(
 ) -> prompt_result {
     let mut c = c_owner.get();
     let item_owner = cdata.item.upgrade();
-    let item: *mut cmdq_item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let item: *mut cmdq_item = item_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
     let mut retcode: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     if !((*c).flags & CLIENT_DEAD as uint64_t != 0) {
@@ -153,13 +163,22 @@ unsafe fn cmd_confirm_before_callback(
             if confirmed {
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
-                    new_item_allocation = cmdq_get_command(
-                        &cdata.cmdlist, None,
+                    new_item_allocation = cmdq_get_command(&cdata.cmdlist, None);
+                    cmdq_append(
+                        c.as_ref()
+                            .map(|client| client.observer.upgrade().expect("queue client is live"))
+                            .as_ref(),
+                        new_item_allocation,
                     );
-                    cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item_allocation);
                 } else {
                     new_item_allocation = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
-                    cmdq_insert_after(&(*(item)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
+                    cmdq_insert_after(
+                        &(*(item))
+                            .observer
+                            .upgrade()
+                            .expect("queued insertion anchor"),
+                        new_item_allocation,
+                    );
                 }
             }
         }
@@ -171,7 +190,12 @@ unsafe fn cmd_confirm_before_callback(
                 (*c).retval = retcode;
             }
         }
-        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
+        cmdq_continue(
+            &(*(item))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+        );
     }
     return PROMPT_CLOSE;
 }
@@ -179,7 +203,10 @@ impl cmd_confirm_before_data {
     fn into_callback(self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, _key| unsafe {
             cmd_confirm_before_callback(
-                &(*(client.map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live client"),
+                &(*(client.map_or(std::ptr::null_mut(), |owner| owner.get())))
+                    .observer
+                    .upgrade()
+                    .expect("live client"),
                 &self,
                 text,
             )

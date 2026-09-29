@@ -4,7 +4,9 @@ use std::ffi::CStr;
 
 fn node(name: &CStr) -> std::rc::Rc<std::cell::UnsafeCell<session>> {
     let node = session::new();
-    unsafe { (*node.get()).name = name.to_owned(); }
+    unsafe {
+        (*node.get()).name = name.to_owned();
+    }
     node
 }
 
@@ -21,14 +23,24 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         let name = CStr::from_ptr(((*first.get()).name).as_ptr().cast_mut())
             .to_bytes()
             .to_vec();
-        assert_eq!(sessions_next(&mut *first.get()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &mut *second.get() as *mut _);
+        assert_eq!(
+            sessions_next(&mut *first.get())
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()),
+            &mut *second.get() as *mut _
+        );
 
         // Group destruction removes the current session AND its cached successor.
         sessions_remove(&mut head, &first);
         sessions_remove(&mut head, &second);
         drop(first);
         drop(second);
-        assert_eq!(sessions_after(&head, &name).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &mut *last.get() as *mut _);
+        assert_eq!(
+            sessions_after(&head, &name)
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()),
+            &mut *last.get() as *mut _
+        );
 
         let last_name = CStr::from_ptr(((*last.get()).name).as_ptr().cast_mut())
             .to_bytes()
@@ -42,7 +54,9 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         let replacement = node(c"z1");
         sessions_insert(&mut head, replacement.clone());
         assert_eq!(
-            sessions_after(&head, &last_name).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()),
+            sessions_after(&head, &last_name)
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()),
             &mut *replacement.get() as *mut _
         );
         sessions_remove(&mut head, &replacement);
@@ -92,7 +106,10 @@ fn duplicate_insertion_returns_retained_identity_and_wrong_owner_cannot_remove_i
         assert!(head.storage.is_none());
         drop(removed);
         drop(original);
-        assert!(observer.upgrade().is_some(), "duplicate result retains the indexed session");
+        assert!(
+            observer.upgrade().is_some(),
+            "duplicate result retains the indexed session"
+        );
         drop(retained);
         assert!(observer.upgrade().is_none());
     }

@@ -31,14 +31,18 @@ fn global_index_observes_windows_and_lookups_retain_them() {
         let existing = windows_insert(head, &duplicate).unwrap();
         assert_eq!(existing.get(), first.get());
         window_remove_ref(existing, c"duplicate lookup".as_ptr());
-        assert!((*duplicate.get()).entry.owner.is_empty());
+        assert!((*duplicate.get()).owner.is_empty());
         assert!(!windows_remove(&mut *head, &duplicate));
         window_remove_ref(duplicate, c"duplicate window".as_ptr());
 
         let mut other = hmux2::src::shared::window::windows { storage: None };
         assert!(!windows_remove(&mut other, &first));
         assert!(windows_remove(&mut *head, &second));
-        assert_eq!(Rc::strong_count(&second), 1, "removal must not retain window");
+        assert_eq!(
+            Rc::strong_count(&second),
+            1,
+            "removal must not retain window"
+        );
         assert!(window_find_by_id(125).is_none());
         assert!(windows_next(&*first.get()).is_none());
         assert!(

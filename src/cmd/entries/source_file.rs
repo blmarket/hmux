@@ -1,4 +1,3 @@
-use hmux_buffer::SegmentedBuf;
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::queue::{
@@ -29,6 +28,7 @@ use crate::src::shared::ctype::_ISalnum;
 use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
 use crate::src::shared::event::*;
 use crate::src::shared::session::session;
+use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -137,7 +137,10 @@ unsafe fn cmd_source_file_complete_cb(
 }
 
 unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
-    let c = cdata.client_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = cdata
+        .client_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if cfg_finished == 0 {
         // Startup completion does not decrement nesting depth in tmux.
         // Cancellation during an active read still decrements it.
@@ -157,15 +160,32 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
             cmd_source_file_complete_cb(item, cdata)
         })),
     );
-    cmdq_insert_after(&(*(after)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
+    cmdq_insert_after(
+        &(*(after))
+            .observer
+            .upgrade()
+            .expect("queued insertion anchor"),
+        new_item_allocation,
+    );
 }
 
 unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
-    let Some(item_owner) = cdata.item.upgrade() else { return };
+    let Some(item_owner) = cdata.item.upgrade() else {
+        return;
+    };
     let client_owner = cdata.client.clone();
     let item = item_owner.get();
     let path = cdata.files[cdata.current as usize].as_ptr();
-    file_read_with_cmdq_wait(client_owner.as_ref(), path, cdata.into_read_callback(), &(*(item)).observer.upgrade().expect("live command queue item"), None);
+    file_read_with_cmdq_wait(
+        client_owner.as_ref(),
+        path,
+        cdata.into_read_callback(),
+        &(*(item))
+            .observer
+            .upgrade()
+            .expect("live command queue item"),
+        None,
+    );
 }
 
 unsafe fn cmd_source_file_done(
@@ -174,7 +194,9 @@ unsafe fn cmd_source_file_done(
     error: ::core::ffi::c_int,
     buffer: &mut SegmentedBuf,
 ) {
-    let Some(item_owner) = cdata.item.upgrade() else { return };
+    let Some(item_owner) = cdata.item.upgrade() else {
+        return;
+    };
     let item = item_owner.get();
     let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
     // Progress does not coalesce the buffer; only complete files are parsed.
@@ -185,19 +207,31 @@ unsafe fn cmd_source_file_done(
     let mut new_item = Weak::new();
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     if error != 0 {
-        cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
-            write_cstr(out, strerror(error))?;
-            out.write_all(b": ")?;
-            write_cstr(out, path)
-        });
+        cmdq_error(
+            &(*(item))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+            |out| {
+                write_cstr(out, strerror(error))?;
+                out.write_all(b": ")?;
+                write_cstr(out, path)
+            },
+        );
     } else if bsize != 0 {
-        let after_owner = cdata.after.upgrade().unwrap_or_else(|| Rc::clone(&item_owner));
+        let after_owner = cdata
+            .after
+            .upgrade()
+            .unwrap_or_else(|| Rc::clone(&item_owner));
         if load_cfg_from_buffer(
             bdata,
             bsize,
             path,
             cdata.client.as_ref(),
-            (after_owner.get()).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
+            (after_owner.get())
+                .as_ref()
+                .and_then(|item| item.observer.upgrade())
+                .as_ref(),
             target,
             cdata.flags,
             Some(&mut new_item),
@@ -213,7 +247,12 @@ unsafe fn cmd_source_file_done(
         cmd_source_file_read(cdata);
     } else {
         cmd_source_file_complete(cdata);
-        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
+        cmdq_continue(
+            &(*(item))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+        );
     }
 }
 unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
@@ -239,11 +278,17 @@ unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     }
     CString::new(quoted).expect("C string path has no interior NUL")
 }
-unsafe fn cmd_source_file_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_source_file_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -278,11 +323,7 @@ unsafe fn cmd_source_file_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
         client: if c.is_null() {
             None
         } else {
-            Some(
-                (*c).observer
-                    .upgrade()
-                    .expect("live source-file client"),
-            )
+            Some((*c).observer.upgrade().expect("live source-file client"))
         },
         depth_active: true,
         flags: 0,

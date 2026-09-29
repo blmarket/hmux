@@ -59,33 +59,8 @@ pub struct style_line_entry {
     pub ranges: style_ranges,
 }
 
-#[derive(Clone, Default)]
-#[repr(C)]
-pub struct style_ranges {
-    /// Owns the ranges; boxes keep their addresses stable as the vector grows.
-    pub ranges: Vec<Box<style_range>>,
-}
-
-impl style_ranges {
-    pub fn as_slice(&self) -> &[Box<style_range>] {
-        self.ranges.as_slice()
-    }
-
-    /// Append a stable-address range.
-    pub fn push(&mut self, range: Box<style_range>) {
-        self.ranges.push(range);
-    }
-
-    /// Drop all range boxes while keeping the Vec allocation available for reuse.
-    pub fn clear(&mut self) {
-        self.ranges.clear();
-    }
-
-    /// Release the ranges and their collection allocation, leaving an empty owner.
-    pub fn release_storage(&mut self) {
-        self.ranges = Vec::new();
-    }
-}
+/// Owns the ranges; boxes keep their addresses stable as the vector grows.
+pub type style_ranges = Vec<Box<style_range>>;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -118,7 +93,6 @@ mod tests {
         assert_eq!(offset_of!(style_line_entry, ranges), 16);
         assert_eq!(size_of::<style_ranges>(), 24);
         assert_eq!(align_of::<style_ranges>(), 8);
-        assert_eq!(offset_of!(style_ranges, ranges), 0);
         assert_eq!(size_of::<style_range>(), 32);
         assert_eq!(align_of::<style_range>(), 4);
     }

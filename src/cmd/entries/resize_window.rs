@@ -1,9 +1,9 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_result};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::format::bytes::write_cstr;
+use crate::src::options::options_owner_ptr;
 use crate::src::options::options_set_number;
 use crate::src::resize::{default_window_size, recalculate_size};
 use crate::src::shared::abi::*;
@@ -45,13 +45,24 @@ pub static cmd_resize_window_entry: cmd_entry = {
         exec: Some(cmd_resize_window_exec),
     }
 };
-unsafe fn cmd_resize_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_resize_window_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wl
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*target)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;
     let mut sx: u_int = 0;
@@ -128,7 +139,9 @@ unsafe fn cmd_resize_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         default_window_size(
             None,
             &(*(s)).observer.upgrade().expect("live session"),
-            (w).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (w).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
             &raw mut sx,
             &raw mut sy,
             &raw mut xpixel,
@@ -139,7 +152,9 @@ unsafe fn cmd_resize_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         default_window_size(
             None,
             &(*(s)).observer.upgrade().expect("live session"),
-            (w).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (w).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
             &raw mut sx,
             &raw mut sy,
             &raw mut xpixel,
@@ -154,6 +169,9 @@ unsafe fn cmd_resize_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
     );
     (*w).manual_sx = sx;
     (*w).manual_sy = sy;
-    recalculate_size(&(*(w)).observer.upgrade().expect("live window"), 1 as ::core::ffi::c_int);
+    recalculate_size(
+        &(*(w)).observer.upgrade().expect("live window"),
+        1 as ::core::ffi::c_int,
+    );
     return CMD_RETURN_NORMAL;
 }

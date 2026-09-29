@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
@@ -12,6 +11,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
 use crate::src::monitor::monitor_parse_owned;
+use crate::src::options::options_owner_ptr;
 use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_assign, options_array_clear, options_array_get, options_array_set, options_empty,
@@ -124,9 +124,13 @@ fn cmd_set_option_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_set_hook_event_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_set_hook_event_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if args_count(args) == 0 as u_int {
@@ -137,15 +141,22 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
         return CMD_RETURN_ERROR;
     }
-    let argument = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    let argument = format_single_from_target_cstring(
+        item_handle,
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if *argument.as_ptr() as ::core::ffi::c_int != '@' as i32 {
-        cmdq_error(item_handle, |out| out.write_all(b"event name must start with @"));
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"event name must start with @")
+        });
         return CMD_RETURN_ERROR;
     }
     let mut ep = event_payload_create();
     event_payload_set_target(&mut *ep, &*target);
     let c_owner = cmdq_get_client((item).as_ref());
-    c = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    c = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !c.is_null() {
         event_payload_set_client(&mut *ep, (*(c)).observer.upgrade().expect("live client"));
     }
@@ -153,14 +164,26 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*((*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"),
+            (*((*target)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live session"),
         );
     }
     if !(*target).window_handle().is_none() {
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*((*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+            (*((*target)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
         );
     }
     if (*target).winlink_handle().is_alive() {
@@ -180,7 +203,13 @@ unsafe fn cmd_set_hook_event_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*((*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"),
+            (*((*target)
+                .pane_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window_pane"),
         );
     }
     events_fire(argument.as_ptr(), ep);
@@ -213,7 +242,8 @@ unsafe fn cmd_set_hook_monitor_exec(
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
         return CMD_RETURN_ERROR;
     }
-    value = args_get(&*(args), 'B' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    value =
+        args_get(&*(args), 'B' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let unsubscribe = args_has(args, 'u' as i32 as u_char) != 0;
     let parsed = monitor_parse_owned(CStr::from_ptr(value));
     let (name_owned, type_0, id, format_owned) = if unsubscribe {
@@ -251,12 +281,17 @@ unsafe fn cmd_set_hook_monitor_exec(
                 hooks_monitor_remove(oo, name);
             } else {
                 if args_count(args) != 0 as u_int {
-                    value = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+                    value = args_string(&mut *(args), 0 as u_int)
+                        .map_or(std::ptr::null(), |value| value.as_ptr());
                     if args_has(args, 'F' as i32 as u_char) != 0 {
                         expanded = Some(format_single_from_target_cstring(item_handle, value));
                         value = expanded.as_ref().expect("expanded value was set").as_ptr();
                     }
-                    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
+                    o = crate::src::options::options_get_only_mut(
+                        &mut *(oo),
+                        std::ffi::CStr::from_ptr(name),
+                    )
+                    .map_or(std::ptr::null_mut(), |entry| entry);
                     if args_has(args, 'o' as i32 as u_char) == 0 || o.is_null() {
                         let newvalue = if args_has(args, 'a' as i32 as u_char) != 0 && !o.is_null()
                         {
@@ -285,22 +320,40 @@ unsafe fn cmd_set_hook_monitor_exec(
                     }
                 }
                 if oo != global_options && oo != global_s_options && oo != global_w_options {
-                    s = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                    s = (*target)
+                        .session_handle()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get());
                 }
                 if args_has(args, 'T' as i32 as u_char) != 0 {
                     flags |= MONITOR_NOTIFY_TRUE;
                 }
-                hooks_monitor_add(oo, name, type_0, id, format, flags, &raw mut fs, (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                hooks_monitor_add(
+                    oo,
+                    name,
+                    type_0,
+                    id,
+                    format,
+                    flags,
+                    &raw mut fs,
+                    (s).as_ref()
+                        .and_then(|model| model.observer.upgrade())
+                        .as_ref(),
+                );
             }
             return CMD_RETURN_NORMAL;
         }
     }
     return CMD_RETURN_ERROR;
 }
-unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_set_option_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut append: ::core::ffi::c_int = args_has(args, 'a' as i32 as u_char);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -318,8 +371,10 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
     let mut error: ::core::ffi::c_int = 0;
     let mut ambiguous: ::core::ffi::c_int = 0;
     let mut scope: ::core::ffi::c_int = 0;
-    window =
-        (std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_window_option_entry)) as ::core::ffi::c_int;
+    window = (std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_set_window_option_entry,
+    )) as ::core::ffi::c_int;
     if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
         && args_has(args, 'E' as i32 as u_char) != 0
     {
@@ -334,7 +389,10 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
         cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
         return CMD_RETURN_ERROR;
     }
-    let argument = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    let argument = format_single_from_target_cstring(
+        item_handle,
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
         && args_has(args, 'R' as i32 as u_char) != 0
     {
@@ -378,7 +436,8 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
         if args_count(args) < 2 as u_int {
             value = ::core::ptr::null::<::core::ffi::c_char>();
         } else {
-            value = args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+            value = args_string(&mut *(args), 1 as u_int)
+                .map_or(std::ptr::null(), |value| value.as_ptr());
         }
         if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
             expanded = Some(format_single_from_target_cstring(item_handle, value));
@@ -395,7 +454,11 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                 current_block = 8517774764635037400;
             }
         } else {
-            o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
+            o = crate::src::options::options_get_only_mut(
+                &mut *(oo),
+                std::ffi::CStr::from_ptr(name),
+            )
+            .map_or(std::ptr::null_mut(), |entry| entry);
             parent = options_get(oo, name);
             if !array_key.is_null()
                 && (*name as ::core::ffi::c_int == '@' as i32 || options_is_array(parent) == 0)
@@ -413,7 +476,13 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                         already = (o != NULL as *mut options_entry) as ::core::ffi::c_int;
                     } else if o.is_null() {
                         already = 0 as ::core::ffi::c_int;
-                    } else if !crate::src::options::options_array_get_mut(&mut *(o), std::ffi::CStr::from_ptr(array_key)).map_or(std::ptr::null_mut(), |value| value).is_null() {
+                    } else if !crate::src::options::options_array_get_mut(
+                        &mut *(o),
+                        std::ffi::CStr::from_ptr(array_key),
+                    )
+                    .map_or(std::ptr::null_mut(), |value| value)
+                    .is_null()
+                    {
                         already = 1 as ::core::ffi::c_int;
                     } else {
                         already = 0 as ::core::ffi::c_int;
@@ -441,13 +510,26 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                         if args_has(args, 'U' as i32 as u_char) != 0
                             && scope == OPTIONS_TABLE_WINDOW
                         {
-                            loop_0 = window_pane_first(((*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                            loop_0 = window_pane_first(
+                                ((*target)
+                                    .window_handle()
+                                    .as_ref()
+                                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                                .as_ref(),
+                            )
+                            .as_ref()
+                            .map_or(std::ptr::null_mut(), |owner| owner.get());
                             loop {
                                 if loop_0.is_null() {
                                     current_block = 10095721787123848864;
                                     break;
                                 }
-                                po = crate::src::options::options_get_only_mut(&mut *(options_owner_ptr(&mut (*loop_0).options).map_or(std::ptr::null_mut(), |options| options)), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
+                                po = crate::src::options::options_get_only_mut(
+                                    &mut *(options_owner_ptr(&mut (*loop_0).options)
+                                        .map_or(std::ptr::null_mut(), |options| options)),
+                                    std::ffi::CStr::from_ptr(name),
+                                )
+                                .map_or(std::ptr::null_mut(), |entry| entry);
                                 if !po.is_null() {
                                     if options_remove_or_default(po, array_key, &raw mut cause)
                                         != 0 as ::core::ffi::c_int
@@ -459,7 +541,9 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                                         break;
                                     }
                                 }
-                                loop_0 = window_pane_next(loop_0.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                                loop_0 = window_pane_next(loop_0.as_ref())
+                                    .as_ref()
+                                    .map_or(std::ptr::null_mut(), |owner| owner.get());
                             }
                         } else {
                             current_block = 10095721787123848864;
@@ -487,7 +571,9 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                                     }
                                 } else if *name as ::core::ffi::c_int == '@' as i32 {
                                     if value.is_null() {
-                                        cmdq_error(item_handle, |out| out.write_all(b"empty value"));
+                                        cmdq_error(item_handle, |out| {
+                                            out.write_all(b"empty value")
+                                        });
                                         current_block = 8517774764635037400;
                                     } else {
                                         options_set_string(oo, name, append, |out| {
@@ -523,7 +609,11 @@ unsafe fn cmd_set_option_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
                                     current_block = 8517774764635037400;
                                 } else {
                                     if o.is_null() {
-                                        o = options_empty(oo, options_table_entry(&*parent).expect("parent option definition"));
+                                        o = options_empty(
+                                            oo,
+                                            options_table_entry(&*parent)
+                                                .expect("parent option definition"),
+                                        );
                                     }
                                     if array_key.is_null() {
                                         if append == 0 {

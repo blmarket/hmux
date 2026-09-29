@@ -42,9 +42,13 @@ pub static cmd_respawn_window_entry: cmd_entry = {
         exec: Some(cmd_respawn_window_exec),
     }
 };
-unsafe fn cmd_respawn_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_respawn_window_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
@@ -62,14 +66,21 @@ unsafe fn cmd_respawn_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
     };
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let _tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let _tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut s: *mut session = (*target)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = (*item).observer.clone();
     sc.s = (*s).observer.clone();
     sc.set_wl(wl.clone());
-    sc.tc = tc_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    sc.tc = tc_owner
+        .as_ref()
+        .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());
@@ -102,7 +113,13 @@ unsafe fn cmd_respawn_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     }
-    server_redraw_window(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_redraw_window(
+        &*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())),
+    );
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

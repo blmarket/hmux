@@ -80,9 +80,7 @@ use crate::src::cmd::entries::unbind_key::cmd_unbind_key_entry;
 use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
 use crate::src::ffi::libc::{strchr, strcmp, strlcat, strlcpy, strlen, strncmp};
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
-use crate::src::options::{
-    options_array_item_value, options_get_only,
-};
+use crate::src::options::{options_array_item_value, options_get_only};
 use crate::src::session::session_find_by_id;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::ArgumentValue;
@@ -289,28 +287,55 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut wanted: size_t = 0;
     let mut n: size_t = 0;
     let mut equals: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"command-alias\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
+    o = crate::src::options::options_get_only_mut(
+        &mut *(global_options),
+        std::ffi::CStr::from_ptr(b"command-alias\0" as *const u8 as *const ::core::ffi::c_char),
+    )
+    .map_or(std::ptr::null_mut(), |entry| entry);
     if o.is_null() {
         return None;
     }
     wanted = name.to_bytes().len();
     let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
+        .map(|item| item.key.clone())
+        .collect::<Vec<_>>()
+        .into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+        crate::src::options::options_array_item(a_root, key.as_ptr())
+    });
     while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value;
-        equals = strchr((*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()), '=' as i32);
+        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
+            as *mut crate::src::shared::options::options_value;
+        equals = strchr(
+            (*ov)
+                .string_ptr()
+                .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            '=' as i32,
+        );
         if !equals.is_null() {
-            n = equals.offset_from((*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())) as ::core::ffi::c_long as size_t;
+            n = equals.offset_from(
+                (*ov)
+                    .string_ptr()
+                    .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            ) as ::core::ffi::c_long as size_t;
             if n == wanted
-                && strncmp(name.as_ptr(), (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()), n) == 0 as ::core::ffi::c_int
+                && strncmp(
+                    name.as_ptr(),
+                    (*ov)
+                        .string_ptr()
+                        .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    n,
+                ) == 0 as ::core::ffi::c_int
             {
                 return Some(
                     CStr::from_ptr(equals.offset(1 as ::core::ffi::c_int as isize)).to_owned(),
                 );
             }
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+            crate::src::options::options_array_item(a_root, key.as_ptr())
+        });
     }
     None
 }
@@ -410,7 +435,9 @@ pub unsafe fn cmd_parse(
 pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
     let new_cmd = cmd_new_owned(cmd.entry, cmd.file.as_deref());
     {
-        let mut copy = new_cmd.try_borrow_mut().expect("new command is not borrowed");
+        let mut copy = new_cmd
+            .try_borrow_mut()
+            .expect("new command is not borrowed");
         copy.args = Some(args_copy(
             cmd.args.as_deref().expect("parsed command arguments"),
             argv,
@@ -461,8 +488,13 @@ pub fn cmd_list_append(
         .group = cmdlist.group;
     cmdlist.list.push(command);
 }
-pub fn cmd_list_append_all(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, from: &std::rc::Rc<std::cell::RefCell<cmd_list>>) {
-    if std::rc::Rc::ptr_eq(cmdlist, from) { return; }
+pub fn cmd_list_append_all(
+    cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
+    from: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
+) {
+    if std::rc::Rc::ptr_eq(cmdlist, from) {
+        return;
+    }
     let mut cmdlist = cmdlist.borrow_mut();
     let mut from = from.borrow_mut();
     let group = cmdlist.group;
@@ -474,7 +506,10 @@ pub fn cmd_list_append_all(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, 
     }
     cmdlist.list.append(&mut from.list);
 }
-pub unsafe fn cmd_list_move(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>, from: &std::rc::Rc<std::cell::RefCell<cmd_list>>) {
+pub unsafe fn cmd_list_move(
+    cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
+    from: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
+) {
     let mut destination = cmdlist.borrow_mut();
     if !std::rc::Rc::ptr_eq(cmdlist, from) {
         destination.list.append(&mut from.borrow_mut().list);
@@ -483,7 +518,10 @@ pub unsafe fn cmd_list_move(cmdlist: &std::rc::Rc<std::cell::RefCell<cmd_list>>,
     cmd_list_next_group = cmd_list_next_group.wrapping_add(1);
     destination.group = group;
 }
-pub unsafe fn cmd_list_copy(cmdlist: &cmd_list, argv: &Vec<CString>) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
+pub unsafe fn cmd_list_copy(
+    cmdlist: &cmd_list,
+    argv: &Vec<CString>,
+) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let mut group: u_int = cmdlist.group;
     let s = cmd_list_print_cstring(cmdlist, 0);
     log_debug(format_args!(
@@ -616,7 +654,10 @@ pub unsafe fn cmd_mouse_at(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>) -> refbox::Weak<winlink> {
+pub unsafe fn cmd_mouse_window(
+    mut m: *mut mouse_event,
+    sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
+) -> refbox::Weak<winlink> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -634,14 +675,16 @@ pub unsafe fn cmd_mouse_window(mut m: *mut mouse_event, sp: Option<&mut Option<s
         wl = (*s).current_winlink();
     } else {
         let window_owner = window_find_by_id((*m).w as u_int);
-        w = window_owner.as_ref().map_or(
-            std::ptr::null_mut(),
-            crate::src::shared::rc::as_ptr,
-        );
+        w = window_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         if w.is_null() {
             return refbox::Weak::new();
         }
-        wl = winlink_find_by_window(&(*s).windows, &(*(w)).observer.upgrade().expect("live window"));
+        wl = winlink_find_by_window(
+            &(*s).windows,
+            &(*(w)).observer.upgrade().expect("live window"),
+        );
         if let Some(window) = window_owner {
             crate::src::window::window_remove_ref(window, c"cmd_mouse_window".as_ptr());
         }
@@ -664,19 +707,51 @@ pub unsafe fn cmd_mouse_pane(
     }
     let pane_owner;
     if (*m).wp == -(1 as ::core::ffi::c_int) {
-        pane_owner = (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active.upgrade();
-        wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        pane_owner = (*wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .active
+        .upgrade();
+        wp = pane_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     } else {
         pane_owner = window_pane_find_by_id((*m).wp as u_int);
-        wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = pane_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             return None;
         }
-        if !window_has_pane(&*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), &(*wp).observer) {
+        if !window_has_pane(
+            &*wl.get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()),
+            &(*wp).observer,
+        ) {
             return None;
         }
     }
-    if (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.upgrade().is_some() && !pane_owner.as_ref().is_some_and(|owner| (*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.ptr_eq(&std::rc::Rc::downgrade(owner))) {
+    if (*wl
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+    .modal
+    .upgrade()
+    .is_some()
+        && !pane_owner.as_ref().is_some_and(|owner| {
+            (*wl.get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .modal
+            .ptr_eq(&std::rc::Rc::downgrade(owner))
+        })
+    {
         return None;
     }
     if !wlp.is_null() {

@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
@@ -15,6 +14,7 @@ use crate::src::grid::{
 use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatal, fatalx, log_bytes, log_debug, log_get_level};
 use crate::src::options::options_get_number;
+use crate::src::options::options_owner_ptr;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
@@ -103,7 +103,9 @@ fn screen_write_free_citem(item: Box<screen_write_citem>) {
     WRITE_ITEM_POOL.with(|pool| pool.borrow_mut().push_back(item));
 }
 fn screen_write_current_item(ctx: &mut screen_write_ctx) -> &mut screen_write_citem {
-    ctx.item.as_deref_mut().expect("active screen write context")
+    ctx.item
+        .as_deref_mut()
+        .expect("active screen write context")
 }
 fn screen_write_recycle_items(items: &mut screen_write_items) {
     while let Some(item) = items.pop_front() {
@@ -116,7 +118,9 @@ unsafe fn screen_write_set_cursor(
     mut cy: ::core::ffi::c_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut s: *mut screen = ctx.screen_ptr();
@@ -146,7 +150,10 @@ unsafe fn screen_write_set_cursor(
     if wp.is_null() {
         return;
     }
-    w = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    w = (*wp)
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if event_initialized(&(*w).offset_timer) == 0 {
         let window_observer = (*w).observer.clone();
         event_set(
@@ -169,7 +176,9 @@ unsafe fn screen_write_set_cursor(
         event_add(&raw mut (*w).offset_timer, &raw mut tv);
     }
 }
-fn screen_write_redraw_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> tty_ctx_redraw_cb {
+fn screen_write_redraw_cb(
+    observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+) -> tty_ctx_redraw_cb {
     let observer = observer.clone();
     Some(Box::new(move |_| unsafe {
         if let Some(owner) = observer.upgrade() {
@@ -178,18 +187,24 @@ fn screen_write_redraw_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<window_
         }
     }))
 }
-fn screen_write_set_client_cb(observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> tty_ctx_set_client_cb {
+fn screen_write_set_client_cb(
+    observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+) -> tty_ctx_set_client_cb {
     use crate::src::server_client::Client;
     let observer = observer.clone();
     Some(Box::new(move |ttyctx, client| unsafe {
-        let Some(pane) = observer.upgrade() else { return 0; };
+        let Some(pane) = observer.upgrade() else {
+            return 0;
+        };
         client.prepare_pane_render(ttyctx, &pane)
     }))
 }
 
 unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
     if write_pane.is_null() {
         return 0 as ::core::ffi::c_int;
@@ -203,14 +218,26 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::f
     ctx.flags |= SCREEN_WRITE_CHECKED_IF_OBSCURED;
     if (*write_pane).xoff < 0 as ::core::ffi::c_int
         || (*write_pane).yoff < 0 as ::core::ffi::c_int
-        || ((*write_pane).xoff as u_int).wrapping_add((*write_pane).sx) > (*(*write_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sx
-        || ((*write_pane).yoff as u_int).wrapping_add((*write_pane).sy) > (*(*write_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sy
+        || ((*write_pane).xoff as u_int).wrapping_add((*write_pane).sx)
+            > (*(*write_pane)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .sx
+        || ((*write_pane).yoff as u_int).wrapping_add((*write_pane).sy)
+            > (*(*write_pane)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .sy
     {
         ctx.flags |= SCREEN_WRITE_OBSCURED;
         return 1 as ::core::ffi::c_int;
     }
     loop {
-        wp = window_pane_z_previous(wp.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = window_pane_z_previous(wp.as_ref())
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         if wp.is_null() {
             break;
         }
@@ -238,7 +265,9 @@ unsafe fn screen_write_should_draw_lines(
     mut ny: u_int,
 ) -> ::core::ffi::c_int {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
     let mut s: *mut screen = ctx.screen_ptr();
     let mut sy: u_int = (*s).grid().sy;
@@ -255,7 +284,11 @@ unsafe fn screen_write_should_draw_lines(
                     y = 0 as u_int;
                     ny = sy;
                 }
-                screen_write_clear_dirty((wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
+                screen_write_clear_dirty(
+                    (wp as *mut window_pane)
+                        .cast::<std::cell::UnsafeCell<window_pane>>()
+                        .as_ref(),
+                );
                 let bytes = (sy.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize;
                 let mut dirty = Vec::<bitstr_t>::new();
                 if dirty.try_reserve_exact(bytes).is_err() {
@@ -287,7 +320,9 @@ unsafe fn screen_write_initctx(
     mut check_obscured: ::core::ffi::c_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = ctx.screen_ptr();
     *ttyctx = tty_ctx::default();
     ttyctx.sx = (*s).grid().sx;
@@ -303,7 +338,11 @@ unsafe fn screen_write_initctx(
     ttyctx.style_ctx.hyperlinks = (*ctx.screen_ptr()).hyperlinks.clone();
     if let Some(callback) = ctx.init_ctx_cb.as_mut() {
         callback(ttyctx);
-        if let Some((fg, bg)) = ttyctx.style_ctx.palette.with_palette(|palette| palette.map(|palette| (palette.fg, palette.bg))) {
+        if let Some((fg, bg)) = ttyctx
+            .style_ctx
+            .palette
+            .with_palette(|palette| palette.map(|palette| (palette.fg, palette.bg)))
+        {
             if ttyctx.style_ctx.defaults.fg == 8 as ::core::ffi::c_int {
                 ttyctx.style_ctx.defaults.fg = fg;
             }
@@ -314,15 +353,28 @@ unsafe fn screen_write_initctx(
     } else {
         ttyctx.redraw_cb = screen_write_redraw_cb(&ctx.wp);
         if !write_pane.is_null() {
-            (ttyctx.style_ctx.defaults, ttyctx.style_ctx.dim) =
-                tty_default_colours(&(*(write_pane)).observer.upgrade().expect("live window_pane"));
-            ttyctx.style_ctx.palette = crate::src::shared::tty::PaletteSource::Pane((*write_pane).observer.clone());
+            (ttyctx.style_ctx.defaults, ttyctx.style_ctx.dim) = tty_default_colours(
+                &(*(write_pane))
+                    .observer
+                    .upgrade()
+                    .expect("live window_pane"),
+            );
+            ttyctx.style_ctx.palette =
+                crate::src::shared::tty::PaletteSource::Pane((*write_pane).observer.clone());
             ttyctx.set_client_cb = screen_write_set_client_cb(&ctx.wp);
         }
     }
     if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
         if !write_pane.is_null()
-            && (write_pane != (*(*write_pane).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) || (*write_pane).screen_ptr() != &raw mut (*write_pane).base)
+            && (write_pane
+                != (*(*write_pane)
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .active_pane()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())
+                || (*write_pane).screen_ptr() != &raw mut (*write_pane).base)
         {
             ttyctx.flags |= TTY_CTX_SYNC;
         } else {
@@ -654,7 +706,9 @@ pub unsafe fn screen_write_fast_copy(
     mut ny: u_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut wp: *mut window_pane = write_pane;
@@ -1082,7 +1136,9 @@ unsafe fn screen_write_sync_callback(pane: &std::cell::UnsafeCell<window_pane>) 
     event_del(&raw mut (*wp).sync_timer);
     if (*wp).base.mode & MODE_SYNC != 0 {
         (*wp).base.mode &= !MODE_SYNC;
-        screen_write_flush_dirty(&*(wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>());
+        screen_write_flush_dirty(
+            &*(wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>(),
+        );
     }
 }
 pub unsafe fn screen_write_start_sync(pane: Option<&std::cell::UnsafeCell<window_pane>>) {
@@ -1128,7 +1184,9 @@ pub unsafe fn screen_write_stop_sync(pane: Option<&std::cell::UnsafeCell<window_
         event_del(&raw mut (*wp).sync_timer);
     }
     (*wp).base.mode &= !MODE_SYNC;
-    screen_write_flush_dirty(&*(wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>());
+    screen_write_flush_dirty(
+        &*(wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>(),
+    );
     log_debug(format_args!(
         "{}: %{} stopped sync mode",
         "screen_write_stop_sync",
@@ -1137,7 +1195,9 @@ pub unsafe fn screen_write_stop_sync(pane: Option<&std::cell::UnsafeCell<window_
 }
 pub unsafe fn screen_write_end_sync(ctx: &mut screen_write_ctx) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
     if wp.is_null() {
         return;
@@ -1145,7 +1205,11 @@ pub unsafe fn screen_write_end_sync(ctx: &mut screen_write_ctx) {
     if (*wp).base.mode & MODE_SYNC != 0 {
         screen_write_collect_flush(ctx, 0 as ::core::ffi::c_int, "screen_write_end_sync");
     }
-    screen_write_stop_sync((wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
+    screen_write_stop_sync(
+        (wp as *mut window_pane)
+            .cast::<std::cell::UnsafeCell<window_pane>>()
+            .as_ref(),
+    );
 }
 pub unsafe fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u_int) {
     let mut s: *mut screen = ctx.screen_ptr();
@@ -1257,7 +1321,9 @@ unsafe fn screen_write_redraw_line(
     r: &mut Vec<visible_range>,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
     let mut s: *mut screen = ctx.screen_ptr();
     let mut gc: grid_cell = grid_cell {
@@ -1359,7 +1425,11 @@ unsafe fn screen_write_flush_dirty(pane: &std::cell::UnsafeCell<window_pane>) {
     if (*wp).sync_dirty.is_none() {
         return;
     }
-    screen_write_start_pane(&mut ctx, &(*wp).observer.upgrade().expect("live screen-write pane"), s);
+    screen_write_start_pane(
+        &mut ctx,
+        &(*wp).observer.upgrade().expect("live screen-write pane"),
+        s,
+    );
     screen_write_initctx(
         &mut ctx,
         &mut ttyctx,
@@ -1382,7 +1452,11 @@ unsafe fn screen_write_flush_dirty(pane: &std::cell::UnsafeCell<window_pane>) {
         (lines) as u32
     ));
     screen_write_stop(&mut ctx);
-    screen_write_clear_dirty((wp as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
+    screen_write_clear_dirty(
+        (wp as *mut window_pane)
+            .cast::<std::cell::UnsafeCell<window_pane>>()
+            .as_ref(),
+    );
 }
 pub unsafe fn screen_write_clear_dirty(pane: Option<&std::cell::UnsafeCell<window_pane>>) {
     let wp = pane.map_or(std::ptr::null_mut(), |pane| pane.get());
@@ -1404,7 +1478,9 @@ unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_
 }
 pub unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut gc: grid_cell = grid_cell {
@@ -1463,7 +1539,9 @@ pub unsafe fn screen_write_insertcharacter(
     mut bg: u_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
@@ -1507,7 +1585,9 @@ pub unsafe fn screen_write_deletecharacter(
     mut bg: u_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
@@ -1551,7 +1631,9 @@ pub unsafe fn screen_write_clearcharacter(
     mut bg: u_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
@@ -1588,7 +1670,9 @@ pub unsafe fn screen_write_clearcharacter(
 }
 pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut sy: u_int = (*s).grid().sy;
@@ -1658,7 +1742,9 @@ pub unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, mut ny: u_int,
 }
 pub unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, mut ny: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut sy: u_int = (*s).grid().sy;
@@ -1842,7 +1928,9 @@ pub unsafe fn screen_write_cursormove(
 }
 pub unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut ry: u_int = 0;
@@ -1967,7 +2055,9 @@ pub unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, mut lines: u_int
 }
 pub unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, mut lines: u_int, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
     let mut i: u_int = 0;
@@ -2017,7 +2107,9 @@ pub unsafe fn screen_write_carriagereturn(ctx: &mut screen_write_ctx) {
 }
 pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
@@ -2041,7 +2133,8 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
         && (*s).grid().flags & GRID_HISTORY != 0
         && !write_pane.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*write_pane).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*write_pane).options)
+                .map_or(std::ptr::null_mut(), |options| options),
             b"scroll-on-clear\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
@@ -2133,7 +2226,9 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
 }
 pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
@@ -2228,7 +2323,9 @@ pub unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, mut bg
 }
 pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
@@ -2250,7 +2347,8 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
     if (*s).grid().flags & GRID_HISTORY != 0
         && !write_pane.is_null()
         && options_get_number(
-            options_owner_ptr(&mut (*write_pane).options).map_or(std::ptr::null_mut(), |options| options),
+            options_owner_ptr(&mut (*write_pane).options)
+                .map_or(std::ptr::null_mut(), |options| options),
             b"scroll-on-clear\0" as *const u8 as *const ::core::ffi::c_char,
         ) != 0
     {
@@ -2337,7 +2435,7 @@ fn screen_write_collect_trim(
             if csx == 0 && ci.wrapped != 0 {
                 wrapped = true;
             }
-            screen_write_free_citem(items.remove_at(index));
+            screen_write_free_citem(items.remove(index).expect("linked write command"));
         } else if csx < sx && cex >= sx && cex <= ex {
             ci.used = sx.wrapping_sub(csx);
             index += 1;
@@ -2353,7 +2451,7 @@ fn screen_write_collect_trim(
             right.x = ex.wrapping_add(1);
             right.used = cex.wrapping_sub(ex);
             ci.used = sx.wrapping_sub(csx);
-            items.insert_at(index + 1, right);
+            items.insert(index + 1, right);
             return (index + 1, wrapped);
         }
     }
@@ -2391,7 +2489,9 @@ unsafe fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
 }
 unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::core::ffi::c_int {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
     let mut s: *mut screen = ctx.screen_ptr();
     let mut ttyctx = tty_ctx::default();
@@ -2427,11 +2527,22 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
             .wrapping_sub((*s).rupper)
             .wrapping_add(1 as u_int);
     }
-    if !wp.is_null() && ((*wp).yoff as u_int).wrapping_add((*wp).sy) > (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sy {
+    if !wp.is_null()
+        && ((*wp).yoff as u_int).wrapping_add((*wp).sy)
+            > (*(*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .sy
+    {
         ttyctx.orlower = ttyctx.orlower.wrapping_sub(
-            ((*wp).yoff as u_int)
-                .wrapping_add((*wp).sy)
-                .wrapping_sub((*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sy),
+            ((*wp).yoff as u_int).wrapping_add((*wp).sy).wrapping_sub(
+                (*(*wp)
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .sy,
+            ),
         );
     }
     ttyctx.data = tty_command_data::Count(ctx.scrolled);
@@ -2448,7 +2559,9 @@ unsafe fn screen_write_collect_flush_line(
     r: &mut Vec<visible_range>,
 ) -> u_int {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
     let mut s: *mut screen = ctx.screen_ptr();
     let mut last: u_int = UINT_MAX;
@@ -2468,8 +2581,16 @@ unsafe fn screen_write_collect_flush_line(
     let mut c_end: ::core::ffi::c_int = 0;
     let mut ttyctx = tty_ctx::default();
     if !wp.is_null() {
-        wsx = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sx;
-        wsy = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).sy;
+        wsx = (*(*wp)
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .sx;
+        wsy = (*(*wp)
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .sy;
         xoff = (*wp).xoff;
         yoff = (*wp).yoff;
     } else {
@@ -2577,7 +2698,12 @@ unsafe fn screen_write_collect_flush_line(
         }
         if written != 0 {
             last = ci.x;
-            screen_write_free_citem((*s).write_rows_mut()[y as usize].items.remove_at(index));
+            screen_write_free_citem(
+                (*s).write_rows_mut()[y as usize]
+                    .items
+                    .remove(index)
+                    .expect("linked write command"),
+            );
         } else {
             index += 1;
         }
@@ -2599,7 +2725,9 @@ unsafe fn screen_write_collect_flush_with_ranges(
     r: &mut Vec<visible_range>,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut current_block: u64;
     let mut s: *mut screen = ctx.screen_ptr();
     let mut wp: *mut window_pane = write_pane;
@@ -2684,7 +2812,7 @@ unsafe fn screen_write_collect_insert(ctx: &mut screen_write_ctx) {
     if wrapped {
         item.wrapped = 1;
     }
-    items.insert_at(before, item);
+    items.insert(before, item);
     ctx.item = Some(screen_write_get_citem());
 }
 unsafe fn screen_write_collect_insert_clear(
@@ -2927,7 +3055,9 @@ pub unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cel
 }
 pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut wp: *mut window_pane = write_pane;
@@ -3161,7 +3291,9 @@ pub unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
 }
 unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::core::ffi::c_int {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut r = Vec::new();
     let mut s: *mut screen = ctx.screen_ptr();
     let mut wp: *mut window_pane = write_pane;
@@ -3429,7 +3561,9 @@ pub unsafe fn screen_write_alternateon(
     cursor: ::core::ffi::c_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ttyctx = tty_ctx::default();
     let mut wp: *mut window_pane = write_pane;
     if !wp.is_null()
@@ -3450,14 +3584,25 @@ pub unsafe fn screen_write_alternateon(
             event_del(&raw mut (*wp).resize_timer);
         }
         layout_fix_panes(
-            &(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+            &(*((*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
             None,
         );
         if !(*wp).resize_queue.is_empty() {
             window_pane_send_resize(&*wp, (*wp).sx, (*wp).sy);
             window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
         }
-        server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+        server_redraw_window_borders(
+            &*((*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())),
+        );
     }
     screen_write_initctx(
         ctx,
@@ -3475,7 +3620,9 @@ pub unsafe fn screen_write_alternateoff(
     cursor: ::core::ffi::c_int,
 ) {
     let write_pane_owner = ctx.wp.upgrade();
-    let write_pane = write_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let write_pane = write_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ttyctx = tty_ctx::default();
     let mut wp: *mut window_pane = write_pane;
     if !wp.is_null()
@@ -3492,10 +3639,21 @@ pub unsafe fn screen_write_alternateoff(
     }
     if !wp.is_null() {
         layout_fix_panes(
-            &(*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+            &(*((*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
             None,
         );
-        server_redraw_window_borders(&*((*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+        server_redraw_window_borders(
+            &*((*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())),
+        );
     }
     screen_write_initctx(
         ctx,
@@ -3548,11 +3706,23 @@ mod write_ctx_tests {
             screen_write_should_draw_lines(&mut ctx, 16, 1);
             assert_eq!(pane.sync_dirty_size, 17);
             assert_eq!(pane.sync_dirty.as_deref(), Some([0xff, 0xff, 1].as_slice()));
-            screen_write_clear_dirty((&mut *pane as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
+            screen_write_clear_dirty(
+                (&mut *pane as *mut window_pane)
+                    .cast::<std::cell::UnsafeCell<window_pane>>()
+                    .as_ref(),
+            );
             assert!(pane.sync_dirty.is_none());
             assert_eq!(pane.sync_dirty_size, 0);
-            screen_write_clear_dirty((&mut *pane as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
-            screen_write_clear_dirty((std::ptr::null_mut() as *mut window_pane).cast::<std::cell::UnsafeCell<window_pane>>().as_ref());
+            screen_write_clear_dirty(
+                (&mut *pane as *mut window_pane)
+                    .cast::<std::cell::UnsafeCell<window_pane>>()
+                    .as_ref(),
+            );
+            screen_write_clear_dirty(
+                (std::ptr::null_mut() as *mut window_pane)
+                    .cast::<std::cell::UnsafeCell<window_pane>>()
+                    .as_ref(),
+            );
 
             screen_write_should_draw_lines(&mut ctx, 0, 1);
             assert_eq!(pane.sync_dirty.as_deref(), Some([1, 0, 0].as_slice()));
@@ -3590,7 +3760,10 @@ mod write_ctx_tests {
             screen_write_start_pane(&mut ctx, &pane, &mut screen);
             assert!(ctx.wp.ptr_eq(&observer));
             drop(pane);
-            assert!(observer.upgrade().is_none(), "write context must not own its pane");
+            assert!(
+                observer.upgrade().is_none(),
+                "write context must not own its pane"
+            );
             assert_eq!(screen_write_pane_is_obscured(&mut ctx), 0);
             assert_eq!(screen_write_should_draw_lines(&mut ctx, 0, 1), 1);
             screen_write_collect_add(&mut ctx, &grid_default_cell);
@@ -3648,7 +3821,8 @@ mod write_ctx_tests {
                 flags: SCREEN_WRITE_SYNC,
                 init_ctx_cb: Some(Box::new(move |ttyctx| {
                     ttyctx.style_ctx.defaults.fg = 7;
-                    ttyctx.style_ctx.palette = crate::src::shared::tty::PaletteSource::Popup(palette_observer.clone());
+                    ttyctx.style_ctx.palette =
+                        crate::src::shared::tty::PaletteSource::Popup(palette_observer.clone());
                 })),
                 ..Default::default()
             };
@@ -3789,8 +3963,7 @@ mod write_row_tests {
             screen_write_make_list(&mut s);
             let mut allocations = Vec::new();
             for (index, row) in s.write_rows_mut().iter_mut().enumerate() {
-                row.data
-                    .resize_with(4, || b'A' + index as u8);
+                row.data.resize_with(4, || b'A' + index as u8);
                 allocations.push(row.data.as_ptr());
                 let mut item = screen_write_get_citem();
                 item.bg = index as u_int;
@@ -3848,8 +4021,7 @@ mod write_row_tests {
             let mut pointers = Vec::new();
             for y in 0..3 {
                 let row = &mut s.write_rows_mut()[y];
-                row.data
-                    .resize_with(4, || b'A' + y as u8);
+                row.data.resize_with(4, || b'A' + y as u8);
                 pointers.push(row.data.as_ptr());
             }
             let mut ctx: screen_write_ctx = Default::default();

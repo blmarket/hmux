@@ -169,24 +169,7 @@ impl<'a> ArgumentValue<'a> {
     }
 }
 
-#[repr(C)]
-pub struct args_tree {
-    pub entries: args_tree_storage,
-}
-
-impl Default for args_tree {
-    fn default() -> Self {
-        Self {
-            entries: Default::default(),
-        }
-    }
-}
-
-/// Owns each stable heap entry; readers borrow entries from this ordered map.
-#[derive(Default)]
-pub struct args_tree_storage {
-    pub(crate) entries: BTreeMap<u_char, Box<args_entry>>,
-}
+pub type args_tree = BTreeMap<u_char, Box<args_entry>>;
 
 #[repr(C)]
 /// Box-owned by the enclosing args tree; dropping it also drops its values.
@@ -197,18 +180,9 @@ pub struct args_entry {
     pub flags: ::core::ffi::c_int,
 }
 
-#[repr(C)]
 /// Owns flag-value storage directly. Iteration borrows
 /// the boxed records and cannot outlive the containing argument set.
-pub struct args_values {
-    pub storage: args_values_storage,
-}
-
-/// Owns stable flag-value records for one args_entry.
-#[derive(Default)]
-pub struct args_values_storage {
-    pub(crate) values: Vec<Box<args_value>>,
-}
+pub type args_values = Vec<Box<args_value>>;
 
 pub type args_parse_cb = Option<fn(&mut args, u_int) -> Result<args_parse_type, ArgsParseError>>;
 

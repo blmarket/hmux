@@ -42,10 +42,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             let text = CString::new(format!("entry-{n}")).unwrap();
             prompt_add_history(&text, PROMPT_TYPE_COMMAND);
         }
-        assert_eq!(
-            &prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap(),
-            &first
-        );
+        assert_eq!(&prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap(), &first);
         assert_eq!(first.as_c_str().to_bytes(), b"\xff-first");
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 129);
         prompt_add_history(c"entry-127", PROMPT_TYPE_COMMAND);
@@ -67,7 +64,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         );
         assert_eq!(middle.as_c_str(), c"two");
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 2).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 2)
+                .unwrap()
+                .as_c_str(),
             c"four"
         );
 
@@ -77,7 +76,9 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0)
+                .unwrap()
+                .as_c_str(),
             c"three"
         );
 
@@ -132,11 +133,15 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_add_history(&oldest, PROMPT_TYPE_COMMAND);
         assert_eq!(oldest.as_c_str(), c"three");
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0)
+                .unwrap()
+                .as_c_str(),
             c"four"
         );
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1)
+                .unwrap()
+                .as_c_str(),
             c"three"
         );
 
@@ -155,11 +160,15 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_load_history();
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0)
+                .unwrap()
+                .as_c_str(),
             c"four"
         );
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1)
+                .unwrap()
+                .as_c_str(),
             c"three"
         );
         prompt_history_clear(PROMPT_TYPE_COMMAND);
@@ -167,11 +176,15 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_load_history();
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 0)
+                .unwrap()
+                .as_c_str(),
             c"one"
         );
         assert_eq!(
-            prompt_history_get(PROMPT_TYPE_COMMAND, 1).unwrap().as_c_str(),
+            prompt_history_get(PROMPT_TYPE_COMMAND, 1)
+                .unwrap()
+                .as_c_str(),
             c"two"
         );
 

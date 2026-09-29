@@ -1,9 +1,6 @@
 mod api;
 pub use api::Client;
 
-use hmux_buffer::SegmentedBuf;
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_check_session;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
@@ -31,8 +28,7 @@ use crate::src::ffi::libc::{
     strsep, ttyname,
 };
 use crate::src::file::{
-    file_print, file_read_data,
-    file_read_done, file_write_done, file_write_ready,
+    file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::bytes::xformat;
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
@@ -41,23 +37,21 @@ use crate::src::format::{
     format_lost_client,
 };
 use crate::src::input::input_cancel_requests;
-use crate::src::key_bindings::{
-    key_bindings_dispatch, key_bindings_get, key_bindings_get_table,
-};
+use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
 use crate::src::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
 use crate::src::names::check_window_name;
+use crate::src::options::options_owner_ptr;
 use crate::src::options::{
     options_get_command, options_get_number, options_get_string, options_set_number,
 };
 use crate::src::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
-    bufferevent_get_input,
-    bufferevent_disable, bufferevent_enable, evbuffer_add, evbuffer_drain, evbuffer_get_length,
-    evbuffer_pullup, evbuffer_readln, event_add, event_del, event_initialized, event_once,
-    event_pending, event_set,
+    bufferevent_disable, bufferevent_enable, bufferevent_get_input, evbuffer_add, evbuffer_drain,
+    evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_add, event_del, event_initialized,
+    event_once, event_pending, event_set,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
 use crate::src::screen::screen_mode_display;
@@ -88,6 +82,7 @@ use crate::src::tty::{
 };
 use crate::src::tty_features::tty_get_features;
 use crate::src::tty_term::tty_term_has;
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_get_active_at, window_pane_clear_resizes, window_pane_contains,
@@ -105,6 +100,7 @@ use crate::src::window::{
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
+use hmux_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
@@ -163,16 +159,14 @@ impl ClientRegistry {
             .and_then(std::rc::Weak::upgrade)
     }
 
-    pub(crate) fn push_back(
-        &mut self,
-        owner: std::rc::Rc<std::cell::UnsafeCell<client>>,
-    ) {
+    pub(crate) fn push_back(&mut self, owner: std::rc::Rc<std::cell::UnsafeCell<client>>) {
         let key = std::rc::Rc::as_ptr(&owner) as usize;
         assert!(!self.indices.contains_key(&key), "client registered twice");
 
         let observer = std::rc::Rc::downgrade(&owner);
         if let Some(previous) = self.ordered.last() {
-            self.successors.insert(previous.as_ptr() as usize, observer.clone());
+            self.successors
+                .insert(previous.as_ptr() as usize, observer.clone());
         }
         self.indices.insert(key, self.ordered.len());
         self.successors.insert(key, std::rc::Weak::new());
@@ -181,16 +175,15 @@ impl ClientRegistry {
     }
 
     /// Remove a client from active iteration but keep its cached successor.
-    pub(crate) fn remove(&mut self, observer: &std::rc::Weak<std::cell::UnsafeCell<client>>) -> bool {
+    pub(crate) fn remove(
+        &mut self,
+        observer: &std::rc::Weak<std::cell::UnsafeCell<client>>,
+    ) -> bool {
         let key = observer.as_ptr() as usize;
         let Some(index) = self.indices.remove(&key) else {
             return false;
         };
-        let next = self
-            .ordered
-            .get(index + 1)
-            .cloned()
-            .unwrap_or_default();
+        let next = self.ordered.get(index + 1).cloned().unwrap_or_default();
         if index > 0 {
             let previous = &self.ordered[index - 1];
             self.successors.insert(previous.as_ptr() as usize, next);
@@ -312,16 +305,20 @@ mod client_message_owner_tests {
 
             server_client_set_message(&mut *c, Some(CString::new(vec![b'a', 0xff]).unwrap()));
             assert_eq!(
-                ((*c).message_string).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).message_string)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"a\xff"
             );
             assert_eq!(c, &raw mut *owner);
 
             server_client_set_message(&mut *c, Some(CString::new(Vec::<u8>::new()).unwrap()));
             assert_eq!(
-                ((*c).message_string).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).message_string)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
             assert!(!(*c).message_string.is_none());
@@ -345,8 +342,10 @@ mod client_message_owner_tests {
 
             server_client_set_ttyname(&mut *c, Some(CString::new(b"/dev/\xff".to_vec()).unwrap()));
             assert_eq!(
-                ((*c).ttyname).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).ttyname)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"/dev/\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -354,8 +353,10 @@ mod client_message_owner_tests {
             server_client_set_ttyname(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).ttyname.is_none());
             assert_eq!(
-                ((*c).ttyname).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).ttyname)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -372,8 +373,10 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             server_client_ensure_term_name(&mut *c);
             assert_eq!(
-                ((*c).term_name).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).term_name)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"unknown"
             );
 
@@ -382,8 +385,10 @@ mod client_message_owner_tests {
                 Some(CString::new(b"term-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                ((*c).term_name).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).term_name)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"term-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -391,8 +396,10 @@ mod client_message_owner_tests {
             server_client_set_term_name(&mut *c, Some(CString::new("").unwrap()));
             server_client_ensure_term_name(&mut *c);
             assert_eq!(
-                ((*c).term_name).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).term_name)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"unknown"
             );
 
@@ -411,8 +418,7 @@ mod client_message_owner_tests {
 
             server_client_set_cwd(&mut *c, Some(CString::new(b"/work-\xff".to_vec()).unwrap()));
             assert_eq!(
-                ((*c).cwd).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).cwd).as_deref().expect("string is present").to_bytes(),
                 b"/work-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -420,8 +426,7 @@ mod client_message_owner_tests {
             server_client_set_cwd(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).cwd.is_none());
             assert_eq!(
-                ((*c).cwd).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).cwd).as_deref().expect("string is present").to_bytes(),
                 b""
             );
 
@@ -443,8 +448,10 @@ mod client_message_owner_tests {
                 Some(CString::new(b"term-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                ((*c).term_type).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).term_type)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"term-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -452,8 +459,10 @@ mod client_message_owner_tests {
             server_client_set_term_type(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).term_type.is_none());
             assert_eq!(
-                ((*c).term_type).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).term_type)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -475,8 +484,10 @@ mod client_message_owner_tests {
                 Some(CString::new(b"title-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                ((*c).title).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).title)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"title-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -484,8 +495,10 @@ mod client_message_owner_tests {
             server_client_replace_title(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).title.is_none());
             assert_eq!(
-                ((*c).title).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).title)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -507,8 +520,10 @@ mod client_message_owner_tests {
                 Some(CString::new(b"file:///work-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                ((*c).path).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).path)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"file:///work-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -516,8 +531,10 @@ mod client_message_owner_tests {
             server_client_replace_path(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).path.is_none());
             assert_eq!(
-                ((*c).path).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).path)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -539,8 +556,10 @@ mod client_message_owner_tests {
                 Some(CString::new(b"session-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                ((*c).exit_session).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).exit_session)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"session-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -548,8 +567,10 @@ mod client_message_owner_tests {
             server_client_set_exit_session(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).exit_session.is_none());
             assert_eq!(
-                ((*c).exit_session).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).exit_session)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -568,8 +589,10 @@ mod client_message_owner_tests {
 
             server_client_set_user(&mut *c, Some(CString::new(b"user-\xff".to_vec()).unwrap()));
             assert_eq!(
-                ((*c).user).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).user)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"user-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -577,8 +600,10 @@ mod client_message_owner_tests {
             server_client_set_user(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).user.is_none());
             assert_eq!(
-                ((*c).user).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).user)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -600,8 +625,10 @@ mod client_message_owner_tests {
                 Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                ((*c).name).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).name)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"/dev/pts/\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -609,8 +636,10 @@ mod client_message_owner_tests {
             server_client_set_name(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).name.is_none());
             assert_eq!(
-                ((*c).name).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).name)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -632,8 +661,10 @@ mod client_message_owner_tests {
                 Some(CString::new(b"error-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                ((*c).exit_message).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).exit_message)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b"error-\xff"
             );
             assert_eq!(c, &raw mut *owner);
@@ -641,8 +672,10 @@ mod client_message_owner_tests {
             server_client_set_exit_message(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).exit_message.is_none());
             assert_eq!(
-                ((*c).exit_message).as_deref().expect("string is present")
-                .to_bytes(),
+                ((*c).exit_message)
+                    .as_deref()
+                    .expect("string is present")
+                    .to_bytes(),
                 b""
             );
 
@@ -706,7 +739,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
-use crate::src::shared::key::{KeyBindingCommand, key_event, key_table};
+use crate::src::shared::key::{key_event, key_table, KeyBindingCommand};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{SIZE_MAX, UINT_MAX};
 use crate::src::shared::mouse::{
@@ -748,20 +781,28 @@ pub unsafe fn server_client_how_many() -> u_int {
     let mut n: u_int = 0;
     n = 0 as u_int;
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if !(*c).session_handle().is_none() && !(*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
+        if !(*c).session_handle().is_none() && !(*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0
+        {
             n = n.wrapping_add(1);
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return n;
 }
 unsafe fn server_client_update_overlay_focus(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     use crate::src::session::Session;
     use crate::src::window::Window;
-    let Some(session) = owner.attached_session().upgrade() else { return };
+    let Some(session) = owner.attached_session().upgrade() else {
+        return;
+    };
     let link = session.current_winlink();
     if let Some(window) = link.get_unchecked().window_handle().cloned() {
         window_update_focus(Some(&window));
@@ -841,7 +882,9 @@ pub unsafe fn server_client_clear_overlay(c_owner: &std::rc::Rc<std::cell::Unsaf
 }
 // A callback may clear or replace its overlay. Restore only the generation
 // that was borrowed, and discard results pointing into a retired owner.
-pub(crate) unsafe fn server_client_overlay_draw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+pub(crate) unsafe fn server_client_overlay_draw(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+) {
     let mut c = c_owner.get();
     let generation = (*c).overlay_generation;
     let Some(mut callback) = (*c).overlay_draw.take() else {
@@ -853,7 +896,10 @@ pub(crate) unsafe fn server_client_overlay_draw(c_owner: &std::rc::Rc<std::cell:
     }
 }
 
-pub(crate) unsafe fn server_client_overlay_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, event: &mut key_event) -> Option<i32> {
+pub(crate) unsafe fn server_client_overlay_key(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    event: &mut key_event,
+) -> Option<i32> {
     let mut c = c_owner.get();
     let generation = (*c).overlay_generation;
     let mut callback = (*c).overlay_key.take()?;
@@ -885,7 +931,9 @@ pub(crate) unsafe fn server_client_overlay_mode(
     result
 }
 
-pub(crate) unsafe fn server_client_overlay_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+pub(crate) unsafe fn server_client_overlay_resize(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+) {
     let mut c = c_owner.get();
     let generation = (*c).overlay_generation;
     let Some(mut callback) = (*c).overlay_resize.take() else {
@@ -993,7 +1041,9 @@ pub unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-    wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = indexed_pane_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if strcmp(
             &raw mut (*wp).tty as *mut ::core::ffi::c_char,
@@ -1005,7 +1055,9 @@ pub unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
             return 1 as ::core::ffi::c_int;
         }
         indexed_pane_owner = window_pane_tree_next(&*wp);
-        wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = indexed_pane_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -1019,7 +1071,16 @@ pub unsafe fn server_client_set_key_table(
     }
     drop((*c).keytable.take());
     (*c).keytable = key_bindings_get_table(std::ffi::CStr::from_ptr(name), 1);
-    if gettimeofday(&mut (*c).keytable.as_ref().expect("key table").borrow_mut().activity_time, NULL) != 0 as ::core::ffi::c_int {
+    if gettimeofday(
+        &mut (*c)
+            .keytable
+            .as_ref()
+            .expect("key table")
+            .borrow_mut()
+            .activity_time,
+        NULL,
+    ) != 0 as ::core::ffi::c_int
+    {
         fatal(|out| out.write_all(b"gettimeofday failed"));
     }
 }
@@ -1028,8 +1089,22 @@ unsafe fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
         tv_sec: 0,
         tv_usec: 0,
     };
-    diff.tv_sec = (*c).activity_time.tv_sec - (*c).keytable.as_ref().expect("key table").borrow().activity_time.tv_sec;
-    diff.tv_usec = (*c).activity_time.tv_usec - (*c).keytable.as_ref().expect("key table").borrow().activity_time.tv_usec;
+    diff.tv_sec = (*c).activity_time.tv_sec
+        - (*c)
+            .keytable
+            .as_ref()
+            .expect("key table")
+            .borrow()
+            .activity_time
+            .tv_sec;
+    diff.tv_usec = (*c).activity_time.tv_usec
+        - (*c)
+            .keytable
+            .as_ref()
+            .expect("key table")
+            .borrow()
+            .activity_time
+            .tv_usec;
     if diff.tv_usec < 0 as __suseconds_t {
         diff.tv_sec -= 1;
         diff.tv_usec += 1000000 as __suseconds_t;
@@ -1042,7 +1117,10 @@ unsafe fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
         ) as uint64_t;
 }
 pub unsafe fn server_client_get_key_table(c: &client) -> *const ::core::ffi::c_char {
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if s.is_null() {
         return b"root\0" as *const u8 as *const ::core::ffi::c_char;
@@ -1056,10 +1134,7 @@ pub unsafe fn server_client_get_key_table(c: &client) -> *const ::core::ffi::c_c
     }
     return name;
 }
-unsafe fn server_client_is_default_key_table(
-    c: &client,
-    table: &key_table,
-) -> ::core::ffi::c_int {
+unsafe fn server_client_is_default_key_table(c: &client, table: &key_table) -> ::core::ffi::c_int {
     return (strcmp(
         (table.name).as_ptr().cast_mut(),
         server_client_get_key_table(&*(c)),
@@ -1101,7 +1176,9 @@ unsafe fn server_client_init_timers(owner: &std::rc::Rc<std::cell::UnsafeCell<cl
         },
     );
 }
-pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<std::cell::UnsafeCell<client>> {
+pub unsafe fn server_client_create(
+    mut fd: ::core::ffi::c_int,
+) -> std::rc::Rc<std::cell::UnsafeCell<client>> {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
@@ -1129,7 +1206,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<st
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
     (*c).queue = Some(cmdq_new());
-    (*c).files = client_files::new();
+    (*c).files = None;
     (*c).tty.sx = 80 as u_int;
     (*c).tty.sy = 24 as u_int;
     i = 0 as u_int;
@@ -1150,7 +1227,9 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<st
     ));
     owner
 }
-pub unsafe fn server_client_open(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Result<(), CString> {
+pub unsafe fn server_client_open(
+    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+) -> Result<(), CString> {
     let c = owner.get();
     let mut ttynam: *const ::core::ffi::c_char = _PATH_TTY.as_ptr();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
@@ -1208,7 +1287,11 @@ pub unsafe fn server_client_open(owner: &std::rc::Rc<std::cell::UnsafeCell<clien
         return Err(c"not a terminal".to_owned());
     }
     tty_open(owner)?;
-    server_client_update_theme_colours((c).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+    server_client_update_theme_colours(
+        (c).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+    );
     Ok(())
 }
 unsafe fn server_client_attached_lost(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
@@ -1227,10 +1310,23 @@ unsafe fn server_client_attached_lost(c_owner: &std::rc::Rc<std::cell::UnsafeCel
         if (*w).latest.ptr_eq(&(*c).observer) {
             found = ::core::ptr::null_mut::<client>();
             let mut registry_loop_0_owner = clients.first();
-            loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            loop_0 = registry_loop_0_owner
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
             while !loop_0.is_null() {
-                s = (*loop_0).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-                if !(loop_0 == c || s.is_null() || ((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != w) {
+                s = (*loop_0)
+                    .session_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get());
+                if !(loop_0 == c
+                    || s.is_null()
+                    || ((*s).current_winlink())
+                        .get_unchecked()
+                        .window_handle()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get())
+                        != w)
+                {
                     if found.is_null()
                         || (if (*loop_0).activity_time.tv_sec == (*found).activity_time.tv_sec {
                             ((*loop_0).activity_time.tv_usec > (*found).activity_time.tv_usec)
@@ -1243,8 +1339,14 @@ unsafe fn server_client_attached_lost(c_owner: &std::rc::Rc<std::cell::UnsafeCel
                         found = loop_0;
                     }
                 }
-                registry_loop_0_owner = clients.next(registry_loop_0_owner.as_ref().expect("current registry client"));
-                loop_0 = registry_loop_0_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                registry_loop_0_owner = clients.next(
+                    registry_loop_0_owner
+                        .as_ref()
+                        .expect("current registry client"),
+                );
+                loop_0 = registry_loop_0_owner
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get());
             }
             if !found.is_null() {
                 server_client_update_latest(&(*(found)).observer.upgrade().expect("live client"));
@@ -1254,7 +1356,10 @@ unsafe fn server_client_attached_lost(c_owner: &std::rc::Rc<std::cell::UnsafeCel
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
-unsafe fn server_client_fire_session_changed(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, old_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
+unsafe fn server_client_fire_session_changed(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    old_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+) {
     let mut c = c_owner.get();
     let mut old = old_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut fs: cmd_find_state = cmd_find_state {
@@ -1273,12 +1378,24 @@ unsafe fn server_client_fire_session_changed(c_owner: &std::rc::Rc<std::cell::Un
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"),
+            (*(fs
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live session"),
         );
         event_payload_set_session(
             &mut *ep,
             b"new_session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"),
+            (*(fs
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live session"),
         );
     }
     if !old.is_null() {
@@ -1292,7 +1409,13 @@ unsafe fn server_client_fire_session_changed(c_owner: &std::rc::Rc<std::cell::Un
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+            (*(fs
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
         );
     }
     if fs.winlink_handle().is_alive() {
@@ -1312,7 +1435,13 @@ unsafe fn server_client_fire_session_changed(c_owner: &std::rc::Rc<std::cell::Un
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"),
+            (*(fs
+                .pane_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window_pane"),
         );
     }
     events_fire(
@@ -1320,7 +1449,11 @@ unsafe fn server_client_fire_session_changed(c_owner: &std::rc::Rc<std::cell::Un
         ep,
     );
 }
-unsafe fn server_client_fire_resized(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut old_sx: u_int, mut old_sy: u_int) {
+unsafe fn server_client_fire_resized(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut old_sx: u_int,
+    mut old_sy: u_int,
+) {
     let mut c = c_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -1338,14 +1471,26 @@ unsafe fn server_client_fire_resized(c_owner: &std::rc::Rc<std::cell::UnsafeCell
         event_payload_set_session(
             &mut *ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live session"),
+            (*(fs
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live session"),
         );
     }
     if !fs.window_handle().is_none() {
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window"),
+            (*(fs
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window"),
         );
     }
     if fs.winlink_handle().is_alive() {
@@ -1365,7 +1510,13 @@ unsafe fn server_client_fire_resized(c_owner: &std::rc::Rc<std::cell::UnsafeCell
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))).observer.upgrade().expect("live window_pane"),
+            (*(fs
+                .pane_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())))
+            .observer
+            .upgrade()
+            .expect("live window_pane"),
         );
     }
     event_payload_set_uint(
@@ -1393,14 +1544,20 @@ unsafe fn server_client_fire_resized(c_owner: &std::rc::Rc<std::cell::UnsafeCell
         ep,
     );
 }
-pub unsafe fn server_client_set_session(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
+pub unsafe fn server_client_set_session(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+) {
     use crate::src::session::Session;
     use crate::src::window::Window;
 
     let old = c_owner.attached_session().upgrade();
     let c = c_owner.get();
     if let Some(target) = s_owner {
-        if old.as_ref().is_some_and(|old| !std::rc::Rc::ptr_eq(old, target)) {
+        if old
+            .as_ref()
+            .is_some_and(|old| !std::rc::Rc::ptr_eq(old, target))
+        {
             (*c).last_session = (*c).session.clone();
         }
     } else {
@@ -1420,13 +1577,20 @@ pub unsafe fn server_client_set_session(c_owner: &std::rc::Rc<std::cell::UnsafeC
     if let Some(session) = s_owner {
         {
             let link = session.current_winlink();
-            let window = link.get_unchecked().window_handle().expect("attached session window");
+            let window = link
+                .get_unchecked()
+                .window_handle()
+                .expect("attached session window");
             window.set_latest_client(Some(c_owner));
         }
         recalculate_sizes();
         {
             let link = session.current_winlink();
-            let window = link.get_unchecked().window_handle().cloned().expect("attached session window");
+            let window = link
+                .get_unchecked()
+                .window_handle()
+                .cloned()
+                .expect("attached session window");
             window_update_focus(Some(&window));
             window.release(c"client new-session focus");
         }
@@ -1450,7 +1614,7 @@ pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCel
     status_prompt_clear(&(*(c)).observer.upgrade().expect("live client"));
     status_message_clear(&mut *c);
     cmdq_abort_file_wait(client_owner);
-    (*c).files.interrupt(EINTR);
+    crate::src::file::client_files_interrupt(&(*c).files, EINTR);
     clients.remove(&(*c).observer);
     log_debug(format_args!(
         "lost client {}",
@@ -1513,7 +1677,12 @@ pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCel
         close((*c).fd);
         (*c).fd = -(1 as ::core::ffi::c_int);
     }
-    server_client_unref_owned(clients.owners.remove(&((*c).observer.as_ptr() as usize)).expect("registered client owner"));
+    server_client_unref_owned(
+        clients
+            .owners
+            .remove(&((*c).observer.as_ptr() as usize))
+            .expect("registered client owner"),
+    );
     server_add_accept(0 as ::core::ffi::c_int);
     recalculate_sizes();
     server_check_unattached();
@@ -1540,7 +1709,7 @@ unsafe fn server_client_free(c_value: &mut client) {
     let had_queue = (*c).queue.is_some();
     drop((*c).queue.take());
     assert!(
-        (*c).files.is_empty(),
+        crate::src::file::client_files_is_empty(&(*c).files),
         "client file index still contains live records at client teardown"
     );
     // Server-created clients have a queue before joining the global registry.
@@ -1551,7 +1720,10 @@ unsafe fn server_client_free(c_value: &mut client) {
 }
 pub unsafe fn server_client_suspend(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return;
     }
@@ -1565,23 +1737,32 @@ pub unsafe fn server_client_suspend(c_owner: &std::rc::Rc<std::cell::UnsafeCell<
         0 as size_t,
     );
 }
-pub unsafe fn server_client_detach(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut msgtype: msgtype) {
+pub unsafe fn server_client_detach(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut msgtype: msgtype,
+) {
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if s.is_null() || (*c).flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
         return;
     }
     (*c).flags |= CLIENT_EXIT as uint64_t;
     (*c).exit_type = CLIENT_EXIT_DETACH;
     (*c).exit_msgtype = msgtype;
-    server_client_set_exit_session(
-        &mut *c,
-        Some((*s).name.clone()),
-    );
+    server_client_set_exit_session(&mut *c, Some((*s).name.clone()));
 }
-pub unsafe fn server_client_exec(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut cmd: *const ::core::ffi::c_char) {
+pub unsafe fn server_client_exec(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut cmd: *const ::core::ffi::c_char,
+) {
     let mut c = c_owner.get();
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if *cmd as ::core::ffi::c_int == '\0' as i32 {
         return;
@@ -1618,7 +1799,10 @@ unsafe fn server_client_in_scrollbar_area(
     mut px: ::core::ffi::c_int,
     mut py: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut w: *mut window = wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = wp
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut width: u_int = 0;
     let mut pad: u_int = 0;
     let mut total: u_int = 0;
@@ -1655,7 +1839,12 @@ unsafe fn server_client_update_scrollbar_hover(
     let Some(session_owner) = (*c).session.upgrade() else {
         return;
     };
-    let window_owner = ((*session_owner.get()).current_winlink()).get_unchecked().window_owner.as_ref().expect("hover window").clone();
+    let window_owner = ((*session_owner.get()).current_winlink())
+        .get_unchecked()
+        .window_owner
+        .as_ref()
+        .expect("hover window")
+        .clone();
     let result = (|| {
         let w = window_owner.get();
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1675,7 +1864,10 @@ unsafe fn server_client_update_scrollbar_hover(
             cursor = window_pane_next(wp.as_ref());
         }
     })();
-    crate::src::window::window_remove_ref(window_owner, c"server_client_update_scrollbar_hover".as_ptr());
+    crate::src::window::window_remove_ref(
+        window_owner,
+        c"server_client_update_scrollbar_hover".as_ptr(),
+    );
     result
 }
 unsafe fn server_client_check_mouse_in_pane(
@@ -1685,7 +1877,10 @@ unsafe fn server_client_check_mouse_in_pane(
     sl_mpos: &mut u_int,
 ) -> key_code_mouse_location {
     let wp = pane_owner.get();
-    let mut w: *mut window = (*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = (*wp)
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut fwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut pane_status: ::core::ffi::c_int = 0;
     let mut sb_w: ::core::ffi::c_int = 0;
@@ -1861,7 +2056,10 @@ unsafe fn server_client_check_mouse_in_pane(
     }
     return KEYC_MOUSE_LOCATION_NOWHERE;
 }
-unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut event: *mut key_event) -> key_code {
+unsafe fn server_client_check_mouse(
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut event: *mut key_event,
+) -> key_code {
     let c = client_owner.get();
     let mut selected_pane = None;
     let mut last_pane = None;
@@ -1870,7 +2068,12 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         return KEYC_UNKNOWN;
     };
     let s = session_owner.get();
-    let window_owner = ((*s).current_winlink()).get_unchecked().window_owner.as_ref().expect("mouse window").clone();
+    let window_owner = ((*s).current_winlink())
+        .get_unchecked()
+        .window_owner
+        .as_ref()
+        .expect("mouse window")
+        .clone();
     let result = (|| {
         let mut current_block: u64;
         let w = window_owner.get();
@@ -2066,14 +2269,17 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     4 => {
-                        fwl = winlink_find_by_index(
-                            &(*s).windows,
-                            sr.argument as ::core::ffi::c_int,
-                        );
+                        fwl =
+                            winlink_find_by_index(&(*s).windows, sr.argument as ::core::ffi::c_int);
                         if !fwl.is_alive() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
-                        (*m).w = (*fwl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id as ::core::ffi::c_int;
+                        (*m).w = (*fwl
+                            .get_unchecked()
+                            .window_handle()
+                            .as_ref()
+                            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                        .id as ::core::ffi::c_int;
                         log_debug(format_args!("mouse range: window @{}", ((*m).w) as u32));
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
@@ -2093,7 +2299,8 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                         n = sr.argument;
                         log_debug(format_args!("mouse range: control {}", (n) as u32));
                         loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
-                            .wrapping_add(n) as key_code_mouse_location;
+                            .wrapping_add(n)
+                            as key_code_mouse_location;
                     }
                     _ => {}
                 }
@@ -2108,7 +2315,11 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
             if let Some(pane) = last_pane.as_ref() {
                 loc = KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
                 (*m).wp = (*pane.get()).id as ::core::ffi::c_int;
-                (*m).w = (*(*pane.get()).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id as ::core::ffi::c_int;
+                (*m).w = (*(*pane.get())
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .id as ::core::ffi::c_int;
             }
         } else if loc as ::core::ffi::c_uint
             == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2145,8 +2356,12 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
             px = px.wrapping_add((*m).ox);
             py = py.wrapping_add((*m).oy);
             let modal_owner = (*w).modal.upgrade();
-            if let Some(modal) = modal_owner.filter(|owner| window_pane_contains(owner, px, py) == 0) {
-                if last_pane.as_ref().is_some_and(|last| std::rc::Rc::ptr_eq(&modal, last))
+            if let Some(modal) =
+                modal_owner.filter(|owner| window_pane_contains(owner, px, py) == 0)
+            {
+                if last_pane
+                    .as_ref()
+                    .is_some_and(|last| std::rc::Rc::ptr_eq(&modal, last))
                     && (*c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int
                     && (type_0 as ::core::ffi::c_uint
                         == KEYC_TYPE_MOUSEDRAG as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2158,7 +2373,11 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     wp = selected_pane.as_ref().expect("drag pane").get();
                     loc = KEYC_MOUSE_LOCATION_PANE;
                     (*m).wp = (*wp).id as ::core::ffi::c_int;
-                    (*m).w = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id as ::core::ffi::c_int;
+                    (*m).w = (*(*wp)
+                        .window_handle()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                    .id as ::core::ffi::c_int;
                 } else {
                     server_client_update_scrollbar_hover(
                         client_owner,
@@ -2176,9 +2395,11 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                         && (type_0 as ::core::ffi::c_uint
                             == KEYC_TYPE_MOUSEDOWN as ::core::ffi::c_int as ::core::ffi::c_uint
                             || type_0 as ::core::ffi::c_uint
-                                == KEYC_TYPE_SECONDCLICK as ::core::ffi::c_int as ::core::ffi::c_uint
+                                == KEYC_TYPE_SECONDCLICK as ::core::ffi::c_int
+                                    as ::core::ffi::c_uint
                             || type_0 as ::core::ffi::c_uint
-                                == KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_uint)
+                                == KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
+                                    as ::core::ffi::c_uint)
                     {
                         server_kill_pane(&modal);
                     }
@@ -2201,7 +2422,9 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                 } else {
                     let hit_window_owner = &window_owner;
                     selected_pane = window_get_active_at(hit_window_owner, px, py);
-                    wp = selected_pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                    wp = selected_pane
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get());
                 }
             }
             if wp.is_null() {
@@ -2235,11 +2458,14 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
                     if let Some(range) = window_pane_status_get_range(
-                        selected_pane.as_ref().expect("mouse border pane"), px, py,
+                        selected_pane.as_ref().expect("mouse border pane"),
+                        px,
+                        py,
                     ) {
                         n = range.argument;
                         loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
-                            .wrapping_add(n) as key_code_mouse_location;
+                            .wrapping_add(n)
+                            as key_code_mouse_location;
                     }
                     log_debug(format_args!("mouse on pane %{} border", ((*wp).id) as u32));
                 } else if loc as ::core::ffi::c_uint
@@ -2257,7 +2483,11 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                     ));
                 }
                 (*m).wp = (*wp).id as ::core::ffi::c_int;
-                (*m).w = (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).id as ::core::ffi::c_int;
+                (*m).w = (*(*wp)
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .id as ::core::ffi::c_int;
             }
         } else {
             server_client_update_scrollbar_hover(
@@ -2304,7 +2534,8 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
                 (*c).click_wp = (*m).wp;
                 log_debug(format_args!("click timer started"));
                 tv.tv_sec = (KEYC_CLICK_TIMEOUT / 1000 as ::core::ffi::c_int) as __time_t;
-                tv.tv_usec = ((KEYC_CLICK_TIMEOUT % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
+                tv.tv_usec = ((KEYC_CLICK_TIMEOUT % 1000 as ::core::ffi::c_int)
+                    as ::core::ffi::c_long
                     * 1000 as ::core::ffi::c_long) as __suseconds_t;
                 event_del(&raw mut (*c).click_timer);
                 event_add(&raw mut (*c).click_timer, &raw mut tv);
@@ -2341,14 +2572,28 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
         {
             key = KEYC_MOUSEMOVE_PANE as ::core::ffi::c_ulong as key_code;
             if !wp.is_null()
-                && wp != (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())
+                && wp
+                    != (*w)
+                        .active_pane()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get())
                 && options_get_number(
-                    options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                    options_owner_ptr(&mut (*s).options)
+                        .map_or(std::ptr::null_mut(), |options| options),
                     b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
                 ) != 0
             {
-                window_redraw_active_switch(&(*(w)).observer.upgrade().expect("live window"), (wp).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
-                window_set_active_pane(&(*(w)).observer.upgrade().expect("live window"), &(*(wp)).observer.upgrade().expect("live window_pane"), 1 as ::core::ffi::c_int);
+                window_redraw_active_switch(
+                    &(*(w)).observer.upgrade().expect("live window"),
+                    (wp).as_ref()
+                        .and_then(|model| model.observer.upgrade())
+                        .as_ref(),
+                );
+                window_set_active_pane(
+                    &(*(w)).observer.upgrade().expect("live window"),
+                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    1 as ::core::ffi::c_int,
+                );
                 server_redraw_window_borders(&*(w));
                 server_status_window(&*(w));
             }
@@ -2368,7 +2613,9 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
             if last_pane.is_none() {
                 let hit_window_owner = &window_owner;
                 selected_pane = window_get_active_at(hit_window_owner, px, py);
-                wp = selected_pane.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                wp = selected_pane
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get());
                 last_pane = selected_pane.clone();
                 if !wp.is_null() {
                     (*c).tty.mouse_last_pane = (*wp).id as ::core::ffi::c_int;
@@ -2376,7 +2623,8 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
             }
             if (*c).tty.mouse_scrolling_flag == 0 as ::core::ffi::c_int
                 && loc as ::core::ffi::c_uint
-                    == KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER as ::core::ffi::c_int as ::core::ffi::c_uint
+                    == KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER as ::core::ffi::c_int
+                        as ::core::ffi::c_uint
             {
                 (*c).tty.mouse_scrolling_flag = 1 as ::core::ffi::c_int;
                 if (*m).statusat == 0 as ::core::ffi::c_int {
@@ -2435,7 +2683,9 @@ unsafe fn server_client_check_mouse(client_owner: &std::rc::Rc<std::cell::Unsafe
     crate::src::window::window_remove_ref(window_owner, c"server_client_check_mouse".as_ptr());
     result
 }
-pub unsafe fn server_client_update_theme_colours(c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>) {
+pub unsafe fn server_client_update_theme_colours(
+    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+) {
     let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2459,20 +2709,9 @@ pub unsafe fn server_client_update_theme_colours(c_owner: Option<&std::rc::Rc<st
         }
         return;
     }
-    let mut ft_owner = format_create(
-        c_owner,
-        None,
-        FORMAT_NONE,
-        FORMAT_NOJOBS,
-    );
+    let mut ft_owner = format_create(c_owner, None, FORMAT_NONE, FORMAT_NOJOBS);
     ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        c_owner,
-        None,
-        (refbox::Weak::new()).clone(),
-        None,
-    );
+    format_defaults(ft, c_owner, None, (refbox::Weak::new()).clone(), None);
     theme = (*c).theme;
     if theme as ::core::ffi::c_uint == THEME_UNKNOWN as ::core::ffi::c_int as ::core::ffi::c_uint {
         theme = colour_totheme((*c).tty.bg);
@@ -2498,10 +2737,7 @@ pub unsafe fn server_client_update_theme_colours(c_owner: Option<&std::rc::Rc<st
     }
     format_free(ft_owner);
 }
-unsafe fn server_client_is_bracket_paste(
-    c: &mut client,
-    mut key: key_code,
-) -> ::core::ffi::c_int {
+unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> ::core::ffi::c_int {
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
         == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
     {
@@ -2537,7 +2773,10 @@ unsafe fn server_client_is_bracket_paste(
         as ::core::ffi::c_int;
 }
 unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -2553,7 +2792,11 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     if t == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    if tty_term_has(tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term), TTYC_ENBP) != 0 {
+    if tty_term_has(
+        tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term),
+        TTYC_ENBP,
+    ) != 0
+    {
         return 0 as ::core::ffi::c_int;
     }
     tv.tv_sec = (*c).activity_time.tv_sec - (*c).last_activity_time.tv_sec;
@@ -2598,15 +2841,24 @@ unsafe fn server_client_update_latest(c_owner: &std::rc::Rc<std::cell::UnsafeCel
     use crate::src::session::Session;
     use crate::src::window::Window;
 
-    let Some(session) = c_owner.attached_session().upgrade() else { return };
+    let Some(session) = c_owner.attached_session().upgrade() else {
+        return;
+    };
     let link = session.current_winlink();
-    let window = link.get_unchecked().window_handle().cloned().expect("attached session window");
+    let window = link
+        .get_unchecked()
+        .window_handle()
+        .cloned()
+        .expect("attached session window");
     if !window.set_latest_client(Some(c_owner)) {
         window.release(c"client latest window");
         return;
     }
     let use_latest = window.with_options_mut(|options| {
-        options_get_number((options as *const crate::src::shared::options::options).cast_mut(), c"window-size".as_ptr()) == WINDOW_SIZE_LATEST as i64
+        options_get_number(
+            (options as *const crate::src::shared::options::options).cast_mut(),
+            c"window-size".as_ptr(),
+        ) == WINDOW_SIZE_LATEST as i64
     });
     if use_latest {
         recalculate_size(&window, 0);
@@ -2616,7 +2868,10 @@ unsafe fn server_client_update_latest(c_owner: &std::rc::Rc<std::cell::UnsafeCel
 }
 
 unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut repeat: u_int = 0;
     let mut initial: u_int = 0;
     if !bd.flags & KEY_BINDING_REPEAT != 0 {
@@ -2644,7 +2899,9 @@ unsafe fn server_client_handle_dead_key(
     pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut key: key_code,
 ) -> ::core::ffi::c_int {
-    let Some(pane_owner) = pane_owner else { return 0; };
+    let Some(pane_owner) = pane_owner else {
+        return 0;
+    };
     let wp = pane_owner.get();
     let mut remain_on_exit: ::core::ffi::c_int = 0;
     if !(*wp).flags & PANE_EXITED != 0
@@ -2719,9 +2976,14 @@ unsafe fn server_client_key_callback(
     let mut prefix: key_code = 0;
     let mut prefix2: key_code = 0;
     let c_owner = (*event).resolve_client(|| cmdq_get_client((item).as_ref()));
-    let Some(c_owner) = c_owner else { return CMD_RETURN_NORMAL; };
+    let Some(c_owner) = c_owner else {
+        return CMD_RETURN_NORMAL;
+    };
     c = crate::src::shared::rc::as_ptr(&c_owner);
-    s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    s = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !(s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
         wl = (*s).current_winlink();
         memcpy(
@@ -2779,9 +3041,18 @@ unsafe fn server_client_key_callback(
                                 << 32 as ::core::ffi::c_int)
                     || cmd_find_from_mouse(&raw mut fs, m) != 0 as ::core::ffi::c_int
                 {
-                    cmd_find_from_client(&raw mut fs, (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), 0 as ::core::ffi::c_int);
+                    cmd_find_from_client(
+                        &raw mut fs,
+                        (c).as_ref()
+                            .and_then(|model| model.observer.upgrade())
+                            .as_ref(),
+                        0 as ::core::ffi::c_int,
+                    );
                 }
-                wp = fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                wp = fs
+                    .pane_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get());
                 if (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                     || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -2792,7 +3063,8 @@ unsafe fn server_client_key_callback(
                                 as ::core::ffi::c_ulonglong)
                                 << 32 as ::core::ffi::c_int)
                     && options_get_number(
-                        options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                        options_owner_ptr(&mut (*s).options)
+                            .map_or(std::ptr::null_mut(), |options| options),
                         b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
                     ) == 0
                 {
@@ -2837,16 +3109,25 @@ unsafe fn server_client_key_callback(
                     {
                         current_block = 15469183920764600035;
                     } else {
-                        if server_client_is_default_key_table(&*(c), &(*c).keytable.as_ref().expect("key table").borrow())
-                            != 0
+                        if server_client_is_default_key_table(
+                            &*(c),
+                            &(*c).keytable.as_ref().expect("key table").borrow(),
+                        ) != 0
                             && !wp.is_null()
                             && {
-                                wme = (*wp).modes.active_weak();
+                                wme = (*wp).active_mode_entry();
                                 wme.is_alive()
                             }
                             && (*wme.get_unchecked().mode).key_table.is_some()
                         {
-                            table_owner = key_bindings_get_table(std::ffi::CStr::from_ptr((*wme.get_unchecked().mode).key_table.expect("non-null function pointer")(wme)), 1 as ::core::ffi::c_int);
+                            table_owner = key_bindings_get_table(
+                                std::ffi::CStr::from_ptr((*wme.get_unchecked().mode)
+                                    .key_table
+                                    .expect("non-null function pointer")(
+                                    wme
+                                )),
+                                1 as ::core::ffi::c_int,
+                            );
                         } else {
                             table_owner = (*c).keytable.clone();
                         }
@@ -2854,11 +3135,13 @@ unsafe fn server_client_key_callback(
                         first = table.clone();
                         '_table_changed: loop {
                             prefix = options_get_number(
-                                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                                options_owner_ptr(&mut (*s).options)
+                                    .map_or(std::ptr::null_mut(), |options| options),
                                 b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
                             ) as key_code;
                             prefix2 = options_get_number(
-                                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                                options_owner_ptr(&mut (*s).options)
+                                    .map_or(std::ptr::null_mut(), |options| options),
                                 b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
                             ) as key_code;
                             key0 = (key as ::core::ffi::c_ulonglong
@@ -2889,14 +3172,16 @@ unsafe fn server_client_key_callback(
                                         log_debug(format_args!(
                                             "key table {} (no pane)",
                                             log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut()) as *const _
+                                                ((table.borrow().name).as_ptr().cast_mut())
+                                                    as *const _
                                             )
                                         ));
                                     } else {
                                         log_debug(format_args!(
                                             "key table {} (pane %{})",
                                             log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut()) as *const _
+                                                ((table.borrow().name).as_ptr().cast_mut())
+                                                    as *const _
                                             ),
                                             ((*wp).id) as u32
                                         ));
@@ -2904,7 +3189,8 @@ unsafe fn server_client_key_callback(
                                     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
                                         log_debug(format_args!("currently repeating"));
                                     }
-                                    bd = key_bindings_get(&table.borrow(), key0).map(|bd| bd.command());
+                                    bd = key_bindings_get(&table.borrow(), key0)
+                                        .map(|bd| bd.command());
                                     prefix_delay = options_get_number(
                                         global_options,
                                         b"prefix-timeout\0" as *const u8
@@ -2916,7 +3202,8 @@ unsafe fn server_client_key_callback(
                                             (table.borrow().name).as_ptr().cast_mut(),
                                             b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
                                         ) == 0 as ::core::ffi::c_int
-                                        && server_client_key_table_activity_diff(&*(c)) > prefix_delay
+                                        && server_client_key_table_activity_diff(&*(c))
+                                            > prefix_delay
                                     {
                                         if bd.is_some()
                                             && (*c).flags & CLIENT_REPEAT as uint64_t != 0
@@ -2932,7 +3219,8 @@ unsafe fn server_client_key_callback(
                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                             );
                                             table_owner = (*c).keytable.clone();
-                                        table = table_owner.as_ref().expect("key table").clone();
+                                            table =
+                                                table_owner.as_ref().expect("key table").clone();
                                             first = table.clone();
                                             server_status_client(&mut *(c));
                                             continue '_table_changed;
@@ -2979,10 +3267,14 @@ unsafe fn server_client_key_callback(
                                         log_debug(format_args!(
                                             "not found in key table {}",
                                             log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut()) as *const _
+                                                ((table.borrow().name).as_ptr().cast_mut())
+                                                    as *const _
                                             )
                                         ));
-                                        if server_client_is_default_key_table(&*(c), &table.borrow()) == 0
+                                        if server_client_is_default_key_table(
+                                            &*(c),
+                                            &table.borrow(),
+                                        ) == 0
                                             || (*c).flags & CLIENT_REPEAT as uint64_t != 0
                                         {
                                             current_block = 13484060386966298149;
@@ -2995,7 +3287,8 @@ unsafe fn server_client_key_callback(
                                 }
                                 match current_block {
                                     11796148217846552555 => {
-                                        if !std::rc::Rc::ptr_eq(&first, &table) && !flags & CLIENT_REPEAT as uint64_t != 0
+                                        if !std::rc::Rc::ptr_eq(&first, &table)
+                                            && !flags & CLIENT_REPEAT as uint64_t != 0
                                         {
                                             current_block = 10435735846551762309;
                                             break;
@@ -3008,7 +3301,8 @@ unsafe fn server_client_key_callback(
                                         log_debug(format_args!(
                                             "found in key table {}",
                                             log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut()) as *const _
+                                                ((table.borrow().name).as_ptr().cast_mut())
+                                                    as *const _
                                             )
                                         ));
                                         let bd = bd.take().expect("matched binding");
@@ -3032,7 +3326,15 @@ unsafe fn server_client_key_callback(
                                             );
                                         }
                                         server_status_client(&mut *(c));
-                                        key_bindings_dispatch(bd, Some(item_handle), (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), event, &raw mut fs);
+                                        key_bindings_dispatch(
+                                            bd,
+                                            Some(item_handle),
+                                            (c).as_ref()
+                                                .and_then(|model| model.observer.upgrade())
+                                                .as_ref(),
+                                            event,
+                                            &raw mut fs,
+                                        );
                                         current_block = 1578459965781631232;
                                         break;
                                     }
@@ -3054,7 +3356,8 @@ unsafe fn server_client_key_callback(
                                         log_debug(format_args!(
                                             "found in key table {} (not repeating)",
                                             log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut()) as *const _
+                                                ((table.borrow().name).as_ptr().cast_mut())
+                                                    as *const _
                                             )
                                         ));
                                         server_client_set_key_table(
@@ -3091,7 +3394,11 @@ unsafe fn server_client_key_callback(
                                 current_block = 1578459965781631232;
                             } else {
                                 if let Some(bytes) = (*event).bytes_ptr_len() {
-                                    window_pane_paste(&(*wp).observer.upgrade().expect("paste target pane"), key, bytes);
+                                    window_pane_paste(
+                                        &(*wp).observer.upgrade().expect("paste target pane"),
+                                        key,
+                                        bytes,
+                                    );
                                 }
                                 key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
                                 current_block = 1578459965781631232;
@@ -3121,7 +3428,10 @@ unsafe fn server_client_key_callback(
     return CMD_RETURN_NORMAL;
 }
 
-struct QueuedKeyEvent(Box<key_event>, Option<std::rc::Rc<std::cell::UnsafeCell<client>>>);
+struct QueuedKeyEvent(
+    Box<key_event>,
+    Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
+);
 
 impl Drop for QueuedKeyEvent {
     fn drop(&mut self) {
@@ -3136,7 +3446,15 @@ unsafe fn server_client_handle_menu_key(
     mut event: *mut key_event,
 ) -> ::core::ffi::c_int {
     let c = owner.get();
-    let mut w: *mut window = ((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut w: *mut window = ((*(*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+    .current_winlink())
+    .get_unchecked()
+    .window_handle()
+    .as_ref()
+    .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut new_event = (*event).metadata_snapshot();
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
     let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) else {
@@ -3185,7 +3503,10 @@ unsafe fn server_client_handle_key0(
     let after = after_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let c = owner.get();
     let event: *mut key_event = &raw mut *owned;
-    let mut s: *mut session = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*c)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let item_allocation;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -3193,7 +3514,10 @@ unsafe fn server_client_handle_key0(
         return 0 as ::core::ffi::c_int;
     }
     if (*event).key == KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code {
-        server_client_report_theme(&(*(c)).observer.upgrade().expect("live client"), THEME_LIGHT);
+        server_client_report_theme(
+            &(*(c)).observer.upgrade().expect("live client"),
+            THEME_LIGHT,
+        );
         return 0 as ::core::ffi::c_int;
     }
     if (*event).key == KEYC_REPORT_DARK_THEME as ::core::ffi::c_ulong as key_code {
@@ -3207,7 +3531,10 @@ unsafe fn server_client_handle_key0(
             }
             status_message_clear(&mut *c);
         }
-        if let Some(result) = server_client_overlay_key(&(*(c)).observer.upgrade().expect("live client"), &mut *event) {
+        if let Some(result) = server_client_overlay_key(
+            &(*(c)).observer.upgrade().expect("live client"),
+            &mut *event,
+        ) {
             match result {
                 0 => return 0 as ::core::ffi::c_int,
                 1 => {
@@ -3218,13 +3545,25 @@ unsafe fn server_client_handle_key0(
             }
         }
         server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
-        wp = (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        wp = (*((*s).current_winlink())
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .active_pane()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
         let active_pane_owner = wp.as_ref().and_then(|pane| pane.observer.upgrade());
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
         if !wp.is_null()
-            && (*(*wp).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).modal.ptr_eq(&(*wp).observer)
+            && (*(*wp)
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .modal
+            .ptr_eq(&(*wp).observer)
             && (*wp).flags & PANE_CLOSEONCANCEL != 0
             && ((*event).key == '\u{1b}' as i32 as key_code
                 || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
@@ -3246,7 +3585,13 @@ unsafe fn server_client_handle_key0(
                             << 32 as ::core::ffi::c_int)
         {
             if !(*wp).flags & PANE_EXITED != 0 {
-                window_pane_key(active_pane_owner.as_ref().expect("key target pane"), Some(owner), ((*s).current_winlink()).clone(), (*event).key, &raw mut (*event).m);
+                window_pane_key(
+                    active_pane_owner.as_ref().expect("key target pane"),
+                    Some(owner),
+                    ((*s).current_winlink()).clone(),
+                    (*event).key,
+                    &raw mut (*event).m,
+                );
                 return 0 as ::core::ffi::c_int;
             }
         }
@@ -3254,14 +3599,26 @@ unsafe fn server_client_handle_key0(
             return 0 as ::core::ffi::c_int;
         }
         if (*c).prompt.is_some() {
-            match status_prompt_key(&(*(c)).observer.upgrade().expect("live client"), (*event).key, &raw mut (*event).m) as ::core::ffi::c_uint {
+            match status_prompt_key(
+                &(*(c)).observer.upgrade().expect("live client"),
+                (*event).key,
+                &raw mut (*event).m,
+            ) as ::core::ffi::c_uint
+            {
                 1 | 2 => return 0 as ::core::ffi::c_int,
                 0 | 3 | _ => {}
             }
         }
-        let prompt_window = ((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        let prompt_window = ((*s).current_winlink())
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         let mut prompt_pane = (*prompt_window).active.upgrade();
-        if !prompt_pane.as_ref().is_some_and(|pane| window_pane_has_prompt(&*pane.get()) != 0) {
+        if !prompt_pane
+            .as_ref()
+            .is_some_and(|pane| window_pane_has_prompt(&*pane.get()) != 0)
+        {
             prompt_pane = window_pane_first(prompt_window.as_ref());
             while let Some(pane_owner) = prompt_pane.as_ref() {
                 if window_pane_has_prompt(&*pane_owner.get()) != 0
@@ -3275,8 +3632,12 @@ unsafe fn server_client_handle_key0(
         if let Some(pane_owner) = prompt_pane.filter(|pane| {
             window_pane_has_prompt(&*pane.get()) != 0 && window_pane_is_visible(pane) != 0
         }) {
-            match window_pane_prompt_key(&pane_owner, Some(owner), (*event).key, &raw mut (*event).m)
-                as ::core::ffi::c_uint
+            match window_pane_prompt_key(
+                &pane_owner,
+                Some(owner),
+                (*event).key,
+                &raw mut (*event).m,
+            ) as ::core::ffi::c_uint
             {
                 1..=3 => return 0 as ::core::ffi::c_int,
                 0 => {
@@ -3326,12 +3687,7 @@ pub unsafe fn server_client_handle_key(
     owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
     event: Box<key_event>,
 ) -> ::core::ffi::c_int {
-    return server_client_handle_key0(
-        owner,
-        event,
-        None,
-        None,
-    );
+    return server_client_handle_key0(owner, event, None, None);
 }
 pub unsafe fn server_client_handle_key_after(
     owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
@@ -3356,7 +3712,7 @@ pub unsafe fn server_client_loop() {
         while let Some(pane_owner) = pane_cursor {
             let wp = pane_owner.get();
             if (*wp).flags & PANE_STYLECHANGED != 0 {
-                let wme = (*wp).modes.active_weak();
+                let wme = (*wp).active_mode_entry();
                 if wme.is_alive() && (*(wme).get_unchecked().mode).style_changed.is_some() {
                     (*(wme).get_unchecked().mode)
                         .style_changed
@@ -3372,7 +3728,14 @@ pub unsafe fn server_client_loop() {
     while let Some(client_owner) = registry_c_owner {
         let c = client_owner.get();
         server_client_check_exit(&client_owner, 0 as ::core::ffi::c_int);
-        if !(*c).session_handle().is_none() && (*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink().is_alive() {
+        if !(*c).session_handle().is_none()
+            && (*(*c)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .current_winlink()
+            .is_alive()
+        {
             server_client_check_modes(&client_owner);
             server_client_check_redraw(&client_owner);
             server_client_reset_state(&client_owner);
@@ -3413,7 +3776,9 @@ unsafe fn server_client_check_window_resize(owner: &std::rc::Rc<std::cell::Unsaf
     }
     wl = window_winlinks_first((w).as_ref());
     while wl.is_alive() {
-        if wl.get_unchecked().session.upgrade().is_some_and(|owner| (*owner.get()).attached != 0 && (*owner.get()).current_winlink() == wl) {
+        if wl.get_unchecked().session.upgrade().is_some_and(|owner| {
+            (*owner.get()).attached != 0 && (*owner.get()).current_winlink() == wl
+        }) {
             break;
         }
         wl = window_winlinks_next((w).as_ref(), wl.clone());
@@ -3508,8 +3873,10 @@ mod prompt_cursor_tests {
             use crate::src::session::Session;
             let mut options = crate::src::options::options_create(std::ptr::null_mut());
             for key in [c"status", c"status-position"] {
-                let definition = crate::src::options_table::options_table.iter()
-                    .find(|definition| definition.name == Some(key)).unwrap();
+                let definition = crate::src::options_table::options_table
+                    .iter()
+                    .find(|definition| definition.name == Some(key))
+                    .unwrap();
                 crate::src::options::options_default(&mut *options, definition);
             }
             session.options = Some(options);
@@ -3517,7 +3884,10 @@ mod prompt_cursor_tests {
                 &mut crate::src::session::sessions,
                 crate::src::shared::session::sessions { storage: None },
             );
-            crate::src::session::sessions_insert(&mut crate::src::session::sessions, session_owner.clone());
+            crate::src::session::sessions_insert(
+                &mut crate::src::session::sessions,
+                session_owner.clone(),
+            );
             (c.tty.oox, c.tty.ooy, c.tty.osx, c.tty.osy) = (10, 5, 80, 20);
             let incoming = PromptCursor {
                 mode: MODE_CURSOR | MODE_WRAP,
@@ -3543,7 +3913,11 @@ mod prompt_cursor_tests {
             ] {
                 session_owner.with_options_mut(|options| {
                     options_set_number(options, c"status".as_ptr(), 2);
-                    options_set_number(options, c"status-position".as_ptr(), if at == 0 { 0 } else { 1 });
+                    options_set_number(
+                        options,
+                        c"status-position".as_ptr(),
+                        if at == 0 { 0 } else { 1 },
+                    );
                 });
                 crate::src::session::recalculate_size_state();
                 c.flags = if at == -1 { CLIENT_STATUSOFF as u64 } else { 0 };
@@ -3581,7 +3955,10 @@ mod prompt_cursor_tests {
                 );
                 crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
             }
-            crate::src::session::sessions_remove(&mut crate::src::session::sessions, &session_owner);
+            crate::src::session::sessions_remove(
+                &mut crate::src::session::sessions,
+                &session_owner,
+            );
             crate::src::session::sessions = previous_sessions;
         }
     }
@@ -3595,16 +3972,23 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
     let Ok(link) = (*session_owner.get()).curw.try_borrow_mut() else {
         return;
     };
-    let window_owner = link.window_owner.as_ref().expect("current link window").clone();
+    let window_owner = link
+        .window_owner
+        .as_ref()
+        .expect("current link window")
+        .clone();
     drop(link);
     let result = (|| {
         let w = window_owner.get();
         let mut r = Vec::new();
         let mut tty: *mut tty = &raw mut (*c).tty;
         let active_owner = (*w).active.upgrade();
-        let wp = active_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        let wp = active_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
         let mut s: *const screen = std::ptr::null();
-        let mut oo: *mut options = options_owner_ptr(&mut (*session_owner.get()).options).map_or(std::ptr::null_mut(), |options| options);
+        let mut oo: *mut options = options_owner_ptr(&mut (*session_owner.get()).options)
+            .map_or(std::ptr::null_mut(), |options| options);
         let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut cursor: ::core::ffi::c_int = 0;
         let mut flags: ::core::ffi::c_int = 0;
@@ -3621,7 +4005,9 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
         let menu_owner = (*w).menu.as_ref().map(|menu| menu.downgrade());
         let mut menu_borrow = None;
         if (*c).overlay_draw.is_some() {
-            if let Some((overlay_screen, overlay_cx, overlay_cy)) = server_client_overlay_mode(&(*(c)).observer.upgrade().expect("live client")) {
+            if let Some((overlay_screen, overlay_cx, overlay_cy)) =
+                server_client_overlay_mode(&(*(c)).observer.upgrade().expect("live client"))
+            {
                 s = overlay_screen.as_ptr();
                 cx = overlay_cx;
                 cy = overlay_cy;
@@ -3671,7 +4057,9 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
                 }
                 prompt = 1 as u_int;
             } else {
-                if let Some(cursor) = server_client_prompt_cursor(&*c, &*wp, PromptCursor { mode, cx, cy }) {
+                if let Some(cursor) =
+                    server_client_prompt_cursor(&*c, &*wp, PromptCursor { mode, cx, cy })
+                {
                     prompt = 1;
                     mode = cursor.mode;
                     cx = cursor.cx;
@@ -3779,7 +4167,10 @@ unsafe fn server_client_reset_state(client_owner: &std::rc::Rc<std::cell::Unsafe
 unsafe fn server_client_repeat_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let c = owner.get();
     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
-        server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
+        server_client_set_key_table(
+            &(*(c)).observer.upgrade().expect("live client"),
+            ::core::ptr::null::<::core::ffi::c_char>(),
+        );
         (*c).flags &= !CLIENT_REPEAT as uint64_t;
         server_status_client(&mut *(c));
     }
@@ -3842,7 +4233,10 @@ unsafe fn server_client_exit_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<cli
         server_client_check_exit(owner, 1 as ::core::ffi::c_int);
     }
 }
-unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, force: ::core::ffi::c_int) {
+unsafe fn server_client_check_exit(
+    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    force: ::core::ffi::c_int,
+) {
     let c = client_owner.get();
     let mut name: *const ::core::ffi::c_char = ((*c).exit_session)
         .as_ref()
@@ -3864,7 +4258,7 @@ unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeC
             }
         }
     }
-    if force == 0 && (*c).files.has_pending_data() {
+    if force == 0 && crate::src::file::client_files_has_pending_data(&(*c).files) {
         server_client_start_exit_timer(&mut *c);
         return;
     }
@@ -3876,8 +4270,10 @@ unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeC
             let mut data = Vec::from((*c).retval.to_ne_bytes());
             if !(*c).exit_message.is_none() {
                 data.extend_from_slice(
-                    ((*c).exit_message).as_deref().expect("string is present")
-                    .to_bytes_with_nul(),
+                    ((*c).exit_message)
+                        .as_deref()
+                        .expect("string is present")
+                        .to_bytes_with_nul(),
                 );
             }
             proc_send(
@@ -3920,7 +4316,11 @@ unsafe fn server_client_check_modes(client_owner: &std::rc::Rc<std::cell::Unsafe
     let Ok(link) = (*session_owner.get()).curw.try_borrow_mut() else {
         return;
     };
-    let window_owner = link.window_owner.as_ref().expect("current link window").clone();
+    let window_owner = link
+        .window_owner
+        .as_ref()
+        .expect("current link window")
+        .clone();
     drop(link);
     let result = (|| {
         let w = window_owner.get();
@@ -3934,9 +4334,11 @@ unsafe fn server_client_check_modes(client_owner: &std::rc::Rc<std::cell::Unsafe
         let mut cursor = window_pane_first(Some(&*w));
         while let Some(pane_owner) = cursor {
             let wp = pane_owner.get();
-            let wme = (*wp).modes.active_weak();
+            let wme = (*wp).active_mode_entry();
             if wme.is_alive() && (*(wme).get_unchecked().mode).update.is_some() {
-                (*(wme).get_unchecked().mode).update.expect("non-null function pointer")(wme);
+                (*(wme).get_unchecked().mode)
+                    .update
+                    .expect("non-null function pointer")(wme);
             }
             cursor = window_pane_next(Some(&*wp));
         }
@@ -3961,7 +4363,11 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
     let Ok(link) = (*session_owner.get()).curw.try_borrow_mut() else {
         return;
     };
-    let window_owner = link.window_owner.as_ref().expect("current link window").clone();
+    let window_owner = link
+        .window_owner
+        .as_ref()
+        .expect("current link window")
+        .clone();
     drop(link);
     let result = (|| {
         let s = session_owner.get();
@@ -4087,7 +4493,8 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
                     break;
                 } else {
                     if (*wp).flags & PANE_REDRAWSCROLLBAR != 0 {
-                        (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_REDRAWSCROLLBARS)
+                        (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
+                            | CLIENT_REDRAWSCROLLBARS)
                             as uint64_t;
                     }
                     cursor = window_pane_next(Some(wp));
@@ -4130,7 +4537,8 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
         }
         if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
             if options_get_number(
-                options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                options_owner_ptr(&mut (*s).options)
+                    .map_or(std::ptr::null_mut(), |options| options),
                 b"set-titles\0" as *const u8 as *const ::core::ffi::c_char,
             ) != 0
             {
@@ -4183,7 +4591,9 @@ unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCe
     ft = &raw mut *ft_owner;
     format_defaults(
         ft,
-        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        (c).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
         None,
         (refbox::Weak::new()).clone(),
         None,
@@ -4200,7 +4610,9 @@ unsafe fn server_client_set_title(client_owner: &std::rc::Rc<std::cell::UnsafeCe
 }
 /// Acquire the current active pane for an immediate client operation.
 /// Raw relationship fields are accessed only while resolving the handle.
-unsafe fn server_client_active_pane(c: &client) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+unsafe fn server_client_active_pane(
+    c: &client,
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let session_owner = c.session.upgrade()?;
     let session = &*session_owner.get();
     let link = session.curw.try_borrow_mut().ok()?;
@@ -4254,10 +4666,18 @@ unsafe fn server_client_dispatch(
     };
     datalen = imsg.data.len() as ssize_t;
     match imsg.hdr.type_0 {
-        MSG_IDENTIFY_CLIENTPID | MSG_IDENTIFY_CWD | MSG_IDENTIFY_ENVIRON
-        | MSG_IDENTIFY_FEATURES | MSG_IDENTIFY_FLAGS | MSG_IDENTIFY_LONGFLAGS
-        | MSG_IDENTIFY_STDIN | MSG_IDENTIFY_STDOUT | MSG_IDENTIFY_TERM
-        | MSG_IDENTIFY_TERMINFO | MSG_IDENTIFY_TTYNAME | MSG_IDENTIFY_DONE => {
+        MSG_IDENTIFY_CLIENTPID
+        | MSG_IDENTIFY_CWD
+        | MSG_IDENTIFY_ENVIRON
+        | MSG_IDENTIFY_FEATURES
+        | MSG_IDENTIFY_FLAGS
+        | MSG_IDENTIFY_LONGFLAGS
+        | MSG_IDENTIFY_STDIN
+        | MSG_IDENTIFY_STDOUT
+        | MSG_IDENTIFY_TERM
+        | MSG_IDENTIFY_TERMINFO
+        | MSG_IDENTIFY_TTYNAME
+        | MSG_IDENTIFY_DONE => {
             if server_client_dispatch_identify(owner, imsg) != 0 as ::core::ffi::c_int {
                 current_block = 13639960948656484833;
             } else {
@@ -4290,7 +4710,11 @@ unsafe fn server_client_dispatch(
                 }
                 server_redraw_client(&mut *(c));
                 if !(*c).session_handle().is_none() {
-                    server_client_fire_resized(&(*(c)).observer.upgrade().expect("live client"), old_sx, old_sy);
+                    server_client_fire_resized(
+                        &(*(c)).observer.upgrade().expect("live client"),
+                        old_sx,
+                        old_sy,
+                    );
                 }
                 current_block = 14945149239039849694;
             }
@@ -4322,7 +4746,10 @@ unsafe fn server_client_dispatch(
                 if (*c).fd == -(1 as ::core::ffi::c_int) || (*c).session_handle().is_none() {
                     current_block = 14945149239039849694;
                 } else {
-                    s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+                    s = (*c)
+                        .session_handle()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get());
                     if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
                         fatal(|out| out.write_all(b"gettimeofday failed"));
                     }
@@ -4390,22 +4817,26 @@ unsafe fn server_client_dispatch(
         }
     };
 }
-unsafe fn server_client_read_only(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn server_client_read_only(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
     return CMD_RETURN_ERROR;
 }
-unsafe fn server_client_default_command(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn server_client_default_command(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let new_item_allocation;
     let cmdlist = options_get_command(global_options);
     if (*c).flags & CLIENT_READONLY as uint64_t != 0 && cmd_list_all_have(&cmdlist.borrow()) == 0 {
         new_item_allocation = cmdq_get_callback_owned(
             c"server_client_read_only",
-            Some(Box::new(|item| unsafe {
-                server_client_read_only(item)
-            })),
+            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
         );
     } else {
         new_item_allocation = cmdq_get_command(&cmdlist, None);
@@ -4413,10 +4844,14 @@ unsafe fn server_client_default_command(item_handle: &std::rc::Rc<std::cell::Uns
     cmdq_insert_after(item_handle, new_item_allocation);
     return CMD_RETURN_NORMAL;
 }
-unsafe fn server_client_command_done(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn server_client_command_done(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if !(*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
         (*c).flags |= CLIENT_EXIT as uint64_t;
     } else if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
@@ -4480,16 +4915,19 @@ unsafe fn server_client_dispatch_command(
                 }
                 1 | _ => {
                     if (*c).flags & CLIENT_READONLY as uint64_t != 0
-                        && cmd_list_all_have(&pr.cmdlist.as_ref().expect("parsed command list").borrow()) == 0
+                        && cmd_list_all_have(
+                            &pr.cmdlist.as_ref().expect("parsed command list").borrow(),
+                        ) == 0
                     {
                         new_item_allocation = Some(cmdq_get_callback_owned(
                             c"server_client_read_only",
-                            Some(Box::new(|item| unsafe {
-                                server_client_read_only(item)
-                            })),
+                            Some(Box::new(|item| unsafe { server_client_read_only(item) })),
                         ));
                     } else {
-                        new_item_allocation = Some(cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None));
+                        new_item_allocation = Some(cmdq_get_command(
+                            pr.cmdlist.as_ref().expect("successful command parse"),
+                            None,
+                        ));
                     }
                     drop(pr.cmdlist.take());
                     current_block = 13472856163611868459;
@@ -4499,14 +4937,15 @@ unsafe fn server_client_dispatch_command(
         match current_block {
             12680788052841528405 => {}
             _ => {
-                cmdq_append(Some(owner), new_item_allocation.take().expect("parsed command item"));
+                cmdq_append(
+                    Some(owner),
+                    new_item_allocation.take().expect("parsed command item"),
+                );
                 cmdq_append(
                     Some(owner),
                     cmdq_get_callback_owned(
                         c"server_client_command_done",
-                        Some(Box::new(|item| unsafe {
-                            server_client_command_done(item)
-                        })),
+                        Some(Box::new(|item| unsafe { server_client_command_done(item) })),
                     ),
                 );
                 return 0 as ::core::ffi::c_int;
@@ -4725,8 +5164,10 @@ unsafe fn server_client_dispatch_identify(
     if !(*c).ttyname.is_none()
         && *(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int != '\0' as i32
     {
-        let name = ((*c).ttyname).as_deref().expect("string is present")
-        .to_owned();
+        let name = ((*c).ttyname)
+            .as_deref()
+            .expect("string is present")
+            .to_owned();
         server_client_set_name(&mut *c, Some(name));
     } else {
         let name = CString::new(format!("client-{}", (*c).pid as ::core::ffi::c_long)).unwrap();
@@ -4779,7 +5220,10 @@ unsafe fn server_client_dispatch_identify(
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING)) as uint64_t;
     }
-    if !(*c).flags & CLIENT_EXIT as uint64_t != 0 && cfg_finished == 0 && clients.first().is_some_and(|owner| owner.get() == c) {
+    if !(*c).flags & CLIENT_EXIT as uint64_t != 0
+        && cfg_finished == 0
+        && clients.first().is_some_and(|owner| owner.get() == c)
+    {
         start_cfg();
     }
     return 0 as ::core::ffi::c_int;
@@ -4877,7 +5321,10 @@ unsafe fn server_client_control_flags(
     }
     return 0 as uint64_t;
 }
-pub unsafe fn server_client_set_flags(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut flags: *const ::core::ffi::c_char) {
+pub unsafe fn server_client_set_flags(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut flags: *const ::core::ffi::c_char,
+) {
     let mut c = c_owner.get();
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -5056,19 +5503,26 @@ pub unsafe fn server_client_get_flags(c: &client) -> *const ::core::ffi::c_char 
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+pub unsafe fn server_client_remove_pane(
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
     let mut wp = wp_owner.get();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
         if (*c).tty.mouse_last_pane == (*wp).id as ::core::ffi::c_int {
             (*c).tty.mouse_last_pane = -(1 as ::core::ffi::c_int);
             (*c).tty.mouse_drag_update = None;
             (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
         }
-        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        registry_c_owner =
+            clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_client_print(
@@ -5077,9 +5531,9 @@ pub unsafe fn server_client_print(
     mut evb: &mut SegmentedBuf,
 ) {
     let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut data: *mut ::core::ffi::c_void =
-        evbuffer_pullup(evb, -1)
-            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
+    let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
+        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+        as *mut ::core::ffi::c_void;
     let mut size: size_t = evbuffer_get_length(&*(evb));
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -5099,9 +5553,8 @@ pub unsafe fn server_client_print(
     } else if size == 0 as size_t {
         msg = &raw mut empty;
     } else {
-        msg =
-            evbuffer_pullup(evb, -1)
-                .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
+        msg = evbuffer_pullup(evb, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+            as *mut ::core::ffi::c_char;
         if *msg.offset(size.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int != '\0' as i32
         {
             evbuffer_add(
@@ -5109,7 +5562,10 @@ pub unsafe fn server_client_print(
                 b"\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
-            msg = evbuffer_pullup(evb, -1).expect("nonempty print buffer").as_mut_ptr().cast();
+            msg = evbuffer_pullup(evb, -1)
+                .expect("nonempty print buffer")
+                .as_mut_ptr()
+                .cast();
         }
     }
     log_debug(format_args!(
@@ -5122,7 +5578,9 @@ pub unsafe fn server_client_print(
             if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
                 let sanitized = utf8_sanitize_cstring(CStr::from_ptr(msg));
                 if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                    control_write(&(*(c)).observer.upgrade().expect("live client"), |out| write_cstr(out, sanitized.as_ptr()));
+                    control_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+                        write_cstr(out, sanitized.as_ptr())
+                    });
                 } else {
                     file_print(client_owner, |out| {
                         write_cstr(out, sanitized.as_ptr())?;
@@ -5130,7 +5588,9 @@ pub unsafe fn server_client_print(
                     });
                 }
             } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                control_write(&(*(c)).observer.upgrade().expect("live client"), |out| write_cstr(out, msg));
+                control_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+                    write_cstr(out, msg)
+                });
             } else {
                 file_print(client_owner, |out| {
                     write_cstr(out, msg)?;
@@ -5138,9 +5598,20 @@ pub unsafe fn server_client_print(
                 });
             }
         } else {
-            wp = (*((*(*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+            wp = (*((*(*c)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .current_winlink())
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .active_pane()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
             let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-            wme = (*wp).modes.active_weak();
+            wme = (*wp).active_mode_entry();
             if !wme.is_alive() || !std::ptr::eq(wme.get_unchecked().mode, &window_view_mode) {
                 window_pane_set_mode(
                     &pane_owner,
@@ -5170,12 +5641,17 @@ pub unsafe fn server_client_print(
                     });
                 }
             } else {
-                window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| write_cstr(out, msg));
+                window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {
+                    write_cstr(out, msg)
+                });
             }
         }
     }
 }
-unsafe fn server_client_report_theme(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, mut theme: client_theme) {
+unsafe fn server_client_report_theme(
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    mut theme: client_theme,
+) {
     let mut c = c_owner.get();
     let mut old: client_theme = (*c).theme;
     if theme as ::core::ffi::c_uint == THEME_LIGHT as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -5233,13 +5709,15 @@ mod client_registry_tests {
             drop(last);
             crate::src::reactor::event_loop();
             assert!(middle_observer.upgrade().is_none());
-            assert!(last_observer.upgrade().is_some(), "saved successor retains its client");
+            assert!(
+                last_observer.upgrade().is_some(),
+                "saved successor retains its client"
+            );
             drop(held_successor);
             assert!(last_observer.upgrade().is_none());
             assert!(registry.first().is_none());
         }
     }
-
 }
 
 #[cfg(test)]
@@ -5350,7 +5828,10 @@ mod overlay_dispatch_tests {
                     c.clear_overlay();
                     Some((screen, 1, 2))
                 }));
-                assert!(server_client_overlay_mode(&(*(c)).observer.upgrade().expect("live client")).is_none());
+                assert!(server_client_overlay_mode(
+                    &(*(c)).observer.upgrade().expect("live client")
+                )
+                .is_none());
                 assert!((*c).overlay_mode.is_none());
 
                 install(&(*(c)).observer.upgrade().expect("live client"));
@@ -5380,10 +5861,22 @@ mod overlay_dispatch_tests {
                     1
                 }));
                 let mut event = key_event::new(0, mouse_event::default(), None);
-                assert_eq!(server_client_overlay_key(&(*(c)).observer.upgrade().expect("live client"), &mut event), Some(0));
+                assert_eq!(
+                    server_client_overlay_key(
+                        &(*(c)).observer.upgrade().expect("live client"),
+                        &mut event
+                    ),
+                    Some(0)
+                );
                 assert!((*c).overlay_generation > generation);
                 assert!((*c).overlay_data.is_some());
-                assert_eq!(server_client_overlay_key(&(*(c)).observer.upgrade().expect("live client"), &mut event), Some(42));
+                assert_eq!(
+                    server_client_overlay_key(
+                        &(*(c)).observer.upgrade().expect("live client"),
+                        &mut event
+                    ),
+                    Some(42)
+                );
             });
         }
     }
@@ -5406,7 +5899,8 @@ mod overlay_dispatch_tests {
                 let observed = nested_frees.clone();
                 (*c).overlay_free = Some(Box::new(move |c| {
                     install(c);
-                    (*c.get()).overlay_free = Some(Box::new(move |_| observed.set(observed.get() + 1)));
+                    (*c.get()).overlay_free =
+                        Some(Box::new(move |_| observed.set(observed.get() + 1)));
                 }));
                 install(&(*(c)).observer.upgrade().expect("live client"));
                 assert_eq!(nested_frees.get(), 1);
@@ -5427,13 +5921,19 @@ mod client_timer_observer_tests {
             let observer = std::rc::Rc::downgrade(&owner);
             server_client_init_timers(&owner);
             (*owner.get()).flags |= CLIENT_DOUBLECLICK as uint64_t;
-            let mut immediate = timeval { tv_sec: 0, tv_usec: 0 };
+            let mut immediate = timeval {
+                tv_sec: 0,
+                tv_usec: 0,
+            };
             event_add(&mut (*owner.get()).click_timer, &mut immediate);
             crate::src::reactor::event_loop();
             assert_eq!((*owner.get()).flags & CLIENT_DOUBLECLICK as uint64_t, 0);
             let mut detached_timer = std::mem::take(&mut (*owner.get()).click_timer);
             drop(owner);
-            assert!(observer.upgrade().is_none(), "timer callbacks must not retain clients");
+            assert!(
+                observer.upgrade().is_none(),
+                "timer callbacks must not retain clients"
+            );
             event_add(&mut detached_timer, &mut immediate);
             crate::src::reactor::event_loop();
             assert!(observer.upgrade().is_none());

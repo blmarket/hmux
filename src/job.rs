@@ -1,4 +1,3 @@
-use crate::src::reactor::BufferEvent;
 use crate::src::cfg::cfg_finished;
 use crate::src::cmd::queue::cmdq_print;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -14,9 +13,9 @@ use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::options_get_string;
 use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_clear_signals;
+use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_new,
-    evbuffer_get_length, evbuffer_pullup,
+    bufferevent_disable, bufferevent_enable, bufferevent_new, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
 use crate::src::shared::abi::*;

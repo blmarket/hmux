@@ -95,7 +95,9 @@ fn paste_time_tree_insert(
 ) -> Option<PasteBufferRef> {
     let key = paste_time_key(&elm.try_borrow_mut().unwrap());
     match head.entries.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => Some(PasteBufferRef::observe(entry.get())),
+        std::collections::btree_map::Entry::Occupied(entry) => {
+            Some(PasteBufferRef::observe(entry.get()))
+        }
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
             None
@@ -743,8 +745,11 @@ mod tests {
                     Rc::new(move |event, payload| {
                         let name = event_payload_get_string(payload).expect("paste buffer name");
                         let buffer = paste_get_name(name);
-                        seen.borrow_mut()
-                            .push((event.to_owned(), name.to_owned(), buffer.is_some()));
+                        seen.borrow_mut().push((
+                            event.to_owned(),
+                            name.to_owned(),
+                            buffer.is_some(),
+                        ));
                         if let Some(buffer) = buffer {
                             // No owner or index borrow may span dispatch.
                             buffer.borrow_mut().created = 17;

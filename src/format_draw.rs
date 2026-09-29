@@ -1948,7 +1948,6 @@ mod range_tests {
                 );
                 screen_write_stop(&mut ctx);
                 let actual: Vec<_> = ranges
-                    .ranges
                     .iter()
                     .map(|range| {
                         (

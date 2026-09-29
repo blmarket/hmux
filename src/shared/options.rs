@@ -128,8 +128,6 @@ impl options_value {
         }
     }
 
-
-
     pub fn array_storage(&mut self) -> &mut options_array_storage {
         match self {
             Self::Array(value) => value,

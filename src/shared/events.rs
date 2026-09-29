@@ -49,25 +49,8 @@ pub fn events_callback(
     std::rc::Rc::new(callback)
 }
 
-#[repr(C)]
-pub struct event_payload_tree {
-    pub entries: event_payload_tree_storage,
-}
-
-impl Default for event_payload_tree {
-    fn default() -> Self {
-        Self {
-            entries: Default::default(),
-        }
-    }
-}
-
-/// Rust-owned ordering storage for an event payload's Box-owned items.
-/// Keys retain the original C string bytes so ordering matches `strcmp`.
-#[derive(Default)]
-pub struct event_payload_tree_storage {
-    pub(crate) entries: BTreeMap<Vec<u8>, Box<event_payload_item>>,
-}
+/// Byte keys preserve C string ordering for the owned payload items.
+pub type event_payload_tree = BTreeMap<Vec<u8>, Box<event_payload_item>>;
 
 pub enum EventPayloadValue {
     String(std::ffi::CString),

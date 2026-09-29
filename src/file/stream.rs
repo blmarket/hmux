@@ -196,7 +196,7 @@ mod tests {
             (*file.get()).read.input.put_slice(b"retained");
             file_fire_done(&file);
             crate::src::reactor::event_loop();
-            assert!(files.is_empty());
+            assert!(client_files_is_empty(&files));
             let mut cx = Context::from_waker(Waker::noop());
             let Poll::Ready(Some(Ok(bytes))) = Pin::new(&mut *file.get()).poll_next(&mut cx) else {
                 panic!("retained data");
@@ -252,7 +252,7 @@ mod tests {
             assert!(!finished.get(), "completion remains deferred");
             crate::src::reactor::event_loop();
             assert!(finished.get());
-            assert!(files.is_empty());
+            assert!(client_files_is_empty(&files));
             drop(file);
             crate::src::reactor::shutdown_runtime();
         }

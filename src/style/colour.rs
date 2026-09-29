@@ -1,4 +1,3 @@
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
@@ -13,6 +12,7 @@ use crate::src::shared::colour::{
 use crate::src::shared::ctype::_ISxdigit;
 use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_OPENED};
+use crate::src::tty_term::tty_term_owner_ptr;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -473,8 +473,13 @@ pub unsafe fn colour_format_escape_for_client(
 ) -> Option<std::ffi::CString> {
     let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
     if let Some(client) = c {
-        if client.tty.flags & TTY_OPENED != 0 && !tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term).is_null() {
-            flags = (*tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term)).flags;
+        if client.tty.flags & TTY_OPENED != 0
+            && !tty_term_owner_ptr(&client.tty.term)
+                .map_or(std::ptr::null(), |term| term)
+                .is_null()
+        {
+            flags =
+                (*tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term)).flags;
         }
     }
     if colour & COLOUR_FLAG_THEME != 0 {
@@ -3799,14 +3804,19 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
         return;
     };
     let o = options_get(oo, c"pane-colours".as_ptr());
-    if crate::src::options::options_array_iter_mut(&mut *(o)).next().map_or(std::ptr::null_mut(), |item| item).is_null() {
+    if crate::src::options::options_array_iter_mut(&mut *(o))
+        .next()
+        .map_or(std::ptr::null_mut(), |item| item)
+        .is_null()
+    {
         p.default_palette = None;
         return;
     }
     let palette = p.default_palette.get_or_insert_with(|| Box::new([-1; 256]));
     palette.fill(-1);
     for (i, colour) in palette.iter_mut().enumerate() {
-        let ov = crate::src::options::options_array_get_index_mut(&mut *(o), i as u_int).map_or(std::ptr::null_mut(), |value| value);
+        let ov = crate::src::options::options_array_get_index_mut(&mut *(o), i as u_int)
+            .map_or(std::ptr::null_mut(), |value| value);
         if !ov.is_null() {
             *colour = (*ov).number() as ::core::ffi::c_int;
         }

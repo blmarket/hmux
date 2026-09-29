@@ -18,7 +18,11 @@ fn sorted_and_adjacent_results_survive_session_removal() {
         let last_weak = Rc::downgrade(&last);
         sessions_insert(&mut *head, last.clone());
         sessions_insert(&mut *head, first.clone());
-        let criteria = sort_criteria { order: SORT_NAME, reversed: 0, order_seq: &[] };
+        let criteria = sort_criteria {
+            order: SORT_NAME,
+            reversed: 0,
+            order_seq: &[],
+        };
         let sorted = sort_get_sessions(&criteria);
         assert!(Rc::ptr_eq(&sorted[0], &first));
         assert!(Rc::ptr_eq(&sorted[1], &last));

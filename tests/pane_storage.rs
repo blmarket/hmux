@@ -1,4 +1,7 @@
-use hmux2::src::shared::pane::{window_pane, window_pane_history, window_panes};
+use hmux2::src::shared::pane::{
+    pane_history_first, pane_history_next, pane_history_push, pane_history_remove, window_pane,
+    window_pane_history, window_panes,
+};
 use hmux2::src::window::*;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -14,23 +17,31 @@ fn removing_from_another_history_preserves_membership_and_cleanup() {
     let observer = Rc::downgrade(&owner);
     let mut source = window_pane_history::default();
     let mut destination = window_pane_history::default();
-    source.push_front(observer.clone());
+    pane_history_push(&mut source, observer.clone());
     unsafe {
         window_pane_stack_remove(&mut destination, Some(&owner));
         assert!(destination.is_empty());
-        let retained = source.first().expect("removing from another history preserves the source");
+        let retained = pane_history_first(&source)
+            .expect("removing from another history preserves the source");
         assert!(Rc::ptr_eq(&retained, &owner));
-        assert_eq!(Rc::strong_count(&owner), 2, "histories store only weak entries");
+        assert_eq!(
+            Rc::strong_count(&owner),
+            2,
+            "histories store only weak entries"
+        );
         window_pane_stack_remove(&mut source, Some(&owner));
         assert!(source.is_empty());
 
         // Cleanup follows membership alone and is safe to repeat.
         window_pane_stack_remove(&mut source, Some(&owner));
-        source.push_front(observer.clone());
+        pane_history_push(&mut source, observer.clone());
         window_pane_stack_remove(&mut source, Some(&owner));
         assert!(source.is_empty());
         drop(owner);
-        assert!(observer.upgrade().is_some(), "the traversal result still retains the pane");
+        assert!(
+            observer.upgrade().is_some(),
+            "the traversal result still retains the pane"
+        );
         drop(retained);
         assert!(observer.upgrade().is_none());
     }
@@ -46,7 +57,10 @@ fn pane_order_and_visit_history_preserve_stable_weak_entries() {
     }
     assert!(Rc::ptr_eq(&order.first().unwrap(), &owners[0]));
     assert!(Rc::ptr_eq(&order.next(&observers[0]).unwrap(), &owners[1]));
-    assert!(Rc::ptr_eq(&order.previous(&observers[3]).unwrap(), &owners[2]));
+    assert!(Rc::ptr_eq(
+        &order.previous(&observers[3]).unwrap(),
+        &owners[2]
+    ));
     order.insert_before(&observers[2], observers[3].clone());
     order.swap(&observers[1], &observers[3]);
     assert!(Rc::ptr_eq(&order.next(&observers[0]).unwrap(), &owners[3]));
@@ -54,15 +68,23 @@ fn pane_order_and_visit_history_preserve_stable_weak_entries() {
     assert!(Rc::ptr_eq(&order.next(&observers[0]).unwrap(), &owners[1]));
 
     let mut history = window_pane_history::default();
-    history.push_front(observers[1].clone());
-    history.push_front(observers[2].clone());
-    history.push_front(observers[1].clone());
-    assert!(Rc::ptr_eq(&history.first().unwrap(), &owners[1]));
-    assert!(Rc::ptr_eq(&history.next(&observers[1]).unwrap(), &owners[2]));
-    assert!(history.remove(&observers[2]));
-    assert!(history.next(&observers[1]).is_none());
+    pane_history_push(&mut history, observers[1].clone());
+    pane_history_push(&mut history, observers[2].clone());
+    pane_history_push(&mut history, observers[1].clone());
+    assert!(Rc::ptr_eq(
+        &pane_history_first(&history).unwrap(),
+        &owners[1]
+    ));
+    assert!(Rc::ptr_eq(
+        &pane_history_next(&history, &observers[1]).unwrap(),
+        &owners[2]
+    ));
+    assert!(pane_history_remove(&mut history, &observers[2]));
+    assert!(pane_history_next(&history, &observers[1]).is_none());
     drop(owners);
-    assert!(observers.iter().all(|observer| observer.upgrade().is_none()));
+    assert!(observers
+        .iter()
+        .all(|observer| observer.upgrade().is_none()));
 }
 
 #[test]
@@ -75,16 +97,16 @@ fn expired_observers_can_be_removed_without_upgrading_any_pane() {
     let mut history = window_pane_history::default();
     for observer in [&first_observer, &last_observer] {
         order.push_back(observer.clone());
-        history.push_front(observer.clone());
+        pane_history_push(&mut history, observer.clone());
     }
     drop(first);
     drop(last);
     assert_eq!(order.position(&last_observer), Some(1));
     assert!(order.remove(&last_observer));
-    assert!(history.remove(&last_observer));
+    assert!(pane_history_remove(&mut history, &last_observer));
     assert!(!order.remove(&last_observer));
     assert!(order.remove(&first_observer));
-    assert!(history.remove(&first_observer));
+    assert!(pane_history_remove(&mut history, &first_observer));
     assert!(order.storage.is_empty());
     assert!(history.is_empty());
 }
@@ -100,7 +122,10 @@ fn global_lookup_preserves_pane_identity_and_retains_removed_pane() {
         assert!(window_pane_tree_insert(&mut *head, owner.clone()).is_none());
         let retained = window_pane_find_by_id(123).unwrap();
         assert!(Rc::ptr_eq(&retained, &owner));
-        assert!(Rc::ptr_eq(&window_pane_find_by_id_str(c"%123").unwrap(), &owner));
+        assert!(Rc::ptr_eq(
+            &window_pane_find_by_id_str(c"%123").unwrap(),
+            &owner
+        ));
         for invalid in [c"123", c"%", c"%x", c"%-1", c"%4294967296"] {
             assert!(window_pane_find_by_id_str(invalid).is_none());
         }

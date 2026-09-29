@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::cmd::cmd_table;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::src::ffi::libc::strlen;
@@ -11,9 +10,9 @@ use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_debug};
+use crate::src::options::options_owner_ptr;
 use crate::src::options::{
-    options_array_item_value, options_get_number,
-    options_get_only, options_get_string,
+    options_array_item_value, options_get_number, options_get_only, options_get_string,
 };
 use crate::src::paste::{paste_buffer_data, paste_get_top};
 use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
@@ -107,7 +106,9 @@ fn prompt_write_flags(
     Ok(())
 }
 pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&mut session>) {
-    let oo = s.map_or(global_s_options, |s| options_owner_ptr(&mut s.options).map_or(std::ptr::null_mut(), |options| options));
+    let oo = s.map_or(global_s_options, |s| {
+        options_owner_ptr(&mut s.options).map_or(std::ptr::null_mut(), |options| options)
+    });
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -184,7 +185,9 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, s: Option<&mut
     ))
     .to_owned();
 }
-pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
+pub unsafe fn prompt_create(
+    pd: prompt_create_data<'_>,
+) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
     let owner = refbox::RefBox::new(prompt::default());
     let mut pr = owner.try_borrow_mut().expect("live unborrowed prompt");
     let mut ft_owner = if let Some(fs) = pd.fs {
@@ -201,19 +204,23 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
         format_create_defaults(
             None,
             None,
-            (fs.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (fs.session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
             (fs.winlink_handle()).clone(),
-            (fs.pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+            (fs.pane_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
         )
     } else {
         cmd_find_clear_state(&mut pr.state, 0);
-        format_create_defaults(
-            None,
-            None,
-            None,
-            refbox::Weak::new(),
-            None,
-        )
+        format_create_defaults(None, None, None, refbox::Weak::new(), None)
     };
     let ft = &raw mut *ft_owner;
     let input = pd.input.unwrap_or(c"");
@@ -251,7 +258,9 @@ pub unsafe fn prompt_create(pd: prompt_create_data<'_>) -> refbox::RefBox<crate:
     drop(pr);
     owner
 }
-fn prompt_borrow_live(owner: &refbox::Weak<crate::src::shared::prompt::prompt>) -> Option<refbox::Borrow<'_, prompt>> {
+fn prompt_borrow_live(
+    owner: &refbox::Weak<crate::src::shared::prompt::prompt>,
+) -> Option<refbox::Borrow<'_, prompt>> {
     match owner.try_borrow_mut() {
         Ok(prompt) => Some(prompt),
         Err(refbox::BorrowError::Dropped) => None,
@@ -381,13 +390,7 @@ pub unsafe fn prompt_update(pr: &mut prompt, msg: &CStr, input: Option<&CStr>) {
     let mut ft_owner = if cmd_find_valid_state(&pr.state) != 0 {
         format_create_from_state(None, None, &pr.state)
     } else {
-        format_create_defaults(
-            None,
-            None,
-            None,
-            refbox::Weak::new(),
-            None,
-        )
+        format_create_defaults(None, None, None, refbox::Weak::new(), None)
     };
     let ft = &raw mut *ft_owner;
     pr.string = msg.to_owned();
@@ -516,19 +519,9 @@ unsafe fn prompt_draw_complete(
 unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     let mut owner;
     if cmd_find_valid_state(&pr.state) != 0 {
-        owner = format_create_from_state(
-            None,
-            None,
-            &pr.state,
-        );
+        owner = format_create_from_state(None, None, &pr.state);
     } else {
-        owner = format_create_defaults(
-            None,
-            None,
-            None,
-            (refbox::Weak::new()).clone(),
-            None,
-        );
+        owner = format_create_defaults(None, None, None, (refbox::Weak::new()).clone(), None);
     }
     let ft = &raw mut *owner;
     let tmp = utf8_tocstr_cstring(&pr.buffer);
@@ -1303,7 +1296,10 @@ unsafe fn prompt_done_with_history(
     }
     prompt_done(pr, Some(&input), redraw).key_result()
 }
-fn prompt_check_move(owner: &refbox::Weak<crate::src::shared::prompt::prompt>, key: key_code) -> prompt_key_result {
+fn prompt_check_move(
+    owner: &refbox::Weak<crate::src::shared::prompt::prompt>,
+    key: key_code,
+) -> prompt_key_result {
     let input = {
         let pr = owner.try_borrow_mut().expect("live unborrowed prompt");
         if pr.flags & PROMPT_INCREMENTAL == 0 {
@@ -1528,7 +1524,8 @@ pub unsafe fn prompt_key(
     key = prompt_keypad_key(key & !KEYC_MASK_FLAGS);
     let translated = if flags & PROMPT_NUMERIC != 0 {
         if !(b'0' as key_code..=b'9' as key_code).contains(&key) {
-            let input = utf8_tocstr_cstring(&pr.try_borrow_mut().expect("live unborrowed prompt").buffer);
+            let input =
+                utf8_tocstr_cstring(&pr.try_borrow_mut().expect("live unborrowed prompt").buffer);
             if prompt_fire_callback(pr, Some(&input), PROMPT_KEY_CLOSE, None)
                 == PromptCallbackResult::Continue
             {
@@ -1555,7 +1552,11 @@ pub unsafe fn prompt_key(
         pr.try_borrow_mut().expect("live unborrowed prompt").flags &= !PROMPT_QUOTENEXT;
         PromptTranslatedKey::Append(key)
     } else if keys == MODEKEY_VI {
-        prompt_translate_key(&mut pr.try_borrow_mut().expect("live unborrowed prompt"), key, redraw)
+        prompt_translate_key(
+            &mut pr.try_borrow_mut().expect("live unborrowed prompt"),
+            key,
+            redraw,
+        )
     } else {
         PromptTranslatedKey::Process(key)
     };
@@ -1567,7 +1568,10 @@ pub unsafe fn prompt_key(
             if result != PROMPT_KEY_NOT_HANDLED {
                 return result;
             }
-            prompt_edit_key(&mut pr.try_borrow_mut().expect("live unborrowed prompt"), key)
+            prompt_edit_key(
+                &mut pr.try_borrow_mut().expect("live unborrowed prompt"),
+                key,
+            )
         }
     };
     let mut result = PROMPT_KEY_HANDLED;
@@ -1580,7 +1584,10 @@ pub unsafe fn prompt_key(
         PromptEditAction::Cancel => return prompt_done(pr, None, redraw).key_result(),
         PromptEditAction::Changed(prefix) => prefix,
         PromptEditAction::Append(key) => {
-            if !prompt_append_key(&mut pr.try_borrow_mut().expect("live unborrowed prompt"), key) {
+            if !prompt_append_key(
+                &mut pr.try_borrow_mut().expect("live unborrowed prompt"),
+                key,
+            ) {
                 return PROMPT_KEY_HANDLED;
             }
             if flags & PROMPT_SINGLE != 0 {
@@ -1588,7 +1595,9 @@ pub unsafe fn prompt_key(
                     pr.try_borrow_mut().expect("live unborrowed prompt").closed = 1;
                     result = PROMPT_KEY_CLOSE;
                 } else {
-                    let input = utf8_tocstr_cstring(&pr.try_borrow_mut().expect("live unborrowed prompt").buffer);
+                    let input = utf8_tocstr_cstring(
+                        &pr.try_borrow_mut().expect("live unborrowed prompt").buffer,
+                    );
                     let outcome = prompt_done(pr, Some(&input), redraw);
                     if outcome == PromptCallbackResult::Freed {
                         // Closing callbacks may replace the owner or destroy it.
@@ -1631,13 +1640,25 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             prompt_complete_add(&mut list, name);
         }
     }
-    o = crate::src::options::options_get_only_mut(&mut *(global_options), std::ffi::CStr::from_ptr(b"command-alias\0" as *const u8 as *const ::core::ffi::c_char)).map_or(std::ptr::null_mut(), |entry| entry);
+    o = crate::src::options::options_get_only_mut(
+        &mut *(global_options),
+        std::ffi::CStr::from_ptr(b"command-alias\0" as *const u8 as *const ::core::ffi::c_char),
+    )
+    .map_or(std::ptr::null_mut(), |entry| entry);
     if !o.is_null() {
         let a_root = o;
-        let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+        let mut a_keys = crate::src::options::options_array_iter(&*a_root)
+            .map(|item| item.key.clone())
+            .collect::<Vec<_>>()
+            .into_iter();
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+            crate::src::options::options_array_item(a_root, key.as_ptr())
+        });
         while !a.is_null() {
-            let value = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().expect("string option");
+            let value = (*(crate::src::options::options_array_item_value_mut(&mut *(a))
+                as *mut crate::src::shared::options::options_value))
+                .string_ptr()
+                .expect("string option");
             if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
                 if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {
                     let alias = CString::new(&value.to_bytes()[..separator])
@@ -1645,7 +1666,9 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
                     prompt_complete_add(&mut list, alias.as_c_str());
                 }
             }
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+            a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
+                crate::src::options::options_array_item(a_root, key.as_ptr())
+            });
         }
     }
     return list;
@@ -1748,7 +1771,10 @@ mod prompt_buffer_tests {
         })
     }
 
-    fn make_prompt_owner(input: &CStr, index: usize) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
+    fn make_prompt_owner(
+        input: &CStr,
+        index: usize,
+    ) -> refbox::RefBox<crate::src::shared::prompt::prompt> {
         refbox::RefBox::new(prompt {
             buffer: utf8_fromcstr_vec(input),
             index,
@@ -1934,7 +1960,10 @@ mod prompt_buffer_tests {
         ] {
             let mut redraw = 0;
             unsafe {
-                assert_eq!(prompt_key(&pr.downgrade(), key, &mut redraw), PROMPT_KEY_HANDLED);
+                assert_eq!(
+                    prompt_key(&pr.downgrade(), key, &mut redraw),
+                    PROMPT_KEY_HANDLED
+                );
                 assert_eq!(
                     utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
                     expected
@@ -1942,7 +1971,10 @@ mod prompt_buffer_tests {
             }
             assert_eq!(redraw, 1);
             assert_eq!(pr.try_borrow_mut().unwrap().index, index);
-            assert_eq!(pr.try_borrow_mut().unwrap().flags & PROMPT_COMMANDMODE != 0, command);
+            assert_eq!(
+                pr.try_borrow_mut().unwrap().flags & PROMPT_COMMANDMODE != 0,
+                command
+            );
             {
                 let state = pr.try_borrow_mut().unwrap();
                 assert_eq!(state.buffer.len(), utf8_strlen(&state.buffer) + 1);
@@ -1955,7 +1987,11 @@ mod prompt_buffer_tests {
         let modified_keypad = KEYC_KP_PLUS | KEYC_CTRL;
         assert_eq!(prompt_keypad_key(modified_keypad), modified_keypad);
         assert_eq!(
-            prompt_translate_key(&mut pr.try_borrow_mut().unwrap(), modified_keypad, &mut redraw),
+            prompt_translate_key(
+                &mut pr.try_borrow_mut().unwrap(),
+                modified_keypad,
+                &mut redraw
+            ),
             PromptTranslatedKey::Append(modified_keypad)
         );
         assert_eq!(redraw, 7);
@@ -2011,7 +2047,10 @@ mod prompt_buffer_tests {
             pr.try_borrow_mut().unwrap().word_separators = c",".to_owned();
             let mut redraw = 0;
             unsafe {
-                assert_eq!(prompt_key(&pr.downgrade(), key, &mut redraw), PROMPT_KEY_HANDLED);
+                assert_eq!(
+                    prompt_key(&pr.downgrade(), key, &mut redraw),
+                    PROMPT_KEY_HANDLED
+                );
             }
             assert_eq!(
                 utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
@@ -2024,7 +2063,8 @@ mod prompt_buffer_tests {
             }
             assert_eq!(pr.try_borrow_mut().unwrap().buffer.last().unwrap().size, 0);
             assert_eq!(
-                pr.try_borrow_mut().unwrap()
+                pr.try_borrow_mut()
+                    .unwrap()
                     .copied
                     .as_deref()
                     .map(utf8_tocstr_cstring)
@@ -2083,7 +2123,10 @@ mod prompt_buffer_tests {
         ] {
             let mut redraw = 0;
             unsafe {
-                assert_eq!(prompt_key(&pr.downgrade(), key, &mut redraw), PROMPT_KEY_HANDLED);
+                assert_eq!(
+                    prompt_key(&pr.downgrade(), key, &mut redraw),
+                    PROMPT_KEY_HANDLED
+                );
             }
             assert_eq!(
                 utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
@@ -2232,9 +2275,15 @@ mod prompt_buffer_tests {
                 } else {
                     PROMPT_KEY_HANDLED
                 };
-                assert_eq!(prompt_key(&pr.downgrade(), b'a' as key_code, &mut redraw), expected);
+                assert_eq!(
+                    prompt_key(&pr.downgrade(), b'a' as key_code, &mut redraw),
+                    expected
+                );
                 assert_eq!(redraw, 1);
-                assert_eq!(utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(), c"é漢");
+                assert_eq!(
+                    utf8_tocstr_cstring(&pr.try_borrow_mut().unwrap().buffer).as_c_str(),
+                    c"é漢"
+                );
                 assert_eq!(
                     &*events.borrow(),
                     &[
@@ -2265,7 +2314,9 @@ mod prompt_buffer_tests {
             (0, 27, PROMPT_KEY_CLOSE),
         ] {
             let events = Rc::new(RefCell::new(Vec::new()));
-            let slot = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::prompt::prompt>>));
+            let slot = Rc::new(RefCell::new(
+                None::<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+            ));
             let prompt = make_prompt_owner(c"", 0);
             let observer = prompt.downgrade();
             prompt.try_borrow_mut().unwrap().flags = flags;
@@ -2302,7 +2353,9 @@ mod prompt_buffer_tests {
 
     #[test]
     fn cleanup_callback_can_drop_the_only_owner() {
-        let slot = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::prompt::prompt>>));
+        let slot = Rc::new(RefCell::new(
+            None::<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+        ));
         let prompt = make_prompt_owner(c"", 0);
         let observer = prompt.downgrade();
         let callback_slot = slot.clone();
@@ -2318,7 +2371,9 @@ mod prompt_buffer_tests {
     #[test]
     fn callbacks_replace_owners_without_retaining_closed_prompts() {
         let events = Rc::new(RefCell::new(Vec::new()));
-        let owner = Rc::new(RefCell::new(None::<refbox::RefBox<crate::src::shared::prompt::prompt>>));
+        let owner = Rc::new(RefCell::new(
+            None::<refbox::RefBox<crate::src::shared::prompt::prompt>>,
+        ));
         let pr = make_prompt_owner(c"", 0);
         pr.try_borrow_mut().unwrap().flags = PROMPT_SINGLE;
         let weak = pr.downgrade();

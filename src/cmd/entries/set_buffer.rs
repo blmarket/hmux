@@ -63,16 +63,25 @@ pub static cmd_delete_buffer_entry: cmd_entry = {
         exec: Some(cmd_set_buffer_exec),
     }
 };
-unsafe fn cmd_set_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_set_buffer_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let tc = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let name = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
     let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());
     let mut pb = bufname.as_deref().and_then(paste_get_name);
     let mut cause = None;
-    let deleting = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_delete_buffer_entry);
+    let deleting = std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_delete_buffer_entry,
+    );
     if deleting || args_has(args, b'n') != 0 {
         if pb.is_none() {
             if let Some(name) = bufname.as_ref() {
@@ -109,7 +118,9 @@ unsafe fn cmd_set_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
         cmdq_error(item_handle, |out| out.write_all(b"no data specified"));
         return CMD_RETURN_ERROR;
     }
-    let new_data = args_string(&mut *(args), 0).expect("argument is present").to_bytes();
+    let new_data = args_string(&mut *(args), 0)
+        .expect("argument is present")
+        .to_bytes();
     if new_data.is_empty() {
         return CMD_RETURN_NORMAL;
     }

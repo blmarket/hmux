@@ -182,35 +182,59 @@ fn cmd_choose_tree_args_parse(
 ) -> Result<args_parse_type, ArgsParseError> {
     Ok(ARGS_PARSE_COMMANDS_OR_STRING)
 }
-unsafe fn cmd_choose_tree_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_choose_tree_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target)
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mode: &'static window_mode;
     let mut order: sort_order = SORT_ACTIVITY;
-    order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
+    order = sort_order_from_string(
+        args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_choose_buffer_entry) {
+    if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_choose_buffer_entry,
+    ) {
         if paste_is_empty() != 0 {
             return CMD_RETURN_NORMAL;
         }
         mode = &window_buffer_mode;
-    } else if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_choose_client_entry) {
+    } else if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_choose_client_entry,
+    ) {
         if server_client_how_many() == 0 as u_int {
             return CMD_RETURN_NORMAL;
         }
         mode = &window_client_mode;
-    } else if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_customize_mode_entry) {
+    } else if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_customize_mode_entry,
+    ) {
         mode = &window_customize_mode;
-    } else if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_switch_mode_entry) {
+    } else if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_switch_mode_entry,
+    ) {
         mode = &window_switch_mode;
-    } else if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_display_panes_entry) {
+    } else if std::ptr::eq(
+        cmd_get_entry(self_0.get_unchecked()),
+        &cmd_display_panes_entry,
+    ) {
         mode = &window_panes_mode;
     } else {
         mode = &window_tree_mode;

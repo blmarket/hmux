@@ -80,22 +80,52 @@ pub static cmd_previous_layout_entry: cmd_entry = {
         exec: Some(cmd_select_layout_exec),
     }
 };
-unsafe fn cmd_select_layout_exec(mut command: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_select_layout_exec(
+    mut command: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     use crate::src::server_client::Client;
     use crate::src::window::Window;
-    let is_next = std::ptr::eq(cmd_get_entry(command.get_unchecked()), &cmd_next_layout_entry);
-    let is_previous = std::ptr::eq(cmd_get_entry(command.get_unchecked()), &cmd_previous_layout_entry);
+    let is_next = std::ptr::eq(
+        cmd_get_entry(command.get_unchecked()),
+        &cmd_next_layout_entry,
+    );
+    let is_previous = std::ptr::eq(
+        cmd_get_entry(command.get_unchecked()),
+        &cmd_previous_layout_entry,
+    );
     let arguments = cmd_get_args_mut(command.get_mut_unchecked()).expect("layout arguments");
     let target = &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item_handle.get());
-    let window = target.winlink_handle().get_unchecked().window_handle().expect("target window").clone();
+    let window = target
+        .winlink_handle()
+        .get_unchecked()
+        .window_handle()
+        .expect("target window")
+        .clone();
     let client = cmdq_get_target_client(Some(&*item_handle.get()));
     let next = is_next || args_has(arguments, b'n') != 0;
     let previous = is_previous || args_has(arguments, b'p') != 0;
-    let cycle = if next { 1 } else if previous { -1 } else { 0 };
-    let spread = if args_has(arguments, b'E') != 0 { target.pane_handle() } else { None };
+    let cycle = if next {
+        1
+    } else if previous {
+        -1
+    } else {
+        0
+    };
+    let spread = if args_has(arguments, b'E') != 0 {
+        target.pane_handle()
+    } else {
+        None
+    };
     let restore = args_has(arguments, b'o') != 0;
-    let name = if args_count(arguments) != 0 { args_string(arguments, 0) } else { None };
-    let legacy = client.as_ref().is_some_and(|client| client.uses_legacy_layout_format());
+    let name = if args_count(arguments) != 0 {
+        args_string(arguments, 0)
+    } else {
+        None
+    };
+    let legacy = client
+        .as_ref()
+        .is_some_and(|client| client.uses_legacy_layout_format());
     let result = window.select_layout(name, restore, cycle, spread.as_ref(), legacy);
     window.release(c"cmd_select_layout");
     match result {

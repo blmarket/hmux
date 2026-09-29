@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_percentage_result, args_string,
     args_strtonum_result, args_to_vector,
@@ -15,6 +14,7 @@ use crate::src::format::{
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::menu::{menu_add_item, menu_create, menu_display};
+use crate::src::options::options_owner_ptr;
 use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_find_choice, options_get, options_get_number, options_get_string,
@@ -112,7 +112,12 @@ fn cmd_display_menu_args_parse(
         }
         let fresh0 = i;
         i = i.wrapping_add(1);
-        if unsafe { *args_string(&mut *(args as *mut args), fresh0).map_or(std::ptr::null(), |value| value.as_ptr()) } as ::core::ffi::c_int == '\0' as i32 {
+        if unsafe {
+            *args_string(&mut *(args as *mut args), fresh0)
+                .map_or(std::ptr::null(), |value| value.as_ptr())
+        } as ::core::ffi::c_int
+            == '\0' as i32
+        {
             continue;
         }
         type_0 = ARGS_PARSE_STRING;
@@ -145,9 +150,15 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: *mut session = (*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*tc)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target)
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -178,7 +189,17 @@ unsafe fn cmd_display_menu_get_popup_pos(
     format_add(
         ft,
         b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((*(*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).menu_last_px) as u32),
+        |out| {
+            write!(
+                out,
+                "{}",
+                ((*(*target)
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .menu_last_px) as u32
+            )
+        },
     );
     format_add(
         ft,
@@ -187,7 +208,12 @@ unsafe fn cmd_display_menu_get_popup_pos(
             write!(
                 out,
                 "{}",
-                ((*(*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).menu_last_py.wrapping_add(h)) as u32
+                ((*(*target)
+                    .window_handle()
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .menu_last_py
+                .wrapping_add(h)) as u32
             )
         },
     );
@@ -539,10 +565,19 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: *mut session = (*tc).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*tc)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut window: *mut window = (*target).window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut window: *mut window = (*target)
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target)
+        .pane_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ranges: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
     let mut sr: *mut style_range = ::core::ptr::null_mut::<style_range>();
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -916,18 +951,36 @@ unsafe fn cmd_display_menu_get_menu_pos(
     format_free(ft_owner);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_display_menu_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let tc = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let tc = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
-    let o = options_owner_ptr(&mut (*((*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+    let o = options_owner_ptr(
+        &mut (*((*(*target)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .current_winlink())
+        .get_unchecked()
+        .window_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .options,
+    )
+    .map_or(std::ptr::null_mut(), |options| options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
         if args_get(&*(args), b'C').expect("argument is present") == c"-" {
@@ -958,17 +1011,26 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     let count = args_count(args);
     let mut i = 0;
     while i != count {
-        let name = args_string(&mut *(args), i).expect("argument is present").to_owned();
+        let name = args_string(&mut *(args), i)
+            .expect("argument is present")
+            .to_owned();
         i += 1;
         if name.is_empty() {
-            menu_add_item(&mut menu, None, Some(item_handle), tc_owner.as_ref(), target);
+            menu_add_item(
+                &mut menu,
+                None,
+                Some(item_handle),
+                tc_owner.as_ref(),
+                target,
+            );
             continue;
         }
         if count - i < 2 {
             cmdq_error(item_handle, |out| out.write_all(b"not enough arguments"));
             return CMD_RETURN_ERROR;
         }
-        let key = key_string_parse_cstr(args_string(&mut *(args), i).expect("argument is present")).unwrap_or(KEYC_UNKNOWN);
+        let key = key_string_parse_cstr(args_string(&mut *(args), i).expect("argument is present"))
+            .unwrap_or(KEYC_UNKNOWN);
         let command = args_string(&mut *(args), i + 1).expect("argument is present");
         i += 2;
         let definition = menu_item {
@@ -976,7 +1038,13 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
             key,
             command: Some(command),
         };
-        menu_add_item(&mut menu, Some(&definition), Some(item_handle), tc_owner.as_ref(), target);
+        menu_add_item(
+            &mut menu,
+            Some(&definition),
+            Some(item_handle),
+            tc_owner.as_ref(),
+            target,
+        );
     }
     let mut px = 0;
     let mut py = 0;
@@ -998,7 +1066,13 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     if !value.is_null() {
         let oe = options_get(o, c"menu-border-lines".as_ptr());
         let mut cause = None;
-        lines = options_find_choice(options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry), value, &mut cause) as box_lines;
+        lines = options_find_choice(
+            options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| {
+                entry as *const crate::src::shared::options::options_table_entry
+            }),
+            value,
+            &mut cause,
+        ) as box_lines;
         if lines == -1 {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"menu-border-lines ")?;
@@ -1031,20 +1105,31 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     );
     CMD_RETURN_NORMAL
 }
-unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_display_popup_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let mut current_block: u64;
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut s: *mut session = (*target)
+        .session_handle()
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     let mut tty: *mut tty = &raw mut (*tc).tty;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut shellcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut style: *const ::core::ffi::c_char = args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut border_style: *const ::core::ffi::c_char = args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut style: *const ::core::ffi::c_char =
+        args_get(&*(args), 's' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut border_style: *const ::core::ffi::c_char =
+        args_get(&*(args), 'S' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_cwd: Option<std::ffi::CString> = None;
     let mut default_cwd: Option<std::ffi::CString> = None;
@@ -1052,7 +1137,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
     let mut argv_owner = Vec::new();
     let mut title: *const ::core::ffi::c_char = ::core::ptr::null();
     let mut formatted_title: Option<std::ffi::CString> = None;
-    let mut modify: ::core::ffi::c_int = popup_present(&(*(tc)).observer.upgrade().expect("live client"));
+    let mut modify: ::core::ffi::c_int =
+        popup_present(&(*(tc)).observer.upgrade().expect("live client"));
     let mut flags: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut lines: box_lines = BOX_LINES_DEFAULT;
     let mut px: u_int = 0;
@@ -1061,7 +1147,15 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
     let mut h: u_int = 0;
     let mut count: u_int = args_count(args);
     let mut env: Option<Box<environ>> = None;
-    let mut o: *mut options = options_owner_ptr(&mut (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
+    let mut o: *mut options = options_owner_ptr(
+        &mut (*((*s).current_winlink())
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .options,
+    )
+    .map_or(std::ptr::null_mut(), |options| options);
     let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if args_has(args, 'C' as i32 as u_char) != 0 {
         server_client_clear_overlay(&(*(tc)).observer.upgrade().expect("live client"));
@@ -1146,7 +1240,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                         {
                             current_block = 6589043366517631393;
                         } else {
-                            value = args_get(&*(args), 'd' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+                            value = args_get(&*(args), 'd' as i32 as u_char)
+                                .map_or(std::ptr::null(), |value| value.as_ptr());
                             if !value.is_null() {
                                 formatted_cwd =
                                     Some(format_single_from_target_cstring(item_handle, value));
@@ -1155,7 +1250,12 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                                     .expect("formatted cwd was set")
                                     .as_ptr();
                             } else {
-                                default_cwd = server_client_get_cwd(tc.as_ref(), s.as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+                                default_cwd = server_client_get_cwd(
+                                    tc.as_ref(),
+                                    s.as_ref()
+                                        .and_then(|model| model.observer.upgrade())
+                                        .as_ref(),
+                                );
                                 cwd = default_cwd
                                     .as_ref()
                                     .expect("default cwd was copied")
@@ -1163,11 +1263,13 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                             }
                             if count == 0 as u_int {
                                 shellcmd = options_get_string(
-                                    options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                                    options_owner_ptr(&mut (*s).options)
+                                        .map_or(std::ptr::null_mut(), |options| options),
                                     b"default-command\0" as *const u8 as *const ::core::ffi::c_char,
                                 );
                             } else if count == 1 as u_int {
-                                shellcmd = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+                                shellcmd = args_string(&mut *(args), 0 as u_int)
+                                    .map_or(std::ptr::null(), |value| value.as_ptr());
                             }
                             if count <= 1 as u_int
                                 && (shellcmd.is_null()
@@ -1175,7 +1277,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                             {
                                 shellcmd = ::core::ptr::null::<::core::ffi::c_char>();
                                 shell = options_get_string(
-                                    options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
+                                    options_owner_ptr(&mut (*s).options)
+                                        .map_or(std::ptr::null_mut(), |options| options),
                                     b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
                                 );
                                 if checkshell(shell) == 0 {
@@ -1206,7 +1309,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
     }
     match current_block {
         1345366029464561491 => {
-            value = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+            value = args_get(&*(args), 'b' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr());
             if args_has(args, 'B' as i32 as u_char) != 0 {
                 lines = BOX_LINES_NONE;
                 current_block = 8151474771948790331;
@@ -1215,8 +1319,13 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                     o,
                     b"popup-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
                 );
-                lines = options_find_choice(options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry), value, &raw mut cause)
-                    as box_lines;
+                lines = options_find_choice(
+                    options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| {
+                        entry as *const crate::src::shared::options::options_table_entry
+                    }),
+                    value,
+                    &raw mut cause,
+                ) as box_lines;
                 if let Some(cause) = cause.as_ref() {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"popup-border-lines ")?;
@@ -1235,7 +1344,8 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                     if args_has(args, 'T' as i32 as u_char) != 0 {
                         formatted_title = Some(format_single_from_target_cstring(
                             item_handle,
-                            args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+                            args_get(&*(args), 'T' as i32 as u_char)
+                                .map_or(std::ptr::null(), |value| value.as_ptr()),
                         ));
                         title = formatted_title
                             .as_ref()
@@ -1265,7 +1375,14 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                         flags |= POPUP_CLOSEANYKEY;
                     }
                     if modify != 0 {
-                        popup_modify(&(*(tc)).observer.upgrade().expect("live client"), title, style, border_style, lines, flags);
+                        popup_modify(
+                            &(*(tc)).observer.upgrade().expect("live client"),
+                            title,
+                            style,
+                            border_style,
+                            lines,
+                            flags,
+                        );
                     } else if !(popup_display(
                         flags,
                         lines,
@@ -1280,7 +1397,9 @@ unsafe fn cmd_display_popup_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
                         cwd,
                         title,
                         &(*(tc)).observer.upgrade().expect("live client"),
-                        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+                        (s).as_ref()
+                            .and_then(|model| model.observer.upgrade())
+                            .as_ref(),
                         style,
                         border_style,
                     ) != 0 as ::core::ffi::c_int)

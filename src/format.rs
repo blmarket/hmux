@@ -28,8 +28,8 @@ use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::names::parse_window_name_cstring;
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_item_key, options_get,
-    options_get_number, options_get_string, options_is_array, options_name, options_parse_owned, options_to_cstring,
+    options_array_item_key, options_get, options_get_number, options_get_string, options_is_array,
+    options_name, options_parse_owned, options_to_cstring,
 };
 use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
@@ -38,8 +38,8 @@ use crate::src::paste::{
 };
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-    evbuffer_readline, event_add, event_initialized, event_pending, event_set,
+    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readline, event_add,
+    event_initialized, event_pending, event_set,
 };
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
@@ -132,7 +132,6 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
-use libc::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::{
     screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
@@ -154,6 +153,7 @@ use crate::src::shared::window::{
     WINDOW_PANE_NO_MODE, WINDOW_SIZE_MANUAL, WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS,
     WINLINK_BELL, WINLINK_SILENCE,
 };
+use libc::{REG_EXTENDED, REG_ICASE};
 
 /*
  * This module is the stable facade for format handling.  The private
@@ -170,16 +170,17 @@ mod tree;
 pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
-    format_add, format_add_cstr, format_add_tv, format_create, format_create_with_client, format_create_owned, format_owner_ptr, format_each, format_free,
-    format_get_pane, format_log_debug, format_merge,
+    format_add, format_add_cstr, format_add_tv, format_create, format_create_owned,
+    format_create_with_client, format_each, format_free, format_get_pane, format_log_debug,
+    format_merge, format_owner_ptr,
 };
 mod jobs;
 use jobs::*;
 pub use jobs::{format_lost_client, format_tidy_jobs};
 mod callbacks;
 pub use callbacks::FormatValue;
-pub(crate) use callbacks::{client_format_value, pane_format_value, window_format_value};
 use callbacks::*;
+pub(crate) use callbacks::{client_format_value, pane_format_value, window_format_value};
 mod expression;
 pub use expression::format_expand_cstring;
 pub(crate) use expression::format_pretty_time_cstring;
@@ -322,12 +323,22 @@ unsafe fn format_log1(
         log_cstr((from) as *const _),
         log_cstr((s.as_ptr()) as *const _)
     ));
-    if let Some(item) = (*ft).item.upgrade().filter(|_| (*ft).flags & FORMAT_VERBOSE != 0) {
-        cmdq_print(&(*(item.get())).observer.upgrade().expect("live command queue item"), |out| {
-            out.write_all(b"#")?;
-            write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
-            write_cstr(out, s.as_ptr())
-        });
+    if let Some(item) = (*ft)
+        .item
+        .upgrade()
+        .filter(|_| (*ft).flags & FORMAT_VERBOSE != 0)
+    {
+        cmdq_print(
+            &(*(item.get()))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+            |out| {
+                out.write_all(b"#")?;
+                write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
+                write_cstr(out, s.as_ptr())
+            },
+        );
     }
 }
 unsafe fn format_copy_state(
@@ -364,12 +375,7 @@ pub unsafe fn format_create_defaults(
             0 as ::core::ffi::c_int,
         );
     } else {
-        owner = format_create(
-            None,
-            item_handle,
-            FORMAT_NONE,
-            0 as ::core::ffi::c_int,
-        );
+        owner = format_create(None, item_handle, FORMAT_NONE, 0 as ::core::ffi::c_int);
     }
     let ft = &raw mut *owner;
     format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
@@ -380,13 +386,29 @@ pub unsafe fn format_create_from_state(
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: &cmd_find_state,
 ) -> Box<format_tree> {
-    return format_create_defaults(item_handle, c_owner, fs.s.upgrade().as_ref(), (fs.winlink_handle()).clone(), fs.wp.upgrade().as_ref());
+    return format_create_defaults(
+        item_handle,
+        c_owner,
+        fs.s.upgrade().as_ref(),
+        (fs.winlink_handle()).clone(),
+        fs.wp.upgrade().as_ref(),
+    );
 }
-pub unsafe fn format_create_from_target(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> Box<format_tree> {
+pub unsafe fn format_create_from_target(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> Box<format_tree> {
     let item = item_handle.get();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    return format_create_from_state(Some(item_handle), (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item));
+    let mut tc: *mut client = tc_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    return format_create_from_state(
+        Some(item_handle),
+        (tc).as_ref()
+            .and_then(|model| model.observer.upgrade())
+            .as_ref(),
+        &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
+    );
 }
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,
@@ -439,7 +461,14 @@ pub unsafe fn format_defaults(
     } else {
         log_debug(format_args!("{}: wp=none", "format_defaults"));
     }
-    if !c.is_null() && !s.is_null() && (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s {
+    if !c.is_null()
+        && !s.is_null()
+        && (*c)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())
+            != s
+    {
         log_debug(format_args!(
             "{}: session does not match",
             "format_defaults"
@@ -454,15 +483,20 @@ pub unsafe fn format_defaults(
     } else {
         (*ft).type_0 = FORMAT_TYPE_UNKNOWN;
     }
-    let session_owner = s_owner.cloned().or_else(|| {
-        c_owner.and_then(|owner| (*owner.get()).session.upgrade())
-    });
+    let session_owner = s_owner
+        .cloned()
+        .or_else(|| c_owner.and_then(|owner| (*owner.get()).session.upgrade()));
     if !wl.is_alive() {
-        wl = session_owner.as_ref().map_or_else(refbox::Weak::new, |owner| owner.current_winlink());
+        wl = session_owner
+            .as_ref()
+            .map_or_else(refbox::Weak::new, |owner| owner.current_winlink());
     }
     let pane_owner = wp_owner.cloned().or_else(|| {
-        wl.try_borrow_mut().ok()
-            .and_then(|link| link.window_owner.as_ref().and_then(|owner| (*owner.get()).active.upgrade()))
+        wl.try_borrow_mut().ok().and_then(|link| {
+            link.window_owner
+                .as_ref()
+                .and_then(|owner| (*owner.get()).active.upgrade())
+        })
     });
     if let Some(client) = c_owner {
         format_defaults_client(ft, client);
@@ -480,17 +514,26 @@ pub unsafe fn format_defaults(
         format_defaults_paste_buffer(&mut *ft, &pb);
     }
 }
-unsafe fn format_defaults_session(mut ft: *mut format_tree, s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+unsafe fn format_defaults_session(
+    mut ft: *mut format_tree,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+) {
     (*ft).s = std::rc::Rc::downgrade(s_owner);
 }
-unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
+unsafe fn format_defaults_client(
+    mut ft: *mut format_tree,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+) {
     let mut c = c_owner.get();
     if (*ft).s.upgrade().is_none() {
-    (*ft).s = (*c).session.clone();
+        (*ft).s = (*c).session.clone();
     }
     (*ft).c = std::rc::Rc::downgrade(c_owner);
 }
-pub unsafe fn format_defaults_window(mut ft: *mut format_tree, w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>) {
+pub unsafe fn format_defaults_window(
+    mut ft: *mut format_tree,
+    w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>,
+) {
     (*ft).w = w_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
 }
 unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak<winlink>) {
@@ -499,16 +542,21 @@ unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak
     }
     (*ft).wl = wl;
 }
-pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+pub unsafe fn format_defaults_pane(
+    mut ft: *mut format_tree,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
     let mut wp = wp_owner.get();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if (*ft).w.upgrade().is_none() {
         format_defaults_window(ft, (*wp).window.upgrade().as_ref());
     }
     (*ft).wp = std::rc::Rc::downgrade(wp_owner);
-    wme = (*wp).modes.active_weak();
+    wme = (*wp).active_mode_entry();
     if !!wme.is_alive() && (*wme.get_unchecked().mode).formats.is_some() {
-        (*wme.get_unchecked().mode).formats.expect("non-null function pointer")(wme, ft);
+        (*wme.get_unchecked().mode)
+            .formats
+            .expect("non-null function pointer")(wme, ft);
     }
 }
 pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &PasteBufferRef) {

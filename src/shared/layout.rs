@@ -57,7 +57,7 @@ pub struct layout_cell {
     pub type_0: layout_type,
     pub flags: ::core::ffi::c_int,
     pub parent: *mut layout_cell,
-    /// Index in `parent.cells.children` for constant-time neighbor steps.
+    /// Index in `parent.cells` for constant-time neighbor steps.
     pub sibling_index: usize,
     pub g: layout_geometry,
     pub fg: layout_geometry,
@@ -66,9 +66,7 @@ pub struct layout_cell {
     pub cells: layout_cells,
 }
 
-pub struct layout_cells {
-    pub children: Vec<Box<layout_cell>>,
-}
+pub type layout_cells = Vec<Box<layout_cell>>;
 
 #[inline]
 fn layout_cell_ptr(cell: &Box<layout_cell>) -> *mut layout_cell {
@@ -79,7 +77,6 @@ fn layout_cell_ptr(cell: &Box<layout_cell>) -> *mut layout_cell {
 pub fn layout_cells_first(parent: &layout_cell) -> *mut layout_cell {
     parent
         .cells
-        .children
         .first()
         .map(layout_cell_ptr)
         .unwrap_or(std::ptr::null_mut())
@@ -89,7 +86,6 @@ pub fn layout_cells_first(parent: &layout_cell) -> *mut layout_cell {
 pub fn layout_cells_last(parent: &layout_cell) -> *mut layout_cell {
     parent
         .cells
-        .children
         .last()
         .map(layout_cell_ptr)
         .unwrap_or(std::ptr::null_mut())
@@ -100,7 +96,7 @@ pub unsafe fn layout_cell_next(cell: *mut layout_cell) -> *mut layout_cell {
     if cell.is_null() || (*cell).parent.is_null() {
         return std::ptr::null_mut();
     }
-    let children = &(*(*cell).parent).cells.children;
+    let children = &(*(*cell).parent).cells;
     let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
     let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
         Some(index)
@@ -119,7 +115,7 @@ pub unsafe fn layout_cell_prev(cell: *mut layout_cell) -> *mut layout_cell {
     if cell.is_null() || (*cell).parent.is_null() {
         return std::ptr::null_mut();
     }
-    let children = &(*(*cell).parent).cells.children;
+    let children = &(*(*cell).parent).cells;
     let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
     let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
         Some(index)
@@ -142,7 +138,7 @@ pub unsafe fn layout_cells_remove(
     parent: *mut layout_cell,
     child: *mut layout_cell,
 ) -> Option<Box<layout_cell>> {
-    let children = &mut (*parent).cells.children;
+    let children = &mut (*parent).cells;
     let hinted = (*child).sibling_index;
     let index = if children.get(hinted).map(layout_cell_ptr) == Some(child) {
         Some(hinted)
@@ -163,15 +159,15 @@ pub unsafe fn layout_cells_remove(
 #[inline]
 pub unsafe fn layout_cells_push_back(parent: *mut layout_cell, mut child: Box<layout_cell>) {
     child.parent = parent;
-    child.sibling_index = (*parent).cells.children.len();
-    (*parent).cells.children.push(child);
+    child.sibling_index = (*parent).cells.len();
+    (*parent).cells.push(child);
 }
 
 #[inline]
 pub unsafe fn layout_cells_push_front(parent: *mut layout_cell, mut child: Box<layout_cell>) {
     child.parent = parent;
-    (*parent).cells.children.insert(0, child);
-    for (index, sibling) in (*parent).cells.children.iter_mut().enumerate() {
+    (*parent).cells.insert(0, child);
+    for (index, sibling) in (*parent).cells.iter_mut().enumerate() {
         sibling.sibling_index = index;
     }
 }
@@ -183,7 +179,7 @@ pub unsafe fn layout_cells_insert_before(
     mut child: Box<layout_cell>,
 ) {
     child.parent = parent;
-    let children = &mut (*parent).cells.children;
+    let children = &mut (*parent).cells;
     let index = children
         .iter()
         .position(|item| layout_cell_ptr(item) == reference)
@@ -201,7 +197,7 @@ pub unsafe fn layout_cells_insert_after(
     mut child: Box<layout_cell>,
 ) {
     child.parent = parent;
-    let children = &mut (*parent).cells.children;
+    let children = &mut (*parent).cells;
     let index = children
         .iter()
         .position(|item| layout_cell_ptr(item) == reference)
@@ -218,7 +214,7 @@ pub unsafe fn layout_cells_replace(
     old: *mut layout_cell,
     mut new: Box<layout_cell>,
 ) -> Box<layout_cell> {
-    let children = &mut (*parent).cells.children;
+    let children = &mut (*parent).cells;
     let index = children
         .iter()
         .position(|item| layout_cell_ptr(item) == old)
@@ -255,7 +251,7 @@ impl Drop for layout_cell {
 #[inline]
 pub fn layout_cells_require_empty(parent: &layout_cell) {
     assert!(
-        parent.cells.children.is_empty(),
+        parent.cells.is_empty(),
         "layout cell children must be detached before clearing"
     );
 }

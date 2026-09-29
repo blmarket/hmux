@@ -61,7 +61,9 @@ impl EditorHandle {
     }
 
     pub fn cancel(&self) {
-        let Some(pane) = self.pane.upgrade() else { return };
+        let Some(pane) = self.pane.upgrade() else {
+            return;
+        };
         let pane = unsafe { &mut *pane.get() };
         if let Some(editor) = pane.editor.as_mut().filter(|editor| editor.id == self.id) {
             editor.cb = None;
@@ -69,7 +71,9 @@ impl EditorHandle {
     }
 
     pub fn pid(&self) -> pid_t {
-        let Some(pane) = self.pane.upgrade() else { return -1 };
+        let Some(pane) = self.pane.upgrade() else {
+            return -1;
+        };
         let pane = unsafe { &*pane.get() };
         pane.editor
             .as_ref()

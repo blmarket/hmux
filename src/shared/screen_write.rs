@@ -27,10 +27,7 @@ pub struct screen_write_citem {
 /// Row-owned collection. Boxes keep item addresses stable as the deque grows,
 /// inserts, removes, and moves between rows. Indexed lookups are O(1); middle
 /// deque edits are O(n), so repeated arbitrary edits can be O(n²).
-#[derive(Default)]
-pub struct screen_write_items {
-    items: VecDeque<Box<screen_write_citem>>,
-}
+pub type screen_write_items = VecDeque<Box<screen_write_citem>>;
 
 pub type screen_write_item_type = ::core::ffi::c_uint;
 pub const CLEAR: screen_write_item_type = 1;
@@ -50,10 +47,7 @@ pub struct screen_write_ctx {
 /// The active write target. A borrowed target is valid only between start and
 /// stop; a pane base target is resolved from its owner on each access.
 #[derive(Default)]
-pub(crate) struct ScreenWriteTarget(ScreenWriteTargetKind);
-
-#[derive(Default)]
-enum ScreenWriteTargetKind {
+pub(crate) enum ScreenWriteTarget {
     #[default]
     None,
     PaneBase(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
@@ -62,66 +56,38 @@ enum ScreenWriteTargetKind {
 
 impl screen_write_ctx {
     pub fn screen_ptr(&self) -> *mut screen {
-        match &self.target.0 {
-            ScreenWriteTargetKind::None => std::ptr::null_mut(),
-            ScreenWriteTargetKind::PaneBase(observer) => {
-                let owner = observer.upgrade().expect("active pane base write has an owner");
+        match &self.target {
+            ScreenWriteTarget::None => std::ptr::null_mut(),
+            ScreenWriteTarget::PaneBase(observer) => {
+                let owner = observer
+                    .upgrade()
+                    .expect("active pane base write has an owner");
                 unsafe { &raw mut (*owner.get()).base }
             }
-            ScreenWriteTargetKind::Borrowed(screen) => screen.as_ptr(),
+            ScreenWriteTarget::Borrowed(screen) => screen.as_ptr(),
         }
     }
 
     pub fn use_pane_base(&mut self, pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-        self.target = ScreenWriteTarget(ScreenWriteTargetKind::PaneBase(
-            std::rc::Rc::downgrade(pane),
-        ));
+        self.target = ScreenWriteTarget::PaneBase(std::rc::Rc::downgrade(pane));
     }
 
     /// # Safety
     /// The screen must remain allocated until this context stops or changes target.
     pub unsafe fn borrow_screen(&mut self, screen: *mut screen) {
-        self.target = ScreenWriteTarget(ScreenWriteTargetKind::Borrowed(
+        self.target = ScreenWriteTarget::Borrowed(
             std::ptr::NonNull::new(screen).expect("screen write target"),
-        ));
+        );
     }
 }
 
 impl ScreenWriteTarget {
     pub(crate) const fn none() -> Self {
-        Self(ScreenWriteTargetKind::None)
+        Self::None
     }
 }
 
 pub type screen_write_init_ctx_cb = Option<Box<dyn FnMut(&mut tty_ctx)>>;
-
-impl screen_write_items {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-    pub(crate) fn get(&self, index: usize) -> Option<&screen_write_citem> {
-        self.items.get(index).map(Box::as_ref)
-    }
-    pub(crate) fn get_mut(&mut self, index: usize) -> Option<&mut screen_write_citem> {
-        self.items.get_mut(index).map(Box::as_mut)
-    }
-    pub(crate) fn push_back(&mut self, node: Box<screen_write_citem>) {
-        self.items.push_back(node);
-    }
-    pub(crate) fn remove_at(&mut self, index: usize) -> Box<screen_write_citem> {
-        self.items.remove(index).expect("linked write command")
-    }
-    pub(crate) fn insert_at(&mut self, index: usize, node: Box<screen_write_citem>) {
-        assert!(index <= self.items.len());
-        self.items.insert(index, node);
-    }
-    pub(crate) fn pop_front(&mut self) -> Option<Box<screen_write_citem>> {
-        self.items.pop_front()
-    }
-    pub(crate) fn append(&mut self, other: &mut Self) {
-        self.items.append(&mut other.items);
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -146,7 +112,7 @@ mod tests {
 
         let inserted = make_item();
         let inserted_ptr = address(&inserted);
-        dst.insert_at(1, inserted);
+        dst.insert(1, inserted);
         assert_eq!(address(dst.get(0).unwrap()), first_ptr);
         assert_eq!(address(dst.get(1).unwrap()), inserted_ptr);
         assert_eq!(address(dst.get(2).unwrap()), second_ptr);
@@ -174,7 +140,7 @@ mod tests {
         assert_eq!(address(dst.get(66).unwrap()), src_last);
         assert_eq!(address(dst.get(67).unwrap()), tail_ptr);
 
-        let removed = dst.remove_at(1);
+        let removed = dst.remove(1).expect("linked write command");
         assert_eq!(address(&removed), inserted_ptr);
         assert_eq!(address(dst.get(0).unwrap()), first_ptr);
         assert_eq!(address(dst.get(1).unwrap()), second_ptr);

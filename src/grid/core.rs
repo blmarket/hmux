@@ -1515,11 +1515,7 @@ mod storage_tests {
     fn captures_preserve_last_code_when_closing_hyperlinks() {
         unsafe {
             let table = crate::src::hyperlinks::HyperlinksRef::new();
-            let link = crate::src::hyperlinks::hyperlinks_put(
-                &table,
-                c"uri",
-                Some(c"id"),
-            );
+            let link = crate::src::hyperlinks::hyperlinks_put(&table, c"uri", Some(c"id"));
             let mut screen = screen::empty();
             screen.hyperlinks = Some(table.clone());
             let mut gd = grid_create(2, 1, 0);
@@ -2213,7 +2209,8 @@ mod storage_tests {
             let mut src = labeled_grid();
             let mut dst = labeled_grid();
             src.linedata[1].time = 77;
-            src.linedata[1].flags |= GRID_LINE_WRAPPED as u_short | GRID_LINE_START_PROMPT as u_short;
+            src.linedata[1].flags |=
+                GRID_LINE_WRAPPED as u_short | GRID_LINE_START_PROMPT as u_short;
             src.linedata[1].osc133_data.prompt_col = 3;
             grid_duplicate_lines(&mut dst, 3, &src, 1, 3);
             assert_eq!(labels(&mut dst), b"ABCB");

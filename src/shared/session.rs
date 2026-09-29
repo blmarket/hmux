@@ -3,14 +3,12 @@
 pub use crate::src::session::session;
 
 #[repr(C)]
-pub struct session_entry {
-    /// Weak traversal handle into the session index.
-    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>,
-}
-
-#[repr(C)]
 pub struct sessions {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>>,
+    pub storage: Option<
+        refbox::RefBox<
+            std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>,
+        >,
+    >,
 }
 
 #[repr(C)]

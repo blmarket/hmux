@@ -38,12 +38,19 @@ pub static cmd_rename_window_entry: cmd_entry = {
         exec: Some(cmd_rename_window_exec),
     }
 };
-unsafe fn cmd_rename_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_rename_window_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let name = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    let name = format_single_from_target_cstring(
+        item_handle,
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+    );
     if !check_name(&name) {
         cmdq_error(item_handle, |out| {
             out.write_all(b"invalid window name: ")?;
@@ -51,13 +58,29 @@ unsafe fn cmd_rename_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         });
         return CMD_RETURN_ERROR;
     }
-    let window = wl.get_unchecked().window_handle().expect("target window").clone();
+    let window = wl
+        .get_unchecked()
+        .window_handle()
+        .expect("target window")
+        .clone();
     window.rename(&name, false);
     window.with_options_mut(|options| {
         options_set_number(options, c"automatic-rename".as_ptr(), 0);
     });
-    server_redraw_window_borders(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
-    server_status_window(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
+    server_redraw_window_borders(
+        &*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())),
+    );
+    server_status_window(
+        &*(wl
+            .get_unchecked()
+            .window_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get())),
+    );
     window.release(c"cmd_rename_window");
     return CMD_RETURN_NORMAL;
 }

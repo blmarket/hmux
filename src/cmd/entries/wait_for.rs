@@ -8,7 +8,9 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create_with_client, format_expand_cstring, format_free, format_true};
+use crate::src::format::{
+    format_create_with_client, format_expand_cstring, format_free, format_true,
+};
 use crate::src::hooks::hooks_valid_event_name;
 use crate::src::log::{log_cstr, log_debug, log_pointer};
 use crate::src::shared::abi::*;
@@ -19,8 +21,8 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item, wai
 use crate::src::shared::events::{event_payload, event_payload_item, events_callback, EventSinkId};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
-use std::ffi::{CStr, CString};
 use std::cell::UnsafeCell;
+use std::ffi::{CStr, CString};
 use std::rc::Weak;
 
 #[repr(C)]
@@ -225,7 +227,9 @@ unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     drop(wait_channels_remove(&mut *(&raw mut wait_channels), &*wc));
 }
 
-unsafe fn cmd_wait_for_item_client_name(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> CString {
+unsafe fn cmd_wait_for_item_client_name(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> CString {
     let item = item_handle.get();
     let owner = cmdq_get_client((item).as_ref());
     owner
@@ -235,13 +239,23 @@ unsafe fn cmd_wait_for_item_client_name(item_handle: &std::rc::Rc<std::cell::Uns
 }
 unsafe fn cmd_wait_for_waiter_client_name(waiter: &wait_item) -> CString {
     waiter.item.upgrade().map_or_else(CString::default, |item| {
-        cmd_wait_for_item_client_name(&(*(item.get())).observer.upgrade().expect("live command queue item"))
+        cmd_wait_for_item_client_name(
+            &(*(item.get()))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+        )
     })
 }
 
 unsafe fn cmd_wait_for_continue_waiter(waiter: &wait_item) {
     if let Some(item) = waiter.item.upgrade() {
-        cmdq_continue(&(*(item.get())).observer.upgrade().expect("live command queue item"));
+        cmdq_continue(
+            &(*(item.get()))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+        );
     }
 }
 
@@ -251,12 +265,22 @@ unsafe fn cmd_wait_for_prune_expired(wc: *mut wait_channel) {
 }
 unsafe fn cmd_wait_for_client_name(wei: *mut wait_event_item) -> CString {
     (*wei).item.upgrade().map_or_else(CString::default, |item| {
-        cmd_wait_for_item_client_name(&(*(item.get())).observer.upgrade().expect("live command queue item"))
+        cmd_wait_for_item_client_name(
+            &(*(item.get()))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+        )
     })
 }
-unsafe fn cmd_wait_for_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+unsafe fn cmd_wait_for_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut name: *const ::core::ffi::c_char =
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
     if args_has(args, 'E' as i32 as u_char) != 0 {
         return cmd_wait_for_event(item_handle, name, args);
@@ -279,7 +303,10 @@ unsafe fn cmd_wait_for_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
     }
     return cmd_wait_for_wait(item_handle, name, wc);
 }
-unsafe fn cmd_wait_for_event_print(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, ep: &event_payload) {
+unsafe fn cmd_wait_for_event_print(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    ep: &event_payload,
+) {
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     for epi in event_payload_items(&*ep) {
         key = event_payload_item_name(epi).as_ptr();
@@ -310,12 +337,21 @@ unsafe fn cmd_wait_for_event_cb(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if (*wei).verbose != 0 {
-        cmd_wait_for_event_print(&(*(item)).observer.upgrade().expect("live command queue item"), ep);
+        cmd_wait_for_event_print(
+            &(*(item))
+                .observer
+                .upgrade()
+                .expect("live command queue item"),
+            ep,
+        );
     }
     if !(*wei).filter.is_none() {
         let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
-            (item).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
+            (item)
+                .as_ref()
+                .and_then(|item| item.observer.upgrade())
+                .as_ref(),
             FORMAT_NONE,
             FORMAT_NOJOBS,
         );
@@ -334,7 +370,12 @@ unsafe fn cmd_wait_for_event_cb(
         }
     }
     let owner = wait_event_items_remove(&raw mut wait_event_items, wei);
-    cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
+    cmdq_continue(
+        &(*(item))
+            .observer
+            .upgrade()
+            .expect("live command queue item"),
+    );
     if let Some(owner) = owner {
         cmd_wait_for_event_free(owner);
     }
@@ -360,7 +401,8 @@ unsafe fn cmd_wait_for_event(
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut wei: *mut wait_event_item = ::core::ptr::null_mut::<wait_event_item>();
-    let mut filter: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut filter: *const ::core::ffi::c_char =
+        args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if hooks_valid_event_name(name) == 0 {
         cmdq_error(item_handle, |out| {
             out.write_all(b"invalid event: ")?;
@@ -406,7 +448,9 @@ unsafe fn cmd_wait_for_event_list(
     for owner in (&raw const wait_event_items).as_ref().unwrap() {
         let wei = std::ptr::from_ref(owner.as_ref()).cast_mut();
         if strcmp(((*wei).name).as_ptr().cast_mut(), name) == 0 as ::core::ffi::c_int {
-            cmdq_print(item_handle, |out| write_cstr(out, cmd_wait_for_client_name(wei).as_ptr()));
+            cmdq_print(item_handle, |out| {
+                write_cstr(out, cmd_wait_for_client_name(wei).as_ptr())
+            });
         }
     }
     return CMD_RETURN_NORMAL;
@@ -417,15 +461,23 @@ unsafe fn cmd_wait_for_event_wake(
     mut args: *mut args,
 ) -> cmd_retval {
     cmd_wait_for_event_prune_expired(&mut *(&raw mut wait_event_items));
-    let mut client_name: *const ::core::ffi::c_char = args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut client_name: *const ::core::ffi::c_char =
+        args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut index = 0;
     while index < (&raw const wait_event_items).as_ref().unwrap().len() {
         let wei = wait_event_item_at(&raw mut wait_event_items, index);
         if !(strcmp(((*wei).name).as_ptr().cast_mut(), name) != 0 as ::core::ffi::c_int) {
-            if !(strcmp(cmd_wait_for_client_name(wei).as_ptr(), client_name) != 0 as ::core::ffi::c_int) {
+            if !(strcmp(cmd_wait_for_client_name(wei).as_ptr(), client_name)
+                != 0 as ::core::ffi::c_int)
+            {
                 let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
                 if let Some(item) = owner.item.upgrade() {
-                    cmdq_continue(&(*(item.get())).observer.upgrade().expect("live command queue item"));
+                    cmdq_continue(
+                        &(*(item.get()))
+                            .observer
+                            .upgrade()
+                            .expect("live command queue item"),
+                    );
                 }
                 cmd_wait_for_event_free(owner);
                 return CMD_RETURN_NORMAL;
@@ -440,7 +492,10 @@ unsafe fn cmd_wait_for_event_wake(
     });
     return CMD_RETURN_ERROR;
 }
-unsafe fn cmd_wait_for_list(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, mut wc: *mut wait_channel) -> cmd_retval {
+unsafe fn cmd_wait_for_list(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    mut wc: *mut wait_channel,
+) -> cmd_retval {
     if wc.is_null() {
         return CMD_RETURN_NORMAL;
     }
@@ -457,11 +512,9 @@ unsafe fn cmd_wait_for_list(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq
     }
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_wait_for_wake(
-    mut args: *mut args,
-    mut wc: *mut wait_channel,
-) -> cmd_retval {
-    let mut client_name: *const ::core::ffi::c_char = args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+unsafe fn cmd_wait_for_wake(mut args: *mut args, mut wc: *mut wait_channel) -> cmd_retval {
+    let mut client_name: *const ::core::ffi::c_char =
+        args_get(&*(args), 'w' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !wc.is_null() {
         cmd_wait_for_prune_expired(wc);
         let waiters = wait_channel_waiters(wc);
@@ -533,7 +586,9 @@ unsafe fn cmd_wait_for_wait(
 ) -> cmd_retval {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: *mut client = c_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if c.is_null() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
         return CMD_RETURN_ERROR;
@@ -555,7 +610,9 @@ unsafe fn cmd_wait_for_wait(
         log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
-    (*wait_channel_waiters(wc)).push(Box::new(wait_item { item: (*item).observer.clone() }));
+    (*wait_channel_waiters(wc)).push(Box::new(wait_item {
+        item: (*item).observer.clone(),
+    }));
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_wait_for_lock(
@@ -572,7 +629,9 @@ unsafe fn cmd_wait_for_lock(
         wc = cmd_wait_for_add(name);
     }
     if (*wc).locked != 0 {
-        (*wait_channel_lockers(wc)).push(Box::new(wait_item { item: (*item).observer.clone() }));
+        (*wait_channel_lockers(wc)).push(Box::new(wait_item {
+            item: (*item).observer.clone(),
+        }));
         return CMD_RETURN_WAIT;
     }
     (*wc).locked = 1 as ::core::ffi::c_int;
@@ -616,7 +675,12 @@ pub unsafe fn cmd_wait_for_flush() {
             break;
         };
         if let Some(item) = owner.item.upgrade() {
-            cmdq_continue(&(*(item.get())).observer.upgrade().expect("live command queue item"));
+            cmdq_continue(
+                &(*(item.get()))
+                    .observer
+                    .upgrade()
+                    .expect("live command queue item"),
+            );
         }
         cmd_wait_for_event_free(owner);
         wei = wei1;
@@ -710,22 +774,16 @@ mod tests {
         let mut owner = test_channel(&name);
         let channel = &raw mut *owner;
         let original = (0..128)
-            .map(|_| {
-                Box::new(wait_item {
-                    item: Weak::new(),
-                })
-            })
+            .map(|_| Box::new(wait_item { item: Weak::new() }))
             .collect::<Vec<_>>();
         let addresses = original
             .iter()
             .map(|item| &**item as *const wait_item as *mut wait_item)
             .collect::<Vec<_>>();
         owner.waiters.extend(original);
-        let lockers = (0..128).map(|_| {
-            Box::new(wait_item {
-                item: Weak::new(),
-            })
-        }).collect::<Vec<_>>();
+        let lockers = (0..128)
+            .map(|_| Box::new(wait_item { item: Weak::new() }))
+            .collect::<Vec<_>>();
         let first_locker = &*lockers[0] as *const wait_item as *mut wait_item;
         owner.lockers.extend(lockers);
 
@@ -790,5 +848,4 @@ mod tests {
             assert_eq!(wait_event_item_at(&raw mut items, 126), addresses[127]);
         }
     }
-
 }

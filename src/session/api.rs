@@ -116,12 +116,7 @@ impl Session for Rc<UnsafeCell<session>> {
         (*self.get()).curw.clone()
     }
     unsafe fn last_winlink(&self) -> refbox::Weak<winlink> {
-        (*self.get())
-            .lastw
-            .storage
-            .front()
-            .cloned()
-            .unwrap_or_default()
+        (*self.get()).lastw.front().cloned().unwrap_or_default()
     }
     unsafe fn with_winlinks<R>(&self, read: impl FnOnce(&winlinks) -> R) -> R {
         read(&(*self.get()).windows)

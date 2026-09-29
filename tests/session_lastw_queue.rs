@@ -1,5 +1,4 @@
 use hmux2::src::shared::session::session;
-use hmux2::src::shared::window::{winlink_stack, winlinks};
 use hmux2::src::window::{
     winlink_add, winlink_remove, winlink_stack_clear, winlink_stack_first, winlink_stack_indices,
     winlink_stack_next, winlink_stack_push, winlink_stack_remove, winlinks_reindex,
@@ -9,12 +8,11 @@ use refbox::BorrowError;
 #[test]
 fn visit_order_uses_weak_links_and_survives_index_change() {
     unsafe {
-        let mut links = winlinks { storage: None };
-        let mut stack = winlink_stack { storage: Default::default() };
+        let mut links = None;
+        let mut stack = Default::default();
         let first = winlink_add(&raw mut links, 1);
         let second = winlink_add(&raw mut links, 2);
         let old_second = links
-            .storage
             .as_ref()
             .unwrap()
             .try_borrow_mut()
@@ -44,15 +42,15 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         winlink_stack_remove(&raw mut stack, (first).clone());
         winlink_remove(&raw mut links, (first).clone());
         winlink_stack_clear(&mut stack);
-        assert!(links.storage.is_none());
+        assert!(links.is_none());
     }
 }
 
 #[test]
 fn history_entry_is_removed_before_its_owner() {
     unsafe {
-        let mut links = winlinks { storage: None };
-        let mut stack = winlink_stack { storage: Default::default() };
+        let mut links = None;
+        let mut stack = Default::default();
         let link = winlink_add(&raw mut links, 7);
         winlink_stack_push(&raw mut stack, link.clone());
         winlink_stack_remove(&raw mut stack, link.clone());
@@ -71,7 +69,6 @@ fn boxed_session_drops_its_winlink_owner() {
         let link = winlink_add(&raw mut owner.windows, 9);
         let weak = owner
             .windows
-            .storage
             .as_ref()
             .unwrap()
             .try_borrow_mut()
@@ -90,8 +87,8 @@ fn boxed_session_drops_its_winlink_owner() {
 #[should_panic(expected = "visited winlink owner was dropped before observer teardown")]
 fn expired_history_observer_is_an_invariant_violation() {
     unsafe {
-        let mut links = winlinks { storage: None };
-        let mut stack = winlink_stack { storage: Default::default() };
+        let mut links = None;
+        let mut stack = Default::default();
         let link = winlink_add(&raw mut links, 1);
         winlink_stack_push(&raw mut stack, link.clone());
         // Deliberately violate teardown order without dereferencing the dead pointer.

@@ -53,7 +53,8 @@ unsafe fn cmd_show_environment_print(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     envent: &environ_entry,
 ) {
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
         return;
     }
@@ -93,15 +94,21 @@ unsafe fn cmd_show_environment_print(
         });
     };
 }
-unsafe fn cmd_show_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_show_environment_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut args: *mut args =
+        cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let env: &environ;
     let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut name: *const ::core::ffi::c_char =
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    tflag =
+        args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !tflag.is_null() {
         if (*target).session_handle().is_none() {
             cmdq_error(item_handle, |out| {
@@ -115,7 +122,8 @@ unsafe fn cmd_show_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: 
         env = global_environ.as_deref().expect("environment");
     } else {
         if (*target).session_handle().is_none() {
-            tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+            tflag = args_get(&*(args), 't' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr());
             if !tflag.is_null() {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"no such session: ")?;
@@ -126,7 +134,13 @@ unsafe fn cmd_show_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: 
             }
             return CMD_RETURN_ERROR;
         }
-        env = (*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).environ.as_deref().expect("environment");
+        env = (*(*target)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .environ
+        .as_deref()
+        .expect("environment");
     }
     if !name.is_null() {
         envent = environ_find(env, name);

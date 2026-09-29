@@ -1,8 +1,8 @@
 use crate::src::ffi::libc::{memcpy, snprintf};
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
-    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create,
-    grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
+    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_duplicate_lines,
+    grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::hyperlinks::{hyperlinks_init, hyperlinks_reset};
 use crate::src::log::{fatal, fatalx, log_debug};
