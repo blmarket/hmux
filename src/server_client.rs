@@ -28,7 +28,7 @@ use crate::src::ffi::libc::{
     strsep, ttyname,
 };
 use crate::src::file::{
-    file_fire_done, file_print, file_read_data,
+    file_print, file_read_data,
     file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::bytes::xformat;
@@ -1117,7 +1117,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<st
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
     (*c).queue = Some(cmdq_new());
-    (*c).files.storage = None;
+    (*c).files = client_files::new();
     (*c).tty.sx = 80 as u_int;
     (*c).tty.sy = 24 as u_int;
     i = 0 as u_int;
@@ -1422,11 +1422,7 @@ pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCel
     status_prompt_clear(&(*(c)).observer.upgrade().expect("live client"));
     status_message_clear(&mut *c);
     cmdq_abort_file_wait(client_owner);
-    for file in (*c).files.iter() {
-        let cf = &mut *file.get();
-        (*cf).error = EINTR;
-        file_fire_done(&file);
-    }
+    (*c).files.interrupt(EINTR);
     clients.remove(&(*c).observer);
     log_debug(format_args!(
         "lost client {}",
@@ -1516,9 +1512,7 @@ unsafe fn server_client_free(c_value: &mut client) {
     let had_queue = (*c).queue.is_some();
     drop((*c).queue.take());
     assert!(
-        (*c).files.storage.as_ref().is_none_or(|index| {
-            index.try_borrow_mut().expect("client file index already borrowed").is_empty()
-        }),
+        (*c).files.is_empty(),
         "client file index still contains live records at client teardown"
     );
     // Server-created clients have a queue before joining the global registry.
@@ -4063,14 +4057,9 @@ unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeC
             }
         }
     }
-    if force == 0 {
-        for file in (*c).files.iter() {
-            let cf = &*file.get();
-            if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
-                server_client_start_exit_timer(&mut *c);
-                return;
-            }
-        }
+    if force == 0 && (*c).files.has_pending_data() {
+        server_client_start_exit_timer(&mut *c);
+        return;
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;
     event_del(&raw mut (*c).exit_timer);

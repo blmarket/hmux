@@ -82,7 +82,7 @@ static mut client_exitsession: Option<CString> = None;
 static mut client_exitmessage: Option<Vec<u8>> = None;
 static mut client_exec_payload: Option<(CString, CString)> = None;
 static mut client_attached: ::core::ffi::c_int = 0;
-static mut client_files: client_files = client_files { storage: None };
+static mut client_files: client_files = client_files::new();
 unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut lockfd: ::core::ffi::c_int = 0;
     log_debug(format_args!(

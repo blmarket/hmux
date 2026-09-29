@@ -296,78 +296,7 @@ impl client {
     }
 }
 
-pub type ClientFileIndex =
-    std::collections::BTreeMap<i32, std::rc::Rc<std::cell::UnsafeCell<client_file>>>;
-
-#[derive(Default)]
-#[repr(C)]
-pub struct client_files {
-    /// The stream index owns active file records until completion unlinks them.
-    pub storage: Option<refbox::RefBox<ClientFileIndex>>,
-}
-
-pub struct client_file {
-    pub c: Option<Rc<UnsafeCell<client>>>,
-    pub peer: *mut tmuxpeer,
-    pub stream: ::core::ffi::c_int,
-    pub path: Option<std::ffi::CString>,
-    pub buffer: Box<SegmentedBuf>,
-    pub event: crate::src::reactor::StreamHandle,
-    pub fd: ::core::ffi::c_int,
-    pub error: ::core::ffi::c_int,
-    pub closed: ::core::ffi::c_int,
-    pub cb: client_file_cb,
-    pub entry: client_file_entry,
-    pub(crate) wait_item: std::rc::Weak<std::cell::UnsafeCell<super::command::cmdq_item>>,
-    pub(crate) wait_active: bool,
-    pub(crate) wait_client: std::rc::Weak<std::cell::UnsafeCell<client>>,
-    pub(crate) cancel_data: Option<Box<dyn FnOnce()>>,
-    pub(crate) terminal_scheduled: bool,
-}
-
-pub struct client_file_event<'a> {
-    /// Borrowed retained client for this callback; clone to retain it afterward.
-    pub client: Option<&'a std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    pub path: Option<&'a CStr>,
-    pub error: i32,
-    pub closed: bool,
-    pub buffer: Option<&'a mut SegmentedBuf>,
-}
-
-impl client_file {
-    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
-        std::rc::Rc::new(std::cell::UnsafeCell::new(Self::empty()))
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            c: Default::default(),
-            peer: Default::default(),
-            stream: Default::default(),
-            path: Default::default(),
-            buffer: Default::default(),
-            event: Default::default(),
-            fd: Default::default(),
-            error: Default::default(),
-            closed: Default::default(),
-            cb: Default::default(),
-            entry: client_file_entry { owner: refbox::Weak::new() },
-            wait_item: Default::default(),
-            wait_active: false,
-            wait_client: Default::default(),
-            cancel_data: Default::default(),
-            terminal_scheduled: Default::default(),
-        }
-    }
-}
-
-#[repr(C)]
-pub struct client_file_entry {
-    /// Weak traversal handle into the client file index.
-    pub owner: refbox::Weak<ClientFileIndex>,
-}
-
-pub type client_file_cb = Option<Box<dyn for<'a> FnMut(client_file_event<'a>)>>;
+pub use crate::src::file::{client_file, client_file_cb, client_file_event, client_files};
 
 pub type overlay_resize_cb = Option<Box<dyn FnMut(&mut client)>>;
 
