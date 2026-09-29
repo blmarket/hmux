@@ -5176,12 +5176,7 @@ mod zoom_teardown_tests {
             .upgrade()
             .expect("cleanup retains the parent");
         assert_eq!((*parent_owner.get()).lifecycle, WindowLifecycle::Destroying);
-        let parent = pane_owner
-            .window_observer()
-            .as_ptr()
-            .cast::<window>()
-            .cast_mut();
-        assert_eq!(parent, parent_owner.get());
+        let parent = parent_owner.get();
         // Releasing a temporary owner during cleanup must not restart cleanup.
         window_remove_ref(parent_owner.clone(), c"reentrant mode cleanup".as_ptr());
         if let Some(slot) = wme.get_unchecked().boxed_data.as_ref() {
@@ -5190,7 +5185,7 @@ mod zoom_teardown_tests {
                 .unwrap();
             *slot.borrow_mut() = Some(parent_owner);
         }
-        assert!(std::ptr::eq((*parent).observer.as_ptr(), parent.cast()));
+        assert!((*parent).observer.ptr_eq(&pane_owner.window_observer()));
         (*pane).sx += 1;
     }
 

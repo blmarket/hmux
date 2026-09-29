@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 /// Borrow the model pointer without deriving it from a reference to the value.
 pub fn as_ptr<T>(owner: &Rc<UnsafeCell<T>>) -> *mut T {
-    Rc::as_ptr(owner).cast_mut().cast()
+    owner.get()
 }
 
 /// Defer one ordinary Rc drop. Cancellation or a scheduling failure drops the

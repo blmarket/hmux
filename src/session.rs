@@ -964,7 +964,7 @@ unsafe fn session_group_remove(s_owner: &Rc<UnsafeCell<session>>) {
     let members = &mut (*sg).members;
     let index = members
         .iter()
-        .position(|member| member.as_ptr().cast::<session>() == s)
+        .position(|member| member.ptr_eq(&Rc::downgrade(s_owner)))
         .expect("session group membership disappeared");
     members.remove(index);
     if members.is_empty() {

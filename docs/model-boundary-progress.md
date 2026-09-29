@@ -69,3 +69,50 @@ and recipient order.
 
 Other control paths, command-target helpers, Client terminal/status state and
 cross-model legacy helper bodies are still outside the completed portions.
+
+## Boundary checks and remaining work
+
+`cargo test --test model_trait_boundary` rejects storage projections in the
+migrated notification consumers and their reply helpers, whole-model references
+or raw components in trait results, and known model/cell representation casts
+throughout application source (including test fixtures). Syntax checks include
+import/type aliases and pointer-to-integer cast chains; they are not a Rust type
+checker and do not prove arbitrary expressions free of aliasing.
+
+`python3 tools/model_boundary_inventory.py --json /tmp/model-boundary.json`
+privatizes all four model structs in a disposable source copy, then classifies
+Rust's field-privacy diagnostics by implementation owner. It never rewrites the
+working tree. `--model session` restricts the probe for work on one trait. Window
+helpers are not exempt from Pane boundaries, or vice versa. This conservative
+inventory is intentionally nonzero while migration remains incomplete; there is
+no baseline allowlist silently accepting the remaining field accesses.
+
+The latest all-model probe still reports 3,271 candidate external field accesses:
+287 Session, 821 Window, 1,341 WindowPane and 822 Client. Five additional type
+inference errors in the private-field probe mean these counts are not an
+exhaustive proof. They count field-access diagnostics, not independent changes.
+The full migration is not complete. Remaining work includes:
+
+- Session identity observers, options ownership, mutable winlink/index operations,
+  and helpers still accepting `&session`.
+- Window layout/scene state and cross-model legacy helpers.
+- Pane base/current-screen pointers, input/parser and mode state, output paths.
+- Client terminal/status/prompt state and other control-mode helpers.
+
+In particular, `screen_write_ctx::screen_ptr`, options-scope pointers, and helper
+conversions to whole-model references still prevent a whole-model RefCell swap.
+Those paths need actual component borrow lifetimes and callback restructuring;
+a pointer-returning adapter or a source-file move would not finish them. No
+RefCell conversion or per-field RefCell has been made in these checkpoints.
+
+Validation at this checkpoint:
+
+- `cargo fmt --all -- --check` and `git diff --check`.
+- `cargo test --workspace`: 768 passed, none failed or ignored.
+- `python3 -m unittest discover -s tools -p 'test_*.py'`: 4 passed.
+- Each of the four implementation commits also compiled independently with
+  `cargo check --offline --all-targets` from its staged source tree.
+- Default `cargo clippy --workspace --all-targets` stops at the existing
+  `clippy::mut_from_ref` denial in `hmux-refbox/src/internals.rs:161`.
+  A supplemental `-- --cap-lints warn` run finishes with warnings; this is not a
+  clean default lint run. Existing code was not changed just to suppress it.
