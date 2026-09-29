@@ -6,10 +6,11 @@ use crate::src::cmd::queue::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_create_with_client, format_defaults, format_each, format_expand_time_cstring, format_free,
+    format_create_with_client, format_defaults, format_each, format_expand_time_cstring,
+    format_free,
 };
 use crate::src::json::{json_parse, json_to_string};
-use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
+use crate::src::reactor::{evbuffer, EventBuffer};
 use crate::src::server_client::server_client_print;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -64,7 +65,10 @@ pub static cmd_display_message_entry: cmd_entry = {
         exec: Some(cmd_display_message_exec),
     }
 };
-unsafe fn cmd_display_message_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_display_message_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -184,8 +188,8 @@ unsafe fn cmd_display_message_exec(mut self_0: refbox::Weak<cmd>, item_handle: &
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         cmdq_print(item_handle, |out| write_cstr(out, msg.as_ptr()));
     } else if !tc.is_null() && (*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
-        let mut evb = evbuffer_new();
-        evbuffer_add_formatted(&mut *evb, |out| {
+        let mut evb = evbuffer::new();
+        evb.add_formatted(|out| {
             out.write_all(b"%message ")?;
             write_cstr(out, msg.as_ptr())
         });

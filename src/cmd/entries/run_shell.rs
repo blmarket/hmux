@@ -1,6 +1,3 @@
-use crate::src::server_client::server_client_unref_owned;
-use crate::src::session::session_remove_ref;
-use crate::src::shared::client::{client_retain, client_handle};
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
@@ -18,17 +15,18 @@ use crate::src::format::{
     format_add, format_create_from_target, format_expand_cstring, format_free,
 };
 use crate::src::job::job_run;
-use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln, event_del,
-    event_once_owned,
-};
-use crate::src::server_client::{server_client_get_cwd};
+use crate::src::reactor::{evbuffer, EventBuffer};
+use crate::src::reactor::{event_del, event_once_owned};
+use crate::src::server_client::server_client_get_cwd;
+use crate::src::server_client::server_client_unref_owned;
+use crate::src::session::session_remove_ref;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::{client_handle, client_retain};
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
@@ -380,11 +378,9 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     if cdata.wait && item_owner.is_none() {
         return;
     }
-    let mut event = evbuffer_new();
+    let mut event = evbuffer::new();
     if !completion.output.is_empty() {
-        evbuffer_add(
-            &mut *event,
-            completion.output.as_ptr().cast(),
+        event.add_raw(completion.output.as_ptr().cast(),
             completion.output.len(),
         );
     }
@@ -398,14 +394,14 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
     loop {
-        let Some(line) = evbuffer_readln(&mut *event) else {
+        let Some(line) = event.read_line(crate::src::reactor::LineEnding::Lf) else {
             break;
         };
         cmd_run_shell_print(cdata, line.as_ptr().cast());
     }
-    size = evbuffer_get_length(&event);
+    size = event.len();
     if size != 0 as size_t {
-        let mut partial_line = evbuffer_pullup(&mut event, -1).unwrap_or_default().to_vec();
+        let mut partial_line = event.pullup(-1).unwrap_or_default().to_vec();
         partial_line.push(0);
         cmd_run_shell_print(cdata, partial_line.as_ptr().cast());
     }

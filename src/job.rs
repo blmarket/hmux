@@ -13,9 +13,9 @@ use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::options_get_string;
 use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_clear_signals;
+use crate::src::reactor::EventBuffer;
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_get_output, bufferevent_new,
-    evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
 use crate::src::shared::abi::*;
@@ -57,7 +57,7 @@ unsafe fn job_completion(job: &job) -> JobCompletion {
     let output = (*job)
         .event
         .with_ptr(|stream| unsafe {
-            evbuffer_pullup(&mut *(*stream).input, -1)
+            (*(*stream).input).pullup(-1)
                 .unwrap_or_default()
                 .to_vec()
         })
@@ -507,7 +507,7 @@ unsafe fn job_write_callback(handle: &Weak<job>) {
     };
     let Some(len) = job
         .event
-        .with_ptr(|stream| evbuffer_get_length(&*bufferevent_get_output(&mut *stream)))
+        .with_ptr(|stream| (*bufferevent_get_output(&mut *stream)).len())
     else {
         return;
     };
@@ -709,9 +709,7 @@ mod job_stream_tests {
 
             for eof_first in [false, true] {
                 let stream = bufferevent_new(-1, None, None, None);
-                crate::src::reactor::evbuffer_add(
-                    &mut *(*stream).input,
-                    b"remaining".as_ptr().cast(),
+                (*(*stream).input).add_raw(b"remaining".as_ptr().cast(),
                     9,
                 );
                 let handle = job_insert(RefBox::new(job {
@@ -758,7 +756,7 @@ mod job_stream_tests {
             });
             let handle = owner.downgrade();
             assert_eq!(job_get_event(&handle), stream);
-            crate::src::reactor::evbuffer_add(&mut *(*stream).input, b"output".as_ptr().cast(), 6);
+            (*(*stream).input).add_raw(b"output".as_ptr().cast(), 6);
             assert_eq!(
                 job_completion(&owner.try_borrow_mut().unwrap()).output,
                 b"output"

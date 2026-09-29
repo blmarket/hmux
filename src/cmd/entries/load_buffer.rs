@@ -1,7 +1,3 @@
-use crate::src::server_client::server_client_unref_owned;
-use std::cell::UnsafeCell;
-use std::rc::{Rc, Weak};
-use crate::src::shared::client::{client_retain, client_handle};
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
@@ -10,18 +6,22 @@ use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
-use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::reactor::{evbuffer, EventBuffer};
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_DEAD;
+use crate::src::shared::client::{client_handle, client_retain};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::src::shared::event::*;
 use crate::src::tty::tty_set_selection;
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct cmd_load_buffer_data {
@@ -84,9 +84,9 @@ unsafe fn cmd_load_buffer_done(
     let item_owner = cdata.item.upgrade();
     let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut bdata: *mut ::core::ffi::c_void =
-        evbuffer_pullup(buffer, -1)
+        buffer.pullup(-1)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
-    let mut bsize: size_t = evbuffer_get_length(&*(buffer));
+    let mut bsize: size_t = (*(buffer)).len();
     let mut cause: Option<CString> = None;
     if error != 0 as ::core::ffi::c_int {
         if !item.is_null() {
@@ -165,7 +165,6 @@ unsafe fn cmd_load_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmux_buffer::{Buf, BufMut, Buffer, SegmentedBuf};
 
     #[test]
     fn file_progress_keeps_segments_until_completion() {
@@ -174,17 +173,17 @@ mod tests {
             item: Weak::new(),
             name: None,
         };
-        let mut buffer = evbuffer::default();
-        buffer.put(SegmentedBuf::from(vec![1; 4096]));
-        let first = buffer.chunk().as_ptr();
+        let mut buffer = *evbuffer::new();
+        buffer.add_formatted(|out| out.write_all(&[1; 4096]));
+        let first = buffer.pullup(1).unwrap().as_ptr();
         for count in 2..=16 {
-            buffer.put(SegmentedBuf::from(vec![2; 4096]));
+            buffer.add_formatted(|out| out.write_all(&[2; 4096]));
             unsafe {
                 cmd_load_buffer_done(&mut data, Some(c"input"), 0, 0, &mut buffer);
             }
-            assert_eq!(buffer.chunks().count(), count);
-            assert_eq!(buffer.chunk().as_ptr(), first);
-            assert_eq!(buffer.remaining(), count * 4096);
+            assert_eq!(buffer.segment_count(), count);
+            assert_eq!(buffer.pullup(1).unwrap().as_ptr(), first);
+            assert_eq!(buffer.len(), count * 4096);
         }
     }
 
@@ -195,7 +194,7 @@ mod tests {
             item: Weak::new(),
             name: None,
         };
-        let mut buffer = evbuffer::default();
+        let mut buffer = *evbuffer::new();
         unsafe { cmd_load_buffer_done(&mut data, Some(c"input"), 5, 1, &mut buffer) };
     }
 }

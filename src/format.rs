@@ -28,8 +28,8 @@ use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::names::parse_window_name_cstring;
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_item_key, options_get,
-    options_get_number, options_get_string, options_is_array, options_name, options_parse_owned, options_to_cstring,
+    options_array_item_key, options_get, options_get_number, options_get_string, options_is_array,
+    options_name, options_parse_owned, options_to_cstring,
 };
 use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
@@ -37,10 +37,8 @@ use crate::src::paste::{
     paste_make_sample_cstring,
 };
 use crate::src::proc::proc_get_peer_uid;
-use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-    evbuffer_readline, event_add, event_initialized, event_pending, event_set,
-};
+use crate::src::reactor::EventBuffer;
+use crate::src::reactor::{event_add, event_initialized, event_pending, event_set};
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};

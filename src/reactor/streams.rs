@@ -1,7 +1,8 @@
 use super::{descriptor, evbuffer, handle};
 use crate::src::control::CONTROL_BUFFER_LOW;
+use crate::src::reactor::EventBuffer;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
-use hmux_buffer::{Buf, BufMut};
+
 use hmux_rt::Handle as _;
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short, c_void};
@@ -93,11 +94,6 @@ impl StreamState {
         }
     }
 }
-pub(super) fn wake_buffer(buffer: &evbuffer) {
-    if let Some(state) = buffer.stream.upgrade() {
-        state.wake();
-    }
-}
 fn state(stream: &bufferevent) -> Rc<StreamState> {
     stream.state.as_ref().expect("live stream").clone()
 }
@@ -152,8 +148,8 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                 let b = &*stream;
                 (
                     b.enabled & 2 != 0
-                        && (b.wm_read.high == 0 || (*b.input).remaining() < b.wm_read.high),
-                    b.enabled & 4 != 0 && ((*b.output).has_remaining() || s.write_requested.get()),
+                        && (b.wm_read.high == 0 || (*b.input).len() < b.wm_read.high),
+                    b.enabled & 4 != 0 && (!(*b.output).is_empty() || s.write_requested.get()),
                     s.generation.get(),
                 )
             };
@@ -188,13 +184,13 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     let count = if high == 0 {
                         65536
                     } else {
-                        high.saturating_sub((*(*stream).input).remaining())
+                        high.saturating_sub((*(*stream).input).len())
                             .min(65536)
                     };
                     if count > 0 {
-                        let n = super::evbuffer_read(&mut *(*stream).input, s.fd, count as c_int);
+                        let n = (*(*stream).input).read_fd(s.fd, count as c_int);
                         if n > 0 {
-                            if (*(*stream).input).remaining() >= (*stream).wm_read.low {
+                            if (*(*stream).input).len() >= (*stream).wm_read.low {
                                 let cb = (*stream).readcb.clone();
                                 if let Some(cb) = cb {
                                     let mut cb = cb.borrow_mut();
@@ -222,14 +218,14 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                 }
                 if writable && (*stream).enabled & 4 != 0 {
                     let requested = s.write_requested.replace(false);
-                    let empty = !(*(*stream).output).has_remaining();
+                    let empty = (*(*stream).output).is_empty();
                     let n = if empty {
                         0
                     } else {
-                        super::evbuffer_write(&mut *(*stream).output, s.fd)
+                        (*(*stream).output).write_fd(s.fd)
                     };
                     if n > 0 || (empty && requested) {
-                        if (*(*stream).output).remaining() <= (*stream).wm_write.low {
+                        if (*(*stream).output).len() <= (*stream).wm_write.low {
                             let cb = (*stream).writecb.clone();
                             if let Some(cb) = cb {
                                 let mut cb = cb.borrow_mut();
@@ -298,8 +294,14 @@ pub unsafe fn bufferevent_new(
     });
     // Explicit free breaks this ownership link, including streams without a task.
     (*stream).state = Some(s.clone());
-    (*stream).input.stream = Rc::downgrade(&s);
-    (*stream).output.stream = Rc::downgrade(&s);
+    let weak = Rc::downgrade(&s);
+    let notify: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(state) = weak.upgrade() {
+            state.wake();
+        }
+    });
+    (*stream).input = evbuffer::with_notify(notify.clone());
+    (*stream).output = evbuffer::with_notify(notify);
     LIVE_STREAMS.with(|streams| {
         let mut streams = streams.borrow_mut();
         streams.retain(|stream| stream.strong_count() != 0);
@@ -360,15 +362,13 @@ pub unsafe fn bufferevent_write(
     data: *const c_void,
     size: usize,
 ) -> c_int {
-    super::evbuffer_add(&mut *(*stream).output, data, size)
+    (*(*stream).output).add_raw(data, size)
 }
 pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: &mut evbuffer) -> c_int {
     if std::ptr::eq(buffer, &raw const *(*stream).output) {
         return -1;
     }
-    (*(*stream).output).put(&mut **buffer);
-    wake_buffer(buffer);
-    state(&*stream).wake();
+    (*(*stream).output).append(buffer);
     0
 }
 pub unsafe fn bufferevent_setwatermark(stream: *mut bufferevent) {
@@ -392,10 +392,10 @@ mod tests {
             let generation = state.generation.get();
             bufferevent_write(stream, b"abc".as_ptr().cast(), 3);
             assert!(state.generation.get() > generation);
-            assert_eq!((*stream).output.remaining(), 3);
+            assert_eq!((*stream).output.len(), 3);
             let generation = state.generation.get();
-            super::super::evbuffer_add(&mut (*stream).input, b"x".as_ptr().cast(), 1);
-            super::super::evbuffer_drain(&mut (*stream).input, 1);
+            ((*stream).input).add_raw(b"x".as_ptr().cast(), 1);
+            ((*stream).input).drain(1);
             assert_eq!(state.generation.get(), generation + 2);
             handle.free();
             assert!(!observer.is_alive());

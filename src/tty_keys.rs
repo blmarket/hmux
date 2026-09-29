@@ -1,4 +1,3 @@
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
@@ -12,10 +11,8 @@ use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
 use crate::src::options::{options_array_get_index, options_get, options_get_number};
 use crate::src::paste::paste_add_owned;
-use crate::src::reactor::{
-    evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
-    event_pending, event_set,
-};
+use crate::src::reactor::EventBuffer;
+use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::server_client::{
     server_client_handle_key, server_client_set_term_type, server_client_update_theme_colours,
 };
@@ -51,6 +48,7 @@ use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open
 use crate::src::tmux::global_options;
 use crate::src::tty::{tty_invalidate, tty_set_size, tty_update_features};
 use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;
 use crate::src::window::window_update_focus;
 use std::ffi::CStr;
@@ -1666,10 +1664,10 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         sgr_type: 0,
         sgr_b: 0,
     };
-    buf = evbuffer_pullup((*tty).in_0.as_deref_mut().expect("open TTY buffer"), -1)
+    buf = ((*tty).in_0.as_deref_mut().expect("open TTY buffer")).pullup(-1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *const ::core::ffi::c_char;
-    len = evbuffer_get_length((*tty).in_0.as_deref().expect("open TTY buffer"));
+    len = ((*tty).in_0.as_deref().expect("open TTY buffer")).len();
     if len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
@@ -1876,9 +1874,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                                         log_cstr_n((buf) as *const _, size as ::core::ffi::c_int),
                                                                         log_hex((key) as u64)
                                                                     ));
-                                                                    evbuffer_drain(
-                                                                        (*tty).in_0.as_deref_mut().expect("open TTY buffer"),
-                                                                        size,
+                                                                    ((*tty).in_0.as_deref_mut().expect("open TTY buffer")).drain(size,
                                                                     );
                                                                     return 1 as ::core::ffi::c_int;
                                                                 }
@@ -2128,7 +2124,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                     let event = key_event::new(key, m, Some(bytes));
                     server_client_handle_key(&terminal_client_owner, event);
                 }
-                evbuffer_drain((*tty).in_0.as_deref_mut().expect("open TTY buffer"), size);
+                ((*tty).in_0.as_deref_mut().expect("open TTY buffer")).drain(size);
                 return 1 as ::core::ffi::c_int;
             }
             _ => {
@@ -3475,7 +3471,6 @@ mod key_tree_tests {
             callback.borrow_mut()(-1, 0);
         }
     }
-
 
     fn lookup(tree: &Option<Box<tty_key>>, bytes: &[u8]) -> (Option<key_code>, size_t) {
         let mut size = 0;

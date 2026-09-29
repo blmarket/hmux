@@ -8,13 +8,13 @@ use crate::src::ffi::libc::{
     sigfillset, sigprocmask, socketpair, strerror,
 };
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::{format_create_with_client, format_defaults, format_expand_time_cstring, format_free};
+use crate::src::format::{
+    format_create_with_client, format_defaults, format_expand_time_cstring, format_free,
+};
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
-use crate::src::reactor::{
-    bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup,
-};
+use crate::src::reactor::EventBuffer;
+use crate::src::reactor::{bufferevent_enable, bufferevent_new, bufferevent_write};
 use crate::src::server::server_proc;
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::shared::abi::ssize_t;
@@ -253,7 +253,9 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
         }
     };
 }
-unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
+unsafe fn cmd_pipe_pane_read_callback(
+    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
     let wp = pane_owner.get();
     let mut available: size_t = 0;
     if !(*wp).pipe_event.is_alive() {
@@ -261,8 +263,8 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::Unsafe
     }
     let data = (*wp).pipe_event.with_ptr(|event| unsafe {
         let evb = &mut *(*event).input;
-        let available = evbuffer_get_length(evb);
-        evbuffer_pullup(evb, -1)
+        let available = evb.len();
+        evb.pullup(-1)
             .map_or_else(Vec::new, |bytes| bytes[..available].to_vec())
     }).unwrap_or_default();
     available = data.len();
@@ -275,7 +277,7 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::Unsafe
         bufferevent_write(event, data.as_ptr().cast(), available);
     });
     let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
-        evbuffer_drain(&mut *(*event).input, available);
+        (*(*event).input).drain(available);
     });
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(&pane_owner, 1);
@@ -302,7 +304,7 @@ unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::Unsaf
 #[cfg(test)]
 mod pipe_stream_tests {
     use super::*;
-    use crate::src::reactor::{bufferevent_free, evbuffer_add, shutdown_runtime};
+    use crate::src::reactor::{bufferevent_free, shutdown_runtime};
     use crate::src::shared::rc;
 
     #[test]
@@ -318,14 +320,14 @@ mod pipe_stream_tests {
             (*wp).pipe_event = crate::src::reactor::StreamHandle::from_ptr(pipe);
             let stale = (*wp).pipe_event.clone();
             let bytes = b"pipe output";
-            evbuffer_add(&mut (*pipe).input, bytes.as_ptr().cast(), bytes.len());
+            ((*pipe).input).add_raw(bytes.as_ptr().cast(), bytes.len());
 
             cmd_pipe_pane_read_callback(&pane_owner);
 
             assert_eq!((*wp).event.with_ptr(|event| unsafe {
-                evbuffer_get_length(&(*event).output)
+                ((*event).output).len()
             }), Some(bytes.len()));
-            assert_eq!(evbuffer_get_length(&(*pipe).input), 0);
+            assert_eq!(((*pipe).input).len(), 0);
             (*wp).pipe_event.free();
             assert!(!stale.is_alive());
             assert!(!(*wp).pipe_event.is_alive());

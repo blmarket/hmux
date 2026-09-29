@@ -6,7 +6,7 @@ use crate::src::file::file_write_with_cmdq_wait;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
-use crate::src::reactor::{evbuffer_add, evbuffer_new};
+use crate::src::reactor::{evbuffer, EventBuffer};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -85,7 +85,10 @@ unsafe fn cmd_save_buffer_done(
     }
     cmdq_continue(item_handle);
 }
-unsafe fn cmd_save_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+unsafe fn cmd_save_buffer_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
     let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
@@ -114,11 +117,11 @@ unsafe fn cmd_save_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std:
     let show_buffer = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_buffer_entry);
     if show_buffer {
         if !(*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            let mut evb = evbuffer_new();
+            let mut evb = evbuffer::new();
             {
                 let buffer = pb.borrow();
                 let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-                evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
+                evb.add_raw(bufdata.as_ptr().cast(), bufdata.len());
             }
             cmdq_print_data(item_handle, &mut *evb);
             return CMD_RETURN_NORMAL;

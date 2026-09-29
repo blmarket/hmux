@@ -1,5 +1,6 @@
-use crate::src::shared::client::client_handle;
 use crate::src::log::{log_cstr, log_pointer};
+use crate::src::reactor::{evbuffer, EventBuffer};
+use crate::src::shared::client::client_handle;
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
 // lifecycle.  It calls the parent facade for expansion, logging, and allocation.
@@ -44,7 +45,7 @@ pub(super) unsafe fn format_job_update(job: &refbox::Weak<job>, mut fj: *mut for
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {
-        let Some(next) = evbuffer_readline(evb) else {
+        let Some(next) = evb.read_line(crate::src::reactor::LineEnding::Legacy) else {
             break;
         };
         line = Some(next);
@@ -75,16 +76,14 @@ pub(super) unsafe fn format_job_update(job: &refbox::Weak<job>, mut fj: *mut for
     }
 }
 pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut format_job) {
-    let mut evb = evbuffer_new();
+    let mut evb = evbuffer::new();
     if !completion.output.is_empty() {
-        evbuffer_add(
-            &mut *evb,
-            completion.output.as_ptr().cast(),
+        evb.add_raw(completion.output.as_ptr().cast(),
             completion.output.len(),
         );
     }
     (*fj).job = refbox::Weak::new();
-    let line = evbuffer_readline(&mut *evb);
+    let line = evb.read_line(crate::src::reactor::LineEnding::Legacy);
     let output = if let Some(line) = line {
         let visible = line
             .iter()
@@ -92,8 +91,8 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
             .unwrap_or(line.len());
         CString::new(&line[..visible]).expect("visible job output contains no NUL")
     } else {
-        let len = evbuffer_get_length(&evb);
-        let bytes = evbuffer_pullup(&mut evb, -1).unwrap_or_default();
+        let len = evb.len();
+        let bytes = evb.pullup(-1).unwrap_or_default();
         // The old malloc buffer was treated as a C string after copying all
         // bytes, so only bytes before the first NUL became visible output.
         let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);

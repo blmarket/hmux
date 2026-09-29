@@ -1,7 +1,6 @@
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
-    cmdq_new_state,
+    cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard, cmdq_new_state,
 };
 use crate::src::ffi::libc::{__errno_location, close, memset, poll, strcmp, strlen};
 use crate::src::ffi::libc::{nfds_t, pollfd};
@@ -10,11 +9,10 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_new,
-    bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
-    evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-    evbuffer_read, evbuffer_readln,
+    bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_setwatermark,
+    bufferevent_write, bufferevent_write_buffer,
 };
+use crate::src::reactor::{evbuffer, EventBuffer};
 use crate::src::server_client::server_client_set_exit_message;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -28,8 +26,7 @@ use crate::src::shared::command::CMDQ_STATE_CONTROL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::control::{
-    control_block, control_pane, control_panes, control_state, control_window,
-    control_windows,
+    control_block, control_pane, control_panes, control_state, control_window, control_windows,
 };
 use crate::src::shared::errno::{EAGAIN, EINTR};
 use crate::src::shared::event::*;
@@ -48,10 +45,10 @@ use crate::src::window::{
     window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
     winlink_find_by_window,
 };
-use std::collections::VecDeque;
 use std::cell::UnsafeCell;
-use std::rc::Rc;
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
 
 pub const POLLIN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const INFTIM: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -651,7 +648,7 @@ pub unsafe fn control_pane_offset<'a>(
         return None;
     }
     *off = (cs.write_event.with_ptr(|stream| unsafe {
-        evbuffer_get_length(&*(*stream).output)
+        (*(*stream).output).len()
     }).unwrap_or(0) >= CONTROL_BUFFER_LOW as size_t)
         as ::core::ffi::c_int;
     Some(&mut cp.offset)
@@ -738,7 +735,10 @@ pub unsafe fn control_reset_pane(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &Rc
         cp.queued.used = (*wp).offset.used;
     }
 }
-unsafe fn control_check_reply_buffer(c_owner: &Rc<UnsafeCell<client>>, mut added: size_t) -> ::core::ffi::c_int {
+unsafe fn control_check_reply_buffer(
+    c_owner: &Rc<UnsafeCell<client>>,
+    mut added: size_t,
+) -> ::core::ffi::c_int {
     let c = c_owner.get();
 
     let Some(cs) = (*c).control_state.as_deref_mut() else {
@@ -749,7 +749,7 @@ unsafe fn control_check_reply_buffer(c_owner: &Rc<UnsafeCell<client>>, mut added
         return 1 as ::core::ffi::c_int;
     }
     size = cs.write_event.with_ptr(|stream| unsafe {
-        evbuffer_get_length(&*(*stream).output)
+        (*(*stream).output).len()
     }).unwrap_or(0);
     size = size.wrapping_add(cs.queued_reply_bytes);
     size = size.wrapping_add(added);
@@ -1117,7 +1117,7 @@ unsafe fn control_read_callback(owner: &Rc<UnsafeCell<client>>) {
             break;
         };
         let Some(line) = cs.read_event.with_ptr(|stream| unsafe {
-            evbuffer_readln(&mut *(*stream).input)
+            (*(*stream).input).read_line(crate::src::reactor::LineEnding::Lf)
         }).flatten() else {
             break;
         };
@@ -1169,7 +1169,7 @@ pub unsafe fn control_all_done(c: &client) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     return (cs.write_event.with_ptr(|stream| unsafe {
-        evbuffer_get_length(&*(*stream).output)
+        (*(*stream).output).len()
     }).unwrap_or(0) == 0 as size_t)
         as ::core::ffi::c_int;
 }
@@ -1181,9 +1181,9 @@ pub unsafe fn control_wait_exit() {
         revents: 0,
     };
     let mut n: ::core::ffi::c_int = 0;
-    let mut evb = evbuffer_new();
+    let mut evb = evbuffer::new();
     loop {
-        if let Some(line) = evbuffer_readln(&mut *evb) {
+        if let Some(line) = evb.read_line(crate::src::reactor::LineEnding::Lf) {
             if line[0] == 0 {
                 break;
             }
@@ -1200,7 +1200,7 @@ pub unsafe fn control_wait_exit() {
                     break;
                 }
             } else {
-                n = evbuffer_read(&mut *evb, fd, -(1 as ::core::ffi::c_int));
+                n = evb.read_fd(fd, -(1 as ::core::ffi::c_int));
                 if n == 0 as ::core::ffi::c_int {
                     break;
                 }
@@ -1271,9 +1271,9 @@ unsafe fn control_append_data(
     let mut start: size_t = 0;
     let mut i: u_int = 0;
     let mut message = message.unwrap_or_else(|| {
-        let mut message = evbuffer_new();
+        let mut message = evbuffer::new();
         if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_PAUSEAFTER != 0 {
-            evbuffer_add_formatted(&mut *message, |out| {
+            message.add_formatted(|out| {
                 write!(
                     out,
                     "%extended-output %{} {} : ",
@@ -1282,7 +1282,7 @@ unsafe fn control_append_data(
                 )
             });
         } else {
-            evbuffer_add_formatted(&mut *message, |out| {
+            message.add_formatted(|out| {
                 write!(out, "%output %{} ", ((*wp).id) as u32)
             });
         }
@@ -1308,7 +1308,7 @@ unsafe fn control_append_data(
         if (*new_data.offset(i as isize) as ::core::ffi::c_int) < ' ' as i32
             || *new_data.offset(i as isize) as ::core::ffi::c_int == '\\' as i32
         {
-            evbuffer_add_formatted(&mut *message, |out| {
+            message.add_formatted(|out| {
                 write!(
                     out,
                     "\\{:03o}",
@@ -1325,9 +1325,7 @@ unsafe fn control_append_data(
             {
                 i = i.wrapping_add(1);
             }
-            evbuffer_add(
-                &mut *message,
-                new_data.offset(start as isize) as *const ::core::ffi::c_void,
+            message.add_raw(new_data.offset(start as isize) as *const ::core::ffi::c_void,
                 (i as size_t).wrapping_sub(start).wrapping_add(1 as size_t),
             );
         }
@@ -1353,14 +1351,12 @@ unsafe fn control_write_data(c_owner: &Rc<UnsafeCell<client>>, mut message: Box<
                 as *const _
         ),
         log_cstr_n(
-            (evbuffer_pullup(&mut *message, -1)
+            (message.pullup(-1)
                 .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())) as *const _,
-            evbuffer_get_length(&message) as ::core::ffi::c_int
+            message.len() as ::core::ffi::c_int
         )
     ));
-    evbuffer_add(
-        &mut *message,
-        b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
+    message.add_raw(b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
         1 as size_t,
     );
     let _ = cs.write_event.with_ptr(|stream| unsafe {
@@ -1492,7 +1488,7 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
             return;
         };
         let Some(buffered) = cs.write_event.with_ptr(|stream| unsafe {
-            evbuffer_get_length(&*(*stream).output)
+            (*(*stream).output).len()
         }) else { return };
         if buffered >= CONTROL_BUFFER_HIGH as size_t || cs.pending_count == 0 {
             break;
@@ -1516,7 +1512,7 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
                 return;
             };
             let Some(buffered) = cs.write_event.with_ptr(|stream| unsafe {
-                evbuffer_get_length(&*(*stream).output)
+                (*(*stream).output).len()
             }) else { return };
             if buffered >= CONTROL_BUFFER_HIGH as size_t {
                 break;
@@ -1540,7 +1536,7 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
     }
     if let Some(cs) = (*c).control_state.as_deref() {
         if cs.write_event.with_ptr(|stream| unsafe {
-            evbuffer_get_length(&*(*stream).output)
+            (*(*stream).output).len()
         }) == Some(0) {
             let _ = cs.write_event.with_ptr(|stream| unsafe {
                 bufferevent_disable(stream, EV_WRITE as ::core::ffi::c_short)

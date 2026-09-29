@@ -1,4 +1,3 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_queue;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
@@ -28,15 +27,18 @@ use crate::src::layout::{
 };
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::menu::{menu_destroy, menu_resize};
-use crate::src::options::{options_create, options_free, options_get_number, options_get_number_ref};
+use crate::src::options::options_owner_ptr;
+use crate::src::options::{
+    options_create, options_free, options_get_number, options_get_number_ref,
+};
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_type_string, prompt_update,
 };
+use crate::src::reactor::EventBuffer;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write,
-    evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
-    event_set,
+    bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, event_add,
+    event_del, event_initialized, event_set,
 };
 use crate::src::screen::{
     screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,
@@ -52,7 +54,7 @@ use crate::src::server_fn::{
 };
 use crate::src::session::session_has;
 use crate::src::shared::events::event_payload;
-use crate::src::shared::pane::{window_pane_tree};
+use crate::src::shared::pane::window_pane_tree;
 use crate::src::shared::prompt::prompt_create_data;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::status::status_at_line;
@@ -1098,12 +1100,14 @@ unsafe fn window_destroy(w_owner: &Rc<std::cell::UnsafeCell<window>>) {
     drop((*w).options.take());
     (*w).lifecycle = WindowLifecycle::Destroyed;
 }
-pub unsafe fn window_pane_destroy_ready(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_destroy_ready(
+    wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
+) -> ::core::ffi::c_int {
     let mut wp = wp_owner.get();
     let mut n: ::core::ffi::c_int = 0;
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int)
         && (*wp).pipe_event.with_ptr(|event| unsafe {
-            evbuffer_get_length(&*(*event).output) != 0 as size_t
+            (*(*event).output).len() != 0 as size_t
         }).unwrap_or(false)
     {
         return 0 as ::core::ffi::c_int;
@@ -2795,7 +2799,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
     let wp = owner.get();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let size: size_t = (*wp).event.with_ptr(|event| unsafe {
-        evbuffer_get_length(&(*event).input)
+        ((*event).input).len()
     }).unwrap_or(0);
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
@@ -3875,8 +3879,10 @@ unsafe fn window_pane_input_callback(
     buffer: &mut evbuffer,
 ) {
     let c = cdata.client.as_ref().expect("pane input client").get();
-    let buf = evbuffer_pullup(buffer, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr());
-    let len = evbuffer_get_length(buffer);
+    let buf = buffer
+        .pullup(-1)
+        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr());
+    let len = buffer.len();
     let lookup_wp_owner = window_pane_find_by_id(cdata.wp);
     let wp = lookup_wp_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
@@ -3894,7 +3900,7 @@ unsafe fn window_pane_input_callback(
     } else {
         input_parse_buffer(&(*(wp)).observer.upgrade().expect("live window_pane"), buf, len);
     }
-    evbuffer_drain(buffer, len);
+    buffer.drain(len);
 }
 
 pub unsafe fn window_pane_start_input(
@@ -3944,7 +3950,7 @@ pub fn window_pane_get_new_data<'a>(
     offset: &window_pane_offset,
 ) -> &'a [u8] {
     let used = offset.used.wrapping_sub(base_offset);
-    let data = evbuffer_pullup(input, -1).unwrap_or_default();
+    let data = input.pullup(-1).unwrap_or_default();
     data.get(used..).expect("pane offset is within input buffer")
 }
 pub unsafe fn window_pane_update_used_data(
@@ -3955,7 +3961,7 @@ pub unsafe fn window_pane_update_used_data(
     let mut wp = wp_owner.get();
     let used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
     let Some(available) = (*wp).event.with_ptr(|event| unsafe {
-        evbuffer_get_length(&*(*event).input)
+        (*(*event).input).len()
     }) else { return };
     if size > available.saturating_sub(used) {
         size = available.saturating_sub(used);
