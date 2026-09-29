@@ -1174,7 +1174,7 @@ unsafe fn format_cb_client_last_session(mut ft: *mut format_tree) -> Option<CStr
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let client = format_client.as_ref()?;
     let owner = crate::src::session::sessions_resolve(
-        &*std::ptr::addr_of!(crate::src::session::sessions),
+        &crate::src::session::sessions,
         &client.last_session,
     )?;
     Some((*owner.get()).name.clone())
@@ -2528,7 +2528,7 @@ unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CStr
 unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         n = n.wrapping_add(1);
@@ -2931,7 +2931,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*ft).winlink_handle().is_alive() {
-        let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+        let mut s_owner = sessions_minmax(&sessions);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
         while !s.is_null() {
             wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
@@ -2960,7 +2960,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         return None;
     }
     w = ((*ft).winlink_handle()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
+    sg = session_groups_minmax(&session_groups);
     while !sg.is_null() {
         let group_members = crate::src::session::session_group_members(sg);
         s = group_members.first().map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -2969,7 +2969,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         }
         sg = session_groups_next(&*sg);
     }
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if session_group_contains((s).as_ref()).is_null() {

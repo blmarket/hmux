@@ -326,7 +326,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell
             if !c.is_null() && !(*c).session_handle().is_none() {
                 s = (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
             } else {
-                let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+                let mut s_owner = sessions_minmax(&sessions);
                 s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
             }
         }

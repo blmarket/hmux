@@ -38,7 +38,7 @@ pub unsafe fn key_bindings_get_table(
     name: &CStr,
     create: i32,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    if let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() {
+    if let Some(index) = key_tables.storage.as_ref() {
         let map = index.try_borrow_mut().expect("key table index already borrowed");
         if let Some(table) = map.get(name.to_bytes()) {
             return Some(table.clone());
@@ -63,7 +63,7 @@ pub fn key_bindings_get_default(table: &key_table, key: key_code) -> Option<&key
 
 /// Retain the tables while callers borrow their bindings for listing.
 pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() else {
+    let Some(index) = key_tables.storage.as_ref() else {
         return Vec::new();
     };
     let map = index.try_borrow_mut().expect("key table index already borrowed");

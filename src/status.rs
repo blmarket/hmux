@@ -942,7 +942,7 @@ mod status_screen_tests {
                 c"status-position",
                 c"status",
             ] {
-                let definition = (&*std::ptr::addr_of!(options_table))
+                let definition = (&options_table)
                     .iter()
                     .find(|entry| entry.name == Some(name))
                     .unwrap();

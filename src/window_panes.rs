@@ -1940,7 +1940,7 @@ mod session_observer_tests {
             let owner = session::new();
             let session = rc::as_ptr(&owner);
             (*session).name = c"panes-mode-session".to_owned();
-            sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
+            sessions_insert(&mut sessions, owner);
             let observer = (*session).observer.clone();
             let mut mode = window_panes_modedata {
                 wp: Weak::new(),
@@ -1959,7 +1959,7 @@ mod session_observer_tests {
             assert_eq!((*session).observer.strong_count(), 1);
             let guard = window_panes_session(&mut mode).unwrap();
             assert_eq!(rc::as_ptr(&guard), session);
-            let owner = sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*session).observer.upgrade().expect("indexed session")).unwrap();
+            let owner = sessions_remove(&mut sessions, &(*session).observer.upgrade().expect("indexed session")).unwrap();
             assert!(window_panes_session(&mut mode).is_none());
             assert_eq!(observer.strong_count(), 2);
             drop(owner);

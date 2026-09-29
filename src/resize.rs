@@ -596,7 +596,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         (*s).attached = 0 as u_int;
@@ -621,7 +621,7 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
         recalculate_size(&(*(w)).observer.upgrade().expect("live window"), now);

@@ -21,7 +21,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         let mut options_owner = options_create(std::ptr::null_mut());
         let options = &raw mut *options_owner;
         for name in [c"prompt-history-limit", c"history-file"] {
-            let definition = (&*std::ptr::addr_of!(options_table))
+            let definition = (&options_table)
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();

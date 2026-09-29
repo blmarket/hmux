@@ -100,9 +100,9 @@ unsafe fn cmd_rename_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &s
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| out.write_all(newname.as_bytes()),
     );
-    let owner = sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")).expect("registered session owner");
+    let owner = sessions_remove(&mut sessions, &(*s).observer.upgrade().expect("indexed session")).expect("registered session owner");
     drop(session_replace_name(&mut *s, newname));
-    sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
+    sessions_insert(&mut sessions, owner);
     server_status_session(&*(s));
     events_fire(
         b"session-renamed\0" as *const u8 as *const ::core::ffi::c_char,

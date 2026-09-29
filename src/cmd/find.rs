@@ -145,7 +145,7 @@ unsafe fn cmd_find_inside_pane(c_owner: Option<&std::rc::Rc<std::cell::UnsafeCel
     if c.is_null() {
         return None;
     }
-    let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+    let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
     wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if (*wp).fd != -(1 as ::core::ffi::c_int)
@@ -230,7 +230,7 @@ unsafe fn cmd_find_best_session(
     let candidates = match candidates {
         Some(candidates) => candidates,
         None => {
-            let mut cursor = sessions_minmax(&*std::ptr::addr_of!(sessions));
+            let mut cursor = sessions_minmax(&sessions);
             while let Some(owner) = cursor {
                 cursor = sessions_next(&*owner.get());
                 all.push(owner);
@@ -252,7 +252,7 @@ unsafe fn cmd_find_best_session(
 unsafe fn cmd_find_best_session_with_window(fs: *mut cmd_find_state) -> ::core::ffi::c_int {
     let Some(window_owner) = (*fs).w.upgrade() else { return -1; };
     let mut candidates = Vec::new();
-    let mut cursor = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut cursor = sessions_minmax(&sessions);
     while let Some(owner) = cursor {
         cursor = sessions_next(&*owner.get());
         if session_has(&*owner.get(), &*window_owner.get()) != 0 {
@@ -347,7 +347,7 @@ unsafe fn cmd_find_get_session(
         return -(1 as ::core::ffi::c_int);
     }
     s = ::core::ptr::null_mut::<session>();
-    let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_loop_owner = sessions_minmax(&sessions);
     s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s_loop.is_null() {
         if strncmp(
@@ -369,7 +369,7 @@ unsafe fn cmd_find_get_session(
         return 0 as ::core::ffi::c_int;
     }
     s = ::core::ptr::null_mut::<session>();
-    let mut s_loop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_loop_owner = sessions_minmax(&sessions);
     s_loop = s_loop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s_loop.is_null() {
         if fnmatch(
@@ -1240,7 +1240,7 @@ pub unsafe fn cmd_find_target(
     let mut current_context: Option<cmd_find_state> = None;
     cmd_find_clear_state(fs, flags);
     if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
-        current_context = Some((&*std::ptr::addr_of!(marked_pane)).clone());
+        current_context = Some((&marked_pane).clone());
         log_debug(format_args!(
             "{}: current is marked pane",
             "cmd_find_target"
@@ -1798,7 +1798,7 @@ mod target_observer_tests {
     fn best_client_selection_preserves_filtering_ties_and_retains_result() {
         unsafe {
             let saved = std::mem::replace(
-                &mut *std::ptr::addr_of_mut!(clients),
+                &mut clients,
                 crate::src::server_client::ClientRegistry::new(),
             );
             let session_owner = session::new();
@@ -1820,7 +1820,7 @@ mod target_observer_tests {
             (*second.get()).activity_time.tv_usec = 1;
             let selected = cmd_find_best_client(&*session_owner.get()).unwrap();
             let observer = Rc::downgrade(&second);
-            let registry = std::mem::replace(&mut *std::ptr::addr_of_mut!(clients), saved);
+            let registry = std::mem::replace(&mut clients, saved);
             drop(registry);
             (*first.get()).set_session(None);
             (*second.get()).set_session(None);
@@ -1923,7 +1923,7 @@ mod target_observer_tests {
     fn validation_checks_membership_and_rejects_replacement_links() {
         unsafe {
             let saved = std::mem::replace(
-                &mut *std::ptr::addr_of_mut!(sessions),
+                &mut sessions,
                 crate::src::shared::session::sessions { storage: None },
             );
             let session_owner = session::new();
@@ -1934,7 +1934,7 @@ mod target_observer_tests {
             let s = rc::as_ptr(&session_owner);
             let w = rc::as_ptr(&window_owner);
             let wp = rc::as_ptr(&pane_owner);
-            crate::src::session::sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), session_owner.clone());
+            crate::src::session::sessions_insert(&mut sessions, session_owner.clone());
             assert_eq!(session_alive(Some(&*session_owner.get())), 1);
             let links = &raw mut (*s).windows;
             let mut wl = winlink_add(links, 1);
@@ -1961,11 +1961,11 @@ mod target_observer_tests {
             let panes = std::mem::take(&mut (*w).panes.storage);
             assert_eq!(cmd_find_valid_state(&state), 0);
             (*w).panes.storage = panes;
-            drop(crate::src::session::sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")));
+            drop(crate::src::session::sessions_remove(&mut sessions, &(*s).observer.upgrade().expect("indexed session")));
             assert!(state.s.upgrade().is_some());
             assert_eq!(session_alive(Some(&*session_owner.get())), 0);
             assert_eq!(cmd_find_valid_state(&state), 0);
-            crate::src::session::sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), session_owner.clone());
+            crate::src::session::sessions_insert(&mut sessions, session_owner.clone());
             assert_eq!(cmd_find_valid_state(&state), 1);
 
             winlink_remove(links, wl.clone());
@@ -1978,8 +1978,8 @@ mod target_observer_tests {
             winlink_remove(links, (replacement).clone());
             (*w).panes.storage.clear();
             (*wp).window = std::rc::Weak::new();
-            drop(crate::src::session::sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")));
-            *std::ptr::addr_of_mut!(sessions) = saved;
+            drop(crate::src::session::sessions_remove(&mut sessions, &(*s).observer.upgrade().expect("indexed session")));
+            sessions = saved;
             crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
         }
     }

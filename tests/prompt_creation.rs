@@ -53,7 +53,7 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             c"status-keys",
             c"word-separators",
         ] {
-            let definition = (&*std::ptr::addr_of!(options_table))
+            let definition = (&options_table)
                 .iter()
                 .find(|entry| entry.name == Some(name))
                 .unwrap();

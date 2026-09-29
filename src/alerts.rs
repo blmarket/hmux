@@ -57,7 +57,7 @@ unsafe fn alerts_callback() {
     let mut alerts: ::core::ffi::c_int = 0;
     loop {
         let next = {
-            let queue = &mut *::core::ptr::addr_of_mut!(alerts_list);
+            let queue = &mut alerts_list;
             alerts_pop_front(queue)
         };
         let Some((owner, has_next)) = next else {
@@ -148,7 +148,7 @@ unsafe fn alerts_enabled(w_owner: &Rc<UnsafeCell<window>>, mut flags: ::core::ff
 }
 pub unsafe fn alerts_reset_all() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
         alerts_reset(&window_owner);
@@ -206,7 +206,7 @@ pub unsafe fn alerts_queue(w_owner: &Rc<UnsafeCell<window>>, mut flags: ::core::
     if alerts_enabled(w_owner, flags) != 0 {
         if (*w).alerts_queued == 0 {
             let owner = Rc::clone(w_owner);
-            let queue = &mut *::core::ptr::addr_of_mut!(alerts_list);
+            let queue = &mut alerts_list;
             alerts_enqueue(queue, &mut (*w).alerts_queued, owner);
         }
         if alerts_fired == 0 {

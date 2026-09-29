@@ -167,7 +167,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: refbox::Weak<cmd>, item_handle: &st
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
         last_session_owner = crate::src::session::sessions_resolve(
-            &*std::ptr::addr_of!(crate::src::session::sessions),
+            &crate::src::session::sessions,
             &(*tc).last_session,
         );
         s = last_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

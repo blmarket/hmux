@@ -437,7 +437,7 @@ unsafe fn server_send_exit() {
         }
         (*c).set_session(None);
     }
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         let name = sessions_key(&*s);
@@ -446,7 +446,7 @@ unsafe fn server_send_exit() {
             1 as ::core::ffi::c_int,
             b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        s_owner = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        s_owner = sessions_after(&sessions, &name);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
 }
@@ -482,7 +482,7 @@ pub unsafe fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if (*s).attached != 0 as u_int {
@@ -649,7 +649,7 @@ unsafe fn server_child_signal() {
 unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
         window_cursor = windows_next(&*w);
@@ -683,7 +683,7 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     {
         return;
     }
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
         wp = window_pane_first(w.as_ref()).as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());

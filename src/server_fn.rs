@@ -222,7 +222,7 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
     }
 }
 pub unsafe fn server_status_window(window: &window) {
-    let mut next = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut next = sessions_minmax(&sessions);
     while let Some(session_owner) = next {
         let session = &*session_owner.get();
         if session_has(session, window) != 0 {
@@ -308,7 +308,7 @@ pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window
     let w = owner.get();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         // Destroying a group may remove both s and its next session.
@@ -331,7 +331,7 @@ pub unsafe fn server_kill_window(owner: std::rc::Rc<std::cell::UnsafeCell<window
                 server_renumber_session(&(*(s)).observer.upgrade().expect("live session"));
             }
         }
-        s_owner = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        s_owner = sessions_after(&sessions, &name);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     recalculate_sizes();
@@ -357,7 +357,7 @@ pub unsafe fn server_renumber_session(s_owner: &std::rc::Rc<std::cell::UnsafeCel
 }
 pub unsafe fn server_renumber_all() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         server_renumber_session(&(*(s)).observer.upgrade().expect("live session"));
@@ -645,7 +645,7 @@ pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
         b"detach-on-destroy\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    let head = &*std::ptr::addr_of!(sessions);
+    let head = &sessions;
     let mut replacement = match detach_on_destroy {
         0 => server_find_session(head, &*s, server_newer_session),
         2 => server_find_session(head, &*s, server_newer_detached_session),
@@ -685,7 +685,7 @@ pub unsafe fn server_check_unattached() {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current_block_4: u64;
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         let name = sessions_key(&*s);
@@ -799,7 +799,7 @@ pub unsafe fn server_check_unattached() {
                 }
             }
         }
-        s_owner = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        s_owner = sessions_after(&sessions, &name);
         s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
 }

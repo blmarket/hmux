@@ -980,7 +980,7 @@ pub unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     {
         return 0 as ::core::ffi::c_int;
     }
-    let mut indexed_pane_owner = window_pane_tree_minmax(&*std::ptr::addr_of!(all_window_panes));
+    let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
     wp = indexed_pane_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     while !wp.is_null() {
         if strcmp(
@@ -1209,7 +1209,7 @@ unsafe fn server_client_attached_lost(c_owner: &std::rc::Rc<std::cell::UnsafeCel
         "lost attached client {}",
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
         if (*w).latest.ptr_eq(&(*c).observer) {
@@ -1414,7 +1414,7 @@ pub unsafe fn server_client_set_session(c_owner: &std::rc::Rc<std::cell::UnsafeC
 }
 pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let c = client_owner.get();
-    if (&*std::ptr::addr_of!(cfg_client)).ptr_eq(&(*c).observer) {
+    if (&cfg_client).ptr_eq(&(*c).observer) {
         cfg_client = std::rc::Weak::new();
     }
     (*c).flags |= CLIENT_DEAD as uint64_t;
@@ -3316,14 +3316,14 @@ pub unsafe fn server_client_handle_key_after(
     return server_client_handle_key0(owner, event, after_handle, next);
 }
 pub unsafe fn server_client_loop() {
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         let w = window_owner.get();
         server_client_check_window_resize(&window_owner);
         window_cursor = windows_next(&*w);
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         let w = window_owner.get();
         let mut pane_cursor = window_pane_first(Some(&*w));
@@ -3353,7 +3353,7 @@ pub unsafe fn server_client_loop() {
         }
         registry_c_owner = clients.next(&client_owner);
     }
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         let w = window_owner.get();
         let mut pane_cursor = window_pane_first(Some(&*w));
@@ -3370,7 +3370,7 @@ pub unsafe fn server_client_loop() {
         window_cursor = windows_next(&*w);
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         let w = window_owner.get();
         let mut pane_cursor = window_pane_first(Some(&*w));
@@ -4999,7 +4999,7 @@ pub unsafe fn server_client_get_cwd(
     s: Option<&session>,
 ) -> Option<CString> {
     if cfg_finished == 0 {
-        if let Some(owner) = (&*std::ptr::addr_of!(cfg_client)).upgrade() {
+        if let Some(owner) = (&cfg_client).upgrade() {
             return (*owner.get()).cwd.clone();
         }
     }

@@ -71,7 +71,7 @@ unsafe fn monitor_get_session(ms: *mut monitor_set, c_owner: Option<&Rc<UnsafeCe
         return (*c_owner?.get()).session.upgrade();
     }
     let Some(session) = (*ms).session.as_ref() else {
-        return sessions_minmax(&*std::ptr::addr_of!(sessions));
+        return sessions_minmax(&sessions);
     };
     let indexed = session_find_by_id((*session.get()).id)?;
     Rc::ptr_eq(session, &indexed).then_some(indexed)
@@ -1291,7 +1291,7 @@ mod last_owner_tests {
             let owner = session::new();
             let session = rc::as_ptr(&owner);
             (*session).name = c"monitor-release-test".to_owned();
-            sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
+            sessions_insert(&mut sessions, owner);
             let observer = (*session).observer.clone();
             let mut set_owner = monitor_create_session((session).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), std::rc::Rc::new(|_| {}));
             let set = &raw mut *set_owner;
@@ -1308,7 +1308,7 @@ mod last_owner_tests {
             event_loop();
             assert_eq!(observer.strong_count(), 2);
 
-            sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*session).observer.upgrade().expect("indexed session"));
+            sessions_remove(&mut sessions, &(*session).observer.upgrade().expect("indexed session"));
             monitor_destroy(set_owner);
             assert_eq!(observer.strong_count(), 1);
             shutdown_runtime();

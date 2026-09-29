@@ -976,7 +976,7 @@ mod tests {
             let previous_options = global_options;
             let mut global_options_owner = options_create(std::ptr::null_mut());
             global_options = &raw mut *global_options_owner;
-            let definition = (&*std::ptr::addr_of!(options_table))
+            let definition = (&options_table)
                 .iter()
                 .find(|entry| {
                     entry.name == Some(c"extended-keys")

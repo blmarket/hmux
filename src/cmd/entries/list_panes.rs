@@ -73,7 +73,7 @@ unsafe fn cmd_list_panes_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
 }
 unsafe fn cmd_list_panes_server(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         cmd_list_panes_session(self_0.clone(), &(*(s)).observer.upgrade().expect("live session"), item_handle, 2 as ::core::ffi::c_int);

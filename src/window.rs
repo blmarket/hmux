@@ -965,7 +965,7 @@ pub unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option
 pub unsafe fn window_find_by_id(id: u_int) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
     let mut w = window::default();
     w.id = id;
-    return windows_find(&*std::ptr::addr_of!(windows), &w);
+    return windows_find(&windows, &w);
 }
 pub unsafe fn window_update_activity(w_owner: &Rc<std::cell::UnsafeCell<window>>) {
     let mut w = w_owner.get();
@@ -1054,7 +1054,7 @@ unsafe fn window_destroy(w_owner: &Rc<std::cell::UnsafeCell<window>>) {
     // Restore layout links without scheduling resize events for dying panes.
     window_unzoom_internal(w_owner, 0, false);
     if !(*w).entry.owner.is_empty() {
-        windows_remove(&mut *std::ptr::addr_of_mut!(windows), w_owner);
+        windows_remove(&mut windows, w_owner);
     }
     drop((*w).layout_root.take());
     drop((*w).saved_layout_root.take());
@@ -2172,7 +2172,7 @@ pub unsafe fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::Unsaf
     window_pane_find_by_id(id)
 }
 pub unsafe fn window_pane_find_by_id(id: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    window_pane_tree_find(&*std::ptr::addr_of!(all_window_panes), id)
+    window_pane_tree_find(&all_window_panes, id)
 }
 pub(crate) unsafe fn window_pane_weak(
     wp_value: &window_pane,
@@ -2570,7 +2570,7 @@ unsafe fn window_pane_create(
     let fresh2 = next_window_pane_id;
     next_window_pane_id = next_window_pane_id.wrapping_add(1);
     (*wp).id = fresh2;
-    window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), owner.clone());
+    window_pane_tree_insert(&mut all_window_panes, owner.clone());
     (*wp).fd = -(1 as ::core::ffi::c_int);
     (*wp).modes = window_pane_modes::default();
     (*wp).resize_queue = window_pane_resizes::default();
@@ -2687,7 +2687,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     let wp = pane_owner.get();
     window_pane_wait_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
     spawn_editor_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
-    let owner = window_pane_tree_remove(&mut *std::ptr::addr_of_mut!(all_window_panes), &mut *wp).expect("registered pane owner");
+    let owner = window_pane_tree_remove(&mut all_window_panes, &mut *wp).expect("registered pane owner");
     (*wp).flags |= PANE_DESTROYED;
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
@@ -4517,7 +4517,7 @@ mod pane_prompt_data_tests {
             (*wp).id = u_int::MAX - 1;
             // This fixture exercises cleanup without firing pane hook events.
             (*wp).flags = PANE_DESTROYED;
-            assert!(window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), pane.clone()).is_none());
+            assert!(window_pane_tree_insert(&mut all_window_panes, pane.clone()).is_none());
             let old_data = data((*wp).id);
             let old_weak = old_data.downgrade();
             let old_prompt = attach(old_data);
@@ -4567,7 +4567,7 @@ mod pane_prompt_data_tests {
             assert!(!replacement_observer.is_alive());
             drop(replacement);
             assert!(!replacement_weak.is_alive());
-            assert_eq!(rc::as_ptr(&window_pane_tree_remove(&mut *std::ptr::addr_of_mut!(all_window_panes), &mut *wp).unwrap()), wp);
+            assert_eq!(rc::as_ptr(&window_pane_tree_remove(&mut all_window_panes, &mut *wp).unwrap()), wp);
         }
     }
 }
@@ -4590,7 +4590,7 @@ mod pane_stream_lifecycle_tests {
             let guard = window_pane_upgrade(&observer).unwrap();
             assert_eq!(rc::as_ptr(&guard), pane);
 
-            window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), pane_owner);
+            window_pane_tree_insert(&mut all_window_panes, pane_owner);
             window_pane_destroy(&observer.upgrade().expect("registered pane"));
 
             // An in-flight operation can still hold the allocation, but new
@@ -4621,7 +4621,7 @@ mod pane_stream_lifecycle_tests {
                 Rc::downgrade((*event).readcb.as_ref().unwrap())
             }).unwrap();
 
-            window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), pane_owner);
+            window_pane_tree_insert(&mut all_window_panes, pane_owner);
             window_pane_destroy(&observer.upgrade().expect("registered pane"));
 
             assert!(observer.upgrade().is_none());
@@ -4747,7 +4747,7 @@ mod zoom_teardown_tests {
         options_default(options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options), entry);
         let pane_owner = window_pane::new();
             let pane = crate::src::shared::rc::as_ptr(&pane_owner);
-        window_pane_tree_insert(&mut *std::ptr::addr_of_mut!(all_window_panes), pane_owner);
+        window_pane_tree_insert(&mut all_window_panes, pane_owner);
         (*pane).window = (*w).observer.clone();
         (*pane).fd = -1;
         (*pane).pipe_fd = -1;

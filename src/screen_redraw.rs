@@ -1024,7 +1024,7 @@ pub unsafe fn redraw_invalidate_scene(w_value: &mut window) {
 }
 pub unsafe fn redraw_invalidate_all_scenes() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut window_cursor = windows_minmax(&*std::ptr::addr_of!(windows));
+    let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         w = window_owner.get();
         redraw_invalidate_scene(&mut *(w));

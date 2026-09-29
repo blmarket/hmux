@@ -2865,7 +2865,7 @@ unsafe fn tty_dim_default_colour(
 pub unsafe fn tty_attributes(mut tty: *mut tty, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
     let mut gc2 = *gc;
     let mut changed: ::core::ffi::c_int = 0;
-    let style_ctx = style_ctx.unwrap_or(&*std::ptr::addr_of!(tty_default_style_ctx));
+    let style_ctx = style_ctx.unwrap_or(&tty_default_style_ctx);
     let palette_guard = style_ctx.palette.resolve();
     let palette = palette_guard.as_ref();
     if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_NOPALETTE != 0 {

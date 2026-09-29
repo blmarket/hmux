@@ -271,7 +271,7 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
     return b"unknown reason\0" as *const u8 as *const ::core::ffi::c_char;
 }
 unsafe fn client_exit() {
-    if file_write_left(&*std::ptr::addr_of!(client_files)) == 0 {
+    if file_write_left(&client_files) == 0 {
         proc_exit(client_proc);
     }
 }
@@ -938,7 +938,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         MSG_READ_OPEN => {
             file_read_open(
-                &mut *std::ptr::addr_of_mut!(client_files),
+                &mut client_files,
                 client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
@@ -946,11 +946,11 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             );
         }
         MSG_READ_CANCEL => {
-            file_read_cancel(&*std::ptr::addr_of!(client_files), imsg);
+            file_read_cancel(&client_files, imsg);
         }
         MSG_WRITE_OPEN => {
             file_write_open(
-                &mut *std::ptr::addr_of_mut!(client_files),
+                &mut client_files,
                 client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
@@ -958,10 +958,10 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             );
         }
         MSG_WRITE => {
-            file_write_data(&*std::ptr::addr_of!(client_files), imsg);
+            file_write_data(&client_files, imsg);
         }
         MSG_WRITE_CLOSE => {
-            file_write_close(&*std::ptr::addr_of!(client_files), imsg);
+            file_write_close(&client_files, imsg);
         }
         MSG_STDERR | MSG_STDIN | MSG_STDOUT => {
             fprintf(

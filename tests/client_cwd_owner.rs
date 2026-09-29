@@ -19,7 +19,7 @@ fn startup_observer_and_owned_directory_preserve_lifetime_and_precedence() {
         (*startup.get()).cwd = None;
         assert!(server_client_get_cwd(Some(&*other.get()), None).is_none());
         drop(startup);
-        assert!((&*std::ptr::addr_of!(cfg_client)).upgrade().is_none());
+        assert!((&cfg_client).upgrade().is_none());
         assert_eq!(saved.as_c_str(), c"/startup");
         assert_eq!(
             server_client_get_cwd(Some(&*other.get()), Some(&*session.get())).unwrap().as_c_str(),

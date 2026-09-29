@@ -103,7 +103,7 @@ unsafe fn cmd_kill_session_all(
     let item = item_handle.get();
     let mut s: *mut session = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
-    let mut sloop_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut sloop_owner = sessions_minmax(&sessions);
     sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !sloop.is_null() {
         let name = sessions_key(&*sloop);
@@ -117,7 +117,7 @@ unsafe fn cmd_kill_session_all(
                 );
             }
         }
-        sloop_owner = sessions_after(&*std::ptr::addr_of!(sessions), &name);
+        sloop_owner = sessions_after(&sessions, &name);
         sloop = sloop_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     }
     return CMD_RETURN_NORMAL;

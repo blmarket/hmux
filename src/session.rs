@@ -166,7 +166,7 @@ impl session_group {
     }
 
     pub fn node_ptr(&self) -> *mut session_group {
-        std::ptr::addr_of!(*self).cast_mut()
+        (self as *const Self).cast_mut()
     }
 }
 
@@ -257,10 +257,10 @@ pub fn sessions_resolve(
 }
 
 pub unsafe fn session_alive(s: Option<&session>) -> ::core::ffi::c_int {
-    s.is_some_and(|s| sessions_resolve(&*std::ptr::addr_of!(sessions), &s.observer).is_some()) as ::core::ffi::c_int
+    s.is_some_and(|s| sessions_resolve(&sessions, &s.observer).is_some()) as ::core::ffi::c_int
 }
 pub unsafe fn session_find(name: &CStr) -> Option<Rc<UnsafeCell<session>>> {
-    let index = (*std::ptr::addr_of!(sessions)).storage.as_ref()?;
+    let index = sessions.storage.as_ref()?;
     let map = index.try_borrow_mut().expect("session index already borrowed");
     map.get(name.to_bytes()).cloned()
 }
@@ -283,7 +283,7 @@ pub unsafe fn session_find_by_id_str(s: &CStr) -> Option<Rc<UnsafeCell<session>>
 }
 pub unsafe fn session_find_by_id(mut id: u_int) -> Option<Rc<UnsafeCell<session>>> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    let mut s_owner = sessions_minmax(&*std::ptr::addr_of!(sessions));
+    let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     while !s.is_null() {
         if (*s).id == id {
@@ -336,12 +336,12 @@ pub unsafe fn session_create(
                 &mut *s,
                 CString::new(generated).expect("generated name has no NUL"),
             ));
-            if sessions_find(&*std::ptr::addr_of!(sessions), &*s).is_none() {
+            if sessions_find(&sessions, &*s).is_none() {
                 break;
             }
         }
     }
-    sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), Rc::clone(&owner));
+    sessions_insert(&mut sessions, Rc::clone(&owner));
     log_debug(format_args!(
         "new session {} ${}",
         log_bytes((*s).name.as_bytes()),
@@ -402,7 +402,7 @@ pub unsafe fn session_destroy(
         return;
     }
     (*s).set_curw((refbox::Weak::new()).clone());
-    let owner = sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), s_owner).expect("registered session owner");
+    let owner = sessions_remove(&mut sessions, s_owner).expect("registered session owner");
     if notify != 0 {
         events_fire_session(
             b"session-closed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -764,7 +764,7 @@ pub unsafe fn session_set_current(s_owner: &Rc<UnsafeCell<session>>, mut wl: ref
 pub unsafe fn session_group_contains(target: Option<&session>) -> *mut session_group {
     let Some(target) = target else { return std::ptr::null_mut(); };
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    sg = session_groups_minmax(&*std::ptr::addr_of!(session_groups));
+    sg = session_groups_minmax(&session_groups);
     while !sg.is_null() {
         if (*sg).members.iter().any(|member| member.ptr_eq(&target.observer)) {
             return sg;
@@ -780,7 +780,7 @@ pub unsafe fn session_group_find(mut name: *const ::core::ffi::c_char) -> *mut s
         ..session_group::empty()
     };
     sg.name = ::std::ffi::CStr::from_ptr(name).to_owned();
-    return session_groups_find(&*std::ptr::addr_of!(session_groups), &sg);
+    return session_groups_find(&session_groups, &sg);
 }
 pub unsafe fn session_group_new(mut name: *const ::core::ffi::c_char) -> *mut session_group {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
