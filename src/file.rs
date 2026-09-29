@@ -790,8 +790,7 @@ pub unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
 pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut next = client_files_minmax(files);
-    while let Some(file) = next {
+    for file in files.iter() {
         let cf = &*file.get();
         if let Some(remaining) = cf.event.with_ptr(|stream| unsafe {
             evbuffer_get_length(&*(*stream).output)
@@ -806,7 +805,6 @@ pub unsafe fn file_write_left(files: &client_files) -> ::core::ffi::c_int {
                 ));
             }
         }
-        next = client_files_next(&*cf);
     }
     return (waiting != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
@@ -1353,24 +1351,25 @@ pub fn client_files_remove(elm: &mut client_file) {
     }
 }
 
-pub fn client_files_minmax(head: &client_files) -> Option<Rc<UnsafeCell<client_file>>> {
-    let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("client file index already borrowed");
-    map.values().next().cloned()
-}
-
-pub fn client_files_next(elm: &client_file) -> Option<Rc<UnsafeCell<client_file>>> {
-    let owner = &elm.entry.owner;
-    let map = match owner.try_borrow_mut() {
-        Ok(map) => map,
-        Err(refbox::BorrowError::Dropped) => return None,
-        Err(refbox::BorrowError::Borrowed) => panic!("client file index already borrowed"),
-    };
-    let key = client_files_key(elm);
-    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
-        .next().map(|(_, file)| file.clone())
+impl client_files {
+    /// Iterate in stream order, retaining each file only when it is yielded.
+    /// No index or collection borrow is held across loop bodies. Removing the
+    /// current file does not interrupt traversal; dropping the index ends it.
+    pub fn iter(&self) -> impl Iterator<Item = Rc<UnsafeCell<client_file>>> + use<> {
+        let owner = self.storage.as_ref().map(|index| index.downgrade());
+        let mut after = std::ops::Bound::Unbounded;
+        std::iter::from_fn(move || {
+            let map = match owner.as_ref()?.try_borrow_mut() {
+                Ok(map) => map,
+                Err(refbox::BorrowError::Dropped) => return None,
+                Err(refbox::BorrowError::Borrowed) => panic!("client file index already borrowed"),
+            };
+            let (&key, file) = map.range((after, std::ops::Bound::Unbounded)).next()?;
+            after = std::ops::Bound::Excluded(key);
+            Some(file.clone())
+        })
+        .fuse()
+    }
 }
 
 impl Drop for client_file {
@@ -1383,6 +1382,28 @@ impl Drop for client_file {
 mod file_index_ownership_tests {
     use super::*;
     use crate::src::reactor::{event_loop, shutdown_runtime};
+
+    #[test]
+    fn iteration_releases_borrows_and_survives_removing_the_current_file() {
+        unsafe {
+            let mut files = client_files::default();
+            let last = file_create_with_peer(std::ptr::null_mut(), &mut files, 9, None);
+            let first = file_create_with_peer(std::ptr::null_mut(), &mut files, 3, None);
+            let middle = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
+            let mut iter = files.iter();
+            let current = iter.next().unwrap();
+            assert!(Rc::ptr_eq(&current, &first));
+            client_files_remove(&mut *current.get());
+            assert!(Rc::ptr_eq(&iter.next().unwrap(), &middle));
+            assert!(Rc::ptr_eq(&iter.next().unwrap(), &last));
+            assert!(iter.next().is_none());
+
+            let mut iter = files.iter();
+            assert!(iter.next().is_some());
+            drop(files);
+            assert!(iter.next().is_none());
+        }
+    }
 
     #[test]
     fn pending_write_check_skips_a_freed_stream() {
@@ -1410,13 +1431,13 @@ mod file_index_ownership_tests {
             let file = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
             let observed = Rc::downgrade(&file);
             assert_eq!(Rc::strong_count(&file), 2, "caller and index each own the file");
-            let guard = client_files_minmax(&files).unwrap();
+            let guard = files.iter().next().unwrap();
             file_fire_done(&file);
             drop(file);
             event_loop();
 
             assert!(observed.upgrade().is_some());
-            assert!(client_files_minmax(&files).is_none());
+            assert!(files.iter().next().is_none());
             assert!((&*guard.get()).entry.owner.is_empty());
             drop(guard);
             assert!(observed.upgrade().is_none());
@@ -1447,12 +1468,12 @@ mod file_index_ownership_tests {
             assert!(!old_index.is_alive());
             let replacement = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
             drop(old);
-            let found = client_files_minmax(&files).unwrap();
+            let found = files.iter().next().unwrap();
             assert!(Rc::ptr_eq(&found, &replacement));
             drop(found);
             client_files_remove(&mut *replacement.get());
             drop(replacement);
-            assert!(client_files_minmax(&files).is_none());
+            assert!(files.iter().next().is_none());
         }
     }
 }

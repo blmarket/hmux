@@ -28,7 +28,7 @@ use crate::src::ffi::libc::{
     strsep, ttyname,
 };
 use crate::src::file::{
-    client_files_minmax, client_files_next, file_fire_done, file_print, file_read_data,
+    file_fire_done, file_print, file_read_data,
     file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::bytes::xformat;
@@ -1422,10 +1422,8 @@ pub unsafe fn server_client_lost(client_owner: &std::rc::Rc<std::cell::UnsafeCel
     status_prompt_clear(&(*(c)).observer.upgrade().expect("live client"));
     status_message_clear(&mut *c);
     cmdq_abort_file_wait(client_owner);
-    let mut next_file = client_files_minmax(&(*c).files);
-    while let Some(file) = next_file {
+    for file in (*c).files.iter() {
         let cf = &mut *file.get();
-        next_file = client_files_next(&*cf);
         (*cf).error = EINTR;
         file_fire_done(&file);
     }
@@ -4066,14 +4064,12 @@ unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeC
         }
     }
     if force == 0 {
-        let mut next_file = client_files_minmax(&(*c).files);
-        while let Some(file) = next_file {
+        for file in (*c).files.iter() {
             let cf = &*file.get();
             if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
                 server_client_start_exit_timer(&mut *c);
                 return;
             }
-            next_file = client_files_next(&*cf);
         }
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;
