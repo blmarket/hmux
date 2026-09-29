@@ -1,6 +1,7 @@
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::options::options_owner_ptr;
+use crate::src::session::Session;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use refbox::RefBox;
 use std::borrow::Cow;
@@ -174,8 +175,8 @@ enum CustomizeEnvironment {
 }
 
 impl CustomizeEnvironment {
-    fn session(s: &session) -> Self {
-        Self::Session((*s).observer.clone())
+    fn session(s: &Rc<UnsafeCell<session>>) -> Self {
+        Self::Session(Rc::downgrade(s))
     }
 
     fn matches(&self, other: &Self) -> bool {
@@ -202,19 +203,44 @@ enum CustomizeEnvironmentBorrow {
 }
 
 impl CustomizeEnvironmentBorrow {
-    unsafe fn get(&self) -> Option<&environ> {
+    unsafe fn read<R>(&self, read: impl FnOnce(&environ) -> R) -> Option<R> {
         match self {
-            Self::Global => global_environ.as_deref(),
-            Self::Session(owner) => (*crate::src::shared::rc::as_ptr(owner)).environ.as_deref(),
+            Self::Global => global_environ.as_deref().map(read),
+            Self::Session(owner) => {
+                let env = owner.borrow_environment()?;
+                Some(read(&env))
+            }
         }
     }
 
-    unsafe fn get_mut(&mut self) -> Option<&mut environ> {
+    // Formatting, drawing and prompt installation can reenter the target.
+    // A snapshot owns the entry strings throughout those operations.
+    unsafe fn get(&self) -> Option<environ> {
+        self.read(Clone::clone)
+    }
+
+    unsafe fn rows(&self) -> Option<Vec<(u64, environ_entry)>> {
+        self.read(|env| {
+            environ_iter(env)
+                .map(|entry| {
+                    // Preserve the existing mode-tree identity. This number is only a
+                    // row tag, never converted back to an address or used for access.
+                    (
+                        (2_u64 << 62) | std::ptr::from_ref(entry) as u64,
+                        entry.clone(),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    unsafe fn edit<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> Option<R> {
         match self {
-            Self::Global => global_environ.as_deref_mut(),
-            Self::Session(owner) => (*crate::src::shared::rc::as_ptr(owner))
-                .environ
-                .as_deref_mut(),
+            Self::Global => global_environ.as_deref_mut().map(edit),
+            Self::Session(owner) => {
+                let mut env = owner.borrow_environment_mut()?;
+                Some(edit(&mut env))
+            }
         }
     }
 }
@@ -461,14 +487,9 @@ unsafe fn window_customize_get_environment(
 ) -> Option<CustomizeEnvironment> {
     match scope {
         WINDOW_CUSTOMIZE_GLOBAL_ENVIRONMENT => Some(CustomizeEnvironment::Global),
-        WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT if !fs.session_handle().is_none() => {
-            Some(CustomizeEnvironment::session(
-                &*(fs
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())),
-            ))
-        }
+        WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT if !fs.session_handle().is_none() => Some(
+            CustomizeEnvironment::session(&fs.session_handle().expect("target session")),
+        ),
         _ => None,
     }
 }
@@ -922,30 +943,28 @@ unsafe fn window_customize_set_environment_value(
     else {
         return;
     };
-    let Some(env) = environment.get_mut() else {
-        return;
-    };
-
-    let mut envent: Option<&environ_entry> = None;
-    let mut flags: ::core::ffi::c_int = 0;
-    flags = item.environ_flags;
-    envent = environ_find(
-        env,
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
-    if !envent.is_none() {
-        flags = envent.unwrap().flags;
-    }
-    environ_set(
-        env,
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        flags,
-        |out| write_cstr(out, s),
-    );
+    environment.edit(|env| {
+        let mut envent: Option<&environ_entry> = None;
+        let mut flags: ::core::ffi::c_int = 0;
+        flags = item.environ_flags;
+        envent = environ_find(
+            env,
+            (item.name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        );
+        if !envent.is_none() {
+            flags = envent.unwrap().flags;
+        }
+        environ_set(
+            env,
+            (item.name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            flags,
+            |out| write_cstr(out, s),
+        );
+    });
 }
 unsafe fn window_customize_option_is_changed(
     mut o: *mut options_entry,
@@ -1585,7 +1604,7 @@ unsafe fn window_customize_build_environment(
     let Some(environment) = target.resolve() else {
         return;
     };
-    let Some(env) = environment.get() else {
+    let Some(rows) = environment.rows() else {
         return;
     };
 
@@ -1633,8 +1652,8 @@ unsafe fn window_customize_build_environment(
         |out| write_cstr(out, scope_text.as_ptr()),
     );
     drop(scope_text);
-    for entry in environ_iter(&*env) {
-        let envent = entry;
+    for (tag, entry) in rows {
+        let envent = &entry;
         format_add(
             ft,
             b"environment_name\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1713,7 +1732,7 @@ unsafe fn window_customize_build_environment(
             &mut *(*data).tree_owner().get(),
             Some(&top),
             ModeTreeItemData::Customize(item_owner.clone()),
-            (2_u64 << 62) | std::ptr::from_ref(envent) as uint64_t,
+            tag,
             &name,
             text.as_deref(),
             0 as ::core::ffi::c_int,
@@ -1907,12 +1926,7 @@ unsafe fn window_customize_build(
         b"Session Environment\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_ENVIRONMENT,
         WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-        CustomizeEnvironment::session(
-            &*(fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())),
-        ),
+        CustomizeEnvironment::session(&fs.session_handle().expect("target session")),
         ft,
         filter,
         &raw mut fs,
@@ -2847,7 +2861,7 @@ unsafe fn window_customize_draw_environment(
         return;
     }
     envent = environ_find(
-        env,
+        &env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
@@ -3375,40 +3389,25 @@ unsafe fn window_customize_set_environment_callback(
     else {
         return PROMPT_CLOSE;
     };
-    let Some(env) = environment.get_mut() else {
+    if environment.read(|_| ()).is_none() {
         return PROMPT_CLOSE;
-    };
+    }
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut envent: Option<&environ_entry> = None;
-    let mut flags: ::core::ffi::c_int = 0;
     if s.is_null() || (*data).dead != 0 {
         return PROMPT_CLOSE;
     }
     if window_customize_check_item(&*data, item, None) == 0 {
         return PROMPT_CLOSE;
     }
-    flags = item.environ_flags;
-    envent = environ_find(
-        env,
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
-    if !envent.is_none() {
-        flags = envent.unwrap().flags;
-    }
-    environ_set(
-        env,
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        flags,
-        |out| write_cstr(out, s),
-    );
+    environment.edit(|env| {
+        let name = item.name.as_ref().expect("environment name").as_ptr();
+        let flags = environ_find(env, name).map_or(item.environ_flags, |entry| entry.flags);
+        environ_set(env, name, flags, |out| write_cstr(out, s));
+    });
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     (*mode_pane).flags |= PANE_REDRAW;
@@ -3448,7 +3447,7 @@ unsafe fn window_customize_set_environment(
         return;
     }
     envent = environ_find(
-        env,
+        &env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
@@ -3662,9 +3661,9 @@ unsafe fn window_customize_add_environment_callback(
     else {
         return PROMPT_CLOSE;
     };
-    let Some(env) = environment.get_mut() else {
+    if environment.read(|_| ()).is_none() {
         return PROMPT_CLOSE;
-    };
+    }
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return PROMPT_CLOSE;
@@ -3696,7 +3695,7 @@ unsafe fn window_customize_add_environment_callback(
             );
             return PROMPT_CLOSE;
         }
-        environ_clear(env, s.offset(1 as ::core::ffi::c_int as isize));
+        environment.edit(|env| environ_clear(env, s.offset(1 as ::core::ffi::c_int as isize)));
     } else {
         value = strchr(s, '=' as i32);
         if value.is_null() || value == s {
@@ -3714,8 +3713,10 @@ unsafe fn window_customize_add_environment_callback(
         }
         let name = CString::new(&CStr::from_ptr(s).to_bytes()[..value.offset_from(s) as usize])
             .expect("environment name contains no NUL");
-        environ_set(env, name.as_ptr(), 0 as ::core::ffi::c_int, |out| {
-            write_cstr(out, value.offset(1 as ::core::ffi::c_int as isize))
+        environment.edit(|env| {
+            environ_set(env, name.as_ptr(), 0, |out| {
+                write_cstr(out, value.offset(1 as ::core::ffi::c_int as isize))
+            })
         });
     }
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
@@ -3929,7 +3930,7 @@ unsafe fn window_customize_start_edit(
             return;
         };
         envent = environ_find(
-            env,
+            &env,
             (item.name)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
@@ -4274,7 +4275,7 @@ unsafe fn window_customize_unset_environment(
     else {
         return;
     };
-    let Some(env) = environment.get_mut() else {
+    let Some(env) = environment.get() else {
         return;
     };
 
@@ -4282,7 +4283,7 @@ unsafe fn window_customize_unset_environment(
         return;
     }
     if environ_find(
-        env,
+        &env,
         (item.name)
             .as_ref()
             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
@@ -4294,12 +4295,14 @@ unsafe fn window_customize_unset_environment(
     if mode_tree_get_current(&*(*data).tree_owner().get()).is_customize(item) {
         mode_tree_up(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int);
     }
-    environ_unset(
-        env,
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
+    environment.edit(|env| {
+        environ_unset(
+            env,
+            (item.name)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+        )
+    });
 }
 unsafe fn window_customize_unset_option(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
@@ -5000,12 +5003,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_SESSION_ENVIRONMENT,
-            CustomizeEnvironment::session(
-                &*(fs
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())),
-            ),
+            CustomizeEnvironment::session(&fs.session_handle().expect("target session")),
         );
         return 1 as ::core::ffi::c_int;
     }
@@ -5485,21 +5483,15 @@ mod item_owner_tests {
 mod environment_lifetime_tests {
     use super::*;
     use crate::src::environ::environ_create;
-    use crate::src::shared::rc;
 
     #[test]
     fn detached_environment_rows_expire_after_their_session() {
         unsafe {
             let owner = session::new();
-            let session = rc::as_ptr(&owner);
-            (*session).environ = Some(environ_create());
-            (*session)
-                .environ
-                .as_deref_mut()
-                .unwrap()
-                .set(b"NAME", 0, b"value")
-                .unwrap();
-            let target = CustomizeEnvironment::session(&*(session));
+            let lifetime = Rc::downgrade(&owner);
+            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            owner.with_environment_mut(|env| env.set(b"NAME", 0, b"value").unwrap());
+            let target = CustomizeEnvironment::session(&owner);
             let mut row = window_customize_new_item();
             row.environ = Some(target.clone());
             let detached = window_customize_copy_item(&row);
@@ -5511,7 +5503,6 @@ mod environment_lifetime_tests {
                 Some(c"value")
             );
             assert!(target.resolve().is_some());
-            let lifetime = (*session).observer.clone();
             drop(guard);
             assert!(lifetime.upgrade().is_none());
             assert!(target.resolve().is_none());
@@ -5521,24 +5512,48 @@ mod environment_lifetime_tests {
     }
 
     #[test]
+    fn environment_row_snapshots_keep_tags_and_survive_reentrant_edits() {
+        unsafe {
+            let owner = session::new();
+            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            let target = CustomizeEnvironment::session(&owner);
+            let environment = target.resolve().unwrap();
+            environment.edit(|env| env.set(b"NAME", 0, b"first").unwrap());
+            let before = environment.rows().unwrap();
+            environment.edit(|env| env.set(b"NAME", ENVIRON_HIDDEN, b"second").unwrap());
+            let after = environment.rows().unwrap();
+            assert_eq!(
+                before[0].0, after[0].0,
+                "editing preserves selection identity"
+            );
+            assert_eq!(before[0].1.value(), Some(c"first"));
+            assert_eq!(after[0].1.value(), Some(c"second"));
+            crate::src::session::replace_test_environment(&owner, None);
+            assert!(environment.rows().is_none());
+            assert_eq!(
+                before[0].1.value(),
+                Some(c"first"),
+                "no live component reference escapes"
+            );
+        }
+    }
+
+    #[test]
     fn environment_guards_reborrow_the_current_box_and_detect_removal() {
         unsafe {
             let owner = session::new();
-            let session = rc::as_ptr(&owner);
-            (*session).environ = Some(environ_create());
-            let target = CustomizeEnvironment::session(&*(session));
-            let mut guard = target.resolve().unwrap();
+            let lifetime = Rc::downgrade(&owner);
+            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            let target = CustomizeEnvironment::session(&owner);
+            let guard = target.resolve().unwrap();
             guard
-                .get_mut()
-                .unwrap()
-                .set(b"NAME", ENVIRON_HIDDEN, b"first")
+                .edit(|env| env.set(b"NAME", ENVIRON_HIDDEN, b"first").unwrap())
                 .unwrap();
             let replacement = environ_create();
-            (*session).environ = Some(replacement);
+            crate::src::session::replace_test_environment(&owner, Some(replacement));
             assert!(guard.get().unwrap().find(c"NAME").is_none());
-            drop((*session).environ.take());
+            crate::src::session::replace_test_environment(&owner, None);
             assert!(guard.get().is_none());
-            let lifetime = (*session).observer.clone();
             drop(guard);
             drop(owner);
             assert!(lifetime.upgrade().is_none());

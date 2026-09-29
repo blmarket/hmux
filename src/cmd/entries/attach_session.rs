@@ -34,6 +34,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_set_active_pane;
+use crate::src::{server_client::Client, session::Session};
 pub static cmd_attach_session_entry: cmd_entry = {
     cmd_entry {
         name: c"attach-session",
@@ -228,12 +229,14 @@ pub unsafe fn cmd_attach_session(
             }
         }
         if Eflag == 0 {
-            environ_update(
-                options_owner_ptr(&mut (*s).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-                (*c).environ.as_deref().expect("client environment"),
-                (*s).environ.as_deref_mut().expect("session environment"),
-            );
+            let source = c_owner
+                .as_ref()
+                .expect("terminal client")
+                .with_environment(|env| env.expect("client environment").clone());
+            target
+                .session_handle()
+                .expect("target session")
+                .update_environment(&source);
         }
         server_client_set_session(
             &(*(c)).observer.upgrade().expect("live client"),
@@ -289,12 +292,14 @@ pub unsafe fn cmd_attach_session(
             }
         }
         if Eflag == 0 {
-            environ_update(
-                options_owner_ptr(&mut (*s).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-                (*c).environ.as_deref().expect("client environment"),
-                (*s).environ.as_deref_mut().expect("session environment"),
-            );
+            let source = c_owner
+                .as_ref()
+                .expect("terminal client")
+                .with_environment(|env| env.expect("client environment").clone());
+            target
+                .session_handle()
+                .expect("target session")
+                .update_environment(&source);
         }
         server_client_set_session(
             &(*(c)).observer.upgrade().expect("live client"),

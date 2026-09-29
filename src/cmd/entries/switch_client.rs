@@ -34,6 +34,7 @@ use crate::src::window::{
     window_pane_is_visible, window_pop_zoom, window_push_zoom, window_redraw_active_switch,
     window_set_active_pane,
 };
+use crate::src::{server_client::Client, session::Session};
 pub static cmd_switch_client_entry: cmd_entry = {
     cmd_entry {
         name: c"switch-client",
@@ -89,8 +90,7 @@ unsafe fn cmd_switch_client_exec(
     let mut tc: *mut client = tc_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let last_session_owner;
-    let adjacent_session_owner;
+    let mut selected_session;
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -121,8 +121,8 @@ unsafe fn cmd_switch_client_exec(
     {
         return CMD_RETURN_ERROR;
     }
-    s = target
-        .session_handle()
+    selected_session = target.session_handle();
+    s = selected_session
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     wl = target.winlink_handle();
@@ -170,7 +170,7 @@ unsafe fn cmd_switch_client_exec(
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
-        adjacent_session_owner = session_next_session(
+        selected_session = session_next_session(
             (*tc)
                 .session_handle()
                 .as_ref()
@@ -178,7 +178,7 @@ unsafe fn cmd_switch_client_exec(
                 .as_ref(),
             &sort_crit,
         );
-        s = adjacent_session_owner
+        s = selected_session
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
@@ -186,7 +186,7 @@ unsafe fn cmd_switch_client_exec(
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        adjacent_session_owner = session_previous_session(
+        selected_session = session_previous_session(
             (*tc)
                 .session_handle()
                 .as_ref()
@@ -194,7 +194,7 @@ unsafe fn cmd_switch_client_exec(
                 .as_ref(),
             &sort_crit,
         );
-        s = adjacent_session_owner
+        s = selected_session
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
@@ -204,11 +204,11 @@ unsafe fn cmd_switch_client_exec(
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
-        last_session_owner = crate::src::session::sessions_resolve(
+        selected_session = crate::src::session::sessions_resolve(
             &crate::src::session::sessions,
             &(*tc).last_session,
         );
-        s = last_session_owner
+        s = selected_session
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         if s.is_null() {
@@ -281,11 +281,14 @@ unsafe fn cmd_switch_client_exec(
         }
     }
     if args_has(args, 'E' as i32 as u_char) == 0 {
-        environ_update(
-            options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-            (*tc).environ.as_deref().expect("client environment"),
-            (*s).environ.as_deref_mut().expect("session environment"),
-        );
+        let source = tc_owner
+            .as_ref()
+            .expect("target client")
+            .with_environment(|env| env.expect("client environment").clone());
+        selected_session
+            .as_ref()
+            .expect("target session")
+            .update_environment(&source);
     }
     server_client_set_session(
         &(*(tc)).observer.upgrade().expect("live client"),

@@ -3,6 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
 use crate::src::environ::{environ_find, environ_iter};
 use crate::src::format::bytes::write_cstr;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
@@ -102,7 +103,7 @@ unsafe fn cmd_show_environment_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let env: &environ;
+    let env: environ;
     let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char =
@@ -119,7 +120,7 @@ unsafe fn cmd_show_environment_exec(
         }
     }
     if args_has(args, 'g' as i32 as u_char) != 0 {
-        env = global_environ.as_deref().expect("environment");
+        env = global_environ.as_deref().expect("environment").clone();
     } else {
         if (*target).session_handle().is_none() {
             tflag = args_get(&*(args), 't' as i32 as u_char)
@@ -134,16 +135,11 @@ unsafe fn cmd_show_environment_exec(
             }
             return CMD_RETURN_ERROR;
         }
-        env = (*(*target)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .environ
-        .as_deref()
-        .expect("environment");
+        let session = (*target).session_handle().expect("target session");
+        env = session.borrow_environment().expect("environment").clone();
     }
     if !name.is_null() {
-        envent = environ_find(env, name);
+        envent = environ_find(&env, name);
         if envent.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown variable: ")?;
@@ -154,7 +150,7 @@ unsafe fn cmd_show_environment_exec(
         cmd_show_environment_print(self_0.clone(), item_handle, envent.unwrap());
         return CMD_RETURN_NORMAL;
     }
-    for entry in environ_iter(&*env) {
+    for entry in environ_iter(&env) {
         let envent = entry;
         cmd_show_environment_print(self_0.clone(), item_handle, envent);
     }

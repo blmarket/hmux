@@ -5,6 +5,20 @@ use crate::src::shared::spawn::spawn_context;
 /// The caller must preserve the legacy single-threaded borrow and logical
 /// lifetime rules. No model/component reference may survive a callback.
 pub trait Session {
+    type Environment<'a>: std::ops::Deref<Target = environ>
+    where
+        Self: 'a;
+    type EnvironmentMut<'a>: std::ops::DerefMut<Target = environ>
+    where
+        Self: 'a;
+    /// Scoped component borrows. Release the guard before model calls, callbacks,
+    /// or environment replacement. These may become Ref/RefMut::map of Session.
+    unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>>;
+    unsafe fn borrow_environment_mut(&self) -> Option<Self::EnvironmentMut<'_>>;
+
+    /// Apply update-environment patterns without exposing either component.
+    unsafe fn update_environment(&self, source: &environ);
+
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
@@ -56,6 +70,24 @@ pub trait Session {
 }
 
 impl Session for Rc<UnsafeCell<session>> {
+    type Environment<'a> = &'a environ;
+    type EnvironmentMut<'a> = &'a mut environ;
+    unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>> {
+        (*self.get()).environ.as_deref()
+    }
+    unsafe fn borrow_environment_mut(&self) -> Option<Self::EnvironmentMut<'_>> {
+        (*self.get()).environ.as_deref_mut()
+    }
+
+    unsafe fn update_environment(&self, source: &environ) {
+        let state = &mut *self.get();
+        crate::src::environ::environ_update(
+            state.options.as_deref_mut().expect("session options"),
+            source,
+            state.environ.as_deref_mut().expect("session environment"),
+        );
+    }
+
     unsafe fn id(&self) -> u32 {
         (*self.get()).id
     }
@@ -200,12 +232,8 @@ impl Session for Rc<UnsafeCell<session>> {
         )
     }
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R {
-        edit(
-            (*self.get())
-                .environ
-                .as_deref_mut()
-                .expect("session environment"),
-        )
+        let mut environment = self.borrow_environment_mut().expect("session environment");
+        edit(&mut environment)
     }
     unsafe fn cwd(&self) -> Option<CString> {
         (*self.get()).cwd.clone()
@@ -243,6 +271,43 @@ mod tests {
     }
 
     #[test]
+    fn updating_environment_uses_patterns_and_clears_missing_variables() {
+        unsafe {
+            let owner = session::new();
+            let mut options = crate::src::options::options_create(std::ptr::null_mut());
+            let definition = crate::src::options_table::options_table
+                .iter()
+                .find(|definition| definition.name == Some(c"update-environment"))
+                .unwrap();
+            crate::src::options::options_default(&mut *options, definition);
+            (*owner.get()).options = Some(options);
+            (*owner.get()).environ = Some(crate::src::environ::environ_create());
+            owner.with_environment_mut(|env| {
+                env.set(b"DISPLAY", 0, b"old").unwrap();
+                env.set(b"SSH_AUTH_SOCK", 0, b"old-socket").unwrap();
+                env.set(b"UNCHANGED", 0, b"keep").unwrap();
+            });
+            let mut source = environ::default();
+            source.set(b"DISPLAY", 0, b"new").unwrap();
+            source.set(b"UNCHANGED", 0, b"ignore").unwrap();
+            owner.update_environment(&source);
+            {
+                let env = owner.borrow_environment().unwrap();
+                assert_eq!(env.find(c"DISPLAY").unwrap().value(), Some(c"new"));
+                assert_eq!(env.find(c"SSH_AUTH_SOCK").unwrap().value(), None);
+                assert_eq!(env.find(c"UNCHANGED").unwrap().value(), Some(c"keep"));
+            }
+            // The read borrow has ended before the next mutation.
+            owner.with_environment_mut(|env| env.unset_cstr(c"DISPLAY"));
+            assert!(owner
+                .borrow_environment()
+                .unwrap()
+                .find(c"DISPLAY")
+                .is_none());
+        }
+    }
+
+    #[test]
     fn status_layout_is_cached_until_the_sizing_pass_publishes_it() {
         unsafe {
             let session = session::new();
@@ -269,4 +334,13 @@ mod tests {
             assert_eq!(session.status_layout(), (-1, 0));
         }
     }
+}
+
+/// Fixture-only replacement also exercises removal while a UI target survives.
+#[cfg(test)]
+pub(crate) unsafe fn replace_test_environment(
+    owner: &Rc<UnsafeCell<session>>,
+    environment: Option<Box<environ>>,
+) {
+    (*owner.get()).environ = environment;
 }

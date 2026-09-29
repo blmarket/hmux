@@ -1,6 +1,8 @@
 mod alerts;
 mod api;
 pub(crate) use alerts::alerts_check_all;
+#[cfg(test)]
+pub(crate) use api::replace_test_environment;
 mod model;
 mod size;
 mod sort;

@@ -5,6 +5,7 @@ use crate::src::environ::{environ_clear, environ_set, environ_unset};
 use crate::src::ffi::libc::strchr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
+use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
@@ -43,17 +44,14 @@ unsafe fn cmd_set_environment_exec(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut current_block: u64;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let env: &mut environ;
+    let session;
     let mut name: *const ::core::ffi::c_char =
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut expanded: Option<std::ffi::CString> = None;
-    let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     if *name as ::core::ffi::c_int == '\0' as i32 {
         cmdq_error(item_handle, |out| out.write_all(b"empty variable name"));
         return CMD_RETURN_ERROR;
@@ -74,63 +72,56 @@ unsafe fn cmd_set_environment_exec(
         expanded = Some(format_single_from_target_cstring(item_handle, value));
         value = expanded.as_ref().expect("expanded value was set").as_ptr();
     }
-    if args_has(args, 'g' as i32 as u_char) != 0 {
-        env = global_environ.as_deref_mut().expect("environment");
-        current_block = 224731115979188411;
-    } else if (*target).session_handle().is_none() {
-        tflag = args_get(&*(args), 't' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        if !tflag.is_null() {
+    let global = args_has(args, b'g') != 0;
+    session = (*target).session_handle();
+    if !global && session.is_none() {
+        if let Some(target) = args_get(&*args, b't') {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"no such session: ")?;
-                write_cstr(out, tflag)
+                out.write_all(target.to_bytes())
             });
         } else {
             cmdq_error(item_handle, |out| out.write_all(b"no current session"));
         }
         return CMD_RETURN_ERROR;
+    }
+    // Preserve -u before -r precedence and report before borrowing Session.
+    let unset = args_has(args, b'u') != 0;
+    let remove = args_has(args, b'r') != 0;
+    let error = if unset && !value.is_null() {
+        Some(b"can't specify a value with -u".as_slice())
+    } else if !unset && remove && !value.is_null() {
+        Some(b"can't specify a value with -r".as_slice())
+    } else if !unset && !remove && value.is_null() {
+        Some(b"no value specified".as_slice())
     } else {
-        env = (*(*target)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .environ
-        .as_deref_mut()
-        .expect("environment");
-        current_block = 224731115979188411;
+        None
+    };
+    if let Some(error) = error {
+        cmdq_error(item_handle, |out| out.write_all(error));
+        return CMD_RETURN_ERROR;
     }
-    match current_block {
-        224731115979188411 => {
-            if args_has(args, 'u' as i32 as u_char) != 0 {
-                if !value.is_null() {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"can't specify a value with -u")
-                    });
-                    retval = CMD_RETURN_ERROR;
-                } else {
-                    environ_unset(env, name);
-                }
-            } else if args_has(args, 'r' as i32 as u_char) != 0 {
-                if !value.is_null() {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"can't specify a value with -r")
-                    });
-                    retval = CMD_RETURN_ERROR;
-                } else {
-                    environ_clear(env, name);
-                }
-            } else if value.is_null() {
-                cmdq_error(item_handle, |out| out.write_all(b"no value specified"));
-                retval = CMD_RETURN_ERROR;
-            } else if args_has(args, 'h' as i32 as u_char) != 0 {
-                environ_set(env, name, ENVIRON_HIDDEN, |out| write_cstr(out, value));
-            } else {
-                environ_set(env, name, 0 as ::core::ffi::c_int, |out| {
-                    write_cstr(out, value)
-                });
-            }
+    let hidden = if args_has(args, b'h') != 0 {
+        ENVIRON_HIDDEN
+    } else {
+        0
+    };
+    let edit = |env: &mut environ| {
+        if unset {
+            environ_unset(env, name);
+        } else if remove {
+            environ_clear(env, name);
+        } else {
+            environ_set(env, name, hidden, |out| write_cstr(out, value));
         }
-        _ => {}
+    };
+    if global {
+        edit(global_environ.as_deref_mut().expect("environment"));
+    } else {
+        session
+            .as_ref()
+            .expect("target session")
+            .with_environment_mut(edit);
     }
-    return retval;
+    CMD_RETURN_NORMAL
 }

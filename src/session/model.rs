@@ -29,7 +29,7 @@ pub struct session {
     pub(super) flags: ::core::ffi::c_int,
     pub attached: u_int,
     pub tio: Option<Box<termios>>,
-    pub environ: Option<Box<environ>>,
+    pub(super) environ: Option<Box<environ>>,
     /// Weak traversal handle into the containing index.
     pub(super) owner: refbox::Weak<
         std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>,
