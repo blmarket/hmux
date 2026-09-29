@@ -1,3 +1,4 @@
+use crate::src::reactor::BufferEvent;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::cmd_find_from_pane;
@@ -466,12 +467,12 @@ pub unsafe fn server_destroy_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         utempter_remove_record((*wp).fd);
         kill(getpid(), SIGCHLD);
-        (*wp).event.free();
+        std::mem::take(&mut (*wp).event).free();
         close((*wp).fd);
         (*wp).fd = -(1 as ::core::ffi::c_int);
     }
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        (*wp).pipe_event.free();
+        std::mem::take(&mut (*wp).pipe_event).free();
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     }

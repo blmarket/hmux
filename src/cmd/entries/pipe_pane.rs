@@ -1,3 +1,4 @@
+use crate::src::reactor::BufferEvent;
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
@@ -91,7 +92,7 @@ unsafe fn cmd_pipe_pane_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::r
     }
     old_fd = (*wp).pipe_fd;
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        (*wp).pipe_event.free();
+        std::mem::take(&mut (*wp).pipe_event).free();
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
         if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
@@ -292,7 +293,7 @@ unsafe fn cmd_pipe_pane_write_callback(pane_owner: &std::rc::Rc<std::cell::Unsaf
 unsafe fn cmd_pipe_pane_error_callback(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe error", ((*wp).id) as u32));
-    (*wp).pipe_event.free();
+    std::mem::take(&mut (*wp).pipe_event).free();
     close((*wp).pipe_fd);
     (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
@@ -327,10 +328,10 @@ mod pipe_stream_tests {
                 evbuffer_get_length(&(*event).output)
             }), Some(bytes.len()));
             assert_eq!(evbuffer_get_length(&(*pipe).input), 0);
-            (*wp).pipe_event.free();
+            std::mem::take(&mut (*wp).pipe_event).free();
             assert!(!stale.is_alive());
             assert!(!(*wp).pipe_event.is_alive());
-            (*wp).event.free();
+            std::mem::take(&mut (*wp).event).free();
             drop(pane_owner);
             shutdown_runtime();
         }

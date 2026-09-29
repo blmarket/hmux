@@ -1,3 +1,5 @@
+mod api;
+pub use api::*;
 use super::{descriptor, handle};
 use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
@@ -47,21 +49,10 @@ impl StreamHandle {
         Some(access((&**stream as *const bufferevent).cast_mut()))
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.with_ptr(|_| ()).is_some()
-    }
-
     /// Legacy pointer view. The caller must keep the stream registered through use.
     pub fn ptr(&self) -> *mut bufferevent {
         self.with_ptr(|stream| stream)
             .unwrap_or(std::ptr::null_mut())
-    }
-
-    /// Free this registered stream at the existing teardown point.
-    pub fn free(&mut self) {
-        let stream = self.ptr();
-        *self = Self::default();
-        unsafe { bufferevent_free(stream) };
     }
 }
 thread_local! {
@@ -414,7 +405,7 @@ mod tests {
         }
     }
 
-    fn poll_until(mut ready: impl FnMut() -> bool) {
+    pub(super) fn poll_until(mut ready: impl FnMut() -> bool) {
         use hmux_rt::Runtime as _;
         use std::time::{Duration, Instant};
 

@@ -1,4 +1,5 @@
 use hmux_buffer::SegmentedBuf;
+use crate::src::reactor::BufferEvent;
 use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::cmd_find_from_pane;

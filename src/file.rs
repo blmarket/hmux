@@ -1,3 +1,4 @@
+use crate::src::reactor::BufferEvent;
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::cmd::queue::{cmdq_clear_wait_file, cmdq_set_wait_file};
 use crate::src::compat::imsg::imsg;
@@ -815,7 +816,7 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
         stream: 0,
         error: 0,
     };
-    cf.event.free();
+    std::mem::take(&mut cf.event).free();
     if cf.fd != -(1 as ::core::ffi::c_int) {
         if close(cf.fd) != 0 as ::core::ffi::c_int && cf.error == 0 as ::core::ffi::c_int {
             cf.error = *__errno_location();
@@ -858,7 +859,7 @@ unsafe fn file_write_error_callback(
     }
     log_debug(format_args!("write error file {}", (cf.stream) as i32));
     cf.error = error;
-    cf.event.free();
+    std::mem::take(&mut cf.event).free();
     close(cf.fd);
     cf.fd = -(1 as ::core::ffi::c_int);
     if cf.closed != 0 {
@@ -1051,7 +1052,7 @@ unsafe fn file_read_error_callback(
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
-    cf.event.free();
+    std::mem::take(&mut cf.event).free();
     close(cf.fd);
     client_files_remove(&mut *cf);
 }
@@ -1393,7 +1394,7 @@ mod file_index_ownership_tests {
             assert_eq!(file_write_left(&files), 0);
             bufferevent_write(stream, b"pending".as_ptr().cast(), 7);
             assert_eq!(file_write_left(&files), 1);
-            (*owner.get()).event.free();
+            std::mem::take(&mut (*owner.get()).event).free();
             assert_eq!(file_write_left(&files), 0);
             client_files_remove(&mut *owner.get());
             drop(owner);

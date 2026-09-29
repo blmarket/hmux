@@ -1,3 +1,4 @@
+use crate::src::reactor::BufferEvent;
 use crate::src::cfg::cfg_finished;
 use crate::src::cmd::queue::cmdq_print;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -454,7 +455,7 @@ pub unsafe fn job_free(handle: &Weak<job>) {
             kill(job.pid as __pid_t, SIGTERM);
             job.pid = -1;
         }
-        job.event.free();
+        std::mem::take(&mut job.event).free();
         if job.fd != -1 {
             close(job.fd);
             job.fd = -1;
@@ -763,7 +764,7 @@ mod job_stream_tests {
                 job_completion(&owner.try_borrow_mut().unwrap()).output,
                 b"output"
             );
-            owner.try_borrow_mut().unwrap().event.free();
+            std::mem::take(&mut owner.try_borrow_mut().unwrap().event).free();
             assert!(job_get_event(&handle).is_null());
             assert!(job_completion(&owner.try_borrow_mut().unwrap())
                 .output

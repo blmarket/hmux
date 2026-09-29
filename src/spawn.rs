@@ -1,3 +1,4 @@
+use crate::src::reactor::BufferEvent;
 use crate::src::options::options_owner_ptr;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
@@ -557,7 +558,7 @@ pub unsafe fn spawn_pane(
             );
             return None;
         }
-        (*source_pane).event.free();
+        std::mem::take(&mut (*source_pane).event).free();
         if (*source_pane).fd != -(1 as ::core::ffi::c_int) {
             close((*source_pane).fd);
             (*source_pane).fd = -(1 as ::core::ffi::c_int);

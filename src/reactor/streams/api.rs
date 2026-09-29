@@ -1,0 +1,471 @@
+//! Opaque stream operations. Destruction remains explicit, independent of Drop.
+use super::*;
+use crate::src::shared::event::{bufferevent_data_callback, bufferevent_event_callback};
+use std::io;
+use std::os::fd::RawFd;
+
+/// Read/write interests, distinct from EOF/error notification flags.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Interests(c_short);
+
+impl Interests {
+    pub const READ: Self = Self(2);
+    pub const WRITE: Self = Self(4);
+}
+
+impl std::ops::BitOr for Interests {
+    type Output = Self;
+
+    fn bitor(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Direction {
+    Read,
+    Write,
+}
+
+#[derive(Debug)]
+pub enum StreamEventCause {
+    Eof,
+    IoError(io::Error),
+}
+
+#[derive(Debug)]
+pub struct StreamEvent {
+    pub direction: Direction,
+    pub cause: StreamEventCause,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StreamError {
+    Freed,
+    InvalidRange,
+}
+
+impl std::fmt::Display for StreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Freed => "stream has been freed",
+            Self::InvalidRange => "input offset exceeds buffered length",
+        })
+    }
+}
+
+impl std::error::Error for StreamError {}
+
+pub type StreamResult<T> = Result<T, StreamError>;
+pub type DataCallback = Box<dyn FnMut(StreamHandle)>;
+pub type EventCallback = Box<dyn FnMut(StreamHandle, StreamEvent)>;
+
+#[derive(Default)]
+pub struct Callbacks {
+    pub read: Option<DataCallback>,
+    pub write: Option<DataCallback>,
+    pub event: Option<EventCallback>,
+}
+
+/// Fixed stream thresholds. Defaults enable unlimited input and zero low marks.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StreamOptions {
+    pub read_low: usize,
+    /// None means unlimited. A finite limit must be nonzero and >= read_low.
+    pub read_high: Option<usize>,
+    pub write_low: usize,
+}
+
+/// Statically dispatched access to a reactor-owned stream through an observer.
+/// No buffer references escape these operations. Clones do not own the stream;
+/// the logical owner must call free at its existing teardown point.
+pub trait BufferEvent {
+    fn is_alive(&self) -> bool;
+    /// Consume this handle, invalidate all observers, and release the stream.
+    /// An already invalidated handle is harmless. The external fd is not closed.
+    fn free(self);
+    /// Enabling WRITE also requests an empty-output write callback opportunity.
+    fn enable(&self, interests: Interests) -> StreamResult<()>;
+    fn disable(&self, interests: Interests) -> StreamResult<()>;
+    fn input_len(&self) -> StreamResult<usize>;
+    /// Copy from a relative input offset without consuming. Returns bytes copied.
+    fn copy_input(&self, offset: usize, dst: &mut [u8]) -> StreamResult<usize>;
+    /// Consume up to count bytes and recheck read readiness. Returns bytes drained.
+    fn drain_input(&self, count: usize) -> StreamResult<usize>;
+    fn output_len(&self) -> StreamResult<usize>;
+    /// Copy borrowed bytes into output. Success means queued, not delivered.
+    fn write(&self, bytes: &[u8]) -> StreamResult<()>;
+    /// Queue all source bytes, preserving segment transfers for SegmentedBuf.
+    /// A freed stream leaves source untouched. Other Buf implementations may copy.
+    fn write_buffer<B: Buf>(&self, source: &mut B) -> StreamResult<()>;
+}
+
+impl StreamHandle {
+    fn access<R>(&self, f: impl FnOnce(&mut bufferevent) -> StreamResult<R>) -> StreamResult<R> {
+        let owner = self.0.upgrade().ok_or(StreamError::Freed)?;
+        if !owner.live.get() {
+            return Err(StreamError::Freed);
+        }
+        let mut slot = owner.stream.borrow_mut();
+        f(slot.as_deref_mut().ok_or(StreamError::Freed)?)
+    }
+}
+
+impl BufferEvent for StreamHandle {
+    fn is_alive(&self) -> bool {
+        self.0.upgrade().is_some_and(|state| state.live.get())
+    }
+
+    fn free(self) {
+        // Release the allocation-slot borrow before freeing, including callbacks.
+        let stream = self.ptr();
+        unsafe { bufferevent_free(stream) };
+    }
+
+    fn enable(&self, interests: Interests) -> StreamResult<()> {
+        self.access(|stream| {
+            unsafe { bufferevent_enable(stream, interests.0) };
+            Ok(())
+        })
+    }
+
+    fn disable(&self, interests: Interests) -> StreamResult<()> {
+        self.access(|stream| {
+            unsafe { bufferevent_disable(stream, interests.0) };
+            Ok(())
+        })
+    }
+
+    fn input_len(&self) -> StreamResult<usize> {
+        self.access(|stream| Ok(stream.input.remaining()))
+    }
+
+    fn copy_input(&self, mut offset: usize, dst: &mut [u8]) -> StreamResult<usize> {
+        self.access(|stream| {
+            if offset > stream.input.remaining() {
+                return Err(StreamError::InvalidRange);
+            }
+            let mut copied = 0;
+            for chunk in hmux_buffer::Buffer::chunks(&*stream.input) {
+                if offset >= chunk.len() {
+                    offset -= chunk.len();
+                    continue;
+                }
+                let chunk = &chunk[offset..];
+                let count = chunk.len().min(dst.len() - copied);
+                dst[copied..copied + count].copy_from_slice(&chunk[..count]);
+                copied += count;
+                offset = 0;
+                if copied == dst.len() {
+                    break;
+                }
+            }
+            Ok(copied)
+        })
+    }
+
+    fn drain_input(&self, count: usize) -> StreamResult<usize> {
+        self.access(|stream| {
+            let count = count.min(stream.input.remaining());
+            stream.input.advance(count);
+            state(stream).wake();
+            Ok(count)
+        })
+    }
+
+    fn output_len(&self) -> StreamResult<usize> {
+        self.access(|stream| Ok(stream.output.remaining()))
+    }
+
+    fn write(&self, bytes: &[u8]) -> StreamResult<()> {
+        self.access(|stream| {
+            stream.output.put_slice(bytes);
+            state(stream).wake();
+            Ok(())
+        })
+    }
+
+    fn write_buffer<B: Buf>(&self, source: &mut B) -> StreamResult<()> {
+        self.access(|stream| {
+            // Call the concrete buffer's override, not Box<SegmentedBuf>'s
+            // default BufMut::put, which would copy through borrowed chunks.
+            stream.output.as_mut().put(source);
+            state(stream).wake();
+            Ok(())
+        })
+    }
+}
+
+/// Construct a stream with fixed thresholds and opaque callback handles.
+///
+/// # Safety
+/// fd must be -1 (buffer-only), or an externally owned descriptor that remains
+/// open until explicit free. Coordinate external descriptor I/O with the reactor.
+pub unsafe fn new_buffer_event(
+    fd: RawFd,
+    options: StreamOptions,
+    callbacks: Callbacks,
+) -> io::Result<StreamHandle> {
+    if options
+        .read_high
+        .is_some_and(|high| high == 0 || high < options.read_low)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid read watermarks",
+        ));
+    }
+    fn data_callback(callback: Option<DataCallback>) -> bufferevent_data_cb {
+        callback.and_then(|mut callback| {
+            bufferevent_data_callback(move |stream| {
+                callback(unsafe { StreamHandle::from_ptr(stream.as_ptr()) });
+            })
+        })
+    }
+    let errorcb = callbacks.event.and_then(|mut callback| {
+        bufferevent_event_callback(move |stream, flags| {
+            // Capture errno before any application code or handle manipulation.
+            let cause = if flags & 0x10 != 0 {
+                StreamEventCause::Eof
+            } else {
+                StreamEventCause::IoError(io::Error::last_os_error())
+            };
+            let direction = if flags & 1 != 0 {
+                Direction::Read
+            } else {
+                Direction::Write
+            };
+            callback(
+                unsafe { StreamHandle::from_ptr(stream.as_ptr()) },
+                StreamEvent { direction, cause },
+            );
+        })
+    });
+    let stream = bufferevent_new(
+        fd,
+        data_callback(callbacks.read),
+        data_callback(callbacks.write),
+        errorcb,
+    );
+    if stream.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // Construction and configuration are synchronous; the task has not polled.
+    (*stream).wm_read.low = options.read_low;
+    (*stream).wm_read.high = options.read_high.unwrap_or(0);
+    (*stream).wm_write.low = options.write_low;
+    Ok(StreamHandle::from_ptr(stream))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hmux_buffer::Buffer;
+    use std::io::{Read, Write};
+    use std::os::fd::AsRawFd;
+    use std::os::unix::net::UnixStream;
+
+    fn buffer_only() -> StreamHandle {
+        unsafe { new_buffer_event(-1, StreamOptions::default(), Callbacks::default()).unwrap() }
+    }
+
+    #[test]
+    fn generic_transfer_moves_segments_and_freed_handles_preserve_source() {
+        let stream = buffer_only();
+        stream.write(b"prefix").unwrap();
+        let mut source = SegmentedBuf::from(b"first".to_vec());
+        source.append(&mut SegmentedBuf::from(b"second".to_vec()));
+        source.advance(1);
+        let pointers: Vec<_> = source.chunks().map(|chunk| chunk.as_ptr()).collect();
+        stream.write_buffer(&mut source).unwrap();
+        assert_eq!(source.remaining(), 0);
+        stream
+            .access(|inner| {
+                let chunks: Vec<_> = inner.output.chunks().collect();
+                assert_eq!(chunks, vec![b"prefix".as_slice(), b"irst", b"second"]);
+                assert_eq!(chunks[1].as_ptr(), pointers[0]);
+                assert_eq!(chunks[2].as_ptr(), pointers[1]);
+                Ok(())
+            })
+            .unwrap();
+        // The same generic API also accepts non-segmented sources.
+        let mut borrowed: &[u8] = b"tail";
+        stream.write_buffer(&mut borrowed).unwrap();
+        assert!(borrowed.is_empty());
+        assert_eq!(stream.output_len(), Ok(20));
+
+        let observer = stream.clone();
+        stream.free();
+        assert!(!observer.is_alive());
+        source.put_slice(b"keep");
+        assert_eq!(observer.write_buffer(&mut source), Err(StreamError::Freed));
+        assert_eq!(source.chunk(), b"keep");
+        assert_eq!(observer.input_len(), Err(StreamError::Freed));
+        assert_eq!(observer.output_len(), Err(StreamError::Freed));
+        assert_eq!(observer.write(b"x"), Err(StreamError::Freed));
+        assert_eq!(observer.enable(Interests::READ), Err(StreamError::Freed));
+        assert_eq!(observer.disable(Interests::WRITE), Err(StreamError::Freed));
+        assert_eq!(observer.copy_input(0, &mut [0; 1]), Err(StreamError::Freed));
+        assert_eq!(observer.drain_input(1), Err(StreamError::Freed));
+        observer.free();
+        super::super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn input_copy_crosses_segments_without_consuming_and_drain_wakes() {
+        let stream = buffer_only();
+        stream
+            .access(|inner| {
+                inner.input.as_mut().put(SegmentedBuf::from(b"abc".to_vec()));
+                inner.input.as_mut().put(SegmentedBuf::from(b"def".to_vec()));
+                Ok(())
+            })
+            .unwrap();
+        let state = stream.0.upgrade().unwrap();
+        let generation = state.generation.get();
+        let mut bytes = [0; 4];
+        assert_eq!(stream.copy_input(2, &mut bytes), Ok(4));
+        assert_eq!(&bytes, b"cdef");
+        assert_eq!(stream.input_len(), Ok(6));
+        assert_eq!(stream.copy_input(6, &mut bytes), Ok(0));
+        assert_eq!(
+            stream.copy_input(7, &mut bytes),
+            Err(StreamError::InvalidRange)
+        );
+        assert_eq!(state.generation.get(), generation);
+        assert_eq!(stream.drain_input(usize::MAX), Ok(6));
+        assert_eq!(stream.input_len(), Ok(0));
+        assert!(state.generation.get() > generation);
+        stream.free();
+        assert!(state.stream.borrow().is_none());
+        super::super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn fixed_watermark_pauses_and_drain_resumes_reads() {
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let callbacks_seen = Rc::new(Cell::new(0));
+        let seen = callbacks_seen.clone();
+        let stream = unsafe {
+            new_buffer_event(
+                socket.as_raw_fd(),
+                StreamOptions {
+                    read_low: 3,
+                    read_high: Some(3),
+                    ..Default::default()
+                },
+                Callbacks {
+                    read: Some(Box::new(move |handle| {
+                        assert_eq!(handle.input_len(), Ok(3));
+                        seen.set(seen.get() + 1);
+                    })),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        stream.enable(Interests::READ).unwrap();
+        peer.write_all(b"abcdef").unwrap();
+        super::super::tests::poll_until(|| callbacks_seen.get() == 1);
+        assert_eq!(stream.input_len(), Ok(3));
+        let mut bytes = [0; 3];
+        stream.copy_input(0, &mut bytes).unwrap();
+        assert_eq!(&bytes, b"abc");
+        stream.drain_input(3).unwrap();
+        super::super::tests::poll_until(|| callbacks_seen.get() == 2);
+        stream.copy_input(0, &mut bytes).unwrap();
+        assert_eq!(&bytes, b"def");
+        stream.free();
+        // Explicit free restores flags but leaves the caller's fd open.
+        assert_eq!(
+            unsafe { libc::fcntl(socket.as_raw_fd(), libc::F_GETFL) } & libc::O_NONBLOCK,
+            0
+        );
+        super::super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn output_wakes_idle_task_and_empty_enable_requests_callback() {
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        peer.set_nonblocking(true).unwrap();
+        let written = Rc::new(Cell::new(0));
+        let seen = written.clone();
+        let stream = unsafe {
+            new_buffer_event(
+                socket.as_raw_fd(),
+                StreamOptions::default(),
+                Callbacks {
+                    write: Some(Box::new(move |handle| {
+                        assert_eq!(handle.output_len(), Ok(0));
+                        seen.set(seen.get() + 1);
+                    })),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        super::super::tests::poll_until(|| stream.0.upgrade().unwrap().wake.borrow().is_some());
+        stream.write(b"abc").unwrap();
+        super::super::tests::poll_until(|| written.get() == 1);
+        let mut bytes = [0; 3];
+        peer.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"abc");
+        stream.enable(Interests::WRITE).unwrap();
+        super::super::tests::poll_until(|| written.get() == 2);
+        stream.free();
+        super::super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn eof_callback_can_consume_handle_and_release_captures() {
+        let (socket, peer) = UnixStream::pair().unwrap();
+        let capture = Rc::new(());
+        let weak_capture = Rc::downgrade(&capture);
+        let stream = unsafe {
+            new_buffer_event(
+                socket.as_raw_fd(),
+                StreamOptions::default(),
+                Callbacks {
+                    event: Some(Box::new(move |handle, event| {
+                        assert_eq!(event.direction, Direction::Read);
+                        assert!(matches!(event.cause, StreamEventCause::Eof));
+                        assert_eq!(Rc::strong_count(&capture), 1);
+                        handle.free();
+                    })),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        stream.enable(Interests::READ).unwrap();
+        drop(peer);
+        super::super::tests::poll_until(|| !stream.is_alive());
+        assert!(weak_capture.upgrade().is_none());
+        stream.free();
+        super::super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn invalid_options_do_not_change_descriptor_flags() {
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let flags = unsafe { libc::fcntl(socket.as_raw_fd(), libc::F_GETFL) };
+        for high in [0, 2] {
+            let result = unsafe {
+                new_buffer_event(
+                    socket.as_raw_fd(),
+                    StreamOptions {
+                        read_low: 3,
+                        read_high: Some(high),
+                        ..Default::default()
+                    },
+                    Callbacks::default(),
+                )
+            };
+            assert!(matches!(result, Err(error) if error.kind() == io::ErrorKind::InvalidInput));
+            assert_eq!(
+                unsafe { libc::fcntl(socket.as_raw_fd(), libc::F_GETFL) },
+                flags
+            );
+        }
+    }
+}

@@ -1,3 +1,4 @@
+use crate::src::reactor::BufferEvent;
 use hmux_buffer::SegmentedBuf;
 use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_queue;
@@ -2741,7 +2742,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
         kill(getpid(), SIGCHLD);
     }
     // Empty panes have stream buffers and an input parser without a PTY.
-    (*wp).event.free();
+    std::mem::take(&mut (*wp).event).free();
     if (*wp).fd != -(1 as ::core::ffi::c_int) {
         close((*wp).fd);
         (*wp).fd = -(1 as ::core::ffi::c_int);
@@ -2750,7 +2751,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
         input_free(ictx);
     }
     if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        (*wp).pipe_event.free();
+        std::mem::take(&mut (*wp).pipe_event).free();
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     }

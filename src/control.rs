@@ -1,3 +1,4 @@
+use crate::src::reactor::BufferEvent;
 use hmux_buffer::SegmentedBuf;
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
@@ -1758,11 +1759,11 @@ pub unsafe fn control_stop(c_owner: &Rc<UnsafeCell<client>>) {
         crate::src::monitor::monitor_destroy(subs);
     }
     if (*c).flags & CLIENT_CONTROLCONTROL as uint64_t == 0 {
-        cs.write_event.free();
+        std::mem::take(&mut cs.write_event).free();
     } else {
         cs.write_event = Default::default();
     }
-    cs.read_event.free();
+    std::mem::take(&mut cs.read_event).free();
     control_reset_offsets(&mut *(c));
     let cs = (*c)
         .control_state
