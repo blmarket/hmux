@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::shared::client::client_handle;
 use crate::src::log::{log_cstr, log_pointer};
 // Private job-integration implementation.  This module owns the process-wide
@@ -40,7 +41,7 @@ static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
 };
 pub(super) unsafe fn format_job_update(job: &refbox::Weak<job>, mut fj: *mut format_job) {
-    let evb: &mut evbuffer = &mut *(*job_get_event(job)).input;
+    let evb: &mut SegmentedBuf = crate::src::reactor::bufferevent_get_input(&mut *job_get_event(job));
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {

@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard,
@@ -10,6 +11,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
 use crate::src::reactor::{
+    bufferevent_get_input,
     bufferevent_disable, bufferevent_enable, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
     evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
@@ -1117,7 +1119,7 @@ unsafe fn control_read_callback(owner: &Rc<UnsafeCell<client>>) {
             break;
         };
         let Some(line) = cs.read_event.with_ptr(|stream| unsafe {
-            evbuffer_readln(&mut *(*stream).input)
+            evbuffer_readln(bufferevent_get_input(&mut *stream))
         }).flatten() else {
             break;
         };
@@ -1259,10 +1261,10 @@ unsafe fn control_append_data(
     c_owner: &Rc<UnsafeCell<client>>,
     cp: &mut control_pane,
     mut age: uint64_t,
-    message: Option<Box<evbuffer>>,
+    message: Option<Box<SegmentedBuf>>,
     wp_owner: &Rc<UnsafeCell<window_pane>>,
     mut size: size_t,
-) -> Box<evbuffer> {
+) -> Box<SegmentedBuf> {
     let c = c_owner.get();
     let wp = wp_owner.get();
 
@@ -1336,7 +1338,7 @@ unsafe fn control_append_data(
     window_pane_update_used_data(&(*(wp)).observer.upgrade().expect("live window_pane"), &raw mut cp.offset, size);
     return message;
 }
-unsafe fn control_write_data(c_owner: &Rc<UnsafeCell<client>>, mut message: Box<evbuffer>) {
+unsafe fn control_write_data(c_owner: &Rc<UnsafeCell<client>>, mut message: Box<SegmentedBuf>) {
     let c = c_owner.get();
 
     let cs = (*c)
@@ -1375,7 +1377,7 @@ unsafe fn control_write_pending(
     let c = c_owner.get();
 
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut message: Option<Box<evbuffer>> = None;
+    let mut message: Option<Box<SegmentedBuf>> = None;
     let mut used: size_t = 0 as size_t;
     let mut size: size_t = 0;
     let mut cb = refbox::Weak::<control_block>::new();

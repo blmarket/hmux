@@ -1,10 +1,11 @@
 //! Authoritative terminal capability-code values.
 
+use hmux_buffer::SegmentedBuf;
 use super::abi::{size_t, time_t, u_int};
 use super::client::client;
 use super::colour::colour_palette;
 use super::display::{screen_cursor_style, visible_ranges};
-use super::event::{evbuffer, event};
+use super::event::event;
 use super::grid::grid_cell;
 use super::key::key_code;
 use super::mouse::mouse_event;
@@ -355,9 +356,9 @@ pub struct tty {
     pub rleft: u_int,
     pub rright: u_int,
     pub event_in: event,
-    pub in_0: Option<Box<evbuffer>>,
+    pub in_0: Option<Box<SegmentedBuf>>,
     pub event_out: event,
-    pub out: Option<Box<evbuffer>>,
+    pub out: Option<Box<SegmentedBuf>>,
     pub timer: event,
     pub discarded: size_t,
     pub tio: termios,

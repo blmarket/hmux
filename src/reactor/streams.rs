@@ -1,7 +1,7 @@
-use super::{descriptor, evbuffer, handle};
+use super::{descriptor, handle};
 use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
-use hmux_buffer::{Buf, BufMut};
+use hmux_buffer::{Buf, BufMut, SegmentedBuf};
 use hmux_rt::Handle as _;
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short, c_void};
@@ -91,11 +91,6 @@ impl StreamState {
         if let Some(wake) = wake {
             wake.wake();
         }
-    }
-}
-pub(super) fn wake_buffer(buffer: &evbuffer) {
-    if let Some(state) = buffer.stream.upgrade() {
-        state.wake();
     }
 }
 fn state(stream: &bufferevent) -> Rc<StreamState> {
@@ -298,8 +293,6 @@ pub unsafe fn bufferevent_new(
     });
     // Explicit free breaks this ownership link, including streams without a task.
     (*stream).state = Some(s.clone());
-    (*stream).input.stream = Rc::downgrade(&s);
-    (*stream).output.stream = Rc::downgrade(&s);
     LIVE_STREAMS.with(|streams| {
         let mut streams = streams.borrow_mut();
         streams.retain(|stream| stream.strong_count() != 0);
@@ -332,7 +325,17 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
     }
 }
 
-pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut evbuffer {
+/// Schedule an I/O recheck before lending input for synchronous consumption.
+/// The local task runs after the caller returns to the reactor, so it observes
+/// the updated length and can resume reads paused at the high watermark.
+pub fn bufferevent_get_input(stream: &mut bufferevent) -> &mut SegmentedBuf {
+    state(stream).wake();
+    &mut stream.input
+}
+/// Schedule an I/O recheck before lending output for synchronous mutation.
+/// Callers must finish modifying the buffer before returning to the reactor.
+pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut SegmentedBuf {
+    state(stream).wake();
     &mut stream.output
 }
 pub unsafe fn bufferevent_enable(stream: *mut bufferevent, flags: c_short) -> c_int {
@@ -360,14 +363,18 @@ pub unsafe fn bufferevent_write(
     data: *const c_void,
     size: usize,
 ) -> c_int {
-    super::evbuffer_add(&mut *(*stream).output, data, size)
+    super::evbuffer_add(bufferevent_get_output(&mut *stream), data, size)
 }
-pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: &mut evbuffer) -> c_int {
+/// Move bytes into output. If the source belongs to another stream, obtain it
+/// through bufferevent_get_input/output so that stream also rechecks its I/O.
+pub unsafe fn bufferevent_write_buffer(
+    stream: *mut bufferevent,
+    buffer: &mut SegmentedBuf,
+) -> c_int {
     if std::ptr::eq(buffer, &raw const *(*stream).output) {
         return -1;
     }
-    (*(*stream).output).put(&mut **buffer);
-    wake_buffer(buffer);
+    (*(*stream).output).put(buffer);
     state(&*stream).wake();
     0
 }
@@ -383,7 +390,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn direct_buffer_links_wake_and_explicit_free_invalidates_handles() {
+    fn stream_buffer_access_wakes_and_explicit_free_invalidates_handles() {
         unsafe {
             let stream = bufferevent_new(-1, None, None, None);
             let mut handle = StreamHandle::from_ptr(stream);
@@ -395,14 +402,98 @@ mod tests {
             assert_eq!((*stream).output.remaining(), 3);
             let generation = state.generation.get();
             super::super::evbuffer_add(&mut (*stream).input, b"x".as_ptr().cast(), 1);
-            super::super::evbuffer_drain(&mut (*stream).input, 1);
-            assert_eq!(state.generation.get(), generation + 2);
+            assert_eq!(state.generation.get(), generation);
+            super::super::evbuffer_drain(bufferevent_get_input(&mut *stream), 1);
+            assert_eq!(state.generation.get(), generation + 1);
             handle.free();
             assert!(!observer.is_alive());
             assert!(state.stream.borrow().is_none());
             assert!(!state.live.get());
             drop(state);
             assert!(observer.0.upgrade().is_none());
+        }
+    }
+
+    fn poll_until(mut ready: impl FnMut() -> bool) {
+        use hmux_rt::Runtime as _;
+        use std::time::{Duration, Instant};
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !ready() {
+            assert!(Instant::now() < deadline, "stream did not make progress");
+            let mut runtime = super::super::HOST.with(|host| host.borrow_mut().take().unwrap());
+            runtime.poll(Some(Duration::from_millis(1))).unwrap();
+            super::super::HOST.with(|host| *host.borrow_mut() = Some(runtime));
+        }
+    }
+
+    #[test]
+    fn output_mutations_restart_idle_writes() {
+        use std::io::Read;
+        use std::os::fd::AsRawFd;
+        use std::os::unix::net::UnixStream;
+
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        peer.set_nonblocking(true).unwrap();
+        unsafe {
+            let stream = bufferevent_new(socket.as_raw_fd(), None, None, None);
+            assert!(!stream.is_null());
+            let mut owner = StreamHandle::from_ptr(stream);
+            // Default read is disabled and output is empty: no fd readiness
+            // interest can drive this task until a buffer mutation wakes it.
+            poll_until(|| state(&*stream).wake.borrow().is_some());
+            for mode in 0..3 {
+                match mode {
+                    0 => {
+                        bufferevent_write(stream, b"abc".as_ptr().cast(), 3);
+                    }
+                    1 => {
+                        super::super::evbuffer_add_formatted(
+                            bufferevent_get_output(&mut *stream),
+                            |out| out.write_all(b"abc"),
+                        );
+                    }
+                    _ => {
+                        let mut source = SegmentedBuf::from(b"abc".to_vec());
+                        bufferevent_write_buffer(stream, &mut source);
+                        assert!(!source.has_remaining());
+                    }
+                }
+                poll_until(|| !(*stream).output.has_remaining());
+                let mut received = [0; 3];
+                peer.read_exact(&mut received).unwrap();
+                assert_eq!(&received, b"abc");
+            }
+            owner.free();
+            super::super::shutdown_runtime();
+        }
+    }
+
+    #[test]
+    fn consuming_input_resumes_reads_at_high_watermark() {
+        use std::io::Write;
+        use std::os::fd::AsRawFd;
+        use std::os::unix::net::UnixStream;
+
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        unsafe {
+            let stream = bufferevent_new(socket.as_raw_fd(), None, None, None);
+            assert!(!stream.is_null());
+            let mut owner = StreamHandle::from_ptr(stream);
+            (*stream).wm_read.high = 3;
+            bufferevent_enable(stream, 2);
+            peer.write_all(b"abcdef").unwrap();
+            poll_until(|| (*stream).input.remaining() == 3);
+            assert_eq!((*stream).input.chunk(), b"abc");
+            // Let the task settle with reads paused before consuming input.
+            let generation = state(&*stream).generation.get();
+            poll_until(|| state(&*stream).wake.borrow().is_some());
+            super::super::evbuffer_drain(bufferevent_get_input(&mut *stream), 3);
+            assert!(state(&*stream).generation.get() > generation);
+            poll_until(|| (*stream).input.remaining() == 3);
+            assert_eq!((*stream).input.chunk(), b"def");
+            owner.free();
+            super::super::shutdown_runtime();
         }
     }
 

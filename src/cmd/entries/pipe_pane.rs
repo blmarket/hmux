@@ -12,6 +12,7 @@ use crate::src::format::{format_create_with_client, format_defaults, format_expa
 use crate::src::log::{fatalx, log_debug};
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
+    bufferevent_get_input,
     bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
@@ -275,7 +276,7 @@ unsafe fn cmd_pipe_pane_read_callback(pane_owner: &std::rc::Rc<std::cell::Unsafe
         bufferevent_write(event, data.as_ptr().cast(), available);
     });
     let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
-        evbuffer_drain(&mut *(*event).input, available);
+        evbuffer_drain(bufferevent_get_input(&mut *event), available);
     });
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(&pane_owner, 1);

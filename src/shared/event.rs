@@ -3,8 +3,9 @@
 //! Scheduling and registration ownership live in the reactor's Rust collections.
 //! Event handles can be zero initialized by translated callers. Streams own
 //! their buffers; neither layout is tied to libevent.
+use hmux_buffer::SegmentedBuf;
 use super::abi::*;
-pub use crate::src::reactor::{bufferevent_ops, evbuffer, event_base};
+pub use crate::src::reactor::{bufferevent_ops, event_base};
 
 pub type EventCallback = Option<
     std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(::core::ffi::c_int, ::core::ffi::c_short)>>>,
@@ -37,9 +38,10 @@ pub struct bufferevent {
     pub(crate) state: Option<std::rc::Rc<crate::src::reactor::StreamState>>,
     pub ev_read: event,
     pub ev_write: event,
-    // Keep buffer addresses stable for borrowed pointers.
-    pub input: Box<evbuffer>,
-    pub output: Box<evbuffer>,
+    // Keep buffer addresses stable for borrowed pointers. Use the bufferevent
+    // accessors for mutations so the stream task rechecks its I/O interests.
+    pub input: Box<SegmentedBuf>,
+    pub output: Box<SegmentedBuf>,
     pub wm_read: event_watermark,
     pub wm_write: event_watermark,
     pub readcb: bufferevent_data_cb,

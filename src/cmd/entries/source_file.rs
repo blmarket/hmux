@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::queue::{
@@ -171,7 +172,7 @@ unsafe fn cmd_source_file_done(
     mut cdata: Box<cmd_source_file_data>,
     path: Option<&CStr>,
     error: ::core::ffi::c_int,
-    buffer: &mut evbuffer,
+    buffer: &mut SegmentedBuf,
 ) {
     let Some(item_owner) = cdata.item.upgrade() else { return };
     let item = item_owner.get();

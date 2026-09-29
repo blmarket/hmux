@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::server_client::server_client_unref_owned;
 use std::rc::Rc;
 use crate::src::shared::client::{client_retain, client_handle};
@@ -11,6 +12,7 @@ use crate::src::input_keys::{input_key, input_key_get_mouse};
 use crate::src::job::{job_free, job_get_event, job_resize, job_run};
 use crate::src::options::options_get_number;
 use crate::src::reactor::{
+    bufferevent_get_input,
     bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::screen::screen_share_hyperlinks;
@@ -844,7 +846,7 @@ unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup:
 }
 unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let pd = popup.as_ptr();
-    let evb: &mut evbuffer = &mut *(*job_get_event(job)).input;
+    let evb: &mut SegmentedBuf = bufferevent_get_input(&mut *job_get_event(job));
     let mut c: *mut client = client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)

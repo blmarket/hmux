@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::cmd::find::{
     cmd_find_clear_state, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
     cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
@@ -309,7 +310,7 @@ pub fn event_payload_get_string(ep: &event_payload) -> Option<&CStr> {
         _ => None,
     }
 }
-unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut evbuffer) {
+unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBuf) {
     match epi.type_0() as ::core::ffi::c_uint {
         0 => {
             evbuffer_add_formatted(evb, |out| write_cstr(out, epi.value.string()));

@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_check_session;
@@ -50,6 +51,7 @@ use crate::src::options::{
 use crate::src::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
+    bufferevent_get_input,
     bufferevent_disable, bufferevent_enable, evbuffer_add, evbuffer_drain, evbuffer_get_length,
     evbuffer_pullup, evbuffer_readln, event_add, event_del, event_initialized, event_once,
     event_pending, event_set,
@@ -3605,7 +3607,7 @@ unsafe fn server_client_check_pane_buffer(pane_owner: &std::rc::Rc<std::cell::Un
             (buffer_len) as usize
         ));
         let _ = (*wp).event.with_ptr(|event| unsafe {
-            evbuffer_drain(&mut *(*event).input, minimum);
+            evbuffer_drain(bufferevent_get_input(&mut *event), minimum);
         });
         if (*wp).base_offset > (SIZE_MAX as size_t).wrapping_sub(minimum) {
             log_debug(format_args!(
@@ -5291,7 +5293,7 @@ pub unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::Unsafe
 pub unsafe fn server_client_print(
     client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     mut parse: ::core::ffi::c_int,
-    mut evb: &mut evbuffer,
+    mut evb: &mut SegmentedBuf,
 ) {
     let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut data: *mut ::core::ffi::c_void =

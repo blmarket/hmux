@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::cmd_find_from_pane;
@@ -2392,7 +2393,7 @@ pub unsafe fn input_reset(mut ictx: *mut input_ctx, mut clear: ::core::ffi::c_in
     (*ictx).state = &input_state_ground;
     (*ictx).flags = 0 as ::core::ffi::c_int;
 }
-pub fn input_pending(ictx: &mut input_ctx) -> &mut evbuffer {
+pub fn input_pending(ictx: &mut input_ctx) -> &mut SegmentedBuf {
     &mut ictx.since_ground
 }
 unsafe fn input_set_state(mut ictx: *mut input_ctx, state: &'static input_state) {

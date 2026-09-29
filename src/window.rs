@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_queue;
 use crate::src::arguments::args_has;
@@ -3872,7 +3873,7 @@ unsafe fn window_pane_input_callback(
     cdata: &window_pane_input_data,
     error: ::core::ffi::c_int,
     closed: bool,
-    buffer: &mut evbuffer,
+    buffer: &mut SegmentedBuf,
 ) {
     let c = cdata.client.as_ref().expect("pane input client").get();
     let buf = evbuffer_pullup(buffer, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr());
@@ -3939,7 +3940,7 @@ pub unsafe fn window_pane_start_input(
     Ok(0)
 }
 pub fn window_pane_get_new_data<'a>(
-    input: &'a mut evbuffer,
+    input: &'a mut SegmentedBuf,
     base_offset: size_t,
     offset: &window_pane_offset,
 ) -> &'a [u8] {

@@ -2,7 +2,7 @@
 
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new, evbuffer_pullup};
 use crate::src::shared::abi::int64_t;
-use crate::src::shared::event::evbuffer;
+use hmux_buffer::SegmentedBuf;
 use crate::src::shared::json::{json_node, json_node_type, JsonValue};
 use hmux_buffer::BufMut;
 use std::ffi::{CStr, CString};
@@ -462,7 +462,7 @@ fn json_parse_boolean(
     *tokens = &tokens[1..];
     Some(json_create_node(key, JsonValue::Boolean(boolean)))
 }
-fn json_string_append(buffer: &mut evbuffer, node: &json_node) {
+fn json_string_append(buffer: &mut SegmentedBuf, node: &json_node) {
     match &node.value {
         JsonValue::String(string) => {
             buffer.put_slice(b"\"");

@@ -14,7 +14,7 @@ use crate::src::options::options_get_string;
 use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_get_output, bufferevent_new,
+    bufferevent_disable, bufferevent_enable, bufferevent_new,
     evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
@@ -507,7 +507,7 @@ unsafe fn job_write_callback(handle: &Weak<job>) {
     };
     let Some(len) = job
         .event
-        .with_ptr(|stream| evbuffer_get_length(&*bufferevent_get_output(&mut *stream)))
+        .with_ptr(|stream| evbuffer_get_length(&(*stream).output))
     else {
         return;
     };

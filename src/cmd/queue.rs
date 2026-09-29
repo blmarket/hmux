@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::arguments::{
     args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
@@ -959,7 +960,7 @@ pub unsafe fn cmdq_guard(
         control_write_guard(&(*(c)).observer.upgrade().expect("live client"), guard, t, number, flags);
     }
 }
-pub unsafe fn cmdq_print_data(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, mut evb: &mut evbuffer) {
+pub unsafe fn cmdq_print_data(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, mut evb: &mut SegmentedBuf) {
     let item = item_handle.get();
     let client = cmdq_get_client((item).as_ref());
     server_client_print(client.as_ref(), 1 as ::core::ffi::c_int, evb);

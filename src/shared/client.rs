@@ -1,4 +1,5 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
+use hmux_buffer::SegmentedBuf;
 use crate::src::server_client::server_client_unref_owned;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -9,7 +10,7 @@ use super::command::cmdq_list;
 use super::control::control_state;
 use super::display::{progress_bar, visible_ranges};
 use super::environment::environ;
-use super::event::{bufferevent, evbuffer, event};
+use super::event::{bufferevent, event};
 use super::format::format_job_tree;
 use super::key::{key_code, key_event, key_table};
 use super::mouse::mouse_event;
@@ -312,7 +313,7 @@ pub struct client_file {
     pub peer: *mut tmuxpeer,
     pub stream: ::core::ffi::c_int,
     pub path: Option<std::ffi::CString>,
-    pub buffer: Box<evbuffer>,
+    pub buffer: Box<SegmentedBuf>,
     pub event: crate::src::reactor::StreamHandle,
     pub fd: ::core::ffi::c_int,
     pub error: ::core::ffi::c_int,
@@ -332,7 +333,7 @@ pub struct client_file_event<'a> {
     pub path: Option<&'a CStr>,
     pub error: i32,
     pub closed: bool,
-    pub buffer: Option<&'a mut evbuffer>,
+    pub buffer: Option<&'a mut SegmentedBuf>,
 }
 
 impl client_file {

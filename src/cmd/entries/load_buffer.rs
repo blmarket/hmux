@@ -1,3 +1,4 @@
+use hmux_buffer::SegmentedBuf;
 use crate::src::server_client::server_client_unref_owned;
 use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
@@ -73,7 +74,7 @@ unsafe fn cmd_load_buffer_done(
     path: Option<&CStr>,
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
-    mut buffer: &mut evbuffer,
+    mut buffer: &mut SegmentedBuf,
 ) {
     // Progress notifications do not need contiguous storage. Coalesce only
     // once, after the complete file has arrived.
@@ -174,7 +175,7 @@ mod tests {
             item: Weak::new(),
             name: None,
         };
-        let mut buffer = evbuffer::default();
+        let mut buffer = SegmentedBuf::default();
         buffer.put(SegmentedBuf::from(vec![1; 4096]));
         let first = buffer.chunk().as_ptr();
         for count in 2..=16 {
@@ -195,7 +196,7 @@ mod tests {
             item: Weak::new(),
             name: None,
         };
-        let mut buffer = evbuffer::default();
+        let mut buffer = SegmentedBuf::default();
         unsafe { cmd_load_buffer_done(&mut data, Some(c"input"), 5, 1, &mut buffer) };
     }
 }

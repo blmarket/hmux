@@ -1,12 +1,13 @@
 //! Authoritative input declarations.
 
+use hmux_buffer::SegmentedBuf;
 use std::collections::VecDeque;
 use std::ffi::CString;
 
 use super::abi::{size_t, u_char, u_int, uint64_t};
 use super::client::client;
 use super::colour::colour_palette;
-use super::event::{bufferevent, evbuffer, event};
+use super::event::{bufferevent, event};
 use super::grid::{grid_cell, utf8_data};
 use super::pane::window_pane;
 use super::screen_write::screen_write_ctx;
@@ -81,7 +82,7 @@ pub struct input_ctx {
     pub(crate) requests: VecDeque<Box<input_request>>,
     pub request_count: u_int,
     pub request_timer: event,
-    pub since_ground: Box<evbuffer>,
+    pub since_ground: Box<SegmentedBuf>,
     pub ground_timer: event,
 }
 

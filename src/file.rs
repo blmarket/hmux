@@ -10,6 +10,7 @@ use crate::src::ffi::libc::{
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
 use crate::src::reactor::{
+    bufferevent_get_input,
     bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_once,
 };
@@ -1095,7 +1096,7 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
             msglen,
         );
         let _ = cf.event.with_ptr(|stream| unsafe {
-            evbuffer_drain(&mut *(*stream).input, bsize)
+            evbuffer_drain(bufferevent_get_input(&mut *stream), bsize)
         });
     }
 }

@@ -1,48 +1,30 @@
-//! Borrowed buffer operations for runtime-owned byte storage.
+//! Legacy buffer helpers over plain segmented byte storage.
+//! Stream scheduling belongs to bufferevent, not these storage operations.
 use crate::src::format::bytes::write_cstr;
 use crate::src::shared::abi::{size_t, ssize_t};
-/// Byte storage with a direct, non-owning link to its stream's wake state.
-#[derive(Default)]
-pub struct evbuffer {
-    bytes: hmux_buffer::SegmentedBuf,
-    pub(super) stream: std::rc::Weak<super::streams::StreamState>,
-}
-impl std::ops::Deref for evbuffer {
-    type Target = hmux_buffer::SegmentedBuf;
-    fn deref(&self) -> &Self::Target {
-        &self.bytes
-    }
-}
-impl std::ops::DerefMut for evbuffer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bytes
-    }
-}
-use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf as ByteBuffer};
+use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
 use std::ffi::{c_char, c_int, c_void, CStr};
 
-pub fn evbuffer_new() -> Box<evbuffer> {
-    Box::new(evbuffer::default())
+pub fn evbuffer_new() -> Box<SegmentedBuf> {
+    Box::new(SegmentedBuf::default())
 }
-pub fn evbuffer_get_length(b: &evbuffer) -> size_t {
+pub fn evbuffer_get_length(b: &SegmentedBuf) -> size_t {
     b.remaining() as size_t
 }
-pub unsafe fn evbuffer_add(b: &mut evbuffer, data: *const c_void, len: size_t) -> c_int {
+pub unsafe fn evbuffer_add(b: &mut SegmentedBuf, data: *const c_void, len: size_t) -> c_int {
     if len != 0 {
         b.put_slice(std::slice::from_raw_parts(data.cast(), len));
     }
-    super::wake_buffer(b);
     0
 }
-pub fn evbuffer_drain(b: &mut evbuffer, len: size_t) -> c_int {
+pub fn evbuffer_drain(b: &mut SegmentedBuf, len: size_t) -> c_int {
     let count = len.min(b.remaining());
     b.advance(count);
-    super::wake_buffer(b);
     0
 }
 /// Borrow a contiguous prefix, or all readable bytes when `size` is negative.
 /// Empty buffers and requests larger than the readable length return `None`.
-pub fn evbuffer_pullup(b: &mut evbuffer, size: ssize_t) -> Option<&mut [u8]> {
+pub fn evbuffer_pullup(b: &mut SegmentedBuf, size: ssize_t) -> Option<&mut [u8]> {
     if !b.has_remaining() || (size >= 0 && size as usize > b.remaining()) {
         None
     } else {
@@ -54,7 +36,7 @@ pub fn evbuffer_pullup(b: &mut evbuffer, size: ssize_t) -> Option<&mut [u8]> {
         b.pullup(count)
     }
 }
-pub unsafe fn evbuffer_read(b: &mut evbuffer, fd: c_int, limit: c_int) -> c_int {
+pub unsafe fn evbuffer_read(b: &mut SegmentedBuf, fd: c_int, limit: c_int) -> c_int {
     let count = if limit < 0 {
         65536
     } else {
@@ -65,12 +47,11 @@ pub unsafe fn evbuffer_read(b: &mut evbuffer, fd: c_int, limit: c_int) -> c_int 
     if n > 0 {
         // read initialized exactly n bytes of the allocation.
         bytes.set_len(n as usize);
-        b.put(ByteBuffer::from(bytes));
-        super::wake_buffer(b);
+        b.put(SegmentedBuf::from(bytes));
     }
     n as c_int
 }
-pub unsafe fn evbuffer_write(b: &mut evbuffer, fd: c_int) -> c_int {
+pub unsafe fn evbuffer_write(b: &mut SegmentedBuf, fd: c_int) -> c_int {
     let mut chunks = [libc::iovec {
         iov_base: std::ptr::null_mut(),
         iov_len: 0,
@@ -92,29 +73,27 @@ pub unsafe fn evbuffer_write(b: &mut evbuffer, fd: c_int) -> c_int {
     let n = libc::writev(fd, chunks.as_ptr(), count as c_int);
     if n > 0 {
         b.advance(n as usize);
-        super::wake_buffer(b);
     }
     n as c_int
 }
 
-fn read_line(b: &mut evbuffer, ending: LineEnding) -> Option<Vec<u8>> {
+fn read_line(b: &mut SegmentedBuf, ending: LineEnding) -> Option<Vec<u8>> {
     let Some(mut line) = b.read_line(ending) else {
         return None;
     };
     line.push(0);
 
-    super::wake_buffer(b);
     Some(line)
 }
-pub fn evbuffer_readln(b: &mut evbuffer) -> Option<Vec<u8>> {
+pub fn evbuffer_readln(b: &mut SegmentedBuf) -> Option<Vec<u8>> {
     read_line(b, LineEnding::Lf)
 }
 
-pub fn evbuffer_readline(b: &mut evbuffer) -> Option<Vec<u8>> {
+pub fn evbuffer_readline(b: &mut SegmentedBuf) -> Option<Vec<u8>> {
     read_line(b, LineEnding::Legacy)
 }
 pub fn evbuffer_add_formatted(
-    b: &mut evbuffer,
+    b: &mut SegmentedBuf,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> c_int {
     let Some(mut formatted) = format_buffer(write) else {
@@ -122,7 +101,6 @@ pub fn evbuffer_add_formatted(
     };
     let count = formatted.remaining();
     b.append(&mut formatted);
-    super::wake_buffer(b);
     count as c_int
 }
 
@@ -130,7 +108,7 @@ pub fn evbuffer_add_formatted(
 /// Moving this segment with append preserves its allocation and capacity.
 fn format_buffer(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
-) -> Option<ByteBuffer> {
+) -> Option<SegmentedBuf> {
     let mut bytes = crate::src::format::bytes::format_bytes_with(write).ok()?;
     if bytes.len() > c_int::MAX as usize {
         return None;
@@ -138,7 +116,7 @@ fn format_buffer(
     bytes.try_reserve(1).ok()?;
     bytes.push(0);
     bytes.pop();
-    Some(ByteBuffer::from(bytes))
+    Some(SegmentedBuf::from(bytes))
 }
 
 #[cfg(test)]
@@ -167,7 +145,7 @@ mod tests {
     }
 
     fn append_formatted(
-        destination: &mut ByteBuffer,
+        destination: &mut SegmentedBuf,
         write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
     ) -> c_int {
         let Some(mut formatted) = format_buffer(write) else {
@@ -187,7 +165,7 @@ mod tests {
     fn formatted_storage_survives_append_and_terminator_commit() {
         for size in [1, 1023, 1024, 4095, 4096, 4097, 40076, 100_000] {
             let text = CString::new("x".repeat(size)).unwrap();
-            let mut buffer = ByteBuffer::default();
+            let mut buffer = SegmentedBuf::default();
             assert_eq!(
                 unsafe {
                     append_formatted(&mut buffer, |out| {
@@ -218,7 +196,7 @@ mod tests {
 
     #[test]
     fn formatting_preserves_prefix_empty_output_and_embedded_nul() {
-        let mut buffer = ByteBuffer::from(b"prefix".to_vec());
+        let mut buffer = SegmentedBuf::from(b"prefix".to_vec());
         unsafe {
             assert_eq!(
                 append_formatted(&mut buffer, |out| { write_cstr(out, c"".as_ptr()) }),
