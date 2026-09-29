@@ -164,7 +164,6 @@ pub struct window_pane {
     pub sb_slider_y: u_int,
     pub sb_slider_h: u_int,
     pub sb_auto_visible: ::core::ffi::c_int,
-    pub sb_auto_hover: ::core::ffi::c_int,
     pub sb_auto_timer: event,
     pub argv: Vec<std::ffi::CString>,
     pub shell: Option<CString>,

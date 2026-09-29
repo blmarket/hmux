@@ -135,7 +135,6 @@ pub struct ClientRegistry {
     ordered: Vec<std::rc::Weak<std::cell::UnsafeCell<client>>>,
     indices: std::collections::BTreeMap<usize, usize>,
     successors: std::collections::BTreeMap<usize, std::rc::Weak<std::cell::UnsafeCell<client>>>,
-    observers: Vec<std::rc::Weak<std::cell::UnsafeCell<client>>>,
 }
 
 impl ClientRegistry {
@@ -145,7 +144,6 @@ impl ClientRegistry {
             ordered: Vec::new(),
             indices: std::collections::BTreeMap::new(),
             successors: std::collections::BTreeMap::new(),
-            observers: Vec::new(),
         }
     }
 
@@ -176,7 +174,6 @@ impl ClientRegistry {
         self.indices.insert(key, self.ordered.len());
         self.successors.insert(key, std::rc::Weak::new());
         self.ordered.push(observer);
-        self.observers.push(std::rc::Rc::downgrade(&owner));
         self.owners.insert(key, owner);
     }
 
@@ -206,13 +203,6 @@ impl ClientRegistry {
     pub(crate) fn release(&mut self, observer: &std::rc::Weak<std::cell::UnsafeCell<client>>) {
         self.remove(observer);
         self.successors.remove(&(observer.as_ptr() as usize));
-        if let Some(index) = self
-            .observers
-            .iter()
-            .position(|owner| owner.ptr_eq(observer))
-        {
-            self.observers.remove(index);
-        }
     }
 
     /// Reset active membership while retaining records owned by outstanding
@@ -1657,10 +1647,8 @@ unsafe fn server_client_update_scrollbar_hover(
             wp = pane_owner.get();
             if !(window_pane_is_visible(&*wp) == 0) {
                 if server_client_in_scrollbar_area(&*wp, px, py) != 0 {
-                    (*wp).sb_auto_hover = 1 as ::core::ffi::c_int;
                     window_pane_scrollbar_show(&pane_owner);
                 } else {
-                    (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
                     window_pane_scrollbar_start_timer(&pane_owner);
                 }
             }
@@ -5443,10 +5431,8 @@ mod client_registry_tests {
             assert!(registry.remove(&middle_observer));
             assert!(Rc::ptr_eq(&registry.next(&first).unwrap(), &last));
             assert!(Rc::ptr_eq(&registry.next(&middle).unwrap(), &last));
-            assert!(registry.observers.iter().any(|owner| owner.ptr_eq(&middle_observer)));
             registry.release(&middle_observer);
             assert!(registry.next(&middle).is_none());
-            assert!(!registry.observers.iter().any(|owner| owner.ptr_eq(&middle_observer)));
             let last_observer = Rc::downgrade(&last);
             registry.clear();
             drop(first);

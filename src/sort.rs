@@ -53,7 +53,7 @@ fn sort_buffer_cmp(pa: &paste_buffer, pb: &paste_buffer, sort_crit: &sort_criter
     let order = match sort_crit.order {
         SORT_NAME => pa.name.cmp(&pb.name),
         SORT_CREATION => pb.order.cmp(&pa.order),
-        SORT_SIZE => (pa.size.wrapping_sub(pb.size) as i32).cmp(&0),
+        SORT_SIZE => (pa.size().wrapping_sub(pb.size()) as i32).cmp(&0),
         _ => Ordering::Equal,
     }
     .then_with(|| pa.name.cmp(&pb.name));

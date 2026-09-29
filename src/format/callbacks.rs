@@ -1069,7 +1069,7 @@ unsafe fn format_cb_buffer_full(ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_buffer_size(ft: *mut format_tree) -> Option<CString> {
     let buffer = (*ft).pb.as_ref()?.try_borrow()?;
-    Some(CString::new(buffer.size.to_string()).expect("formatted numbers contain no NUL"))
+    Some(CString::new(buffer.size().to_string()).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_client_cell_height(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
@@ -4211,8 +4211,7 @@ mod owned_callback_tests {
             assert_eq!(paste_buffer_data(&buffer.borrow()), Some(&b""[..]));
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"");
 
-            buffer.borrow_mut().data = Some(b"A\xff\0Btrailing".to_vec().into_boxed_slice());
-            buffer.borrow_mut().size = 4;
+            buffer.borrow_mut().data = Some(b"A\xff\0B".to_vec().into_boxed_slice());
             {
                 let value = buffer.borrow();
                 let bytes = paste_buffer_data(&value).unwrap();
@@ -4222,7 +4221,7 @@ mod owned_callback_tests {
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_bytes(), b"A\xff");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"4");
 
-            buffer.borrow_mut().size = 1;
+            buffer.borrow_mut().data = Some(b"A".to_vec().into_boxed_slice());
             assert_eq!(format_cb_buffer_full(ft).unwrap().as_c_str(), c"A");
             assert_eq!(format_cb_buffer_size(ft).unwrap().as_c_str(), c"1");
             (*ft).pb = None;

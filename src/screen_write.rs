@@ -890,12 +890,12 @@ pub unsafe fn screen_write_menu(
     screen_write_box(
         ctx,
         width.wrapping_add(4),
-        menu.count.wrapping_add(2),
+        menu.count().wrapping_add(2),
         lines,
         border_gc,
         Some(menu.title.as_c_str()),
     );
-    for (index, item) in menu.items[..menu.count as usize].iter().enumerate() {
+    for (index, item) in menu.items.iter().enumerate() {
         let y = cy.wrapping_add(1).wrapping_add(index as u_int);
         let Some(name) = item.name.as_deref() else {
             screen_write_cursormove(ctx, cx as ::core::ffi::c_int, y as ::core::ffi::c_int, 0);

@@ -72,7 +72,6 @@ mod tests {
 #[repr(C)]
 pub struct args {
     pub tree: args_tree,
-    pub count: u_int,
     pub values: Vec<args_value>,
 }
 
@@ -80,7 +79,6 @@ impl args {
     pub fn empty() -> Self {
         Self {
             tree: args_tree::default(),
-            count: Default::default(),
             values: Vec::new(),
         }
     }

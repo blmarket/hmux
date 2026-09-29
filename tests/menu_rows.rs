@@ -35,7 +35,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         menu_add_item(&mut *menu, None, None, Some(&owner), null_mut());
         menu_add_items(&mut *menu, &[], Some(&owner));
         menu_add_item(&mut *menu, Some(&separator), None, Some(&owner), null_mut());
-        assert_eq!((*menu).count, 0);
+        assert_eq!((*menu).count(), 0);
 
         for index in 0..64 {
             let name = CString::new(format!("Row {index}")).unwrap();
@@ -66,10 +66,10 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
             Some(&owner),
             null_mut(),
         );
-        assert_eq!((*menu).count, 64);
+        assert_eq!((*menu).count(), 64);
         menu_add_item(&mut *menu, Some(&separator), None, Some(&owner), null_mut());
         menu_add_item(&mut *menu, Some(&separator), None, Some(&owner), null_mut());
-        assert_eq!((*menu).count, 65);
+        assert_eq!((*menu).count(), 65);
         for (index, row) in (&(*menu).items)[..64].iter().enumerate() {
             assert_eq!(
                 row.name.as_ref().unwrap().as_bytes(),
@@ -102,7 +102,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
             // A bounded stack array needs no terminal item, and its text may expire.
             menu_add_items(&mut *menu, &definitions, Some(&owner));
         }
-        assert_eq!((*menu).count, 67);
+        assert_eq!((*menu).count(), 67);
         assert_eq!((&(*menu).items)[65].name.as_deref(), Some(c"借用"));
         assert!((&(*menu).items)[65].command.is_none());
         assert_eq!((&(*menu).items)[66].name.as_deref(), Some(c"Last row"));

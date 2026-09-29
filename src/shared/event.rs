@@ -36,8 +36,6 @@ impl event {
 #[repr(C)]
 pub struct bufferevent {
     pub(crate) state: Option<std::rc::Rc<crate::src::reactor::StreamState>>,
-    pub ev_read: event,
-    pub ev_write: event,
     // Keep buffer addresses stable for borrowed pointers. Use the bufferevent
     // accessors for mutations so the stream task rechecks its I/O interests.
     pub input: Box<SegmentedBuf>,
@@ -47,8 +45,6 @@ pub struct bufferevent {
     pub readcb: bufferevent_data_cb,
     pub writecb: bufferevent_data_cb,
     pub errorcb: bufferevent_event_cb,
-    pub timeout_read: timeval,
-    pub timeout_write: timeval,
     pub enabled: ::core::ffi::c_short,
 }
 

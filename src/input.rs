@@ -152,7 +152,6 @@ impl input_ctx {
             state: &input_state_ground,
             flags: 0,
             requests: VecDeque::new(),
-            request_count: 0,
             request_timer: Default::default(),
             since_ground: evbuffer_new(),
             ground_timer: Default::default(),
@@ -384,7 +383,6 @@ mod input_request_ownership_tests {
                 request.ictx = &mut *context;
                 input_client_requests(&mut *client.get()).push(&mut *request);
                 context.requests.push_back(request);
-                context.request_count = 1;
                 assert_eq!(std::rc::Rc::strong_count(&client), 1);
                 if expired {
                     drop(client);
@@ -408,11 +406,9 @@ mod input_request_ownership_tests {
             request.ictx = &mut *context;
             input_client_requests(&mut client).push(&mut *request);
             context.requests.push_back(request);
-            context.request_count = 1;
             input_cancel_requests(&mut client);
             assert!(client.input_requests.is_empty());
             assert!(context.requests.is_empty());
-            assert_eq!(context.request_count, 0);
         }
     }
 
@@ -433,7 +429,6 @@ mod input_request_ownership_tests {
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
             input_ctx_requests(ictx).push_back(pending_owner);
             input_client_requests(&mut *c).push(pending);
-            (*ictx).request_count = 1;
 
             input_reply(ictx, 1, |out| {
                 out.write_all(b"reply:")?;
@@ -455,7 +450,6 @@ mod input_request_ownership_tests {
             );
             input_free_request(queued);
             assert!(input_ctx_requests(ictx).is_empty());
-            assert_eq!((*ictx).request_count, 0);
             drop(ictx_owner);
         }
     }
@@ -477,7 +471,6 @@ mod input_request_ownership_tests {
             (*pending).idx = 7;
             input_ctx_requests(ictx).push_back(pending_owner);
             input_client_requests(&mut *c).push(pending);
-            (*ictx).request_count = 1;
 
             input_reply(ictx, 1, |out| out.write_all(b"queued"));
             let reply = input_request_palette_data { idx: 7, c: -1 };
@@ -485,7 +478,6 @@ mod input_request_ownership_tests {
 
             assert!(input_ctx_requests(ictx).is_empty());
             assert!(input_client_requests(&mut *c).is_empty());
-            assert_eq!((*ictx).request_count, 0);
             drop(ictx_owner);
         }
     }
@@ -497,7 +489,6 @@ mod input_request_ownership_tests {
             let ictx = &raw mut *ictx_owner;
             input_reply(ictx, 1, |out| out.write_all(b"\x1b[0n"));
             assert!(input_ctx_requests(ictx).is_empty());
-            assert_eq!((*ictx).request_count, 0);
             drop(ictx_owner);
         }
     }
@@ -519,7 +510,6 @@ mod input_request_ownership_tests {
                 (*ir).type_0 = type_0;
                 input_ctx_requests(ictx).push_back(owner);
                 input_client_requests(&mut *c).push(ir);
-                (*ictx).request_count += 1;
             }
 
             assert!(input_client_has_requests(&mut *(c)));
@@ -527,7 +517,6 @@ mod input_request_ownership_tests {
 
             assert!(!input_client_has_requests(&mut *(c)));
             assert!(input_ctx_requests(ictx).is_empty());
-            assert_eq!((*ictx).request_count, 0);
             drop(ictx_owner);
         }
     }
@@ -5913,7 +5902,7 @@ unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
             input_free_request(ir);
         }
     }
-    if (*ictx).request_count != 0 as u_int {
+    if !(*ictx).requests.is_empty() {
         input_start_request_timer(ictx);
     }
 }
@@ -5934,8 +5923,7 @@ unsafe fn input_make_request(
     (*ir).type_0 = type_0;
     (*ir).ictx = ictx;
     (*ir).t = get_timer();
-    (*ictx).request_count = (*ictx).request_count.wrapping_add(1);
-    if (*ictx).request_count == 1 as u_int {
+    if (*ictx).requests.is_empty() {
         input_start_request_timer(ictx);
     }
     input_ctx_requests(ictx).push_back(owner);
@@ -5951,7 +5939,6 @@ unsafe fn input_free_request(mut ir: *mut input_request) {
             .expect("request missing from its client handle collection");
         c_requests.remove(index);
     }
-    (*ictx).request_count = (*ictx).request_count.wrapping_sub(1);
     let requests = input_ctx_requests(ictx);
     let index = requests
         .iter()

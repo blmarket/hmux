@@ -95,8 +95,6 @@ pub struct style_range {
     pub string: [::core::ffi::c_char; 16],
     pub start: u_int,
     pub end: u_int,
-    /// Legacy TAILQ link space retained for ABI size and alignment.
-    pub _reserved: [usize; 2],
 }
 
 #[cfg(test)]
@@ -121,8 +119,7 @@ mod tests {
         assert_eq!(size_of::<style_ranges>(), 24);
         assert_eq!(align_of::<style_ranges>(), 8);
         assert_eq!(offset_of!(style_ranges, ranges), 0);
-        assert_eq!(size_of::<style_range>(), 48);
-        assert_eq!(align_of::<style_range>(), 8);
-        assert_eq!(offset_of!(style_range, _reserved), 32);
+        assert_eq!(size_of::<style_range>(), 32);
+        assert_eq!(align_of::<style_range>(), 4);
     }
 }

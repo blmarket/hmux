@@ -1160,7 +1160,6 @@ mod style_ranges_tests {
             string: [0; 16],
             start,
             end,
-            _reserved: [0; 2],
         })
     }
 

@@ -1585,7 +1585,6 @@ pub unsafe fn format_draw(
                     string: [0; 16],
                     start: range.start,
                     end: range.end,
-                    _reserved: [0; 2],
                 });
                 strlcpy(
                     &raw mut owned.string as *mut ::core::ffi::c_char,

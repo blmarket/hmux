@@ -980,7 +980,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     }
     let mut px = 0;
     let mut py = 0;
-    if menu.count == 0
+    if menu.count() == 0
         || cmd_display_menu_get_menu_pos(
             &(*(tc)).observer.upgrade().expect("live client"),
             item_handle,
@@ -988,7 +988,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
             &mut px,
             &mut py,
             menu.width.wrapping_add(4),
-            menu.count.wrapping_add(2),
+            menu.count().wrapping_add(2),
         ) == 0
     {
         return CMD_RETURN_NORMAL;

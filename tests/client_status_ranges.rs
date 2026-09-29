@@ -13,7 +13,6 @@ fn status_ranges_are_bounded_snapshots() {
             string: [0; 16],
             start: 2,
             end: 5,
-            _reserved: [0; 2],
         }));
         assert!(status_get_range(client, 1, 0).is_none());
         assert!(status_get_range(client, 5, 0).is_none());

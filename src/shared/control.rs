@@ -10,7 +10,6 @@ use std::collections::VecDeque;
 pub struct control_state {
     pub panes: control_panes,
     pub windows: control_windows,
-    pub pending_count: u_int,
     pub queued_reply_bytes: size_t,
     pub read_event: crate::src::reactor::StreamHandle,
     pub write_event: crate::src::reactor::StreamHandle,
@@ -26,7 +25,6 @@ impl control_state {
         Self {
             panes: control_panes { storage: None },
             windows: control_windows { storage: None },
-            pending_count: Default::default(),
             queued_reply_bytes: Default::default(),
             read_event: Default::default(),
             write_event: Default::default(),

@@ -41,7 +41,6 @@ impl MenuRow {
 pub struct menu {
     pub title: std::ffi::CString,
     pub items: Vec<MenuRow>,
-    pub count: u_int,
     pub width: u_int,
 }
 

@@ -82,8 +82,6 @@ use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct window_tree_modedata {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(crate) observer: Weak<UnsafeCell<window_tree_modedata>>,
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
@@ -323,7 +321,7 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
         }
         pane
     };
-    WindowTreeTarget { session: Some(session), winlink: link.observer.clone(), pane }
+    WindowTreeTarget { session: Some(session), winlink: wl.clone(), pane }
 }
 fn window_tree_add_item(
     items: &mut Vec<refbox::RefBox<window_tree_itemdata>>,
@@ -1733,8 +1731,7 @@ unsafe fn window_tree_init(
     } else {
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())
     };
-    let owner = Rc::new_cyclic(|observer| UnsafeCell::new(window_tree_modedata {
-        observer: observer.clone(),
+    let owner = Rc::new(UnsafeCell::new(window_tree_modedata {
         wp: Weak::new(),
         dead: 0,
         data: None,
@@ -1757,6 +1754,7 @@ unsafe fn window_tree_init(
         each: 0,
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
+    let build_mode = Rc::downgrade(&owner);
     wme.get_mut_unchecked().data_owner = Some(owner);
     (*data).wp = std::rc::Rc::downgrade(&mode_pane_owner);
     if args_has(args, 's' as i32 as u_char) != 0 {
@@ -1772,7 +1770,6 @@ unsafe fn window_tree_init(
     if args_has(args, 'y' as i32 as u_char) != 0 {
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
-    let build_mode = (*data).observer.clone();
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
     let key_mode = build_mode.clone();

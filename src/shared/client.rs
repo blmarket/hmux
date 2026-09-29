@@ -307,8 +307,6 @@ pub struct client_files {
 }
 
 pub struct client_file {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
     pub c: Option<Rc<UnsafeCell<client>>>,
     pub peer: *mut tmuxpeer,
     pub stream: ::core::ffi::c_int,
@@ -338,16 +336,11 @@ pub struct client_file_event<'a> {
 
 impl client_file {
     pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
-        std::rc::Rc::new_cyclic(|observer| {
-            let mut value = Self::empty();
-            value.observer = observer.clone();
-            std::cell::UnsafeCell::new(value)
-        })
+        std::rc::Rc::new(std::cell::UnsafeCell::new(Self::empty()))
     }
 
     pub fn empty() -> Self {
         Self {
-            observer: std::rc::Weak::new(),
             c: Default::default(),
             peer: Default::default(),
             stream: Default::default(),

@@ -137,7 +137,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_fil
     }
     owner.wait_active = false;
     if let Some(item) = std::mem::take(&mut owner.wait_item).upgrade() {
-        cmdq_clear_wait_file(&mut *item.get(), &owner.observer);
+        cmdq_clear_wait_file(&mut *item.get(), &Rc::downgrade(file_owner));
     }
     owner.wait_client = Weak::new();
     owner.cb = None;
@@ -219,14 +219,14 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     if dead {
         file_cancel_cmdq_wait(owner);
     } else {
-        let owner = &mut *owner.get();
-        if owner.wait_active {
-            owner.wait_active = false;
-            if let Some(item) = std::mem::take(&mut owner.wait_item).upgrade() {
-                cmdq_clear_wait_file(&mut *item.get(), &owner.observer);
+        let file = &mut *owner.get();
+        if file.wait_active {
+            file.wait_active = false;
+            if let Some(item) = std::mem::take(&mut file.wait_item).upgrade() {
+                cmdq_clear_wait_file(&mut *item.get(), &Rc::downgrade(owner));
             }
-            owner.wait_client = Weak::new();
-            owner.cancel_data = None;
+            file.wait_client = Weak::new();
+            file.cancel_data = None;
         }
     }
     let mut callback = (&mut *owner.get()).cb.take();
@@ -1345,7 +1345,7 @@ pub fn client_files_remove(elm: &mut client_file) {
     let key = client_files_key(&*elm);
     if map
         .get(&key)
-        .is_some_and(|file| Rc::downgrade(file).ptr_eq(&elm.observer))
+        .is_some_and(|file| std::ptr::eq(file.get(), elm))
     {
         let file = map.remove(&key);
         drop(map);

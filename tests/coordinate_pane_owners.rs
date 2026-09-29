@@ -58,7 +58,6 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
                 string: [0; 16],
                 start: 1,
                 end: 3,
-                _reserved: [0; 2],
             },
         ));
         let range = hmux2::src::window::window_pane_status_get_range(&first, 3, 2).unwrap();

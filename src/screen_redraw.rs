@@ -2094,7 +2094,6 @@ mod menu_observer_tests {
         let menu = refbox::RefBox::new(menu_data::new(Box::new(menu {
             title: c"Scene".to_owned(),
             items: Vec::new(),
-            count: 0,
             width: 1,
         })));
         let mut client = client::empty();
@@ -2126,7 +2125,6 @@ mod menu_observer_tests {
         let menu = refbox::RefBox::new(menu_data::new(Box::new(menu {
             title: c"Scene".to_owned(),
             items: Vec::new(),
-            count: 0,
             width: 1,
         })));
         let mut client = client::empty();
@@ -2389,7 +2387,6 @@ mod menu_observer_tests {
         let owner = refbox::RefBox::new(menu_data::new(Box::new(menu {
             title: c"Observed".to_owned(),
             items: Vec::new(),
-            count: 0,
             width: 10,
         })));
         let mut cell = redraw_build_cell {

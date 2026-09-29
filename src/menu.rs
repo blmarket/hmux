@@ -42,14 +42,15 @@ use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
 impl menu {
-    fn refresh_items(&mut self) {
-        self.count = self.items.len().try_into().expect("too many menu items");
+    pub fn count(&self) -> u_int {
+        self.items.len().try_into().expect("too many menu items")
     }
 
     fn push_empty(&mut self) -> usize {
         let index = self.items.len();
         self.items.push(MenuRow::default());
-        self.refresh_items();
+        // Preserve the menu size limit when appending a row.
+        self.count();
         index
     }
 }
@@ -93,7 +94,6 @@ pub unsafe fn menu_add_item(
     if expanded.is_empty() {
         // Construction has not published this menu, so the placeholder is last.
         menu.items.pop();
-        menu.refresh_items();
         return;
     }
     let client = &*client_owner.expect("menu row requires a client").get();
@@ -156,7 +156,6 @@ pub unsafe fn menu_create(title: &CStr) -> Box<menu> {
     let owner = Box::new(menu {
         title: title,
         items: Vec::new(),
-        count: 0,
         width: width,
     });
     owner
@@ -214,7 +213,7 @@ pub unsafe fn menu_update(md: &mut menu_data) {
         screen_write_box(
             &mut ctx,
             menu.width.wrapping_add(4),
-            menu.count.wrapping_add(2),
+            menu.count().wrapping_add(2),
             md.border_lines,
             Some(&md.border_style_gc),
             Some(&menu.title),
@@ -297,7 +296,7 @@ pub fn menu_width(md: &menu_data) -> u_int {
     md.menu.width.wrapping_add(4)
 }
 pub fn menu_height(md: &menu_data) -> u_int {
-    md.menu.count.wrapping_add(2)
+    md.menu.count().wrapping_add(2)
 }
 pub fn menu_x(md: &menu_data) -> u_int {
     md.px
@@ -628,7 +627,7 @@ pub unsafe fn menu_display(
     let window = Rc::downgrade(&setup_window);
     let w = &mut *setup_window.get();
     let sx = menu.width.wrapping_add(4);
-    let sy = menu.count.wrapping_add(2);
+    let sy = menu.count().wrapping_add(2);
     if sx >= w.sx {
         px = 0;
     } else if px.wrapping_add(sx) > w.sx {
@@ -715,7 +714,6 @@ mod tests {
                     command: None,
                 })
                 .collect(),
-            count: names.len() as u_int,
             width: 20,
         }))
     }

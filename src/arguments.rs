@@ -129,13 +129,11 @@ pub fn args_create() -> Box<args> {
         tree: args_tree {
             entries: Box::default(),
         },
-        count: 0,
         values: Vec::new(),
     })
 }
 fn args_push_positional_owned(args: &mut args, value: args_value) {
     args.values.push(value);
-    args.count = args.values.len() as u_int;
 }
 
 /// Append a positional command list and transfer its reference into `args`.
@@ -276,7 +274,7 @@ pub unsafe fn args_parse(
             log_bytes(args_type_to_string(value.type_0()).to_bytes())
         ));
         let kind = if let Some(callback) = parse.cb {
-            let index = args.count;
+            let index = args.values.len() as u_int;
             callback(&mut args, index)?
         } else {
             ARGS_PARSE_STRING
@@ -286,13 +284,13 @@ pub unsafe fn args_parse(
             ARGS_PARSE_STRING if value.type_0() != ARGS_STRING => {
                 return Err(ArgsParseError::Message(parse_number_error(format!(
                     "argument {} must be \"string\"",
-                    args.count.wrapping_add(1)
+                    (args.values.len() as u_int).wrapping_add(1)
                 ))));
             }
             ARGS_PARSE_COMMANDS if value.type_0() != ARGS_COMMANDS => {
                 return Err(ArgsParseError::Message(parse_number_error(format!(
                     "argument {} must be {{ commands }}",
-                    args.count.wrapping_add(1)
+                    (args.values.len() as u_int).wrapping_add(1)
                 ))));
             }
             _ => {}
@@ -305,13 +303,13 @@ pub unsafe fn args_parse(
         };
         args_push_positional_owned(&mut args, copied);
     }
-    if parse.lower != -1 && args.count < parse.lower as u_int {
+    if parse.lower != -1 && (args.values.len() as u_int) < parse.lower as u_int {
         return Err(ArgsParseError::Message(parse_number_error(format!(
             "too few arguments (need at least {})",
             parse.lower as u_int
         ))));
     }
-    if parse.upper != -1 && args.count > parse.upper as u_int {
+    if parse.upper != -1 && (args.values.len() as u_int) > parse.upper as u_int {
         return Err(ArgsParseError::Message(parse_number_error(format!(
             "too many arguments (need at most {})",
             parse.upper as u_int
@@ -779,10 +777,10 @@ mod ownership_tests {
 }
 
 pub unsafe fn args_count(mut args: *mut args) -> u_int {
-    return (*args).count;
+    return (*args).values.len() as u_int;
 }
 pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
-    if idx >= args.count {
+    if idx >= (args.values.len() as u_int) {
         return None;
     }
     let value = &mut args.values[idx as usize];
@@ -839,7 +837,7 @@ pub unsafe fn args_make_commands_prepare(
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let _file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut state = Box::new(args_command_state::empty());
-    if idx < (*args).count {
+    if idx < ((*args).values.len() as u_int) {
         value = (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;
         if (*value).type_0() as ::core::ffi::c_uint
             == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint

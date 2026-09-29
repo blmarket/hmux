@@ -49,8 +49,6 @@ pub struct winlinks {
 #[derive(Default)]
 #[repr(C)]
 pub struct winlink {
-    /// Observe this allocation independently of its current index/key.
-    pub(crate) observer: refbox::Weak<winlink>,
     pub idx: ::core::ffi::c_int,
     pub session: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub window_owner: Option<std::rc::Rc<std::cell::UnsafeCell<window>>>,

@@ -345,8 +345,6 @@ impl window_copy_cmd_state<'_> {
 #[repr(C)]
 pub struct C2RustUnnamed_46 {
     pub command: &'static CStr,
-    pub minargs: u_int,
-    pub maxargs: u_int,
     pub args: args_parse,
     pub flags: ::core::ffi::c_int,
     pub clear: window_copy_cmd_clear,
@@ -3787,8 +3785,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
     [
         C2RustUnnamed_46 {
             command: c"append-selection",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -3801,8 +3797,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"append-selection-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -3815,8 +3809,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"back-to-indentation",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -3829,8 +3821,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"begin-selection",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -3843,8 +3833,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"bottom-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -3857,8 +3845,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -3871,8 +3857,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"clear-selection",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -3885,8 +3869,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-end-of-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3899,8 +3881,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-end-of-line-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3913,8 +3893,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-pipe-end-of-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3927,8 +3905,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-pipe-end-of-line-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3941,8 +3917,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3955,8 +3929,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-line-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3969,8 +3941,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-pipe-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3983,8 +3953,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-pipe-line-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -3997,8 +3965,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-pipe-no-clear",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -4011,8 +3977,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-pipe",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -4025,8 +3989,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-pipe-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -4039,8 +4001,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-selection-no-clear",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -4053,8 +4013,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-selection",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -4067,8 +4025,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"copy-selection-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"CP",
                 lower: 0 as ::core::ffi::c_int,
@@ -4081,8 +4037,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cursor-down",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4095,8 +4049,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cursor-down-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4109,8 +4061,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cursor-left",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4123,8 +4073,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cursor-right",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4137,8 +4085,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cursor-up",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4151,8 +4097,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cursor-centre-vertical",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4165,8 +4109,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"cursor-centre-horizontal",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4179,8 +4121,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"end-of-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4193,8 +4133,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"goto-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 1 as ::core::ffi::c_int,
@@ -4207,8 +4145,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"halfpage-down",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4221,8 +4157,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"halfpage-down-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4235,8 +4169,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"halfpage-up",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4249,8 +4181,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"history-bottom",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4263,8 +4193,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"history-top",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4277,8 +4205,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"jump-again",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4291,8 +4217,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"jump-backward",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 1 as ::core::ffi::c_int,
@@ -4305,8 +4229,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"jump-forward",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 1 as ::core::ffi::c_int,
@@ -4319,8 +4241,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"jump-reverse",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4333,8 +4253,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"jump-to-backward",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 1 as ::core::ffi::c_int,
@@ -4347,8 +4265,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"jump-to-forward",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 1 as ::core::ffi::c_int,
@@ -4361,8 +4277,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"jump-to-mark",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4375,8 +4289,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"line-numbers-on",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4389,8 +4301,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"line-numbers-off",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4403,8 +4313,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"line-numbers-toggle",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4417,8 +4325,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"next-prompt",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"o",
                 lower: 0 as ::core::ffi::c_int,
@@ -4431,8 +4337,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"previous-prompt",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"o",
                 lower: 0 as ::core::ffi::c_int,
@@ -4445,8 +4349,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"middle-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4459,8 +4361,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"next-matching-bracket",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4473,8 +4373,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"next-paragraph",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4487,8 +4385,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"next-space",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4501,8 +4397,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"next-space-end",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4515,8 +4409,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"next-word",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4529,8 +4421,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"next-word-end",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4543,8 +4433,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"other-end",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4557,8 +4445,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"page-down",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4571,8 +4457,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"page-down-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4585,8 +4469,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"page-up",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4599,8 +4481,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"pipe-no-clear",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4613,8 +4493,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"pipe",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4627,8 +4505,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"pipe-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4641,8 +4517,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"previous-matching-bracket",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4655,8 +4529,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"previous-paragraph",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4669,8 +4541,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"previous-space",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4683,8 +4553,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"previous-word",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4697,8 +4565,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"recentre-top-bottom",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4711,8 +4577,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"rectangle-on",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4725,8 +4589,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"rectangle-off",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4739,8 +4601,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"rectangle-toggle",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4753,8 +4613,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"refresh-on",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4767,8 +4625,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"refresh-off",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4781,8 +4637,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"refresh-now",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4795,8 +4649,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"refresh-toggle",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4809,8 +4661,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-bottom",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4823,8 +4673,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-down",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4837,8 +4685,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-down-and-cancel",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4851,8 +4697,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-exit-on",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4865,8 +4709,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-exit-off",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4879,8 +4721,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-exit-toggle",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4893,8 +4733,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-middle",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4907,8 +4745,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-to-mouse",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"e",
                 lower: 0 as ::core::ffi::c_int,
@@ -4921,8 +4757,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-top",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4935,8 +4769,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"scroll-up",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4949,8 +4781,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-again",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4963,8 +4793,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-backward",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4977,8 +4805,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-backward-text",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -4991,8 +4817,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-backward-incremental",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 1 as ::core::ffi::c_int,
@@ -5005,8 +4829,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-forward",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5019,8 +4841,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-forward-text",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5033,8 +4853,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-forward-incremental",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 1 as ::core::ffi::c_int,
@@ -5047,8 +4865,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"search-reverse",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5061,8 +4877,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"select-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5075,8 +4889,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"select-word",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5089,8 +4901,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"selection-mode",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5103,8 +4913,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"set-mark",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5117,8 +4925,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"start-of-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5131,8 +4937,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"stop-selection",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5145,8 +4949,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"toggle-position",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,
@@ -5159,8 +4961,6 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
         },
         C2RustUnnamed_46 {
             command: c"top-line",
-            minargs: 0,
-            maxargs: 0,
             args: args_parse {
                 template: c"",
                 lower: 0 as ::core::ffi::c_int,

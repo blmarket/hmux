@@ -495,7 +495,7 @@ unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak
     if (*ft).w.upgrade().is_none() {
         format_defaults_window(ft, wl.get_unchecked().window_owner.as_ref());
     }
-    (*ft).wl = wl.get_unchecked().observer.clone();
+    (*ft).wl = wl;
 }
 pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let mut wp = wp_owner.get();

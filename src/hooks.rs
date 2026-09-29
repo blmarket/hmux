@@ -643,7 +643,7 @@ mod hooks_events_tests {
                 last: None,
                 c: Weak::new(),
                 s: Rc::downgrade(&session_owner),
-                wl: wl.get_unchecked().observer.clone(),
+                wl: wl.clone(),
                 wp: Weak::new(),
             };
             let observer = change.wl.clone();

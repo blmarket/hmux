@@ -112,8 +112,6 @@ fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
 
 #[repr(C)]
 pub struct window_customize_modedata {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(crate) observer: Weak<std::cell::UnsafeCell<window_customize_modedata>>,
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub dead: ::core::ffi::c_int,
     pub data: Option<std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>>,
@@ -2925,8 +2923,7 @@ unsafe fn window_customize_init(
     } else {
         args_get(&*(args), 'F' as i32 as u_char).expect("argument is present").to_owned()
     };
-    let owner = Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(window_customize_modedata {
-        observer: observer.clone(),
+    let owner = Rc::new(std::cell::UnsafeCell::new(window_customize_modedata {
         wp: std::rc::Rc::downgrade(&mode_pane_owner),
         dead: 0,
         data: None,
@@ -2940,8 +2937,8 @@ unsafe fn window_customize_init(
         change: WINDOW_CUSTOMIZE_UNSET,
     }));
     data = crate::src::shared::rc::as_ptr(&owner);
+    let build_mode = Rc::downgrade(&owner);
     wme.get_mut_unchecked().data_owner = Some(owner);
-    let build_mode = (*data).observer.clone();
     let draw_mode = build_mode.clone();
     let menu_mode = build_mode.clone();
     if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -5063,8 +5060,7 @@ mod item_owner_tests {
             PROMPT_CONTINUE
         }
         unsafe {
-            let owner = Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(window_customize_modedata {
-        observer: observer.clone(),
+            let owner = Rc::new(std::cell::UnsafeCell::new(window_customize_modedata {
                 wp: Weak::new(),
                 dead: 0,
                 data: None,
@@ -5102,7 +5098,7 @@ mod item_owner_tests {
                 window_customize_add_item(&mut (*data).item_list, window_customize_itemdata::new());
             }
             assert!(first_owner.is(&(&(*data).item_list)[0]));
-            let mode_observer = (*data).observer.clone();
+            let mode_observer = Rc::downgrade(&owner);
             let live = window_customize_live_mode(&mode_observer).unwrap();
             assert!(Rc::ptr_eq(&live, &owner));
             assert_eq!(Rc::strong_count(&owner), 2);

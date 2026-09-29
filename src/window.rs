@@ -353,10 +353,10 @@ pub unsafe fn window_winlinks_append(w_value: &mut window, wl: refbox::Weak<winl
     assert!(!w.is_null() && wl.is_alive());
     let links = (*w).winlinks.storage.get_or_insert_with(|| Box::default());
     assert!(
-        !links.contains(&wl.get_unchecked().observer),
+        !links.contains(&wl),
         "winlink is already present in this window"
     );
-    links.push_back(wl.get_unchecked().observer.clone());
+    links.push_back(wl);
 }
 
 /// Remove a non-owning winlink handle from its window's association order.
@@ -677,7 +677,6 @@ pub unsafe fn winlink_find_by_index(
     mut idx: ::core::ffi::c_int,
 ) -> refbox::Weak<winlink> {
     let mut wl: winlink = winlink {
-        observer: Default::default(),
         idx: 0,
         session: std::rc::Weak::new(),
         window_owner: None,
@@ -745,7 +744,6 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
         return refbox::Weak::new();
     }
     let owner = refbox::RefBox::new(winlink {
-        observer: Default::default(),
         idx,
         session: std::rc::Weak::new(),
         window_owner: None,
@@ -753,7 +751,6 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
         entry: winlink_entry { owner: refbox::Weak::new() },
     });
     wl = owner.downgrade();
-    owner.try_borrow_mut().expect("new winlink").observer = wl.clone();
     let storage = (*wwl).storage.get_or_insert_with(refbox::RefBox::default);
     let observer = storage.downgrade();
     let mut map = storage
@@ -2697,8 +2694,6 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     (*wp).screen_source = PaneScreenSource::Base;
 }
 unsafe fn window_pane_scrollbar_timer(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
-    let wp = owner.get();
-    (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
     window_pane_scrollbar_hide(owner);
 }
 unsafe fn window_pane_scrollbar_auto_hide(wp: &window_pane) -> ::core::ffi::c_int {
@@ -4065,7 +4060,6 @@ pub unsafe fn window_pane_scrollbar_hide(pane_owner: &Rc<std::cell::UnsafeCell<w
     if event_initialized(&(*wp).sb_auto_timer) != 0 {
         event_del(&raw mut (*wp).sb_auto_timer);
     }
-    (*wp).sb_auto_hover = 0 as ::core::ffi::c_int;
     if (*wp).sb_auto_visible == 0 {
         return;
     }
@@ -4825,14 +4819,13 @@ mod zoom_teardown_tests {
             let w_owner = zoomed_window();
             let w = rc::as_ptr(&w_owner);
             let pane = (*w).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-            let tree_owner = std::rc::Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
-                observer: observer.clone(),
+            let tree_owner = std::rc::Rc::new(std::cell::UnsafeCell::new(crate::src::shared::mode_tree::mode_tree_data {
                 wp: window_pane_weak(&*(pane)),
                 zoomed: 0,
                 ..Default::default()
             }));
             let tree = rc::as_ptr(&tree_owner);
-            let observed = (*tree).observer.clone();
+            let observed = Rc::downgrade(&tree_owner);
             (*pane).flags |= PANE_DESTROYED;
             assert!(window_pane_upgrade(&(*tree).wp).is_none());
 

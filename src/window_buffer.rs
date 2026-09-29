@@ -231,7 +231,7 @@ unsafe fn window_buffer_build(
             &mut (*data).item_list,
             name,
             paste_buffer_order(&buffer),
-            buffer.size,
+            buffer.size(),
         );
     }
     if cmd_find_valid_state(&(*data).fs) != 0 {

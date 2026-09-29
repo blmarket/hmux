@@ -309,14 +309,12 @@ mod control_queue_tests {
                 pane.blocks.push_back(block);
                 pane.pending_flag = 1;
                 owner.pending_panes.push_back(id);
-                owner.pending_count += 1;
             }
             assert_eq!(owner.pending_snapshot(), [4, 9]);
             control_reset_offsets(&mut client);
             let owner = client.control_state.as_deref_mut().unwrap();
             assert!(owner.panes.storage.is_none());
             assert!(owner.pending_panes.is_empty());
-            assert_eq!(owner.pending_count, 0);
             assert_eq!(owner.all_blocks.len(), 1);
             assert_eq!(owner.block(0), reply);
             assert_eq!(owner.queued_reply_bytes, 6);
@@ -439,7 +437,6 @@ mod control_queue_tests {
                 pane.blocks.push_back(output);
                 pane.pending_flag = 1;
                 cs.pending_panes.push_back(wp.id);
-                cs.pending_count = 1;
                 let read_observer = cs.read_event.clone();
                 let write_observer = cs.write_event.clone();
 
@@ -633,7 +630,6 @@ pub unsafe fn control_reset_offsets(c: &mut client) {
         }
     }
     cs.pending_panes.clear();
-    cs.pending_count = 0;
 }
 pub unsafe fn control_pane_offset<'a>(
     cs: &'a mut control_state,
@@ -1061,7 +1057,6 @@ pub unsafe fn control_write_output(c_owner: &Rc<UnsafeCell<client>>, wp_owner: &
                 ));
                 cs.pending_panes.push_back(pane);
                 cp.pending_flag = 1 as ::core::ffi::c_int;
-                cs.pending_count = cs.pending_count.wrapping_add(1);
             }
             let _ = cs.write_event.with_ptr(|stream| unsafe {
                 bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short)
@@ -1497,7 +1492,7 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
         let Some(buffered) = cs.write_event.with_ptr(|stream| unsafe {
             evbuffer_get_length(&*(*stream).output)
         }) else { return };
-        if buffered >= CONTROL_BUFFER_HIGH as size_t || cs.pending_count == 0 {
+        if buffered >= CONTROL_BUFFER_HIGH as size_t || cs.pending_panes.is_empty() {
             break;
         }
         let space = (CONTROL_BUFFER_HIGH as size_t).wrapping_sub(buffered);
@@ -1510,9 +1505,9 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
                     .map_or(std::ptr::null(), |name| name.as_ptr())
             ),
             space,
-            cs.pending_count
+            cs.pending_panes.len()
         ));
-        let limit = (space / cs.pending_count as size_t / 3).max(CONTROL_WRITE_MINIMUM as size_t);
+        let limit = (space / cs.pending_panes.len() / 3).max(CONTROL_WRITE_MINIMUM as size_t);
         let pending = cs.pending_snapshot();
         for pane in pending {
             let Some(cs) = (*c).control_state.as_deref_mut() else {
@@ -1536,7 +1531,6 @@ unsafe fn control_write_callback(owner: &Rc<UnsafeCell<client>>) {
                         .get_mut(pane)
                         .expect("indexed control pane")
                         .pending_flag = 0;
-                    cs.pending_count = cs.pending_count.wrapping_sub(1);
                 }
             }
         }

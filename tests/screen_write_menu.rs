@@ -31,7 +31,6 @@ fn menu_rendering_preserves_selection_disabled_rows_and_borrowed_inputs() {
         let menu = menu {
             title: c"Title".to_owned(),
             width: 6,
-            count: 4,
             items: [Some(c"First"), None, Some(c"-Off"), Some(c"After")]
                 .into_iter()
                 .map(|name| MenuRow {

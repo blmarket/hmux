@@ -48,10 +48,7 @@ fn paste_new_owned(name: CString) -> RefBox<paste_buffer> {
 }
 
 fn paste_store_data(pb: &mut paste_buffer, data: Option<Box<[u8]>>) {
-    let size = data.as_ref().map_or(0, |bytes| bytes.len());
     pb.data = data;
-
-    pb.size = size;
 }
 
 fn paste_replace_name(pb: &mut paste_buffer, name: CString) -> CString {
@@ -227,7 +224,7 @@ pub fn paste_buffer_created(pb: &paste_buffer) -> time_t {
     pb.created
 }
 pub fn paste_buffer_data(pb: &paste_buffer) -> Option<&[u8]> {
-    pb.data.as_deref().map(|data| &data[..pb.size])
+    pb.data.as_deref()
 }
 pub fn paste_walk(pb: Option<&PasteBufferRef>) -> Option<PasteBufferRef> {
     match pb {
@@ -443,14 +440,11 @@ pub(crate) unsafe fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
 pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
     let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
     let width = 200;
-    let len = pb.size.min(width);
+    let data = pb.data.as_deref().unwrap_or(&[]);
+    let len = data.len().min(width);
     let mut buffer = vec![0u8; len * 8 + 4];
-    let used = utf8_strvis(
-        &mut buffer,
-        &pb.data.as_deref().unwrap_or(&[])[..len],
-        flags,
-    );
-    if pb.size > width || used > width {
+    let used = utf8_strvis(&mut buffer, &data[..len], flags);
+    if data.len() > width || used > width {
         buffer[width..width + 4].copy_from_slice(b"...\0");
     }
     let length = CStr::from_bytes_until_nul(&buffer)
