@@ -187,7 +187,7 @@ unsafe fn hooks_insert(item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cm
     }
     if !(*hd).oo.is_null() {
         oo = (*hd).oo;
-        o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((*hd).name.as_ptr())).map_or(std::ptr::null_mut(), |entry| entry);
+        o = crate::src::options::options_get_only_mut(&mut *(oo), (*hd).name).map_or(std::ptr::null_mut(), |entry| entry);
     } else {
         if fs.session_handle().is_none() {
             oo = global_s_options;

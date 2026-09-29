@@ -226,7 +226,7 @@ unsafe fn options_value_to_cstring(
         || (*tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        return CStr::from_ptr(ov.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_owned();
+        return ov.string_ptr().expect("string option").to_owned();
     }
     c"".to_owned()
 }
@@ -586,7 +586,7 @@ pub unsafe fn options_array_set(
     {
         a = options_array_item(o, new_key.as_ptr());
         let owned_value = if !a.is_null() && append != 0 {
-            let previous = CStr::from_ptr((*a).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes();
+            let previous = (*a).value.string_ptr().expect("string option").to_bytes();
             let suffix = CStr::from_ptr(value).to_bytes();
             let mut bytes = Vec::with_capacity(previous.len() + suffix.len());
             bytes.extend_from_slice(previous);
@@ -954,11 +954,7 @@ pub unsafe fn options_set_string(
         }
         // glibc printf renders a null %s argument as "(null)". An entry
         // created by options_empty can reach this append path with no value.
-        let previous = if (*o).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()).is_null() {
-            b"(null)".as_slice()
-        } else {
-            CStr::from_ptr((*o).value.string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())).to_bytes()
-        };
+        let previous = (*o).value.string_ptr().map_or(b"(null)".as_slice(), CStr::to_bytes);
         let separator = CStr::from_ptr(separator).to_bytes();
         let mut bytes =
             Vec::with_capacity(previous.len() + separator.len() + formatted.as_bytes().len());

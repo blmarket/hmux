@@ -268,13 +268,7 @@ pub(super) unsafe fn format_find(
                     }
                     if !envent.is_none() && !envent.unwrap().value.is_none() {
                         found = Some(
-                            CStr::from_ptr(
-                                (envent.unwrap().value)
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| {
-                                        value.as_ptr().cast_mut()
-                                    }),
-                            )
+                            (envent.unwrap().value).as_deref().expect("string is present")
                             .to_owned(),
                         );
                         current_block = 11739001764845178280;
@@ -2759,11 +2753,7 @@ pub(super) unsafe fn format_replace(
             if modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0 {
                 envent = environ_find((*format_client).environ.as_deref().expect("environment"), copy);
                 if !envent.is_none() && !envent.unwrap().value.is_none() {
-                    value = CStr::from_ptr(
-                        (envent.unwrap().value)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
+                    value = (envent.unwrap().value).as_deref().expect("string is present")
                     .to_owned();
                 } else {
                     value = c"".to_owned();

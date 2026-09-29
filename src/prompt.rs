@@ -1637,7 +1637,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
         let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
         while !a.is_null() {
-            let value = CStr::from_ptr((*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+            let value = (*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().expect("string option");
             if let Some(separator) = value.to_bytes().iter().position(|&byte| byte == b'=') {
                 if prefix.len() <= separator && &value.to_bytes()[..prefix.len()] == prefix {
                     let alias = CString::new(&value.to_bytes()[..separator])

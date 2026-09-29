@@ -56,7 +56,7 @@ pub unsafe fn utf8_update_width_cache() {
     let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     while !a.is_null() {
-        utf8_add_to_width_cache(CStr::from_ptr((*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())));
+        utf8_add_to_width_cache((*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().expect("string option"));
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     }
 }

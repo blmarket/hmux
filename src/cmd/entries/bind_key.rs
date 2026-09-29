@@ -53,7 +53,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut repeat: ::core::ffi::c_int = 0;
     let mut count: u_int = args_count(args);
-    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())))
+    key = key_string_parse_cstr(args_string(&mut *(args), 0 as u_int).expect("argument is present"))
         .unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
@@ -84,7 +84,7 @@ unsafe fn cmd_bind_key_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
     }
     if count == 2 as u_int {
         pr = cmd_parse_from_string(
-            std::ffi::CStr::from_ptr(args_string(&mut *(args), 1 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())),
+            args_string(&mut *(args), 1 as u_int).expect("argument is present"),
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
     } else {

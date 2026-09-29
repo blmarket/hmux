@@ -66,11 +66,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
                 names.push(b',');
             }
             names.extend_from_slice(
-                std::ffi::CStr::from_ptr(
-                    ((*loop_0).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
+                ((*loop_0).name).as_deref().expect("string is present")
                 .to_bytes(),
             );
         }
@@ -355,11 +351,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
                     names.push(b',');
                 }
                 names.extend_from_slice(
-                    std::ffi::CStr::from_ptr(
-                        ((*loop_0).name)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
+                    ((*loop_0).name).as_deref().expect("string is present")
                     .to_bytes(),
                 );
             }
@@ -717,11 +709,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
                         names.push(b',');
                     }
                     names.extend_from_slice(
-                        std::ffi::CStr::from_ptr(
-                            ((*loop_0).name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        )
+                        ((*loop_0).name).as_deref().expect("string is present")
                         .to_bytes(),
                     );
                 }
@@ -1196,11 +1184,7 @@ unsafe fn format_cb_client_name(mut ft: *mut format_tree) -> Option<CString> {
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_client.is_null() {
         return Some(
-            CStr::from_ptr(
-                ((*format_client).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            ((*format_client).name).as_deref().expect("string is present")
             .to_owned(),
         );
     }
@@ -1267,11 +1251,7 @@ unsafe fn format_cb_client_termname(mut ft: *mut format_tree) -> Option<CString>
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_client.is_null() {
         return Some(
-            CStr::from_ptr(
-                ((*format_client).term_name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            ((*format_client).term_name).as_deref().expect("string is present")
             .to_owned(),
         );
     }
@@ -1285,11 +1265,7 @@ unsafe fn format_cb_client_termtype(mut ft: *mut format_tree) -> Option<CString>
             return Some(c"".to_owned());
         }
         return Some(
-            CStr::from_ptr(
-                ((*format_client).term_type)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            ((*format_client).term_type).as_deref().expect("string is present")
             .to_owned(),
         );
     }
@@ -1300,11 +1276,7 @@ unsafe fn format_cb_client_tty(mut ft: *mut format_tree) -> Option<CString> {
     let format_client = format_client_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_client.is_null() {
         return Some(
-            CStr::from_ptr(
-                ((*format_client).ttyname)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            ((*format_client).ttyname).as_deref().expect("string is present")
             .to_owned(),
         );
     }
@@ -1336,11 +1308,7 @@ unsafe fn format_cb_client_user(mut ft: *mut format_tree) -> Option<CString> {
     if !format_client.is_null() {
         if !(*format_client).user.is_none() {
             return Some(
-                CStr::from_ptr(
-                    ((*format_client).user)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
+                ((*format_client).user).as_deref().expect("string is present")
                 .to_owned(),
             );
         }
@@ -1354,11 +1322,7 @@ unsafe fn format_cb_client_user(mut ft: *mut format_tree) -> Option<CString> {
                 Some(std::ffi::CStr::from_ptr((*pw).pw_name).to_owned()),
             );
             return Some(
-                CStr::from_ptr(
-                    ((*format_client).user)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
+                ((*format_client).user).as_deref().expect("string is present")
                 .to_owned(),
             );
         }
@@ -2766,11 +2730,7 @@ unsafe fn format_cb_session_path(mut ft: *mut format_tree) -> Option<CString> {
     let format_session = format_session_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
         return Some(
-            CStr::from_ptr(
-                ((*format_session).cwd)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            ((*format_session).cwd).as_deref().expect("string is present")
             .to_owned(),
         );
     }

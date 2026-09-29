@@ -317,11 +317,7 @@ mod client_message_owner_tests {
 
             server_client_set_message(&mut *c, Some(CString::new(vec![b'a', 0xff]).unwrap()));
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).message_string)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).message_string).as_deref().expect("string is present")
                 .to_bytes(),
                 b"a\xff"
             );
@@ -329,11 +325,7 @@ mod client_message_owner_tests {
 
             server_client_set_message(&mut *c, Some(CString::new(Vec::<u8>::new()).unwrap()));
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).message_string)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).message_string).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -358,11 +350,7 @@ mod client_message_owner_tests {
 
             server_client_set_ttyname(&mut *c, Some(CString::new(b"/dev/\xff".to_vec()).unwrap()));
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).ttyname)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).ttyname).as_deref().expect("string is present")
                 .to_bytes(),
                 b"/dev/\xff"
             );
@@ -371,11 +359,7 @@ mod client_message_owner_tests {
             server_client_set_ttyname(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).ttyname.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).ttyname)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).ttyname).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -393,11 +377,7 @@ mod client_message_owner_tests {
             let c = &raw mut *owner;
             server_client_ensure_term_name(&mut *c);
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).term_name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).term_name).as_deref().expect("string is present")
                 .to_bytes(),
                 b"unknown"
             );
@@ -407,11 +387,7 @@ mod client_message_owner_tests {
                 Some(CString::new(b"term-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).term_name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).term_name).as_deref().expect("string is present")
                 .to_bytes(),
                 b"term-\xff"
             );
@@ -420,11 +396,7 @@ mod client_message_owner_tests {
             server_client_set_term_name(&mut *c, Some(CString::new("").unwrap()));
             server_client_ensure_term_name(&mut *c);
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).term_name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).term_name).as_deref().expect("string is present")
                 .to_bytes(),
                 b"unknown"
             );
@@ -444,11 +416,7 @@ mod client_message_owner_tests {
 
             server_client_set_cwd(&mut *c, Some(CString::new(b"/work-\xff".to_vec()).unwrap()));
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).cwd)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).cwd).as_deref().expect("string is present")
                 .to_bytes(),
                 b"/work-\xff"
             );
@@ -457,11 +425,7 @@ mod client_message_owner_tests {
             server_client_set_cwd(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).cwd.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).cwd)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).cwd).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -484,11 +448,7 @@ mod client_message_owner_tests {
                 Some(CString::new(b"term-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).term_type)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).term_type).as_deref().expect("string is present")
                 .to_bytes(),
                 b"term-\xff"
             );
@@ -497,11 +457,7 @@ mod client_message_owner_tests {
             server_client_set_term_type(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).term_type.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).term_type)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).term_type).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -524,11 +480,7 @@ mod client_message_owner_tests {
                 Some(CString::new(b"title-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).title)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).title).as_deref().expect("string is present")
                 .to_bytes(),
                 b"title-\xff"
             );
@@ -537,11 +489,7 @@ mod client_message_owner_tests {
             server_client_replace_title(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).title.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).title)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).title).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -564,11 +512,7 @@ mod client_message_owner_tests {
                 Some(CString::new(b"file:///work-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).path)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).path).as_deref().expect("string is present")
                 .to_bytes(),
                 b"file:///work-\xff"
             );
@@ -577,11 +521,7 @@ mod client_message_owner_tests {
             server_client_replace_path(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).path.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).path)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).path).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -604,11 +544,7 @@ mod client_message_owner_tests {
                 Some(CString::new(b"session-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).exit_session)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).exit_session).as_deref().expect("string is present")
                 .to_bytes(),
                 b"session-\xff"
             );
@@ -617,11 +553,7 @@ mod client_message_owner_tests {
             server_client_set_exit_session(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).exit_session.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).exit_session)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).exit_session).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -641,11 +573,7 @@ mod client_message_owner_tests {
 
             server_client_set_user(&mut *c, Some(CString::new(b"user-\xff".to_vec()).unwrap()));
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).user)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).user).as_deref().expect("string is present")
                 .to_bytes(),
                 b"user-\xff"
             );
@@ -654,11 +582,7 @@ mod client_message_owner_tests {
             server_client_set_user(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).user.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).user)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).user).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -681,11 +605,7 @@ mod client_message_owner_tests {
                 Some(CString::new(b"/dev/pts/\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).name).as_deref().expect("string is present")
                 .to_bytes(),
                 b"/dev/pts/\xff"
             );
@@ -694,11 +614,7 @@ mod client_message_owner_tests {
             server_client_set_name(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).name.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).name).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -721,11 +637,7 @@ mod client_message_owner_tests {
                 Some(CString::new(b"error-\xff".to_vec()).unwrap()),
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).exit_message)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).exit_message).as_deref().expect("string is present")
                 .to_bytes(),
                 b"error-\xff"
             );
@@ -734,11 +646,7 @@ mod client_message_owner_tests {
             server_client_set_exit_message(&mut *c, Some(CString::new("").unwrap()));
             assert!(!(*c).exit_message.is_none());
             assert_eq!(
-                CStr::from_ptr(
-                    ((*c).exit_message)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*c).exit_message).as_deref().expect("string is present")
                 .to_bytes(),
                 b""
             );
@@ -1228,7 +1136,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> std::rc::Rc<st
     (*c).theme = THEME_UNKNOWN;
     status_init(&mut *(c));
     (*c).flags |= CLIENT_FOCUSED as uint64_t;
-    (*c).keytable = key_bindings_get_table(std::ffi::CStr::from_ptr(c"root".as_ptr()), 1);
+    (*c).keytable = key_bindings_get_table(c"root", 1);
     server_client_init_timers(&owner);
     (*c).click_wp = -(1 as ::core::ffi::c_int);
     clients.push_back(owner.clone());
@@ -4186,11 +4094,7 @@ unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeC
             let mut data = Vec::from((*c).retval.to_ne_bytes());
             if !(*c).exit_message.is_none() {
                 data.extend_from_slice(
-                    ::std::ffi::CStr::from_ptr(
-                        ((*c).exit_message)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
+                    ((*c).exit_message).as_deref().expect("string is present")
                     .to_bytes_with_nul(),
                 );
             }
@@ -5039,11 +4943,7 @@ unsafe fn server_client_dispatch_identify(
     if !(*c).ttyname.is_none()
         && *(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int != '\0' as i32
     {
-        let name = CStr::from_ptr(
-            ((*c).ttyname)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        )
+        let name = ((*c).ttyname).as_deref().expect("string is present")
         .to_owned();
         server_client_set_name(&mut *c, Some(name));
     } else {

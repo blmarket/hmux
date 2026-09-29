@@ -197,6 +197,6 @@ pub struct format_job {
     pub last: time_t,
     pub out: Option<std::ffi::CString>,
     pub updated: ::core::ffi::c_int,
-    pub job: *mut job,
+    pub job: refbox::Weak<job>,
     pub status: ::core::ffi::c_int,
 }

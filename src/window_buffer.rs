@@ -465,19 +465,19 @@ unsafe fn window_buffer_init(
     let mut data: *mut window_buffer_modedata = ::core::ptr::null_mut::<window_buffer_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
-        CStr::from_ptr(WINDOW_BUFFER_DEFAULT_FORMAT.as_ptr()).to_owned()
+        WINDOW_BUFFER_DEFAULT_FORMAT.to_owned()
     } else {
-        CStr::from_ptr(args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
+        args_get(&*(args), 'F' as i32 as u_char).expect("argument is present").to_owned()
     };
     let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
         CStr::from_ptr(WINDOW_BUFFER_DEFAULT_KEY_FORMAT.as_ptr()).to_owned()
     } else {
-        CStr::from_ptr(args_get(&*(args), 'K' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
+        args_get(&*(args), 'K' as i32 as u_char).expect("argument is present").to_owned()
     };
     let command = if args.is_null() || args_count(args) == 0 as u_int {
         CStr::from_ptr(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr()).to_owned()
     } else {
-        CStr::from_ptr(args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
+        args_string(&mut *(args), 0 as u_int).expect("argument is present").to_owned()
     };
     let owner = Box::new(std::cell::UnsafeCell::new(window_buffer_modedata {
         wp: std::rc::Rc::downgrade(&mode_pane_owner),

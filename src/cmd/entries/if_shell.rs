@@ -151,7 +151,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
         -(1 as ::core::ffi::c_int),
         -(1 as ::core::ffi::c_int),
     );
-    if job.is_null() {
+    if job.is_empty() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"failed to run command: ")?;
             write_cstr(out, shellcmd.as_ptr())
@@ -160,7 +160,7 @@ unsafe fn cmd_if_shell_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc
     }
     // The job takes ownership only after startup succeeds. The record also
     // drops when the completion callback is cancelled without being invoked.
-    (*job).completecb = Some(Box::new(move |completion| unsafe {
+    job.try_borrow_mut().expect("newly registered job").completecb = Some(Box::new(move |completion| unsafe {
         cmd_if_shell_callback(completion, &mut cdata);
     }));
     if wait == 0 {

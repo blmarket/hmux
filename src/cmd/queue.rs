@@ -35,7 +35,7 @@ use crate::src::shared::client::{client, client_file};
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb,
     cmdq_state, cmdq_type,
 };
 use crate::src::shared::command::{
@@ -54,6 +54,112 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_sanitize_cstring;
 use std::ffi::{CStr, CString};
+
+/// Queue-created command state. Only this module may construct or remove it.
+///
+/// ```compile_fail
+/// use hmux2::src::shared::command::cmdq_item;
+/// let item = cmdq_item::empty();
+/// ```
+pub struct cmdq_item {
+    /// Observe this allocation across detached and queued ownership transfer.
+    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
+    pub name: Option<std::ffi::CString>,
+    queue: *mut cmdq_list,
+    /// Own the remaining detached chain until enqueue consumes it.
+    next: Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    /// Runtime destruction marker: only cmdq_remove may set this to true.
+    removed: bool,
+    /// Nonowning execution context, which can temporarily differ from the queue owner.
+    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    client_owner: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    /// Nonowning command target; upgrade before accessing the client.
+    pub target_client: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub type_0: cmdq_type,
+    pub group: u_int,
+    pub number: u_int,
+    pub time: time_t,
+    pub flags: ::core::ffi::c_int,
+    pub state: Option<std::rc::Rc<cmdq_state>>,
+    pub source: cmd_find_state,
+    pub target: cmd_find_state,
+    cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
+    pub cmd: refbox::Weak<cmd>,
+    pub cb: cmdq_cb,
+    cancel_data: Option<Box<dyn FnOnce()>>,
+    wait_file: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
+}
+
+impl Drop for cmdq_item {
+    fn drop(&mut self) {
+        assert!(self.removed, "command item dropped without cmdq_remove");
+    }
+}
+
+impl cmdq_item {
+    pub(crate) fn is_removed(&self) -> bool {
+        self.removed
+    }
+
+    /// Observe the command retained by this queue item's command list.
+    pub fn command_handle(&self) -> refbox::Weak<cmd> {
+        self.cmd.clone()
+    }
+
+    fn empty() -> Self {
+        Self {
+            observer: Default::default(),
+            name: Default::default(),
+            queue: Default::default(),
+            next: Default::default(),
+            removed: false,
+            client: Default::default(),
+            client_owner: None,
+            target_client: Default::default(),
+            type_0: Default::default(),
+            group: Default::default(),
+            number: Default::default(),
+            time: Default::default(),
+            flags: Default::default(),
+            state: Default::default(),
+            source: Default::default(),
+            target: Default::default(),
+            cmdlist: Default::default(),
+            cmd: Default::default(),
+            cb: Default::default(),
+            cancel_data: Default::default(),
+            wait_file: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
+/// Box-owned by a client until client destruction; the lazy global queue lives for
+/// the process. The private deque owns stable command item allocations.
+///
+/// ```compile_fail
+/// use hmux2::src::cmd::queue::cmdq_new;
+/// let mut queue = cmdq_new();
+/// queue.list.pop_front();
+/// ```
+pub struct cmdq_list {
+    /// Current execution position, observed without retaining the item.
+    item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
+    list: std::collections::VecDeque<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+}
+
+impl cmdq_list {
+    fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>> {
+        self.list.front().cloned()
+    }
+
+    fn position(&self, item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> usize {
+        self.list
+            .iter()
+            .position(|owner| std::rc::Rc::ptr_eq(owner, item))
+            .expect("command item belongs to queue")
+    }
+}
 
 pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;

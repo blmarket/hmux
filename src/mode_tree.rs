@@ -545,7 +545,7 @@ pub unsafe fn mode_tree_start(
     mtd.sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
     mtd.sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        mtd.filter = Some(CStr::from_ptr(args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned());
+        mtd.filter = Some(args_get(&*(args), 'f' as i32 as u_char).expect("argument is present").to_owned());
     } else {
         mtd.filter = None;
     }
@@ -972,11 +972,11 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         let line = (&(*mtd).lines)[i as usize].clone();
         let mti = line.item.borrow();
         if mti.align != 0
-            && strlen((mti.name).as_ptr().cast_mut()) as ::core::ffi::c_int
+            && mti.name.as_bytes().len() as ::core::ffi::c_int
                 > *alignlen.as_mut_ptr().offset(line.depth as isize)
         {
             *alignlen.as_mut_ptr().offset(line.depth as isize) =
-                strlen((mti.name).as_ptr().cast_mut()) as ::core::ffi::c_int;
+                mti.name.as_bytes().len() as ::core::ffi::c_int;
         }
         i = i.wrapping_add(1);
     }
@@ -2504,11 +2504,7 @@ mod mode_tree_tests {
                 match expected {
                     Some(expected) => {
                         assert_eq!(
-                            CStr::from_ptr(
-                                (item.borrow().keystr)
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                            )
+                            (item.borrow().keystr).as_deref().expect("string is present")
                             .to_bytes(),
                             expected
                         );

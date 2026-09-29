@@ -39,8 +39,8 @@ fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
 static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
 };
-pub(super) unsafe fn format_job_update(job: &mut job, mut fj: *mut format_job) {
-    let evb: &mut evbuffer = &mut *(*job_get_event(job as *mut job)).input;
+pub(super) unsafe fn format_job_update(job: &refbox::Weak<job>, mut fj: *mut format_job) {
+    let evb: &mut evbuffer = &mut *(*job_get_event(job)).input;
     let mut line: Option<Vec<u8>> = None;
     let mut t: time_t = 0;
     loop {
@@ -83,7 +83,7 @@ pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut
             completion.output.len(),
         );
     }
-    (*fj).job = ::core::ptr::null_mut::<job>();
+    (*fj).job = refbox::Weak::new();
     let line = evbuffer_readline(&mut *evb);
     let output = if let Some(line) = line {
         let visible = line
@@ -172,10 +172,10 @@ pub(super) unsafe fn format_job_get(
         force = (*ft).flags & FORMAT_FORCE;
     }
     t = time(::core::ptr::null_mut::<time_t>());
-    if force != 0 && !(*fj).job.is_null() {
-        job_free((*fj).job);
+    if force != 0 && !(*fj).job.is_empty() {
+        job_free(&(*fj).job);
     }
-    if force != 0 || (*fj).job.is_null() && (*fj).last != t {
+    if force != 0 || (*fj).job.is_empty() && (*fj).last != t {
         let cwd = server_client_get_cwd((*ft).client.as_ref().map(|owner| &*owner.get()), None);
         (*fj).job = job_run(
             Some(expanded.as_c_str()),
@@ -192,13 +192,13 @@ pub(super) unsafe fn format_job_get(
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),
         );
-        if (*fj).job.is_null() {
+        if (*fj).job.is_empty() {
             let message = format_job_message(&*fj, b"' didn't start>");
             format_job_set_out(&mut *fj, message);
         }
         (*fj).last = t;
         (*fj).updated = 0 as ::core::ffi::c_int;
-    } else if !(*fj).job.is_null() && t - (*fj).last > 1 as time_t && (*fj).out.is_none() {
+    } else if !(*fj).job.is_empty() && t - (*fj).last > 1 as time_t && (*fj).out.is_none() {
         let message = format_job_message(&*fj, b"' not ready>");
         format_job_set_out(&mut *fj, message);
     }
@@ -233,7 +233,7 @@ unsafe fn format_job_find_or_insert(
             last: 0,
             out: Default::default(),
             updated: 0,
-            job: std::ptr::null_mut(),
+            job: refbox::Weak::new(),
             status: 0,
         };
         Box::new(format_job {
@@ -273,8 +273,8 @@ unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_i
             "format_job_tidy",
             log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _)
         ));
-        if !(*fj).job.is_null() {
-            job_free((*fj).job);
+        if !(*fj).job.is_empty() {
+            job_free(&(*fj).job);
         }
         drop(fj);
     }
@@ -423,11 +423,7 @@ mod tests {
             for (cmd, fj) in survivors {
                 assert_eq!(cache.entries.get(&(0, cmd.as_bytes().to_vec())).map(|job| &**job as *const format_job), Some(fj as *const format_job));
                 assert_eq!(
-                    std::ffi::CStr::from_ptr(
-                        ((*fj).out)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                    )
+                    ((*fj).out).as_deref().expect("string is present")
                     .to_bytes(),
                     cmd.as_bytes()
                 );
@@ -446,11 +442,7 @@ mod tests {
             let fj = format_job_find_or_insert(&mut cache, None, 1, cmd.as_c_str());
             format_job_set_out_from_line(&mut *fj, b"first\0ignored");
             assert_eq!(
-                CStr::from_ptr(
-                    ((*fj).out)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*fj).out).as_deref().expect("string is present")
                 .to_bytes(),
                 b"first"
             );
@@ -458,20 +450,12 @@ mod tests {
             let message = format_job_message(&*fj, b"' not ready>");
             format_job_set_out(&mut *fj, message);
             assert_eq!(
-                CStr::from_ptr(
-                    ((*fj).out)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*fj).out).as_deref().expect("string is present")
                 .to_bytes(),
                 b"<'printf '\xff'' not ready>"
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*fj).expanded)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*fj).expanded).as_deref().expect("string is present")
                 .to_bytes(),
                 b"expanded\xff"
             );

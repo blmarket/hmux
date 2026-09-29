@@ -181,12 +181,8 @@ mod control_queue_tests {
             assert_eq!(control_first_block(cs), output);
             assert_eq!(cs.block(1), reply);
             assert_eq!(
-                std::ffi::CStr::from_ptr(
-                    ((*reply.try_borrow_mut().expect("live control block")).line)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
-                .to_bytes(),
+                reply.try_borrow_mut().expect("live control block").line
+                    .as_deref().expect("reply text").to_bytes(),
                 b"reply-\xff"
             );
 

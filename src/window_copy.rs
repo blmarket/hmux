@@ -8204,7 +8204,7 @@ unsafe fn window_copy_pipe_run(
     mut cmd: *const ::core::ffi::c_char,
 ) -> Option<Vec<u8>> {
     let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut job: *mut job = ::core::ptr::null_mut::<job>();
+    let mut job = refbox::Weak::new();
     let buf = window_copy_get_selection(wme.clone());
     if cmd.is_null() || *cmd as ::core::ffi::c_int == '\0' as i32 {
         cmd = options_get_string(
@@ -8226,9 +8226,9 @@ unsafe fn window_copy_pipe_run(
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),
         );
-        if !job.is_null() {
+        if !job.is_empty() {
             bufferevent_write(
-                job_get_event(job),
+                job_get_event(&job),
                 buf.as_ref()
                     .map_or(::core::ptr::null(), |buf| buf.as_ptr())
                     .cast(),

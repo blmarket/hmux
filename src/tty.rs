@@ -833,7 +833,7 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_ENEKS).as_ptr()),
+            tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_ENEKS),
         );
     }
     if options_get_number(
@@ -843,7 +843,7 @@ pub unsafe fn tty_update_features(mut tty: *mut tty) {
     {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_ENFCS).as_ptr()),
+            tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), TTYC_ENFCS),
         );
     }
     if (*tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)).flags & TERM_VT100LIKE != 0 {
@@ -879,7 +879,7 @@ pub unsafe fn tty_raw(mut tty: *mut tty, mut s: *const ::core::ffi::c_char) {
 pub unsafe fn tty_putcode(mut tty: *mut tty, mut code: tty_code_code) {
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), code).as_ptr()),
+        tty_term_string(&*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)), code),
     );
 }
 pub unsafe fn tty_putcode_i(mut tty: *mut tty, mut code: tty_code_code, mut a: ::core::ffi::c_int) {
@@ -888,7 +888,7 @@ pub unsafe fn tty_putcode_i(mut tty: *mut tty, mut code: tty_code_code, mut a: :
     }
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string_i(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a).as_ptr()),
+        &tty_term_string_i(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a),
     );
 }
 pub unsafe fn tty_putcode_ii(
@@ -902,7 +902,7 @@ pub unsafe fn tty_putcode_ii(
     }
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string_ii(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b).as_ptr()),
+        &tty_term_string_ii(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b),
     );
 }
 pub unsafe fn tty_putcode_iii(
@@ -917,7 +917,7 @@ pub unsafe fn tty_putcode_iii(
     }
     tty_puts(
         tty,
-        std::ffi::CStr::from_ptr(tty_term_string_iii(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b, c).as_ptr()),
+        &tty_term_string_iii(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b, c),
     );
 }
 pub unsafe fn tty_putcode_s(mut tty: *mut tty, mut a: *const ::core::ffi::c_char) {
@@ -925,7 +925,7 @@ pub unsafe fn tty_putcode_s(mut tty: *mut tty, mut a: *const ::core::ffi::c_char
     if !a.is_null() {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string_s(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a).as_ptr()),
+            &tty_term_string_s(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a),
         );
     }
 }
@@ -938,7 +938,7 @@ pub unsafe fn tty_putcode_ss(
     if !a.is_null() && !b.is_null() {
         tty_puts(
             tty,
-            std::ffi::CStr::from_ptr(tty_term_string_ss(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b).as_ptr()),
+            &tty_term_string_ss(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term), code, a, b),
         );
     }
 }

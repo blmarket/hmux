@@ -94,7 +94,7 @@ unsafe fn cmd_set_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
         }
         if paste_rename(
             bufname.as_deref(),
-            Some(CStr::from_ptr(args_get(&*(args), b'n').map_or(std::ptr::null(), |value| value.as_ptr()))),
+            Some(args_get(&*(args), b'n').expect("argument is present")),
             Some(&mut cause),
         ) != 0
         {
@@ -109,7 +109,7 @@ unsafe fn cmd_set_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::
         cmdq_error(item_handle, |out| out.write_all(b"no data specified"));
         return CMD_RETURN_ERROR;
     }
-    let new_data = CStr::from_ptr(args_string(&mut *(args), 0).map_or(std::ptr::null(), |value| value.as_ptr())).to_bytes();
+    let new_data = args_string(&mut *(args), 0).expect("argument is present").to_bytes();
     if new_data.is_empty() {
         return CMD_RETURN_NORMAL;
     }

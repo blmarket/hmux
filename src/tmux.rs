@@ -507,11 +507,7 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
         let mut expanded = if value.unwrap().value.is_none() {
             b"(null)".to_vec()
         } else {
-            CStr::from_ptr(
-                (value.unwrap().value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            (value.unwrap().value).as_deref().expect("string is present")
             .to_bytes()
             .to_vec()
         };

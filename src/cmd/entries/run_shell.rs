@@ -306,7 +306,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             -(1 as ::core::ffi::c_int),
             -(1 as ::core::ffi::c_int),
         );
-        if job.is_null() {
+        if job.is_empty() {
             if !cdata.wait {
                 status_message_set(
                     (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
@@ -330,7 +330,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
             // job_run does not dispatch callbacks before returning. Transfer the
             // record only after startup succeeds; dropping the callback also
             // releases it if the job is cancelled before completion.
-            (*job).completecb = Some(Box::new(move |completion| unsafe {
+            job.try_borrow_mut().expect("newly registered job").completecb = Some(Box::new(move |completion| unsafe {
                 cmd_run_shell_callback(completion, &cdata);
             }));
         }

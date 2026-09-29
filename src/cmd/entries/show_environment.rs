@@ -37,15 +37,8 @@ pub static cmd_show_environment_entry: cmd_entry = {
         exec: Some(cmd_show_environment_exec),
     }
 };
-unsafe fn cmd_show_environment_escape(envent: &environ_entry) -> CString {
-    // The entry value is a C string: only bytes before its first NUL are visible.
-    let value = CStr::from_ptr(
-        envent
-            .value
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    )
-    .to_bytes();
+fn cmd_show_environment_escape(value: &CStr) -> CString {
+    let value = value.to_bytes();
     let mut escaped = Vec::with_capacity(value.len().saturating_mul(2));
     for &byte in value {
         if matches!(byte, b'$' | b'`' | b'"' | b'\\') {
@@ -68,39 +61,34 @@ unsafe fn cmd_show_environment_print(
         return;
     }
     if args_has(args, 's' as i32 as u_char) == 0 {
-        if !(*envent).value.is_none() {
+        if let Some(value) = envent.value.as_deref() {
             cmdq_print(item_handle, |out| {
-                write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+                out.write_all(envent.name.as_bytes())?;
                 out.write_all(b"=")?;
-                write_cstr(
-                    out,
-                    ((*envent).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
+                out.write_all(value.to_bytes())
             });
         } else {
             cmdq_print(item_handle, |out| {
                 out.write_all(b"-")?;
-                write_cstr(out, ((*envent).name).as_ptr().cast_mut())
+                out.write_all(envent.name.as_bytes())
             });
         }
         return;
     }
-    if !(*envent).value.is_none() {
-        let escaped = cmd_show_environment_escape(&*envent);
+    if let Some(value) = envent.value.as_deref() {
+        let escaped = cmd_show_environment_escape(value);
         cmdq_print(item_handle, |out| {
-            write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+            out.write_all(envent.name.as_bytes())?;
             out.write_all(b"=\"")?;
-            write_cstr(out, escaped.as_ptr())?;
+            out.write_all(escaped.as_bytes())?;
             out.write_all(b"\"; export ")?;
-            write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+            out.write_all(envent.name.as_bytes())?;
             out.write_all(b";")
         });
     } else {
         cmdq_print(item_handle, |out| {
             out.write_all(b"unset ")?;
-            write_cstr(out, ((*envent).name).as_ptr().cast_mut())?;
+            out.write_all(envent.name.as_bytes())?;
             out.write_all(b";")
         });
     };
@@ -175,7 +163,7 @@ mod tests {
             ),
             flags: 0,
         };
-        let escaped = unsafe { cmd_show_environment_escape(&entry) };
+        let escaped = cmd_show_environment_escape(entry.value.as_deref().unwrap());
         assert_eq!(escaped.as_bytes(), b"\xff\\$\\`\\\"\\\\");
     }
 }

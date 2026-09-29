@@ -207,7 +207,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         (
             file.c.clone(),
             (!Weak::ptr_eq(&file.wait_client, &Weak::new())).then(|| file.wait_client.upgrade()),
-            file.wait_active && file.wait_item.upgrade().is_none_or(|item| (*item.get()).removed),
+            file.wait_active && file.wait_item.upgrade().is_none_or(|item| (*item.get()).is_removed()),
         )
     };
     let dead = expired_wait || client_owner.as_ref().is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
@@ -648,12 +648,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     }
     match current_block {
         17710118112003399050 => {
-            let path = CStr::from_ptr(
-                cf.path
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
-            .to_bytes_with_nul();
+            let path = cf.path.as_deref().expect("file path").to_bytes_with_nul();
             let header_len = ::core::mem::size_of::<msg_read_open>();
             let msglen = header_len + path.len();
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {

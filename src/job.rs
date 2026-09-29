@@ -1,22 +1,21 @@
-use crate::src::options::options_owner_ptr;
 use crate::src::cfg::cfg_finished;
 use crate::src::cmd::queue::cmdq_print;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
-use crate::src::environ::{
-    environ_copy, environ_for_session, environ_push, environ_set,
-};
+use crate::src::environ::{environ_copy, environ_for_session, environ_push, environ_set};
 use crate::src::ffi::libc::{
     _exit, chdir, close, closefrom, dup2, execl, execvp, fork, ioctl, kill, killpg, memset, open,
-    setenv, shutdown, sigfillset, sigprocmask, socketpair, strlcpy,
+    setenv, shutdown, sigfillset, sigprocmask, socketpair,
 };
 use crate::src::format::bytes::write_cstr;
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_pointer};
+use crate::src::log::log_bytes;
+use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::options_get_string;
+use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_get_output,
-    bufferevent_new, evbuffer_get_length, evbuffer_pullup,
+    bufferevent_disable, bufferevent_enable, bufferevent_get_output, bufferevent_new,
+    evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
 use crate::src::shared::abi::*;
@@ -44,6 +43,7 @@ use crate::src::shared::terminal::*;
 use crate::src::tmux::{
     checkshell, find_home_cstr, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
 };
+use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
@@ -53,7 +53,7 @@ pub const JOB_CLOSED: job_state = 2;
 pub const JOB_DEAD: job_state = 1;
 pub const JOB_RUNNING: job_state = 0;
 
-unsafe fn job_completion(job: *mut job) -> JobCompletion {
+unsafe fn job_completion(job: &job) -> JobCompletion {
     let output = (*job)
         .event
         .with_ptr(|stream| unsafe {
@@ -67,31 +67,23 @@ unsafe fn job_completion(job: *mut job) -> JobCompletion {
         output,
     }
 }
-pub struct joblist {
-    pub lh_first: *mut job,
-    // Links and callbacks observe allocations owned here.
-    owners: Vec<Box<job>>,
-}
-
 pub const O_RDWR: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
 
-static mut all_jobs: joblist = joblist {
-    lh_first: ::core::ptr::null::<job>() as *mut job,
-    owners: Vec::new(),
-};
+// The server thread owns every job. Observers never retain a process or stream.
+static mut all_jobs: Vec<RefBox<job>> = Vec::new();
 
-// Return a nonowning identity; completion or cancellation explicitly removes
-// the owner through job_free. Moving the Vec never moves the boxed jobs.
-unsafe fn job_insert(mut owner: Box<job>) -> *mut job {
-    let job = &raw mut *owner;
-    (*job).entry.le_next = all_jobs.lh_first;
-    if !(*job).entry.le_next.is_null() {
-        (*all_jobs.lh_first).entry.le_prev = &raw mut (*job).entry.le_next;
-    }
-    all_jobs.lh_first = job;
-    (*job).entry.le_prev = &raw mut all_jobs.lh_first;
-    (*(&raw mut all_jobs.owners)).push(owner);
-    job
+unsafe fn job_insert(owner: RefBox<job>) -> Weak<job> {
+    let observer = owner.downgrade();
+    // Keep the previous newest-first traversal order.
+    (*(&raw mut all_jobs)).insert(0, owner);
+    observer
+}
+
+unsafe fn job_snapshot() -> Vec<Weak<job>> {
+    (*(&raw const all_jobs))
+        .iter()
+        .map(RefBox::downgrade)
+        .collect()
 }
 
 /// Start a registry-owned job and return its nonowning identity.
@@ -107,10 +99,9 @@ pub unsafe fn job_run(
     mut flags: ::core::ffi::c_int,
     mut sx: ::core::ffi::c_int,
     mut sy: ::core::ffi::c_int,
-) -> *mut job {
+) -> Weak<job> {
     let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut current_block: u64;
-    let mut job: *mut job = ::core::ptr::null_mut::<job>();
     let mut pid: pid_t = 0;
     let mut nullfd: ::core::ffi::c_int = 0;
     let mut out: [::core::ffi::c_int; 2] = [0; 2];
@@ -148,7 +139,8 @@ pub unsafe fn job_run(
         shell = _PATH_BSHELL.as_ptr();
     } else {
         if !s.is_null() {
-            oo = options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options);
+            oo = options_owner_ptr(&mut (*s).options)
+                .map_or(std::ptr::null_mut(), |options| options);
         } else {
             oo = global_s_options;
         }
@@ -354,61 +346,55 @@ pub unsafe fn job_run(
                     } else {
                         cmd_stringify_argv_cstring(argv)
                     };
-                    let mut owner = Box::new(job {
+                    let mut value = job {
                         cmd: cmd_owner,
+                        state: JOB_RUNNING,
+                        flags,
+                        pid,
+                        updatecb,
+                        completecb,
+                        freecb,
                         ..job::empty()
-                    });
-
-                    job = job_insert(owner);
-                    (*job).state = JOB_RUNNING;
-                    (*job).flags = flags;
-                    (*job).pid = pid;
+                    };
                     if flags & JOB_PTY != 0 {
-                        strlcpy(
-                            &raw mut (*job).tty as *mut ::core::ffi::c_char,
-                            &raw mut tty as *mut ::core::ffi::c_char,
-                            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-                        );
+                        value.tty = tty;
                     }
-                    (*job).status = 0 as ::core::ffi::c_int;
-                    (*job).updatecb = updatecb;
-                    (*job).completecb = completecb;
-                    (*job).freecb = freecb;
-                    if !flags & JOB_PTY != 0 {
-                        close(out[1 as ::core::ffi::c_int as usize]);
-                        (*job).fd = out[0 as ::core::ffi::c_int as usize];
+                    if flags & JOB_PTY == 0 {
+                        close(out[1]);
+                        value.fd = out[0];
                     } else {
-                        (*job).fd = master;
+                        value.fd = master;
                     }
-                    setblocking((*job).fd, 0 as ::core::ffi::c_int);
+                    setblocking(value.fd, 0);
+                    let fd = value.fd;
+                    let job = job_insert(RefBox::new(value));
+                    let read_job = job.clone();
+                    let write_job = job.clone();
+                    let error_job = job.clone();
                     let stream = bufferevent_new(
-                        (*job).fd,
+                        fd,
+                        bufferevent_data_callback(move |_| unsafe { job_read_callback(&read_job) }),
                         bufferevent_data_callback(move |_| unsafe {
-                            job_read_callback(job)
-                        }),
-                        bufferevent_data_callback(move |_| unsafe {
-                            job_write_callback(job)
+                            job_write_callback(&write_job)
                         }),
                         bufferevent_event_callback(move |_, _| unsafe {
-                            job_error_callback(job)
+                            job_error_callback(&error_job)
                         }),
                     );
                     if stream.is_null() {
                         fatalx(|out| out.write_all(b"out of memory"));
                     }
-                    (*job).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                    job.try_borrow_mut().expect("registered job").event =
+                        crate::src::reactor::StreamHandle::from_ptr(stream);
                     bufferevent_enable(stream, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
-                    log_debug(format_args!(
-                        "run job {}: {}, pid {}",
-                        log_pointer((job) as *const ::core::ffi::c_void),
-                        log_cstr(
-                            (((*job).cmd)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                                as *const _
-                        ),
-                        (*job).pid as ::core::ffi::c_long
-                    ));
+                    {
+                        let value = job.try_borrow_mut().expect("registered job");
+                        log_debug(format_args!(
+                            "run job: {}, pid {}",
+                            log_bytes(value.cmd.as_deref().unwrap_or(c"(null)").to_bytes()),
+                            value.pid
+                        ));
+                    }
                     return job;
                 }
             }
@@ -421,230 +407,343 @@ pub unsafe fn job_run(
         ::core::ptr::null_mut::<sigset_t>(),
     );
     drop(argv0);
-    return ::core::ptr::null_mut::<job>();
+    return Weak::new();
 }
-pub unsafe fn job_free(mut job: *mut job) {
-    // End the registry borrow before any destructor or callback can reenter it.
-    let owner = {
-        let owners = &mut *(&raw mut all_jobs.owners);
-        let index = owners.iter().position(|owner| std::ptr::eq(&**owner, job))
-            .expect("job must belong to the registry");
-        owners.swap_remove(index)
-    };
-
-    log_debug(format_args!(
-        "free job {}: {}",
-        log_pointer((job) as *const ::core::ffi::c_void),
-        log_cstr(
-            (((*job).cmd)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        )
-    ));
-    if !(*job).entry.le_next.is_null() {
-        (*(*job).entry.le_next).entry.le_prev = (*job).entry.le_prev;
+fn job_borrow_live(handle: &Weak<job>) -> Option<refbox::Borrow<'_, job>> {
+    match handle.try_borrow_mut() {
+        Ok(job) => Some(job),
+        Err(refbox::BorrowError::Dropped) => None,
+        Err(refbox::BorrowError::Borrowed) => panic!("job already borrowed during dispatch"),
     }
-    *(*job).entry.le_prev = (*job).entry.le_next;
-    if let Some(callback) = (*job).freecb.take() {
+}
+
+unsafe fn job_log(action: &str, job: &job) {
+    log_debug(format_args!(
+        "{} job: {}, pid {}",
+        action,
+        log_bytes(job.cmd.as_deref().unwrap_or(c"(null)").to_bytes()),
+        job.pid
+    ));
+}
+
+/// Remove ownership before callbacks, but keep the allocation and resources alive
+/// until the free callback returns. Reentrant cancellation is a no-op.
+pub unsafe fn job_free(handle: &Weak<job>) {
+    let owner = {
+        let owners = &mut *(&raw mut all_jobs);
+        let Some(index) = owners.iter().position(|owner| handle.is(owner)) else {
+            return;
+        };
+        owners.remove(index)
+    };
+    let callback = {
+        let mut job = owner
+            .try_borrow_mut()
+            .expect("unborrowed job during cleanup");
+        job_log("free", &job);
+        job.freecb.take()
+    };
+    if let Some(callback) = callback {
         callback();
     }
-    if (*job).pid != -(1 as ::core::ffi::c_int) {
-        kill((*job).pid as __pid_t, SIGTERM);
-    }
-    (*job).event.free();
-    if (*job).fd != -(1 as ::core::ffi::c_int) {
-        close((*job).fd);
+    {
+        let mut job = owner
+            .try_borrow_mut()
+            .expect("unborrowed job after cleanup callback");
+        if job.pid != -1 {
+            kill(job.pid as __pid_t, SIGTERM);
+            job.pid = -1;
+        }
+        job.event.free();
+        if job.fd != -1 {
+            close(job.fd);
+            job.fd = -1;
+        }
     }
     drop(owner);
 }
-pub unsafe fn job_resize(mut job: *mut job, mut sx: u_int, mut sy: u_int) {
-    let mut ws: winsize = winsize {
-        ws_row: 0,
-        ws_col: 0,
+
+pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
+    let job = handle.try_borrow_mut().expect("live popup job");
+    if job.fd == -1 || job.flags & JOB_PTY == 0 {
+        return;
+    }
+    log_debug(format_args!("resize job: {}x{}", sx, sy));
+    let ws = winsize {
+        ws_row: sy as _,
+        ws_col: sx as _,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if (*job).fd == -(1 as ::core::ffi::c_int) || !(*job).flags & JOB_PTY != 0 {
-        return;
-    }
-    log_debug(format_args!(
-        "resize job {}: {}x{}",
-        log_pointer((job) as *const ::core::ffi::c_void),
-        (sx) as u32,
-        (sy) as u32
-    ));
-    memset(
-        &raw mut ws as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<winsize>() as size_t,
-    );
-    ws.ws_col = sx as ::core::ffi::c_ushort;
-    ws.ws_row = sy as ::core::ffi::c_ushort;
-    if ioctl((*job).fd, TIOCSWINSZ as ::core::ffi::c_ulong, &raw mut ws)
-        == -(1 as ::core::ffi::c_int)
-    {
+    if ioctl(job.fd, TIOCSWINSZ as ::core::ffi::c_ulong, &ws) == -1 {
         fatal(|out| out.write_all(b"ioctl failed"));
     }
 }
-unsafe fn job_read_callback(job: *mut job) {
-    let Some(callback_slot) = (*job).updatecb.as_ref().cloned() else {
-        return;
+
+unsafe fn job_read_callback(handle: &Weak<job>) {
+    let callback_slot = {
+        let Some(job) = job_borrow_live(handle) else {
+            return;
+        };
+        let Some(slot) = job.updatecb.clone() else {
+            return;
+        };
+        slot
     };
     let Some(mut callback) = callback_slot.borrow_mut().take() else {
         return;
     };
-    callback(&mut *job);
-    let mut callback_owner = callback_slot.borrow_mut();
-    if callback_owner.is_none() {
-        *callback_owner = Some(callback);
+    // No job borrow survives dispatch: an update may cancel this very job.
+    callback(handle);
+    let mut slot = callback_slot.borrow_mut();
+    if slot.is_none() {
+        *slot = Some(callback);
     }
 }
-unsafe fn job_write_callback(job: *mut job) {
-    let Some(len) = (*job).event.with_ptr(|stream| unsafe {
-        evbuffer_get_length(&*(bufferevent_get_output(&mut *stream)))
-    }) else { return };
-    log_debug(format_args!(
-        "job write {}: {}, pid {}, output left {}",
-        log_pointer((job) as *const ::core::ffi::c_void),
-        log_cstr(
-            (((*job).cmd)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
-        (*job).pid as ::core::ffi::c_long,
-        (len) as usize
-    ));
-    if len == 0 as size_t && !(*job).flags & JOB_KEEPWRITE != 0 {
-        shutdown((*job).fd, SHUT_WR as ::core::ffi::c_int);
-        let _ = (*job).event.with_ptr(|stream| unsafe {
-            bufferevent_disable(stream, EV_WRITE as ::core::ffi::c_short)
-        });
-    }
-}
-unsafe fn job_error_callback(job: *mut job) {
-    log_debug(format_args!(
-        "job error {}: {}, pid {}",
-        log_pointer((job) as *const ::core::ffi::c_void),
-        log_cstr(
-            (((*job).cmd)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
-        (*job).pid as ::core::ffi::c_long
-    ));
-    if (*job).state as ::core::ffi::c_uint == JOB_DEAD as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if let Some(callback) = (*job).completecb.take() {
-            callback(job_completion(job));
-        }
-        job_free(job);
-    } else {
-        let _ = (*job).event.with_ptr(|stream| unsafe {
-            bufferevent_disable(stream, EV_READ as ::core::ffi::c_short)
-        });
-        (*job).state = JOB_CLOSED;
-    };
-}
-pub unsafe fn job_check_died(mut pid: pid_t, mut status: ::core::ffi::c_int) {
-    let mut job: *mut job = ::core::ptr::null_mut::<job>();
-    job = all_jobs.lh_first;
-    while !job.is_null() {
-        if pid == (*job).pid {
-            break;
-        }
-        job = (*job).entry.le_next;
-    }
-    if job.is_null() {
+
+unsafe fn job_write_callback(handle: &Weak<job>) {
+    let Some(job) = job_borrow_live(handle) else {
         return;
+    };
+    let Some(len) = job
+        .event
+        .with_ptr(|stream| evbuffer_get_length(&*bufferevent_get_output(&mut *stream)))
+    else {
+        return;
+    };
+    job_log("write", &job);
+    log_debug(format_args!("job output left {}", len));
+    if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
+        shutdown(job.fd, SHUT_WR as _);
+        job.event.with_ptr(|stream| {
+            bufferevent_disable(stream, EV_WRITE as _);
+        });
     }
-    if status & 0xff as ::core::ffi::c_int == 0x7f as ::core::ffi::c_int {
-        if (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int == SIGTTIN
-            || (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int == SIGTTOU
-        {
+}
+
+unsafe fn job_finish(handle: &Weak<job>) {
+    let completion = {
+        let Some(mut job) = job_borrow_live(handle) else {
+            return;
+        };
+        job.completecb
+            .take()
+            .map(|callback| (callback, job_completion(&job)))
+    };
+    if let Some((callback, result)) = completion {
+        callback(result);
+    }
+    // Completion may already have cancelled the job, or its owning popup/cache.
+    job_free(handle);
+}
+
+unsafe fn job_error_callback(handle: &Weak<job>) {
+    let complete = {
+        let Some(mut job) = job_borrow_live(handle) else {
+            return;
+        };
+        job_log("error", &job);
+        if job.state == JOB_DEAD {
+            true
+        } else {
+            job.event.with_ptr(|stream| {
+                bufferevent_disable(stream, EV_READ as _);
+            });
+            job.state = JOB_CLOSED;
+            false
+        }
+    };
+    if complete {
+        job_finish(handle);
+    }
+}
+
+pub unsafe fn job_check_died(pid: pid_t, status: ::core::ffi::c_int) {
+    let Some(handle) = job_snapshot()
+        .into_iter()
+        .find(|handle| handle.try_borrow_mut().expect("registered job").pid == pid)
+    else {
+        return;
+    };
+    let complete = {
+        let mut job = handle.try_borrow_mut().expect("registered job");
+        if status & 0xff == 0x7f {
+            let signal = (status & 0xff00) >> 8;
+            if signal != SIGTTIN && signal != SIGTTOU {
+                killpg(job.pid as __pid_t, SIGCONT);
+            }
             return;
         }
-        killpg((*job).pid as __pid_t, SIGCONT);
-        return;
-    }
-    log_debug(format_args!(
-        "job died {}: {}, pid {}",
-        log_pointer((job) as *const ::core::ffi::c_void),
-        log_cstr(
-            (((*job).cmd)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
-        (*job).pid as ::core::ffi::c_long
-    ));
-    (*job).status = status;
-    if (*job).state as ::core::ffi::c_uint
-        == JOB_CLOSED as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if let Some(callback) = (*job).completecb.take() {
-            callback(job_completion(job));
+        job_log("died", &job);
+        job.status = status;
+        // The child is reaped; cleanup must not signal its old PID.
+        job.pid = -1;
+        if job.state == JOB_CLOSED {
+            true
+        } else {
+            job.state = JOB_DEAD;
+            false
         }
-        job_free(job);
-    } else {
-        (*job).pid = -(1 as ::core::ffi::c_int) as pid_t;
-        (*job).state = JOB_DEAD;
     };
+    if complete {
+        job_finish(&handle);
+    }
 }
-pub unsafe fn job_get_event(mut job: *mut job) -> *mut bufferevent {
-    return (*job).event.ptr();
+
+pub unsafe fn job_get_event(handle: &Weak<job>) -> *mut bufferevent {
+    handle
+        .try_borrow_mut()
+        .expect("live job stream")
+        .event
+        .ptr()
+}
+
+pub unsafe fn job_kill_all() {
+    for handle in job_snapshot() {
+        let job = handle.try_borrow_mut().expect("registered job");
+        if job.pid != -1 {
+            kill(job.pid as __pid_t, SIGTERM);
+        }
+    }
+}
+
+pub unsafe fn job_still_running() -> ::core::ffi::c_int {
+    job_snapshot().iter().any(|handle| {
+        let job = handle.try_borrow_mut().expect("registered job");
+        job.flags & JOB_NOWAIT == 0 && job.state == JOB_RUNNING
+    }) as _
+}
+
+pub unsafe fn job_print_summary(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    mut blank: ::core::ffi::c_int,
+) {
+    for (n, handle) in job_snapshot().into_iter().enumerate() {
+        let (cmd, fd, pid, status) = {
+            let job = handle.try_borrow_mut().expect("registered job");
+            (job.cmd.clone(), job.fd, job.pid, job.status)
+        };
+        if blank != 0 {
+            cmdq_print(item_handle, |_| Ok(()));
+            blank = 0;
+        }
+        cmdq_print(item_handle, |out| {
+            write!(out, "Job {}: ", n)?;
+            out.write_all(cmd.as_deref().unwrap_or(c"(null)").to_bytes())?;
+            write!(out, " [fd={}, pid={}, status={}]", fd, pid, status)
+        });
+    }
 }
 
 #[cfg(test)]
 mod job_stream_tests {
     use super::*;
+    use crate::src::shared::job::job_update_callback;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    fn idle_job() -> job {
+        job {
+            pid: -1,
+            fd: -1,
+            ..job::empty()
+        }
+    }
 
     #[test]
-    fn registry_owner_survives_reentrant_free_and_preserves_cleanup_order() {
+    fn registry_cleanup_reentrancy_and_both_completion_orders() {
         unsafe {
-            assert!(all_jobs.lh_first.is_null());
-            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
-            let mut second = Box::new(job::empty());
-            second.pid = -1;
-            second.fd = -1;
-            let second = job_insert(second);
-
+            assert!(job_snapshot().is_empty());
+            let calls = Rc::new(Cell::new(0));
+            let second = job_insert(RefBox::new(idle_job()));
+            let second_observer = second.clone();
             let mut pair = [0; 2];
-            assert_eq!(::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()), 0);
+            assert_eq!(
+                ::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()),
+                0
+            );
             let fd = pair[0];
-            let mut first = Box::new(job::empty());
-            first.pid = -1;
-            first.fd = fd;
             let stream = bufferevent_new(fd, None, None, None);
-            first.event = crate::src::reactor::StreamHandle::from_ptr(stream);
-            let callback_stream = first.event.clone();
+            let first = job_insert(RefBox::new(job {
+                fd,
+                event: crate::src::reactor::StreamHandle::from_ptr(stream),
+                ..idle_job()
+            }));
+            let event = first.try_borrow_mut().unwrap().event.clone();
+            let callback_event = event.clone();
             let observed = calls.clone();
-            first.freecb = Some(Box::new(move || {
-                // The freeing job has left both indexes, but its resources
-                // remain available until its free callback returns.
-                assert_eq!(all_jobs.lh_first, second);
-                assert_eq!((*(&raw const all_jobs.owners)).len(), 1);
-                assert_eq!(callback_stream.ptr(), stream);
+            let callback_first = first.clone();
+            first.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
+                assert_eq!(job_snapshot(), vec![second.clone()]);
+                // Owner and resources remain live, with no outstanding borrow.
+                assert_eq!(callback_first.try_borrow_mut().unwrap().fd, fd);
+                assert_eq!(callback_event.ptr(), stream);
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
-                job_free(second);
-                let mut replacement = Box::new(job::empty());
-                replacement.pid = -1;
-                replacement.fd = -1;
-                let replacement = job_insert(replacement);
-                job_free(replacement);
+                job_free(&callback_first); // reentrant cancellation is harmless
+                job_free(&second);
+                let replacement = job_insert(RefBox::new(idle_job()));
+                assert_ne!(replacement, callback_first);
+                job_free(&replacement);
                 observed.set(observed.get() + 1);
             }));
-            let first = job_insert(first);
-            let event = (*first).event.clone();
-            job_free(first);
+            job_free(&first);
             assert_eq!(calls.get(), 1);
+            assert!(first.try_borrow_mut().is_err());
+            assert!(second_observer.try_borrow_mut().is_err());
             assert!(event.ptr().is_null());
             assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
-            assert!(all_jobs.lh_first.is_null());
-            assert!((*(&raw const all_jobs.owners)).is_empty());
             close(pair[1]);
+            assert!(job_snapshot().is_empty());
+
+            // Update callbacks can cancel their own registry owner.
+            let update = job_insert(RefBox::new(idle_job()));
+            let observed = calls.clone();
+            update.try_borrow_mut().unwrap().updatecb = job_update_callback(move |job| {
+                observed.set(observed.get() + 1);
+                job_free(job);
+            });
+            job_read_callback(&update);
+            job_read_callback(&update); // a stale queued event does nothing
+            assert_eq!(calls.get(), 2);
+            assert!(update.try_borrow_mut().is_err());
+
+            for eof_first in [false, true] {
+                let stream = bufferevent_new(-1, None, None, None);
+                crate::src::reactor::evbuffer_add(
+                    &mut *(*stream).input,
+                    b"remaining".as_ptr().cast(),
+                    9,
+                );
+                let handle = job_insert(RefBox::new(job {
+                    pid: 1234567,
+                    event: crate::src::reactor::StreamHandle::from_ptr(stream),
+                    ..idle_job()
+                }));
+                let callback_handle = handle.clone();
+                let observed = calls.clone();
+                handle.try_borrow_mut().unwrap().completecb = Some(Box::new(move |completion| {
+                    assert_eq!(completion.output, b"remaining");
+                    assert_eq!(completion.status, JobExitStatus::Exited(7));
+                    assert_eq!(callback_handle.try_borrow_mut().unwrap().pid, -1);
+                    observed.set(observed.get() + 1);
+                    // Completion may cancel itself while the dispatcher runs.
+                    job_free(&callback_handle);
+                }));
+                if eof_first {
+                    job_error_callback(&handle);
+                    assert_eq!(handle.try_borrow_mut().unwrap().state, JOB_CLOSED);
+                    job_check_died(1234567, 7 << 8);
+                } else {
+                    job_check_died(1234567, 7 << 8);
+                    assert_eq!(handle.try_borrow_mut().unwrap().state, JOB_DEAD);
+                    job_error_callback(&handle);
+                }
+                assert!(handle.try_borrow_mut().is_err());
+                job_error_callback(&handle);
+                job_write_callback(&handle);
+            }
+            assert_eq!(calls.get(), 4);
+            assert!(job_snapshot().is_empty());
             crate::src::reactor::shutdown_runtime();
         }
     }
@@ -653,74 +752,23 @@ mod job_stream_tests {
     fn completion_reads_a_live_stream_and_skips_one_after_free() {
         unsafe {
             let stream = bufferevent_new(-1, None, None, None);
-            let mut job = job::empty();
-            job.event = crate::src::reactor::StreamHandle::from_ptr(stream);
-            assert_eq!(job_get_event(&mut job), stream);
-            crate::src::reactor::evbuffer_add(
-                &mut *(*stream).input,
-                b"output".as_ptr().cast(),
-                6,
+            let owner = RefBox::new(job {
+                event: crate::src::reactor::StreamHandle::from_ptr(stream),
+                ..idle_job()
+            });
+            let handle = owner.downgrade();
+            assert_eq!(job_get_event(&handle), stream);
+            crate::src::reactor::evbuffer_add(&mut *(*stream).input, b"output".as_ptr().cast(), 6);
+            assert_eq!(
+                job_completion(&owner.try_borrow_mut().unwrap()).output,
+                b"output"
             );
-            assert_eq!(job_completion(&mut job).output, b"output");
-            job.event.free();
-            assert!(job_get_event(&mut job).is_null());
-            assert!(job_completion(&mut job).output.is_empty());
+            owner.try_borrow_mut().unwrap().event.free();
+            assert!(job_get_event(&handle).is_null());
+            assert!(job_completion(&owner.try_borrow_mut().unwrap())
+                .output
+                .is_empty());
             crate::src::reactor::shutdown_runtime();
         }
-    }
-}
-pub unsafe fn job_kill_all() {
-    let mut job: *mut job = ::core::ptr::null_mut::<job>();
-    job = all_jobs.lh_first;
-    while !job.is_null() {
-        if (*job).pid != -(1 as ::core::ffi::c_int) {
-            kill((*job).pid as __pid_t, SIGTERM);
-        }
-        job = (*job).entry.le_next;
-    }
-}
-pub unsafe fn job_still_running() -> ::core::ffi::c_int {
-    let mut job: *mut job = ::core::ptr::null_mut::<job>();
-    job = all_jobs.lh_first;
-    while !job.is_null() {
-        if !(*job).flags & JOB_NOWAIT != 0
-            && (*job).state as ::core::ffi::c_uint
-                == JOB_RUNNING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            return 1 as ::core::ffi::c_int;
-        }
-        job = (*job).entry.le_next;
-    }
-    return 0 as ::core::ffi::c_int;
-}
-pub unsafe fn job_print_summary(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>, mut blank: ::core::ffi::c_int) {
-    let mut job: *mut job = ::core::ptr::null_mut::<job>();
-    let mut n: u_int = 0 as u_int;
-    job = all_jobs.lh_first;
-    while !job.is_null() {
-        if blank != 0 {
-            cmdq_print(item_handle, |out| {
-                write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
-            });
-            blank = 0 as ::core::ffi::c_int;
-        }
-        cmdq_print(item_handle, |out| {
-            write!(out, "Job {}: ", (n) as u32)?;
-            write_cstr(
-                out,
-                ((*job).cmd)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )?;
-            write!(
-                out,
-                " [fd={}, pid={}, status={}]",
-                ((*job).fd) as i32,
-                ((*job).pid as ::core::ffi::c_long) as ::core::ffi::c_long,
-                ((*job).status) as i32
-            )
-        });
-        n = n.wrapping_add(1);
-        job = (*job).entry.le_next;
     }
 }

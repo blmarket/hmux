@@ -83,7 +83,7 @@ pub struct popup_data {
     pub s: screen,
     pub defaults: grid_cell,
     pub palette: refbox::RefBox<colour_palette>,
-    pub job: *mut job,
+    pub job: refbox::Weak<job>,
     pub ictx: Option<Box<input_ctx>>,
     pub status: ::core::ffi::c_int,
     pub px: u_int,
@@ -234,8 +234,8 @@ impl Drop for popup_data {
             if let Some(client) = self.c.take() {
                 server_client_unref_owned(client);
             }
-            if !self.job.is_null() {
-                job_free(self.job);
+            if !self.job.is_empty() {
+                job_free(&self.job);
             }
             if let Some(ictx) = self.ictx.take() {
                 input_free(ictx);
@@ -613,8 +613,8 @@ unsafe fn popup_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, pop
     }
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         screen_resize(&mut (*pd).s, (*pd).sx, (*pd).sy, 0 as ::core::ffi::c_int);
-        if !(*pd).job.is_null() {
-            job_resize((*pd).job, (*pd).sx, (*pd).sy);
+        if !(*pd).job.is_empty() {
+            job_resize(&(*pd).job, (*pd).sx, (*pd).sy);
         }
     } else if (*pd).sx > 2 as u_int && (*pd).sy > 2 as u_int {
         screen_resize(
@@ -623,9 +623,9 @@ unsafe fn popup_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, pop
             (*pd).sy.wrapping_sub(2 as u_int),
             0 as ::core::ffi::c_int,
         );
-        if !(*pd).job.is_null() {
+        if !(*pd).job.is_empty() {
             job_resize(
-                (*pd).job,
+                &(*pd).job,
                 (*pd).sx.wrapping_sub(2 as u_int),
                 (*pd).sy.wrapping_sub(2 as u_int),
             );
@@ -687,8 +687,8 @@ unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
         (*pd).psy = (*pd).sy;
         if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
             screen_resize(&mut (*pd).s, (*pd).sx, (*pd).sy, 0 as ::core::ffi::c_int);
-            if !(*pd).job.is_null() {
-                job_resize((*pd).job, (*pd).sx, (*pd).sy);
+            if !(*pd).job.is_empty() {
+                job_resize(&(*pd).job, (*pd).sx, (*pd).sy);
             }
         } else {
             screen_resize(
@@ -697,9 +697,9 @@ unsafe fn popup_handle_drag(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>
                 (*pd).sy.wrapping_sub(2 as u_int),
                 0 as ::core::ffi::c_int,
             );
-            if !(*pd).job.is_null() {
+            if !(*pd).job.is_empty() {
                 job_resize(
-                    (*pd).job,
+                    &(*pd).job,
                     (*pd).sx.wrapping_sub(2 as u_int),
                     (*pd).sy.wrapping_sub(2 as u_int),
                 );
@@ -788,13 +788,13 @@ unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup:
         }
     }
     if ((*pd).flags & (POPUP_CLOSEEXIT | POPUP_CLOSEEXITZERO) == 0 as ::core::ffi::c_int
-        || (*pd).job.is_null())
+        || (*pd).job.is_empty())
         && ((*event).key == '\u{1b}' as i32 as key_code
             || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
     {
         return 1 as ::core::ffi::c_int;
     }
-    if (*pd).job.is_null()
+    if (*pd).job.is_empty()
         && (*pd).flags & POPUP_CLOSEANYKEY != 0
         && !((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -814,7 +814,7 @@ unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup:
     {
         return 1 as ::core::ffi::c_int;
     }
-    if !(*pd).job.is_null() {
+    if !(*pd).job.is_empty() {
         if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
             || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -835,16 +835,16 @@ unsafe fn popup_key(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup:
             let Some(len) = input_key_get_mouse(&raw mut (*pd).s, m, px, py, &mut buf) else {
                 return 0 as ::core::ffi::c_int;
             };
-            bufferevent_write(job_get_event((*pd).job), buf.as_ptr().cast(), len);
+            bufferevent_write(job_get_event(&(*pd).job), buf.as_ptr().cast(), len);
             return 0 as ::core::ffi::c_int;
         }
-        input_key(&raw mut (*pd).s, job_get_event((*pd).job), (*event).key);
+        input_key(&raw mut (*pd).s, job_get_event(&(*pd).job), (*event).key);
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn popup_job_update_cb(job: &mut job, popup: &PopupGuard) {
+unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let pd = popup.as_ptr();
-    let evb: &mut evbuffer = &mut *(*job_get_event(job as *mut job)).input;
+    let evb: &mut evbuffer = &mut *(*job_get_event(job)).input;
     let mut c: *mut client = client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
@@ -873,7 +873,7 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
         JobExitStatus::Signaled(signal) => signal,
         JobExitStatus::Other(_) => 0,
     };
-    (*pd).job = ::core::ptr::null_mut::<job>();
+    (*pd).job = refbox::Weak::new();
     if (*pd).flags & POPUP_CLOSEEXIT != 0
         || (*pd).flags & POPUP_CLOSEEXITZERO != 0 && (*pd).status == 0 as ::core::ffi::c_int
     {
@@ -982,7 +982,7 @@ pub unsafe fn popup_modify(
             && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
         {
             screen_resize(&mut (*pd).s, (*pd).sx, (*pd).sy, 1 as ::core::ffi::c_int);
-            job_resize((*pd).job, (*pd).sx, (*pd).sy);
+            job_resize(&(*pd).job, (*pd).sx, (*pd).sy);
         } else if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int
             && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
         {
@@ -993,7 +993,7 @@ pub unsafe fn popup_modify(
                 1 as ::core::ffi::c_int,
             );
             job_resize(
-                (*pd).job,
+                &(*pd).job,
                 (*pd).sx.wrapping_sub(2 as u_int),
                 (*pd).sy.wrapping_sub(2 as u_int),
             );
@@ -1191,12 +1191,12 @@ pub unsafe fn popup_display(
         jx as ::core::ffi::c_int,
         jy as ::core::ffi::c_int,
     );
-    if (*pd).job.is_null() {
+    if (*pd).job.is_empty() {
         return -(1 as ::core::ffi::c_int);
     }
     (*pd).ictx = Some(input_init(
         None,
-        job_get_event((*pd).job),
+        job_get_event(&(*pd).job),
         crate::src::shared::input::InputPalette::Popup((*pd).palette.downgrade()),
         (*pd).c.as_ref(),
     ));

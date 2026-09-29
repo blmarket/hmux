@@ -1,24 +1,40 @@
 //! Borrowed buffer operations for runtime-owned byte storage.
 use crate::src::format::bytes::write_cstr;
 use crate::src::shared::abi::{size_t, ssize_t};
-pub use hmux_buffer::SegmentedBuf as evbuffer;
+/// Byte storage with a direct, non-owning link to its stream's wake state.
+#[derive(Default)]
+pub struct evbuffer {
+    bytes: hmux_buffer::SegmentedBuf,
+    pub(super) stream: std::rc::Weak<super::streams::StreamState>,
+}
+impl std::ops::Deref for evbuffer {
+    type Target = hmux_buffer::SegmentedBuf;
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
+impl std::ops::DerefMut for evbuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.bytes
+    }
+}
 use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf as ByteBuffer};
 use std::ffi::{c_char, c_int, c_void, CStr};
 
-pub fn evbuffer_new() -> Box<ByteBuffer> {
-    Box::new(ByteBuffer::default())
+pub fn evbuffer_new() -> Box<evbuffer> {
+    Box::new(evbuffer::default())
 }
-pub fn evbuffer_get_length(b: &ByteBuffer) -> size_t {
+pub fn evbuffer_get_length(b: &evbuffer) -> size_t {
     b.remaining() as size_t
 }
-pub unsafe fn evbuffer_add(b: &mut ByteBuffer, data: *const c_void, len: size_t) -> c_int {
+pub unsafe fn evbuffer_add(b: &mut evbuffer, data: *const c_void, len: size_t) -> c_int {
     if len != 0 {
         b.put_slice(std::slice::from_raw_parts(data.cast(), len));
     }
     super::wake_buffer(b);
     0
 }
-pub fn evbuffer_drain(b: &mut ByteBuffer, len: size_t) -> c_int {
+pub fn evbuffer_drain(b: &mut evbuffer, len: size_t) -> c_int {
     let count = len.min(b.remaining());
     b.advance(count);
     super::wake_buffer(b);
@@ -26,7 +42,7 @@ pub fn evbuffer_drain(b: &mut ByteBuffer, len: size_t) -> c_int {
 }
 /// Borrow a contiguous prefix, or all readable bytes when `size` is negative.
 /// Empty buffers and requests larger than the readable length return `None`.
-pub fn evbuffer_pullup(b: &mut ByteBuffer, size: ssize_t) -> Option<&mut [u8]> {
+pub fn evbuffer_pullup(b: &mut evbuffer, size: ssize_t) -> Option<&mut [u8]> {
     if !b.has_remaining() || (size >= 0 && size as usize > b.remaining()) {
         None
     } else {
@@ -38,7 +54,7 @@ pub fn evbuffer_pullup(b: &mut ByteBuffer, size: ssize_t) -> Option<&mut [u8]> {
         b.pullup(count)
     }
 }
-pub unsafe fn evbuffer_read(b: &mut ByteBuffer, fd: c_int, limit: c_int) -> c_int {
+pub unsafe fn evbuffer_read(b: &mut evbuffer, fd: c_int, limit: c_int) -> c_int {
     let count = if limit < 0 {
         65536
     } else {
@@ -54,7 +70,7 @@ pub unsafe fn evbuffer_read(b: &mut ByteBuffer, fd: c_int, limit: c_int) -> c_in
     }
     n as c_int
 }
-pub unsafe fn evbuffer_write(b: &mut ByteBuffer, fd: c_int) -> c_int {
+pub unsafe fn evbuffer_write(b: &mut evbuffer, fd: c_int) -> c_int {
     let mut chunks = [libc::iovec {
         iov_base: std::ptr::null_mut(),
         iov_len: 0,
@@ -81,7 +97,7 @@ pub unsafe fn evbuffer_write(b: &mut ByteBuffer, fd: c_int) -> c_int {
     n as c_int
 }
 
-fn read_line(b: &mut ByteBuffer, ending: LineEnding) -> Option<Vec<u8>> {
+fn read_line(b: &mut evbuffer, ending: LineEnding) -> Option<Vec<u8>> {
     let Some(mut line) = b.read_line(ending) else {
         return None;
     };
@@ -90,15 +106,15 @@ fn read_line(b: &mut ByteBuffer, ending: LineEnding) -> Option<Vec<u8>> {
     super::wake_buffer(b);
     Some(line)
 }
-pub fn evbuffer_readln(b: &mut ByteBuffer) -> Option<Vec<u8>> {
+pub fn evbuffer_readln(b: &mut evbuffer) -> Option<Vec<u8>> {
     read_line(b, LineEnding::Lf)
 }
 
-pub fn evbuffer_readline(b: &mut ByteBuffer) -> Option<Vec<u8>> {
+pub fn evbuffer_readline(b: &mut evbuffer) -> Option<Vec<u8>> {
     read_line(b, LineEnding::Legacy)
 }
 pub fn evbuffer_add_formatted(
-    b: &mut ByteBuffer,
+    b: &mut evbuffer,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> c_int {
     let Some(mut formatted) = format_buffer(write) else {

@@ -4,13 +4,12 @@ use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_ev
 use hmux_buffer::{Buf, BufMut};
 use hmux_rt::Handle as _;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::ffi::{c_int, c_short, c_void};
 use std::future::{poll_fn, Future};
 use std::pin::pin;
 use std::rc::{Rc, Weak};
 use std::task::{LocalWaker, Poll};
-struct StreamState {
+pub(crate) struct StreamState {
     stream: RefCell<Option<Box<bufferevent>>>,
     fd: c_int,
     original_flags: c_int,
@@ -32,11 +31,9 @@ impl StreamHandle {
         if stream.is_null() {
             return Self::default();
         }
-        STREAMS.with(|streams| {
-            let streams = streams.borrow();
-            let owner = streams.get(&(stream as usize)).expect("registered stream");
-            Self(Rc::downgrade(owner))
-        })
+        Self(Rc::downgrade(
+            (*stream).state.as_ref().expect("registered stream"),
+        ))
     }
 
     /// Keep the stream's allocation slot borrowed for one synchronous operation.
@@ -56,7 +53,8 @@ impl StreamHandle {
 
     /// Legacy pointer view. The caller must keep the stream registered through use.
     pub fn ptr(&self) -> *mut bufferevent {
-        self.with_ptr(|stream| stream).unwrap_or(std::ptr::null_mut())
+        self.with_ptr(|stream| stream)
+            .unwrap_or(std::ptr::null_mut())
     }
 
     /// Free this registered stream at the existing teardown point.
@@ -67,8 +65,19 @@ impl StreamHandle {
     }
 }
 thread_local! {
-    static STREAMS: RefCell<HashMap<usize, Rc<StreamState>>> = RefCell::new(HashMap::new());
-    static BUFFERS: RefCell<HashMap<usize, Weak<StreamState>>> = RefCell::new(HashMap::new());
+    // Enumeration only: I/O and teardown use the state carried by each object.
+    static LIVE_STREAMS: RefCell<Vec<Weak<StreamState>>> = const { RefCell::new(Vec::new()) };
+}
+fn live_states() -> Vec<Rc<StreamState>> {
+    LIVE_STREAMS.with(|streams| {
+        let mut streams = streams.borrow_mut();
+        streams.retain(|stream| stream.strong_count() != 0);
+        streams
+            .iter()
+            .filter_map(Weak::upgrade)
+            .filter(|s| s.live.get())
+            .collect()
+    })
 }
 impl StreamState {
     fn wake(&self) {
@@ -85,25 +94,15 @@ impl StreamState {
     }
 }
 pub(super) fn wake_buffer(buffer: &evbuffer) {
-    let state = BUFFERS.with(|b| {
-        b.borrow()
-            .get(&(buffer as *const evbuffer as usize))
-            .and_then(Weak::upgrade)
-    });
-    if let Some(state) = state {
+    if let Some(state) = buffer.stream.upgrade() {
         state.wake();
     }
 }
 fn state(stream: &bufferevent) -> Rc<StreamState> {
-    STREAMS.with(|s| {
-        s.borrow()
-            .get(&(stream as *const bufferevent as usize))
-            .expect("live stream")
-            .clone()
-    })
+    stream.state.as_ref().expect("live stream").clone()
 }
 pub(super) fn stop_tasks() {
-    let states = STREAMS.with(|s| s.borrow().values().cloned().collect::<Vec<_>>());
+    let states = live_states();
     for s in states {
         let task = s.task.borrow_mut().take();
         drop(task);
@@ -111,19 +110,25 @@ pub(super) fn stop_tasks() {
     }
 }
 pub(super) fn restart() {
-    let states = STREAMS.with(|s| s.borrow().values().cloned().collect::<Vec<_>>());
+    let states = live_states();
     for s in states {
         start(&s).expect("rebuild stream");
     }
 }
 pub(super) fn clear() {
-    let streams = STREAMS.with(|s| s.borrow().keys().copied().collect::<Vec<_>>());
-    for stream in streams {
-        unsafe {
-            bufferevent_free(stream as *mut bufferevent);
+    for state in live_states() {
+        let stream = state
+            .stream
+            .borrow()
+            .as_ref()
+            .map(|s| (&**s as *const bufferevent).cast_mut());
+        if let Some(stream) = stream {
+            unsafe { bufferevent_free(stream) };
         }
     }
+    LIVE_STREAMS.with(|streams| streams.borrow_mut().clear());
 }
+
 fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     // Empty panes keep stream buffers and an input parser without a PTY.
     if state.fd == -1 {
@@ -291,17 +296,14 @@ pub unsafe fn bufferevent_new(
         wake: RefCell::new(None),
         task: RefCell::new(None),
     });
-    STREAMS.with(|r| r.borrow_mut().insert(stream as usize, s.clone()));
-    BUFFERS.with(|b| {
-        let mut b = b.borrow_mut();
-        b.insert(
-            (&*(*stream).input as *const evbuffer) as usize,
-            Rc::downgrade(&s),
-        );
-        b.insert(
-            (&*(*stream).output as *const evbuffer) as usize,
-            Rc::downgrade(&s),
-        );
+    // Explicit free breaks this ownership link, including streams without a task.
+    (*stream).state = Some(s.clone());
+    (*stream).input.stream = Rc::downgrade(&s);
+    (*stream).output.stream = Rc::downgrade(&s);
+    LIVE_STREAMS.with(|streams| {
+        let mut streams = streams.borrow_mut();
+        streams.retain(|stream| stream.strong_count() != 0);
+        streams.push(Rc::downgrade(&s));
     });
     if let Err(error) = start(&s) {
         bufferevent_free(stream);
@@ -314,17 +316,12 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
     if stream.is_null() {
         return;
     }
-    let s = STREAMS.with(|r| r.borrow_mut().remove(&(stream as usize)));
+    let s = (*stream).state.take();
     if let Some(s) = s {
         s.live.set(false);
         super::FDS.with(|f| f.borrow_mut().remove(&s.fd));
         let task = s.task.borrow_mut().take();
         drop(task);
-        BUFFERS.with(|b| {
-            let mut b = b.borrow_mut();
-            b.remove(&((&*(*stream).input as *const evbuffer) as usize));
-            b.remove(&((&*(*stream).output as *const evbuffer) as usize));
-        });
         if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {
             libc::fcntl(s.fd, libc::F_SETFL, s.original_flags);
         }
@@ -369,7 +366,7 @@ pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: &mut ev
     if std::ptr::eq(buffer, &raw const *(*stream).output) {
         return -1;
     }
-    (*(*stream).output).put(&mut *buffer);
+    (*(*stream).output).put(&mut **buffer);
     wake_buffer(buffer);
     state(&*stream).wake();
     0
@@ -379,4 +376,50 @@ pub unsafe fn bufferevent_setwatermark(stream: *mut bufferevent) {
     (*stream).wm_write.high = 0;
 
     state(&*stream).wake();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct_buffer_links_wake_and_explicit_free_invalidates_handles() {
+        unsafe {
+            let stream = bufferevent_new(-1, None, None, None);
+            let mut handle = StreamHandle::from_ptr(stream);
+            let observer = handle.clone();
+            let state = state(&*stream);
+            let generation = state.generation.get();
+            bufferevent_write(stream, b"abc".as_ptr().cast(), 3);
+            assert!(state.generation.get() > generation);
+            assert_eq!((*stream).output.remaining(), 3);
+            let generation = state.generation.get();
+            super::super::evbuffer_add(&mut (*stream).input, b"x".as_ptr().cast(), 1);
+            super::super::evbuffer_drain(&mut (*stream).input, 1);
+            assert_eq!(state.generation.get(), generation + 2);
+            handle.free();
+            assert!(!observer.is_alive());
+            assert!(state.stream.borrow().is_none());
+            assert!(!state.live.get());
+            drop(state);
+            assert!(observer.0.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn runtime_clear_frees_streams_without_tasks() {
+        unsafe {
+            let first = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None));
+            let second = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None));
+            stop_tasks();
+            restart();
+            assert!(first.is_alive());
+            assert!(second.is_alive());
+            clear();
+            assert!(!first.is_alive());
+            assert!(!second.is_alive());
+            assert!(first.0.upgrade().is_none());
+            assert!(second.0.upgrade().is_none());
+        }
+    }
 }

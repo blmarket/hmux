@@ -147,19 +147,15 @@ pub unsafe fn check_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<wind
 }
 
 pub(crate) unsafe fn default_window_name_cstring(w: &window) -> CString {
-    if w.active_pane().is_none() {
+    let Some(pane_owner) = w.active_pane() else {
         return c"".to_owned();
-    }
-    let cmd = cmd_stringify_argv_cstring(&(*w.active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).argv);
+    };
+    let pane = &*pane_owner.get();
+    let cmd = cmd_stringify_argv_cstring(&pane.argv);
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         parse_window_name_cstring(cmd)
     } else {
-        parse_window_name_cstring(CStr::from_ptr(
-            (*w.active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .shell
-                .as_ref()
-                .map_or(::core::ptr::null(), |value| value.as_ptr()),
-        ))
+        parse_window_name_cstring(pane.shell.as_deref().expect("pane shell"))
     }
 }
 unsafe fn format_window_name(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) -> CString {

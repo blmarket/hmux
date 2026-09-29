@@ -34,9 +34,10 @@ impl event {
 #[derive(Default)]
 #[repr(C)]
 pub struct bufferevent {
+    pub(crate) state: Option<std::rc::Rc<crate::src::reactor::StreamState>>,
     pub ev_read: event,
     pub ev_write: event,
-    // Keep buffer addresses stable for reactor registrations and borrowed pointers.
+    // Keep buffer addresses stable for borrowed pointers.
     pub input: Box<evbuffer>,
     pub output: Box<evbuffer>,
     pub wm_read: event_watermark,

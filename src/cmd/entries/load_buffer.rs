@@ -174,7 +174,8 @@ mod tests {
             item: Weak::new(),
             name: None,
         };
-        let mut buffer = SegmentedBuf::from(vec![1; 4096]);
+        let mut buffer = evbuffer::default();
+        buffer.put(SegmentedBuf::from(vec![1; 4096]));
         let first = buffer.chunk().as_ptr();
         for count in 2..=16 {
             buffer.put(SegmentedBuf::from(vec![2; 4096]));
@@ -194,7 +195,7 @@ mod tests {
             item: Weak::new(),
             name: None,
         };
-        let mut buffer = SegmentedBuf::from(vec![]);
+        let mut buffer = evbuffer::default();
         unsafe { cmd_load_buffer_done(&mut data, Some(c"input"), 5, 1, &mut buffer) };
     }
 }

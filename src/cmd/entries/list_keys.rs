@@ -73,7 +73,7 @@ pub static cmd_list_keys_entry: cmd_entry = {
 unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
     let mut prefix: key_code = 0;
     if args_has(args, 'P' as i32 as u_char) != 0 {
-        return CStr::from_ptr(args_get(&*(args), 'P' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned();
+        return args_get(&*(args), 'P' as i32 as u_char).expect("argument is present").to_owned();
     }
     prefix = options_get_number(
         global_s_options,

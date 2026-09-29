@@ -930,7 +930,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     let o = options_owner_ptr(&mut (*((*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).options).map_or(std::ptr::null_mut(), |options| options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
-        if std::ffi::CStr::from_ptr(args_get(&*(args), b'C').map_or(std::ptr::null(), |value| value.as_ptr())) == c"-" {
+        if args_get(&*(args), b'C').expect("argument is present") == c"-" {
             starting_choice = -1;
         } else {
             match args_strtonum_result(args, b'C', 0, UINT_MAX as i64) {
@@ -958,7 +958,7 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
     let count = args_count(args);
     let mut i = 0;
     while i != count {
-        let name = std::ffi::CStr::from_ptr(args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()));
+        let name = args_string(&mut *(args), i).expect("argument is present").to_owned();
         i += 1;
         if name.is_empty() {
             menu_add_item(&mut menu, None, Some(item_handle), tc_owner.as_ref(), target);
@@ -968,12 +968,12 @@ unsafe fn cmd_display_menu_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std
             cmdq_error(item_handle, |out| out.write_all(b"not enough arguments"));
             return CMD_RETURN_ERROR;
         }
-        let key = std::ffi::CStr::from_ptr(args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr()));
-        let command = std::ffi::CStr::from_ptr(args_string(&mut *(args), i + 1).map_or(std::ptr::null(), |value| value.as_ptr()));
+        let key = key_string_parse_cstr(args_string(&mut *(args), i).expect("argument is present")).unwrap_or(KEYC_UNKNOWN);
+        let command = args_string(&mut *(args), i + 1).expect("argument is present");
         i += 2;
         let definition = menu_item {
-            name,
-            key: key_string_parse_cstr(key).unwrap_or(KEYC_UNKNOWN),
+            name: &name,
+            key,
             command: Some(command),
         };
         menu_add_item(&mut menu, Some(&definition), Some(item_handle), tc_owner.as_ref(), target);

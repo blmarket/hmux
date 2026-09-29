@@ -1,7 +1,6 @@
 //! Authoritative job declarations.
 
 use super::abi::pid_t;
-use super::event::bufferevent;
 use std::cell::RefCell;
 use std::rc::Rc;
 pub const JOB_NOWAIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -26,7 +25,6 @@ pub struct job {
     pub updatecb: job_update_cb,
     pub completecb: job_complete_cb,
     pub freecb: job_free_cb,
-    pub entry: job_entry,
 }
 
 impl job {
@@ -43,14 +41,13 @@ impl job {
             updatecb: Default::default(),
             completecb: Default::default(),
             freecb: Default::default(),
-            entry: Default::default(),
         }
     }
 }
 
-pub type job_update_cb = Option<Rc<RefCell<Option<Box<dyn FnMut(&mut job)>>>>>;
+pub type job_update_cb = Option<Rc<RefCell<Option<Box<dyn FnMut(&refbox::Weak<job>)>>>>>;
 
-pub fn job_update_callback(callback: impl FnMut(&mut job) + 'static) -> job_update_cb {
+pub fn job_update_callback(callback: impl FnMut(&refbox::Weak<job>) + 'static) -> job_update_cb {
     Some(Rc::new(RefCell::new(Some(Box::new(callback)))))
 }
 
@@ -82,12 +79,5 @@ pub struct JobCompletion {
 pub type job_complete_cb = Option<Box<dyn FnOnce(JobCompletion)>>;
 
 pub type job_free_cb = Option<Box<dyn FnOnce()>>;
-
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct job_entry {
-    pub le_next: *mut job,
-    pub le_prev: *mut *mut job,
-}
 
 pub type job_state = ::core::ffi::c_uint;

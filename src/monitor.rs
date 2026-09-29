@@ -1367,11 +1367,7 @@ mod last_owner_tests {
                 &raw mut (*owner).last,
             );
             assert_eq!(
-                CStr::from_ptr(
-                    ((*item).last)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut())
-                )
+                ((*item).last).as_deref().expect("string is present")
                 .to_bytes(),
                 first.to_bytes()
             );

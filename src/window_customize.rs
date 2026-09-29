@@ -466,7 +466,7 @@ unsafe fn window_customize_check_item(
 unsafe fn window_customize_get_key_table(
     item: &window_customize_itemdata,
 ) -> Option<Rc<std::cell::RefCell<key_table>>> {
-    let table = crate::src::key_bindings::key_bindings_get_table(std::ffi::CStr::from_ptr(item.table.as_ref()?.as_ptr()), 0)?;
+    let table = crate::src::key_bindings::key_bindings_get_table(item.table.as_deref()?, 0)?;
     key_bindings_get(&table.borrow(), item.key)?;
     Some(table)
 }
@@ -981,7 +981,7 @@ unsafe fn window_customize_build_array(
         if (*data).hide_default != 0 && window_customize_option_is_changed(o, array_key) == 0 {
             ai = ai_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(ai_root, key.as_ptr()));
         } else {
-            let mut name = CStr::from_ptr(options_name(&*(o)).as_ptr()).to_bytes().to_vec();
+            let mut name = options_name(&*(o)).to_bytes().to_vec();
             name.push(b'[');
             name.extend_from_slice(CStr::from_ptr(array_key).to_bytes());
             name.push(b']');
@@ -1008,7 +1008,7 @@ unsafe fn window_customize_build_array(
                     },
                     scope,
                     oo,
-                    name: Some(CStr::from_ptr(options_name(&*(o)).as_ptr()).to_owned()),
+                    name: Some(options_name(&*(o)).to_owned()),
                     array_key: if array_key.is_null() {
                         None
                     } else {
@@ -1212,7 +1212,7 @@ unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CS
     let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
     let mut o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
     while !o.is_null() {
-        let name = CStr::from_ptr(options_name(&*(o)).as_ptr());
+        let name = options_name(&*(o));
         if name.to_bytes().first() == Some(&b'@') && !list.iter().any(|entry| entry == name) {
             // Later row builders can call format callbacks before the list is exhausted.
             list.push(name.to_owned());
@@ -1431,11 +1431,7 @@ unsafe fn window_customize_build_keys(
             drop(text);
             let text = if !bd.note.is_none() {
                 window_customize_key_detail(
-                    CStr::from_ptr(
-                        (bd.note)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
+                    (bd.note).as_deref().expect("string is present")
                     .to_bytes(),
                 )
             } else {
@@ -1581,11 +1577,7 @@ unsafe fn window_customize_build_environment(
         let value = if (*envent).value.is_none() {
             CStr::from_bytes_with_nul(b"\0").expect("empty C string")
         } else {
-            CStr::from_ptr(
-                ((*envent).value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            ((*envent).value).as_deref().expect("string is present")
         };
         format_add(
             ft,
@@ -2929,9 +2921,9 @@ unsafe fn window_customize_init(
         ::core::ptr::null_mut::<window_customize_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
-        CStr::from_ptr(WINDOW_CUSTOMIZE_DEFAULT_FORMAT.as_ptr()).to_owned()
+        WINDOW_CUSTOMIZE_DEFAULT_FORMAT.to_owned()
     } else {
-        CStr::from_ptr(args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr())).to_owned()
+        args_get(&*(args), 'F' as i32 as u_char).expect("argument is present").to_owned()
     };
     let owner = Rc::new_cyclic(|observer| std::cell::UnsafeCell::new(window_customize_modedata {
         observer: observer.clone(),
@@ -3292,11 +3284,7 @@ unsafe fn window_customize_set_environment(
     let mut prompt_bytes = Vec::new();
     prompt_bytes.extend_from_slice(b"(");
     prompt_bytes.extend_from_slice(
-        CStr::from_ptr(
-            (item.name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        )
+        (item.name).as_deref().expect("string is present")
         .to_bytes(),
     );
     prompt_bytes.extend_from_slice(CStr::from_ptr(space).to_bytes());
@@ -4021,20 +4009,12 @@ unsafe fn window_customize_set_array_key(
     let mut prompt_bytes = Vec::new();
     prompt_bytes.extend_from_slice(b"(");
     prompt_bytes.extend_from_slice(
-        CStr::from_ptr(
-            (item.name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        )
+        (item.name).as_deref().expect("string is present")
         .to_bytes(),
     );
     prompt_bytes.extend_from_slice(b"[");
     prompt_bytes.extend_from_slice(
-        CStr::from_ptr(
-            (item.array_key)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        )
+        (item.array_key).as_deref().expect("string is present")
         .to_bytes(),
     );
     prompt_bytes.extend_from_slice(b"]) ");
@@ -4152,9 +4132,7 @@ unsafe fn window_customize_reset_option(
     }
     oo = item.oo;
     while !oo.is_null() {
-        o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((item.name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))).map_or(std::ptr::null_mut(), |entry| entry);
+        o = crate::src::options::options_get_only_mut(&mut *(oo), (item.name).as_deref().expect("string is present")).map_or(std::ptr::null_mut(), |entry| entry);
         if !o.is_null() {
             options_remove_or_default(
                 o,
@@ -4480,7 +4458,7 @@ unsafe fn window_customize_unset_key(
     {
         mode_tree_up(&mut *(*data).tree_owner().get(), 0);
     }
-    key_bindings_remove(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
+    key_bindings_remove(&name, item.key);
 }
 unsafe fn window_customize_reset_key(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
@@ -4505,7 +4483,7 @@ unsafe fn window_customize_reset_key(
     {
         mode_tree_up(&mut *(*data).tree_owner().get(), 0);
     }
-    key_bindings_reset(std::ffi::CStr::from_ptr(name.as_ptr()), item.key);
+    key_bindings_reset(&name, item.key);
 }
 unsafe fn window_customize_change_each(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
@@ -4517,11 +4495,7 @@ unsafe fn window_customize_change_each(
         == WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         Some(
-            CStr::from_ptr(
-                (item.name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
+            (item.name).as_deref().expect("string is present")
             .to_owned(),
         )
     } else {
@@ -4899,11 +4873,7 @@ unsafe fn window_customize_key(
                 }) {
                     let mut prompt_bytes = b"Reset ".to_vec();
                     prompt_bytes.extend_from_slice(
-                        CStr::from_ptr(
-                            (item.name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        )
+                        (item.name).as_deref().expect("string is present")
                         .to_bytes(),
                     );
                     prompt_bytes.extend_from_slice(b" to default? ");
@@ -4954,23 +4924,13 @@ unsafe fn window_customize_key(
                 if let Some(item) = item {
                     let mut prompt_bytes = b"Unset ".to_vec();
                     prompt_bytes.extend_from_slice(
-                        CStr::from_ptr(
-                            (item.name)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        )
+                        (item.name).as_deref().expect("string is present")
                         .to_bytes(),
                     );
                     if !item.array_key.is_none() {
                         prompt_bytes.push(b'[');
                         prompt_bytes.extend_from_slice(
-                            CStr::from_ptr(
-                                (item.array_key)
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| {
-                                        value.as_ptr().cast_mut()
-                                    }),
-                            )
+                            (item.array_key).as_deref().expect("string is present")
                             .to_bytes(),
                         );
                         prompt_bytes.push(b']');
