@@ -147,7 +147,7 @@ pub struct window_entry {
 #[repr(C)]
 pub struct window_winlinks {
     /// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.
-    pub storage: Option<Box<super::inefficient_list::InefficientList<refbox::Weak<winlink>>>>,
+    pub storage: super::inefficient_list::InefficientList<refbox::Weak<winlink>>,
 }
 
 #[repr(C)]
@@ -256,7 +256,7 @@ impl Default for window_mode {
 pub struct winlink_stack {
     /// Weak visit history; the session owns the deque and the ordered index
     /// owns each link.
-    pub storage: Option<Box<std::collections::VecDeque<refbox::Weak<winlink>>>>,
+    pub storage: std::collections::VecDeque<refbox::Weak<winlink>>,
 }
 
 #[repr(C)]

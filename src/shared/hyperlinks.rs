@@ -5,20 +5,20 @@ use std::{collections::BTreeMap, ffi::CString};
 
 pub(crate) type HyperlinkKey = (bool, Vec<u8>, Vec<u8>, u32);
 
-/// The table, index records, and entries remain heap allocated.
+/// The table owns its indexes directly; entries remain heap allocated.
 /// Inner IDs own entries; the URI index stores IDs into the same table.
 pub struct hyperlinks {
     pub(crate) next_inner: u_int,
-    pub(crate) by_inner: Option<Box<BTreeMap<u_int, Box<hyperlinks_uri>>>>,
-    pub(crate) by_uri: Option<Box<BTreeMap<HyperlinkKey, u_int>>>,
+    pub(crate) by_inner: BTreeMap<u_int, Box<hyperlinks_uri>>,
+    pub(crate) by_uri: BTreeMap<HyperlinkKey, u_int>,
 }
 
 impl hyperlinks {
     pub fn empty() -> Self {
         Self {
             next_inner: 0,
-            by_inner: None,
-            by_uri: None,
+            by_inner: BTreeMap::new(),
+            by_uri: BTreeMap::new(),
         }
     }
 }

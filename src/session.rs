@@ -308,7 +308,7 @@ pub unsafe fn session_create(
     (*s).cwd = Some(cwd.to_owned());
 
     (*s).flags = 0 as ::core::ffi::c_int;
-    (*s).lastw.storage = None;
+    (*s).lastw.storage.clear();
     (*s).windows.storage = None;
     (*s).environ = Some(env);
     (*s).options = oo;
@@ -559,7 +559,7 @@ pub unsafe fn session_detach(s_owner: &Rc<UnsafeCell<session>>, mut wl: refbox::
 }
 pub fn session_has(s: &session, w: &window) -> ::core::ffi::c_int {
     if s.observer.strong_count() == 0 { return 0; }
-    let Some(links) = w.winlinks.storage.as_deref() else { return 0; };
+    let links = &w.winlinks.storage;
     for observer in links.iter() {
         let link = match observer.try_borrow_mut() {
             Ok(link) => link,
@@ -949,7 +949,7 @@ unsafe fn session_group_synchronize1(target_owner: &Rc<UnsafeCell<session>>, s_o
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
-        winlink_stack { storage: None },
+        winlink_stack { storage: Default::default() },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&old_lastw) {
         wl2 = winlink_find_by_index(&raw mut (*s).windows, old_idx);
@@ -1006,7 +1006,7 @@ pub unsafe fn session_renumber_windows(s_owner: &Rc<UnsafeCell<session>>) {
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
-        winlink_stack { storage: None },
+        winlink_stack { storage: Default::default() },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&old_lastw) {
         wl = winlink_find_by_index(&raw mut old_wins, old_idx);

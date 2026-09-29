@@ -45,10 +45,10 @@ fn order_swaps_preserve_weak_membership_within_and_between_windows() {
         }
 
         // These are ordering-only fixtures, with no pane registry membership.
-        left.panes.storage = None;
-        left.z_index.storage = None;
-        right.panes.storage = None;
-        right.z_index.storage = None;
+        left.panes.storage.clear();
+        left.z_index.storage.clear();
+        right.panes.storage.clear();
+        right.z_index.storage.clear();
         hmux2::src::window::window_remove_ref(left_owner, c"test owner".as_ptr());
         hmux2::src::window::window_remove_ref(right_owner, c"test owner".as_ptr());
     }

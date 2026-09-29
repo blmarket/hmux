@@ -19,7 +19,7 @@ fn losing_modal_pane_tolerates_expired_previous_target() {
         assert!((*window.get()).active_pane().is_none());
         assert!((*window.get()).modal.upgrade().is_none());
         assert!((*window.get()).modal_last.upgrade().is_none());
-        (*window.get()).panes.storage = None;
+        (*window.get()).panes.storage.clear();
         drop(modal);
         hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
     }

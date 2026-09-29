@@ -1784,7 +1784,7 @@ unsafe fn window_customize_build(
     );
     for table_owner in key_bindings_tables() {
         let kt = table_owner.borrow();
-        if kt.key_bindings.storage.is_some() {
+        if !kt.key_bindings.storage.is_empty() {
             window_customize_build_keys(mode_owner, &kt, ft, filter, &raw mut fs);
         }
     }

@@ -263,7 +263,7 @@ mod control_queue_tests {
 
     #[test]
     fn pane_index_owns_pane_boxes_and_keeps_addresses_stable() {
-        let mut index = control_panes { storage: None };
+        let mut index = control_panes { storage: Default::default() };
         let mut wp = window_pane::empty();
         wp.id = 4;
         wp.offset.used = 123;
@@ -313,7 +313,7 @@ mod control_queue_tests {
             assert_eq!(owner.pending_snapshot(), [4, 9]);
             control_reset_offsets(&mut client);
             let owner = client.control_state.as_deref_mut().unwrap();
-            assert!(owner.panes.storage.is_none());
+            assert!(owner.panes.storage.is_empty());
             assert!(owner.pending_panes.is_empty());
             assert_eq!(owner.all_blocks.len(), 1);
             assert_eq!(owner.block(0), reply);
@@ -494,10 +494,10 @@ mod control_queue_tests {
 
     #[test]
     fn window_index_owns_overrides_and_borrows_stable_entries() {
-        let mut index = control_windows { storage: None };
+        let mut index = control_windows { storage: Default::default() };
         assert!(index.get(4).is_none());
         index.remove(4);
-        assert!(index.storage.is_none());
+        assert!(index.storage.is_empty());
 
         index.set(4, 80, 24);
         let address = index.get(4).unwrap() as *const control_window as usize;
@@ -515,10 +515,10 @@ mod control_queue_tests {
         // Dropping a populated index owns cleanup for all remaining overrides.
         drop(moved);
 
-        let mut index = control_windows { storage: None };
+        let mut index = control_windows { storage: Default::default() };
         index.set(4, 80, 24);
         index.remove(4);
-        assert!(index.storage.is_none());
+        assert!(index.storage.is_empty());
         index.set(4, 90, 30);
         assert_eq!(index.get(4).unwrap().sy, 30);
     }
@@ -548,7 +548,7 @@ unsafe fn control_release_block(
 }
 
 fn control_add_pane<'a>(panes: &'a mut control_panes, wp: &window_pane) -> &'a mut control_pane {
-    let map = panes.storage.get_or_insert_with(Box::default);
+    let map = &mut panes.storage;
     map.entry(wp.id)
         .or_insert_with(|| {
             Box::new(control_pane {
@@ -622,11 +622,9 @@ pub unsafe fn control_reset_offsets(c: &mut client) {
         .control_state
         .as_deref_mut()
         .expect("control client state");
-    if let Some(panes) = cs.panes.storage.take() {
-        for (_, mut pane) in *panes {
-            while let Some(block) = pane.blocks.pop_front() {
-                control_free_block(cs, &block);
-            }
+    for (_, mut pane) in std::mem::take(&mut cs.panes.storage) {
+        while let Some(block) = pane.blocks.pop_front() {
+            control_free_block(cs, &block);
         }
     }
     cs.pending_panes.clear();
@@ -1707,15 +1705,13 @@ pub unsafe fn control_discard(c: &mut client) {
         .control_state
         .as_deref_mut()
         .expect("control client state");
-    if let Some(panes) = cs.panes.storage.as_mut() {
-        for cp in panes.values_mut() {
-            while let Some(block) = cp.blocks.pop_front() {
-                control_release_block(
-                    &mut cs.all_blocks,
-                    &mut cs.queued_reply_bytes,
-                    &block,
-                );
-            }
+    for cp in cs.panes.storage.values_mut() {
+        while let Some(block) = cp.blocks.pop_front() {
+            control_release_block(
+                &mut cs.all_blocks,
+                &mut cs.queued_reply_bytes,
+                &block,
+            );
         }
     }
     let _ = cs.read_event.with_ptr(|stream| unsafe {
@@ -1763,7 +1759,7 @@ pub unsafe fn control_stop(c_owner: &Rc<UnsafeCell<client>>) {
         .control_state
         .as_deref_mut()
         .expect("control client state");
-    cs.windows.storage = None;
+    cs.windows.storage.clear();
     loop {
         let cb = control_first_block(cs);
         if !cb.is_alive() {
@@ -1802,21 +1798,21 @@ pub unsafe fn control_remove_sub(c_owner: &Rc<UnsafeCell<client>>, mut name: *co
 
 impl control_panes {
     fn get(&self, pane: u_int) -> Option<&control_pane> {
-        self.storage.as_ref()?.get(&pane).map(Box::as_ref)
+        self.storage.get(&pane).map(Box::as_ref)
     }
 
     fn get_mut(&mut self, pane: u_int) -> Option<&mut control_pane> {
-        self.storage.as_mut()?.get_mut(&pane).map(Box::as_mut)
+        self.storage.get_mut(&pane).map(Box::as_mut)
     }
 }
 
 impl control_windows {
     fn get(&self, window: u_int) -> Option<&control_window> {
-        self.storage.as_ref()?.get(&window).map(Box::as_ref)
+        self.storage.get(&window).map(Box::as_ref)
     }
 
     fn set(&mut self, window: u_int, sx: u_int, sy: u_int) {
-        let map = self.storage.get_or_insert_with(Box::default);
+        let map = &mut self.storage;
         let entry = map
             .entry(window)
             .or_insert_with(|| Box::new(control_window { window, sx, sy }));
@@ -1825,12 +1821,6 @@ impl control_windows {
     }
 
     fn remove(&mut self, window: u_int) {
-        let Some(map) = self.storage.as_mut() else {
-            return;
-        };
-        map.remove(&window);
-        if map.is_empty() {
-            self.storage = None;
-        }
+        self.storage.remove(&window);
     }
 }

@@ -3457,10 +3457,7 @@ unsafe fn server_client_check_pane_resize(pane_owner: &std::rc::Rc<std::cell::Un
         ((*wp).id) as u32
     ));
     let (queue_len, first_sx, first_sy, first_osx, first_osy, last_sx, last_sy, last_ptr, previous) = {
-        let queue = (*wp)
-            .resize_queue
-            .as_ref()
-            .expect("non-empty resize queue must have storage");
+        let queue = (*wp).resize_queue.as_ref();
         for resize in queue {
             log_debug(format_args!(
                 "queued resize: {}x{} -> {}x{}",
@@ -4141,7 +4138,7 @@ unsafe fn server_client_any_pane_redraw(c: &client, w: &window) -> bool {
     if c.flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
         return true;
     }
-    w.panes.storage.as_deref().into_iter().flatten().any(|pane| {
+    w.panes.storage.iter().any(|pane| {
         let owner = pane.upgrade().expect("live pane in ordering");
         (*owner.get()).flags & (PANE_REDRAW | PANE_REDRAWSCROLLBAR) != 0
     })

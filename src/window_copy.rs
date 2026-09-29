@@ -6978,7 +6978,7 @@ unsafe fn window_copy_set_line_numbers1(
     window_copy_redraw_screen(wme.clone());
 }
 pub unsafe fn window_copy_get_current_offset(pane: &window_pane) -> Option<(u_int, u_int)> {
-    let entry = pane.modes.storage.as_ref()?.entries.first()?;
+    let entry = pane.modes.storage.entries.first()?;
     let mode = entry.try_borrow_mut().expect("active copy mode already borrowed");
     if !std::ptr::eq(mode.mode, &window_copy_mode) && !std::ptr::eq(mode.mode, &window_view_mode) {
         return None;
@@ -9704,9 +9704,9 @@ mod backing_owner_tests {
             });
             let mut mode_handle = mode.downgrade();
             assert_eq!(window_copy_get_current_offset(pane), None);
-            pane.modes.storage = Some(Box::new(crate::src::shared::pane::WindowPaneModesStorage {
+            pane.modes.storage = crate::src::shared::pane::WindowPaneModesStorage {
                 entries: vec![mode],
-            }));
+            };
             let hsize = data.backing().grid().hsize;
             assert_eq!(window_copy_get_current_offset(pane), Some((hsize, hsize)));
             mode_handle.get_mut_unchecked().mode = &window_view_mode;
@@ -9714,7 +9714,7 @@ mod backing_owner_tests {
             mode_handle.get_mut_unchecked().mode = &crate::src::window_clock::window_clock_mode;
             assert_eq!(window_copy_get_current_offset(pane), None);
             mode_handle.get_mut_unchecked().mode = &window_copy_mode;
-            let _mode_owner = pane.modes.storage.take().unwrap().entries.pop().unwrap();
+            let _mode_owner = pane.modes.storage.entries.pop().unwrap();
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'B';
             grid_set_cell(pane.base.grid_mut(), 0, 0, &cell);

@@ -1958,7 +1958,7 @@ mod target_observer_tests {
             winlinks_reindex(links, wl.clone(), 3);
             assert_eq!(cmd_find_valid_state(&state), 1);
 
-            let panes = (*w).panes.storage.take();
+            let panes = std::mem::take(&mut (*w).panes.storage);
             assert_eq!(cmd_find_valid_state(&state), 0);
             (*w).panes.storage = panes;
             drop(crate::src::session::sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")));
@@ -1976,7 +1976,7 @@ mod target_observer_tests {
             state.set_wl((replacement).clone());
             assert_eq!(cmd_find_valid_state(&state), 1);
             winlink_remove(links, (replacement).clone());
-            (*w).panes.storage = None;
+            (*w).panes.storage.clear();
             (*wp).window = std::rc::Weak::new();
             drop(crate::src::session::sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")));
             *std::ptr::addr_of_mut!(sessions) = saved;

@@ -726,7 +726,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
 unsafe fn format_cb_pane_in_mode(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let pane = &*format_pane_owner?.get();
-    let count = pane.modes.storage.as_ref().map_or(0, |storage| storage.entries.len());
+    let count = pane.modes.storage.entries.len();
     Some(CString::new(format!("{count}")).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {

@@ -23,8 +23,8 @@ pub struct control_state {
 impl control_state {
     pub fn empty() -> Self {
         Self {
-            panes: control_panes { storage: None },
-            windows: control_windows { storage: None },
+            panes: control_panes { storage: Default::default() },
+            windows: control_windows { storage: Default::default() },
             queued_reply_bytes: Default::default(),
             read_event: Default::default(),
             write_event: Default::default(),
@@ -59,7 +59,7 @@ pub struct control_pane {
 
 #[repr(C)]
 pub struct control_windows {
-    pub storage: Option<Box<std::collections::BTreeMap<u32, Box<control_window>>>>,
+    pub storage: std::collections::BTreeMap<u32, Box<control_window>>,
 }
 
 #[repr(C)]
@@ -73,5 +73,5 @@ pub struct control_window {
 #[repr(C)]
 pub struct control_panes {
     /// The index owns each stable pane box.
-    pub storage: Option<Box<std::collections::BTreeMap<u32, Box<control_pane>>>>,
+    pub storage: std::collections::BTreeMap<u32, Box<control_pane>>,
 }

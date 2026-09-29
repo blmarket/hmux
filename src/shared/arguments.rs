@@ -171,13 +171,13 @@ impl<'a> ArgumentValue<'a> {
 
 #[repr(C)]
 pub struct args_tree {
-    pub entries: Box<args_tree_storage>,
+    pub entries: args_tree_storage,
 }
 
 impl Default for args_tree {
     fn default() -> Self {
         Self {
-            entries: Box::default(),
+            entries: Default::default(),
         }
     }
 }
@@ -198,10 +198,10 @@ pub struct args_entry {
 }
 
 #[repr(C)]
-/// Owns flag-value storage in its original heap allocation. Iteration borrows
+/// Owns flag-value storage directly. Iteration borrows
 /// the boxed records and cannot outlive the containing argument set.
 pub struct args_values {
-    pub storage: Box<args_values_storage>,
+    pub storage: args_values_storage,
 }
 
 /// Owns stable flag-value records for one args_entry.

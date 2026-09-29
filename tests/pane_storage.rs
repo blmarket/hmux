@@ -80,7 +80,7 @@ fn expired_observers_can_be_removed_without_upgrading_any_pane() {
     assert!(!order.remove(&last_observer));
     assert!(order.remove(&first_observer));
     assert!(history.remove(&first_observer));
-    assert!(order.storage.is_none());
+    assert!(order.storage.is_empty());
     assert!(history.is_empty());
 }
 
@@ -178,7 +178,7 @@ fn relative_pane_selection_wraps_and_retains_its_result() {
             &last,
         ));
         let observer = Rc::downgrade(&first);
-        (*window.get()).panes.storage = None;
+        (*window.get()).panes.storage.clear();
         drop(first);
         drop(last);
         assert!(observer.upgrade().is_some());
@@ -204,7 +204,7 @@ fn window_membership_uses_live_allocation_identity() {
         assert!(!window_has_pane(&*window.get(), &Rc::downgrade(&unrelated)));
         drop(member);
         assert!(!window_has_pane(&*window.get(), &observer));
-        (*window.get()).panes.storage = None;
+        (*window.get()).panes.storage.clear();
         hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
     }
 }

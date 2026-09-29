@@ -31,7 +31,7 @@ fn directional_selection_preserves_order_activity_and_retained_result() {
         assert!(Rc::ptr_eq(&selected, &lower));
         assert!(Rc::ptr_eq(&window_pane_find_left(Some(&source)).unwrap(), &lower));
         let observer = Rc::downgrade(&lower);
-        (*window.get()).panes.storage = None;
+        (*window.get()).panes.storage.clear();
         drop(lower);
         assert!(observer.upgrade().is_some());
         assert_eq!((*selected.get()).yoff, 5);

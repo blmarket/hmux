@@ -20,7 +20,7 @@ fn sorted_panes_survive_removal_of_ordering_and_source_handles() {
         });
         assert!(Rc::ptr_eq(&sorted[0], &first));
         assert!(Rc::ptr_eq(&sorted[1], &last));
-        (*window.get()).panes.storage = None;
+        (*window.get()).panes.storage.clear();
         drop(first);
         drop(last);
         hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());

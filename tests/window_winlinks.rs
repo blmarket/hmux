@@ -97,8 +97,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         }
         assert!(!window_winlinks_first((first_window).as_ref()).is_alive());
         assert!(!window_winlinks_first((second_window).as_ref()).is_alive());
-        assert!((*first_window).winlinks.storage.is_none());
-        assert!((*second_window).winlinks.storage.is_none());
+        assert!(window_indices(&*first_window).is_empty());
+        assert!(window_indices(&*second_window).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         hmux2::src::window::window_remove_ref(first_owner, c"test owner".as_ptr());
         hmux2::src::window::window_remove_ref(second_owner, c"test owner".as_ptr());

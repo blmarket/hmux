@@ -25,59 +25,39 @@ use super::window::{window, window_mode, window_mode_entry};
 pub struct window_pane_offset {
     pub used: size_t,
 }
+#[derive(Default)]
 #[repr(C)]
 pub struct window_pane_resizes {
-    /// The queue owner is optional so an empty queue has no heap allocation.
-    pub storage: Option<Box<window_pane_resize_storage>>,
+    pub storage: window_pane_resize_storage,
 }
 
 /// Each entry remains separately boxed so pointers used by cancellation keep
 /// their address when the deque grows or other entries are removed.
 pub type window_pane_resize_storage = VecDeque<Box<window_pane_resize>>;
 
-impl Default for window_pane_resizes {
-    fn default() -> Self {
-        Self { storage: None }
-    }
-}
-
 impl window_pane_resizes {
-    pub fn as_ref(&self) -> Option<&window_pane_resize_storage> {
-        self.storage.as_deref()
+    pub fn as_ref(&self) -> &window_pane_resize_storage {
+        &self.storage
     }
 
     pub fn is_empty(&self) -> bool {
-        self.as_ref().is_none_or(VecDeque::is_empty)
+        self.storage.is_empty()
     }
 
     pub fn push_back(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
-        let storage = self
-            .storage
-            .get_or_insert_with(|| Box::new(VecDeque::new()));
         let resize = Box::new(resize);
         let pointer = (&*resize) as *const window_pane_resize as *mut window_pane_resize;
-        storage.push_back(resize);
+        self.storage.push_back(resize);
         pointer
     }
 
     /// Retain only `except`; any removed entry pointer is invalid after return.
     pub fn clear_except(&mut self, except: *mut window_pane_resize) {
         if except.is_null() {
-            self.storage = None;
+            self.storage = Default::default();
             return;
         }
-        let empty = {
-            let Some(storage) = self.storage.as_mut() else {
-                return;
-            };
-            storage.retain(|resize| {
-                (&**resize) as *const window_pane_resize as *mut window_pane_resize == except
-            });
-            storage.is_empty()
-        };
-        if empty {
-            self.storage = None;
-        }
+        self.storage.retain(|resize| std::ptr::eq(&**resize, except));
     }
 }
 #[derive(Copy, Clone, Default)]
@@ -282,56 +262,48 @@ pub struct WindowPaneModesStorage {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane_modes {
-    pub storage: Option<Box<WindowPaneModesStorage>>,
+    pub storage: WindowPaneModesStorage,
 }
 
 impl window_pane_modes {
     pub fn is_empty(&self) -> bool {
-        self.storage.as_ref().is_none_or(|storage| storage.entries.is_empty())
+        self.storage.entries.is_empty()
     }
 
     pub fn active_mode(&self) -> Option<&'static window_mode> {
-        let entry = self.storage.as_ref()?.entries.first()?;
+        let entry = self.storage.entries.first()?;
         Some(entry.try_borrow_mut().expect("active pane mode already borrowed").mode)
     }
 
     /// Observe the current entry without retaining the pane-owned allocation.
     pub fn active_weak(&self) -> refbox::Weak<window_mode_entry> {
-        self.storage
-            .as_ref()
-            .and_then(|storage| storage.entries.first())
+        self.storage.entries.first()
             .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
     }
-
-
 }
 
 /// Ordered, non-owning pane handles. Retained Rc references keep allocations
 /// alive; this collection only records order.
 #[derive(Default)]
 pub struct window_panes {
-    pub storage: Option<Box<Vec<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>>>,
+    pub storage: Vec<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>,
 }
 
 impl window_panes {
     /// Retain every pane in display order for operations that may outlive membership.
     pub fn snapshot(&self) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage.as_deref().into_iter().flatten()
+        self.storage.iter()
             .map(|observer| observer.upgrade().expect("live pane in ordering"))
             .collect()
     }
 
     pub fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage
-            .as_deref()
-            .and_then(|panes| panes.first())
+        self.storage.first()
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
     pub fn next(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        let Some(storage) = self.storage.as_deref() else {
-            return None;
-        };
+        let storage = &self.storage;
         let Some(position) = storage
             .iter()
             .position(|weak| weak.ptr_eq(pane))
@@ -344,22 +316,19 @@ impl window_panes {
     }
 
     pub fn last(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage
-            .as_deref()
-            .and_then(|panes| panes.last())
+        self.storage.last()
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
     pub fn previous(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         self.position(pane)
             .and_then(|position| position.checked_sub(1))
-            .and_then(|position| self.storage.as_deref()?.get(position))
+            .and_then(|position| self.storage.get(position))
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
     pub fn position(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<usize> {
         self.storage
-            .as_deref()?
             .iter()
             .position(|weak| weak.ptr_eq(pane))
     }
@@ -368,7 +337,6 @@ impl window_panes {
         assert!(pane.strong_count() != 0, "live pane for insertion");
         self.remove(&pane);
         self.storage
-            .get_or_insert_with(|| Box::new(Vec::new()))
             .insert(0, pane);
     }
 
@@ -376,7 +344,6 @@ impl window_panes {
         assert!(pane.strong_count() != 0, "live pane for insertion");
         self.remove(&pane);
         self.storage
-            .get_or_insert_with(|| Box::new(Vec::new()))
             .push(pane);
     }
 
@@ -391,8 +358,6 @@ impl window_panes {
             .position(before)
             .expect("insertion point is not in pane collection");
         self.storage
-            .as_mut()
-            .expect("pane collection is present")
             .insert(position, pane);
     }
 
@@ -407,15 +372,11 @@ impl window_panes {
             .position(after)
             .expect("insertion point is not in pane collection");
         self.storage
-            .as_mut()
-            .expect("pane collection is present")
             .insert(position + 1, pane);
     }
 
     pub fn remove(&mut self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> bool {
-        let Some(storage) = self.storage.as_mut() else {
-            return false;
-        };
+        let storage = &mut self.storage;
         let Some(position) = storage
             .iter()
             .position(|weak| weak.ptr_eq(pane))
@@ -423,9 +384,6 @@ impl window_panes {
             return false;
         };
         storage.remove(position);
-        if storage.is_empty() {
-            self.storage = None;
-        }
         true
     }
 
@@ -437,8 +395,6 @@ impl window_panes {
             .position(second)
             .expect("second pane is not in collection");
         self.storage
-            .as_mut()
-            .expect("pane collection is present")
             .swap(first_position, second_position);
     }
 
@@ -448,8 +404,6 @@ impl window_panes {
     ) -> std::rc::Weak<std::cell::UnsafeCell<window_pane>> {
         let position = self.position(pane).expect("pane is not in collection");
         self.storage
-            .as_mut()
-            .expect("pane collection is present")
             .remove(position)
     }
 
@@ -459,8 +413,6 @@ impl window_panes {
         pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     ) {
         self.storage
-            .as_mut()
-            .expect("pane collection is present")
             .insert(position, pane);
     }
 }
@@ -468,25 +420,21 @@ impl window_panes {
 /// Most-recently-visited pane handles, with the newest pane at the front.
 #[derive(Default)]
 pub struct window_pane_history {
-    pub storage: Option<Box<VecDeque<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>>>,
+    pub storage: VecDeque<std::rc::Weak<std::cell::UnsafeCell<window_pane>>>,
 }
 
 impl window_pane_history {
     pub fn is_empty(&self) -> bool {
-        self.storage.as_deref().is_none_or(VecDeque::is_empty)
+        self.storage.is_empty()
     }
 
     pub fn first(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage
-            .as_deref()
-            .and_then(|panes| panes.front())
+        self.storage.front()
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
     pub fn next(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        let Some(storage) = self.storage.as_deref() else {
-            return None;
-        };
+        let storage = &self.storage;
         let Some(position) = storage
             .iter()
             .position(|weak| weak.ptr_eq(pane))
@@ -499,22 +447,16 @@ impl window_pane_history {
     }
 
     pub fn remove(&mut self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> bool {
-        let Some(storage) = self.storage.as_mut() else {
-            return false;
-        };
+        let storage = &mut self.storage;
         let old_len = storage.len();
         storage.retain(|weak| !weak.ptr_eq(pane));
-        if storage.is_empty() {
-            self.storage = None;
-        }
-        old_len != self.storage.as_ref().map_or(0, |value| value.len())
+        old_len != storage.len()
     }
 
     pub fn push_front(&mut self, pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         assert!(pane.strong_count() != 0, "live pane for insertion");
         self.remove(&pane);
         self.storage
-            .get_or_insert_with(|| Box::new(VecDeque::new()))
             .push_front(pane);
     }
 }

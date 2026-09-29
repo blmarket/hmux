@@ -19,7 +19,7 @@ impl HyperlinksRef {
     }
 
     pub fn len(&self) -> usize {
-        self.0.borrow().by_inner.as_ref().map_or(0, |map| map.len())
+        self.0.borrow().by_inner.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -76,19 +76,10 @@ fn hyperlinks_remove(entry: QueuedHyperlink) {
     let mut table = owner.borrow_mut();
     let node = table
         .by_inner
-        .as_mut()
-        .and_then(|index| index.remove(&entry.inner))
+        .remove(&entry.inner)
         .expect("queued hyperlink is indexed");
     let key = hyperlink_key(&node.internal_id, &node.uri, node.inner);
-    table
-        .by_uri
-        .as_mut()
-        .expect("hyperlink URI index")
-        .remove(&key);
-    if table.by_inner.as_ref().unwrap().is_empty() {
-        table.by_inner = None;
-        table.by_uri = None;
-    }
+    table.by_uri.remove(&key);
 }
 
 pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<&CStr>) -> u_int {
@@ -102,8 +93,7 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
         if let Some(&inner) =
             hl.0.borrow()
                 .by_uri
-                .as_ref()
-                .and_then(|index| index.get(&key))
+                .get(&key)
         {
             return inner;
         }
@@ -128,11 +118,9 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
         });
         table
             .by_uri
-            .get_or_insert_with(Default::default)
             .insert(key, inner);
         table
             .by_inner
-            .get_or_insert_with(Default::default)
             .insert(inner, node);
         inner
     };
@@ -159,7 +147,7 @@ pub fn hyperlinks_put(hl: &HyperlinksRef, uri_in: &CStr, internal_id_in: Option<
 /// table: insertion can evict entries from another table through the global FIFO.
 pub fn hyperlinks_get(hl: &HyperlinksRef, inner: u_int) -> Option<Ref<'_, hyperlinks_uri>> {
     Ref::filter_map(hl.0.borrow(), |table| {
-        table.by_inner.as_ref()?.get(&inner).map(Box::as_ref)
+        table.by_inner.get(&inner).map(Box::as_ref)
     })
     .ok()
 }
@@ -183,8 +171,8 @@ pub fn hyperlinks_reset(hl: &HyperlinksRef) {
             .retain(|entry| !entry.table.ptr_eq(&table));
     });
     let mut table = hl.0.borrow_mut();
-    table.by_inner = None;
-    table.by_uri = None;
+    table.by_inner.clear();
+    table.by_uri.clear();
 }
 
 pub fn hyperlinks_free(hl: HyperlinksRef) {
@@ -193,7 +181,7 @@ pub fn hyperlinks_free(hl: HyperlinksRef) {
 
 impl Drop for hyperlinks {
     fn drop(&mut self) {
-        if self.by_inner.is_some() {
+        if !self.by_inner.is_empty() {
             // The last strong table reference is already gone. Do not access
             // the history after its thread-local destructor has run.
             let _ = HYPERLINK_HISTORY.try_with(|history| {

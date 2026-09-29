@@ -1551,40 +1551,31 @@ pub struct key_table_entry {
     pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>>,
 }
 
-/// Each table owns its bindings; the map is allocated only when first populated.
+/// Each table owns its map directly; bindings keep their stable allocations.
 #[derive(Default)]
 pub struct key_bindings {
-    pub storage: Option<Box<std::collections::BTreeMap<key_code, Box<key_binding>>>>,
+    pub storage: std::collections::BTreeMap<key_code, Box<key_binding>>,
 }
 
 impl key_bindings {
     pub fn get(&self, key: key_code) -> Option<&key_binding> {
-        self.storage.as_ref()?.get(&key).map(Box::as_ref)
+        self.storage.get(&key).map(Box::as_ref)
     }
 
     pub fn get_mut(&mut self, key: key_code) -> Option<&mut key_binding> {
-        self.storage.as_mut()?.get_mut(&key).map(Box::as_mut)
+        self.storage.get_mut(&key).map(Box::as_mut)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &key_binding> {
-        self.storage
-            .iter()
-            .flat_map(|map| map.values().map(Box::as_ref))
+        self.storage.values().map(Box::as_ref)
     }
 
     pub fn insert(&mut self, binding: Box<key_binding>) {
-        self.storage
-            .get_or_insert_with(Box::default)
-            .insert(binding.key, binding);
+        self.storage.insert(binding.key, binding);
     }
 
     pub fn remove(&mut self, key: key_code) -> Option<Box<key_binding>> {
-        let map = self.storage.as_mut()?;
-        let binding = map.remove(&key);
-        if map.is_empty() {
-            self.storage = None;
-        }
-        binding
+        self.storage.remove(&key)
     }
 }
 

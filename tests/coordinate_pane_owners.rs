@@ -38,7 +38,7 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         let observer = Rc::downgrade(&second);
         (*window.get()).was_zoomed = observer.clone();
         (*window.get()).modal = observer.clone();
-        (*window.get()).z_index.storage = None;
+        (*window.get()).z_index.storage.clear();
         drop(second);
         assert!(observer.upgrade().is_some());
         drop(selected);

@@ -324,8 +324,7 @@ pub unsafe fn window_winlinks_first(w_value: Option<&window>) -> refbox::Weak<wi
     }
     (*w).winlinks
         .storage
-        .as_deref()
-        .and_then(|links| links.first())
+        .first()
         .filter(|link| link.is_alive())
         .map_or(refbox::Weak::new(), |link| link.clone())
 }
@@ -338,9 +337,7 @@ pub unsafe fn window_winlinks_next(w_value: Option<&window>, wl: refbox::Weak<wi
     if w.is_null() || !wl.is_alive() {
         return refbox::Weak::new();
     }
-    let Some(links) = (*w).winlinks.storage.as_deref() else {
-        return refbox::Weak::new();
-    };
+    let links = &(*w).winlinks.storage;
     links
         .next_after(|link| *link == wl)
         .filter(|link| link.is_alive())
@@ -351,7 +348,7 @@ pub unsafe fn window_winlinks_next(w_value: Option<&window>, wl: refbox::Weak<wi
 pub unsafe fn window_winlinks_append(w_value: &mut window, wl: refbox::Weak<winlink>) {
     let w: *mut window = w_value as *mut _;
     assert!(!w.is_null() && wl.is_alive());
-    let links = (*w).winlinks.storage.get_or_insert_with(|| Box::default());
+    let links = &mut (*w).winlinks.storage;
     assert!(
         !links.contains(&wl),
         "winlink is already present in this window"
@@ -363,17 +360,10 @@ pub unsafe fn window_winlinks_append(w_value: &mut window, wl: refbox::Weak<winl
 pub unsafe fn window_winlinks_remove(w_value: &mut window, wl: refbox::Weak<winlink>) {
     let w: *mut window = w_value as *mut _;
     assert!(!w.is_null() && wl.is_alive());
-    let links = (*w)
-        .winlinks
-        .storage
-        .as_mut()
-        .expect("window winlink collection must be alive");
+    let links = &mut (*w).winlinks.storage;
     links
         .remove_first(|link| *link == wl)
         .expect("winlink must belong to its window");
-    if links.is_empty() {
-        (*w).winlinks.storage = None;
-    }
 }
 
 pub fn window_pane_tree_find(head: &window_pane_tree, id: u_int) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -905,14 +895,9 @@ pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, mut wl: refbox::Weak
         return;
     }
     winlink_stack_remove(stack, wl.clone());
-    if (*stack).storage.is_none() {
-        (*stack).storage = Some(Box::default());
-    }
     let weak = winlink_weak(wl.clone());
     (*stack)
         .storage
-        .as_mut()
-        .expect("visit history was just initialized")
         .push_front(weak);
     wl.get_mut_unchecked().flags |= WINLINK_VISITED;
 }
@@ -920,34 +905,25 @@ pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, mut wl: refbox::We
     if !wl.is_alive() {
         return;
     }
-    if let Some(storage) = (*stack).storage.as_mut() {
-        storage.retain(|link| *link != wl);
-    }
+    (*stack).storage.retain(|link| *link != wl);
     wl.get_mut_unchecked().flags &= !WINLINK_VISITED;
 }
 
 /// Append while rebuilding a session's saved visit order.
 pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, mut wl: refbox::Weak<winlink>) {
-    if stack.storage.is_none() {
-        stack.storage = Some(Box::default());
-    }
     let weak = winlink_weak(wl.clone());
     stack
         .storage
-        .as_mut()
-        .expect("visit history was just initialized")
         .push_back(weak);
     wl.get_mut_unchecked().flags |= WINLINK_VISITED;
 }
 
 pub fn winlink_stack_clear(stack: &mut winlink_stack) {
-    stack.storage = None;
+    stack.storage = Default::default();
 }
 
 pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {
-    let Some(storage) = stack.storage.as_ref() else {
-        return Vec::new();
-    };
+    let storage = &stack.storage;
     storage
         .iter()
         .filter_map(|link| match link.try_access_mut(|node| node.idx) {
@@ -961,11 +937,11 @@ pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {
 }
 
 pub fn winlink_stack_first(stack: &winlink_stack) -> refbox::Weak<winlink> {
-    stack.storage.as_ref().and_then(|links| links.front()).cloned().unwrap_or_default()
+    stack.storage.front().cloned().unwrap_or_default()
 }
 
 pub fn winlink_stack_next(stack: &winlink_stack, wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
-    let Some(queue) = stack.storage.as_ref() else { return refbox::Weak::new() };
+    let queue = &stack.storage;
     let Some(position) = queue.iter().position(|link| *link == wl) else { return refbox::Weak::new() };
     queue.get(position + 1).cloned().unwrap_or_default()
 }
@@ -1048,7 +1024,7 @@ pub unsafe fn window_create(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
         b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
-    (*w).winlinks.storage = None;
+    (*w).winlinks.storage = Default::default();
     (*w).entry.owner = refbox::Weak::new();
     let fresh0 = next_window_id;
     next_window_id = next_window_id.wrapping_add(1);
@@ -2011,7 +1987,7 @@ pub unsafe fn window_pane_at_index(w: &mut window, idx: u_int) -> Option<Rc<std:
         options_owner_ptr(&mut w.options).map_or(std::ptr::null_mut(), |options| options),
         c"pane-base-index".as_ptr(),
     ) as u_int;
-    w.panes.storage.as_deref()?.get(idx.wrapping_sub(base) as usize)
+    w.panes.storage.get(idx.wrapping_sub(base) as usize)
         .map(|observer| observer.upgrade().expect("live pane in ordering"))
 }
 pub fn window_pane_next_by_number(
@@ -2062,7 +2038,7 @@ pub unsafe fn window_pane_zindex(wp: &window_pane) -> Option<u32> {
 }
 pub unsafe fn window_pane_last_index(wp: &window_pane) -> Option<u32> {
     let history = &wp.window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()).as_ref()?.last_panes;
-    history.storage.as_deref()?.iter()
+    history.storage.iter()
         .position(|observer| observer.ptr_eq(&wp.observer))
         .map(|position| position as u32)
 }
@@ -2070,7 +2046,7 @@ pub unsafe fn window_count_panes(
     w: &window,
     with_floating: ::core::ffi::c_int,
 ) -> u_int {
-    w.panes.storage.as_deref().into_iter().flatten().fold(0, |count, observer| {
+    w.panes.storage.iter().fold(0, |count, observer| {
         let pane = observer.upgrade().expect("live pane in ordering");
         if with_floating != 0 || window_pane_is_floating(&*pane.get()) == 0 {
             count.wrapping_add(1)
@@ -2388,9 +2364,7 @@ unsafe fn window_pane_mode_next(wme: refbox::Weak<window_mode_entry>) -> refbox:
     let Some(pane_owner) = wme.get_unchecked().wp.upgrade() else {
         return refbox::Weak::new();
     };
-    let Some(storage) = (*pane_owner.get()).modes.storage.as_ref() else {
-        return refbox::Weak::new();
-    };
+    let storage = &(*pane_owner.get()).modes.storage;
     let Some(index) = storage.entries.iter().position(|entry| {
         wme.is(entry)
     }) else {
@@ -2409,11 +2383,7 @@ pub(crate) unsafe fn window_pane_mode_weak(
     wme: refbox::Weak<window_mode_entry>,
 ) -> refbox::Weak<window_mode_entry> {
     let pane_owner = wme.get_unchecked().wp.upgrade().expect("mode belongs to a live pane");
-    let storage = (*pane_owner.get())
-        .modes
-        .storage
-        .as_ref()
-        .expect("mode belongs to a pane mode stack");
+    let storage = &(*pane_owner.get()).modes.storage;
     storage
         .entries
         .iter()
@@ -2427,7 +2397,7 @@ unsafe fn window_pane_mode_insert_front(
     entry: refbox::RefBox<window_mode_entry>,
 ) -> refbox::Weak<window_mode_entry> {
     let modes = &mut wp.modes;
-    let storage = modes.storage.get_or_insert_with(Default::default);
+    let storage = &mut modes.storage;
     let weak = entry.downgrade();
     storage.entries.insert(0, entry);
     weak
@@ -2439,18 +2409,9 @@ unsafe fn window_pane_mode_remove(
 ) -> Option<refbox::RefBox<window_mode_entry>> {
     let wp: *mut window_pane = wp_value as *mut _;
     let modes = &mut (*wp).modes;
-    let (removed, empty) = {
-        let storage = modes.storage.as_mut()?;
-        let index = storage.entries.iter().position(|entry| {
-            wme.is(entry)
-        })?;
-        let removed = storage.entries.remove(index);
-        (removed, storage.entries.is_empty())
-    };
-    if empty {
-        modes.storage = None;
-    }
-    Some(removed)
+    let storage = &mut modes.storage;
+    let index = storage.entries.iter().position(|entry| wme.is(entry))?;
+    Some(storage.entries.remove(index))
 }
 
 unsafe fn window_pane_mode_promote(wp_value: &mut window_pane, wme: refbox::Weak<window_mode_entry>) {
@@ -2506,7 +2467,6 @@ mod window_mode_collection_tests {
             window_pane_free_modes(&owner);
             assert_eq!((*wp).sx, 3);
             assert!((*wp).modes.is_empty());
-            assert!((*wp).modes.storage.is_none());
             assert_eq!((*wp).screen_ptr(), &raw mut (*wp).base);
             drop(owner);
             assert!(observer.upgrade().is_none());
@@ -2566,7 +2526,7 @@ mod window_mode_collection_tests {
                 let top = (*wp).modes.active_weak();
                 drop(window_pane_mode_remove(&mut *(wp), top.clone()).expect("mode was present"));
             }
-            assert!((*wp).modes.storage.is_none());
+            assert!((*wp).modes.is_empty());
             assert!(!(*wp).modes.active_weak().is_alive());
 
             let detached = boxed_mode(&*wp);
@@ -2978,8 +2938,7 @@ pub unsafe fn window_pane_set_mode(
     let existing = (*wp)
         .modes
         .storage
-        .as_ref()
-        .and_then(|storage| storage.entries.iter().find(|entry| std::ptr::eq(entry.get_unchecked().mode, mode)))
+        .entries.iter().find(|entry| std::ptr::eq(entry.get_unchecked().mode, mode))
         .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade);
     if existing.is_alive() {
         wme = existing.clone();
@@ -4301,7 +4260,7 @@ pub unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
     status
 }
 pub unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
-    let hide_status = wp.modes.storage.as_ref().and_then(|storage| storage.entries.first())
+    let hide_status = wp.modes.storage.entries.first()
         .is_some_and(|entry| entry.try_borrow_mut().expect("active pane mode already borrowed").mode.flags & WINDOW_MODE_HIDE_PANE_STATUS != 0);
     if hide_status && wp.flags & PANE_ZOOMED != 0 {
         return 0;

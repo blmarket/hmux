@@ -127,7 +127,7 @@ unsafe fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow<'a, CStr> 
 pub fn args_create() -> Box<args> {
     Box::new(args {
         tree: args_tree {
-            entries: Box::default(),
+            entries: Default::default(),
         },
         values: Vec::new(),
     })
@@ -529,7 +529,7 @@ fn args_set_value(
         Box::new(args_entry {
             flag,
             values: args_values {
-                storage: Box::default(),
+                storage: Default::default(),
             },
             count: 0,
             flags,

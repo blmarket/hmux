@@ -63,7 +63,7 @@ impl session {
             last_activity_time: Default::default(),
             lock_timer: Default::default(),
             curw: Default::default(),
-            lastw: winlink_stack { storage: None },
+            lastw: winlink_stack { storage: Default::default() },
             windows: winlinks { storage: None },
             statusat: Default::default(),
             statuslines: Default::default(),

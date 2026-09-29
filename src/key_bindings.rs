@@ -123,7 +123,7 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
         crate::src::log::log_bytes(key_string.as_bytes())
     ));
     drop(bd);
-    if table.key_bindings.storage.is_none() && table.default_key_bindings.storage.is_none() {
+    if table.key_bindings.storage.is_empty() && table.default_key_bindings.storage.is_empty() {
         drop(table);
         drop(key_tables_remove(&raw mut key_tables, &owner));
     }
@@ -1011,7 +1011,7 @@ mod ownership_tests {
             assert!(commands.upgrade().is_none());
             drop(index.remove(2));
             drop(index.remove(13));
-            assert!(index.storage.is_none());
+            assert!(index.storage.is_empty());
         }
     }
 
