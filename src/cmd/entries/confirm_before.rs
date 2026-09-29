@@ -4,10 +4,12 @@ use crate::src::cmd::queue::{
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_list_first};
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_DEAD;
 use crate::src::shared::command::CMD_CLIENT_TFLAG;
 use crate::src::shared::command::*;
@@ -67,9 +69,7 @@ unsafe fn cmd_confirm_before_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut confirm_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -128,7 +128,7 @@ unsafe fn cmd_confirm_before_exec(
     };
     let inputcb = cdata.into_callback();
     status_prompt_set(
-        &(*(tc)).observer.upgrade().expect("live client"),
+        &tc.clone().expect("live client"),
         target,
         new_prompt.as_ptr(),
         ::core::ptr::null::<::core::ffi::c_char>(),
@@ -144,18 +144,18 @@ unsafe fn cmd_confirm_before_exec(
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_confirm_before_callback(
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    c_owner: &ClientRef,
     cdata: &cmd_confirm_before_data,
     s: Option<&CStr>,
 ) -> prompt_result {
-    let mut c = c_owner.get();
+    let mut c: Option<ClientRef> = Some(c_owner.clone());
     let item_owner = cdata.item.upgrade();
     let item: *mut cmdq_item = item_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_item_allocation;
     let mut retcode: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    if !((*c).flags & CLIENT_DEAD as uint64_t != 0) {
+    if !(c.as_ref().expect("live client").flags() & CLIENT_DEAD as uint64_t != 0) {
         if let Some(s) = s {
             let bytes = s.to_bytes();
             let confirmed = bytes.len() == 1
@@ -164,12 +164,7 @@ unsafe fn cmd_confirm_before_callback(
                 retcode = 0 as ::core::ffi::c_int;
                 if item.is_null() {
                     new_item_allocation = cmdq_get_command(&cdata.cmdlist, None);
-                    cmdq_append(
-                        c.as_ref()
-                            .map(|client| client.observer.upgrade().expect("queue client is live"))
-                            .as_ref(),
-                        new_item_allocation,
-                    );
+                    cmdq_append(c.as_ref(), new_item_allocation);
                 } else {
                     new_item_allocation = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
                     cmdq_insert_after(
@@ -185,9 +180,8 @@ unsafe fn cmd_confirm_before_callback(
     }
     if !item.is_null() {
         if let Some(client) = cmdq_get_client((item).as_ref()) {
-            let c = crate::src::shared::rc::as_ptr(&client);
-            if (*c).session_handle().is_none() {
-                (*c).retval = retcode;
+            if client.attached_session().upgrade().is_none() {
+                client.set_return_value(retcode);
             }
         }
         cmdq_continue(
@@ -202,14 +196,7 @@ unsafe fn cmd_confirm_before_callback(
 impl cmd_confirm_before_data {
     fn into_callback(self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {
         Some(Box::new(move |client, text, _key| unsafe {
-            cmd_confirm_before_callback(
-                &(*(client.map_or(std::ptr::null_mut(), |owner| owner.get())))
-                    .observer
-                    .upgrade()
-                    .expect("live client"),
-                &self,
-                text,
-            )
+            cmd_confirm_before_callback(client.expect("live client"), &self, text)
         }))
     }
 }

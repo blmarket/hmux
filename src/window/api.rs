@@ -13,6 +13,7 @@ use crate::src::layout::set::{
 };
 use crate::src::layout::{layout_get_floating_cell, layout_get_tiled_cell, layout_spread_out};
 use crate::src::resize::recalculate_sizes;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
 use crate::src::spawn::spawn_pane;
@@ -78,7 +79,7 @@ pub trait Window {
     unsafe fn update_activity(&self);
     /// Return whether the identity changed. Attachment and input dispatch have
     /// different notifications and keep that orchestration in their callers.
-    unsafe fn set_latest_client(&self, client: Option<&Rc<UnsafeCell<client>>>) -> bool;
+    unsafe fn set_latest_client(&self, client: Option<&ClientRef>) -> bool;
     /// Window-owned modal/menu/selection policy used when a pane's focus changes.
     unsafe fn pane_is_focused(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool;
     unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R;
@@ -332,7 +333,7 @@ impl Window for Rc<UnsafeCell<window>> {
     unsafe fn update_activity(&self) {
         window_update_activity(self);
     }
-    unsafe fn set_latest_client(&self, client: Option<&Rc<UnsafeCell<client>>>) -> bool {
+    unsafe fn set_latest_client(&self, client: Option<&ClientRef>) -> bool {
         let latest = client.map_or_else(Weak::new, Rc::downgrade);
         if (*self.get()).latest.ptr_eq(&latest) {
             return false;

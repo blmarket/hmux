@@ -4,6 +4,7 @@ use super::abi::{size_t, timeval, u_int};
 use super::client::client;
 use super::command::cmd_list;
 use super::mouse::mouse_event;
+use crate::src::shared::client::{ClientRef, ClientWeak};
 // Underlying type of the historical 2,053-value anonymous KEYC enum.
 // Preserve unsigned long independently of key_code (unsigned long long).
 
@@ -1471,7 +1472,7 @@ pub const MODEKEY_VI: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub struct key_event {
     /// Explicit dispatch target, observed without extending its lifetime.
     /// An empty handle uses the queue client; an expired explicit target must not fall back.
-    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub client: ClientWeak,
     pub key: key_code,
     pub m: mouse_event,
     pub bytes: Option<Vec<u8>>,
@@ -1491,8 +1492,8 @@ impl key_event {
     /// explicit target was supplied. Expiry must not redirect input.
     pub fn resolve_client(
         &self,
-        fallback: impl FnOnce() -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+        fallback: impl FnOnce() -> Option<ClientRef>,
+    ) -> Option<ClientRef> {
         if std::rc::Weak::ptr_eq(&self.client, &std::rc::Weak::new()) {
             fallback()
         } else {

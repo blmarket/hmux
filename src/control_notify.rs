@@ -10,6 +10,7 @@ use crate::src::server_client::Client;
 use crate::src::session::Session;
 use crate::src::shared::abi::u_int;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::{event_payload, events_callback};
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::window::{winlink_find_by_window_id, Window, WindowPane};
@@ -23,7 +24,7 @@ pub struct C2RustUnnamed_35 {
 
 // Query eligibility at each visit, then release all state before formatting.
 // Preserve live registry traversal rather than snapshotting recipients.
-unsafe fn recipients(mut visit: impl FnMut(&Rc<UnsafeCell<client>>)) {
+unsafe fn recipients(mut visit: impl FnMut(&ClientRef)) {
     let mut cursor = clients.first();
     while let Some(client) = cursor {
         if client.receives_notifications() {
@@ -328,22 +329,17 @@ mod tests {
         name: &CStr,
         session: Option<&Rc<UnsafeCell<session>>>,
         flags: u64,
-    ) -> Rc<UnsafeCell<client>> {
-        let client = client::new();
-        (*client.get()).name = Some(name.to_owned());
-        (*client.get()).flags = flags;
-        (*client.get()).session = session.map_or_else(std::rc::Weak::new, Rc::downgrade);
-        let mut state = control_state::empty();
-        state.guard_depth = 1;
-        (*client.get()).control_state = Some(Box::new(state));
+    ) -> ClientRef {
+        let client = client::with_control_for_test(Some(name), session);
+        client.update_flags(flags, 0);
+        client.borrow_control_mut().unwrap().guard_depth = 1;
         clients.push_back(client.clone());
         client
     }
 
-    unsafe fn messages(client: &Rc<UnsafeCell<client>>) -> Vec<Vec<u8>> {
-        (*client.get())
-            .control_state
-            .as_ref()
+    unsafe fn messages(client: &ClientRef) -> Vec<Vec<u8>> {
+        client
+            .borrow_control_mut()
             .unwrap()
             .deferred
             .iter()

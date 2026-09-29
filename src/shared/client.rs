@@ -1,27 +1,11 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
-use crate::src::server_client::server_client_unref_owned;
-use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
-use super::abi::{pid_t, size_t, time_t, timeval, u_int, uint64_t};
-use super::colour::client_theme;
-use super::command::cmdq_list;
-use super::control::control_state;
-use super::display::{progress_bar, visible_ranges};
-use super::environment::environ;
-use super::event::{bufferevent, event};
-use super::format::format_job_tree;
-use super::key::{key_code, key_event, key_table};
-use super::mouse::mouse_event;
-use super::process::tmuxpeer;
-use super::redraw::redraw_scene;
-use super::screen::screen;
-use super::session::session;
-use super::status::status_line;
-use super::tty::tty;
-use crate::src::compat::imsg::msgtype;
-use std::ffi::CStr;
+use super::abi::u_int;
+use super::display::visible_ranges;
+use super::key::key_event;
+use super::screen::ScreenMode;
 pub type client_exit_type = ::core::ffi::c_uint;
 
 pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
@@ -120,285 +104,29 @@ mod tests {
     }
 }
 
-pub struct client {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<client>>,
-    pub name: Option<std::ffi::CString>,
-    pub peer: *mut tmuxpeer,
-    pub user: Option<std::ffi::CString>,
-    pub queue: Option<Box<cmdq_list>>,
-    pub control_state: Option<Box<control_state>>,
-    pub pause_age: u_int,
-    pub pid: pid_t,
-    pub fd: ::core::ffi::c_int,
-    pub out_fd: ::core::ffi::c_int,
-    pub retval: ::core::ffi::c_int,
-    pub creation_time: timeval,
-    pub activity_time: timeval,
-    pub last_activity_time: timeval,
-    pub environ: Option<Box<environ>>,
-    /// Sole owner of this client's lazily allocated format-job cache.
-    pub jobs: Option<Box<format_job_tree>>,
-    pub title: Option<std::ffi::CString>,
-    pub path: Option<std::ffi::CString>,
-    pub cwd: Option<std::ffi::CString>,
-    pub progress_bar: progress_bar,
-    pub term_name: Option<std::ffi::CString>,
-    pub term_features: ::core::ffi::c_int,
-    pub term_nofeatures: ::core::ffi::c_int,
-    pub term_type: Option<std::ffi::CString>,
-    pub term_caps: Vec<std::ffi::CString>,
-    pub ttyname: Option<std::ffi::CString>,
-    pub tty: tty,
-    pub written: size_t,
-    pub discarded: size_t,
-    pub redraw: size_t,
-    pub redraw_scene: Option<Box<redraw_scene>>,
-    pub repeat_timer: event,
-    pub click_timer: event,
-    pub click_loc: ::core::ffi::c_int,
-    pub click_wp: ::core::ffi::c_int,
-    pub exit_timer: event,
-    pub click_button: u_int,
-    pub click_event: mouse_event,
-    pub status: status_line,
-    pub cycle_timer: event,
-    pub theme: client_theme,
-    pub input_requests: Vec<*mut super::input::input_request>,
-    pub flags: uint64_t,
-    pub exit_type: client_exit_type,
-    pub exit_msgtype: msgtype,
-    pub exit_session: Option<std::ffi::CString>,
-    pub exit_message: Option<std::ffi::CString>,
-    pub keytable: Option<std::rc::Rc<std::cell::RefCell<key_table>>>,
-    pub last_key: key_code,
-    pub paste_time: time_t,
-    pub message_ignore_keys: ::core::ffi::c_int,
-    pub message_ignore_styles: ::core::ffi::c_int,
-    pub message_string: Option<std::ffi::CString>,
-    pub message_timer: event,
-    pub prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
-    /// Attached session identity; the session index owns the Rc allocation.
-    pub session: std::rc::Weak<UnsafeCell<session>>,
-    /// Previous session observer; this link never keeps a session alive.
-    pub last_session: std::rc::Weak<UnsafeCell<session>>,
-    pub theme_colours: [::core::ffi::c_int; 10],
-    /// Window whose manual pan offsets are active; this does not retain it.
-    pub pan_window: std::rc::Weak<UnsafeCell<super::window::window>>,
-    pub pan_ox: u_int,
-    pub pan_oy: u_int,
-    pub overlay_generation: u64,
-    pub overlay_check: overlay_check_cb,
-    pub overlay_mode: overlay_mode_cb,
-    pub overlay_draw: overlay_draw_cb,
-    pub overlay_key: overlay_key_cb,
-    pub overlay_free: overlay_free_cb,
-    pub overlay_resize: overlay_resize_cb,
-    pub overlay_data: Option<Box<dyn std::any::Any>>,
-    pub files: client_files,
-    pub source_file_depth: u_int,
-}
+pub use crate::src::server_client::client;
 
-impl client {
-    /// Retain the attached session for the current operation.
-    pub fn session_handle(&self) -> Option<Rc<UnsafeCell<session>>> {
-        self.session.upgrade()
-    }
-
-    /// The caller supplies a live Rc-backed session.
-    pub fn set_session(&mut self, session: Option<&Rc<UnsafeCell<session>>>) {
-        self.session = session.map_or_else(std::rc::Weak::new, Rc::downgrade);
-    }
-
-    pub fn pan_window_is(&self, window: &super::window::window) -> bool {
-        self.pan_window.strong_count() != 0
-            && std::rc::Weak::ptr_eq(&self.pan_window, &window.observer)
-    }
-
-    pub fn set_pan_window(&mut self, window: &super::window::window) {
-        self.pan_window = window.observer.clone();
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            observer: std::rc::Weak::new(),
-            name: Default::default(),
-            peer: Default::default(),
-            user: Default::default(),
-            queue: Default::default(),
-            control_state: Default::default(),
-            pause_age: Default::default(),
-            pid: Default::default(),
-            fd: Default::default(),
-            out_fd: Default::default(),
-            retval: Default::default(),
-            creation_time: Default::default(),
-            activity_time: Default::default(),
-            last_activity_time: Default::default(),
-            environ: Default::default(),
-            jobs: Default::default(),
-            title: Default::default(),
-            path: Default::default(),
-            cwd: Default::default(),
-            progress_bar: Default::default(),
-            term_name: Default::default(),
-            term_features: Default::default(),
-            term_nofeatures: Default::default(),
-            term_type: Default::default(),
-            term_caps: Vec::new(),
-            ttyname: Default::default(),
-            tty: tty::empty(),
-            written: Default::default(),
-            discarded: Default::default(),
-            redraw: Default::default(),
-            redraw_scene: Default::default(),
-            repeat_timer: Default::default(),
-            click_timer: Default::default(),
-            click_loc: Default::default(),
-            click_wp: Default::default(),
-            exit_timer: Default::default(),
-            click_button: Default::default(),
-            click_event: Default::default(),
-            status: status_line::empty(),
-            cycle_timer: Default::default(),
-            theme: Default::default(),
-            input_requests: Vec::new(),
-            flags: Default::default(),
-            exit_type: Default::default(),
-            exit_msgtype: Default::default(),
-            exit_session: Default::default(),
-            exit_message: Default::default(),
-            keytable: Default::default(),
-            last_key: Default::default(),
-            paste_time: Default::default(),
-            message_ignore_keys: Default::default(),
-            message_ignore_styles: Default::default(),
-            message_string: None,
-            message_timer: Default::default(),
-            prompt: Default::default(),
-            session: Default::default(),
-            last_session: Default::default(),
-            theme_colours: Default::default(),
-            pan_window: Default::default(),
-            pan_ox: Default::default(),
-            pan_oy: Default::default(),
-            overlay_generation: 0,
-            overlay_check: Default::default(),
-            overlay_mode: Default::default(),
-            overlay_draw: Default::default(),
-            overlay_key: Default::default(),
-            overlay_free: Default::default(),
-            overlay_resize: Default::default(),
-            overlay_data: None,
-            files: Default::default(),
-            source_file_depth: Default::default(),
-        }
-    }
-}
+/// Retained Client identity. Consumers use Client operations and bounded
+/// component borrows; the cell representation is selected here.
+pub type ClientRef = Rc<UnsafeCell<client>>;
+/// Nonowning Client identity retained by callbacks and back references.
+pub type ClientWeak = std::rc::Weak<UnsafeCell<client>>;
 
 pub use crate::src::file::{client_file, client_file_cb, client_file_event, client_files};
 
-pub type overlay_resize_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>)>>;
+pub type overlay_resize_cb = Option<Box<dyn FnMut(&ClientRef)>>;
 
-pub type overlay_free_cb = Option<Box<dyn FnOnce(&Rc<UnsafeCell<client>>)>>;
+pub type overlay_free_cb = Option<Box<dyn FnOnce(&ClientRef)>>;
 
-pub type overlay_key_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, &mut key_event) -> i32>>;
+pub type overlay_key_cb = Option<Box<dyn FnMut(&ClientRef, &mut key_event) -> i32>>;
 
-pub type overlay_draw_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>)>>;
+pub type overlay_draw_cb = Option<Box<dyn FnMut(&ClientRef)>>;
 
-pub type overlay_mode_cb = Option<
-    Box<dyn FnMut(&Rc<UnsafeCell<client>>) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)>>,
->;
+pub type overlay_mode_cb = Option<Box<dyn FnMut(&ClientRef) -> Option<(ScreenMode, u_int, u_int)>>>;
 
 pub type overlay_check_cb =
-    Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, u_int, u_int, u_int) -> visible_ranges>>;
+    Option<Box<dyn FnMut(&ClientRef, u_int, u_int, u_int) -> visible_ranges>>;
 
-/// Retain an optional live, Rc-owned client.
-/// Panics if a supplied client is not backed by a live Rc allocation.
-pub fn client_retain(value: Option<&client>) -> Option<Rc<UnsafeCell<client>>> {
-    value.map(|client| client.observer.upgrade().expect("live Rc client"))
-}
-
-pub fn client_handle(owner: &Option<Rc<UnsafeCell<client>>>) -> Option<&Rc<UnsafeCell<client>>> {
+pub fn client_handle(owner: &Option<ClientRef>) -> Option<&ClientRef> {
     owner.as_ref()
-}
-
-#[cfg(test)]
-mod retained_client_tests {
-    use super::*;
-    use crate::src::{reactor, shared::rc};
-
-    #[test]
-    fn attached_session_observer_does_not_retain_a_removed_session() {
-        let mut client = client::empty();
-        let session = super::super::session::session::new();
-        let observer = Rc::downgrade(&session);
-        unsafe {
-            client.set_session(Some(&session));
-        }
-        assert_eq!(
-            client
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()),
-            session.get()
-        );
-        assert_eq!(Rc::strong_count(&session), 1);
-        drop(session);
-        assert!(observer.upgrade().is_none());
-        assert!(client.session_handle().is_none());
-    }
-
-    #[test]
-    fn pan_window_observes_identity_without_retaining_the_window() {
-        let mut client = client::empty();
-        let first = super::super::window::window::new();
-        let first_observer = Rc::downgrade(&first);
-        unsafe {
-            let first_window = &*first.get();
-            assert!(!client.pan_window_is(first_window));
-            client.set_pan_window(first_window);
-            assert!(client.pan_window_is(first_window));
-        }
-        assert_eq!(Rc::strong_count(&first), 1);
-        unsafe {
-            crate::src::window::window_remove_ref(first, c"test owner".as_ptr());
-        }
-        assert!(first_observer.upgrade().is_none());
-
-        let second = super::super::window::window::new();
-        unsafe {
-            assert!(!client.pan_window_is(&*second.get()));
-            client.set_pan_window(&*second.get());
-            assert!(client.pan_window_is(&*second.get()));
-        }
-        assert_eq!(Rc::strong_count(&second), 1);
-        unsafe {
-            crate::src::window::window_remove_ref(second, c"test owner".as_ptr());
-        }
-    }
-
-    #[test]
-    fn owner_release_defers_cleanup_until_dispatch_or_cancellation() {
-        unsafe {
-            for cancel in [false, true] {
-                let initial = client::new();
-                let ptr = rc::as_ptr(&initial);
-                let observer = (*ptr).observer.clone();
-                let owner = client_retain((ptr).as_ref()).unwrap();
-                drop(initial);
-                assert_eq!(rc::as_ptr(&owner), ptr);
-                server_client_unref_owned(owner);
-                assert_eq!(observer.strong_count(), 1);
-                if cancel {
-                    reactor::shutdown_runtime();
-                } else {
-                    reactor::event_loop();
-                }
-                assert_eq!(observer.strong_count(), 0);
-                reactor::shutdown_runtime();
-            }
-            assert!(client_retain(None).is_none());
-        }
-    }
 }

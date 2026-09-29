@@ -5,12 +5,14 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_session;
 use crate::src::session::Session;
 use crate::src::session::{session_last, session_next, session_previous, session_select};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_TARGET_SESSION_USAGE;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -124,9 +126,7 @@ unsafe fn cmd_select_window_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
@@ -223,7 +223,14 @@ unsafe fn cmd_select_window_exec(
             |out| out.write_all(b"after-select-window"),
         );
     }
-    if !c.is_null() && !(*c).session_handle().is_none() {
+    if !c.is_none()
+        && !c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+    {
         (*(s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
@@ -231,7 +238,7 @@ unsafe fn cmd_select_window_exec(
             .map_or(std::ptr::null_mut(), |owner| owner.get()))
         .latest = c
             .as_ref()
-            .map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

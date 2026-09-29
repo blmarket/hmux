@@ -19,12 +19,14 @@ use crate::src::reactor::{
     evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -78,9 +80,7 @@ unsafe fn cmd_pipe_pane_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
     let wp = pane_owner.get();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
@@ -147,9 +147,7 @@ unsafe fn cmd_pipe_pane_exec(
     ft = &raw mut *ft_owner;
     format_defaults(
         ft,
-        (tc).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        tc.as_ref(),
         s.as_ref(),
         wl.clone(),
         (wp).as_ref()

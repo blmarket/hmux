@@ -15,10 +15,12 @@ use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_menu, screen_write_start,
     screen_write_stop,
 };
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_window, server_redraw_window_menu};
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
@@ -58,7 +60,7 @@ impl menu {
 pub unsafe fn menu_add_items(
     menu: &mut menu,
     items: &[menu_item<'_>],
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
 ) {
     for item in items {
         menu_add_item(menu, Some(item), None, client_owner, std::ptr::null_mut());
@@ -68,7 +70,7 @@ pub unsafe fn menu_add_item(
     menu: &mut menu,
     item: Option<&menu_item<'_>>,
     qitem_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     fs: *mut cmd_find_state,
 ) {
     let Some(item) = item.filter(|item| !item.name.is_empty()) else {
@@ -95,8 +97,11 @@ pub unsafe fn menu_add_item(
         menu.items.pop();
         return;
     }
-    let client = &*client_owner.expect("menu row requires a client").get();
-    let mut max_width = client.tty.sx.wrapping_sub(4);
+    let mut max_width = client_owner
+        .expect("menu row requires a client")
+        .terminal_size()
+        .0
+        .wrapping_sub(4);
     let text = expanded.as_bytes();
     let mut key = if text[0] != b'-' && item.key != KEYC_UNKNOWN && item.key != KEYC_NONE {
         Some(key_string_format(item.key, false))
@@ -522,7 +527,7 @@ fn menu_handle_key(md: &mut menu_data, event: &key_event) -> MenuKeyAction {
 }
 
 pub unsafe fn menu_key(
-    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     owner: &refbox::Weak<crate::src::shared::menu::menu_data>,
     event: &key_event,
 ) -> ::core::ffi::c_int {
@@ -627,7 +632,7 @@ pub unsafe fn menu_display(
     event: Option<&key_event>,
     mut px: u_int,
     mut py: u_int,
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut lines: box_lines,
     style: Option<&CStr>,
     selected_style: Option<&CStr>,
@@ -636,11 +641,10 @@ pub unsafe fn menu_display(
     cb: menu_choice_cb,
 ) {
     let setup_window = if fs.is_null() {
-        let client = &*client_owner
-            .expect("menu without a target requires a client")
-            .get();
+        let client = client_owner.expect("menu without a target requires a client");
         let link_handle = client
-            .session_handle()
+            .attached_session()
+            .upgrade()
             .expect("live session")
             .current_winlink();
         let link = link_handle.try_borrow_mut().expect("current menu link");

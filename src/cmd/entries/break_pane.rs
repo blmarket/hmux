@@ -16,6 +16,7 @@ use crate::src::names::default_window_name_cstring;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
 use crate::src::server_client::server_client_remove_pane;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_link_window, server_redraw_session, server_redraw_window, server_status_session_group,
     server_unlink_window, server_unzoom_window,
@@ -25,6 +26,7 @@ use crate::src::session::{session_attach, session_select};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -137,9 +139,7 @@ unsafe fn cmd_break_pane_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut src_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*source).session_handle();
     let mut dst_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
@@ -280,7 +280,7 @@ unsafe fn cmd_break_pane_exec(
         (*w).set_active((wp).as_ref());
         (*w).latest = tc
             .as_ref()
-            .map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
         if name.is_null() {
             drop(window_replace_name(
                 &(*(w)).observer.upgrade().expect("live window"),
@@ -374,9 +374,7 @@ unsafe fn cmd_break_pane_exec(
         let cp = format_single_cstring(
             Some(item_handle),
             template,
-            (tc).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            tc.as_ref(),
             dst_s.as_ref(),
             wl.clone(),
             (wp).as_ref()

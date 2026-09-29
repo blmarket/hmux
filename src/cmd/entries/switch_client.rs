@@ -10,6 +10,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::key_bindings_get_table;
 use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_get_peer_uid;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_set_key_table, server_client_set_session};
 use crate::src::server_fn::server_redraw_window;
 use crate::src::session::{session_next_session, session_previous_session, session_set_current};
@@ -17,6 +18,7 @@ use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_IGNORESIZE, CLIENT_READONLY};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -83,13 +85,9 @@ unsafe fn cmd_switch_client_exec(
     let mut visible: ::core::ffi::c_int = 0;
     let mut Zflag: ::core::ffi::c_int = args_has(args, 'Z' as i32 as u_char);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut selected_session;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -129,17 +127,21 @@ unsafe fn cmd_switch_client_exec(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if args_has(args, 'r' as i32 as u_char) != 0 {
-        if (*tc).flags & CLIENT_READONLY as uint64_t != 0 {
-            uid = proc_get_peer_uid((*c).peer);
+        if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
+            uid = c.as_ref().expect("live client").peer_uid();
             if uid != getuid() {
                 cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
                 return CMD_RETURN_ERROR;
             }
         }
-        if (*tc).flags & CLIENT_READONLY as uint64_t != 0 {
-            (*tc).flags &= !(CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t;
+        if tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
+            tc.as_ref()
+                .expect("live client")
+                .update_flags(0, !(!(CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t));
         } else {
-            (*tc).flags |= (CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t;
+            tc.as_ref()
+                .expect("live client")
+                .update_flags((CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t, 0);
         }
     }
     tablename =
@@ -153,7 +155,7 @@ unsafe fn cmd_switch_client_exec(
             });
             return CMD_RETURN_ERROR;
         };
-        (*tc).keytable = Some(table);
+        tc.as_ref().expect("target client").select_key_table(table);
         return CMD_RETURN_NORMAL;
     }
     sort_crit.order = sort_order_from_string(
@@ -168,14 +170,28 @@ unsafe fn cmd_switch_client_exec(
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
-        selected_session = session_next_session((*tc).session_handle().as_ref(), &sort_crit);
+        selected_session = session_next_session(
+            tc.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .as_ref(),
+            &sort_crit,
+        );
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        selected_session = session_previous_session((*tc).session_handle().as_ref(), &sort_crit);
+        selected_session = session_previous_session(
+            tc.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .as_ref(),
+            &sort_crit,
+        );
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| {
@@ -186,7 +202,7 @@ unsafe fn cmd_switch_client_exec(
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
         selected_session = crate::src::session::sessions_resolve(
             &crate::src::session::sessions,
-            &(*tc).last_session,
+            &tc.as_ref().expect("live client").previous_session(),
         );
         s = selected_session.clone();
         if s.is_none() {
@@ -268,13 +284,10 @@ unsafe fn cmd_switch_client_exec(
             .expect("target session")
             .update_environment(&source);
     }
-    server_client_set_session(
-        &(*(tc)).observer.upgrade().expect("live client"),
-        s.as_ref(),
-    );
+    server_client_set_session(&tc.clone().expect("live client"), s.as_ref());
     if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
         server_client_set_key_table(
-            &(*(tc)).observer.upgrade().expect("live client"),
+            &tc.clone().expect("live client"),
             ::core::ptr::null::<::core::ffi::c_char>(),
         );
     }

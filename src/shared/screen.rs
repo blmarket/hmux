@@ -50,6 +50,35 @@ pub struct screen {
     pub progress_bar: progress_bar,
 }
 
+/// Owned display state used after releasing the screen's owner or component borrow.
+/// In particular, overlay callbacks must not return pointers into their screen.
+#[derive(Clone, Copy)]
+pub struct ScreenMode {
+    pub cx: u_int,
+    pub cy: u_int,
+    pub mode: ::core::ffi::c_int,
+    pub default_mode: ::core::ffi::c_int,
+    pub cstyle: screen_cursor_style,
+    pub default_cstyle: screen_cursor_style,
+    pub ccolour: ::core::ffi::c_int,
+    pub default_ccolour: ::core::ffi::c_int,
+}
+
+impl From<&screen> for ScreenMode {
+    fn from(screen: &screen) -> Self {
+        Self {
+            cx: screen.cx,
+            cy: screen.cy,
+            mode: screen.mode,
+            default_mode: screen.default_mode,
+            cstyle: screen.cstyle,
+            default_cstyle: screen.default_cstyle,
+            ccolour: screen.ccolour,
+            default_ccolour: screen.default_ccolour,
+        }
+    }
+}
+
 impl screen {
     pub(crate) fn write_rows(&self) -> &[screen_write_cline] {
         self.write_list

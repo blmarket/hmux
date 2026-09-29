@@ -8,12 +8,13 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::server_client_unref_owned;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_DEAD;
-use crate::src::shared::client::{client_handle, client_retain};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
@@ -26,7 +27,7 @@ use std::rc::{Rc, Weak};
 
 #[repr(C)]
 pub struct cmd_load_buffer_data {
-    pub client: Option<Rc<UnsafeCell<client>>>,
+    pub client: Option<ClientRef>,
     pub item: Weak<UnsafeCell<cmdq_item>>,
     pub name: Option<CString>,
 }
@@ -81,8 +82,7 @@ unsafe fn cmd_load_buffer_done(
     if closed == 0 {
         return;
     }
-    let mut tc: *mut client =
-        client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get());
+    let tc = cdata.client.as_ref();
     let item_owner = cdata.item.upgrade();
     let item = item_owner
         .as_ref()
@@ -120,12 +120,11 @@ unsafe fn cmd_load_buffer_done(
                     |out| write_cstr(out, cause.as_ref().unwrap().as_ptr()),
                 );
             }
-        } else if !tc.is_null()
-            && !(*tc).session_handle().is_none()
-            && !(*tc).flags & CLIENT_DEAD as uint64_t != 0
-        {
+        } else if tc.is_some_and(|client| {
+            client.attached_session().upgrade().is_some() && !client.is_dead()
+        }) {
             tty_set_selection(
-                &raw mut (*tc).tty,
+                tc.expect("selection client"),
                 c"",
                 std::slice::from_raw_parts(bdata.cast(), bsize),
             );
@@ -150,9 +149,7 @@ unsafe fn cmd_load_buffer_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut cdata = Box::new(cmd_load_buffer_data {
         client: None,
         item: (*item).observer.clone(),
@@ -163,8 +160,8 @@ unsafe fn cmd_load_buffer_exec(
     if !bufname.is_null() {
         cdata.name = Some(CStr::from_ptr(bufname).to_owned());
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
-        cdata.client = client_retain((tc).as_ref());
+    if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_none() {
+        cdata.client = tc_owner.clone();
     }
     let path = format_single_from_target_cstring(
         item_handle,

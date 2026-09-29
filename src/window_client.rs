@@ -18,6 +18,7 @@ use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_hline, screen_write_preview,
     screen_write_vline,
 };
+use crate::src::server_client::Client as _;
 use crate::src::server_client::{
     server_client_detach, server_client_how_many, server_client_suspend, server_client_unref_owned,
 };
@@ -25,6 +26,7 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
@@ -79,7 +81,7 @@ impl window_client_modedata {
 
 pub struct window_client_itemdata {
     // Present until Drop transfers the last item-owned reference to the reactor.
-    c: Option<Rc<UnsafeCell<client>>>,
+    c: Option<ClientRef>,
     retained_client_reference: bool,
     pub ttyname: CString,
 }
@@ -96,7 +98,7 @@ impl Clone for window_client_itemdata {
 }
 
 impl window_client_itemdata {
-    fn new(c: &Rc<UnsafeCell<client>>, ttyname: &CStr) -> Self {
+    fn new(c: &ClientRef, ttyname: &CStr) -> Self {
         Self {
             c: Some(Rc::clone(c)),
             retained_client_reference: true,
@@ -104,7 +106,7 @@ impl window_client_itemdata {
         }
     }
 
-    fn client(&self) -> &Rc<UnsafeCell<client>> {
+    fn client(&self) -> &ClientRef {
         self.c.as_ref().expect("live client row retains its client")
     }
 }
@@ -245,7 +247,7 @@ pub static window_client_mode: window_mode = {
             window_client_key
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
+                    &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
@@ -262,13 +264,12 @@ static window_client_order_seq: [sort_order; 4] =
     [SORT_NAME, SORT_SIZE, SORT_CREATION, SORT_ACTIVITY];
 unsafe fn window_client_add_item(
     items: &mut Vec<refbox::RefBox<window_client_itemdata>>,
-    c: &Rc<UnsafeCell<client>>,
+    c: &ClientRef,
 ) {
-    let ttyname = (*c.get())
-        .ttyname
-        .as_deref()
-        .expect("attached client has a terminal name");
-    items.push(refbox::RefBox::new(window_client_itemdata::new(c, ttyname)));
+    let ttyname = c.tty_name().expect("attached client has a terminal name");
+    items.push(refbox::RefBox::new(window_client_itemdata::new(
+        c, &ttyname,
+    )));
 }
 
 #[cfg(test)]
@@ -324,9 +325,7 @@ mod tests {
         use crate::src::{reactor, shared::rc};
         for cancel in [false, true] {
             unsafe {
-                let client_owner = client::new();
-                let c = rc::as_ptr(&client_owner);
-                (*c).ttyname = Some(c"/dev/pts/7".to_owned());
+                let client_owner = client::with_names_for_test(None, Some(c"/dev/pts/7"));
                 let client_observer = Rc::downgrade(&client_owner);
                 let mut data = window_client_modedata {
                     wp: Weak::new(),
@@ -377,14 +376,19 @@ unsafe fn window_client_build(
     mut filter: *const ::core::ffi::c_char,
 ) {
     let mut i: u_int = 0;
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     (*data).items.clear();
     let clients_sorted = sort_get_clients(sort_crit);
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
-        let c = clients_sorted[i as usize].get();
-        if !((*c).session_handle().is_none()
-            || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0)
+        let c = Some(clients_sorted[i as usize].clone());
+        if !(c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+            || c.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t != 0)
         {
             window_client_add_item(&mut (*data).items, &clients_sorted[i as usize]);
         }
@@ -397,14 +401,12 @@ unsafe fn window_client_build(
         let item = ModeTreeItemData::Client(item_handle.clone())
             .as_client()
             .unwrap();
-        c = crate::src::shared::rc::as_ptr(item.client());
+        c = Some(item.client().clone());
         if !filter.is_null() {
             let cp = format_single_cstring(
                 None,
                 filter,
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c.as_ref(),
                 None,
                 (refbox::Weak::new()).clone(),
                 None,
@@ -422,9 +424,7 @@ unsafe fn window_client_build(
                 let text = format_single_cstring(
                     None,
                     (*data).format.as_ptr(),
-                    (c).as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
+                    c.as_ref(),
                     None,
                     (refbox::Weak::new()).clone(),
                     None,
@@ -433,8 +433,12 @@ unsafe fn window_client_build(
                     &mut *(*data).tree_owner().get(),
                     None,
                     ModeTreeItemData::Client(item_handle.clone()),
-                    c as uint64_t,
-                    (*c).name.as_deref().expect("attached client has a name"),
+                    std::rc::Rc::as_ptr(c.as_ref().expect("live client")) as uint64_t,
+                    c.as_ref()
+                        .expect("live client")
+                        .name()
+                        .as_deref()
+                        .expect("attached client has a name"),
                     Some(&text),
                     -(1 as ::core::ffi::c_int),
                 );
@@ -450,10 +454,11 @@ unsafe fn window_client_draw_info(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
+    let c = item.client();
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut w: *mut window = ((*c)
-        .session_handle()
+    let mut w: *mut window = (c
+        .attached_session()
+        .upgrade()
         .expect("live session")
         .current_winlink())
     .get_unchecked()
@@ -478,20 +483,18 @@ unsafe fn window_client_draw_info(
     let mut cy: u_int = (*s).cy;
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut ft_owner = format_create_defaults(
-        None,
-        (c).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        None,
-        (refbox::Weak::new()).clone(),
-        None,
-    );
+    let mut ft_owner =
+        format_create_defaults(None, Some(c), None, (refbox::Weak::new()).clone(), None);
     ft = &raw mut *ft_owner;
-    if (*tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term)).flags
-        & TERM_INVALIDMS
-        != 0
-    {
+    if {
+        c.borrow_terminal()
+            .term
+            .as_deref()
+            .expect("terminal description")
+            .flags
+            & TERM_INVALIDMS
+            != 0
+    } {
         format_add(
             ft,
             b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,
@@ -568,8 +571,9 @@ unsafe fn window_client_draw(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut c: *mut client = crate::src::shared::rc::as_ptr(item.client());
-    let mut session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let c = item.client();
+    let mut session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> =
+        c.attached_session().upgrade();
     let mut s: *mut screen = (*ctx).screen_ptr();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -591,7 +595,7 @@ unsafe fn window_client_draw(
     let mut cy: u_int = (*s).cy;
     let mut lines: u_int = 0;
     let mut at: u_int = 0;
-    if session.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
+    if session.is_none() || c.flags() & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return;
     }
     if (*data).preview_is_info != 0 {
@@ -616,11 +620,11 @@ unsafe fn window_client_draw(
             wp = ::core::ptr::null_mut::<window_pane>();
         }
     }
-    lines = status_line_size(&*c);
+    lines = status_line_size(c);
     if lines >= sy {
         lines = 0 as u_int;
     }
-    if status_at_line(&*c) == 0 as ::core::ffi::c_int {
+    if status_at_line(c) == 0 as ::core::ffi::c_int {
         at = lines;
     } else {
         at = 0 as u_int;
@@ -690,20 +694,56 @@ unsafe fn window_client_draw(
             0 as ::core::ffi::c_int,
         );
     }
-    screen_write_fast_copy(
-        &mut *ctx,
-        &(*c).status.screen,
-        0 as u_int,
-        0 as u_int,
-        sx,
-        lines,
-    );
+    // Rendering can dispatch terminal output back into this client. Copy its
+    // status grid before rendering so no status borrow spans that dispatch.
+    let mut preview = window_client_status_snapshot(c, lines);
+    screen_write_fast_copy(ctx, &preview, 0, 0, sx, lines);
+    crate::src::screen::screen_free(&mut preview);
 }
-unsafe fn window_client_menu(
-    data: *mut window_client_modedata,
-    c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut key: key_code,
-) {
+unsafe fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
+    let status = c.borrow_status();
+    let source = status.screen.grid();
+    let rows = lines.min(source.hsize.wrapping_add(source.sy));
+    let mut snapshot = screen::empty();
+    // fast_copy only reads the grid; no timer, hyperlink table or write-list is
+    // needed for this owned source image.
+    snapshot.grid = Some(crate::src::grid::grid_create(source.sx, rows, 0));
+    crate::src::grid::grid_duplicate_lines(snapshot.grid_mut(), 0, source, 0, rows);
+    snapshot
+}
+
+#[cfg(test)]
+mod status_preview_tests {
+    use super::*;
+
+    #[test]
+    fn preview_survives_status_replacement_before_rendering() {
+        unsafe {
+            let client = client::new();
+            let mut cell = grid_default_cell;
+            cell.data.data[0] = b'A';
+            cell.data.size = 1;
+            cell.data.width = 1;
+            {
+                let mut status = client.borrow_status_mut();
+                status.screen.grid = Some(crate::src::grid::grid_create(4, 1, 0));
+                crate::src::grid::grid_set_cell(status.screen.grid_mut(), 0, 0, &cell);
+            }
+            let mut preview = window_client_status_snapshot(&client, 1);
+            // Formatting/terminal dispatch may replace the live status screen.
+            {
+                let mut status = client.borrow_status_mut();
+                crate::src::screen::screen_free(&mut status.screen);
+            }
+            let mut observed = grid_default_cell;
+            crate::src::grid::grid_get_cell(preview.grid(), 0, 0, &mut observed);
+            assert_eq!(observed.data.data[0], b'A');
+            crate::src::screen::screen_free(&mut preview);
+        }
+    }
+}
+
+unsafe fn window_client_menu(data: *mut window_client_modedata, c: &ClientRef, mut key: key_code) {
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -738,10 +778,7 @@ unsafe fn window_client_get_key(
     ft = &raw mut *ft_owner;
     format_defaults(
         ft,
-        (crate::src::shared::rc::as_ptr(item.client()))
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        Some(item.client()),
         None,
         (refbox::Weak::new()).clone(),
         None,
@@ -937,38 +974,20 @@ unsafe fn window_client_do_detach(
         mode_tree_down(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
-        server_client_detach(
-            &(*(crate::src::shared::rc::as_ptr(item.client())))
-                .observer
-                .upgrade()
-                .expect("live client"),
-            MSG_DETACH,
-        );
+        server_client_detach(item.client(), MSG_DETACH);
     } else if key == 'x' as i32 as key_code || key == 'X' as i32 as key_code {
-        server_client_detach(
-            &(*(crate::src::shared::rc::as_ptr(item.client())))
-                .observer
-                .upgrade()
-                .expect("live client"),
-            MSG_DETACHKILL,
-        );
+        server_client_detach(item.client(), MSG_DETACHKILL);
     } else if key == 'z' as i32 as key_code || key == 'Z' as i32 as key_code {
-        server_client_suspend(
-            &(*(crate::src::shared::rc::as_ptr(item.client())))
-                .observer
-                .upgrade()
-                .expect("live client"),
-        );
+        server_client_suspend(item.client());
     }
 }
 unsafe fn window_client_key(
     mut wme: refbox::Weak<window_mode_entry>,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let _c = client_owner.get();
     let mode_pane_owner = wme
         .get_unchecked()
         .wp

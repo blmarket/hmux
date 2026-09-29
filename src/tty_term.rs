@@ -11,15 +11,16 @@ use crate::src::ffi::ncurses::{
 use crate::src::format::bytes::{format_message_with, xformat};
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::{options_array_item_value, options_get_only};
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::environment::environ_entry;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::options::{options_array_item, options_entry, options_value};
 use crate::src::shared::posix_io::STDIN_FILENO;
-use crate::src::shared::tty::tty_terms;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{tty, tty_code, tty_code_type, tty_term, tty_term_entry};
+use crate::src::shared::tty::{tty, tty_code, tty_code_type, tty_term};
 use crate::src::shared::tty::{
     TERM_DECFRA, TERM_DECSLRM, TERM_INVALIDMS, TERM_NOAM, TERM_RGBCOLOURS, TERM_SIXEL,
     TERM_VT100LIKE,
@@ -40,9 +41,61 @@ pub struct tty_term_code_entry {
     pub name: &'static ::std::ffi::CStr,
 }
 pub const OK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub static mut tty_terms: tty_terms = tty_terms {
-    lh_first: ::core::ptr::null::<tty_term>() as *mut tty_term,
-};
+#[derive(Clone)]
+struct TerminalRegistration {
+    client: ClientWeak,
+    identity: std::rc::Weak<()>,
+}
+
+// Registration order is newest first. These observations never project into a
+// Client component; reporting reacquires that Client's terminal guard instead.
+static mut tty_terms: Vec<TerminalRegistration> = Vec::new();
+
+pub(crate) struct TerminalDescription {
+    pub name: CString,
+    pub client_name: Option<CString>,
+    pub flags: i32,
+    pub codes: Vec<CString>,
+}
+
+pub(crate) unsafe fn tty_term_descriptions(
+    target: Option<&ClientRef>,
+) -> impl Iterator<Item = TerminalDescription> {
+    let target = target.map(std::rc::Rc::downgrade);
+    // New registrations are always prepended, so the old intrusive traversal
+    // would not visit them after starting either. Removed entries are skipped
+    // as they are reached, and descriptions are copied only at that point.
+    tty_terms
+        .clone()
+        .into_iter()
+        .filter_map(move |registration| {
+            if target
+                .as_ref()
+                .is_some_and(|target| !target.ptr_eq(&registration.client))
+            {
+                return None;
+            }
+            let owner = registration.client.upgrade()?;
+            let client_name = owner.name();
+            let terminal = owner.borrow_terminal();
+            let term = terminal.term.as_deref()?;
+            if !registration
+                .identity
+                .ptr_eq(&std::rc::Rc::downgrade(&term.identity))
+            {
+                return None;
+            }
+            Some(TerminalDescription {
+                name: term.name.clone(),
+                client_name,
+                flags: term.flags,
+                codes: (0..tty_term_ncodes())
+                    .map(|code| tty_term_describe(term, code))
+                    .collect(),
+            })
+        })
+}
+
 static mut tty_term_codes: [tty_term_code_entry; 234] = [
     tty_term_code_entry {
         type_0: TTYCODE_STRING,
@@ -1270,17 +1323,11 @@ unsafe fn tty_term_validate(mut term: *mut tty_term) {
     (&mut (*term).codes)[TTYC_MS as usize] = tty_code::None;
 }
 pub unsafe fn tty_term_create(
-    mut tty: *mut tty,
+    client_owner: &ClientRef,
     mut name: *mut ::core::ffi::c_char,
     mut caps: *mut *mut ::core::ffi::c_char,
     mut ncaps: u_int,
 ) -> Result<Box<tty_term>, CString> {
-    let terminal_client_owner = (*tty)
-        .client
-        .upgrade()
-        .expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
-    let mut c: *mut client = terminal_client;
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
     let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -1294,29 +1341,26 @@ pub unsafe fn tty_term_create(
     let mut offset: size_t = 0;
     let mut namelen: size_t = 0;
     let mut n: ::core::ffi::c_int = 0;
-    let mut envent: Option<&environ_entry> = None;
     log_debug(format_args!("adding term {}", log_cstr((name) as *const _)));
-    // The global list and tty keep this address until tty_term_free.
+    // Register identity before validation; failure and explicit free retire it.
     let mut owner = Box::new(tty_term {
         name: CStr::from_ptr(name).to_owned(),
-        client: (*tty).client.clone(),
+        client: std::rc::Rc::downgrade(client_owner),
         applied_features: 0,
         acs: [[0; 2]; 256],
         codes: vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice(),
         flags: 0,
-        entry: tty_term_entry {
-            le_next: ::core::ptr::null_mut(),
-            le_prev: ::core::ptr::null_mut(),
-        },
+        identity: std::rc::Rc::new(()),
+        registered: true,
     });
-
+    tty_terms.insert(
+        0,
+        TerminalRegistration {
+            client: std::rc::Rc::downgrade(client_owner),
+            identity: std::rc::Rc::downgrade(&owner.identity),
+        },
+    );
     term = &raw mut *owner;
-    (*term).entry.le_next = tty_terms.lh_first;
-    if !(*term).entry.le_next.is_null() {
-        (*tty_terms.lh_first).entry.le_prev = &raw mut (*term).entry.le_next;
-    }
-    tty_terms.lh_first = term;
-    (*term).entry.le_prev = &raw mut tty_terms.lh_first;
     i = 0 as u_int;
     while i < ncaps {
         namelen = strcspn(
@@ -1403,7 +1447,7 @@ pub unsafe fn tty_term_create(
             ) == 0
         }) {
             tty_parse_client_features(
-                &mut *(c),
+                client_owner,
                 s.offset(offset as isize),
                 b":\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1413,57 +1457,25 @@ pub unsafe fn tty_term_create(
         });
     }
     del_curterm(cur_term);
-    envent = environ_find(
-        (*c).environ.as_deref().expect("environment"),
-        b"COLORTERM\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if !envent.is_none() {
+    let colour_term = client_owner.with_environment(|env| {
+        env.and_then(|env| env.find(c"COLORTERM"))
+            .map(|entry| entry.value.clone())
+    });
+    if let Some(value) = colour_term {
+        let name = client_owner.name();
         log_debug(format_args!(
             "{} COLORTERM={}",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
-            log_cstr(
-                ((envent.unwrap().value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(name.as_ref().map_or(std::ptr::null(), |s| s.as_ptr())),
+            log_cstr(value.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()))
         ));
-        if strcasecmp(
-            (envent.unwrap().value)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            b"truecolor\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcasecmp(
-                (envent.unwrap().value)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                b"24bit\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
-        {
-            tty_parse_client_features(
-                &mut *(c),
-                b"RGB\0" as *const u8 as *const ::core::ffi::c_char,
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-        } else if !strstr(
-            (envent.unwrap().value)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            b"256\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-        .is_null()
-        {
-            tty_parse_client_features(
-                &mut *(c),
-                b"256\0" as *const u8 as *const ::core::ffi::c_char,
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+        if let Some(value) = value {
+            if value.to_bytes().eq_ignore_ascii_case(b"truecolor")
+                || value.to_bytes().eq_ignore_ascii_case(b"24bit")
+            {
+                client_owner.parse_terminal_features(c"RGB", c",");
+            } else if value.to_bytes().windows(3).any(|part| part == b"256") {
+                client_owner.parse_terminal_features(c"256", c",");
+            }
         }
     }
     tty_term_apply_overrides(term);
@@ -1482,7 +1494,7 @@ pub unsafe fn tty_term_create(
         {
             (*term).flags |= TERM_VT100LIKE;
             tty_parse_client_features(
-                &mut *(c),
+                client_owner,
                 b"bpaste,focus,title\0" as *const u8 as *const ::core::ffi::c_char,
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );
@@ -1491,12 +1503,16 @@ pub unsafe fn tty_term_create(
             && (tty_term_has(term, TTYC_SETRGBF) == 0 || tty_term_has(term, TTYC_SETRGBB) == 0)
         {
             tty_parse_client_features(
-                &mut *(c),
+                client_owner,
                 b"RGB\0" as *const u8 as *const ::core::ffi::c_char,
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        if tty_apply_features(term) != 0 {
+        let applied = tty_apply_features(term, client_owner.terminal_feature_mask());
+        if applied.enable_utf8 {
+            client_owner.update_flags(crate::src::shared::client::CLIENT_UTF8 as u64, 0);
+        }
+        if applied.changed {
             tty_term_apply_overrides(term);
         }
         i = 0 as u_int;
@@ -1519,9 +1535,9 @@ pub fn tty_term_free(term: Box<tty_term>) {
 
 impl Drop for tty_term {
     fn drop(&mut self) {
-        // Empty/test terminals are unregistered. Constructors link the stable
-        // Box before validation, so this also unlinks on every failure path.
-        if self.entry.le_prev.is_null() {
+        // Empty/test terminals are unregistered. Constructor failure follows
+        // the same retirement path as the existing explicit tty_term_free.
+        if !self.registered {
             return;
         }
         unsafe {
@@ -1529,10 +1545,8 @@ impl Drop for tty_term {
                 "removing term {}",
                 crate::src::log::log_bytes(self.name.as_bytes())
             ));
-            if !self.entry.le_next.is_null() {
-                (*self.entry.le_next).entry.le_prev = self.entry.le_prev;
-            }
-            *self.entry.le_prev = self.entry.le_next;
+            let identity = std::rc::Rc::downgrade(&self.identity);
+            tty_terms.retain(|entry| !entry.identity.ptr_eq(&identity));
         }
     }
 }
@@ -1805,7 +1819,7 @@ mod term_string_owner_tests {
         use crate::src::options::{options_create_owned, options_empty, options_search};
         unsafe {
             let saved = global_options;
-            let initial_head = tty_terms.lh_first;
+            let initial_count = tty_terms.len();
             let mut options = options_create_owned(std::ptr::null_mut());
             global_options = &raw mut *options;
             for name in [c"terminal-features", c"terminal-overrides"] {
@@ -1815,33 +1829,53 @@ mod term_string_owner_tests {
                 );
             }
             let client_owner = client::new();
-            let client = &mut *client_owner.get();
-            client.environ = Some(crate::src::environ::environ_create());
             let mut terminal = tty::empty();
             terminal.client = std::rc::Rc::downgrade(&client_owner);
             let name = c"owner-test".as_ptr().cast_mut();
 
-            // A failed constructor must remove its already-published address.
-            let failed = tty_term_create(&mut terminal, name, std::ptr::null_mut(), 0);
+            // A failed constructor must remove its already-published registration.
+            let failed = tty_term_create(&client_owner, name, std::ptr::null_mut(), 0);
             assert_eq!(
                 failed.err().unwrap().as_c_str(),
                 c"terminal does not support clear"
             );
-            assert_eq!(tty_terms.lh_first, initial_head);
+            assert_eq!(tty_terms.len(), initial_count);
 
             let mut caps = [c"clear=C".as_ptr().cast_mut(), c"cup=P".as_ptr().cast_mut()];
-            let first = tty_term_create(&mut terminal, name, caps.as_mut_ptr(), 2).unwrap();
-            let first_ptr = &*first as *const tty_term;
+            let first = tty_term_create(&client_owner, name, caps.as_mut_ptr(), 2).unwrap();
+            let first_identity = std::rc::Rc::downgrade(&first.identity);
             terminal.term = Some(first);
-            let second = tty_term_create(&mut terminal, name, caps.as_mut_ptr(), 2).unwrap();
+            let second = tty_term_create(&client_owner, name, caps.as_mut_ptr(), 2).unwrap();
             assert!(second.client.ptr_eq(&terminal.client));
             let stale_client = second.client.clone();
-            assert!(std::ptr::eq(second.entry.le_next, first_ptr));
-            // Remove the tail before the head; the head's back-links must be repaired.
+            assert!(tty_terms[1].identity.ptr_eq(&first_identity));
+            // Retire the older term without invalidating the newer registration.
             drop(terminal.term.take());
-            assert_eq!(second.entry.le_next, initial_head);
+            assert_eq!(tty_terms.len(), initial_count + 1);
+            assert!(tty_terms[0]
+                .identity
+                .ptr_eq(&std::rc::Rc::downgrade(&second.identity)));
             drop(second);
-            assert_eq!(tty_terms.lh_first, initial_head);
+            assert_eq!(tty_terms.len(), initial_count);
+            // Reporting resolves only the currently installed component. An
+            // iterator must not expose a later replacement under the old token.
+            let installed = tty_term_create(&client_owner, name, caps.as_mut_ptr(), 2).unwrap();
+            client_owner.borrow_terminal_mut().term = Some(installed);
+            let description = tty_term_descriptions(Some(&client_owner)).next().unwrap();
+            let mut retired_iterator = tty_term_descriptions(Some(&client_owner));
+            let retired = client_owner.borrow_terminal_mut().term.take().unwrap();
+            tty_term_free(retired);
+            let replacement = tty_term_create(&client_owner, name, caps.as_mut_ptr(), 2).unwrap();
+            client_owner.borrow_terminal_mut().term = Some(replacement);
+            assert!(retired_iterator.next().is_none());
+            assert_eq!(description.name.as_c_str(), c"owner-test");
+            assert_eq!(description.codes.len(), tty_term_ncodes() as usize);
+            assert!(description.codes[TTYC_CLEAR as usize]
+                .to_bytes()
+                .ends_with(b"C"));
+            let retired = client_owner.borrow_terminal_mut().term.take().unwrap();
+            tty_term_free(retired);
+            assert_eq!(tty_terms.len(), initial_count);
             drop(client_owner);
             assert!(terminal.client.upgrade().is_none());
             assert!(stale_client.upgrade().is_none());

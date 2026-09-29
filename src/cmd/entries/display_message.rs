@@ -12,9 +12,11 @@ use crate::src::format::{
 use crate::src::json::{json_parse, json_to_string};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server_client::server_client_print;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -75,10 +77,8 @@ unsafe fn cmd_display_message_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut tc: Option<ClientRef> = tc_owner.clone();
+    let mut c: Option<ClientRef> = None;
     let s = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
@@ -146,20 +146,22 @@ unsafe fn cmd_display_message_exec(
         template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
     }
     let best_client_owner;
-    if !tc.is_null()
-        && (*tc).session.ptr_eq(
-            &s.as_ref()
-                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
-        )
+    if !tc.is_none()
+        && tc
+            .as_ref()
+            .expect("target client")
+            .attached_session()
+            .ptr_eq(
+                &s.as_ref()
+                    .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+            )
     {
-        c = tc;
+        c = tc.clone();
     } else if s.is_some() {
         best_client_owner = cmd_find_best_client(s.as_ref().unwrap());
-        c = best_client_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = best_client_owner.clone();
     } else {
-        c = ::core::ptr::null_mut::<client>();
+        c = None;
     }
     if args_has(args, 'v' as i32 as u_char) != 0 {
         flags = FORMAT_VERBOSE;
@@ -171,9 +173,7 @@ unsafe fn cmd_display_message_exec(
     ft = &raw mut *ft_owner;
     format_defaults(
         ft,
-        (c).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        c.as_ref(),
         s.as_ref(),
         wl.clone(),
         (wp).as_ref()
@@ -216,18 +216,18 @@ unsafe fn cmd_display_message_exec(
         cmdq_error(item_handle, |out| write_cstr(out, msg.as_ptr()));
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
         cmdq_print(item_handle, |out| write_cstr(out, msg.as_ptr()));
-    } else if !tc.is_null() && (*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
+    } else if !tc.is_none()
+        && tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
+    {
         let mut evb = evbuffer_new();
         evbuffer_add_formatted(&mut *evb, |out| {
             out.write_all(b"%message ")?;
             write_cstr(out, msg.as_ptr())
         });
         server_client_print(tc_owner.as_ref(), 0 as ::core::ffi::c_int, &mut *evb);
-    } else if !tc.is_null() {
+    } else if !tc.is_none() {
         status_message_set(
-            (tc).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            tc.as_ref(),
             delay,
             0 as ::core::ffi::c_int,
             Nflag,

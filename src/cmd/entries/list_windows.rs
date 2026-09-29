@@ -6,10 +6,12 @@ use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
     format_true,
 };
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -65,9 +67,7 @@ unsafe fn cmd_list_windows_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut i: u_int = 0;
@@ -134,15 +134,7 @@ unsafe fn cmd_list_windows_exec(
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (n) as u32),
         );
-        format_defaults(
-            ft,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-            s.as_ref(),
-            wl.clone(),
-            None,
-        );
+        format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), None);
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

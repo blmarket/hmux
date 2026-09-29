@@ -7,9 +7,11 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
 use crate::src::reactor::{evbuffer_add, evbuffer_new};
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
@@ -94,9 +96,7 @@ unsafe fn cmd_save_buffer_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let pb;
     let mut flags: ::core::ffi::c_int = 0;
     let mut bufname: *const ::core::ffi::c_char =
@@ -123,7 +123,14 @@ unsafe fn cmd_save_buffer_exec(
         &cmd_show_buffer_entry,
     );
     if show_buffer {
-        if !(*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+        if !c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+            || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
+        {
             let mut evb = evbuffer_new();
             {
                 let buffer = pb.borrow();

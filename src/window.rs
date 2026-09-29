@@ -1,4 +1,6 @@
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
+use crate::src::shared::client::ClientRef;
 mod alerts;
 mod api;
 pub use api::Window;
@@ -143,7 +145,7 @@ use libc::{REG_EXTENDED, REG_ICASE};
 
 struct window_pane_input_data {
     item: Weak<UnsafeCell<cmdq_item>>,
-    client: Option<Rc<UnsafeCell<client>>>,
+    client: Option<ClientRef>,
     wp: u_int,
     file: Weak<UnsafeCell<client_file>>,
 }
@@ -2863,7 +2865,7 @@ pub unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window
     let item_owner = std::mem::take(&mut (*wp).wait_item).upgrade();
     let Some(item_owner) = item_owner else { return };
     let item = item_owner.get();
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut retval: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*wp).flags & PANE_STATUSREADY != 0 {
         if (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
@@ -3436,7 +3438,7 @@ unsafe fn window_pane_prompt_free_callback(
 }
 pub unsafe fn window_pane_set_prompt(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    client_owner: Option<&Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut fs: *mut cmd_find_state,
     mut msg: *const ::core::ffi::c_char,
     mut input: *const ::core::ffi::c_char,
@@ -3446,7 +3448,7 @@ pub unsafe fn window_pane_set_prompt(
     mut type_0: prompt_type,
 ) {
     let wp = pane_owner.get();
-    let session_owner = client_owner.and_then(|owner| (*owner.get()).session.upgrade());
+    let session_owner = client_owner.and_then(|owner| owner.attached_session().upgrade());
     let mut pd = prompt_create_data::default();
     window_pane_clear_prompt(pane_owner);
     let wpp = refbox::RefBox::new(window_pane_prompt {
@@ -3536,7 +3538,7 @@ pub unsafe fn window_pane_update_prompt(
 }
 pub unsafe fn window_pane_prompt_key(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    client_owner: Option<&Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) -> prompt_key_result {
@@ -3574,7 +3576,7 @@ pub unsafe fn window_pane_prompt_key(
         {
             result = PROMPT_KEY_NOT_HANDLED;
         } else {
-            if client_owner.is_some_and(|owner| status_at_line(&*owner.get()) == 0) {
+            if client_owner.is_some_and(|owner| status_at_line(owner) == 0) {
                 py = 0 as u_int;
             } else {
                 py = (*wp).sy.wrapping_sub(1 as u_int);
@@ -3726,7 +3728,7 @@ pub unsafe fn window_pane_paste(
 }
 pub unsafe fn window_pane_key(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
@@ -4217,23 +4219,27 @@ pub unsafe fn window_pane_start_input(
     let item = item_handle.get();
     let mut wp = wp_owner.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let c = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     if (*wp).flags & PANE_EMPTY == 0 {
         return Err(c"pane is not empty".to_owned());
     }
-    if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
+    if c.as_ref().expect("live client").flags() & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
         return Ok(1);
     }
-    if !(*c).session_handle().is_none() {
+    if !c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade()
+        .is_none()
+    {
         return Ok(1);
     }
     // The file initializer publishes its weak identity before dispatch. The
     // callback then owns the box, including its retained client reference.
     let mut cdata = Box::new(window_pane_input_data {
         item: (*item).observer.clone(),
-        client: Some((*c).observer.upgrade().expect("live pane input client")),
+        client: c.clone(),
         wp: (*wp).id,
         file: Weak::new(),
     });
@@ -4446,23 +4452,33 @@ pub unsafe fn window_get_bg_client(
         .window_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session_handle().is_none()
-                || ((*loop_0)
-                    .session_handle()
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
+            != 0)
+        {
+            if !(loop_0
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .is_none()
+                || (loop_0
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
                     .expect("live session")
                     .contains_window(&(*w).observer.upgrade().expect("live window"))
                     as i32)
                     == 0)
             {
-                if !((*loop_0).tty.bg == -(1 as ::core::ffi::c_int)) {
-                    return (*loop_0).tty.bg;
+                if !(loop_0.as_ref().expect("live client").borrow_terminal().bg
+                    == -(1 as ::core::ffi::c_int))
+                {
+                    return loop_0.as_ref().expect("live client").borrow_terminal().bg;
                 }
             }
         }
@@ -4471,9 +4487,7 @@ pub unsafe fn window_get_bg_client(
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -4501,23 +4515,33 @@ pub unsafe fn window_pane_get_fg(
         .window_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session_handle().is_none()
-                || ((*loop_0)
-                    .session_handle()
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
+            != 0)
+        {
+            if !(loop_0
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .is_none()
+                || (loop_0
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
                     .expect("live session")
                     .contains_window(&(*w).observer.upgrade().expect("live window"))
                     as i32)
                     == 0)
             {
-                if !((*loop_0).tty.fg == -(1 as ::core::ffi::c_int)) {
-                    return (*loop_0).tty.fg;
+                if !(loop_0.as_ref().expect("live client").borrow_terminal().fg
+                    == -(1 as ::core::ffi::c_int))
+                {
+                    return loop_0.as_ref().expect("live client").borrow_terminal().fg;
                 }
             }
         }
@@ -4526,9 +4550,7 @@ pub unsafe fn window_pane_get_fg(
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     return -(1 as ::core::ffi::c_int);
 }
@@ -4553,7 +4575,7 @@ pub unsafe fn window_pane_get_theme(
 ) -> client_theme {
     let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     let mut found_light: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut found_dark: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if wp.is_null() {
@@ -4564,20 +4586,29 @@ pub unsafe fn window_pane_get_theme(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session_handle().is_none()
-                || ((*loop_0)
-                    .session_handle()
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
+            != 0)
+        {
+            if !(loop_0
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .is_none()
+                || (loop_0
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
                     .expect("live session")
                     .contains_window(&(*w).observer.upgrade().expect("live window"))
                     as i32)
                     == 0)
             {
-                match (*loop_0).theme as ::core::ffi::c_uint {
+                match loop_0.as_ref().expect("live client").terminal_theme() as ::core::ffi::c_uint
+                {
                     1 => {
                         found_light = 1 as ::core::ffi::c_int;
                     }
@@ -4593,9 +4624,7 @@ pub unsafe fn window_pane_get_theme(
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     if found_dark != 0 && found_light == 0 {
         return THEME_DARK;
@@ -4949,7 +4978,7 @@ mod pane_prompt_data_tests {
         unsafe {
             let client = client::new();
             let weak_client = Rc::downgrade(&client);
-            let pointer = rc::as_ptr(&client);
+            let pointer = Rc::as_ptr(&client);
             let client_slot = Rc::new(RefCell::new(Some(client)));
             let data = data(u_int::MAX);
             data.try_borrow_mut().unwrap().c = weak_client.clone();
@@ -4963,7 +4992,7 @@ mod pane_prompt_data_tests {
                 assert_eq!(text, Some(c"input"));
                 assert_eq!(key, PROMPT_KEY_HANDLED);
                 if count.get() == 0 {
-                    assert_eq!(client.unwrap().get(), pointer);
+                    assert_eq!(Rc::as_ptr(client.unwrap()), pointer);
                     drop(slot.borrow_mut().take());
                     assert!(observed.upgrade().is_some());
                     // Dispatch must release the data borrow before callbacks.

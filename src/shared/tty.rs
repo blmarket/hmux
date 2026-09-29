@@ -10,6 +10,7 @@ use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::terminal::termios;
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use hmux_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;
@@ -331,7 +332,7 @@ pub struct tty_window_view {
 #[derive(Default)]
 pub struct tty {
     /// The client owns its terminal; this backreference must not retain it.
-    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub client: ClientWeak,
     pub start_timer: event,
     pub clipboard_timer: event,
     pub last_requests: time_t,
@@ -356,7 +357,7 @@ pub struct tty {
     pub rleft: u_int,
     pub rright: u_int,
     pub event_in: event,
-    pub in_0: Option<Box<SegmentedBuf>>,
+    pub in_0: Option<Box<crate::src::tty::TerminalInput>>,
     pub event_out: event,
     pub out: Option<Box<SegmentedBuf>>,
     pub timer: event,
@@ -397,12 +398,13 @@ impl tty {
 pub struct tty_term {
     pub name: std::ffi::CString,
     /// Observes the terminal client without retaining a closed client.
-    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub client: ClientWeak,
     pub applied_features: ::core::ffi::c_int,
     pub acs: [[u8; 2]; 256],
     pub codes: Box<[tty_code]>,
     pub flags: ::core::ffi::c_int,
-    pub entry: tty_term_entry,
+    pub(crate) identity: std::rc::Rc<()>,
+    pub(crate) registered: bool,
 }
 
 impl tty_term {
@@ -414,16 +416,10 @@ impl tty_term {
             acs: [[0; 2]; 256],
             codes: Default::default(),
             flags: Default::default(),
-            entry: Default::default(),
+            identity: std::rc::Rc::new(()),
+            registered: false,
         }
     }
-}
-
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct tty_term_entry {
-    pub le_next: *mut tty_term,
-    pub le_prev: *mut *mut tty_term,
 }
 
 /// Command metadata; screen and cell borrows are supplied only at dispatch.
@@ -566,15 +562,8 @@ impl<'a> tty_command_data<'a> {
     }
 }
 
-pub type tty_ctx_set_client_cb =
-    Option<Box<dyn FnMut(&mut tty_ctx, &std::rc::Rc<std::cell::UnsafeCell<client>>) -> i32>>;
+pub type tty_ctx_set_client_cb = Option<Box<dyn FnMut(&mut tty_ctx, &ClientRef) -> i32>>;
 
 pub type tty_ctx_redraw_cb = Option<Box<dyn Fn(&tty_ctx)>>;
 
 pub type tty_code_type = ::core::ffi::c_uint;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tty_terms {
-    pub lh_first: *mut tty_term,
-}

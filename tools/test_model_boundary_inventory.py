@@ -1,8 +1,23 @@
 import unittest
 from model_boundary_inventory import mask, enclosing_function, owner, private_fields, classify
+from client_storage_boundary import private_storage_probe
 
 
 class BoundaryInventoryTests(unittest.TestCase):
+    def test_client_storage_probe_seals_projection_without_changing_consumers(self):
+        source = {
+            'src/shared/client.rs': 'type R = Rc<UnsafeCell<client>>; type W = Weak<UnsafeCell<client>>;',
+            'src/server_client/mod.rs': 'pub use model::client; fn make() { std::cell::UnsafeCell::new(value) }',
+            'src/server_client/model.rs': 'pub struct client {}',
+            'src/tty.rs': 'fn callback(c: &ClientRef) { c.get(); }',
+        }
+        changed = private_storage_probe(source)
+        self.assertIn('ClientStorage::new(value)', changed['src/server_client/mod.rs'])
+        self.assertEqual(changed['src/shared/client.rs'].count('server_client::ClientStorage'), 2)
+        self.assertIn('pub(super) fn get', changed['src/server_client/model.rs'])
+        self.assertEqual(changed['src/tty.rs'], source['src/tty.rs'])
+        self.assertNotIn('ClientStorage', source['src/server_client/model.rs'])
+
     def test_literals_comments_lifetimes_and_nested_functions(self):
         source = '''// fn fake() { }
 fn window_pane_resize<'a>(pane: &'a Pane) {
@@ -25,6 +40,9 @@ fn next() { other(); }
         self.assertEqual(owner('src/window.rs', 'window_resize'), 'window')
         self.assertNotEqual(owner('src/window.rs', 'winlink_set_window'), 'window')
         self.assertIsNone(owner('src/layout/core.rs', 'layout_resize'))
+        self.assertEqual(owner('src/server_client/model.rs', 'client_retain'), 'client')
+        self.assertNotEqual(owner('src/control.rs', 'control_write_output'), 'client')
+        self.assertNotEqual(owner('src/tty.rs', 'tty_stop_tty'), 'client')
         self.assertNotEqual(owner('src/session/alerts.rs', 'alerts_set_message'), 'client')
 
     def test_private_probe_preserves_lines_and_other_structs(self):

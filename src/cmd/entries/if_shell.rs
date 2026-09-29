@@ -14,13 +14,14 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
 use crate::src::server_client::server_client_get_cwd;
 use crate::src::server_client::server_client_unref_owned;
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
-use crate::src::shared::client::{client_handle, client_retain};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
@@ -37,7 +38,7 @@ use std::rc::{Rc, Weak};
 pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,
     pub cmd_else: Option<Box<args_command_state>>,
-    pub client: Option<Rc<UnsafeCell<client>>>,
+    pub client: Option<ClientRef>,
     pub item: Weak<UnsafeCell<cmdq_item>>,
     pub wait: bool,
 }
@@ -81,17 +82,13 @@ unsafe fn cmd_if_shell_exec(
 ) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let queue_client_ptr = queue_client
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
@@ -157,7 +154,7 @@ unsafe fn cmd_if_shell_exec(
         cdata.client = cmdq_get_client((item).as_ref());
         cdata.item = (*item).observer.clone();
     } else {
-        cdata.client = client_retain((tc).as_ref());
+        cdata.client = tc_owner.clone();
     }
     let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
     let job = job_run(
@@ -197,8 +194,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
     if cdata.wait && item_owner.is_none() {
         return;
     }
-    let mut c: *mut client =
-        client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = cdata.client.as_ref();
     let item = item_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -219,9 +215,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                     .map_or(::core::ptr::null(), |cause| cause.as_ptr());
                 if !cdata.wait {
                     status_message_set(
-                        (c).as_ref()
-                            .and_then(|model| model.observer.upgrade())
-                            .as_ref(),
+                        c,
                         -(1 as ::core::ffi::c_int),
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
@@ -240,12 +234,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
             }
             Ok(commands) if !cdata.wait => {
                 new_item_allocation = cmdq_get_command(&commands, None);
-                cmdq_append(
-                    c.as_ref()
-                        .map(|client| client.observer.upgrade().expect("queue client is live"))
-                        .as_ref(),
-                    new_item_allocation,
-                );
+                cmdq_append(c, new_item_allocation);
                 drop(commands);
             }
             Ok(commands) => {

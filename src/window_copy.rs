@@ -46,11 +46,13 @@ use crate::src::screen_write::{
     screen_write_putc, screen_write_setselection, screen_write_start, screen_write_start_pane,
     screen_write_stop, screen_write_strlen,
 };
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__int32_t, ssize_t};
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::colour::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
@@ -319,7 +321,7 @@ pub struct window_copy_cmd_state<'a> {
     pub format_search: bool,
     pub wargs: Option<Box<args>>,
     pub m: Option<mouse_event>,
-    pub c: Option<&'a std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    pub c: Option<&'a ClientRef>,
     pub s: Option<&'a std::rc::Rc<std::cell::UnsafeCell<session>>>,
     pub wl: refbox::Weak<winlink>,
 }
@@ -416,7 +418,7 @@ pub static window_copy_mode: window_mode = {
             window_copy_command
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+                    Option<&ClientRef>,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
                     refbox::Weak<winlink>,
                     *mut args,
@@ -464,7 +466,7 @@ pub static window_view_mode: window_mode = {
             window_copy_command
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+                    Option<&ClientRef>,
                     Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
                     refbox::Weak<winlink>,
                     *mut args,
@@ -1800,7 +1802,7 @@ unsafe fn window_copy_do_copy_end_of_line(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = (*cs).c;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
@@ -1825,9 +1827,7 @@ unsafe fn window_copy_do_copy_end_of_line(
             prefix = Some(format_single_cstring(
                 None,
                 arg1,
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 s.as_ref(),
                 wl.clone(),
                 (wp).as_ref()
@@ -1839,9 +1839,7 @@ unsafe fn window_copy_do_copy_end_of_line(
             command = Some(format_single_cstring(
                 None,
                 arg0,
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 s.as_ref(),
                 wl.clone(),
                 (wp).as_ref()
@@ -1853,9 +1851,7 @@ unsafe fn window_copy_do_copy_end_of_line(
         prefix = Some(format_single_cstring(
             None,
             arg0,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             s.as_ref(),
             wl.clone(),
             (wp).as_ref()
@@ -1938,7 +1934,7 @@ unsafe fn window_copy_do_copy_line(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = (*cs).c;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
@@ -1963,9 +1959,7 @@ unsafe fn window_copy_do_copy_line(
             prefix = Some(format_single_cstring(
                 None,
                 arg1,
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 s.as_ref(),
                 wl.clone(),
                 (wp).as_ref()
@@ -1977,9 +1971,7 @@ unsafe fn window_copy_do_copy_line(
             command = Some(format_single_cstring(
                 None,
                 arg0,
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 s.as_ref(),
                 wl.clone(),
                 (wp).as_ref()
@@ -1991,9 +1983,7 @@ unsafe fn window_copy_do_copy_line(
         prefix = Some(format_single_cstring(
             None,
             arg0,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             s.as_ref(),
             wl.clone(),
             (wp).as_ref()
@@ -2074,7 +2064,7 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = (*cs).c;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
@@ -2089,9 +2079,7 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
         prefix = Some(format_single_cstring(
             None,
             arg0,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             s.as_ref(),
             wl.clone(),
             (wp).as_ref()
@@ -2235,13 +2223,15 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let _wp: *mut window_pane = mode_pane;
-    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = (*cs).c;
     let mut scroll_exit: ::core::ffi::c_int = args_has((*cs).parsed_args(), 'e' as i32 as u_char);
-    let tty_oy = tty_window_offset(&(*c).tty).oy;
+    let client = c.expect("live client");
+    let tty_oy = client.terminal_view().oy;
+    let slider_position = { client.borrow_terminal().mouse_slider_mpos };
     let mouse = (*cs).m.expect("scroll-to-mouse requires a mouse event");
     window_copy_scroll(
         &mode_pane_owner,
-        (*c).tty.mouse_slider_mpos,
+        slider_position,
         mouse.y,
         tty_oy,
         scroll_exit,
@@ -3234,7 +3224,7 @@ unsafe fn window_copy_cmd_scroll_down(
     }
     dragging = (*cs)
         .c
-        .is_some_and(|owner| (*owner.get()).tty.mouse_drag_flag != 0)
+        .is_some_and(|owner| owner.borrow_terminal().mouse_drag_flag != 0)
         as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
@@ -3260,7 +3250,7 @@ unsafe fn window_copy_cmd_scroll_down_and_cancel(
     let mut dragging: ::core::ffi::c_int = 0;
     dragging = (*cs)
         .c
-        .is_some_and(|owner| (*owner.get()).tty.mouse_drag_flag != 0)
+        .is_some_and(|owner| owner.borrow_terminal().mouse_drag_flag != 0)
         as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
@@ -3287,7 +3277,7 @@ unsafe fn window_copy_cmd_scroll_up(mut cs: *mut window_copy_cmd_state) -> windo
     }
     dragging = (*cs)
         .c
-        .is_some_and(|owner| (*owner.get()).tty.mouse_drag_flag != 0)
+        .is_some_and(|owner| owner.borrow_terminal().mouse_drag_flag != 0)
         as ::core::ffi::c_int;
     if !(*data).screen.sel.is_none() && dragging == 0 {
         (*data).cursordrag = CURSORDRAG_NONE;
@@ -3504,7 +3494,7 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = (*cs).c;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
@@ -3522,9 +3512,7 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
         prefix = Some(format_single_cstring(
             None,
             arg1,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             s.as_ref(),
             wl.clone(),
             (wp).as_ref()
@@ -3536,9 +3524,7 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
         command = Some(format_single_cstring(
             None,
             arg0,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             s.as_ref(),
             wl.clone(),
             (wp).as_ref()
@@ -3584,7 +3570,7 @@ unsafe fn window_copy_cmd_pipe_no_clear(
         .upgrade()
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
-    let c = (*cs).c.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = (*cs).c;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
@@ -3595,9 +3581,7 @@ unsafe fn window_copy_cmd_pipe_no_clear(
         command = Some(format_single_cstring(
             None,
             arg0,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             s.as_ref(),
             wl.clone(),
             (wp).as_ref()
@@ -5387,7 +5371,7 @@ static mut window_copy_cmd_table: [C2RustUnnamed_46; 99] = {
 pub const WINDOW_COPY_CMD_FLAG_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 unsafe fn window_copy_command(
     wme: refbox::Weak<window_mode_entry>,
-    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     session: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     wl: refbox::Weak<winlink>,
     args: *mut args,
@@ -5407,13 +5391,13 @@ unsafe fn window_copy_command(
 
 unsafe fn window_copy_command_with_session(
     mut wme: refbox::Weak<window_mode_entry>,
-    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     s: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     wl: refbox::Weak<winlink>,
     args: *mut args,
     m: *mut mouse_event,
 ) {
-    let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = client_owner.cloned();
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -5467,14 +5451,12 @@ unsafe fn window_copy_command_with_session(
             == 0 as ::core::ffi::c_int
         {
             flags = window_copy_cmd_table[i as usize].flags;
-            if !c.is_null()
-                && (*c).flags & CLIENT_READONLY as uint64_t != 0
+            if !c.is_none()
+                && c.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0
                 && !flags & WINDOW_COPY_CMD_FLAG_READONLY != 0
             {
                 status_message_set(
-                    (c).as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
+                    c.as_ref(),
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -8836,7 +8818,7 @@ unsafe fn window_copy_copy_line(
                 if ud.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
                     && gc.attr as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0
                 {
-                    if let Some(acs) = tty_acs_get(None, ud.data[0]) {
+                    if let Some(acs) = tty_acs_get(None, true, ud.data[0]) {
                         let bytes = acs.to_bytes();
                         if bytes.len() <= ud.data.len() {
                             ud.size = bytes.len() as u_char;
@@ -10083,28 +10065,23 @@ unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
     x = window_copy_cursor_unoffset(wme.clone(), x, (*data).screen.grid().sx);
     window_copy_update_cursor(wme.clone(), x, y);
 }
-unsafe fn window_copy_install_drag_callbacks(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-) {
-    let c = client_owner.get();
+unsafe fn window_copy_install_drag_callbacks(client_owner: &ClientRef) {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let drag_client = std::rc::Rc::downgrade(client_owner);
-    (*c).tty.mouse_drag_update = Some(Box::new(move |m| {
+    client_owner.borrow_terminal_mut().mouse_drag_update = Some(Box::new(move |m| {
         if let Some(owner) = drag_client.upgrade() {
             unsafe { window_copy_drag_update(&owner, m) }
         }
     }));
     let drag_client = std::rc::Rc::downgrade(client_owner);
-    (*c).tty.mouse_drag_release = Some(Box::new(move |m| {
+    client_owner.borrow_terminal_mut().mouse_drag_release = Some(Box::new(move |m| {
         if let Some(owner) = drag_client.upgrade() {
             unsafe { window_copy_drag_release(&owner, m) }
         }
     }));
 }
 
-pub unsafe fn window_copy_start_drag(
-    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-    mut m: *mut mouse_event,
-) {
+pub unsafe fn window_copy_start_drag(client_owner: Option<&ClientRef>, mut m: *mut mouse_event) {
     let Some(client_owner) = client_owner else {
         return;
     };
@@ -10201,10 +10178,7 @@ pub unsafe fn window_copy_start_drag(
     window_copy_redraw_screen(wme.clone());
     window_copy_drag_update(client_owner, m);
 }
-unsafe fn window_copy_drag_update(
-    _client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut m: *mut mouse_event,
-) {
+unsafe fn window_copy_drag_update(_client_owner: &ClientRef, mut m: *mut mouse_event) {
     let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -10262,10 +10236,7 @@ unsafe fn window_copy_drag_update(
         }
     }
 }
-unsafe fn window_copy_drag_release(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut m: *mut mouse_event,
-) {
+unsafe fn window_copy_drag_release(client_owner: &ClientRef, mut m: *mut mouse_event) {
     let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -10407,8 +10378,16 @@ mod drag_client_tests {
             let weak = std::rc::Rc::downgrade(&owner);
             window_copy_install_drag_callbacks(&owner);
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            let mut update = (*owner.get()).tty.mouse_drag_update.take().unwrap();
-            let release = (*owner.get()).tty.mouse_drag_release.take().unwrap();
+            let mut update = owner
+                .borrow_terminal_mut()
+                .mouse_drag_update
+                .take()
+                .unwrap();
+            let release = owner
+                .borrow_terminal_mut()
+                .mouse_drag_release
+                .take()
+                .unwrap();
             drop(owner);
             assert!(weak.upgrade().is_none());
 

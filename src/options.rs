@@ -22,11 +22,13 @@ use crate::src::resize::recalculate_sizes;
 use crate::src::screen_redraw::redraw_invalidate_all_scenes;
 use crate::src::server::clients;
 use crate::src::server::current_time;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_set_key_table, server_client_update_theme_colours};
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
 use crate::src::session::sessions_minmax;
 use crate::src::session::Session;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::options::options_name_map;
 use crate::src::status::status_timer_start_all;
 use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
@@ -1875,7 +1877,7 @@ pub unsafe fn options_from_string(
     return -(1 as ::core::ffi::c_int);
 }
 pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1898,28 +1900,24 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         ) == 0 as ::core::ffi::c_int
     {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !loop_0.is_null() {
-            server_client_update_theme_colours(
-                (loop_0)
-                    .as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
-            );
-            if (*loop_0).tty.flags & TTY_OPENED != 0 {
-                tty_invalidate(&raw mut (*loop_0).tty);
-            }
-            server_redraw_client(&mut *(loop_0));
+        loop_0 = registry_loop_0_owner.clone();
+        while !loop_0.is_none() {
+            server_client_update_theme_colours(loop_0.as_ref());
+            loop_0
+                .as_ref()
+                .expect("live client")
+                .with_terminal_output(|terminal| {
+                    if terminal.flags & TTY_OPENED != 0 {
+                        tty_invalidate(terminal);
+                    }
+                });
+            server_redraw_client(loop_0.as_ref().expect("live client"));
             registry_loop_0_owner = clients.next(
                 registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client"),
             );
-            loop_0 = registry_loop_0_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            loop_0 = registry_loop_0_owner.clone();
         }
     }
     if strcmp(
@@ -2001,12 +1999,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     ) == 0 as ::core::ffi::c_int
     {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !loop_0.is_null() {
+        loop_0 = registry_loop_0_owner.clone();
+        while !loop_0.is_none() {
             server_client_set_key_table(
-                &(*(loop_0)).observer.upgrade().expect("live client"),
+                &loop_0.clone().expect("live client"),
                 ::core::ptr::null::<::core::ffi::c_char>(),
             );
             registry_loop_0_owner = clients.next(
@@ -2014,9 +2010,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
                     .as_ref()
                     .expect("current registry client"),
             );
-            loop_0 = registry_loop_0_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            loop_0 = registry_loop_0_owner.clone();
         }
     }
     if strcmp(
@@ -2025,21 +2019,21 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     ) == 0 as ::core::ffi::c_int
     {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !loop_0.is_null() {
-            if (*loop_0).tty.flags & TTY_OPENED != 0 {
-                tty_keys_build(&raw mut (*loop_0).tty);
+        loop_0 = registry_loop_0_owner.clone();
+        while !loop_0.is_none() {
+            {
+                let mut terminal = loop_0.as_ref().expect("live client").borrow_terminal_mut();
+                if terminal.flags & TTY_OPENED != 0 {
+                    // Key construction reads only terminal data and global options.
+                    tty_keys_build(&mut *terminal);
+                }
             }
             registry_loop_0_owner = clients.next(
                 registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client"),
             );
-            loop_0 = registry_loop_0_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            loop_0 = registry_loop_0_owner.clone();
         }
     }
     if strcmp(name, b"status\0" as *const u8 as *const ::core::ffi::c_char)
@@ -2255,21 +2249,23 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     }
     recalculate_sizes();
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if !(*loop_0).session_handle().is_none() {
-            server_redraw_client(&mut *(loop_0));
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if !loop_0
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+        {
+            server_redraw_client(loop_0.as_ref().expect("live client"));
         }
         registry_loop_0_owner = clients.next(
             registry_loop_0_owner
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
 }
 pub unsafe fn options_remove_or_default(

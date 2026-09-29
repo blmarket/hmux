@@ -1,5 +1,4 @@
 use hmux2::src::shared::borders::{CELL_LR, CELL_RD};
-use hmux2::src::shared::client::{client, CLIENT_UTF8};
 use hmux2::src::shared::tty::{tty, tty_code, tty_term, TTYC_U8};
 use hmux2::src::tty_acs::{
     tty_acs_double_borders, tty_acs_get, tty_acs_heavy_borders, tty_acs_needed,
@@ -9,16 +8,13 @@ use hmux2::src::tty_acs::{
 #[test]
 fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
     unsafe {
-        assert_eq!(tty_acs_needed(None), 0);
-        assert_eq!(tty_acs_get(None, b'q'), Some(c"─"));
-        assert!(tty_acs_get(None, b'A').is_none());
-        let client_owner = client::new();
-        let client = &mut *client_owner.get();
+        assert_eq!(tty_acs_needed(None, true), 0);
+        assert_eq!(tty_acs_get(None, true, b'q'), Some(c"─"));
+        assert!(tty_acs_get(None, true, b'A').is_none());
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_U8 as usize + 1].into_boxed_slice();
         term.acs[b'q' as usize] = [0x80, 0];
         let mut terminal = tty {
-            client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             ..Default::default()
         };
@@ -29,11 +25,10 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
             (true, Some(1), false),
             (true, Some(0), true),
         ] {
-            client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
             terminal.term.as_deref_mut().unwrap().codes[TTYC_U8 as usize] =
                 u8_cap.map_or(tty_code::None, tty_code::Number);
-            assert_eq!(tty_acs_needed(Some(&terminal)) != 0, legacy);
-            let mapped = tty_acs_get(Some(&terminal), b'q').unwrap();
+            assert_eq!(tty_acs_needed(Some(&terminal), utf8) != 0, legacy);
+            let mapped = tty_acs_get(Some(&terminal), utf8, b'q').unwrap();
             assert_eq!(
                 mapped.to_bytes(),
                 if legacy {
@@ -48,7 +43,7 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
                     terminal.term.as_deref().unwrap().acs[b'q' as usize].as_ptr()
                 );
             }
-            assert!(tty_acs_get(Some(&terminal), b'A').is_none());
+            assert!(tty_acs_get(Some(&terminal), utf8, b'A').is_none());
         }
     }
 }

@@ -14,6 +14,7 @@ use super::options::options;
 use super::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
 use super::screen::screen;
 use super::session::session;
+use crate::src::shared::client::{ClientRef, ClientWeak};
 
 pub const WINDOW_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const WINDOW_ACTIVITY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
@@ -72,7 +73,7 @@ pub struct window {
     pub(crate) lifecycle: WindowLifecycle,
     pub id: u_int,
     /// Nonowning identity of the client last active in this window.
-    pub latest: std::rc::Weak<std::cell::UnsafeCell<super::client::client>>,
+    pub latest: ClientWeak,
     pub name: std::ffi::CString,
     pub name_event: event,
     pub name_time: timeval,
@@ -189,7 +190,7 @@ pub struct window_mode {
     pub key: Option<
         unsafe fn(
             refbox::Weak<window_mode_entry>,
-            &std::rc::Rc<std::cell::UnsafeCell<client>>,
+            &ClientRef,
             refbox::Weak<winlink>,
             key_code,
             *mut mouse_event,
@@ -199,7 +200,7 @@ pub struct window_mode {
     pub command: Option<
         unsafe fn(
             refbox::Weak<window_mode_entry>,
-            Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+            Option<&ClientRef>,
             Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
             refbox::Weak<winlink>,
             *mut args,

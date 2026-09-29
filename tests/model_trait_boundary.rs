@@ -91,7 +91,7 @@ impl<'ast> Visit<'ast> for Audit {
         let payload_map = matches!(&*call.receiver, syn::Expr::Field(field)
             if matches!(&*field.base, syn::Expr::Path(base) if base.path.is_ident("ep"))
                 && matches!(&field.member, syn::Member::Named(name) if name == "items"));
-        if self.consumer && call.method == "get" && !payload_map {
+        if self.consumer && call.method == "get" && call.args.is_empty() && !payload_map {
             self.findings
                 .push("storage get() in migrated consumer".into());
         }
@@ -202,15 +202,199 @@ fn rejects_projection_references_pointer_helpers_and_representation_casts() {
 }
 
 #[test]
-fn migrated_notification_consumers_do_not_project_model_storage() {
+fn migrated_consumers_do_not_project_model_storage() {
     for path in [
         "src/alerts.rs",
         "src/control_notify.rs",
         "src/events_payload.rs",
+        "src/status.rs",
+        "src/tty_acs.rs",
+        "src/tty_features.rs",
+        "src/tty_term.rs",
+        "src/tty/output.rs",
+        "src/tty/input.rs",
+        "src/tty_draw.rs",
+        "src/tty_keys.rs",
+        "src/format/jobs.rs",
     ] {
         let source =
             std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap();
         assert_eq!(audit(&source, true), Vec::<String>::new(), "{path}");
+    }
+}
+
+#[test]
+fn format_callbacks_do_not_retain_cache_or_entry_pointers() {
+    let source = std::fs::read_to_string("src/format/jobs.rs").unwrap();
+    let syntax = syn::parse_file(&source).unwrap();
+    struct CachePointers;
+    impl<'ast> Visit<'ast> for CachePointers {
+        fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
+            if let Type::Path(path) = &*ty.elem {
+                assert!(
+                    !path.path.segments.last().is_some_and(|segment| matches!(
+                        segment.ident.to_string().as_str(),
+                        "format_job" | "format_job_tree"
+                    )),
+                    "format callbacks must reacquire cache entries after Client borrows end"
+                );
+            }
+            visit::visit_type_ptr(self, ty);
+        }
+    }
+    CachePointers.visit_file(&syntax);
+}
+
+#[test]
+fn overlay_mode_callback_returns_owned_screen_state() {
+    let source = std::fs::read_to_string("src/shared/client.rs").unwrap();
+    let syntax = syn::parse_file(&source).unwrap();
+    let callback = syntax
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Type(alias) if alias.ident == "overlay_mode_cb" => Some(alias),
+            _ => None,
+        })
+        .expect("overlay mode callback declaration");
+    struct OwnedResult;
+    impl<'ast> Visit<'ast> for OwnedResult {
+        fn visit_return_type(&mut self, output: &'ast syn::ReturnType) {
+            struct NoBorrow;
+            impl<'ast> Visit<'ast> for NoBorrow {
+                fn visit_type_ptr(&mut self, _: &'ast syn::TypePtr) {
+                    panic!("overlay callback returned a component pointer");
+                }
+                fn visit_type_reference(&mut self, _: &'ast syn::TypeReference) {
+                    panic!("overlay callback returned a borrowed component");
+                }
+                fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
+                    assert!(
+                        !ty.path.segments.iter().any(|part| part.ident == "NonNull"),
+                        "overlay callback returned a NonNull component"
+                    );
+                    visit::visit_type_path(self, ty);
+                }
+            }
+            NoBorrow.visit_return_type(output);
+        }
+    }
+    OwnedResult.visit_item_type(callback);
+    // The returned display snapshot itself must own only copied scalar state.
+    let source = std::fs::read_to_string("src/shared/screen.rs").unwrap();
+    let syntax = syn::parse_file(&source).unwrap();
+    let snapshot = syntax
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Struct(item) if item.ident == "ScreenMode" => Some(item),
+            _ => None,
+        })
+        .expect("owned screen mode snapshot");
+    for field in &snapshot.fields {
+        let Type::Path(path) = &field.ty else {
+            panic!("borrowed screen mode field")
+        };
+        assert!(matches!(
+            path.path
+                .segments
+                .last()
+                .unwrap()
+                .ident
+                .to_string()
+                .as_str(),
+            "u_int" | "c_int" | "screen_cursor_style"
+        ));
+    }
+}
+
+#[test]
+fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
+    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty.rs").unwrap()).unwrap();
+    for item in &syntax.items {
+        let Item::Fn(function) = item else { continue };
+        // These remaining projections belong to the Window/Pane migration.
+        // Terminal orchestration and output have no Client storage exemption.
+        if matches!(
+            function.sig.ident.to_string().as_str(),
+            "tty_update_window_offset" | "tty_style_changed" | "tty_default_colours"
+        ) {
+            continue;
+        }
+        let mut check = Audit {
+            consumer: true,
+            ..Default::default()
+        };
+        check.visit_item_fn(function);
+        assert!(
+            check.findings.is_empty(),
+            "{}: {:?}",
+            function.sig.ident,
+            check.findings
+        );
+    }
+    for (path, expected) in [
+        (
+            "src/tty.rs",
+            vec![
+                "tty_init",
+                "tty_initialize_component",
+                "tty_window_bigger",
+                "tty_window_offset1",
+                "tty_update_client_offset",
+                "tty_set_selection",
+                "tty_selection_sequence",
+            ],
+        ),
+        (
+            "src/tty_keys.rs",
+            vec![
+                "tty_keys_next1",
+                "tty_keys_extended_key",
+                "tty_keys_mouse",
+                "tty_keys_colours",
+                "tty_keys_update_focus",
+                "tty_keys_clipboard",
+                "tty_keys_palette",
+            ],
+        ),
+        (
+            "src/input.rs",
+            vec![
+                "input_request_reply",
+                "input_request_matches",
+                "input_complete_request",
+                "input_free_request",
+            ],
+        ),
+    ] {
+        let source =
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap();
+        let syntax = syn::parse_file(&source).unwrap();
+        let mut checked = 0;
+        for item in syntax.items {
+            let Item::Fn(function) = item else { continue };
+            if !expected.contains(&function.sig.ident.to_string().as_str()) {
+                continue;
+            }
+            let mut check = Audit {
+                consumer: true,
+                ..Default::default()
+            };
+            check.visit_item_fn(&function);
+            assert!(
+                check.findings.is_empty(),
+                "{path}::{}: {:?}",
+                function.sig.ident,
+                check.findings
+            );
+            checked += 1;
+        }
+        assert_eq!(
+            checked,
+            expected.len(),
+            "{path}: migrated helpers must remain checked"
+        );
     }
 }
 
@@ -308,6 +492,78 @@ fn model_traits_do_not_return_raw_components_or_whole_models() {
 }
 
 #[test]
+fn client_fields_remain_private_to_the_implementation_module() {
+    let source = std::fs::read_to_string("src/server_client/model.rs").unwrap();
+    let syntax = syn::parse_file(&source).unwrap();
+    let model = syntax
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Struct(model) if model.ident == "client" => Some(model),
+            _ => None,
+        })
+        .unwrap();
+    for field in &model.fields {
+        assert!(
+            matches!(&field.vis, syn::Visibility::Restricted(vis)
+            if vis.path.is_ident("super")),
+            "Client field visibility widened: {:?}",
+            field.ident
+        );
+    }
+    let syntax =
+        syn::parse_file(&std::fs::read_to_string("src/server_client/mod.rs").unwrap()).unwrap();
+    struct ClientStorage;
+    impl<'ast> Visit<'ast> for ClientStorage {
+        fn visit_type_reference(&mut self, ty: &'ast syn::TypeReference) {
+            assert!(
+                !matches!(&*ty.elem, Type::Path(path) if path.path.is_ident("client")),
+                "exported helper must not accept or return a whole Client borrow"
+            );
+            visit::visit_type_reference(self, ty);
+        }
+        fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
+            assert!(
+                !matches!(&*ty.elem, Type::Path(path) if path.path.is_ident("client")),
+                "exported helper must not expose raw Client storage"
+            );
+            visit::visit_type_ptr(self, ty);
+        }
+    }
+    for item in &syntax.items {
+        let Item::Fn(function) = item else { continue };
+        if !matches!(function.vis, syn::Visibility::Inherited) {
+            ClientStorage.visit_signature(&function.sig);
+        }
+    }
+}
+
+#[test]
+fn queued_items_do_not_retain_raw_queue_component_pointers() {
+    let source = std::fs::read_to_string("src/cmd/queue.rs").unwrap();
+    let syntax = syn::parse_file(&source).unwrap();
+    struct QueuePointers;
+    impl<'ast> Visit<'ast> for QueuePointers {
+        fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
+            if let Type::Path(path) = &*ty.elem {
+                assert!(
+                    !path
+                        .path
+                        .segments
+                        .last()
+                        .is_some_and(|s| s.ident == "cmdq_list"),
+                    "queue pointers must not outlive the Client component borrow"
+                );
+            }
+            visit::visit_type_ptr(self, ty);
+        }
+    }
+    QueuePointers.visit_file(&syntax);
+    assert!(syntax.items.iter().any(|item| matches!(item,
+        Item::Enum(target) if target.ident == "QueueTarget")));
+}
+
+#[test]
 fn session_state_visibility_cannot_widen_silently() {
     let source = std::fs::read_to_string("src/session/model.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
@@ -359,4 +615,120 @@ fn session_state_visibility_cannot_widen_silently() {
         }
         References.visit_signature(&function.sig);
     }
+}
+
+fn rust_sources(directory: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(rust_sources(&path));
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[test]
+fn external_client_types_use_holders_without_exposing_model_storage() {
+    struct ClientStorage<'a>(&'a Path);
+    impl<'ast> Visit<'ast> for ClientStorage<'_> {
+        fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
+            assert!(
+                !ty.path
+                    .segments
+                    .last()
+                    .is_some_and(|part| part.ident == "client"),
+                "{}: external types must use ClientRef/ClientWeak or component guards",
+                self.0.display()
+            );
+            visit::visit_type_path(self, ty);
+        }
+    }
+    for path in rust_sources(Path::new("src")) {
+        if path.starts_with("src/server_client") || path == Path::new("src/shared/client.rs") {
+            continue;
+        }
+        let syntax = syn::parse_file(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        ClientStorage(&path).visit_file(&syntax);
+    }
+}
+
+#[test]
+fn terminal_output_cannot_recover_a_client_from_the_component() {
+    struct ComponentOnly;
+    impl<'ast> Visit<'ast> for ComponentOnly {
+        fn visit_item(&mut self, item: &'ast Item) {
+            if matches!(item, Item::Mod(module) if module.attrs.iter().any(|attr|
+                attr.path().is_ident("cfg") && attr.parse_args::<syn::Path>()
+                    .is_ok_and(|path| path.is_ident("test"))))
+            {
+                return;
+            }
+            visit::visit_item(self, item);
+        }
+        fn visit_expr_field(&mut self, field: &'ast syn::ExprField) {
+            assert!(
+                !matches!(&field.member, syn::Member::Named(name) if name == "client"),
+                "terminal output must not upgrade the Client back reference under a borrow"
+            );
+            visit::visit_expr_field(self, field);
+        }
+        fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
+            assert!(
+                !ty.path.segments.iter().any(|part| matches!(
+                    part.ident.to_string().as_str(),
+                    "client" | "ClientRef" | "ClientWeak"
+                )),
+                "terminal output must receive component data and copied metadata"
+            );
+            visit::visit_type_path(self, ty);
+        }
+    }
+    for path in ["src/tty/output.rs", "src/tty_draw.rs"] {
+        ComponentOnly
+            .visit_file(&syn::parse_file(&std::fs::read_to_string(path).unwrap()).unwrap());
+    }
+}
+
+#[test]
+fn terminal_registry_and_clipping_results_do_not_retain_component_pointers() {
+    struct Owned;
+    impl<'ast> Visit<'ast> for Owned {
+        fn visit_type_ptr(&mut self, _: &'ast syn::TypePtr) {
+            panic!("terminal observation must reacquire components through its Client holder");
+        }
+        fn visit_type_reference(&mut self, _: &'ast syn::TypeReference) {
+            panic!("terminal observation must own its result");
+        }
+        fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
+            assert!(!ty.path.segments.iter().any(|part| part.ident == "NonNull"));
+            visit::visit_type_path(self, ty);
+        }
+    }
+    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty_term.rs").unwrap()).unwrap();
+    let mut checked = 0;
+    for item in &syntax.items {
+        if let Item::Struct(item) = item {
+            if matches!(
+                item.ident.to_string().as_str(),
+                "TerminalRegistration" | "TerminalDescription"
+            ) {
+                Owned.visit_fields(&item.fields);
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 2);
+    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty.rs").unwrap()).unwrap();
+    let function = syntax
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Fn(function) if function.sig.ident == "tty_check_overlay_range" => Some(function),
+            _ => None,
+        })
+        .unwrap();
+    Owned.visit_return_type(&function.sig.output);
 }

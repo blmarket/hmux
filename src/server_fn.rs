@@ -22,6 +22,7 @@ use crate::src::screen_write::{
 };
 use crate::src::server::clients;
 use crate::src::server::marked_pane;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_remove_pane, Client};
 use crate::src::session::sessions;
 use crate::src::session::Session;
@@ -30,6 +31,7 @@ use crate::src::session::{
     session_previous_session, session_renumber_windows, session_select, sessions_after,
     sessions_minmax,
 };
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::session::session_group;
 use crate::src::tmux::sig2name;
@@ -134,18 +136,21 @@ unsafe fn server_fire_pane_exit(
     );
     events_fire(name, ep);
 }
-pub fn server_redraw_client(c: &mut client) {
-    c.flags |= CLIENT_ALLREDRAWFLAGS as uint64_t;
+pub unsafe fn server_redraw_client(c: &ClientRef) {
+    c.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
-pub fn server_status_client(c: &mut client) {
-    c.flags |= CLIENT_REDRAWSTATUS as uint64_t;
+pub unsafe fn server_status_client(c: &ClientRef) {
+    c.request_redraw(CLIENT_REDRAWSTATUS as u64);
 }
 pub unsafe fn server_redraw_session(session: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
-        let client = &mut *client_owner.get();
-        if client.session.ptr_eq(&std::rc::Rc::downgrade(session)) {
+        let client = &client_owner;
+        if client
+            .attached_session()
+            .ptr_eq(&std::rc::Rc::downgrade(session))
+        {
             server_redraw_client(client);
         }
     }
@@ -165,9 +170,12 @@ pub unsafe fn server_status_session(session: &std::rc::Rc<std::cell::UnsafeCell<
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
-        let client = &mut *client_owner.get();
-        if client.session.ptr_eq(&std::rc::Rc::downgrade(session)) {
-            client.flags |= CLIENT_REDRAWSTATUS as uint64_t;
+        let client = &client_owner;
+        if client
+            .attached_session()
+            .ptr_eq(&std::rc::Rc::downgrade(session))
+        {
+            client.request_redraw(CLIENT_REDRAWSTATUS as u64);
         }
     }
 }
@@ -186,9 +194,10 @@ pub unsafe fn server_redraw_window(window: &window) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
-        let client = &mut *client_owner.get();
+        let client = &client_owner;
         let matches = client
-            .session_handle()
+            .attached_session()
+            .upgrade()
             .and_then(|session| {
                 session
                     .current_winlink()
@@ -208,9 +217,10 @@ pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::Un
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
-        let client = &mut *client_owner.get();
+        let client = &client_owner;
         let matches = client
-            .session_handle()
+            .attached_session()
+            .upgrade()
             .and_then(|session| {
                 session
                     .current_winlink()
@@ -220,7 +230,7 @@ pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::Un
             })
             .is_some_and(|current| std::rc::Rc::ptr_eq(&current, window_owner));
         if matches {
-            client.flags |= CLIENT_REDRAWMENU as uint64_t;
+            client.request_redraw(CLIENT_REDRAWMENU as u64);
         }
     }
 }
@@ -228,9 +238,10 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
-        let client = &mut *client_owner.get();
+        let client = &client_owner;
         let matches = client
-            .session_handle()
+            .attached_session()
+            .upgrade()
             .and_then(|session| {
                 session
                     .current_winlink()
@@ -242,7 +253,7 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
                 std::rc::Weak::ptr_eq(&window.observer, &std::rc::Rc::downgrade(&current))
             });
         if matches {
-            client.flags |= CLIENT_REDRAWBORDERS as uint64_t;
+            client.request_redraw(CLIENT_REDRAWBORDERS as u64);
         }
     }
 }
@@ -258,7 +269,7 @@ pub unsafe fn server_status_window(window: &window) {
 pub unsafe fn server_lock() {
     let mut next = clients.first();
     while let Some(owner) = next {
-        if !(&*owner.get()).session_handle().is_none() {
+        if !owner.attached_session().upgrade().is_none() {
             server_lock_client(&owner);
         }
         next = clients.next(&owner);
@@ -268,79 +279,28 @@ pub unsafe fn server_lock_session(session_owner: &std::rc::Rc<std::cell::UnsafeC
     let observer = std::rc::Rc::downgrade(session_owner);
     let mut next = clients.first();
     while let Some(owner) = next {
-        let matches = (&*owner.get()).session.ptr_eq(&observer);
+        let matches = owner.attached_session().ptr_eq(&observer);
         if matches {
             server_lock_client(&owner);
         }
         next = clients.next(&owner);
     }
 }
-pub unsafe fn server_lock_client(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    let mut cmd_session_value: Option<std::ffi::CString> = None;
-
-    let c = client_owner.get();
-    let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+pub unsafe fn server_lock_client(client_owner: &ClientRef) {
+    if client_owner.flags() & (CLIENT_CONTROL | CLIENT_SUSPENDED) as u64 != 0 {
         return;
     }
-    if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
-        return;
-    }
-    cmd_session_value = Some(
-        (*c).session_handle()
-            .expect("live session")
-            .with_options_mut(|options| {
-                std::ffi::CStr::from_ptr(options_get_string(
-                    options,
-                    b"lock-command\0" as *const u8 as *const ::core::ffi::c_char,
-                ))
+    let command = client_owner
+        .attached_session()
+        .upgrade()
+        .expect("live session")
+        .with_options_mut(|options| {
+            std::ffi::CStr::from_ptr(options_get_string(options, c"lock-command".as_ptr()))
                 .to_owned()
-            }),
-    );
-    cmd = cmd_session_value
-        .as_ref()
-        .expect("option snapshot")
-        .as_ptr();
-    if *cmd as ::core::ffi::c_int == '\0' as i32
-        || strlen(cmd).wrapping_add(1 as size_t)
-            > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE)
-    {
-        return;
-    }
-    tty_stop_tty(&raw mut (*c).tty);
-    tty_raw(
-        &raw mut (*c).tty,
-        tty_term_string(
-            &*(tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term)),
-            TTYC_SMCUP,
-        )
-        .as_ptr(),
-    );
-    tty_raw(
-        &raw mut (*c).tty,
-        tty_term_string(
-            &*(tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term)),
-            TTYC_CLEAR,
-        )
-        .as_ptr(),
-    );
-    tty_raw(
-        &raw mut (*c).tty,
-        tty_term_string(
-            &*(tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term)),
-            TTYC_E3,
-        )
-        .as_ptr(),
-    );
-    (*c).flags |= CLIENT_SUSPENDED as uint64_t;
-    proc_send(
-        (*c).peer,
-        MSG_LOCK,
-        -(1 as ::core::ffi::c_int),
-        cmd as *const ::core::ffi::c_void,
-        strlen(cmd).wrapping_add(1 as size_t),
-    );
+        });
+    client_owner.lock(&command);
 }
+
 pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     let mut w: *mut window = (*wp)
@@ -757,7 +717,7 @@ unsafe fn server_newer_detached_session(
 }
 pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
     let s = Some(source.clone());
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut sort_crit: sort_criteria = sort_criteria {
         order: SORT_NAME,
         reversed: 0,
@@ -799,13 +759,18 @@ pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<
         None
     };
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if !(!crate::src::shared::rc::same((*c).session_handle().as_ref(), s.as_ref())) {
+    c = registry_c_owner.clone();
+    while !c.is_none() {
+        if !(!crate::src::shared::rc::same(
+            c.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .as_ref(),
+            s.as_ref(),
+        )) {
             let target = replacement.as_ref().or_else(|| {
-                ((*c).flags & CLIENT_NO_DETACH_ON_DESTROY != 0)
+                (c.as_ref().expect("live client").flags() & CLIENT_NO_DETACH_ON_DESTROY != 0)
                     .then_some(fallback.as_ref())
                     .flatten()
             });
@@ -816,9 +781,7 @@ pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<
         }
         registry_c_owner =
             clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = registry_c_owner.clone();
     }
     recalculate_sizes();
 }

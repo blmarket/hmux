@@ -12,11 +12,13 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
 use crate::src::server_client::server_client_set_flags;
+use crate::src::server_client::{Client as _, PanDirection};
 use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_SIZECHANGED, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED,
 };
@@ -58,10 +60,9 @@ pub static cmd_refresh_client_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_refresh_client_update_subscription(
-    tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    tc_owner: &ClientRef,
     mut value: *const ::core::ffi::c_char,
 ) {
-    let _tc = tc_owner.get();
     let Some(parsed) = monitor_parse_owned(CStr::from_ptr(value)) else {
         control_remove_sub(tc_owner, value);
         return;
@@ -82,9 +83,7 @@ unsafe fn cmd_refresh_client_control_client_size(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut size: *const ::core::ffi::c_char =
         args_get(&*(args), 'C' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut w: u_int = 0;
@@ -112,7 +111,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             "{}: client {} window @{}: size {}x{}",
             "cmd_refresh_client_control_client_size",
             log_cstr(
-                (((*tc).name)
+                ((tc.as_ref().expect("live client").name())
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
@@ -121,9 +120,10 @@ unsafe fn cmd_refresh_client_control_client_size(
             (x) as u32,
             (y) as u32
         ));
-        control_set_window_size(&mut *(tc), w, x, y);
-        (*tc).flags =
-            ((*tc).flags as ::core::ffi::c_ulonglong | CLIENT_WINDOWSIZECHANGED) as uint64_t;
+        control_set_window_size(tc.as_ref().expect("live client"), w, x, y);
+        tc.as_ref()
+            .expect("live client")
+            .update_flags(CLIENT_WINDOWSIZECHANGED as uint64_t, 0);
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
@@ -137,14 +137,14 @@ unsafe fn cmd_refresh_client_control_client_size(
             "{}: client {} window @{}: no size",
             "cmd_refresh_client_control_client_size",
             log_cstr(
-                (((*tc).name)
+                ((tc.as_ref().expect("live client").name())
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             ),
             (w) as u32
         ));
-        control_clear_window_size(&mut *(tc), w);
+        control_clear_window_size(tc.as_ref().expect("live client"), w);
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
@@ -174,8 +174,7 @@ unsafe fn cmd_refresh_client_control_client_size(
         });
         return CMD_RETURN_ERROR;
     }
-    tty_set_size(&raw mut (*tc).tty, x, y, 0 as u_int, 0 as u_int);
-    (*tc).flags |= CLIENT_SIZECHANGED as uint64_t;
+    tc.as_ref().expect("live client").set_control_size(x, y);
     recalculate_sizes_now(1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }
@@ -197,10 +196,9 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
 }
 
 unsafe fn cmd_refresh_client_update_offset(
-    tc_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    tc_owner: &ClientRef,
     value: *const ::core::ffi::c_char,
 ) {
-    let _tc = tc_owner.get();
     let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
@@ -232,7 +230,7 @@ unsafe fn cmd_refresh_client_update_offset(
     }
 }
 
-unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
+unsafe fn cmd_refresh_report(client: &ClientRef, value: *const ::core::ffi::c_char) {
     let Some((pane, report)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
@@ -246,15 +244,23 @@ unsafe fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
     let mut fg = (*wp).control_fg;
     let mut bg = (*wp).control_bg;
     let mut size: size_t = 0;
-    if tty_keys_colours(
-        tty,
-        report.as_ptr(),
-        report.to_bytes().len(),
-        &mut size,
-        &mut fg,
-        &mut bg,
-    ) == 0
-    {
+    let terminal_owner = { client.borrow_terminal().client.upgrade() };
+    let diagnostic_name = terminal_owner
+        .as_ref()
+        .map(|owner| owner.name().unwrap_or_else(|| c"(null)".to_owned()));
+    let parsed = {
+        let mut tty = client.borrow_terminal_mut();
+        tty_keys_colours(
+            &mut tty.flags,
+            diagnostic_name.as_deref(),
+            report.as_ptr(),
+            report.to_bytes().len(),
+            &mut size,
+            &mut fg,
+            &mut bg,
+        )
+    };
+    if parsed == 0 {
         if bg != (*wp).control_bg {
             (*wp).flags |= PANE_THEMECHANGED;
         }
@@ -271,11 +277,7 @@ unsafe fn cmd_refresh_client_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut tty: *mut tty = &raw mut (*tc).tty;
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;
     if args_has(args, 'c' as i32 as u_char) != 0
@@ -302,106 +304,94 @@ unsafe fn cmd_refresh_client_exec(
                 return CMD_RETURN_ERROR;
             }
         }
-        if args_has(args, 'c' as i32 as u_char) != 0 {
-            (*tc).pan_window = std::rc::Weak::new();
+        let client = tc.as_ref().expect("live client");
+        if args_has(args, b'c') != 0 {
+            client.reset_pan();
         } else {
-            w = ((*tc)
-                .session_handle()
+            let window = client
+                .attached_session()
+                .upgrade()
                 .expect("live session")
-                .current_winlink())
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-            if !(*tc).pan_window_is(&*w) {
-                (*tc).set_pan_window(&*w);
-                (*tc).pan_ox = (*tty).oox;
-                (*tc).pan_oy = (*tty).ooy;
-            }
-            if args_has(args, 'L' as i32 as u_char) != 0 {
-                if (*tc).pan_ox > adjust {
-                    (*tc).pan_ox = (*tc).pan_ox.wrapping_sub(adjust);
-                } else {
-                    (*tc).pan_ox = 0 as u_int;
-                }
-            } else if args_has(args, 'R' as i32 as u_char) != 0 {
-                (*tc).pan_ox = (*tc).pan_ox.wrapping_add(adjust);
-                if (*tc).pan_ox > (*w).sx.wrapping_sub((*tty).osx) {
-                    (*tc).pan_ox = (*w).sx.wrapping_sub((*tty).osx);
-                }
-            } else if args_has(args, 'U' as i32 as u_char) != 0 {
-                if (*tc).pan_oy > adjust {
-                    (*tc).pan_oy = (*tc).pan_oy.wrapping_sub(adjust);
-                } else {
-                    (*tc).pan_oy = 0 as u_int;
-                }
-            } else if args_has(args, 'D' as i32 as u_char) != 0 {
-                (*tc).pan_oy = (*tc).pan_oy.wrapping_add(adjust);
-                if (*tc).pan_oy > (*w).sy.wrapping_sub((*tty).osy) {
-                    (*tc).pan_oy = (*w).sy.wrapping_sub((*tty).osy);
-                }
-            }
+                .current_winlink()
+                .get_unchecked()
+                .window_handle()
+                .cloned()
+                .expect("current window");
+            let direction = if args_has(args, b'L') != 0 {
+                PanDirection::Left
+            } else if args_has(args, b'R') != 0 {
+                PanDirection::Right
+            } else if args_has(args, b'U') != 0 {
+                PanDirection::Up
+            } else {
+                PanDirection::Down
+            };
+            client.pan_window(&window, direction, adjust);
         }
-        tty_update_client_offset(&(*(tc)).observer.upgrade().expect("live client"));
-        server_redraw_client(&mut *(tc));
+        tty_update_client_offset(&tc.clone().expect("live client"));
+        server_redraw_client(tc.as_ref().expect("live client"));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'l' as i32 as u_char) != 0 {
-        tty_clipboard_query(&raw mut (*tc).tty);
+        tty_clipboard_query(tc.as_ref().expect("live client"));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'F' as i32 as u_char) != 0 {
         server_client_set_flags(
-            &(*(tc)).observer.upgrade().expect("live client"),
+            &tc.clone().expect("live client"),
             args_get(&*(args), 'F' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr()),
         );
     }
     if args_has(args, 'f' as i32 as u_char) != 0 {
         server_client_set_flags(
-            &(*(tc)).observer.upgrade().expect("live client"),
+            &tc.clone().expect("live client"),
             args_get(&*(args), 'f' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr()),
         );
     }
     if args_has(args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(
-            tty,
+            tc.as_ref().expect("live client"),
             args_get(&*(args), 'r' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr()),
         );
     }
     if args_has(args, 'A' as i32 as u_char) != 0 {
-        if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
+        if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
             for av in args_flag_values(&*args, 'A' as i32 as u_char) {
                 cmd_refresh_client_update_offset(
-                    &(*(tc)).observer.upgrade().expect("live client"),
+                    &tc.clone().expect("live client"),
                     av.string_ptr(),
                 );
             }
             return CMD_RETURN_NORMAL;
         }
     } else if args_has(args, 'B' as i32 as u_char) != 0 {
-        if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
+        if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
             for av in args_flag_values(&*args, 'B' as i32 as u_char) {
                 cmd_refresh_client_update_subscription(
-                    &(*(tc)).observer.upgrade().expect("live client"),
+                    &tc.clone().expect("live client"),
                     av.string_ptr(),
                 );
             }
             return CMD_RETURN_NORMAL;
         }
     } else if args_has(args, 'C' as i32 as u_char) != 0 {
-        if !(!(*tc).flags & CLIENT_CONTROL as uint64_t != 0) {
+        if !(!tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0) {
             return cmd_refresh_client_control_client_size(self_0.clone(), item_handle);
         }
     } else {
         if args_has(args, 'S' as i32 as u_char) != 0 {
-            (*tc).flags |= CLIENT_STATUSFORCE as uint64_t;
-            server_status_client(&mut *(tc));
+            tc.as_ref()
+                .expect("live client")
+                .update_flags(CLIENT_STATUSFORCE as uint64_t, 0);
+            server_status_client(tc.as_ref().expect("live client"));
         } else {
-            (*tc).flags |= CLIENT_STATUSFORCE as uint64_t;
-            server_redraw_client(&mut *(tc));
+            tc.as_ref()
+                .expect("live client")
+                .update_flags(CLIENT_STATUSFORCE as uint64_t, 0);
+            server_redraw_client(tc.as_ref().expect("live client"));
         }
         return CMD_RETURN_NORMAL;
     }

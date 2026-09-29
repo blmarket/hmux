@@ -10,10 +10,12 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::server::clients;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::session::sessions_minmax;
 use crate::src::session::{sessions, Session};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::status::status_line_size;
 use crate::src::tmux::global_w_options;
@@ -53,19 +55,20 @@ pub unsafe fn resize_window(
 }
 unsafe fn clients_with_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) -> u_int {
     let mut w = w_owner.get();
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     let mut n: u_int = 0 as u_int;
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
         if !(!registry_loop_0_owner
             .as_ref()
             .expect("current registry client")
             .participates_in_window_sizing()
-            || ((*loop_0)
-                .session_handle()
+            || (loop_0
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
                 .expect("live session")
                 .contains_window(&(*w).observer.upgrade().expect("live window"))
                 as i32)
@@ -81,25 +84,23 @@ unsafe fn clients_with_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     return n;
 }
 unsafe fn clients_calculate_size(
     mut type_0: ::core::ffi::c_int,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>,
-    mut skip_client: impl FnMut(&client) -> bool,
+    mut skip_client: impl FnMut(&ClientRef) -> bool,
     mut sx: *mut u_int,
     mut sy: *mut u_int,
     mut xpixel: *mut u_int,
     mut ypixel: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = c_owner.cloned();
     let mut w = w_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
     let mut n: u_int = 0 as u_int;
@@ -126,11 +127,9 @@ unsafe fn clients_calculate_size(
     }
     if !(type_0 == WINDOW_SIZE_MANUAL) {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !loop_0.is_null() {
-            if loop_0 != c
+        loop_0 = registry_loop_0_owner.clone();
+        while !loop_0.is_none() {
+            if !crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
                 && !registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client")
@@ -140,18 +139,20 @@ unsafe fn clients_calculate_size(
                     "{}: ignoring {} (1)",
                     "clients_calculate_size",
                     log_cstr(
-                        (((*loop_0).name)
+                        ((loop_0.as_ref().expect("live client").name())
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                             as *const _
                     )
                 ));
-            } else if loop_0 != c && skip_client(&*loop_0) {
+            } else if !crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
+                && skip_client(loop_0.as_ref().expect("live client"))
+            {
                 log_debug(format_args!(
                     "{}: skipping {} (1)",
                     "clients_calculate_size",
                     log_cstr(
-                        (((*loop_0).name)
+                        ((loop_0.as_ref().expect("live client").name())
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                             as *const _
@@ -159,13 +160,15 @@ unsafe fn clients_calculate_size(
                 ));
             } else if type_0 == WINDOW_SIZE_LATEST
                 && n > 1 as u_int
-                && !(*w).latest.ptr_eq(&(*loop_0).observer)
+                && !(*w).latest.ptr_eq(&std::rc::Rc::downgrade(
+                    loop_0.as_ref().expect("live client"),
+                ))
             {
                 log_debug(format_args!(
                     "{}: {} is not latest",
                     "clients_calculate_size",
                     log_cstr(
-                        (((*loop_0).name)
+                        ((loop_0.as_ref().expect("live client").name())
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                             as *const _
@@ -201,7 +204,7 @@ unsafe fn clients_calculate_size(
                     "{}: after {} ({}x{}), size is {}x{}",
                     "clients_calculate_size",
                     log_cstr(
-                        (((*loop_0).name)
+                        ((loop_0.as_ref().expect("live client").name())
                             .as_ref()
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                             as *const _
@@ -217,9 +220,7 @@ unsafe fn clients_calculate_size(
                     .as_ref()
                     .expect("current registry client"),
             );
-            loop_0 = registry_loop_0_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            loop_0 = registry_loop_0_owner.clone();
         }
         if *sx != UINT_MAX && *sy != UINT_MAX {
             log_debug(format_args!(
@@ -237,17 +238,17 @@ unsafe fn clients_calculate_size(
     }
     if !w.is_null() {
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !loop_0.is_null() {
-            if !(loop_0 != c
+        loop_0 = registry_loop_0_owner.clone();
+        while !loop_0.is_none() {
+            if !(!crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
                 && !registry_loop_0_owner
                     .as_ref()
                     .expect("current registry client")
                     .participates_in_window_sizing())
             {
-                if !(loop_0 != c && skip_client(&*loop_0)) {
+                if !(!crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
+                    && skip_client(loop_0.as_ref().expect("live client")))
+                {
                     registry_loop_0_owner
                         .as_ref()
                         .expect("current registry client")
@@ -259,9 +260,7 @@ unsafe fn clients_calculate_size(
                     .as_ref()
                     .expect("current registry client"),
             );
-            loop_0 = registry_loop_0_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            loop_0 = registry_loop_0_owner.clone();
         }
     }
     if *sx != UINT_MAX && *sy != UINT_MAX {
@@ -299,7 +298,7 @@ unsafe fn clients_calculate_size(
     return (*sx != UINT_MAX && *sy != UINT_MAX) as ::core::ffi::c_int;
 }
 pub unsafe fn default_window_size(
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>,
     mut sx: *mut u_int,
@@ -308,7 +307,7 @@ pub unsafe fn default_window_size(
     mut ypixel: *mut u_int,
     mut type_0: ::core::ffi::c_int,
 ) {
-    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = c_owner.cloned();
     let s = Some(s_owner.clone());
     let mut w = w_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if type_0 == -(1 as ::core::ffi::c_int) {
@@ -318,7 +317,7 @@ pub unsafe fn default_window_size(
         ) as ::core::ffi::c_int;
     }
     if type_0 == WINDOW_SIZE_LATEST
-        && !c.is_null()
+        && !c.is_none()
         && c_owner
             .expect("sizing client")
             .participates_in_window_sizing()
@@ -331,33 +330,34 @@ pub unsafe fn default_window_size(
             (*sx) as u32,
             (*sy) as u32,
             log_cstr(
-                (((*c).name)
+                ((c.as_ref().expect("live client").name())
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             )
         ));
     } else {
-        if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            c = ::core::ptr::null_mut::<client>();
+        if !c.is_none()
+            && c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
+        {
+            c = None;
         }
         if clients_calculate_size(
             type_0,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c.as_ref(),
             w_owner,
             |candidate| unsafe {
                 (!w.is_null()
                     && (candidate
-                        .session_handle()
+                        .attached_session()
+                        .upgrade()
                         .expect("live session")
                         .contains_window(&(*w).observer.upgrade().expect("live window"))
                         as i32)
                         == 0)
                     || (w.is_null()
                         && !crate::src::shared::rc::same(
-                            candidate.session_handle().as_ref(),
+                            candidate.attached_session().upgrade().as_ref(),
                             s.as_ref(),
                         ))
             },
@@ -436,7 +436,7 @@ pub unsafe fn recalculate_size(
         None,
         Some(w_owner),
         |candidate| unsafe {
-            let Some(session) = candidate.session_handle() else {
+            let Some(session) = candidate.attached_session().upgrade() else {
                 return true;
             };
             if !session.current_winlink().is_alive() {
@@ -503,21 +503,23 @@ pub unsafe fn recalculate_sizes() {
 }
 pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     crate::src::session::recalculate_size_state();
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        s = (*c).session_handle();
+    c = registry_c_owner.clone();
+    while !c.is_none() {
+        s = c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade();
         if !(!registry_c_owner
             .as_ref()
             .expect("current registry client")
             .participates_in_window_sizing())
         {
-            if (*c).tty.sy
+            if c.as_ref().expect("live client").terminal_size().1
                 <= registry_c_owner
                     .as_ref()
                     .expect("sizing client")
@@ -526,18 +528,20 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
                     .expect("attached sizing client")
                     .status_layout()
                     .1
-                || (*c).flags & CLIENT_CONTROL as uint64_t != 0
+                || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
             {
-                (*c).flags |= CLIENT_STATUSOFF as uint64_t;
+                c.as_ref()
+                    .expect("live client")
+                    .update_flags(CLIENT_STATUSOFF as uint64_t, 0);
             } else {
-                (*c).flags &= !CLIENT_STATUSOFF as uint64_t;
+                c.as_ref()
+                    .expect("live client")
+                    .update_flags(0, !(!CLIENT_STATUSOFF as uint64_t));
             }
         }
         registry_c_owner =
             clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = registry_c_owner.clone();
     }
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {

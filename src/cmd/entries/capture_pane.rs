@@ -15,11 +15,13 @@ use crate::src::input::input_pending;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::screen::screen_reset_hyperlinks;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::colour::COLOUR_FLAG_256;
 use crate::src::shared::command::CMD_AFTERHOOK;
@@ -577,9 +579,7 @@ unsafe fn cmd_capture_pane_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let pane_owner = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
         .wp
         .upgrade()
@@ -625,8 +625,8 @@ unsafe fn cmd_capture_pane_exec(
         // Give both C printing paths a valid pointer for empty output. The
         // terminator also preserves control_write's first-NUL behavior.
         buf.push(0);
-        if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+        if c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
+            control_write(&c.clone().expect("live client"), |out| {
                 write_cstr_n(
                     out,
                     buf.as_ptr().cast::<::core::ffi::c_char>(),

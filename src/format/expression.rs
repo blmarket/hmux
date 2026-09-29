@@ -1,5 +1,7 @@
 use crate::src::options::options_owner_ptr;
+use crate::src::server_client::Client as _;
 use crate::src::shared::client::client_handle;
+use crate::src::shared::client::ClientRef;
 use crate::src::tty_term::tty_term_owner_ptr;
 // Private expression parser/evaluator.  The modifier parser, loops,
 // conditionals, escaping, job expansion, and recursive expansion routines
@@ -916,9 +918,7 @@ pub(super) unsafe fn format_loop_sessions(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
     let mut item: *mut cmdq_item = item_owner
@@ -997,10 +997,7 @@ pub(super) unsafe fn format_loop_sessions(
         );
         format_defaults(
             nft,
-            (format_client)
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            format_client.as_ref(),
             Some(session),
             (refbox::Weak::new()).clone(),
             None,
@@ -1115,9 +1112,7 @@ pub(super) unsafe fn format_loop_windows(
     let mut ft: *mut format_tree = (*es).ft;
     let format_session_owner = (*ft).s.upgrade();
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
     let mut item: *mut cmdq_item = item_owner
@@ -1257,16 +1252,7 @@ pub(super) unsafe fn format_loop_windows(
                 b"prev\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        format_defaults(
-            nft,
-            (format_client)
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-            Some(session),
-            wl.clone(),
-            None,
-        );
+        format_defaults(nft, format_client.as_ref(), Some(session), wl.clone(), None);
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
         let expanded = format_expand1_cstring(&raw mut next, use_0);
@@ -1291,9 +1277,7 @@ pub(super) unsafe fn format_loop_panes(
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
     let mut item: *mut cmdq_item = item_owner
@@ -1381,10 +1365,7 @@ pub(super) unsafe fn format_loop_panes(
         );
         format_defaults(
             nft,
-            (format_client)
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            format_client.as_ref(),
             format_session_owner.as_ref(),
             ((*ft).winlink_handle()).clone(),
             (wp).as_ref()
@@ -1717,7 +1698,7 @@ pub(super) unsafe fn format_loop_clients(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let item_owner = (*ft).item.upgrade();
     let mut item: *mut cmdq_item = item_owner
         .as_ref()
@@ -1750,7 +1731,7 @@ pub(super) unsafe fn format_loop_clients(
         .expect("too many clients for format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        c = clients_sorted[i as usize].get();
+        c = Some(clients_sorted[i as usize].clone());
         format_log1(
             es,
             b"format_loop_clients\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1758,7 +1739,7 @@ pub(super) unsafe fn format_loop_clients(
                 out.write_all(b"client loop: ")?;
                 write_cstr(
                     out,
-                    ((*c).name)
+                    (c.as_ref().expect("live client").name())
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 )
@@ -1792,9 +1773,7 @@ pub(super) unsafe fn format_loop_clients(
         );
         format_defaults(
             nft,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c.as_ref(),
             format_session_owner.as_ref(),
             ((*ft).winlink_handle()).clone(),
             (format_pane)
@@ -2108,46 +2087,8 @@ pub(super) unsafe fn format_replace_expression(
     }
     return None;
 }
-pub(super) unsafe fn format_cycle_callback(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    let mut c = c_owner.get();
-    if (*c).message_string.is_none() && (*c).prompt.is_none() {
-        (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
-    }
-}
-pub(super) unsafe fn format_cycle_start_timer(
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-) {
-    let mut c = c_owner.get();
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    tv.tv_sec = (FORMAT_CYCLE_PERIOD / 1000 as ::core::ffi::c_int) as __time_t;
-    tv.tv_usec = ((FORMAT_CYCLE_PERIOD % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
-        * 1000 as ::core::ffi::c_long) as __suseconds_t;
-    if event_initialized(&(*c).cycle_timer) == 0 {
-        event_set(
-            &raw mut (*c).cycle_timer,
-            -(1 as ::core::ffi::c_int),
-            0 as ::core::ffi::c_short,
-            {
-                let observer = std::rc::Rc::downgrade(c_owner);
-                move |_, _| unsafe {
-                    if let Some(owner) = observer.upgrade() {
-                        format_cycle_callback(&owner);
-                    }
-                }
-            },
-        );
-    }
-    if event_pending(
-        &raw mut (*c).cycle_timer,
-        EV_TIMEOUT as ::core::ffi::c_short,
-        ::core::ptr::null_mut::<timeval>(),
-    ) == 0
-    {
-        event_add(&raw mut (*c).cycle_timer, &raw mut tv);
-    }
+pub(super) unsafe fn format_cycle_start_timer(client: &ClientRef) {
+    client.schedule_format_cycle(FORMAT_CYCLE_PERIOD);
 }
 pub(super) unsafe fn format_cycle(
     mut es: *mut format_expand_state,
@@ -2179,11 +2120,7 @@ pub(super) unsafe fn format_cycle(
         .start_time
         .wrapping_div(count.wrapping_mul(FORMAT_CYCLE_PERIOD as u_int) as uint64_t)
         .wrapping_rem(n as uint64_t) as u_int;
-    if n > 1 as u_int
-        && !client_handle(&(*ft).client)
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            .is_null()
-    {
+    if n > 1 as u_int && (*ft).client.is_some() {
         format_cycle_start_timer((*ft).client.as_ref().expect("format client"));
     }
     start = frames;
@@ -2216,9 +2153,7 @@ pub(super) unsafe fn format_replace(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mut wp: *mut window_pane = format_pane;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut copy: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2603,51 +2538,46 @@ pub(super) unsafe fn format_replace(
         || modifiers & FORMAT_CLIENT_TERMFEAT as uint64_t != 0
         || modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0
     {
-        if format_client.is_null()
-            || tty_term_owner_ptr(&(*format_client).tty.term)
-                .map_or(std::ptr::null(), |term| term)
-                .is_null()
-            || (*format_client).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0
-        {
+        let ready = format_client.as_ref().is_some_and(|client| {
+            let terminal_present = { client.borrow_terminal().term.is_some() };
+            terminal_present && client.flags() & CLIENT_UNATTACHEDFLAGS as u64 == 0
+        });
+        if !ready {
             value = c"".to_owned();
         } else {
-            if modifiers & FORMAT_CLIENT_TERMCAP as uint64_t != 0 {
-                if tty_term_has_name(
-                    tty_term_owner_ptr(&(*format_client).tty.term)
-                        .map_or(std::ptr::null(), |term| term),
+            let client = format_client.as_ref().expect("live client");
+            if modifiers & FORMAT_CLIENT_TERMCAP as u64 != 0 {
+                let terminal = client.borrow_terminal();
+                value = if tty_term_has_name(
+                    terminal.term.as_deref().expect("terminal description"),
                     copy,
                 ) != 0
                 {
-                    value = c"1".to_owned();
+                    c"1".to_owned()
                 } else {
-                    value = c"0".to_owned();
-                }
+                    c"0".to_owned()
+                };
             }
-            if modifiers & FORMAT_CLIENT_TERMFEAT as uint64_t != 0 {
-                if tty_feature_present(
-                    tty_term_owner_ptr(&(*format_client).tty.term)
-                        .map_or(std::ptr::null(), |term| term),
+            if modifiers & FORMAT_CLIENT_TERMFEAT as u64 != 0 {
+                let utf8 = client.flags() & crate::src::shared::client::CLIENT_UTF8 as u64 != 0;
+                let terminal = client.borrow_terminal();
+                value = if tty_feature_present(
+                    terminal.term.as_deref().expect("terminal description"),
                     copy,
+                    utf8,
                 ) != 0
                 {
-                    value = c"1".to_owned();
+                    c"1".to_owned()
                 } else {
-                    value = c"0".to_owned();
-                }
+                    c"0".to_owned()
+                };
             }
-            if modifiers & FORMAT_CLIENT_ENVIRON as uint64_t != 0 {
-                envent = environ_find(
-                    (*format_client).environ.as_deref().expect("environment"),
-                    copy,
-                );
-                if !envent.is_none() && !envent.unwrap().value.is_none() {
-                    value = (envent.unwrap().value)
-                        .as_deref()
-                        .expect("string is present")
-                        .to_owned();
-                } else {
-                    value = c"".to_owned();
-                }
+            if modifiers & FORMAT_CLIENT_ENVIRON as u64 != 0 {
+                value = client.with_environment(|environment| {
+                    environ_find(environment.expect("environment"), copy)
+                        .and_then(|entry| entry.value.clone())
+                        .unwrap_or_default()
+                });
             }
         }
     } else if modifiers as ::core::ffi::c_ulonglong & FORMAT_CYCLE != 0 {
@@ -3532,7 +3462,7 @@ pub unsafe fn format_expand_cstring(
 pub(crate) unsafe fn format_single_cstring(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fmt: *const ::core::ffi::c_char,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
@@ -3546,7 +3476,7 @@ pub(crate) unsafe fn format_single_cstring(
 pub(crate) unsafe fn format_single_from_state_cstring(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     fmt: *const ::core::ffi::c_char,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     fs: *mut cmd_find_state,
 ) -> CString {
     format_single_cstring(
@@ -3564,15 +3494,11 @@ pub(crate) unsafe fn format_single_from_target_cstring(
 ) -> CString {
     let item = item_handle.get();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let tc = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     format_single_from_state_cstring(
         Some(item_handle),
         fmt,
-        (tc).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        tc.as_ref(),
         crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
     )
 }
@@ -3739,36 +3665,6 @@ mod format_choose_tests {
 
             assert!(format_choose(&raw mut es, c"no delimiter".as_ptr()).is_none());
             format_free(ft_owner);
-        }
-    }
-}
-
-#[cfg(test)]
-mod cycle_owner_tests {
-    use super::*;
-
-    #[test]
-    fn cycle_timer_observes_client_without_retaining_it() {
-        unsafe {
-            let owner = client::new();
-            let observer = std::rc::Rc::downgrade(&owner);
-            format_cycle_start_timer(&owner);
-            let callback = (*owner.get())
-                .cycle_timer
-                .callback
-                .as_ref()
-                .unwrap()
-                .clone();
-            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            callback.borrow_mut()(-1, EV_TIMEOUT as _);
-            assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
-
-            // Cancel registration explicitly before releasing the client, but
-            // retain a callback to exercise a dispatch after its owner expires.
-            crate::src::reactor::event_del(&raw mut (*owner.get()).cycle_timer);
-            drop(owner);
-            assert!(observer.upgrade().is_none());
-            callback.borrow_mut()(-1, EV_TIMEOUT as _);
         }
     }
 }

@@ -8,6 +8,7 @@ use super::key::key_event;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::{window, winlink};
+use crate::src::shared::client::ClientWeak;
 use std::ffi::{CStr, CString};
 pub type cmd_retval = ::core::ffi::c_int;
 pub const CMD_RETURN_STOP: cmd_retval = 2;
@@ -283,7 +284,7 @@ pub struct cmd_parse_input {
     pub line: u_int,
     pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     /// Parser context observes the client; prepared commands own it separately.
-    pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub c: ClientWeak,
     pub fs: cmd_find_state,
 }
 

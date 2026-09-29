@@ -13,9 +13,11 @@ use crate::src::format::{
 };
 use crate::src::hooks::hooks_valid_event_name;
 use crate::src::log::{log_cstr, log_debug, log_pointer};
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item, wait_item};
 use crate::src::shared::events::{event_payload, event_payload_item, events_callback, EventSinkId};
@@ -234,7 +236,7 @@ unsafe fn cmd_wait_for_item_client_name(
     let owner = cmdq_get_client((item).as_ref());
     owner
         .as_ref()
-        .and_then(|owner| (*owner.get()).name.clone())
+        .and_then(|owner| owner.name())
         .unwrap_or_default()
 }
 unsafe fn cmd_wait_for_waiter_client_name(waiter: &wait_item) -> CString {
@@ -586,10 +588,8 @@ unsafe fn cmd_wait_for_wait(
 ) -> cmd_retval {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    if c.is_null() {
+    let mut c: Option<ClientRef> = c_owner.clone();
+    if c.is_none() {
         cmdq_error(item_handle, |out| out.write_all(b"not able to wait"));
         return CMD_RETURN_ERROR;
     }
@@ -600,7 +600,7 @@ unsafe fn cmd_wait_for_wait(
         log_debug(format_args!(
             "wait channel {} already woken ({})",
             log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
-            log_pointer((c) as *const ::core::ffi::c_void)
+            log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")).cast())
         ));
         cmd_wait_for_remove(wc);
         return CMD_RETURN_NORMAL;
@@ -608,7 +608,7 @@ unsafe fn cmd_wait_for_wait(
     log_debug(format_args!(
         "wait channel {} not woken ({})",
         log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
-        log_pointer((c) as *const ::core::ffi::c_void)
+        log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")).cast())
     ));
     (*wait_channel_waiters(wc)).push(Box::new(wait_item {
         item: (*item).observer.clone(),

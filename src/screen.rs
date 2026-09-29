@@ -777,7 +777,8 @@ pub unsafe fn screen_print(
                         last = last.wrapping_add(1);
                         *buf.offset(fresh2 as isize) = '\t' as i32 as ::core::ffi::c_char;
                     } else if (*gce).flags as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
-                        if let Some(text) = tty_acs_get(None, (*gce).c2rust_unnamed.data.data) {
+                        if let Some(text) = tty_acs_get(None, true, (*gce).c2rust_unnamed.data.data)
+                        {
                             acs = text.as_ptr();
                             n = text.to_bytes().len() as ::core::ffi::c_int;
                         } else {

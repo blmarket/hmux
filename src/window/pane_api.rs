@@ -4,6 +4,7 @@ use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
 use crate::src::reactor::{event_pending, Interests};
 use crate::src::server_client::Client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
 use crate::src::shared::pane::PANE_ACTIVITY;
 use crate::src::shared::screen::MODE_SYNC;
@@ -25,6 +26,8 @@ pub trait WindowPane {
     unsafe fn id(&self) -> u32;
     unsafe fn window_observer(&self) -> Weak<UnsafeCell<window>>;
     unsafe fn geometry(&self) -> (u32, u32, i32, i32);
+    /// Visible cursor in window coordinates, for terminal viewport following.
+    unsafe fn visible_cursor_in_window(&self) -> Option<(u32, u32)>;
     /// Whether the pane still has a PTY, including an exited process being drained.
     unsafe fn has_tty(&self) -> bool;
     unsafe fn is_synchronized(&self) -> bool;
@@ -53,7 +56,7 @@ pub trait WindowPane {
     unsafe fn on_selected(&self, record_activity: bool);
     unsafe fn key(
         &self,
-        client: Option<&Rc<UnsafeCell<client>>>,
+        client: Option<&ClientRef>,
         link: refbox::Weak<winlink>,
         key: key_code,
         mouse: Option<&mut mouse_event>,
@@ -131,6 +134,15 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn geometry(&self) -> (u32, u32, i32, i32) {
         let pane = &*self.get();
         (pane.sx, pane.sy, pane.xoff, pane.yoff)
+    }
+
+    unsafe fn visible_cursor_in_window(&self) -> Option<(u32, u32)> {
+        let pane = &*self.get();
+        let screen = &*pane.screen_ptr();
+        (screen.mode & crate::src::shared::screen::MODE_CURSOR != 0).then_some((
+            (pane.xoff as u32).wrapping_add(screen.cx),
+            (pane.yoff as u32).wrapping_add(screen.cy),
+        ))
     }
 
     unsafe fn has_tty(&self) -> bool {
@@ -225,7 +237,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
 
     unsafe fn key(
         &self,
-        client: Option<&Rc<UnsafeCell<client>>>,
+        client: Option<&ClientRef>,
         link: refbox::Weak<winlink>,
         key: key_code,
         mouse: Option<&mut mouse_event>,

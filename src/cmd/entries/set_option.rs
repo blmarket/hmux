@@ -19,12 +19,14 @@ use crate::src::options::{
     options_match_owned, options_push_changes, options_remove_or_default, options_scope_from_name,
     options_set_string, OptionMatchFailure,
 };
+use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
@@ -133,7 +135,7 @@ unsafe fn cmd_set_hook_event_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     if args_count(args) == 0 as u_int {
         cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
         return CMD_RETURN_ERROR;
@@ -155,11 +157,9 @@ unsafe fn cmd_set_hook_event_exec(
     let mut ep = event_payload_create();
     event_payload_set_target(&mut *ep, &*target);
     let c_owner = cmdq_get_client((item).as_ref());
-    c = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    if !c.is_null() {
-        event_payload_set_client(&mut *ep, (*(c)).observer.upgrade().expect("live client"));
+    c = c_owner.clone();
+    if !c.is_none() {
+        event_payload_set_client(&mut *ep, c.clone().expect("live client"));
     }
     if !(*target).session_handle().is_none() {
         event_payload_set_session(

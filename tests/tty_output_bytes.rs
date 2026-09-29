@@ -1,5 +1,7 @@
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
+use hmux2::src::server_client::Client as _;
 use hmux2::src::shared::client::client;
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::tty::{
     tty, tty_command_data, tty_ctx, tty_term, TERM_NOAM, TTY_BLOCK, TTY_NOBLOCK,
 };
@@ -91,10 +93,9 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
             ),
         ] {
             let client_owner = client::new();
-            let client = &mut *client_owner.get();
             let mut term = tty_term::empty();
             term.flags = if no_auto_margin { TERM_NOAM } else { 0 };
-            let mut terminal = tty {
+            *client_owner.borrow_terminal_mut() = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
@@ -105,14 +106,31 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
                 flags: if blocked { TTY_BLOCK } else { 0 },
                 ..Default::default()
             };
-            tty_putn(&raw mut terminal, data, width);
-            assert_eq!((terminal.cx, terminal.cy), cursor);
+            client_owner.with_terminal_output(|terminal| tty_putn(terminal, data, width));
             assert_eq!(
-                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default(),
+                (
+                    client_owner.borrow_terminal().cx,
+                    client_owner.borrow_terminal().cy
+                ),
+                cursor
+            );
+            assert_eq!(
+                evbuffer_pullup(
+                    client_owner
+                        .borrow_terminal_mut()
+                        .out
+                        .as_deref_mut()
+                        .unwrap(),
+                    -1
+                )
+                .unwrap_or_default(),
                 expected
             );
-            assert_eq!(client.written, expected.len());
-            assert_eq!(terminal.discarded, if blocked { data.len() } else { 0 });
+            assert_eq!(written(&client_owner), expected.len());
+            assert_eq!(
+                client_owner.borrow_terminal().discarded,
+                if blocked { data.len() } else { 0 }
+            );
         }
     }
 }
@@ -122,9 +140,8 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
     unsafe {
         for count in [0, 1, 499, 500, 501, 1001] {
             let client_owner = client::new();
-            let client = &mut *client_owner.get();
             let mut term = tty_term::empty();
-            let mut terminal = tty {
+            *client_owner.borrow_terminal_mut() = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
@@ -132,12 +149,20 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
                 sy: 2,
                 ..Default::default()
             };
-            tty_repeat_space(&raw mut terminal, count);
+            client_owner.with_terminal_output(|terminal| tty_repeat_space(terminal, count));
+            let mut terminal = client_owner.borrow_terminal_mut();
             let bytes =
                 evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default();
             assert_eq!(bytes, vec![b' '; count as usize]);
-            assert_eq!((terminal.cx, terminal.cy), (count, 0));
-            assert_eq!(client.written, count as usize);
+            drop(terminal);
+            assert_eq!(
+                (
+                    client_owner.borrow_terminal().cx,
+                    client_owner.borrow_terminal().cy
+                ),
+                (count, 0)
+            );
+            assert_eq!(written(&client_owner), count as usize);
         }
     }
 }
@@ -146,8 +171,7 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
 fn raw_commands_consume_borrowed_binary_payloads_before_returning() {
     unsafe {
         let client_owner = client::new();
-        let client = &mut *client_owner.get();
-        let mut terminal = tty {
+        *client_owner.borrow_terminal_mut() = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             out: Some(evbuffer_new()),
             cx: 3,
@@ -160,20 +184,47 @@ fn raw_commands_consume_borrowed_binary_payloads_before_returning() {
                 data: tty_command_data::Bytes(&bytes),
                 ..Default::default()
             };
-            tty_cmd_rawstring(&raw mut terminal, &ctx);
+            tty_cmd_rawstring(&client_owner, &ctx);
         }
         bytes.fill(b'X');
         let ctx = tty_ctx {
             data: tty_command_data::Bytes(&[]),
             ..Default::default()
         };
-        tty_cmd_rawstring(&raw mut terminal, &ctx);
+        tty_cmd_rawstring(&client_owner, &ctx);
         assert_eq!(
-            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+            evbuffer_pullup(
+                client_owner
+                    .borrow_terminal_mut()
+                    .out
+                    .as_deref_mut()
+                    .unwrap(),
+                -1
+            )
+            .unwrap(),
             b"raw\0\xff"
         );
-        assert_eq!((terminal.cx, terminal.cy), (u32::MAX, u32::MAX));
-        assert_ne!(terminal.flags & TTY_NOBLOCK, 0);
-        assert_eq!(client.written, 5);
+        assert_eq!(
+            (
+                client_owner.borrow_terminal().cx,
+                client_owner.borrow_terminal().cy
+            ),
+            (u32::MAX, u32::MAX)
+        );
+        assert_ne!(client_owner.borrow_terminal().flags & TTY_NOBLOCK, 0);
+        assert_eq!(written(&client_owner), 5);
     }
+}
+
+unsafe fn written(owner: &ClientRef) -> usize {
+    let mut context = hmux2::src::shared::format::format_tree {
+        c: std::rc::Rc::downgrade(owner),
+        ..Default::default()
+    };
+    let Some(hmux2::src::format::FormatValue::String(value)) =
+        owner.format_value(c"client_written", &mut context)
+    else {
+        panic!("client output accounting builtin");
+    };
+    value.to_str().unwrap().parse().unwrap()
 }

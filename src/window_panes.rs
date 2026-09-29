@@ -32,6 +32,7 @@ use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::borders::CELL_BORDERS;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
@@ -120,7 +121,7 @@ pub static window_panes_mode: window_mode = {
             window_panes_key
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
+                    &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
@@ -1910,7 +1911,7 @@ unsafe fn window_panes_resize(
 }
 unsafe fn window_panes_run_command(
     mut data: *mut window_panes_modedata,
-    client_owner: &Rc<UnsafeCell<client>>,
+    client_owner: &ClientRef,
     pane: &window_pane,
 ) {
     let new_item_allocation;
@@ -2036,12 +2037,11 @@ unsafe fn window_panes_get_target(
 }
 unsafe fn window_panes_key(
     mut wme: refbox::Weak<window_mode_entry>,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let _c = client_owner.get();
     let mode_pane_owner = wme
         .get_unchecked()
         .wp

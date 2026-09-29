@@ -22,7 +22,7 @@ MODELS = {
     'session': 'src/session/model.rs',
     'window': 'src/shared/window.rs',
     'window_pane': 'src/shared/pane.rs',
-    'client': 'src/shared/client.rs',
+    'client': 'src/server_client/model.rs',
 }
 
 
@@ -112,7 +112,7 @@ def owner(path, function):
     # Pane helpers must still use Window for their parent, and vice versa.
     if path == 'src/session.rs' or path.startswith('src/session/'):
         return 'session'
-    if path in ('src/server_client.rs', 'src/server_client/api.rs'):
+    if path.startswith('src/server_client/'):
         return 'client'
     if path in ('src/window/api.rs', 'src/window/alerts.rs'):
         return 'window'

@@ -12,6 +12,7 @@ use crate::src::ffi::libc::strcmp;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::resize::recalculate_sizes;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
@@ -20,6 +21,7 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -76,9 +78,7 @@ unsafe fn cmd_new_window_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let current = cmdq_get_state_owned(&*(item));
     let target = cmdq_get_target(&*item).clone();
     let mut sc: spawn_context = spawn_context {
@@ -97,9 +97,7 @@ unsafe fn cmd_new_window_exec(
     };
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let _tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut _tc: Option<ClientRef> = tc_owner.clone();
     let session_owner = target.session_handle().expect("new-window target session");
     let s = Some(session_owner.clone());
     let mut wl: refbox::Weak<winlink> = target.winlink_handle();
@@ -213,7 +211,14 @@ unsafe fn cmd_new_window_exec(
         {
             server_redraw_session(s.as_ref().expect("live session"));
         }
-        if !c.is_null() && !(*c).session_handle().is_none() {
+        if !c.is_none()
+            && !c
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .is_none()
+        {
             (*(s.as_ref().expect("live session").current_winlink())
                 .get_unchecked()
                 .window_handle()
@@ -221,7 +226,7 @@ unsafe fn cmd_new_window_exec(
                 .map_or(std::ptr::null_mut(), |owner| owner.get()))
             .latest = c
                 .as_ref()
-                .map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
         }
         recalculate_sizes();
         return CMD_RETURN_NORMAL;

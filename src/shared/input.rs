@@ -1,5 +1,6 @@
 //! Authoritative input declarations.
 
+use crate::src::shared::client::ClientWeak;
 use hmux_buffer::SegmentedBuf;
 use std::collections::VecDeque;
 use std::ffi::CString;
@@ -58,7 +59,7 @@ pub struct input_ctx {
     pub ctx: screen_write_ctx,
     pub palette: InputPalette,
     /// Client observation; request/context ownership does not retain the client.
-    pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub c: ClientWeak,
     pub cell: input_cell,
     pub old_cell: input_cell,
     pub old_cx: u_int,
@@ -88,7 +89,7 @@ pub struct input_ctx {
 #[repr(C)]
 pub struct input_request {
     /// Client observation; request/context ownership does not retain the client.
-    pub c: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub c: ClientWeak,
     pub ictx: *mut input_ctx,
     pub type_0: input_request_type,
     pub t: uint64_t,

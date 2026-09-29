@@ -8,11 +8,13 @@ use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bind
 use crate::src::key_string::key_string_parse_cstr;
 use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -92,9 +94,7 @@ unsafe fn cmd_send_keys_inject_key(
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
@@ -104,7 +104,7 @@ unsafe fn cmd_send_keys_inject_key(
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut new_after = after.clone();
     if args_has(args, 'K' as i32 as u_char) != 0 {
-        if tc.is_null() {
+        if tc.is_none() {
             return std::rc::Rc::downgrade(item_handle);
         }
         let event = key_event::new(
@@ -156,9 +156,7 @@ unsafe fn cmd_send_keys_inject_key(
         after = key_bindings_dispatch(
             command,
             after.upgrade().as_ref(),
-            (tc).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            tc.as_ref(),
             ::core::ptr::null_mut::<key_event>(),
             target,
         );
@@ -248,9 +246,7 @@ unsafe fn cmd_send_keys_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
@@ -266,8 +262,8 @@ unsafe fn cmd_send_keys_exec(
     let mut i: u_int = 0;
     let mut np: u_int = 1 as u_int;
     let mut count: u_int = args_count(args);
-    if !tc.is_null()
-        && (*tc).flags & CLIENT_READONLY as uint64_t != 0
+    if !tc.is_none()
+        && tc.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0
         && args_has(args, 'X' as i32 as u_char) == 0
     {
         cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));

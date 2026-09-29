@@ -640,6 +640,16 @@ pub unsafe fn job_print_summary(
 }
 
 #[cfg(test)]
+pub(crate) unsafe fn job_with_free_callback_for_test(freecb: job_free_cb) -> Weak<job> {
+    job_insert(RefBox::new(job {
+        pid: -1,
+        fd: -1,
+        freecb,
+        ..job::empty()
+    }))
+}
+
+#[cfg(test)]
 mod job_stream_tests {
     use super::*;
     use crate::src::shared::job::job_update_callback;

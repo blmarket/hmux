@@ -1,8 +1,9 @@
 use crate::src::ffi::libc::{strcasecmp, strcmp, strlen, strsep};
 use crate::src::log::{log_cstr, log_debug};
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
-use crate::src::shared::client::CLIENT_UTF8;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::tty::tty_term;
 use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_RGBCOLOURS, TERM_SIXEL,
@@ -211,17 +212,11 @@ static tty_features: [&tty_feature; 22] = {
     ]
 };
 pub unsafe fn tty_parse_client_features(
-    c_value: &mut client,
-    mut s: *const ::core::ffi::c_char,
-    mut sep: *const ::core::ffi::c_char,
+    owner: &ClientRef,
+    features: *const ::core::ffi::c_char,
+    separators: *const ::core::ffi::c_char,
 ) {
-    let c: *mut client = c_value as *mut _;
-    tty_parse_features(
-        s,
-        sep,
-        &raw mut (*c).term_features,
-        &raw mut (*c).term_nofeatures,
-    );
+    owner.parse_terminal_features(CStr::from_ptr(features), CStr::from_ptr(separators));
 }
 pub unsafe fn tty_parse_features(
     mut s: *const ::core::ffi::c_char,
@@ -305,14 +300,13 @@ pub unsafe fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
 pub unsafe fn tty_feature_present(
     mut term: *const tty_term,
     mut name: *const ::core::ffi::c_char,
+    utf8: bool,
 ) -> ::core::ffi::c_int {
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     let mut i: u_int = 0;
     if strcmp(name, b"utf8\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
     {
-        let owner = (*term).client.upgrade().expect("terminal client");
-        return ((*owner.get()).flags & CLIENT_UTF8 as uint64_t != 0 as uint64_t)
-            as ::core::ffi::c_int;
+        return utf8 as ::core::ffi::c_int;
     }
     i = 0 as u_int;
     while (i as usize) < tty_features.len() {
@@ -351,15 +345,20 @@ pub unsafe fn tty_feature_present(
     }
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int {
-    let owner = (*term).client.upgrade().expect("terminal client");
-    let c = owner.get();
+/// Applying capability strings is component-only; Client flag publication is
+/// left to the caller after releasing its terminal component guard.
+#[derive(Default)]
+pub struct AppliedFeatures {
+    pub changed: bool,
+    pub enable_utf8: bool,
+}
+
+pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedFeatures {
+    let mut result = AppliedFeatures::default();
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
-    let mut feat: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
-    feat = (*c).term_features & !(*c).term_nofeatures;
     if feat == 0 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
+        return result;
     }
     log_debug(format_args!(
         "applying terminal features: {}",
@@ -386,16 +385,17 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int 
             }
             (*term).flags |= (*tf).flags;
             if tf == &raw const tty_feature_utf8 {
-                (*c).flags |= CLIENT_UTF8 as uint64_t;
+                result.enable_utf8 = true;
             }
         }
         i = i.wrapping_add(1);
     }
     if (*term).applied_features | feat == (*term).applied_features {
-        return 0 as ::core::ffi::c_int;
+        return result;
     }
     (*term).applied_features |= feat;
-    return 1 as ::core::ffi::c_int;
+    result.changed = true;
+    result
 }
 
 #[cfg(test)]
@@ -407,29 +407,54 @@ mod tests {
     use crate::src::tty_term::tty_term_ncodes;
 
     #[test]
+    fn feature_application_reports_utf8_without_borrowing_a_client() {
+        unsafe {
+            let mut enabled = 0;
+            let mut disabled = 0;
+            tty_parse_features(c"utf8".as_ptr(), c",".as_ptr(), &mut enabled, &mut disabled);
+            let mut terminal = tty_term::empty();
+            assert!(terminal.client.upgrade().is_none());
+            let first = tty_apply_features(&mut terminal, enabled & !disabled);
+            assert!(first.changed);
+            assert!(first.enable_utf8);
+            let repeated = tty_apply_features(&mut terminal, enabled & !disabled);
+            assert!(!repeated.changed);
+            assert!(!repeated.enable_utf8);
+            let none = tty_apply_features(&mut terminal, 0);
+            assert!(!none.changed);
+            assert!(!none.enable_utf8);
+        }
+    }
+
+    #[test]
     fn feature_presence_checks_capability_names_before_values() {
         unsafe {
             let mut term = tty_term::empty();
             term.codes = vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice();
 
             term.codes[TTYC_MS as usize] = tty_code::String(Default::default());
-            assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 1);
+            assert_eq!(
+                tty_feature_present(&mut term, c"clipboard".as_ptr(), false),
+                1
+            );
             term.codes[TTYC_MS as usize] = tty_code::None;
-            assert_eq!(tty_feature_present(&mut term, c"clipboard".as_ptr()), 0);
+            assert_eq!(
+                tty_feature_present(&mut term, c"clipboard".as_ptr(), false),
+                0
+            );
 
             term.flags = TERM_256COLOURS | TERM_RGBCOLOURS;
             term.codes[TTYC_AX as usize] = tty_code::Flag(1);
             for code in [TTYC_SETRGBF, TTYC_SETRGBB, TTYC_SETAB, TTYC_SETAF] {
                 term.codes[code as usize] = tty_code::String(Default::default());
             }
-            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 1);
+            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr(), false), 1);
             term.codes[TTYC_SETAF as usize] = tty_code::None;
-            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr()), 0);
+            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr(), false), 0);
         }
     }
 }
-pub unsafe fn tty_default_features(c_value: &mut client, mut name: *const ::core::ffi::c_char) {
-    let c: *mut client = c_value as *mut _;
+pub unsafe fn tty_default_features(owner: &ClientRef, mut name: *const ::core::ffi::c_char) {
     static table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
             name: c"mintty",
@@ -485,7 +510,7 @@ pub unsafe fn tty_default_features(c_value: &mut client, mut name: *const ::core
     {
         if !(strcmp(table[i as usize].name.as_ptr(), name) != 0 as ::core::ffi::c_int) {
             tty_parse_client_features(
-                &mut *(c),
+                owner,
                 table[i as usize].features.as_ptr(),
                 b",\0" as *const u8 as *const ::core::ffi::c_char,
             );

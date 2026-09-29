@@ -25,15 +25,16 @@ use crate::src::format::{
 };
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
-use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server::server_add_message;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_print, server_client_unref_owned};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::account::passwd;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::{client, client_file};
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
@@ -67,16 +68,16 @@ pub struct cmdq_item {
     /// Observe this allocation across detached and queued ownership transfer.
     pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub name: Option<std::ffi::CString>,
-    queue: *mut cmdq_list,
+    queue: Option<QueueTarget>,
     /// Own the remaining detached chain until enqueue consumes it.
     next: Option<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     /// Runtime destruction marker: only cmdq_remove may set this to true.
     removed: bool,
     /// Nonowning execution context, which can temporarily differ from the queue owner.
-    pub client: std::rc::Weak<std::cell::UnsafeCell<client>>,
-    client_owner: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    pub client: ClientWeak,
+    client_owner: Option<ClientRef>,
     /// Nonowning command target; upgrade before accessing the client.
-    pub target_client: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub target_client: ClientWeak,
     pub type_0: cmdq_type,
     pub group: u_int,
     pub number: u_int,
@@ -227,9 +228,9 @@ pub(crate) fn cmdq_clear_wait_file(
 /// A dead client cannot resume a file-backed waiting command. Cancel its
 /// callback data first, then remove the waiting item and its queued suffix.
 /// Other wait families need their own cancellation before they can be drained.
-pub(crate) unsafe fn cmdq_abort_file_wait(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    let queue = cmdq_get(Some(owner));
-    let Some(first) = (*queue).first() else {
+pub(crate) unsafe fn cmdq_abort_file_wait(owner: &ClientRef) {
+    let queue = QueueTarget::for_client(Some(owner));
+    let Some(first) = queue.with_queue(|queue| queue.first()) else {
         return;
     };
     if (*first.get()).flags & CMDQ_WAITING == 0 {
@@ -240,35 +241,57 @@ pub(crate) unsafe fn cmdq_abort_file_wait(owner: &std::rc::Rc<std::cell::UnsafeC
     };
     file_cancel_cmdq_wait(&file);
     drop(first);
-    (*queue).item = std::rc::Weak::new();
-    while let Some(item) = (*queue).list.pop_front() {
+    queue.with_queue(|queue| queue.item = std::rc::Weak::new());
+    while let Some(item) = queue.with_queue(|queue| queue.list.pop_front()) {
         cmdq_remove(item);
     }
 }
 
-fn cmdq_name(c: Option<&client>) -> CString {
+/// The execution context of an item may change during dispatch; its queue
+/// identity does not. A weak owner avoids adding a second client lifetime duty.
+#[derive(Clone)]
+enum QueueTarget {
+    Global,
+    Client(ClientWeak),
+}
+
+impl QueueTarget {
+    fn for_client(owner: Option<&ClientRef>) -> Self {
+        owner.map_or(Self::Global, |owner| {
+            Self::Client(std::rc::Rc::downgrade(owner))
+        })
+    }
+
+    /// Only immediate deque operations belong in this scope. In particular,
+    /// dispatch and explicit item removal (which can invoke cancellation) must
+    /// happen after it returns. Results must own their data.
+    unsafe fn with_queue<R>(&self, operation: impl FnOnce(&mut cmdq_list) -> R) -> R {
+        static mut GLOBAL_QUEUE: Option<Box<cmdq_list>> = None;
+        match self {
+            Self::Global => operation((&mut *(&raw mut GLOBAL_QUEUE)).get_or_insert_with(cmdq_new)),
+            Self::Client(observer) => {
+                let owner = observer.upgrade().expect("live command queue owner");
+                let mut queue = owner.borrow_queue_mut();
+                operation(&mut queue)
+            }
+        }
+    }
+}
+
+unsafe fn cmdq_name(c: Option<&ClientRef>) -> CString {
     let Some(c) = c else {
         return c"<global>".to_owned();
     };
+    let name = c.name();
     format_message_with(|out| {
-        if let Some(name) = c.name.as_ref() {
+        if let Some(name) = name.as_ref() {
             out.write_all(b"<")?;
             out.write_all(name.as_bytes())?;
             out.write_all(b">")
         } else {
-            write!(out, "<{:p}>", c)
+            write!(out, "<{:p}>", std::rc::Rc::as_ptr(c))
         }
     })
-}
-unsafe fn cmdq_get(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>) -> *mut cmdq_list {
-    static mut GLOBAL_QUEUE: Option<Box<cmdq_list>> = None;
-    match owner {
-        None => &mut **(&mut *(&raw mut GLOBAL_QUEUE)).get_or_insert_with(cmdq_new),
-        Some(owner) => (*owner.get())
-            .queue
-            .as_deref_mut()
-            .expect("client command queue"),
-    }
 }
 
 pub fn cmdq_new() -> Box<cmdq_list> {
@@ -292,14 +315,10 @@ pub fn cmdq_get_name(item: &cmdq_item) -> Option<&std::ffi::CStr> {
 pub fn cmdq_get_cmd(item: &cmdq_item) -> refbox::Weak<cmd> {
     item.command_handle()
 }
-pub fn cmdq_get_client(
-    item_handle: Option<&cmdq_item>,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+pub fn cmdq_get_client(item_handle: Option<&cmdq_item>) -> Option<ClientRef> {
     item_handle.and_then(|item| item.client.upgrade())
 }
-pub fn cmdq_get_target_client(
-    item_handle: Option<&cmdq_item>,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+pub fn cmdq_get_target_client(item_handle: Option<&cmdq_item>) -> Option<ClientRef> {
     item_handle.and_then(|item| item.target_client.upgrade())
 }
 pub fn cmdq_get_state(item: &cmdq_item) -> Option<&std::rc::Rc<cmdq_state>> {
@@ -416,28 +435,28 @@ pub unsafe fn cmdq_merge_formats(
 }
 /// Consume a detached chain, moving its owners into the queue in order.
 pub unsafe fn cmdq_append(
-    owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    owner: Option<&ClientRef>,
     item: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
-    let queue = cmdq_get(owner);
+    let queue = QueueTarget::for_client(owner);
     let mut remaining = Some(item);
     let mut last = std::rc::Weak::new();
     while let Some(owner_item) = remaining {
         let item = owner_item.get();
         assert!(
-            (*item).queue.is_null() && !(*item).removed,
+            (*item).queue.is_none() && !(*item).removed,
             "detached command item"
         );
         remaining = (*item).next.take();
         (*item).client_owner = owner.cloned();
         (*item).client = owner.map(std::rc::Rc::downgrade).unwrap_or_default();
-        (*item).queue = queue;
+        (*item).queue = Some(queue.clone());
         last = std::rc::Rc::downgrade(&owner_item);
-        (*queue).list.push_back(owner_item);
+        queue.with_queue(|queue| queue.list.push_back(owner_item));
         log_debug(format_args!(
             "{} {}: {}",
             "cmdq_append",
-            crate::src::log::log_bytes(cmdq_name(owner.map(|owner| &*owner.get())).as_bytes()),
+            crate::src::log::log_bytes(cmdq_name(owner).as_bytes()),
             log_cstr(
                 (((*item).name)
                     .as_ref()
@@ -455,19 +474,22 @@ pub unsafe fn cmdq_insert_after(
     item: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
     assert!(
-        !(*after.get()).removed && !(*after.get()).queue.is_null(),
+        !(*after.get()).removed && (*after.get()).queue.is_some(),
         "queued insertion anchor"
     );
     let c_owner = (*after.get()).client.upgrade();
-    let queue = (*after.get()).queue;
-    let mut position = (*queue).position(after) + 1;
+    let queue = (*after.get())
+        .queue
+        .clone()
+        .expect("queued insertion anchor");
+    let mut position = queue.with_queue(|queue| queue.position(after) + 1);
     let mut previous = after.get();
     let mut remaining = Some(item);
     let mut last = std::rc::Weak::new();
     while let Some(owner_item) = remaining {
         let item = owner_item.get();
         assert!(
-            (*item).queue.is_null() && !(*item).removed,
+            (*item).queue.is_none() && !(*item).removed,
             "detached command item"
         );
         remaining = (*item).next.take();
@@ -476,16 +498,14 @@ pub unsafe fn cmdq_insert_after(
             .as_ref()
             .map(std::rc::Rc::downgrade)
             .unwrap_or_default();
-        (*item).queue = queue;
+        (*item).queue = Some(queue.clone());
         last = std::rc::Rc::downgrade(&owner_item);
-        (*queue).list.insert(position, owner_item);
+        queue.with_queue(|queue| queue.list.insert(position, owner_item));
         position += 1;
         log_debug(format_args!(
             "{} {}: {} after {}",
             "cmdq_insert_after",
-            crate::src::log::log_bytes(
-                cmdq_name(c_owner.as_ref().map(|owner| &*owner.get())).as_bytes()
-            ),
+            crate::src::log::log_bytes(cmdq_name(c_owner.as_ref()).as_bytes()),
             log_cstr(
                 (((*item).name)
                     .as_ref()
@@ -603,11 +623,13 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
     }
     drop((*item).cmdlist.take());
     drop((*item).state.take());
-    let queue = (*item).queue;
-    if (*queue).item.ptr_eq(&(*item).observer) {
-        (*queue).item = std::rc::Weak::new();
+    if let Some(queue) = (*item).queue.take() {
+        queue.with_queue(|queue| {
+            if queue.item.ptr_eq(&(*item).observer) {
+                queue.item = std::rc::Weak::new();
+            }
+        });
     }
-    (*item).queue = std::ptr::null_mut();
     // Release resources explicitly before destroying the item.
     drop((*item).cb.take());
     drop((*item).cancel_data.take());
@@ -618,15 +640,21 @@ unsafe fn cmdq_remove_group(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq
     if (*item).group == 0 as u_int {
         return;
     }
-    let queue = (*item).queue;
-    let mut position = (*queue).position(item_handle) + 1;
-    while let Some(owner) = (*queue).list.get(position) {
-        let this = owner.get();
-        if (*this).group == (*item).group {
-            let owner = (*queue).list.remove(position).expect("queued group item");
-            cmdq_remove(owner);
-        } else {
-            position += 1;
+    let queue = (*item).queue.clone().expect("queued group anchor");
+    let mut position = queue.with_queue(|queue| queue.position(item_handle) + 1);
+    loop {
+        let next = queue.with_queue(|queue| {
+            let owner = queue.list.get(position)?;
+            if (*owner.get()).group == (*item).group {
+                Some(queue.list.remove(position))
+            } else {
+                Some(None)
+            }
+        });
+        match next {
+            Some(Some(owner)) => cmdq_remove(owner),
+            Some(None) => position += 1,
+            None => break,
         }
     }
 }
@@ -669,17 +697,7 @@ unsafe fn cmdq_find_flag(
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if flag.flag as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         let target_client = cmdq_get_target_client((item).as_ref());
-        let target_client_ptr = target_client
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        cmd_find_from_client(
-            fs,
-            (target_client_ptr)
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-            0 as ::core::ffi::c_int,
-        );
+        cmd_find_from_client(fs, target_client.as_ref(), 0 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
     value = args_get(
@@ -699,15 +717,13 @@ unsafe fn cmdq_find_flag(
 unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let tmp = cmd_print_cstring(&((*item).command_handle()).get_unchecked());
-    if !c.is_null() {
-        uid = proc_get_peer_uid((*c).peer);
+    if !c.is_none() {
+        uid = c.as_ref().expect("live client").peer_uid();
         let user: CString = if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
             pw = getpwuid(uid as __uid_t);
             if !pw.is_null() {
@@ -723,14 +739,19 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_
         } else {
             c"".to_owned()
         };
-        if !(*c).session_handle().is_none()
+        if !c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
             && state.event.key != KEYC_NONE as ::core::ffi::c_ulong as key_code
         {
             let key = key_string_format(state.event.key, false);
             server_add_message(|out| {
                 write_cstr(
                     out,
-                    ((*c).name)
+                    (c.as_ref().expect("live client").name())
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 )?;
@@ -744,7 +765,7 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_
             server_add_message(|out| {
                 write_cstr(
                     out,
-                    ((*c).name)
+                    (c.as_ref().expect("live client").name())
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 )?;
@@ -766,10 +787,7 @@ unsafe fn cmdq_fire_command(
     let item = item_handle.get();
     let mut current_block: u64;
     let saved_client = cmdq_get_client((item).as_ref());
-    let saved_client_ptr = saved_client
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let name = cmdq_name(saved_client.as_ref().map(|owner| &*owner.get()));
+    let name = cmdq_name(saved_client.as_ref());
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
     let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
     let mut args: *mut args =
@@ -819,9 +837,6 @@ unsafe fn cmdq_fire_command(
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
     let execution_client = cmdq_get_client((item).as_ref());
-    let execution_client_ptr = execution_client
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
     if entry.flags & CMD_CLIENT_CANFAIL != 0 {
         quiet = 1 as ::core::ffi::c_int;
     }
@@ -886,10 +901,7 @@ unsafe fn cmdq_fire_command(
                                 current_block = 8704759739624374314;
                             } else if cmd_find_from_client(
                                 &raw mut fs,
-                                (execution_client_ptr)
-                                    .as_ref()
-                                    .and_then(|model| model.observer.upgrade())
-                                    .as_ref(),
+                                execution_client.as_ref(),
                                 0 as ::core::ffi::c_int,
                             ) == 0 as ::core::ffi::c_int
                             {
@@ -927,14 +939,8 @@ unsafe fn cmdq_fire_command(
         } else if cmd_find_valid_state(&state.current.borrow()) != 0 {
             fs = state.current_snapshot();
             fsp = &mut fs;
-        } else if cmd_find_from_client(
-            &raw mut fs,
-            (saved_client_ptr)
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-            0 as ::core::ffi::c_int,
-        ) == 0 as ::core::ffi::c_int
+        } else if cmd_find_from_client(&raw mut fs, saved_client.as_ref(), 0 as ::core::ffi::c_int)
+            == 0 as ::core::ffi::c_int
         {
             fsp = &raw mut fs;
         }
@@ -1001,18 +1007,18 @@ unsafe fn cmdq_fire_callback(
     (*item).flags |= CMDQ_FIRED;
     return (*item).cb.take().expect("non-null queue callback")(item_handle);
 }
-pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>) -> u_int {
-    let queue = cmdq_get(owner);
-    let name = cmdq_name(owner.map(|owner| &*owner.get()));
+pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
+    let queue = QueueTarget::for_client(owner);
+    let name = cmdq_name(owner);
     let mut items = 0;
     log_debug(format_args!(
         "cmdq_next {}: enter",
         crate::src::log::log_bytes(name.as_bytes())
     ));
     static mut number: u_int = 0;
-    while let Some(item_owner) = (*queue).first() {
+    while let Some(item_owner) = queue.with_queue(|queue| queue.first()) {
         let item = item_owner.get();
-        (*queue).item = std::rc::Rc::downgrade(&item_owner);
+        queue.with_queue(|queue| queue.item = std::rc::Rc::downgrade(&item_owner));
         assert!(!(*item).removed, "queued command item");
         log_debug(format_args!(
             "cmdq_next {}: {} ({}), flags {:x}",
@@ -1049,16 +1055,18 @@ pub unsafe fn cmdq_next(owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>
             items += 1;
         }
         drop(item_owner);
-        let owner = (*queue).list.pop_front().expect("executed queue item");
+        let owner = queue
+            .with_queue(|queue| queue.list.pop_front())
+            .expect("executed queue item");
         cmdq_remove(owner);
     }
-    (*queue).item = std::rc::Weak::new();
+    queue.with_queue(|queue| queue.item = std::rc::Weak::new());
     items
 }
 
 pub unsafe fn cmdq_running() -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
-    let queue = cmdq_get(None);
-    let Some(owner) = (*queue).item.upgrade() else {
+    let queue = QueueTarget::Global;
+    let Some(owner) = queue.with_queue(|queue| queue.item.upgrade()) else {
         return std::rc::Weak::new();
     };
     if (*owner.get()).removed || (*owner.get()).flags & CMDQ_WAITING != 0 {
@@ -1073,19 +1081,11 @@ pub unsafe fn cmdq_guard(
 ) {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut t: ::core::ffi::c_long = (*item).time as ::core::ffi::c_long;
     let mut number: u_int = (*item).number;
-    if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        control_write_guard(
-            &(*(c)).observer.upgrade().expect("live client"),
-            guard,
-            t,
-            number,
-            flags,
-        );
+    if !c.is_none() && c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
+        control_write_guard(&c.clone().expect("live client"), guard, t, number, flags);
     }
 }
 pub unsafe fn cmdq_print_data(
@@ -1110,9 +1110,7 @@ pub unsafe fn cmdq_error(
 ) {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: u_int = 0;
@@ -1122,7 +1120,7 @@ pub unsafe fn cmdq_error(
         "cmdq_error",
         crate::src::log::log_bytes(msg.as_bytes())
     ));
-    if c.is_null() {
+    if c.is_none() {
         let (source, source_line) = cmd_get_source(cmd.get_unchecked());
         file = source.map_or(std::ptr::null(), |file| file.as_ptr());
         line = source_line;
@@ -1149,22 +1147,29 @@ pub unsafe fn cmdq_error(
                 write_cstr(out, msg.as_ptr())
             });
         }
-    } else if (*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+    } else if c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade()
+        .is_none()
+        || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
+    {
         server_add_message(|out| {
             write_cstr(
                 out,
-                ((*c).name)
+                (c.as_ref().expect("live client").name())
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             )?;
             out.write_all(b" message: ")?;
             write_cstr(out, msg.as_ptr())
         });
-        if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
+        if !c.as_ref().expect("live client").flags() & CLIENT_UTF8 as uint64_t != 0 {
             msg = utf8_sanitize_cstring(msg.as_c_str());
         }
-        if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+        if c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
+            control_write(&c.clone().expect("live client"), |out| {
                 write_cstr(out, msg.as_ptr())
             });
         } else {
@@ -1173,7 +1178,7 @@ pub unsafe fn cmdq_error(
                 out.write_all(b"\n")
             });
         }
-        (*c).retval = 1 as ::core::ffi::c_int;
+        c.as_ref().expect("live client").set_return_value(1);
     } else {
         let mut bytes = msg.into_bytes_with_nul();
         bytes[0] = *(*__ctype_toupper_loc()).offset(bytes[0] as isize) as u8;
@@ -1181,9 +1186,7 @@ pub unsafe fn cmdq_error(
         // non-NUL byte to a non-NUL byte, so the terminator stays at the end.
         msg = CString::from_vec_with_nul_unchecked(bytes);
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c.as_ref(),
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -1199,12 +1202,63 @@ mod client_observer_tests {
     use std::rc::Rc;
 
     #[test]
+    fn dispatch_insertion_keeps_queue_identity_when_execution_context_changes() {
+        unsafe {
+            let owner = client::with_queue_for_test();
+            let context = client::with_queue_for_test();
+            let context_observer = Rc::downgrade(&context);
+            let queue_observer = Rc::downgrade(&owner);
+            let calls = Rc::new(std::cell::Cell::new(0));
+            let seen = calls.clone();
+            let first = cmdq_get_callback_owned(
+                c"insert during dispatch",
+                Some(Box::new(move |item| {
+                    let context = context_observer.upgrade().unwrap();
+                    (*item.get()).client = Rc::downgrade(&context);
+                    let expected = context_observer.clone();
+                    let seen = seen.clone();
+                    let inserted = cmdq_get_callback_owned(
+                        c"inserted",
+                        Some(Box::new(move |item| {
+                            assert!(Rc::ptr_eq(
+                                &cmdq_get_client(Some(&*item.get())).unwrap(),
+                                &expected.upgrade().unwrap()
+                            ));
+                            seen.set(seen.get() + 1);
+                            CMD_RETURN_NORMAL
+                        })),
+                    );
+                    cmdq_insert_after(item, inserted);
+                    // Both queries run from the callback, after dispatch's borrow.
+                    assert_eq!(
+                        queue_observer
+                            .upgrade()
+                            .unwrap()
+                            .borrow_queue_mut()
+                            .list
+                            .len(),
+                        2
+                    );
+                    assert!(context.borrow_queue_mut().list.is_empty());
+                    CMD_RETURN_NORMAL
+                })),
+            );
+            cmdq_append(Some(&owner), first);
+            assert_eq!(cmdq_next(Some(&owner)), 2);
+            assert_eq!(calls.get(), 1);
+            assert!(owner.borrow_queue_mut().list.is_empty());
+            assert!(context.borrow_queue_mut().list.is_empty());
+            drop((owner, context));
+            crate::src::reactor::event_loop();
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+
+    #[test]
     fn client_accessors_retain_upgrades_and_handle_expired_observers() {
         unsafe {
-            let mut queue = cmdq_new();
             let item_owner = cmdq_get_callback_owned(c"accessor test", None);
             let item = &mut *item_owner.get();
-            item.queue = &mut *queue;
             assert!(cmdq_get_client(Some(&item)).is_none());
             assert!(cmdq_get_target_client(Some(&item)).is_none());
 
@@ -1229,8 +1283,7 @@ mod client_observer_tests {
     #[test]
     fn retained_client_queue_resumes_after_wait_and_drains_callbacks() {
         unsafe {
-            let owner = client::new();
-            (*owner.get()).queue = Some(cmdq_new());
+            let owner = client::with_queue_for_test();
             let observer = Rc::downgrade(&owner);
             let calls = Rc::new(std::cell::Cell::new(0));
             let waiting_allocation =
@@ -1262,7 +1315,7 @@ mod client_observer_tests {
             );
             assert_eq!(cmdq_next(Some(&owner)), 1);
             assert_eq!(calls.get(), 1);
-            assert!((*owner.get()).queue.as_ref().unwrap().list.is_empty());
+            assert!(owner.borrow_queue_mut().list.is_empty());
             drop(owner);
             crate::src::reactor::event_loop();
             assert!(observer.upgrade().is_none());
@@ -1273,8 +1326,7 @@ mod client_observer_tests {
     #[test]
     fn append_and_insert_retain_client_for_every_queued_item() {
         unsafe {
-            let owner = client::new();
-            (*owner.get()).queue = Some(cmdq_new());
+            let owner = client::with_queue_for_test();
             let observer = Rc::downgrade(&owner);
             let first_allocation = cmdq_get_callback_owned(c"first", None);
             let first = first_allocation.get();
@@ -1315,16 +1367,16 @@ mod client_observer_tests {
             let retained = observer
                 .upgrade()
                 .expect("queued items retain their client");
-            let queue = (*retained.get()).queue.as_deref_mut().unwrap() as *mut cmdq_list;
+            let queue = QueueTarget::for_client(Some(&retained));
             assert_eq!(
-                (*queue)
+                queue.with_queue(|queue| queue
                     .list
                     .iter()
                     .map(|item| item.get())
-                    .collect::<Vec<_>>(),
+                    .collect::<Vec<_>>()),
                 vec![first, inserted, second]
             );
-            while let Some(item) = (*queue).list.pop_front() {
+            while let Some(item) = queue.with_queue(|queue| queue.list.pop_front()) {
                 cmdq_remove(item);
             }
             crate::src::reactor::event_loop();
@@ -1343,10 +1395,8 @@ mod client_observer_tests {
             let context = client::new();
             let target = client::new();
             let observer = Rc::downgrade(&owner);
-            let mut queue = cmdq_new();
             let item_owner = cmdq_get_callback_owned(c"accessor test", None);
             let item = &mut *item_owner.get();
-            item.queue = &mut *queue;
             item.client_owner = Some(owner);
             item.client = Rc::downgrade(&context);
             item.target_client = Rc::downgrade(&target);
@@ -1387,24 +1437,18 @@ mod cancellation_tests {
     fn client_owns_queue_while_cancelled_items_release_their_payloads() {
         let before = DROPPED.load(Ordering::SeqCst);
         unsafe {
-            let mut queue = cmdq_new();
-            let address = &mut *queue as *mut cmdq_list;
+            let owner = client::with_queue_for_test();
             let item_allocation = cmdq_get_callback_owned(c"queued-cancel", None);
-            let item = item_allocation.get();
             let payload = Payload;
-            cmdq_set_cancel_callback(&mut *item, Box::new(move || drop(payload)));
-            (*item).queue = address;
-            // Detached item transfer remains the next queue ownership boundary.
-            queue.list.push_back(item_allocation);
-            let owner = client::new();
-            let client = &mut *owner.get();
-            client.queue = Some(queue);
-            assert_eq!(cmdq_get(Some(&owner)), address);
-            cmdq_remove((*address).list.pop_front().unwrap());
+            cmdq_set_cancel_callback(&mut *item_allocation.get(), Box::new(move || drop(payload)));
+            cmdq_append(Some(&owner), item_allocation);
+            let item = owner.borrow_queue_mut().list.pop_front().unwrap();
+            cmdq_remove(item);
             assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1);
-            assert!(client.queue.as_ref().unwrap().list.is_empty());
-            drop(client.queue.take());
+            assert!(owner.borrow_queue_mut().list.is_empty());
             drop(owner);
+            crate::src::reactor::event_loop();
+            crate::src::reactor::shutdown_runtime();
         }
     }
 }
@@ -1418,16 +1462,13 @@ mod lifecycle_tests {
     #[test]
     fn removal_rejects_an_extra_strong_owner_before_cleanup() {
         unsafe {
-            let mut queue = cmdq_new();
             let item = cmdq_get_callback_owned(c"extra owner", None);
-            (*item.get()).queue = &mut *queue;
             let observer = Rc::downgrade(&item);
             let guard = item.clone();
             let cancelled = Rc::new(Cell::new(false));
             let called = cancelled.clone();
             cmdq_set_cancel_callback(&mut *item.get(), Box::new(move || called.set(true)));
-            queue.list.push_back(item);
-            let owner = queue.list.pop_front().unwrap();
+            let owner = item;
             let result =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cmdq_remove(owner)));
             assert!(result.is_err());
@@ -1464,8 +1505,7 @@ mod lifecycle_tests {
     #[test]
     fn group_removal_cancels_only_matching_suffix_items() {
         unsafe {
-            let client = client::new();
-            (*client.get()).queue = Some(cmdq_new());
+            let client = client::with_queue_for_test();
             let cancelled = Rc::new(Cell::new(0));
             let first = cmdq_get_callback_owned(c"first", None);
             let same = cmdq_get_callback_owned(c"same group", None);
@@ -1484,16 +1524,73 @@ mod lifecycle_tests {
             cmdq_append(Some(&client), first.clone());
             cmdq_remove_group(&first);
             assert_eq!(cancelled.get(), 1);
-            let queue = (*client.get()).queue.as_ref().unwrap();
-            assert_eq!(queue.list.len(), 2);
-            assert!(Rc::ptr_eq(queue.list.front().unwrap(), &first));
-            assert!(Rc::ptr_eq(queue.list.back().unwrap(), &other));
+            {
+                let queue = client.borrow_queue_mut();
+                assert_eq!(queue.list.len(), 2);
+                assert!(Rc::ptr_eq(queue.list.front().unwrap(), &first));
+                assert!(Rc::ptr_eq(queue.list.back().unwrap(), &other));
+            }
             assert!(same_observer.upgrade().is_none());
             drop((first, other));
-            let queue = cmdq_get(Some(&client));
-            while let Some(item) = (*queue).list.pop_front() {
+            let queue = QueueTarget::for_client(Some(&client));
+            while let Some(item) = queue.with_queue(|queue| queue.list.pop_front()) {
                 cmdq_remove(item);
             }
+            drop(client);
+            crate::src::reactor::event_loop();
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+}
+
+#[cfg(test)]
+mod queue_state_ownership_tests {
+    use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_new, cmdq_next};
+    use crate::src::cmd::queue::{cmdq_get_event, cmdq_get_state_owned, cmdq_new_state};
+    use crate::src::shared::client::client;
+    use crate::src::shared::key::key_event;
+    use std::rc::Rc;
+
+    #[test]
+    fn shared_current_is_checked_and_event_snapshots_outlive_queue_items() {
+        unsafe {
+            let mut event = key_event::new(42, Default::default(), Some(vec![1, 2, 3]));
+            event.m.valid = 1;
+            let state = cmdq_new_state(std::ptr::null_mut(), &mut *event, 7);
+            let observed = Rc::downgrade(&state);
+            let client = client::with_queue_for_test();
+            let item_owner = cmdq_get_callback_owned(
+                c"state snapshot test",
+                Some(Box::new(|_| crate::src::shared::command::CMD_RETURN_NORMAL)),
+            );
+            let item = &mut *item_owner.get();
+            item.state = Some(state.clone());
+            let retained = cmdq_get_state_owned(&*item);
+            assert!(Rc::ptr_eq(&retained, &state));
+            {
+                let mut target = retained.current.borrow_mut();
+                target.idx = 19;
+                assert!(state.current.try_borrow().is_err());
+                // Other state fields remain accessible without a whole-state borrow.
+                let snapshot = cmdq_get_event(&*item);
+                assert_eq!(snapshot.key, 42);
+                assert!(snapshot.bytes.is_none());
+            }
+            assert_eq!(state.current.borrow().idx, 19);
+            let saved = state.current_snapshot();
+            state.current.borrow_mut().idx = 23;
+            assert_eq!(saved.idx, 19);
+            let mut snapshot = cmdq_get_event(&*item);
+            snapshot.m.valid = 0;
+            assert_eq!(cmdq_get_event(item).m.valid, 1);
+            drop(state);
+            cmdq_append(Some(&client), item_owner);
+            cmdq_next(Some(&client));
+            assert!(observed.upgrade().is_some());
+            assert_eq!(retained.flags, 7);
+            drop(retained);
+            assert!(observed.upgrade().is_none());
+            assert_eq!(snapshot.key, 42);
             drop(client);
             crate::src::reactor::event_loop();
             crate::src::reactor::shutdown_runtime();

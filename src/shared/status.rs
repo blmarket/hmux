@@ -7,6 +7,7 @@ use super::grid::grid_cell;
 use super::prompt::{prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::style::style_line_entry;
+use crate::src::shared::client::ClientRef;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
@@ -34,15 +35,8 @@ impl status_line {
     }
 }
 
-pub type status_prompt_input_cb = Option<
-    Box<
-        dyn FnMut(
-            Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-            Option<&CStr>,
-            prompt_key_result,
-        ) -> prompt_result,
-    >,
->;
+pub type status_prompt_input_cb =
+    Option<Box<dyn FnMut(Option<&ClientRef>, Option<&CStr>, prompt_key_result) -> prompt_result>>;
 
 /// An owned server message. The message text and its display metadata share
 /// the lifetime of the containing [`message_list`].

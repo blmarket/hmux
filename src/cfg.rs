@@ -12,6 +12,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::prompt_history::prompt_load_history;
 use crate::src::server::clients;
+use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
 use crate::src::session::sessions_minmax;
 use crate::src::session::Session as _;
@@ -19,6 +20,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_CONTROL;
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
@@ -35,7 +37,7 @@ use crate::src::window_copy::{window_copy_add, window_view_mode};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
-pub static mut cfg_client: std::rc::Weak<std::cell::UnsafeCell<client>> = std::rc::Weak::new();
+pub static mut cfg_client: ClientWeak = std::rc::Weak::new();
 pub static mut cfg_finished: ::core::ffi::c_int = 0;
 static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
 #[cfg(test)]
@@ -75,16 +77,14 @@ unsafe fn cfg_done() -> cmd_retval {
     return CMD_RETURN_NORMAL;
 }
 pub unsafe fn start_cfg() {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    c = registry_c_owner.clone();
     cfg_client = registry_c_owner
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    if !c.is_null() {
+    if !c.is_none() {
         let item = cmdq_get_callback_owned(
             c"cfg_client_done",
             Some(Box::new(|_| unsafe { cfg_client_done() })),
@@ -105,7 +105,7 @@ pub unsafe fn start_cfg() {
 }
 pub unsafe fn load_cfg(
     mut path: *const ::core::ffi::c_char,
-    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
@@ -193,7 +193,7 @@ pub unsafe fn load_cfg_from_buffer(
     mut buf: *const ::core::ffi::c_void,
     mut len: size_t,
     mut path: *const ::core::ffi::c_char,
-    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut current: *mut cmd_find_state,
     mut flags: ::core::ffi::c_int,
@@ -302,12 +302,12 @@ pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
 pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     cfg_drain_causes(|cause| {
-        if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+        if !c.is_none()
+            && c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
+        {
+            control_notify_write(&c.clone().expect("live client"), |out| {
                 out.write_all(b"%config-error ")?;
                 write_cstr(out, cause.as_ptr())
             });
@@ -319,25 +319,34 @@ pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<c
 pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
     let mut s = s_owner.cloned();
     let mut registry_c_owner = clients.first();
-    let mut c: *mut client = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = registry_c_owner.clone();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if CFG_CAUSES.lock().unwrap().is_empty() {
         return;
     }
-    if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+    if !c.is_none() && c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
         cfg_drain_causes(|cause| {
-            control_notify_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+            control_notify_write(&c.clone().expect("live client"), |out| {
                 out.write_all(b"%config-error ")?;
                 write_cstr(out, cause.as_ptr())
             });
         });
     } else {
         if s.is_none() {
-            if !c.is_null() && !(*c).session_handle().is_none() {
-                s = (*c).session_handle();
+            if !c.is_none()
+                && !c
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
+                    .is_none()
+            {
+                s = c
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade();
             } else {
                 let mut s_owner = sessions_minmax(&sessions);
                 s = s_owner;

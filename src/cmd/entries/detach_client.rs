@@ -9,6 +9,7 @@ use crate::src::server_client::{server_client_exec, Client};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -96,7 +97,7 @@ unsafe fn cmd_detach_client_exec(
     } else {
         MSG_DETACH
     };
-    let detach = |client: &std::rc::Rc<std::cell::UnsafeCell<client>>| {
+    let detach = |client: &ClientRef| {
         if let Some(command) = exec.as_deref() {
             client.exec(command);
         } else {

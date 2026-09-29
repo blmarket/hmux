@@ -13,10 +13,12 @@ use crate::src::screen_redraw::redraw_get_status_border_cell_type;
 use crate::src::screen_write::{
     screen_write_cell, screen_write_cursormove, screen_write_start, screen_write_stop,
 };
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{CELL_BORDERS, CELL_NONE, SIMPLE_BORDERS};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE, FORMAT_STATUS, FORMAT_WINDOW};
@@ -234,19 +236,26 @@ pub unsafe fn window_pane_get_border_cell(
 }
 pub unsafe fn window_pane_get_border_style(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    c_owner: &ClientRef,
     mut gc: *mut grid_cell,
 ) {
     let mut wp = wp_owner.get();
-    let mut c = c_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut c: Option<ClientRef> = Some(c_owner.clone());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut option: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
     if wp
-        == (*((*c)
-            .session_handle()
+        == (*(c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
             .expect("live session")
             .current_winlink())
         .get_unchecked()
@@ -291,13 +300,13 @@ pub unsafe fn window_pane_get_border_style(
 }
 pub unsafe fn window_make_pane_status(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    c_owner: &ClientRef,
     mut width: u_int,
     spans: &redraw_spans,
     mut span_index: usize,
 ) -> ::core::ffi::c_int {
     let mut wp = wp_owner.get();
-    let mut c = c_owner.get();
+    let mut c: Option<ClientRef> = Some(c_owner.clone());
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -343,9 +352,15 @@ pub unsafe fn window_make_pane_status(
     format_defaults(
         ft,
         Some(c_owner),
-        (*c).session_handle().as_ref(),
-        ((*c)
-            .session_handle()
+        c.as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .as_ref(),
+        (c.as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
             .expect("live session")
             .current_winlink())
         .clone(),

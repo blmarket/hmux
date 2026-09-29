@@ -9,11 +9,13 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::prompt_type;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_CLIENT_TFLAG;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
@@ -132,9 +134,7 @@ unsafe fn cmd_command_prompt_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -152,7 +152,12 @@ unsafe fn cmd_command_prompt_exec(
         if wp.is_null() || window_pane_has_prompt(&*wp) != 0 {
             return CMD_RETURN_NORMAL;
         }
-    } else if (*tc).prompt.is_some() {
+    } else if tc
+        .as_ref()
+        .expect("live client")
+        .prompt_observer()
+        .is_alive()
+    {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'i' as i32 as u_char) != 0 {
@@ -258,7 +263,7 @@ unsafe fn cmd_command_prompt_exec(
         );
     } else {
         status_prompt_set(
-            &(*(tc)).observer.upgrade().expect("live client"),
+            &tc.clone().expect("live client"),
             target,
             prompt_ptr,
             input_ptr,
@@ -274,12 +279,12 @@ unsafe fn cmd_command_prompt_exec(
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_command_prompt_callback(
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     cdata: &mut cmd_command_prompt_cdata,
     mut s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
-    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = c_owner.cloned();
     let mut current_block: u64;
     let item_owner = cdata.item.upgrade();
     if cdata.wait && item_owner.is_none() {
@@ -311,7 +316,7 @@ unsafe fn cmd_command_prompt_callback(
                         window_pane_update_prompt(&pane, prompt_ptr, input_ptr);
                     } else {
                         status_prompt_update(
-                            &(*(c)).observer.upgrade().expect("live client"),
+                            &c.clone().expect("live client"),
                             prompt_ptr,
                             input_ptr,
                         );

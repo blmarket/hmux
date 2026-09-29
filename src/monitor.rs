@@ -5,11 +5,13 @@ use crate::src::format::{
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::server::current_time;
+use crate::src::server_client::Client as _;
 use crate::src::session::session_remove_ref;
 use crate::src::session::sessions;
 use crate::src::session::Session as _;
 use crate::src::session::{session_find_by_id, sessions_minmax};
 use crate::src::shared::abi::*;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{client, client_handle, CLIENT_DEAD};
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::event::EV_TIMEOUT;
@@ -54,9 +56,9 @@ unsafe fn monitor_has_client(ms: *mut monitor_set) -> bool {
     !std::rc::Weak::ptr_eq(&(*ms).client, &std::rc::Weak::new())
 }
 
-unsafe fn monitor_client(ms: *mut monitor_set) -> Option<Rc<UnsafeCell<client>>> {
+unsafe fn monitor_client(ms: *mut monitor_set) -> Option<ClientRef> {
     let client = (*ms).client.upgrade()?;
-    if (*rc::as_ptr(&client)).flags & CLIENT_DEAD as uint64_t != 0 {
+    if client.is_dead() {
         drop(client);
         return None;
     }
@@ -66,10 +68,10 @@ unsafe fn monitor_client(ms: *mut monitor_set) -> Option<Rc<UnsafeCell<client>>>
 // Client and session lifetime guards outlive each format expansion and report.
 unsafe fn monitor_get_session(
     ms: *mut monitor_set,
-    c_owner: Option<&Rc<UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
 ) -> Option<Rc<UnsafeCell<session>>> {
     if monitor_has_client(ms) {
-        return (*c_owner?.get()).session.upgrade();
+        return c_owner?.attached_session().upgrade();
     }
     let Some(session) = (*ms).session.as_ref() else {
         return sessions_minmax(&sessions);
@@ -79,12 +81,12 @@ unsafe fn monitor_get_session(
 }
 
 unsafe fn monitor_create_formats(
-    c_owner: Option<&Rc<UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     s_owner: Option<&Rc<UnsafeCell<session>>>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&Rc<UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
-    let c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = c_owner.cloned();
 
     let wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -92,9 +94,7 @@ unsafe fn monitor_create_formats(
     ft = &raw mut *ft_owner;
     format_defaults(
         ft,
-        (c).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        c.as_ref(),
         s_owner,
         wl.clone(),
         (wp).as_ref()
@@ -199,8 +199,7 @@ unsafe fn monitor_check_session(
     mut ft: *mut format_tree,
 ) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -227,8 +226,7 @@ unsafe fn monitor_check_session(
 }
 unsafe fn monitor_check_pane(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -322,8 +320,7 @@ unsafe fn monitor_check_all_panes_one(
 ) {
     let wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -383,8 +380,7 @@ unsafe fn monitor_sweep_all_panes(mut me: *mut monitor_item, mut generation: u_i
 }
 unsafe fn monitor_check_window(mut ms: *mut monitor_set, mut me: *mut monitor_item) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -470,8 +466,7 @@ unsafe fn monitor_check_all_windows_one(
     mut wl: refbox::Weak<winlink>,
 ) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -538,8 +533,7 @@ unsafe fn monitor_sweep_all_windows(mut me: *mut monitor_item, mut generation: u
 }
 unsafe fn monitor_check_sessions(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -599,8 +593,7 @@ unsafe fn monitor_check_panes_windows(mut ms: *mut monitor_set) {
 }
 unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -687,8 +680,7 @@ unsafe fn monitor_check_all_panes(mut ms: *mut monitor_set) {
 }
 unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -750,8 +742,7 @@ unsafe fn monitor_check_all_windows(mut ms: *mut monitor_set) {
 }
 unsafe fn monitor_timer(ms: *mut monitor_set) {
     let client_owner = monitor_client(ms);
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
-    if monitor_has_client(ms) && c.is_null() {
+    if monitor_has_client(ms) && client_owner.is_none() {
         return;
     }
 
@@ -813,7 +804,7 @@ fn monitor_create(cb: monitor_cb) -> Box<monitor_set> {
     })
 }
 pub unsafe fn monitor_create_client(
-    c_owner: Option<&Rc<UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     cb: monitor_cb,
 ) -> Box<monitor_set> {
     let mut owner = monitor_create(cb);
@@ -854,7 +845,7 @@ pub unsafe fn monitor_destroy(mut owner: Box<monitor_set>) {
 }
 
 pub unsafe fn monitor_create_client_owned(
-    c_owner: Option<&Rc<UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     cb: monitor_cb,
 ) -> Box<monitor_set> {
     monitor_create_client(c_owner, cb)
@@ -1331,7 +1322,6 @@ mod last_owner_tests {
         unsafe {
             for cancel in [false, true] {
                 let client = client::new();
-                let c = rc::as_ptr(&client);
                 let observer = Rc::downgrade(&client);
                 let mut set_owner = monitor_create_client(Some(&client), Rc::new(|_| {}));
                 let set = &raw mut *set_owner;
@@ -1340,7 +1330,10 @@ mod last_owner_tests {
                 // The client exists, but the missing session ends the scan early.
                 monitor_check_sessions(set);
                 assert_eq!(observer.strong_count(), 1);
-                (*c).flags |= CLIENT_DEAD as uint64_t;
+                observer
+                    .upgrade()
+                    .unwrap()
+                    .update_flags(CLIENT_DEAD as uint64_t, 0);
                 assert!(monitor_client(set).is_none());
                 assert_eq!(observer.strong_count(), 1);
 

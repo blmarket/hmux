@@ -12,6 +12,7 @@ use crate::src::log::log_get_level;
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
 use crate::src::shared::pane::window_pane;
@@ -119,11 +120,7 @@ pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<even
     }
     drop(ep);
 }
-pub unsafe fn events_fire_client(
-    mut name: *const ::core::ffi::c_char,
-    owner: std::rc::Rc<std::cell::UnsafeCell<client>>,
-) {
-    let c = owner.get();
+pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: ClientRef) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -133,13 +130,7 @@ pub unsafe fn events_fire_client(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_client(
-        &raw mut fs,
-        (c).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        0 as ::core::ffi::c_int,
-    );
+    cmd_find_from_client(&raw mut fs, Some(&owner), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_client(&mut *ep, owner);
     if !fs.session_handle().is_none() {

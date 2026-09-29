@@ -1,10 +1,12 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_event, cmdq_get_source, cmdq_get_target};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
@@ -82,9 +84,7 @@ unsafe fn cmd_copy_mode_exec(
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
     let mut wp = pane_owner.get();
@@ -108,7 +108,15 @@ unsafe fn cmd_copy_mode_exec(
             return CMD_RETURN_NORMAL;
         }
         pane_owner = mouse_pane_owner.expect("mouse pane was resolved");
-        if c.is_null() || !crate::src::shared::rc::same((*c).session_handle().as_ref(), s.as_ref())
+        if c.is_none()
+            || !crate::src::shared::rc::same(
+                c.as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
+                    .as_ref(),
+                s.as_ref(),
+            )
         {
             return CMD_RETURN_NORMAL;
         }
@@ -157,10 +165,15 @@ unsafe fn cmd_copy_mode_exec(
         window_copy_pagedown(&pane_owner, args_has(args, 'e' as i32 as u_char));
     }
     if args_has(args, 'S' as i32 as u_char) != 0 {
-        let tty_oy = tty_window_offset(&(*c).tty).oy;
+        let tty_oy = c.as_ref().expect("live client").terminal_view().oy;
+        let slider = c
+            .as_ref()
+            .expect("live client")
+            .borrow_terminal()
+            .mouse_slider_mpos;
         window_copy_scroll(
             &pane_owner,
-            (*c).tty.mouse_slider_mpos,
+            slider,
             (*event).m.y,
             tty_oy,
             args_has(args, 'e' as i32 as u_char),

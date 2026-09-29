@@ -6,6 +6,7 @@ use super::command::{cmd_find_state, cmdq_item};
 use super::pane::window_pane;
 use super::session::session;
 use super::window::window;
+use crate::src::shared::client::ClientRef;
 use std::collections::BTreeMap;
 
 /// Box-owned until `events_fire` consumes it. Sinks borrow the payload during
@@ -57,7 +58,7 @@ pub enum EventPayloadValue {
     Time(time_t),
     Int(::core::ffi::c_int),
     Uint(u_int),
-    Client(std::rc::Rc<std::cell::UnsafeCell<client>>),
+    Client(ClientRef),
     Session(std::rc::Rc<std::cell::UnsafeCell<session>>),
     Window(std::rc::Rc<std::cell::UnsafeCell<window>>),
     Pane(std::rc::Rc<std::cell::UnsafeCell<window_pane>>),
@@ -101,7 +102,7 @@ impl EventPayloadValue {
         };
         *value
     }
-    pub fn client(&self) -> &std::rc::Rc<std::cell::UnsafeCell<client>> {
+    pub fn client(&self) -> &ClientRef {
         let Self::Client(value) = self else {
             panic!("incorrect event payload type")
         };

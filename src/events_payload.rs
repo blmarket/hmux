@@ -15,6 +15,7 @@ use crate::src::session::session_remove_ref;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::event::*;
 use crate::src::shared::events::{
@@ -275,10 +276,7 @@ pub unsafe fn event_payload_set_uint(
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Uint(value));
 }
 /// Transfer a retained client into the payload; payload cleanup releases it explicitly.
-pub unsafe fn event_payload_set_client(
-    ep: &mut event_payload,
-    owner: std::rc::Rc<std::cell::UnsafeCell<client>>,
-) {
+pub unsafe fn event_payload_set_client(ep: &mut event_payload, owner: ClientRef) {
     event_payload_set_item(ep, c"client".as_ptr(), EventPayloadValue::Client(owner));
 }
 /// Transfer a retained session into the payload; payload cleanup releases it explicitly.
@@ -467,9 +465,7 @@ pub unsafe fn event_payload_log(
         )
     ));
 }
-pub fn event_payload_get_client(
-    ep: &event_payload,
-) -> Option<&std::rc::Rc<std::cell::UnsafeCell<client>>> {
+pub fn event_payload_get_client(ep: &event_payload) -> Option<&ClientRef> {
     match event_payload_find(ep, c"client").map(|item| &item.value) {
         Some(EventPayloadValue::Client(value)) => Some(value),
         _ => None,

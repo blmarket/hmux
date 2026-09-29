@@ -3,11 +3,12 @@ use crate::src::ffi::libc::{getgrgid, getpwuid, getuid};
 use crate::src::format::bytes::write_cstr;
 use crate::src::proc::{proc_get_peer_gid, proc_get_peer_uid};
 use crate::src::server::clients;
-use crate::src::server_client::server_client_set_exit_message;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__gid_t, __uid_t, gid_t, id_t, uid_t};
 use crate::src::shared::account::{group, passwd};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_EXIT, CLIENT_READONLY};
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
@@ -92,12 +93,11 @@ fn server_acl_entries_clear(head: &mut server_acl_entries) {
     head.entries.clear();
 }
 
-unsafe fn server_acl_check(c_value: &client) -> *mut server_acl_entry {
-    let c: *mut client = c_value as *const _ as *mut _;
+unsafe fn server_acl_check(c: &ClientRef) -> *mut server_acl_entry {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut uid: uid_t = 0;
     let mut gid: gid_t = 0;
-    uid = proc_get_peer_uid((*c).peer);
+    uid = c.peer_uid();
     if uid == -(1 as ::core::ffi::c_int) as uid_t {
         return ::core::ptr::null_mut::<server_acl_entry>();
     }
@@ -105,7 +105,7 @@ unsafe fn server_acl_check(c_value: &client) -> *mut server_acl_entry {
     if !entry.is_null() {
         return entry;
     }
-    gid = proc_get_peer_gid((*c).peer);
+    gid = c.peer_gid();
     if gid == -(1 as ::core::ffi::c_int) as gid_t {
         return ::core::ptr::null_mut::<server_acl_entry>();
     }
@@ -117,29 +117,27 @@ unsafe fn server_acl_check(c_value: &client) -> *mut server_acl_entry {
 }
 unsafe fn server_acl_update() {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        entry = server_acl_check(&*(c));
+    c = registry_c_owner.clone();
+    while !c.is_none() {
+        entry = server_acl_check(c.as_ref().expect("live client"));
         if entry.is_null() {
-            server_client_set_exit_message(
-                &mut *c,
-                Some(CString::new("access not allowed").unwrap()),
-            );
-            (*c).flags |= CLIENT_EXIT as uint64_t;
+            c.as_ref()
+                .expect("live client")
+                .exit_with_message(c"access not allowed".to_owned(), None);
         } else if (*entry).flags & SERVER_ACL_READONLY != 0 {
-            (*c).flags |= CLIENT_READONLY as uint64_t;
+            c.as_ref()
+                .expect("live client")
+                .update_flags(CLIENT_READONLY as uint64_t, 0);
         } else {
-            (*c).flags &= !CLIENT_READONLY as uint64_t;
+            c.as_ref()
+                .expect("live client")
+                .update_flags(0, !(!CLIENT_READONLY as uint64_t));
         }
         registry_c_owner =
             clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = registry_c_owner.clone();
     }
 }
 pub unsafe fn server_acl_init() {
@@ -247,15 +245,14 @@ pub unsafe fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int)
     (*entry).flags |= SERVER_ACL_READONLY;
     server_acl_update();
 }
-pub unsafe fn server_acl_join(c_value: &mut client) -> ::core::ffi::c_int {
-    let c: *mut client = c_value as *mut _;
+pub unsafe fn server_acl_join(c: &ClientRef) -> ::core::ffi::c_int {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_check(&*(c));
+    entry = server_acl_check(c);
     if entry.is_null() {
         return 0 as ::core::ffi::c_int;
     }
     if (*entry).flags & SERVER_ACL_READONLY != 0 {
-        (*c).flags |= CLIENT_READONLY as uint64_t;
+        c.update_flags(CLIENT_READONLY as u64, 0);
     }
     return 1 as ::core::ffi::c_int;
 }

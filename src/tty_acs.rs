@@ -1,5 +1,4 @@
 use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_UTF8;
 use crate::src::shared::grid::*;
 use crate::src::shared::tty::tty;
 use crate::src::shared::tty::*;
@@ -633,7 +632,7 @@ pub fn tty_acs_heavy_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_dat
 pub fn tty_acs_rounded_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_data {
     &tty_acs_rounded_borders_list[cell_type as usize]
 }
-pub unsafe fn tty_acs_needed(terminal: Option<&tty>) -> ::core::ffi::c_int {
+pub unsafe fn tty_acs_needed(terminal: Option<&tty>, utf8: bool) -> ::core::ffi::c_int {
     let Some(terminal) = terminal else {
         return 0;
     };
@@ -648,13 +647,12 @@ pub unsafe fn tty_acs_needed(terminal: Option<&tty>) -> ::core::ffi::c_int {
     {
         return 1;
     }
-    let owner = terminal.client.upgrade().expect("terminal client");
-    ((*owner.get()).flags & CLIENT_UTF8 as uint64_t == 0) as ::core::ffi::c_int
+    i32::from(!utf8)
 }
 
 /// The terminal and its capabilities must remain valid while the result is borrowed.
-pub unsafe fn tty_acs_get(terminal: Option<&tty>, ch: u_char) -> Option<&CStr> {
-    if tty_acs_needed(terminal) != 0 {
+pub unsafe fn tty_acs_get(terminal: Option<&tty>, utf8: bool, ch: u_char) -> Option<&CStr> {
+    if tty_acs_needed(terminal, utf8) != 0 {
         let term = terminal
             .expect("legacy ACS requires a terminal")
             .term

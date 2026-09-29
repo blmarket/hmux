@@ -1,11 +1,13 @@
 use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::paste::paste_walk;
 use crate::src::server::clients;
+use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
 use crate::src::session::sessions_minmax;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_UNATTACHEDFLAGS};
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_table};
@@ -64,72 +66,34 @@ fn sort_buffer_cmp(pa: &paste_buffer, pb: &paste_buffer, sort_crit: &sort_criter
         order
     }
 }
-unsafe fn sort_client_cmp(ca: &client, cb: &client, sort_crit: &sort_criteria) -> Ordering {
-    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match sort_crit.order as ::core::ffi::c_uint {
-        4 => {
-            result = strcmp(
-                ((*ca).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                ((*cb).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+unsafe fn sort_client_cmp(ca: &ClientRef, cb: &ClientRef, sort_crit: &sort_criteria) -> Ordering {
+    let order = match sort_crit.order {
+        SORT_SIZE => {
+            let (a, b) = (ca.terminal_size(), cb.terminal_size());
+            (a.0.wrapping_sub(b.0) as i32)
+                .cmp(&0)
+                .then_with(|| (a.1.wrapping_sub(b.1) as i32).cmp(&0))
         }
-        6 => {
-            result = (*ca).tty.sx.wrapping_sub((*cb).tty.sx) as ::core::ffi::c_int;
-            if result == 0 as ::core::ffi::c_int {
-                result = (*ca).tty.sy.wrapping_sub((*cb).tty.sy) as ::core::ffi::c_int;
-            }
+        SORT_CREATION => {
+            let (a, b) = (ca.creation_time(), cb.creation_time());
+            (a.tv_sec, a.tv_usec).cmp(&(b.tv_sec, b.tv_usec))
         }
-        1 => {
-            if if (*ca).creation_time.tv_sec == (*cb).creation_time.tv_sec {
-                ((*ca).creation_time.tv_usec > (*cb).creation_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*ca).creation_time.tv_sec > (*cb).creation_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = 1 as ::core::ffi::c_int;
-            } else if if (*ca).creation_time.tv_sec == (*cb).creation_time.tv_sec {
-                ((*ca).creation_time.tv_usec < (*cb).creation_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*ca).creation_time.tv_sec < (*cb).creation_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = -(1 as ::core::ffi::c_int);
-            }
+        SORT_ACTIVITY => {
+            let (a, b) = (ca.activity_time(), cb.activity_time());
+            (b.tv_sec, b.tv_usec).cmp(&(a.tv_sec, a.tv_usec))
         }
-        0 => {
-            if if (*ca).activity_time.tv_sec == (*cb).activity_time.tv_sec {
-                ((*ca).activity_time.tv_usec > (*cb).activity_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*ca).activity_time.tv_sec > (*cb).activity_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = -(1 as ::core::ffi::c_int);
-            } else if if (*ca).activity_time.tv_sec == (*cb).activity_time.tv_sec {
-                ((*ca).activity_time.tv_usec < (*cb).activity_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*ca).activity_time.tv_sec < (*cb).activity_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = 1 as ::core::ffi::c_int;
-            }
-        }
-        2 | 3 | 5 | 7 | 8 | _ => {}
+        _ => Ordering::Equal,
     }
-    if result == 0 as ::core::ffi::c_int {
-        result = strcmp(
-            ((*ca).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ((*cb).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+    .then_with(|| {
+        ca.name()
+            .expect("client name")
+            .cmp(&cb.name().expect("client name"))
+    });
+    if sort_crit.reversed != 0 {
+        order.reverse()
+    } else {
+        order
     }
-    return sort_ordering(result, sort_crit.reversed);
 }
 unsafe fn sort_pane_cmp(a: &window_pane, b: &window_pane, sort_crit: &sort_criteria) -> Ordering {
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -408,22 +372,20 @@ pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     });
     buffers
 }
-pub unsafe fn sort_get_clients(
-    sort_crit: *mut sort_criteria,
-) -> Vec<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<ClientRef> {
     let mut clients_sorted = Vec::new();
     let mut current = clients.first();
     while let Some(owner) = current {
         current = clients.next(&owner);
-        let client = &*owner.get();
-        if client.flags & CLIENT_UNATTACHEDFLAGS as uint64_t == 0
-            && client.flags & CLIENT_ATTACHED as uint64_t != 0
+        let client = &owner;
+        if client.flags() & CLIENT_UNATTACHEDFLAGS as uint64_t == 0
+            && client.flags() & CLIENT_ATTACHED as uint64_t != 0
         {
             clients_sorted.push(owner);
         }
     }
     sort_by_criteria(&mut clients_sorted, &*sort_crit, |a, b, criteria| unsafe {
-        sort_client_cmp(&*a.get(), &*b.get(), criteria)
+        sort_client_cmp(a, b, criteria)
     });
     clients_sorted
 }

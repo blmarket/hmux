@@ -50,8 +50,10 @@ use crate::src::screen_write::{
     screen_write_start_callback, screen_write_start_pane, screen_write_stop,
 };
 use crate::src::server::clients;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::src::session::Session as _;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 use crate::src::style::colour::{
@@ -358,20 +360,11 @@ unsafe fn input_ctx_requests<'a>(ictx: *mut input_ctx) -> &'a mut VecDeque<Box<i
     &mut (*ictx).requests
 }
 
-fn input_client_requests(c: &mut client) -> &mut Vec<*mut input_request> {
-    &mut c.input_requests
-}
-
 unsafe fn input_ctx_request_handles(ictx: *mut input_ctx) -> Vec<*mut input_request> {
     input_ctx_requests(ictx)
         .iter_mut()
         .map(|owner| &mut **owner as *mut input_request)
         .collect()
-}
-
-pub(crate) unsafe fn input_client_has_requests(c_value: &mut client) -> bool {
-    let c: *mut client = c_value as *mut _;
-    !input_client_requests(&mut *c).is_empty()
 }
 
 #[cfg(test)]
@@ -389,7 +382,7 @@ mod input_request_ownership_tests {
                 let mut request = input_request::new();
                 request.c = observer.clone();
                 request.ictx = &mut *context;
-                input_client_requests(&mut *client.get()).push(&mut *request);
+                client.observe_input_request(&mut request);
                 context.requests.push_back(request);
                 assert_eq!(std::rc::Rc::strong_count(&client), 1);
                 if expired {
@@ -398,7 +391,7 @@ mod input_request_ownership_tests {
                     drop(context);
                 } else {
                     drop(context);
-                    assert!((*client.get()).input_requests.is_empty());
+                    assert!(!client.has_input_requests());
                     assert_eq!(std::rc::Rc::strong_count(&client), 1);
                 }
             }
@@ -408,14 +401,14 @@ mod input_request_ownership_tests {
     #[test]
     fn cancelling_detaches_client_index_without_upgrading_request_observers() {
         unsafe {
-            let mut client = client::empty();
+            let client = client::new();
             let mut context = Box::new(input_ctx::new());
             let mut request = input_request::new();
             request.ictx = &mut *context;
-            input_client_requests(&mut client).push(&mut *request);
+            client.observe_input_request(&mut request);
             context.requests.push_back(request);
-            input_cancel_requests(&mut client);
-            assert!(client.input_requests.is_empty());
+            client.cancel_input_requests();
+            assert!(!client.has_input_requests());
             assert!(context.requests.is_empty());
         }
     }
@@ -427,7 +420,7 @@ mod input_request_ownership_tests {
             let ictx = &raw mut *ictx_owner;
 
             let client_owner = client::new();
-            let c = client_owner.get();
+            let mut c: Option<ClientRef> = Some(client_owner.clone());
 
             // Seed one pending nonqueue request without starting a timer.
             let mut pending_owner = input_request::new();
@@ -436,7 +429,7 @@ mod input_request_ownership_tests {
             (*pending).c = std::rc::Rc::downgrade(&client_owner);
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
             input_ctx_requests(ictx).push_back(pending_owner);
-            input_client_requests(&mut *c).push(pending);
+            client_owner.observe_input_request(&mut *pending);
 
             input_reply(ictx, 1, |out| {
                 out.write_all(b"reply:")?;
@@ -451,7 +444,7 @@ mod input_request_ownership_tests {
 
             input_free_request(pending);
             assert_eq!(input_ctx_request_handles(ictx), vec![queued]);
-            assert_eq!(input_client_requests(&mut *c), &[]);
+            assert!(!client_owner.has_input_requests());
             assert_eq!(
                 (*queued).data.as_ref().unwrap().to_bytes(),
                 b"reply:\xff\xfe"
@@ -469,7 +462,7 @@ mod input_request_ownership_tests {
             let ictx = &raw mut *ictx_owner;
 
             let client_owner = client::new();
-            let c = client_owner.get();
+            let mut c: Option<ClientRef> = Some(client_owner.clone());
 
             let mut pending_owner = input_request::new();
             let pending = &mut *pending_owner as *mut input_request;
@@ -478,18 +471,58 @@ mod input_request_ownership_tests {
             (*pending).type_0 = INPUT_REQUEST_PALETTE;
             (*pending).idx = 7;
             input_ctx_requests(ictx).push_back(pending_owner);
-            input_client_requests(&mut *c).push(pending);
+            client_owner.observe_input_request(&mut *pending);
 
             input_reply(ictx, 1, |out| out.write_all(b"queued"));
             let reply = input_request_palette_data { idx: 7, c: -1 };
             input_request_reply(
-                &(*(c)).observer.upgrade().expect("live client"),
+                &c.clone().expect("live client"),
                 InputRequestReply::Palette(&reply),
             );
 
             assert!(input_ctx_requests(ictx).is_empty());
-            assert!(input_client_requests(&mut *c).is_empty());
+            assert!(!client_owner.has_input_requests());
             drop(ictx_owner);
+        }
+    }
+
+    #[test]
+    fn matching_reply_retires_only_the_earlier_client_requests() {
+        unsafe {
+            let client = client::new();
+            let mut earlier = Box::new(input_ctx::new());
+            let mut matching = Box::new(input_ctx::new());
+            let mut later = Box::new(input_ctx::new());
+            for (context, kind, index) in [
+                (&mut *earlier, INPUT_REQUEST_PALETTE, 6),
+                (&mut *matching, INPUT_REQUEST_PALETTE, 7),
+                (&mut *later, INPUT_REQUEST_CLIPBOARD, 0),
+            ] {
+                let mut request = input_request::new();
+                request.c = std::rc::Rc::downgrade(&client);
+                request.ictx = context;
+                request.type_0 = kind;
+                request.idx = index;
+                client.observe_input_request(&mut request);
+                context.requests.push_back(request);
+            }
+            assert_eq!(std::rc::Rc::strong_count(&client), 1);
+            client.reply_input_request(InputRequestReply::Palette(&input_request_palette_data {
+                idx: 7,
+                c: -1,
+            }));
+            assert!(earlier.requests.is_empty());
+            assert!(matching.requests.is_empty());
+            assert_eq!(later.requests.len(), 1);
+            assert!(client.has_input_requests());
+
+            // Explicit cancellation still owns retirement of the later context's
+            // request, even after the matched context has already gone away.
+            drop(matching);
+            client.cancel_input_requests();
+            assert!(later.requests.is_empty());
+            assert!(!client.has_input_requests());
+            assert_eq!(std::rc::Rc::strong_count(&client), 1);
         }
     }
 
@@ -511,7 +544,7 @@ mod input_request_ownership_tests {
             let ictx = &raw mut *ictx_owner;
 
             let client_owner = client::new();
-            let c = client_owner.get();
+            let mut c: Option<ClientRef> = Some(client_owner.clone());
 
             for type_0 in [INPUT_REQUEST_PALETTE, INPUT_REQUEST_CLIPBOARD] {
                 let mut owner = input_request::new();
@@ -520,13 +553,15 @@ mod input_request_ownership_tests {
                 (*ir).c = std::rc::Rc::downgrade(&client_owner);
                 (*ir).type_0 = type_0;
                 input_ctx_requests(ictx).push_back(owner);
-                input_client_requests(&mut *c).push(ir);
+                c.as_ref()
+                    .expect("live client")
+                    .observe_input_request(&mut *ir);
             }
 
-            assert!(input_client_has_requests(&mut *(c)));
-            input_cancel_requests(&mut *c);
+            assert!(client_owner.has_input_requests());
+            client_owner.cancel_input_requests();
 
-            assert!(!input_client_has_requests(&mut *(c)));
+            assert!(!client_owner.has_input_requests());
             assert!(input_ctx_requests(ictx).is_empty());
             drop(ictx_owner);
         }
@@ -2331,7 +2366,7 @@ pub unsafe fn input_init(
     wp: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut bev: *mut bufferevent,
     palette: crate::src::shared::input::InputPalette,
-    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
 ) -> Box<input_ctx> {
     let mut owner = Box::new(input_ctx::new());
     let ictx = &raw mut *owner;
@@ -5962,7 +5997,7 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         let Some(client) = (*ictx).c.upgrade() else {
             return;
         };
-        tty_set_selection(&raw mut (*client.get()).tty, clip, &out);
+        tty_set_selection(&client, clip, &out);
         paste_add_owned(None, out.into_boxed_slice());
     } else {
         screen_write_start_pane(
@@ -6145,15 +6180,10 @@ unsafe fn input_make_request(
     input_ctx_requests(ictx).push_back(owner);
     return ir;
 }
-unsafe fn input_free_request(mut ir: *mut input_request) {
+pub(crate) unsafe fn input_free_request(mut ir: *mut input_request) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
     if let Some(client) = (*ir).c.upgrade() {
-        let c_requests = input_client_requests(&mut *client.get());
-        let index = c_requests
-            .iter()
-            .position(|request| *request == ir)
-            .expect("request missing from its client handle collection");
-        c_requests.remove(index);
+        client.forget_input_request(&*ir);
     }
     let requests = input_ctx_requests(ictx);
     let index = requests
@@ -6173,8 +6203,8 @@ unsafe fn input_add_request(
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
+    let mut loop_0: Option<ClientRef> = None;
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
     let mut s: [::core::ffi::c_char; 64] = [0; 64];
     if wp.is_null() {
@@ -6185,27 +6215,43 @@ unsafe fn input_add_request(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
-            if !((*loop_0).session_handle().is_none()
-                || ((*loop_0)
-                    .session_handle()
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
+            != 0)
+        {
+            if !(loop_0
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .is_none()
+                || (loop_0
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
                     .expect("live session")
                     .contains_window(&(*w).observer.upgrade().expect("live window"))
                     as i32)
                     == 0)
             {
-                if !(!(*loop_0).tty.flags & TTY_STARTED != 0) {
-                    if c.is_null() {
+                if loop_0.as_ref().expect("live client").terminal_started() {
+                    if c.is_none() {
                         c = loop_0;
-                    } else if if (*loop_0).activity_time.tv_sec == (*c).activity_time.tv_sec {
-                        ((*loop_0).activity_time.tv_usec > (*c).activity_time.tv_usec)
+                    } else if if loop_0.as_ref().expect("live client").activity_time().tv_sec
+                        == c.as_ref().expect("live client").activity_time().tv_sec
+                    {
+                        (loop_0
+                            .as_ref()
+                            .expect("live client")
+                            .activity_time()
+                            .tv_usec
+                            > c.as_ref().expect("live client").activity_time().tv_usec)
                             as ::core::ffi::c_int
                     } else {
-                        ((*loop_0).activity_time.tv_sec > (*c).activity_time.tv_sec)
+                        (loop_0.as_ref().expect("live client").activity_time().tv_sec
+                            > c.as_ref().expect("live client").activity_time().tv_sec)
                             as ::core::ffi::c_int
                     } != 0
                     {
@@ -6219,30 +6265,39 @@ unsafe fn input_add_request(
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
-    if c.is_null() {
+    if c.is_none() {
         return -(1 as ::core::ffi::c_int);
     }
     ir = input_make_request(ictx, type_0);
-    (*ir).c = (*c).observer.clone();
+    (*ir).c = std::rc::Rc::downgrade(c.as_ref().expect("live client"));
     (*ir).idx = idx;
     (*ir).end = (*ictx).input_end;
-    input_client_requests(&mut *c).push(ir);
+    c.as_ref()
+        .expect("live client")
+        .observe_input_request(&mut *ir);
     match type_0 as ::core::ffi::c_uint {
         0 => {
             xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", idx as i32));
-            tty_puts(&raw mut (*c).tty, std::ffi::CStr::from_ptr(s.as_ptr()));
+            c.as_ref()
+                .expect("live client")
+                .write_terminal(std::ffi::CStr::from_ptr(s.as_ptr()).to_bytes());
         }
         1 => {
-            tty_putcode_ss(
-                &raw mut (*c).tty,
-                TTYC_MS,
-                b"\0" as *const u8 as *const ::core::ffi::c_char,
-                b"?\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            let client = c.as_ref().expect("live client");
+            let query = {
+                let terminal = client.borrow_terminal();
+                crate::src::tty_term::tty_term_string_ss(
+                    terminal.term.as_deref().expect("open terminal"),
+                    TTYC_MS,
+                    c"".as_ptr(),
+                    c"?".as_ptr(),
+                )
+            };
+            if !query.is_empty() {
+                client.write_terminal(query.to_bytes());
+            }
         }
         2 | _ => {}
     }
@@ -6300,39 +6355,24 @@ pub enum InputRequestReply<'a> {
     Clipboard(&'a input_request_clipboard_data),
 }
 
-pub unsafe fn input_request_reply(
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+pub unsafe fn input_request_reply(client: &ClientRef, reply: InputRequestReply<'_>) {
+    client.reply_input_request(reply);
+}
+
+pub(crate) fn input_request_matches(request: &input_request, reply: InputRequestReply<'_>) -> bool {
+    match reply {
+        InputRequestReply::Palette(data) => {
+            request.type_0 == INPUT_REQUEST_PALETTE && request.idx == data.idx
+        }
+        InputRequestReply::Clipboard(_) => request.type_0 == INPUT_REQUEST_CLIPBOARD,
+    }
+}
+
+pub(crate) unsafe fn input_complete_request(
+    found: *mut input_request,
     reply: InputRequestReply<'_>,
 ) {
-    let mut c = c_owner.get();
-    let mut found: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let type_0 = match reply {
-        InputRequestReply::Palette(_) => INPUT_REQUEST_PALETTE,
-        InputRequestReply::Clipboard(_) => INPUT_REQUEST_CLIPBOARD,
-    };
-    let mut complete: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    for ir in input_client_requests(&mut *c).clone() {
-        if (*ir).type_0 as ::core::ffi::c_uint != type_0 as ::core::ffi::c_uint {
-            input_free_request(ir);
-        } else if type_0 as ::core::ffi::c_uint
-            == INPUT_REQUEST_PALETTE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            if !matches!(reply, InputRequestReply::Palette(pd) if pd.idx == (*ir).idx) {
-                input_free_request(ir);
-            } else {
-                found = ir;
-                break;
-            }
-        } else if type_0 as ::core::ffi::c_uint
-            == INPUT_REQUEST_CLIPBOARD as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            found = ir;
-            break;
-        }
-    }
-    if found.is_null() {
-        return;
-    }
+    let mut complete = 0;
     // `found` is freed when its reply is handled. Keep the context separately
     // for later queued replies so the loop never reads through that freed box.
     let ictx = (*found).ictx;
@@ -6367,14 +6407,6 @@ pub unsafe fn input_request_reply(
             }
             complete = 1 as ::core::ffi::c_int;
         }
-        input_free_request(ir);
-    }
-}
-pub unsafe fn input_cancel_requests(c: &mut client) {
-    // Detach the whole index first: cleanup may run after the last strong
-    // client reference is gone, when request observers cannot upgrade.
-    for ir in std::mem::take(input_client_requests(&mut *c)) {
-        (*ir).c = std::rc::Weak::new();
         input_free_request(ir);
     }
 }

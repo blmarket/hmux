@@ -26,12 +26,14 @@ use crate::src::screen_write::{
     screen_write_clearscreen, screen_write_cursormove, screen_write_puts, screen_write_start,
     screen_write_stop,
 };
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
 use crate::src::session::Session as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::{client, CLIENT_DEAD};
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::*;
@@ -1544,7 +1546,7 @@ unsafe fn mode_tree_prompt_free_callback(
 }
 pub unsafe fn mode_tree_set_prompt(
     tree: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>,
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     prompt: &CStr,
     input: Option<&CStr>,
     mut type_0: prompt_type,
@@ -1560,7 +1562,7 @@ pub unsafe fn mode_tree_set_prompt(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let session_owner = client_owner.and_then(|client| (*client.get()).session.upgrade());
+    let session_owner = client_owner.and_then(|client| client.attached_session().upgrade());
     let s = session_owner.clone();
     let mut pd = prompt_create_data::default();
     mode_tree_clear_prompt(&tree);
@@ -1813,7 +1815,7 @@ unsafe fn mode_tree_clear_filter(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
 }
 fn mode_tree_menu_callback(
     tree: Rc<UnsafeCell<mode_tree_data>>,
-    client: Weak<UnsafeCell<client>>,
+    client: ClientWeak,
     line: u_int,
 ) -> menu_choice_cb {
     Some(Box::new(move |selection| unsafe {
@@ -1827,7 +1829,7 @@ fn mode_tree_menu_callback(
         let Some(client) = client.upgrade() else {
             return;
         };
-        if (&*client.get()).flags & CLIENT_DEAD as uint64_t != 0 {
+        if client.is_dead() {
             return;
         }
         mtd.current = line;
@@ -1845,7 +1847,7 @@ fn mode_tree_menu_callback(
 
 unsafe fn mode_tree_display_menu(
     tree: &Rc<UnsafeCell<mode_tree_data>>,
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut x: u_int,
     mut y: u_int,
     mut outside: ::core::ffi::c_int,
@@ -2077,7 +2079,7 @@ unsafe fn mode_tree_display_help(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
 }
 pub unsafe fn mode_tree_key(
     tree: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>,
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut key: *mut key_code,
     mut m: *mut mouse_event,
     mut xp: *mut u_int,
@@ -2488,7 +2490,7 @@ pub unsafe fn mode_tree_key(
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn mode_tree_run_command(
-    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     fs: Option<&cmd_find_state>,
     template: &CStr,
     name: &CStr,
@@ -2506,24 +2508,14 @@ pub unsafe fn mode_tree_run_command(
     if let Err(mut error) = cmd_parse_and_append(&command, client_owner, Some(&state)) {
         if let Some(owner) = client_owner {
             cmd_parse_error_uppercase_first(&mut error);
-            status_message_set(
-                (owner.get())
-                    .as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
-                -1,
-                1,
-                0,
-                0,
-                |out| {
-                    write_cstr(
-                        out,
-                        error
-                            .as_ref()
-                            .map_or(std::ptr::null(), |cause| cause.as_ptr()),
-                    )
-                },
-            );
+            status_message_set(Some(owner), -1, 1, 0, 0, |out| {
+                write_cstr(
+                    out,
+                    error
+                        .as_ref()
+                        .map_or(std::ptr::null(), |cause| cause.as_ptr()),
+                )
+            });
         }
     }
 }
@@ -3109,7 +3101,10 @@ mod menu_callback_owner_tests {
                     drop(client.take());
                     assert!(observer.upgrade().is_none());
                 } else {
-                    (*rc::as_ptr(client.as_ref().unwrap())).flags |= CLIENT_DEAD as uint64_t;
+                    client
+                        .as_ref()
+                        .unwrap()
+                        .update_flags(CLIENT_DEAD as uint64_t, 0);
                 }
                 callback(MenuSelection::Selected {
                     index: 0,

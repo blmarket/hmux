@@ -6,6 +6,7 @@ use super::event::event;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::winlink;
+use crate::src::shared::client::ClientWeak;
 use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
 pub type monitor_type = ::core::ffi::c_uint;
@@ -20,7 +21,7 @@ pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int
 /// Box-owned by monitor_create; its callback and weak observers expire on destroy.
 #[repr(C)]
 pub struct monitor_set {
-    pub client: Weak<UnsafeCell<client>>,
+    pub client: ClientWeak,
     pub session: Option<Rc<UnsafeCell<session>>>,
     pub cb: monitor_cb,
     pub items: monitor_items,
@@ -34,7 +35,7 @@ pub struct monitor_change<'a> {
     pub name: &'a std::ffi::CStr,
     pub value: &'a std::ffi::CStr,
     pub last: Option<&'a std::ffi::CStr>,
-    pub c: Weak<UnsafeCell<client>>,
+    pub c: ClientWeak,
     pub s: Weak<UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
     pub wp: Weak<UnsafeCell<window_pane>>,

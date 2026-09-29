@@ -20,10 +20,12 @@ use crate::src::server::clients;
 use crate::src::server::{
     marked_pane, server_check_marked, server_clear_marked, server_is_marked, server_set_marked,
 };
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_client, server_redraw_window, server_redraw_window_borders, server_status_window,
 };
 use crate::src::session::Session;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::tty::tty_window_bigger;
 use crate::src::window::{
@@ -96,15 +98,23 @@ pub static cmd_last_pane_entry: cmd_entry = {
 };
 unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
     let mut w = w_owner.get();
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if !((*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
-            if ((*c)
-                .session_handle()
+    c = registry_c_owner.clone();
+    while !c.is_none() {
+        if !(c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+            || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0)
+        {
+            if (c
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
                 .expect("live session")
                 .current_winlink())
             .get_unchecked()
@@ -112,12 +122,15 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get())
                 == w
-                && tty_window_bigger(&raw mut (*c).tty) != 0
+                && tty_window_bigger(c.as_ref().expect("live client")) != 0
             {
-                server_redraw_client(&mut *(c));
+                server_redraw_client(c.as_ref().expect("live client"));
             } else {
-                if ((*c)
-                    .session_handle()
+                if (c
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
                     .expect("live session")
                     .current_winlink())
                 .get_unchecked()
@@ -126,24 +139,29 @@ unsafe fn cmd_select_pane_redraw(w_owner: &std::rc::Rc<std::cell::UnsafeCell<win
                 .map_or(std::ptr::null_mut(), |owner| owner.get())
                     == w
                 {
-                    (*c).flags |= CLIENT_REDRAWBORDERS as uint64_t;
+                    c.as_ref()
+                        .expect("live client")
+                        .update_flags(CLIENT_REDRAWBORDERS as uint64_t, 0);
                 }
-                if ((*c)
-                    .session_handle()
+                if (c
+                    .as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
                     .expect("live session")
                     .contains_window(&(*w).observer.upgrade().expect("live window"))
                     as i32)
                     != 0
                 {
-                    (*c).flags |= CLIENT_REDRAWSTATUS as uint64_t;
+                    c.as_ref()
+                        .expect("live client")
+                        .update_flags(CLIENT_REDRAWSTATUS as uint64_t, 0);
                 }
             }
         }
         registry_c_owner =
             clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = registry_c_owner.clone();
     }
 }
 unsafe fn cmd_select_pane_marked_pane(

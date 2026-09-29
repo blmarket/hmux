@@ -11,10 +11,12 @@ use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::server::{marked_pane, server_is_marked};
 use crate::src::server_client::server_client_overlay_draw;
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{CELL_NONE, CELL_UD};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
     CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSTATUS,
     CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED, CLIENT_UTF8,
@@ -175,13 +177,14 @@ fn redraw_flags_to_string(flags: ::core::ffi::c_int) -> std::ffi::CString {
     }
     std::ffi::CString::new(names.join(" ")).expect("redraw flag names contain no NUL")
 }
-unsafe fn redraw_get_window_offset(c: &mut client) -> tty_window_view {
-    let mut view = tty_window_offset(&c.tty);
-    view.sx = view.sx.max(c.tty.sx);
-    view.sy = view.sy.max(c.tty.sy.wrapping_sub(status_line_size(c)));
+unsafe fn redraw_get_window_offset(c: &ClientRef) -> tty_window_view {
+    let mut view = c.terminal_view();
+    let (sx, sy) = c.terminal_size();
+    view.sx = view.sx.max(sx);
+    view.sy = view.sy.max(sy.wrapping_sub(status_line_size(c)));
     view
 }
-unsafe fn redraw_set_context(c: &mut client, bctx: &mut redraw_build_ctx) {
+unsafe fn redraw_set_context(c: &ClientRef, bctx: &mut redraw_build_ctx) {
     let w = bctx.w.get();
     let view = redraw_get_window_offset(c);
     (*bctx).ox = view.ox;
@@ -940,11 +943,13 @@ unsafe fn redraw_build_cells<'a>(
     redraw_mark_two_pane_colours(bctx);
     redraw_mark_menu(bctx);
 }
-unsafe fn redraw_make_scene(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-) -> Option<Box<redraw_scene>> {
-    let c = client_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>> {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade();
     let mut w: *mut window = (s.as_ref().expect("live session").current_winlink())
         .get_unchecked()
         .window_handle()
@@ -966,15 +971,15 @@ unsafe fn redraw_make_scene(
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut x0: u_int = 0;
-    if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
+    if c.as_ref().expect("live client").flags() & CLIENT_SUSPENDED as uint64_t != 0 {
         return None;
     }
-    redraw_set_context(&mut *c, &mut bctx);
+    redraw_set_context(client_owner, &mut bctx);
     let mut cells = RedrawCellScratch::take();
     log_debug(format_args!(
         "{}: building @{} scene ({}x{} {},{}; generation {})",
         log_cstr(
-            (((*c).name)
+            ((c.as_ref().expect("live client").name())
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
@@ -988,7 +993,7 @@ unsafe fn redraw_make_scene(
     ));
     redraw_build_cells(&raw mut bctx, &mut cells.0);
     let mut scene = Box::new(redraw_scene {
-        c: (*c).observer.clone(),
+        c: std::rc::Rc::downgrade(client_owner),
         w: (*w).observer.clone(),
         lines: Box::default(),
         generation: (*w).redraw_scene_generation,
@@ -1037,7 +1042,7 @@ unsafe fn redraw_make_scene(
     log_debug(format_args!(
         "{}: finished building @{} scene",
         log_cstr(
-            (((*c).name)
+            ((c.as_ref().expect("live client").name())
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
@@ -1061,20 +1066,21 @@ pub unsafe fn redraw_invalidate_all_scenes() {
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
-unsafe fn redraw_get_scene(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-) -> Option<Box<redraw_scene>> {
-    let c = client_owner.get();
-    let w = ((*c)
-        .session_handle()
+unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>> {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let w = (c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade()
         .expect("live session")
         .current_winlink())
     .get_unchecked()
     .window_handle()
     .as_ref()
     .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(&mut *c);
-    let scene = (*c).redraw_scene.take();
+    let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(client_owner);
+    let scene = client_owner.take_redraw_scene();
     let reason = match scene.as_deref() {
         None => Some("missing"),
         Some(scene) if !scene.w.ptr_eq(&(*w).observer) => Some("window changed"),
@@ -1089,7 +1095,9 @@ unsafe fn redraw_get_scene(
         log_debug(format_args!(
             "{}: @{} scene invalid: {}",
             log_cstr(
-                (*c).name
+                c.as_ref()
+                    .expect("live client")
+                    .name()
                     .as_ref()
                     .map_or(std::ptr::null(), |name| name.as_ptr())
             ),
@@ -1103,13 +1111,6 @@ unsafe fn redraw_get_scene(
     }
 }
 
-// An active draw owns its scene. Nested draws may publish a replacement while
-// callbacks run; keep that newer cache instead of overwriting it on return.
-fn redraw_restore_scene(c: &mut client, scene: Box<redraw_scene>) {
-    if c.redraw_scene.is_none() {
-        c.redraw_scene = Some(scene);
-    }
-}
 unsafe fn redraw_draw_pane_span(
     dctx: &mut redraw_draw_ctx<'_>,
     span: &redraw_span,
@@ -1124,8 +1125,7 @@ unsafe fn redraw_draw_pane_span(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let c = client_owner.get();
-    let mut tty: *mut tty = &raw mut (*c).tty;
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let wp = pane_owner.get();
     let mut s: *mut screen = (*wp).screen_ptr();
     let mut defaults: grid_cell = grid_cell {
@@ -1157,7 +1157,9 @@ unsafe fn redraw_draw_pane_span(
     style_ctx.hyperlinks = (*s).hyperlinks.clone();
     px = (*span).data.pane().px.wrapping_add(x.wrapping_sub(span.x));
     py = span.data.pane().py;
-    tty_draw_line(tty, &*s, px, py, n, x, y, Some(&style_ctx));
+    client_owner.with_terminal_output(|terminal| {
+        tty_draw_line(terminal, &*s, px, py, n, x, y, Some(&style_ctx));
+    });
 }
 unsafe fn redraw_get_default_border_style(
     dctx: &mut redraw_draw_ctx<'_>,
@@ -1168,8 +1170,12 @@ unsafe fn redraw_get_default_border_style(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let c = client_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade();
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
@@ -1180,9 +1186,7 @@ unsafe fn redraw_get_default_border_style(
     if !dctx.flags & REDRAW_DEFAULT_SET != 0 {
         let mut ft_owner = format_create_defaults(
             None,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c.as_ref(),
             s.as_ref(),
             (s.as_ref().expect("live session").current_winlink()).clone(),
             None,
@@ -1280,8 +1284,7 @@ unsafe fn redraw_draw_border_span(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let c = client_owner.get();
-    let mut tty: *mut tty = &raw mut (*c).tty;
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
@@ -1343,7 +1346,7 @@ unsafe fn redraw_draw_border_span(
     } else {
         window_pane_get_border_style(
             &(*(wp)).observer.upgrade().expect("live window_pane"),
-            &(*(c)).observer.upgrade().expect("live client"),
+            &c.clone().expect("live client"),
             &raw mut gc,
         );
         window_pane_get_border_cell(
@@ -1363,17 +1366,17 @@ unsafe fn redraw_draw_border_span(
     if cell_type == CELL_UD as u_int && dctx.flags & REDRAW_ISOLATES != 0 {
         isolates = 1 as ::core::ffi::c_int;
     }
-    tty_cursor(tty, x, y);
+    client_owner.with_terminal_output(|terminal| tty_cursor(terminal, x, y));
     if isolates != 0 {
-        tty_puts(tty, REDRAW_END_ISOLATE);
+        client_owner.with_terminal_output(|terminal| tty_puts(terminal, REDRAW_END_ISOLATE));
     }
     i = 0 as u_int;
     while i < n {
-        tty_cell(tty, &gc, None);
+        tty_cell(&client_owner, &gc, None);
         i = i.wrapping_add(1);
     }
     if isolates != 0 {
-        tty_puts(tty, REDRAW_START_ISOLATE);
+        client_owner.with_terminal_output(|terminal| tty_puts(terminal, REDRAW_START_ISOLATE));
     }
 }
 unsafe fn redraw_draw_status_span(
@@ -1390,8 +1393,7 @@ unsafe fn redraw_draw_status_span(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let c = client_owner.get();
-    let mut tty: *mut tty = &raw mut (*c).tty;
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let wp = pane_owner.get();
     let mut s: *mut screen = &raw mut (*wp).status_screen;
     let mut px: u_int = 0;
@@ -1405,7 +1407,9 @@ unsafe fn redraw_draw_status_span(
         if n > sx.wrapping_sub(px) {
             n = sx.wrapping_sub(px);
         }
-        tty_draw_line(tty, &*s, px, 0 as u_int, n, x, y, None);
+        client_owner.with_terminal_output(|terminal| {
+            tty_draw_line(terminal, &*s, px, 0, n, x, y, None);
+        });
     }
 }
 unsafe fn redraw_draw_scrollbar_span(
@@ -1424,7 +1428,6 @@ unsafe fn redraw_draw_scrollbar_span(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let tty = &raw mut (*client_owner.get()).tty;
     let mut sb_style: *mut style = &raw mut (*wp).scrollbar_style;
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1524,19 +1527,19 @@ unsafe fn redraw_draw_scrollbar_span(
     sb_w = (*sb_style).width as u_int;
     sb_pad = (*sb_style).pad as u_int;
     off = x.wrapping_sub(span.x);
-    tty_cursor(tty, x, y);
+    client_owner.with_terminal_output(|terminal| tty_cursor(terminal, x, y));
     let mut current_block_40: u64;
     i = 0 as u_int;
     while i < n {
         if span.data.scrollbar().flags & REDRAW_SCROLLBAR_LEFT != 0 {
             if off.wrapping_add(i) >= sb_w && off.wrapping_add(i) < sb_w.wrapping_add(sb_pad) {
-                tty_cell(tty, &pad_gc, None);
+                tty_cell(&client_owner, &pad_gc, None);
                 current_block_40 = 3437258052017859086;
             } else {
                 current_block_40 = 7828949454673616476;
             }
         } else if off.wrapping_add(i) < sb_pad {
-            tty_cell(tty, &pad_gc, None);
+            tty_cell(&client_owner, &pad_gc, None);
             current_block_40 = 3437258052017859086;
         } else {
             current_block_40 = 7828949454673616476;
@@ -1548,7 +1551,7 @@ unsafe fn redraw_draw_scrollbar_span(
                 } else {
                     gcp = &raw mut gc;
                 }
-                tty_cell(tty, &*gcp, None);
+                tty_cell(&client_owner, &*gcp, None);
             }
             _ => {}
         }
@@ -1575,9 +1578,10 @@ unsafe fn redraw_draw_menu_span(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let tty = &raw mut (*client_owner.get()).tty;
     let px = data.px.wrapping_add(x.wrapping_sub(span.x));
-    tty_draw_line(tty, menu_screen(&md), px, data.py, n, x, y, None);
+    client_owner.with_terminal_output(|terminal| {
+        tty_draw_line(terminal, menu_screen(&md), px, data.py, n, x, y, None);
+    });
 }
 unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, mut y: u_int) {
     let scene = dctx.scene;
@@ -1586,10 +1590,8 @@ unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, m
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let c = client_owner.get();
-    let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let mut ranges = visible_ranges::default();
     let mut i: u_int = 0;
     let mut x: u_int = 0;
     let mut n: u_int = 0;
@@ -1603,13 +1605,13 @@ unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, m
     {
         return;
     }
-    r = tty_check_overlay_range(tty, span.x, y, span.width);
+    ranges = tty_check_overlay_range(&client_owner, span.x, y, span.width);
     i = 0 as u_int;
-    while i < (*r).used {
-        rr = &raw mut (&mut (*r).storage)[i as usize];
-        if !((*rr).nx == 0 as u_int) {
-            x = (*rr).px;
-            n = (*rr).nx;
+    while i < ranges.used {
+        let range = &ranges.storage[i as usize];
+        if !(range.nx == 0 as u_int) {
+            x = range.px;
+            n = range.nx;
             match span.data.kind() as ::core::ffi::c_uint {
                 0 => {
                     redraw_draw_pane_span(dctx, span, x, y, n);
@@ -1763,13 +1765,17 @@ unsafe fn redraw_pane_status_width<'scene>(
 unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ctx<'_>> {
     let window_owner = scene.w.upgrade()?;
     let client_owner = scene.c.upgrade()?;
-    let c = client_owner.get();
-    let s = (*c).session_handle();
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let s = c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade();
     let mut dctx = redraw_draw_ctx {
         scene,
         active: (*window_owner.get()).active.clone(),
         marked: std::rc::Weak::new(),
-        status_lines: status_line_size(&*c),
+        status_lines: status_line_size(c.as_ref().expect("live client")),
         pane_lines: PANE_LINES_SINGLE,
         default_gc: grid_cell::default(),
         flags: 0,
@@ -1795,12 +1801,13 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     {
         dctx.flags |= REDRAW_STATUS_TOP;
     }
-    if (*c).flags & CLIENT_UTF8 as uint64_t != 0
-        && tty_term_has(
-            tty_term_owner_ptr(&(*c).tty.term).map_or(std::ptr::null(), |term| term),
+    if c.as_ref().expect("live client").flags() & CLIENT_UTF8 as uint64_t != 0 && {
+        let terminal = client_owner.borrow_terminal();
+        tty_term_has(
+            tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term),
             TTYC_BIDI,
         ) != 0
-    {
+    } {
         dctx.flags |= REDRAW_ISOLATES;
     }
     Some(dctx)
@@ -1814,8 +1821,7 @@ unsafe fn redraw_draw_pane_prompt(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let c = client_owner.get();
-    let mut tty: *mut tty = &raw mut (*c).tty;
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mut screen: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -1885,41 +1891,57 @@ unsafe fn redraw_draw_pane_prompt(
         pdd,
     );
     screen_write_stop(&mut ctx);
-    tty_draw_line(
-        tty,
-        &screen,
-        0 as u_int,
-        offset as u_int,
-        width as u_int,
-        px as u_int,
-        cy as u_int,
-        None,
-    );
+    client_owner.with_terminal_output(|terminal| {
+        tty_draw_line(
+            terminal,
+            &screen,
+            0 as u_int,
+            offset as u_int,
+            width as u_int,
+            px as u_int,
+            cy as u_int,
+            None,
+        );
+    });
     screen_free(&mut screen);
 }
 unsafe fn redraw_draw(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut flags: ::core::ffi::c_int,
 ) {
-    let c = client_owner.get();
-    let s = (*c).session_handle();
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let s = c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade();
     let w = (s.as_ref().expect("live session").current_winlink())
         .get_unchecked()
         .window_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut redraw = 0;
-    if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
+    if c.as_ref().expect("live client").flags() & CLIENT_SUSPENDED as uint64_t != 0 {
         return;
     }
     if flags & REDRAW_STATUS != 0 {
-        if !(*c).message_string.is_none() {
-            redraw = status_message_redraw(&(*(c)).observer.upgrade().expect("live client"));
-        } else if (*c).prompt.is_some() {
-            redraw = status_prompt_redraw(&(*(c)).observer.upgrade().expect("live client"));
+        if c.as_ref()
+            .expect("live client")
+            .status_message_text()
+            .0
+            .is_some()
+        {
+            redraw = status_message_redraw(&c.clone().expect("live client"));
+        } else if c
+            .as_ref()
+            .expect("live client")
+            .prompt_observer()
+            .is_alive()
+        {
+            redraw = status_prompt_redraw(&c.clone().expect("live client"));
         } else {
-            redraw = status_redraw(&(*(c)).observer.upgrade().expect("live client"));
+            redraw = status_redraw(&c.clone().expect("live client"));
         }
         if redraw == 0 && !(flags == REDRAW_ALL) {
             flags &= !REDRAW_STATUS;
@@ -1932,7 +1954,7 @@ unsafe fn redraw_draw(
         log_debug(format_args!(
             "{}: starting @{} redraw ({})",
             log_cstr(
-                (((*c).name)
+                ((c.as_ref().expect("live client").name())
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
@@ -1945,30 +1967,30 @@ unsafe fn redraw_draw(
         return;
     };
     redraw_draw_scene(client_owner, pane_owner, flags, &scene);
-    redraw_restore_scene(&mut *c, scene);
+    client_owner.restore_redraw_scene(scene);
 }
 
 unsafe fn redraw_draw_scene(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     mut flags: ::core::ffi::c_int,
     scene: &redraw_scene,
 ) {
-    let c = client_owner.get();
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let wp = pane_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
     let w = window_owner.get();
-    let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
-    let mut tty: *mut tty = &raw mut (*c).tty;
-    let mut sl: *mut screen = ::core::ptr::null_mut::<screen>();
+    let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade();
     let mut i: u_int = 0;
     let mut y: u_int = 0;
     let mut lines: u_int = 0;
     let mut j: u_int = 0;
-    let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
-    let mut rr: *mut visible_range = ::core::ptr::null_mut::<visible_range>();
     let mut redraw: ::core::ffi::c_int = 0;
     let Some(mut dctx) = redraw_set_draw_context(scene) else {
         return;
@@ -1999,7 +2021,7 @@ unsafe fn redraw_draw_scene(
                 if width != 0
                     && window_make_pane_status(
                         &(*(loop_0)).observer.upgrade().expect("live window_pane"),
-                        &(*(c)).observer.upgrade().expect("live client"),
+                        &c.clone().expect("live client"),
                         width,
                         status_spans,
                         first_status_span,
@@ -2030,8 +2052,10 @@ unsafe fn redraw_draw_scene(
             }
         }
     }
-    tty_sync_start(tty);
-    tty_update_mode(tty, (*tty).mode & !CURSOR_MODES, None);
+    client_owner.with_terminal_output(|terminal| {
+        tty_sync_start(terminal);
+        tty_update_mode(terminal, terminal.mode & !CURSOR_MODES, None);
+    });
     if !wp.is_null() {
         redraw_draw_pane_lines(
             &mut dctx,
@@ -2064,7 +2088,16 @@ unsafe fn redraw_draw_scene(
     }
     if flags & REDRAW_STATUS != 0 {
         lines = dctx.status_lines;
-        if !(*c).message_string.is_none() || (*c).prompt.is_some() {
+        if c.as_ref()
+            .expect("live client")
+            .status_message_text()
+            .0
+            .is_some()
+            || c.as_ref()
+                .expect("live client")
+                .prompt_observer()
+                .is_alive()
+        {
             lines = if lines == 0 as u_int {
                 1 as u_int
             } else {
@@ -2074,40 +2107,28 @@ unsafe fn redraw_draw_scene(
         if dctx.flags & REDRAW_STATUS_TOP != 0 {
             y = 0 as u_int;
         } else {
-            y = (*c).tty.sy.wrapping_sub(lines);
+            y = client_owner.terminal_size().1.wrapping_sub(lines);
         }
-        sl = (*c).status.active_screen();
-        i = 0 as u_int;
+        i = 0;
         while i < lines {
-            r = tty_check_overlay_range(tty, 0 as u_int, y.wrapping_add(i), (*tty).sx);
-            j = 0 as u_int;
-            while j < (*r).used {
-                rr = &raw mut (&mut (*r).storage)[j as usize];
-                if !((*rr).nx == 0 as u_int) {
-                    tty_draw_line(
-                        tty,
-                        &*sl,
-                        (*rr).px,
-                        i,
-                        (*rr).nx,
-                        (*rr).px,
-                        y.wrapping_add(i),
-                        None,
-                    );
+            let width = client_owner.terminal_size().0;
+            let ranges = tty_check_overlay_range(client_owner, 0, y.wrapping_add(i), width);
+            for range in ranges.storage.iter().take(ranges.used as usize) {
+                if range.nx != 0 {
+                    client_owner.draw_status_line(i, range.px, range.nx, y.wrapping_add(i));
                 }
-                j = j.wrapping_add(1);
             }
             i = i.wrapping_add(1);
         }
     }
     if flags & REDRAW_OVERLAY != 0 {
-        server_client_overlay_draw(&(*(c)).observer.upgrade().expect("live client"));
+        server_client_overlay_draw(&c.clone().expect("live client"));
     }
-    tty_reset(tty);
+    client_owner.with_terminal_output(|terminal| tty_reset(terminal));
     log_debug(format_args!(
         "{}: finished @{} redraw",
         log_cstr(
-            (((*c).name)
+            ((c.as_ref().expect("live client").name())
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
@@ -2156,30 +2177,33 @@ pub fn redraw_get_status_border_cell_type(
     }
     return 2 as ::core::ffi::c_int;
 }
-pub unsafe fn redraw_screen(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    let c = client_owner.get();
+pub unsafe fn redraw_screen(client_owner: &ClientRef) {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-        if (*c).flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
+    if c.as_ref().expect("live client").flags() & CLIENT_REDRAWWINDOW as uint64_t != 0 {
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
             redraw_draw(client_owner, None, REDRAW_ALL);
         } else {
             redraw_draw(client_owner, None, REDRAW_ALL & !REDRAW_OVERLAY);
         }
     } else {
-        if (*c).flags & CLIENT_REDRAWBORDERS as uint64_t != 0 {
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWBORDERS as uint64_t != 0 {
             flags |= REDRAW_PANE_BORDER | REDRAW_PANE_STATUS;
         }
-        if (*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWSTATUS as uint64_t != 0 {
             flags |= REDRAW_STATUS | REDRAW_PANE_STATUS;
         }
-        if (*c).flags & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWOVERLAY as uint64_t != 0 {
             flags |= REDRAW_OVERLAY;
         }
-        if (*c).flags & CLIENT_REDRAWMENU as uint64_t != 0 {
+        if c.as_ref().expect("live client").flags() & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;
         }
-        if (*((*c)
-            .session_handle()
+        if (*(c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
             .expect("live session")
             .current_winlink())
         .get_unchecked()
@@ -2197,17 +2221,20 @@ pub unsafe fn redraw_screen(client_owner: &std::rc::Rc<std::cell::UnsafeCell<cli
     };
 }
 pub unsafe fn redraw_pane(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
-    let c = client_owner.get();
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     redraw_draw(
         client_owner,
         Some(pane_owner),
         REDRAW_PANE | REDRAW_PANE_SCROLLBAR,
     );
-    if (*((*c)
-        .session_handle()
+    if (*(c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade()
         .expect("live session")
         .current_winlink())
     .get_unchecked()
@@ -2221,7 +2248,7 @@ pub unsafe fn redraw_pane(
     }
 }
 pub unsafe fn redraw_pane_scrollbar(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     redraw_draw(client_owner, Some(pane_owner), REDRAW_PANE_SCROLLBAR);
@@ -2266,25 +2293,35 @@ mod menu_observer_tests {
             items: Vec::new(),
             width: 1,
         })));
-        let mut client = client::empty();
-        client.redraw_scene = Some(owned_scene(&menu, 1));
-        let active = client.redraw_scene.take().unwrap();
+        let client = unsafe { client::new() };
+        unsafe {
+            client.restore_redraw_scene(owned_scene(&menu, 1));
+        }
+        let active = unsafe { client.take_redraw_scene().unwrap() };
         let original_address = active.as_ref() as *const redraw_scene as usize;
         let span = active.lines[0][REDRAW_SPAN_MENU as usize]
             .iter()
             .next()
             .unwrap();
-        client.redraw_scene = Some(owned_scene(&menu, 2));
+        unsafe {
+            client.restore_redraw_scene(owned_scene(&menu, 2));
+        }
         assert_eq!(menu.weak_count(), 2);
         assert_eq!(active.generation, 1);
         assert!(span.data.menu().md.is_alive());
-        redraw_restore_scene(&mut client, active);
+        unsafe {
+            client.restore_redraw_scene(active);
+        }
         assert_eq!(menu.weak_count(), 1);
-        assert_eq!(client.redraw_scene.as_ref().unwrap().generation, 2);
+        let cached = unsafe { client.take_redraw_scene().unwrap() };
+        assert_eq!(cached.generation, 2);
         assert_ne!(
-            client.redraw_scene.as_deref().unwrap() as *const redraw_scene as usize,
+            cached.as_ref() as *const redraw_scene as usize,
             original_address
         );
+        unsafe {
+            client.restore_redraw_scene(cached);
+        }
         // Client teardown owns all remaining rows, spans and their observers.
         drop(client);
         assert_eq!(menu.weak_count(), 0);
@@ -2297,13 +2334,15 @@ mod menu_observer_tests {
             items: Vec::new(),
             width: 1,
         })));
-        let mut client = client::empty();
+        let client = unsafe { client::new() };
         let scene = owned_scene(&menu, 7);
         let scene_address = scene.as_ref() as *const redraw_scene as usize;
         let span_address =
             scene.lines[0][REDRAW_SPAN_MENU as usize][0].as_ref() as *const redraw_span as usize;
-        redraw_restore_scene(&mut client, scene);
-        let active = client.redraw_scene.take().unwrap();
+        unsafe {
+            client.restore_redraw_scene(scene);
+        }
+        let active = unsafe { client.take_redraw_scene().unwrap() };
         assert_eq!(
             active.as_ref() as *const redraw_scene as usize,
             scene_address
@@ -2312,9 +2351,11 @@ mod menu_observer_tests {
             active.lines[0][REDRAW_SPAN_MENU as usize][0].as_ref() as *const redraw_span as usize,
             span_address
         );
-        redraw_restore_scene(&mut client, active);
+        unsafe {
+            client.restore_redraw_scene(active);
+        }
         assert_eq!(menu.weak_count(), 1);
-        drop(client.redraw_scene.take());
+        drop(unsafe { client.take_redraw_scene() });
         assert_eq!(menu.weak_count(), 0);
     }
 
@@ -2394,7 +2435,7 @@ mod menu_observer_tests {
         unsafe {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
-            (*owner.get()).redraw_scene = Some(Box::new(redraw_scene {
+            owner.restore_redraw_scene(Box::new(redraw_scene {
                 c: observer.clone(),
                 w: std::rc::Weak::new(),
                 lines: Box::default(),
@@ -2404,7 +2445,7 @@ mod menu_observer_tests {
                 ox: 0,
                 oy: 0,
             }));
-            let scene = (*owner.get()).redraw_scene.take().unwrap();
+            let scene = owner.take_redraw_scene().unwrap();
             assert!(std::rc::Rc::ptr_eq(&scene.c.upgrade().unwrap(), &owner));
             drop(owner);
             assert!(observer.upgrade().is_none());

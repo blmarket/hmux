@@ -12,10 +12,12 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_get_cwd, server_client_unref_owned};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__size_t, ssize_t};
 use crate::src::shared::arguments::{args, args_parse};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::{client, client_file_cb};
 use crate::src::shared::command::*;
@@ -35,7 +37,7 @@ use std::rc::{Rc, Weak};
 
 pub struct cmd_source_file_data {
     pub item: Weak<UnsafeCell<cmdq_item>>,
-    pub client: Option<Rc<UnsafeCell<client>>>,
+    pub client: Option<ClientRef>,
     depth_active: bool,
     pub flags: ::core::ffi::c_int,
     pub after: Weak<UnsafeCell<cmdq_item>>,
@@ -73,7 +75,7 @@ pub static cmd_source_file_entry: cmd_entry = {
     }
 };
 impl cmd_source_file_data {
-    fn client_handle(&self) -> Option<&std::rc::Rc<std::cell::UnsafeCell<client>>> {
+    fn client_handle(&self) -> Option<&ClientRef> {
         self.client.as_ref()
     }
 
@@ -83,14 +85,16 @@ impl cmd_source_file_data {
         }
         unsafe {
             let depth = if let Some(client) = &self.client {
-                &mut (*client.get()).source_file_depth
+                client.leave_source_file()
             } else {
-                &mut *(&raw mut cmd_source_file_depth)
+                {
+                    cmd_source_file_depth = cmd_source_file_depth.wrapping_sub(1);
+                    cmd_source_file_depth
+                }
             };
-            *depth = depth.wrapping_sub(1);
             log_debug(format_args!(
                 "{}: depth now {}",
-                "cmd_source_file_complete_cb", *depth
+                "cmd_source_file_complete_cb", depth
             ));
         }
     }
@@ -137,18 +141,19 @@ unsafe fn cmd_source_file_complete_cb(
 }
 
 unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
-    let c = cdata
-        .client_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = cdata.client_handle();
     if cfg_finished == 0 {
         // Startup completion does not decrement nesting depth in tmux.
         // Cancellation during an active read still decrements it.
         cdata.depth_active = false;
         return;
     }
-    if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session_handle().is_none() {
-        (*c).retval = 1;
+    if cdata.retval == CMD_RETURN_ERROR {
+        if let Some(client) = c {
+            if client.attached_session().upgrade().is_none() {
+                client.set_return_value(1);
+            }
+        }
     }
     let Some(after_owner) = cdata.after.upgrade().or_else(|| cdata.item.upgrade()) else {
         return;
@@ -286,16 +291,14 @@ unsafe fn cmd_source_file_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut parse_flags: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
     let mut j: u_int = 0;
-    if c.is_null() {
+    if c.is_none() {
         if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
             cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
             return CMD_RETURN_ERROR;
@@ -307,24 +310,22 @@ unsafe fn cmd_source_file_exec(
             (cmd_source_file_depth) as u32
         ));
     } else {
-        if (*c).source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
+        let Some(depth) = c
+            .as_ref()
+            .expect("live client")
+            .enter_source_file(CMD_SOURCE_FILE_DEPTH_LIMIT as u32)
+        else {
             cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
             return CMD_RETURN_ERROR;
-        }
-        (*c).source_file_depth = (*c).source_file_depth.wrapping_add(1);
+        };
         log_debug(format_args!(
             "{}: depth now {}",
-            "cmd_source_file_exec",
-            ((*c).source_file_depth) as u32
+            "cmd_source_file_exec", depth
         ));
     }
     let mut cdata = Box::new(cmd_source_file_data {
         item: (*item).observer.clone(),
-        client: if c.is_null() {
-            None
-        } else {
-            Some((*c).observer.upgrade().expect("live source-file client"))
-        },
+        client: if c.is_none() { None } else { c.clone() },
         depth_active: true,
         flags: 0,
         after: Weak::new(),
@@ -338,7 +339,7 @@ unsafe fn cmd_source_file_exec(
     if args_has(args, 'n' as i32 as u_char) != 0 {
         cdata.flags |= CMD_PARSE_PARSEONLY;
     }
-    if c.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+    if c.is_none() || !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
         parse_flags = cmd_get_parse_flags(self_0.clone());
         if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
             cdata.flags |= CMD_PARSE_VERBOSE;

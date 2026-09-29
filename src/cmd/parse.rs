@@ -13,6 +13,7 @@ use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
@@ -157,21 +158,11 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let mut session = self.0.borrow_mut();
             let pi = &mut *session.input;
             let client_owner = pi.c.upgrade();
-            let client_ptr = client_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
             let mut fs: cmd_find_state = Default::default();
             let fsp = if cmd_find_valid_state(&(*pi).fs) != 0 {
                 &raw mut (*pi).fs
             } else {
-                cmd_find_from_client(
-                    &raw mut fs,
-                    (client_ptr)
-                        .as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
-                    0,
-                );
+                cmd_find_from_client(&raw mut fs, client_owner.as_ref(), 0);
                 &raw mut fs
             };
             let item_owner = pi.item.upgrade();
@@ -190,10 +181,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let ft = &raw mut *ft_owner;
             format_defaults(
                 ft,
-                (client_ptr)
-                    .as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                client_owner.as_ref(),
                 (*fsp).session_handle().as_ref(),
                 ((*fsp).winlink_handle()).clone(),
                 ((*fsp)
@@ -532,7 +520,7 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
 }
 pub unsafe fn cmd_parse_and_append(
     s: &CStr,
-    owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    owner: Option<&ClientRef>,
     state: Option<&std::rc::Rc<cmdq_state>>,
 ) -> Result<cmd_parse_status, Option<CString>> {
     let mut pi: *mut cmd_parse_input = ::core::ptr::null_mut::<cmd_parse_input>();

@@ -25,6 +25,7 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::display::*;
@@ -117,7 +118,7 @@ pub static window_switch_mode: window_mode = {
             window_switch_key
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
+                    &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
@@ -602,7 +603,7 @@ unsafe fn window_switch_resize(
 }
 unsafe fn window_switch_run_command(
     mut data: *mut window_switch_modedata,
-    client_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
 ) -> ::core::ffi::c_int {
     let mut item: *mut window_switch_itemdata = ::core::ptr::null_mut::<window_switch_itemdata>();
     let mut fs: cmd_find_state = cmd_find_state {
@@ -677,10 +678,7 @@ unsafe fn window_switch_run_command(
             if let Some(owner) = client_owner {
                 cmd_parse_error_uppercase_first(&mut error);
                 status_message_set(
-                    (owner.get())
-                        .as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
+                    Some(owner),
                     -(1 as ::core::ffi::c_int),
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
@@ -722,12 +720,11 @@ unsafe fn window_switch_prompt_callback(
 }
 unsafe fn window_switch_key(
     mut wme: refbox::Weak<window_mode_entry>,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let _c = client_owner.get();
     let mode_pane_owner = wme
         .get_unchecked()
         .wp

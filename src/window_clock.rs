@@ -16,6 +16,7 @@ use crate::src::shared::abi::__syscall_slong_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
@@ -62,7 +63,7 @@ pub static window_clock_mode: window_mode = {
             window_clock_key
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
+                    &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
@@ -743,7 +744,7 @@ unsafe fn window_clock_resize(
 }
 unsafe fn window_clock_key(
     mut wme: refbox::Weak<window_mode_entry>,
-    _client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    _client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     _key: key_code,
     _m: *mut mouse_event,

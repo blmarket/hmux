@@ -3,6 +3,7 @@
 use super::abi::{u_char, u_int};
 use super::client::client;
 use super::command::{cmd_list, cmd_parse_input};
+use crate::src::shared::client::ClientRef;
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
@@ -198,7 +199,7 @@ pub struct args_parse {
 /// Box-owned prepared command; retained model references have typed owners.
 pub struct args_command_state {
     pub cmdlist: Option<Rc<std::cell::RefCell<cmd_list>>>,
-    pub(crate) client: Option<Rc<UnsafeCell<client>>>,
+    pub(crate) client: Option<ClientRef>,
     pub cmd: Option<std::ffi::CString>,
     pub pi: cmd_parse_input,
     pub(crate) file: Option<std::ffi::CString>,

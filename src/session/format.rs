@@ -5,7 +5,9 @@ use crate::src::format::bytes::xformat;
 use crate::src::format::FORMAT_TYPE_SESSION;
 use crate::src::format::{format_tree, FormatValue};
 use crate::src::server::{clients, server_check_marked};
+use crate::src::server_client::Client as _;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
 use crate::src::window::winlink_count;
 
@@ -69,18 +71,19 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     if s.is_null() {
         return None;
     }
     let mut names = Vec::<u8>::new();
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if (*loop_0)
-            .session_handle()
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if loop_0
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get())
             == s
@@ -89,7 +92,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
                 names.push(b',');
             }
             names.extend_from_slice(
-                ((*loop_0).name)
+                (loop_0.as_ref().expect("live client").name())
                     .as_deref()
                     .expect("string is present")
                     .to_bytes(),
@@ -100,9 +103,7 @@ unsafe fn format_cb_session_attached_list(mut ft: *mut format_tree) -> Option<CS
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     if names.is_empty() {
         return None;
@@ -290,7 +291,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     let mut client_session: *mut session = ::core::ptr::null_mut::<session>();
     let _session_loop: *mut session = ::core::ptr::null_mut::<session>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     if s.is_null() {
         return None;
     }
@@ -300,12 +301,13 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
     }
     let mut names = Vec::<u8>::new();
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        client_session = (*loop_0)
-            .session_handle()
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        client_session = loop_0
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         if !client_session.is_null() {
@@ -315,7 +317,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
                         names.push(b',');
                     }
                     names.extend_from_slice(
-                        ((*loop_0).name)
+                        (loop_0.as_ref().expect("live client").name())
                             .as_deref()
                             .expect("string is present")
                             .to_bytes(),
@@ -328,9 +330,7 @@ unsafe fn format_cb_session_group_attached_list(mut ft: *mut format_tree) -> Opt
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     if names.is_empty() {
         return None;
@@ -344,14 +344,15 @@ unsafe fn format_cb_session_active(mut ft: *mut format_tree) -> Option<CString> 
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if format_session.is_null() || format_client.is_null() {
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
+    if format_session.is_null() || format_client.is_none() {
         return None;
     }
-    if (*format_client)
-        .session_handle()
+    if format_client
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get())
         == format_session

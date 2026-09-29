@@ -44,15 +44,15 @@ use crate::src::reactor::{
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
-use crate::src::server_client::{
-    server_client_get_cwd, server_client_get_flags, server_client_get_key_table,
-};
+use crate::src::server_client::server_client_get_cwd;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;
 use crate::src::session::{
     next_session_id, session_group_attached_count, session_group_count, session_groups_minmax,
     session_groups_next, sessions_minmax,
 };
 use crate::src::session::{session_groups, sessions, Session};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;
 use crate::src::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
@@ -179,7 +179,7 @@ pub use jobs::{format_lost_client, format_tidy_jobs};
 mod callbacks;
 pub use callbacks::FormatValue;
 use callbacks::*;
-pub(crate) use callbacks::{client_format_value, pane_format_value, window_format_value};
+pub(crate) use callbacks::{pane_format_value, window_format_value};
 mod expression;
 pub use expression::format_expand_cstring;
 pub(crate) use expression::format_pretty_time_cstring;
@@ -358,7 +358,7 @@ unsafe fn format_copy_state(
 }
 pub unsafe fn format_create_defaults(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
@@ -382,7 +382,7 @@ pub unsafe fn format_create_defaults(
 }
 pub unsafe fn format_create_from_state(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     fs: &cmd_find_state,
 ) -> Box<format_tree> {
     return format_create_defaults(
@@ -398,32 +398,28 @@ pub unsafe fn format_create_from_target(
 ) -> Box<format_tree> {
     let item = item_handle.get();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     return format_create_from_state(
         Some(item_handle),
-        (tc).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        tc.as_ref(),
         &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
     );
 }
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
-    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = c_owner.cloned();
     let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !c.is_null() && !(*c).name.is_none() {
+    if !c.is_none() && !c.as_ref().expect("live client").name().is_none() {
         log_debug(format_args!(
             "{}: c={}",
             "format_defaults",
             log_cstr(
-                (((*c).name)
+                ((c.as_ref().expect("live client").name())
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
@@ -459,9 +455,16 @@ pub unsafe fn format_defaults(
     } else {
         log_debug(format_args!("{}: wp=none", "format_defaults"));
     }
-    if !c.is_null()
+    if !c.is_none()
         && s_owner.is_some()
-        && !crate::src::shared::rc::same((*c).session_handle().as_ref(), s_owner)
+        && !crate::src::shared::rc::same(
+            c.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .as_ref(),
+            s_owner,
+        )
     {
         log_debug(format_args!(
             "{}: session does not match",
@@ -479,7 +482,7 @@ pub unsafe fn format_defaults(
     }
     let session_owner = s_owner
         .cloned()
-        .or_else(|| c_owner.and_then(|owner| (*owner.get()).session.upgrade()));
+        .or_else(|| c_owner.and_then(|owner| owner.attached_session().upgrade()));
     if !wl.is_alive() {
         wl = session_owner
             .as_ref()
@@ -514,13 +517,10 @@ unsafe fn format_defaults_session(
 ) {
     (*ft).s = std::rc::Rc::downgrade(s_owner);
 }
-unsafe fn format_defaults_client(
-    mut ft: *mut format_tree,
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-) {
-    let mut c = c_owner.get();
+unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &ClientRef) {
+    let mut c: Option<ClientRef> = Some(c_owner.clone());
     if (*ft).s.upgrade().is_none() {
-        (*ft).s = (*c).session.clone();
+        (*ft).s = c_owner.attached_session();
     }
     (*ft).c = std::rc::Rc::downgrade(c_owner);
 }

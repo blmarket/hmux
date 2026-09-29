@@ -1,5 +1,6 @@
 //! Authoritative pane declarations, shared by the C translation units.
 
+use crate::src::shared::client::ClientWeak;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::ffi::CString;
@@ -84,7 +85,7 @@ pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_
 
 pub struct window_pane_prompt {
     pub wp_id: u_int,
-    pub c: Weak<UnsafeCell<client>>,
+    pub c: ClientWeak,
     pub inputcb: status_prompt_input_cb,
     pub freecb: prompt_free_cb,
     pub type_0: prompt_type,

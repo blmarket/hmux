@@ -18,6 +18,7 @@ use crate::src::options::options_set_parent;
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_redraw::redraw_invalidate_scene;
 use crate::src::server_client::server_client_remove_pane;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_kill_window, server_redraw_session, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_unzoom_window,
@@ -27,6 +28,7 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -507,9 +509,7 @@ unsafe fn cmd_join_pane_mouse_update(
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -528,8 +528,15 @@ unsafe fn cmd_join_pane_mouse_update(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null()
-        || c.is_null()
-        || !crate::src::shared::rc::same((*c).session_handle().as_ref(), s.as_ref())
+        || c.is_none()
+        || !crate::src::shared::rc::same(
+            c.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .as_ref(),
+            s.as_ref(),
+        )
     {
         return CMD_RETURN_NORMAL;
     }
@@ -552,21 +559,24 @@ unsafe fn cmd_join_pane_mouse_update(
         &(*(wp)).observer.upgrade().expect("live window_pane"),
         1 as ::core::ffi::c_int,
     );
-    (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
-        c_owner.as_ref().expect("live drag client"),
-        cmd_join_pane_mouse_move,
-    )));
+    let drag_update: crate::src::shared::tty::mouse_drag_update_cb =
+        Some(Box::new(crate::src::tty::tty_mouse_client_callback(
+            c_owner.as_ref().expect("live drag client"),
+            cmd_join_pane_mouse_move,
+        )));
+    c_owner
+        .as_ref()
+        .expect("live drag client")
+        .borrow_terminal_mut()
+        .mouse_drag_update = drag_update;
     cmd_join_pane_mouse_move(
         c_owner.as_ref().expect("live drag client"),
         &raw mut (*event).m,
     );
     return CMD_RETURN_NORMAL;
 }
-unsafe fn cmd_join_pane_mouse_move(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut m: *mut mouse_event,
-) {
-    let c = client_owner.get();
+unsafe fn cmd_join_pane_mouse_move(client_owner: &ClientRef, mut m: *mut mouse_event) {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mouse_pane_owner;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -581,7 +591,7 @@ unsafe fn cmd_join_pane_mouse_move(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
-        (*c).tty.mouse_drag_update = None;
+        client_owner.borrow_terminal_mut().mouse_drag_update = None;
         return;
     }
     w = wl

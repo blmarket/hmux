@@ -10,9 +10,11 @@ use crate::src::key_bindings::{
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::options::options_get_number;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
@@ -214,9 +216,7 @@ unsafe fn cmd_list_keys_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -310,15 +310,7 @@ unsafe fn cmd_list_keys_exec(
         0 as ::core::ffi::c_int,
     );
     ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        (tc).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        None,
-        (refbox::Weak::new()).clone(),
-        None,
-    );
+    format_defaults(ft, tc.as_ref(), None, (refbox::Weak::new()).clone(), None);
     format_add(
         ft,
         b"notes_only\0" as *const u8 as *const ::core::ffi::c_char,
@@ -342,11 +334,12 @@ unsafe fn cmd_list_keys_exec(
     for &bd in &bindings {
         cmd_list_keys_format_add_key_binding(ft, &*bd, &prefix);
         let line = format_expand_cstring(ft, template);
-        if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
+        if single != 0
+            && !tc.is_none()
+            && !tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
+        {
             status_message_set(
-                (tc).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                tc.as_ref(),
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,

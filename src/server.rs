@@ -23,13 +23,13 @@ use crate::src::proc::{
 use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_reinit, event_set};
 use crate::src::server_acl::{server_acl_init, server_acl_join};
-use crate::src::server_client::{
-    server_client_create, server_client_loop, server_client_lost, server_client_set_exit_message,
-};
+use crate::src::server_client::Client as _;
+use crate::src::server_client::{server_client_create, server_client_loop, server_client_lost};
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::{session_destroy, sessions_after, sessions_minmax};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::status::message_list;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::text::utf8::utf8_update_width_cache;
@@ -268,7 +268,7 @@ pub(crate) unsafe fn server_start(
     let mut fd: ::core::ffi::c_int = 0;
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut cause: Option<CString> = None;
     let mut tv: timeval = timeval {
         tv_sec: 3600 as __time_t,
@@ -331,7 +331,7 @@ pub(crate) unsafe fn server_start(
     }
     if !flags & CLIENT_NOFORK as uint64_t != 0 {
         let owner = server_client_create(fd);
-        c = owner.get();
+        c = Some(owner.clone());
     } else {
         options_set_number(
             global_options,
@@ -346,10 +346,10 @@ pub(crate) unsafe fn server_start(
         close(lockfd);
     }
     if let Some(cause) = cause {
-        if !c.is_null() {
-            server_client_set_exit_message(&mut *c, Some(cause));
-            (*c).retval = 1 as ::core::ffi::c_int;
-            (*c).flags |= CLIENT_EXIT as uint64_t;
+        if !c.is_none() {
+            c.as_ref()
+                .expect("live client")
+                .exit_with_message(cause, Some(1));
         } else {
             fprintf(
                 stderr,
@@ -380,24 +380,20 @@ pub(crate) unsafe fn server_start(
     exit(0 as ::core::ffi::c_int);
 }
 unsafe fn server_loop() -> ::core::ffi::c_int {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut items: u_int = 0;
     current_time = time(::core::ptr::null_mut::<time_t>());
     loop {
         items = cmdq_next(None);
         let mut registry_c_owner = clients.first();
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !c.is_null() {
-            if (*c).flags & CLIENT_IDENTIFIED as uint64_t != 0 {
+        c = registry_c_owner.clone();
+        while !c.is_none() {
+            if c.as_ref().expect("live client").flags() & CLIENT_IDENTIFIED as uint64_t != 0 {
                 items = items.wrapping_add(cmdq_next(registry_c_owner.as_ref()));
             }
             registry_c_owner =
                 clients.next(registry_c_owner.as_ref().expect("current registry client"));
-            c = registry_c_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            c = registry_c_owner.clone();
         }
         if !(items != 0 as u_int) {
             break;
@@ -422,18 +418,20 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
         }
     }
     let mut registry_c_owner = clients.first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if !(*c).session_handle().is_none() {
+    c = registry_c_owner.clone();
+    while !c.is_none() {
+        if !c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+        {
             return 0 as ::core::ffi::c_int;
         }
         registry_c_owner =
             clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = registry_c_owner.clone();
     }
     cmd_wait_for_flush();
     if clients.first().is_some() {
@@ -449,15 +447,9 @@ unsafe fn server_send_exit() {
     cmd_wait_for_flush();
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
-        let c = client_owner.get();
+        let mut c: Option<ClientRef> = Some(client_owner.clone());
         registry_c_owner = clients.next(&client_owner);
-        if (*c).flags & CLIENT_SUSPENDED as uint64_t != 0 {
-            server_client_lost(&client_owner);
-        } else {
-            (*c).flags |= CLIENT_EXIT as uint64_t;
-            (*c).exit_type = CLIENT_EXIT_SHUTDOWN;
-        }
-        (*c).set_session(None);
+        client_owner.shutdown();
     }
     let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.clone();
@@ -545,7 +537,7 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
     };
     let mut slen: socklen_t = ::core::mem::size_of::<sockaddr_storage>() as socklen_t;
     let mut newfd: ::core::ffi::c_int = 0;
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     server_add_accept(0 as ::core::ffi::c_int);
     if events as ::core::ffi::c_int & EV_READ == 0 {
         return;
@@ -575,11 +567,11 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
         return;
     }
     let owner = server_client_create(newfd);
-    c = owner.get();
-    if server_acl_join(&mut *(c)) == 0 {
-        server_client_set_exit_message(&mut *c, Some(CString::new("access not allowed").unwrap()));
-        (*c).retval = 1 as ::core::ffi::c_int;
-        (*c).flags |= CLIENT_EXIT as uint64_t;
+    c = Some(owner.clone());
+    if server_acl_join(c.as_ref().expect("live client")) == 0 {
+        c.as_ref()
+            .expect("live client")
+            .exit_with_message(CString::new("access not allowed").unwrap(), Some(1));
     }
 }
 pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {

@@ -27,6 +27,7 @@ use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
@@ -182,7 +183,7 @@ pub static window_buffer_mode: window_mode = {
             window_buffer_key
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
+                    &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
@@ -366,11 +367,7 @@ unsafe fn window_buffer_search(item: &window_buffer_itemdata, search: &CStr, ica
         icase,
     )
 }
-unsafe fn window_buffer_menu(
-    data: *mut window_buffer_modedata,
-    c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut key: key_code,
-) {
+unsafe fn window_buffer_menu(data: *mut window_buffer_modedata, c: &ClientRef, mut key: key_code) {
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
     };
@@ -629,7 +626,7 @@ unsafe fn window_buffer_do_delete(
 unsafe fn window_buffer_do_paste(
     mut data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
 ) {
     if paste_get_name(&item.name).is_some() {
         mode_tree_run_command(Some(client_owner), None, &(*data).command, &item.name);
@@ -808,7 +805,7 @@ unsafe fn window_buffer_edit_close_cb(
 unsafe fn window_buffer_start_edit(
     mut data: *mut window_buffer_modedata,
     item: &window_buffer_itemdata,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
 ) {
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return;
@@ -839,12 +836,11 @@ unsafe fn window_buffer_start_edit(
 }
 unsafe fn window_buffer_key(
     mut wme: refbox::Weak<window_mode_entry>,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let _c = client_owner.get();
     let mode_pane_owner = wme
         .get_unchecked()
         .wp

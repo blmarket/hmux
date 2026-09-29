@@ -2,6 +2,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::options::options_owner_ptr;
 use crate::src::session::Session;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use refbox::RefBox;
 use std::borrow::Cow;
@@ -383,7 +384,7 @@ pub static window_customize_mode: window_mode = {
             window_customize_key
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
+                    &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
@@ -3009,7 +3010,7 @@ unsafe fn window_customize_draw(
 }
 unsafe fn window_customize_menu(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
-    c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    c: &ClientRef,
     mut key: key_code,
 ) {
     let data = mode_owner.get();
@@ -3221,12 +3222,7 @@ struct CustomizePromptItem {
 
 fn window_customize_prompt_callbacks<T: 'static>(
     owner: RefBox<T>,
-    callback: unsafe fn(
-        Option<&Rc<UnsafeCell<client>>>,
-        &T,
-        Option<&CStr>,
-        prompt_key_result,
-    ) -> prompt_result,
+    callback: unsafe fn(Option<&ClientRef>, &T, Option<&CStr>, prompt_key_result) -> prompt_result,
 ) -> (mode_tree_prompt_input_cb, prompt_free_cb) {
     let weak = RefBox::downgrade(&owner);
     let inputcb: mode_tree_prompt_input_cb = Some(Box::new(move |client, text, key| {
@@ -3245,7 +3241,7 @@ fn window_customize_prompt_callbacks<T: 'static>(
 fn window_customize_mode_prompt_callbacks(
     owner: Rc<UnsafeCell<window_customize_modedata>>,
     callback: unsafe fn(
-        Option<&Rc<UnsafeCell<client>>>,
+        Option<&ClientRef>,
         &Rc<UnsafeCell<window_customize_modedata>>,
         Option<&CStr>,
         prompt_key_result,
@@ -3266,12 +3262,11 @@ fn window_customize_mode_prompt_callbacks(
 }
 
 unsafe fn window_customize_set_option_callback(
-    c: Option<&Rc<UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let mut current_block: u64;
     let item = &*owner.item;
@@ -3338,9 +3333,7 @@ unsafe fn window_customize_set_option_callback(
         1995505731522653903 => {
             window_customize_uppercase_cause(&mut cause);
             status_message_set(
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -3369,7 +3362,7 @@ unsafe fn window_customize_set_option_callback(
     };
 }
 unsafe fn window_customize_set_environment_callback(
-    _c: Option<&Rc<UnsafeCell<client>>>,
+    _c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -3408,7 +3401,7 @@ unsafe fn window_customize_set_environment_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_set_environment(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
     mut global: ::core::ffi::c_int,
@@ -3503,12 +3496,11 @@ unsafe fn window_customize_set_environment(
     );
 }
 unsafe fn window_customize_add_option_callback(
-    c: Option<&Rc<UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -3528,9 +3520,7 @@ unsafe fn window_customize_add_option_callback(
     namelen = strcspn(s, b" \t\0" as *const u8 as *const ::core::ffi::c_char) as size_t;
     if namelen == 0 as size_t || *s.offset(namelen as isize) as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -3546,9 +3536,7 @@ unsafe fn window_customize_add_option_callback(
     }
     if *value as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -3570,9 +3558,7 @@ unsafe fn window_customize_add_option_callback(
             b"option\0" as *const u8 as *const ::core::ffi::c_char
         };
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -3602,7 +3588,7 @@ unsafe fn window_customize_add_option_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_option(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     mut scope: window_customize_scope,
     mut oo: *mut options,
@@ -3640,12 +3626,11 @@ unsafe fn window_customize_add_option(
     );
 }
 unsafe fn window_customize_add_environment_callback(
-    c: Option<&Rc<UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let Some(mut environment) = item
@@ -3675,9 +3660,7 @@ unsafe fn window_customize_add_environment_callback(
             || !strchr(s.offset(1 as ::core::ffi::c_int as isize), '=' as i32).is_null()
         {
             status_message_set(
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -3694,9 +3677,7 @@ unsafe fn window_customize_add_environment_callback(
         value = strchr(s, '=' as i32);
         if value.is_null() || value == s {
             status_message_set(
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -3719,7 +3700,7 @@ unsafe fn window_customize_add_environment_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_environment(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     mut scope: window_customize_scope,
     target: CustomizeEnvironment,
@@ -3846,7 +3827,7 @@ unsafe fn window_customize_edit_close_cb(
 unsafe fn window_customize_start_edit(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
 ) {
     let data = mode_owner.get();
     let Some(client_owner) = client_owner else {
@@ -3956,7 +3937,7 @@ unsafe fn window_customize_start_edit(
     (*data).editor = editor;
 }
 unsafe fn window_customize_set_option(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
     mut global: ::core::ffi::c_int,
@@ -4125,12 +4106,11 @@ unsafe fn window_customize_set_option(
     };
 }
 unsafe fn window_customize_set_array_key_callback(
-    c: Option<&Rc<UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -4176,9 +4156,7 @@ unsafe fn window_customize_set_array_key_callback(
         drop(value);
         window_customize_uppercase_cause(&mut cause);
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4207,7 +4185,7 @@ unsafe fn window_customize_set_array_key_callback(
     };
 }
 unsafe fn window_customize_set_array_key(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
 ) {
@@ -4360,12 +4338,11 @@ unsafe fn window_customize_reset_option(
     }
 }
 unsafe fn window_customize_set_command_callback(
-    c: Option<&Rc<UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -4388,9 +4365,7 @@ unsafe fn window_customize_set_command_callback(
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);
             status_message_set(
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -4421,7 +4396,7 @@ unsafe fn window_customize_set_command_callback(
     };
 }
 unsafe fn window_customize_set_note_callback(
-    _c: Option<&Rc<UnsafeCell<client>>>,
+    _c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -4457,7 +4432,7 @@ fn window_customize_key_prompt(key_string: &CStr) -> CString {
 }
 
 unsafe fn window_customize_set_key(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
 ) {
@@ -4528,12 +4503,11 @@ unsafe fn window_customize_set_key(
     }
 }
 unsafe fn window_customize_add_key_callback(
-    c: Option<&Rc<UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
     s: Option<&CStr>,
     _key0: prompt_key_result,
 ) -> prompt_result {
-    let c = c.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
     let data = crate::src::shared::rc::as_ptr(&owner.mode);
@@ -4550,9 +4524,7 @@ unsafe fn window_customize_add_key_callback(
     keylen = strcspn(s, b" \t\0" as *const u8 as *const ::core::ffi::c_char) as size_t;
     if keylen == 0 as size_t || *s.offset(keylen as isize) as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4569,9 +4541,7 @@ unsafe fn window_customize_add_key_callback(
     }
     if *command as ::core::ffi::c_int == '\0' as i32 {
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4588,9 +4558,7 @@ unsafe fn window_customize_add_key_callback(
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {
         status_message_set(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c,
             -(1 as ::core::ffi::c_int),
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -4611,9 +4579,7 @@ unsafe fn window_customize_add_key_callback(
         0 => {
             cmd_parse_error_uppercase_first(&mut pr.error);
             status_message_set(
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c,
                 -(1 as ::core::ffi::c_int),
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
@@ -4649,7 +4615,7 @@ unsafe fn window_customize_add_key_callback(
     };
 }
 unsafe fn window_customize_add_key(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     table: &CStr,
 ) {
@@ -4768,7 +4734,7 @@ unsafe fn window_customize_change_each(
     }
 }
 unsafe fn window_customize_change_current_callback(
-    _c: Option<&Rc<UnsafeCell<client>>>,
+    _c: Option<&ClientRef>,
     owner: &Rc<UnsafeCell<window_customize_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -4820,7 +4786,7 @@ unsafe fn window_customize_change_current_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_change_tagged_callback(
-    _c: Option<&Rc<UnsafeCell<client>>>,
+    _c: Option<&ClientRef>,
     owner: &Rc<UnsafeCell<window_customize_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -4879,7 +4845,7 @@ unsafe fn window_customize_change_tagged_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_customize_add_current(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
 ) -> ::core::ffi::c_int {
     let data = mode_owner.get();
@@ -5010,12 +4976,11 @@ unsafe fn window_customize_add_current(
 }
 unsafe fn window_customize_key(
     mut wme: refbox::Weak<window_mode_entry>,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let _c = client_owner.get();
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -5330,7 +5295,7 @@ mod item_owner_tests {
     #[test]
     fn mode_list_keeps_items_stable_until_last_callback_reference() {
         unsafe fn read_mode(
-            _: Option<&Rc<UnsafeCell<client>>>,
+            _: Option<&ClientRef>,
             owner: &Rc<UnsafeCell<window_customize_modedata>>,
             _: Option<&CStr>,
             _: prompt_key_result,
@@ -5340,7 +5305,7 @@ mod item_owner_tests {
             PROMPT_CONTINUE
         }
         unsafe fn read_item(
-            _client: Option<&Rc<UnsafeCell<client>>>,
+            _client: Option<&ClientRef>,
             owner: &CustomizePromptItem,
             _text: Option<&CStr>,
             _key: prompt_key_result,

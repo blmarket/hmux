@@ -1,12 +1,13 @@
 use crate::src::options::options_owner_ptr;
+use crate::src::server_client::Client as _;
 use crate::src::shared::client::client_handle;
+use crate::src::shared::client::ClientRef;
 use crate::src::tty_term::tty_term_owner_ptr;
 // Built-in callbacks return owned bytes or copied timestamps. The sorted
 // immutable table is shared by lookup and enumeration; external user callbacks
 // retain their separate C ABI.
 use super::*;
 use crate::src::format::bytes::xformat;
-use crate::src::server_client::server_client_set_user;
 use crate::src::session::Session;
 use crate::src::window::{window_pane_stack_first, window_winlinks_first, window_winlinks_next};
 use std::cell::UnsafeCell;
@@ -193,7 +194,7 @@ unsafe fn format_cb_window_active_sessions_list(mut ft: *mut format_tree) -> Opt
 }
 unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     let mut n: u_int = 0 as u_int;
     let mut value = None;
     if !(*ft).winlink_handle().is_alive() {
@@ -205,11 +206,14 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if let Some(client_session) = (*loop_0).session_handle() {
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if let Some(client_session) = loop_0
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+        {
             if w == client_session
                 .current_winlink()
                 .get_unchecked()
@@ -225,9 +229,7 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     value =
         Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"));
@@ -235,7 +237,7 @@ unsafe fn format_cb_window_active_clients(mut ft: *mut format_tree) -> Option<CS
 }
 unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Option<CString> {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut loop_0: Option<ClientRef> = None;
     if !(*ft).winlink_handle().is_alive() {
         return None;
     }
@@ -246,11 +248,14 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut names = Vec::<u8>::new();
     let mut registry_loop_0_owner = clients.first();
-    loop_0 = registry_loop_0_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !loop_0.is_null() {
-        if let Some(client_session) = (*loop_0).session_handle() {
+    loop_0 = registry_loop_0_owner.clone();
+    while !loop_0.is_none() {
+        if let Some(client_session) = loop_0
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+        {
             if w == client_session
                 .current_winlink()
                 .get_unchecked()
@@ -262,7 +267,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
                     names.push(b',');
                 }
                 names.extend_from_slice(
-                    ((*loop_0).name)
+                    (loop_0.as_ref().expect("live client").name())
                         .as_deref()
                         .expect("string is present")
                         .to_bytes(),
@@ -274,9 +279,7 @@ unsafe fn format_cb_window_active_clients_list(mut ft: *mut format_tree) -> Opti
                 .as_ref()
                 .expect("current registry client"),
         );
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        loop_0 = registry_loop_0_owner.clone();
     }
     if names.is_empty() {
         return None;
@@ -288,8 +291,7 @@ unsafe fn format_cb_window_layout(mut ft: *mut format_tree) -> Option<CString> {
     let format_window = format_window_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut c: *mut client =
-        client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = client_handle(&(*ft).client);
     let mut w: *mut window = format_window;
     let mut lcroot: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -309,9 +311,8 @@ unsafe fn format_cb_window_layout(mut ft: *mut format_tree) -> Option<CString> {
             .layout_root_ptr()
             .map_or(std::ptr::null_mut(), |root| root);
     }
-    if !c.is_null()
-        && (*c).flags & CLIENT_CONTROL as uint64_t != 0
-        && !(*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_NEWLAYOUTS != 0
+    if c.as_ref()
+        .is_some_and(|client| client.uses_legacy_layout_format())
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
@@ -322,16 +323,14 @@ unsafe fn format_cb_window_visible_layout(mut ft: *mut format_tree) -> Option<CS
     let format_window = format_window_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut c: *mut client =
-        client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = client_handle(&(*ft).client);
     let mut w: *mut window = format_window;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if w.is_null() {
         return None;
     }
-    if !c.is_null()
-        && (*c).flags & CLIENT_CONTROL as uint64_t != 0
-        && !(*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_NEWLAYOUTS != 0
+    if c.as_ref()
+        .is_some_and(|client| client.uses_legacy_layout_format())
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
@@ -896,15 +895,18 @@ unsafe fn format_cb_mouse_line(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_mouse_status_line(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mut value = None;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
         return None;
     }
-    if format_client.is_null() || !(*format_client).tty.flags & TTY_STARTED != 0 {
+    if format_client.is_none()
+        || !format_client
+            .as_ref()
+            .expect("live client")
+            .terminal_started()
+    {
         return None;
     }
     if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
@@ -920,15 +922,18 @@ unsafe fn format_cb_mouse_status_line(mut ft: *mut format_tree) -> Option<CStrin
 }
 unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     if (*ft).m.valid == 0 {
         return None;
     }
-    if format_client.is_null() || !(*format_client).tty.flags & TTY_STARTED != 0 {
+    if format_client.is_none()
+        || !format_client
+            .as_ref()
+            .expect("live client")
+            .terminal_started()
+    {
         return None;
     }
     if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
@@ -940,7 +945,7 @@ unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CStri
     } else {
         return None;
     }
-    let sr = status_get_range(&*format_client, x, y)?;
+    let sr = status_get_range(format_client.as_ref().expect("live client"), x, y)?;
     match sr.type_0 as ::core::ffi::c_uint {
         0 => return None,
         1 => {
@@ -1041,396 +1046,209 @@ unsafe fn format_cb_buffer_size(ft: *mut format_tree) -> Option<CString> {
     let buffer = (*ft).pb.as_ref()?.try_borrow()?;
     Some(CString::new(buffer.size().to_string()).expect("formatted numbers contain no NUL"))
 }
-unsafe fn format_cb_client_cell_height(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() && (*format_client).tty.flags & TTY_STARTED != 0 {
-        return Some(
-            CString::new(format!("{}", ((*format_client).tty.ypixel) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
+unsafe fn format_cb_client_cell_height(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_cell_height", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_cell_width(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() && (*format_client).tty.flags & TTY_STARTED != 0 {
-        return Some(
-            CString::new(format!("{}", ((*format_client).tty.xpixel) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
+unsafe fn format_cb_client_cell_width(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_cell_width", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_colours(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
-    let mut colours: u_int = 0;
-    if format_client.is_null() || !(*format_client).tty.flags & TTY_STARTED != 0 {
-        return None;
+unsafe fn format_cb_client_colours(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_colours", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    term = tty_term_owner_ptr(&(*format_client).tty.term).map_or(std::ptr::null(), |term| term);
-    if (*term).flags & TERM_RGBCOLOURS != 0 {
-        colours = 16777216 as ::core::ffi::c_int as u_int;
-    } else if (*term).flags & TERM_256COLOURS != 0 {
-        colours = 256 as u_int;
-    } else {
-        colours = tty_term_number(term, TTYC_COLORS) as u_int;
-        if colours < 8 as u_int {
-            colours = 2 as u_int;
-        } else if colours < 16 as u_int {
-            colours = 8 as u_int;
-        } else {
-            colours = 16 as u_int;
-        }
-    }
-    return Some(
-        CString::new(format!("{}", (colours) as u32)).expect("formatted numbers contain no NUL"),
-    );
 }
-unsafe fn format_cb_client_control_mode(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        if (*format_client).flags & CLIENT_CONTROL as uint64_t != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+unsafe fn format_cb_client_control_mode(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_control_mode", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_discarded(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_client).discarded) as usize))
-                .expect("formatted numbers contain no NUL"),
-        );
+unsafe fn format_cb_client_discarded(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_discarded", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_flags(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(CStr::from_ptr(server_client_get_flags(&*(format_client))).to_owned());
+unsafe fn format_cb_client_flags(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_flags", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_height(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() && (*format_client).tty.flags & TTY_STARTED != 0 {
-        return Some(
-            CString::new(format!("{}", ((*format_client).tty.sy) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
+unsafe fn format_cb_client_height(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_height", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_key_table(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            (*format_client)
-                .keytable
-                .as_ref()
-                .expect("key table")
-                .borrow()
-                .name
-                .clone(),
-        );
+unsafe fn format_cb_client_key_table(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_key_table", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_last_session(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let client = format_client.as_ref()?;
-    let owner = crate::src::session::sessions_resolve(
-        &crate::src::session::sessions,
-        &client.last_session,
-    )?;
-    Some(owner.name())
-}
-unsafe fn format_cb_client_name(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            ((*format_client).name)
-                .as_deref()
-                .expect("string is present")
-                .to_owned(),
-        );
+unsafe fn format_cb_client_last_session(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_last_session", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_pid(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            CString::new(format!(
-                "{}",
-                ((*format_client).pid as ::core::ffi::c_long) as ::core::ffi::c_long
-            ))
-            .expect("formatted numbers contain no NUL"),
-        );
+unsafe fn format_cb_client_name(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_name", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_prefix(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if !format_client.is_null() {
-        let default_name = server_client_get_key_table(&*format_client);
-        name = default_name.as_ptr();
-        if strcmp(
-            ((*format_client)
-                .keytable
-                .as_ref()
-                .expect("key table")
-                .borrow()
-                .name)
-                .as_ptr()
-                .cast_mut(),
-            name,
-        ) == 0 as ::core::ffi::c_int
-        {
-            return Some(c"0".to_owned());
-        }
-        return Some(c"1".to_owned());
+unsafe fn format_cb_client_pid(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_pid", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_readonly(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        if (*format_client).flags & CLIENT_READONLY as uint64_t != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+unsafe fn format_cb_client_prefix(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_prefix", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_session(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() && !(*format_client).session_handle().is_none() {
-        return Some(
-            (*format_client)
-                .session_handle()
-                .expect("attached session")
-                .name(),
-        );
+unsafe fn format_cb_client_readonly(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_readonly", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_termfeatures(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(tty_get_features((*format_client).term_features));
+unsafe fn format_cb_client_session(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_session", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_termname(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            ((*format_client).term_name)
-                .as_deref()
-                .expect("string is present")
-                .to_owned(),
-        );
+unsafe fn format_cb_client_termfeatures(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_termfeatures", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_termtype(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        if (*format_client).term_type.is_none() {
-            return Some(c"".to_owned());
-        }
-        return Some(
-            ((*format_client).term_type)
-                .as_deref()
-                .expect("string is present")
-                .to_owned(),
-        );
+unsafe fn format_cb_client_termname(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_termname", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_tty(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            ((*format_client).ttyname)
-                .as_deref()
-                .expect("string is present")
-                .to_owned(),
-        );
+unsafe fn format_cb_client_termtype(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_termtype", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_uid(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut uid: uid_t = 0;
-    if !format_client.is_null() {
-        uid = proc_get_peer_uid((*format_client).peer);
-        if uid != -(1 as ::core::ffi::c_int) as uid_t {
-            return Some(
-                CString::new(format!(
-                    "{}",
-                    (uid as ::core::ffi::c_long) as ::core::ffi::c_long
-                ))
-                .expect("formatted numbers contain no NUL"),
-            );
-        }
+unsafe fn format_cb_client_tty(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_tty", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_user(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut uid: uid_t = 0;
-    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-    if !format_client.is_null() {
-        if !(*format_client).user.is_none() {
-            return Some(
-                ((*format_client).user)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_owned(),
-            );
-        }
-        uid = proc_get_peer_uid((*format_client).peer);
-        if uid != -(1 as ::core::ffi::c_int) as uid_t && {
-            pw = getpwuid(uid as __uid_t);
-            !pw.is_null()
-        } {
-            server_client_set_user(
-                &mut *format_client,
-                Some(std::ffi::CStr::from_ptr((*pw).pw_name).to_owned()),
-            );
-            return Some(
-                ((*format_client).user)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_owned(),
-            );
-        }
+unsafe fn format_cb_client_uid(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_uid", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_utf8(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        if (*format_client).flags & CLIENT_UTF8 as uint64_t != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
+unsafe fn format_cb_client_user(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_user", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_width(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_client).tty.sx) as u32))
-                .expect("formatted numbers contain no NUL"),
-        );
+unsafe fn format_cb_client_utf8(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_utf8", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_written(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(
-            CString::new(format!("{}", ((*format_client).written) as usize))
-                .expect("formatted numbers contain no NUL"),
-        );
+unsafe fn format_cb_client_width(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_width", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_theme(mut ft: *mut format_tree) -> Option<CString> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        match (*format_client).theme as ::core::ffi::c_uint {
-            2 => {
-                return Some(c"dark".to_owned());
-            }
-            1 => {
-                return Some(c"light".to_owned());
-            }
-            0 => return None,
-            _ => {}
-        }
+unsafe fn format_cb_client_written(ft: *mut format_tree) -> Option<CString> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_written", &mut *ft)?
+    {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
     }
-    return None;
+}
+unsafe fn format_cb_client_theme(ft: *mut format_tree) -> Option<CString> {
+    match (*ft).c.upgrade()?.format_value(c"client_theme", &mut *ft)? {
+        FormatValue::String(value) => Some(value),
+        FormatValue::Time(_) => unreachable!("builtin value type"),
+    }
 }
 unsafe fn format_cb_config_files(_ft: *mut format_tree) -> Option<CString> {
     let mut paths = Vec::<u8>::new();
@@ -1741,9 +1559,7 @@ unsafe fn format_cb_mouse_utf8_flag(mut ft: *mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_mouse_x(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut x: u_int = 0;
@@ -1772,7 +1588,12 @@ unsafe fn format_cb_mouse_x(mut ft: *mut format_tree) -> Option<CString> {
             CString::new(format!("{}", (x) as u32)).expect("formatted numbers contain no NUL"),
         );
     }
-    if !format_client.is_null() && (*format_client).tty.flags & TTY_STARTED != 0 {
+    if !format_client.is_none()
+        && format_client
+            .as_ref()
+            .expect("live client")
+            .terminal_started()
+    {
         if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
             return Some(
                 CString::new(format!("{}", ((*ft).m.x) as u32))
@@ -1790,9 +1611,7 @@ unsafe fn format_cb_mouse_x(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_mouse_y(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let mouse_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut x: u_int = 0;
@@ -1821,7 +1640,12 @@ unsafe fn format_cb_mouse_y(mut ft: *mut format_tree) -> Option<CString> {
             CString::new(format!("{}", (y) as u32)).expect("formatted numbers contain no NUL"),
         );
     }
-    if !format_client.is_null() && (*format_client).tty.flags & TTY_STARTED != 0 {
+    if !format_client.is_none()
+        && format_client
+            .as_ref()
+            .expect("live client")
+            .terminal_started()
+    {
         if (*ft).m.statusat == 0 as ::core::ffi::c_int && (*ft).m.y < (*ft).m.statuslines {
             return Some(
                 CString::new(format!("{}", ((*ft).m.y) as u32))
@@ -3010,11 +2834,9 @@ unsafe fn format_cb_window_bell_flag(mut ft: *mut format_tree) -> Option<CString
 }
 unsafe fn format_cb_window_bigger(ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let c = format_client.as_ref()?;
-    let view = tty_window_offset(&c.tty);
+    let view = c.terminal_view();
     Some(if view.bigger { c"1" } else { c"0" }.to_owned())
 }
 unsafe fn format_cb_window_cell_height(mut ft: *mut format_tree) -> Option<CString> {
@@ -3262,21 +3084,17 @@ unsafe fn format_cb_window_name(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_offset_x(ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let c = format_client.as_ref()?;
-    let view = tty_window_offset(&c.tty);
+    let view = c.terminal_view();
     view.bigger
         .then(|| CString::new(view.ox.to_string()).expect("formatted number contains no NUL"))
 }
 unsafe fn format_cb_window_offset_y(ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let c = format_client.as_ref()?;
-    let view = tty_window_offset(&c.tty);
+    let view = c.terminal_view();
     view.bigger
         .then(|| CString::new(view.oy.to_string()).expect("formatted number contains no NUL"))
 }
@@ -3389,25 +3207,25 @@ unsafe fn format_cb_wrap_flag(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_buffer_created(ft: *mut format_tree) -> Option<time_t> {
     Some(paste_buffer_created(&*(*ft).pb.as_ref()?.try_borrow()?) as __time_t as time_t)
 }
-unsafe fn format_cb_client_activity(mut ft: *mut format_tree) -> Option<time_t> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(((*format_client).activity_time).tv_sec as time_t);
+unsafe fn format_cb_client_activity(ft: *mut format_tree) -> Option<time_t> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_activity", &mut *ft)?
+    {
+        FormatValue::Time(value) => Some(value),
+        FormatValue::String(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
-unsafe fn format_cb_client_created(mut ft: *mut format_tree) -> Option<time_t> {
-    let format_client_owner = (*ft).c.upgrade();
-    let format_client = format_client_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_client.is_null() {
-        return Some(((*format_client).creation_time).tv_sec as time_t);
+unsafe fn format_cb_client_created(ft: *mut format_tree) -> Option<time_t> {
+    match (*ft)
+        .c
+        .upgrade()?
+        .format_value(c"client_created", &mut *ft)?
+    {
+        FormatValue::Time(value) => Some(value),
+        FormatValue::String(_) => unreachable!("builtin value type"),
     }
-    return None;
 }
 unsafe fn format_cb_session_activity(ft: *mut format_tree) -> Option<time_t> {
     match (*ft)
@@ -3578,16 +3396,6 @@ pub(crate) unsafe fn pane_format_value(
     format_table_get(key)?.evaluate(context)
 }
 
-pub(crate) unsafe fn client_format_value(
-    owner: &Rc<UnsafeCell<client>>,
-    key: &CStr,
-    context: &mut format_tree,
-) -> Option<FormatValue> {
-    if !context.c.ptr_eq(&Rc::downgrade(owner)) || !model_key(key, b"client_") {
-        return None;
-    }
-    format_table_get(key)?.evaluate(context)
-}
 pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
     FormatTableEntry {
         key: c"active_window_index",
@@ -4522,8 +4330,7 @@ mod owned_callback_tests {
     #[test]
     fn client_formats_observe_context_client_without_retaining_it() {
         unsafe {
-            let owner = client::new();
-            (*owner.get()).name = Some(c"observed-client".to_owned());
+            let owner = client::with_names_for_test(Some(c"observed-client"), None);
             let observer = std::rc::Rc::downgrade(&owner);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &raw mut *ft_owner;

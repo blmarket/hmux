@@ -10,8 +10,10 @@ use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::src::server::clients;
 use crate::src::server_client::server_client_set_key_table;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
@@ -160,29 +162,21 @@ pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
 }
 
 pub unsafe fn key_bindings_remove_table(name: &CStr) {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     if let Some(owner) = key_bindings_get_table(name, 0) {
         let detached = key_tables_remove(&raw mut key_tables, &owner);
         let mut registry_c_owner = clients.first();
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !c.is_null() {
-            if (*c)
-                .keytable
-                .as_ref()
-                .is_some_and(|current| std::rc::Rc::ptr_eq(current, &owner))
-            {
+        c = registry_c_owner.clone();
+        while !c.is_none() {
+            if c.as_ref().expect("live client").uses_key_table(&owner) {
                 server_client_set_key_table(
-                    &(*(c)).observer.upgrade().expect("live client"),
+                    &c.clone().expect("live client"),
                     ::core::ptr::null::<::core::ffi::c_char>(),
                 );
             }
             registry_c_owner =
                 clients.next(registry_c_owner.as_ref().expect("current registry client"));
-            c = registry_c_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            c = registry_c_owner.clone();
         }
         drop(detached);
     }
@@ -877,16 +871,16 @@ unsafe fn key_bindings_read_only(
 pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     mut event: *mut key_event,
     mut fs: *mut cmd_find_state,
 ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
-    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = c_owner.cloned();
     let new_item_allocation;
     let new_state;
     let mut readonly: ::core::ffi::c_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
+    if c.is_none() || !c.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
         readonly = 1 as ::core::ffi::c_int;
     } else {
         readonly = cmd_list_all_have(&bd.cmdlist().borrow());

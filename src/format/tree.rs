@@ -1,5 +1,6 @@
 use crate::src::log::log_cstr;
 use crate::src::server_client::server_client_unref_owned;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::format::FormatEntryState;
 // Private tree-storage implementation.  It owns the format-entry tree and
 // format-tree CRUD operations.
@@ -121,7 +122,7 @@ pub(super) unsafe fn format_create_add_item(
 }
 /// Construct the sole owner; callers may project pointers for legacy readers.
 unsafe fn format_create_box(
-    c: Option<std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c: Option<ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
@@ -144,7 +145,7 @@ unsafe fn format_create_box(
 }
 
 pub unsafe fn format_create(
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
@@ -158,7 +159,7 @@ pub unsafe fn format_create(
 /// # Safety
 /// A non-null `item` must point to a live command-queue item.
 pub unsafe fn format_create_with_client(
-    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,
@@ -167,7 +168,7 @@ pub unsafe fn format_create_with_client(
 }
 
 pub unsafe fn format_create_owned(
-    c: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     tag: ::core::ffi::c_int,
     flags: ::core::ffi::c_int,

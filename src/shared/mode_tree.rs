@@ -9,6 +9,7 @@ use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::window_buffer::window_buffer_itemdata;
 use crate::src::window_client::window_client_itemdata;
 use crate::src::window_customize::window_customize_itemdata;
@@ -116,19 +117,13 @@ pub type mode_tree_search_dir = ::core::ffi::c_uint;
 pub struct mode_tree_prompt {
     /// Taken at logical cleanup before dropping the callback record.
     pub mtd: Option<Rc<UnsafeCell<mode_tree_data>>>,
-    pub c: Weak<UnsafeCell<client>>,
+    pub c: ClientWeak,
     pub inputcb: mode_tree_prompt_input_cb,
     pub freecb: prompt_free_cb,
 }
 
 pub type mode_tree_prompt_input_cb = Option<
-    Box<
-        dyn FnMut(
-            Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
-            Option<&std::ffi::CStr>,
-            prompt_key_result,
-        ) -> prompt_result,
-    >,
+    Box<dyn FnMut(Option<&ClientRef>, Option<&std::ffi::CStr>, prompt_key_result) -> prompt_result>,
 >;
 
 /// Mode lists own payloads. Rows carry weak identities; actions copy a snapshot
@@ -365,7 +360,7 @@ pub type mode_tree_key_cb = Option<Box<dyn FnMut(&ModeTreeItemData, u_int) -> ke
 
 pub type mode_tree_height_cb = Option<Box<dyn FnMut(u_int) -> u_int>>;
 
-pub type mode_tree_menu_cb = Option<Box<dyn FnMut(&Rc<UnsafeCell<client>>, key_code)>>;
+pub type mode_tree_menu_cb = Option<Box<dyn FnMut(&ClientRef, key_code)>>;
 
 pub type mode_tree_search_cb =
     Option<Box<dyn FnMut(&ModeTreeItemData, &std::ffi::CStr, bool) -> bool>>;

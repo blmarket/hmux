@@ -702,11 +702,26 @@ unsafe fn prompt_mouse_complete(
     }
     return PROMPT_KEY_HANDLED;
 }
-pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
-    let mut s: *mut screen = ctx.screen_ptr();
-    let mut ax: u_int = pd.area_x;
-    let mut py: u_int = pd.prompt_line;
-    let mut aw: u_int = pd.area_width;
+pub(crate) struct PreparedPromptDraw {
+    layout: prompt_layout,
+    expanded: CString,
+    style: style,
+}
+
+pub(crate) fn prompt_draw_cursor_style(pr: &prompt, s: &mut screen) {
+    if pr.flags & PROMPT_COMMANDMODE != 0 {
+        s.default_cstyle = pr.command_cstyle;
+        s.default_mode = pr.command_cmode;
+        s.default_ccolour = pr.command_ccolour;
+    } else {
+        s.default_cstyle = pr.cstyle;
+        s.default_mode = pr.cmode;
+        s.default_ccolour = pr.ccolour;
+    }
+}
+
+/// Expand formats before borrowing the destination model's screen.
+pub(crate) unsafe fn prompt_prepare_draw(pr: &prompt, ax: u_int, aw: u_int) -> PreparedPromptDraw {
     let mut sy: style = style {
         gc: grid_cell {
             data: utf8_data {
@@ -736,18 +751,31 @@ pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_dr
         default_type: STYLE_DEFAULT_BASE,
         link: 0,
     };
-    let mut width: u_int = 0;
-    let mut pcursor: u_int = 0;
-    if pr.flags & PROMPT_COMMANDMODE != 0 {
-        (*s).default_cstyle = pr.command_cstyle;
-        (*s).default_mode = pr.command_cmode;
-        (*s).default_ccolour = pr.command_ccolour;
-    } else {
-        (*s).default_cstyle = pr.cstyle;
-        (*s).default_mode = pr.cmode;
-        (*s).default_ccolour = pr.ccolour;
+    let (layout, expanded) = prompt_layout(pr, ax, aw, Some(&mut sy));
+    PreparedPromptDraw {
+        layout,
+        expanded,
+        style: sy,
     }
-    let (pl, expanded) = prompt_layout(pr, ax, aw, Some(&mut sy));
+}
+
+/// Draw already-expanded text; this stage does not invoke format callbacks.
+pub(crate) unsafe fn prompt_draw_prepared(
+    pr: &prompt,
+    ctx: &mut screen_write_ctx,
+    pd: prompt_draw_data,
+    prepared: PreparedPromptDraw,
+) -> u_int {
+    let ax = pd.area_x;
+    let py = pd.prompt_line;
+    let aw = pd.area_width;
+    let PreparedPromptDraw {
+        layout: pl,
+        expanded,
+        style: sy,
+    } = prepared;
+    let mut width = 0;
+    let mut pcursor = 0;
     let mut gc = sy.gc;
     screen_write_cursormove(
         ctx,
@@ -830,6 +858,12 @@ pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_dr
         );
     }
     pl.cursor_x
+}
+
+pub unsafe fn prompt_draw(pr: &prompt, ctx: &mut screen_write_ctx, pd: prompt_draw_data) -> u_int {
+    prompt_draw_cursor_style(pr, &mut *ctx.screen_ptr());
+    let prepared = prompt_prepare_draw(pr, pd.area_x, pd.area_width);
+    prompt_draw_prepared(pr, ctx, pd, prepared)
 }
 pub unsafe fn prompt_mouse(
     pr: &mut prompt,

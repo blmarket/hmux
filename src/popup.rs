@@ -24,6 +24,7 @@ use crate::src::shared::client::{
     client, overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::client::{CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWOVERLAY};
 use crate::src::shared::colour::*;
 use crate::src::shared::command::cmdq_item;
@@ -45,7 +46,7 @@ use crate::src::shared::mouse::{
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
-use crate::src::shared::screen::screen;
+use crate::src::shared::screen::{screen, ScreenMode};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGHUP;
@@ -68,7 +69,7 @@ use std::rc::Weak;
 
 pub struct popup_data {
     published: bool,
-    pub c: Option<Rc<UnsafeCell<client>>>,
+    pub c: Option<ClientRef>,
     pub item: Weak<UnsafeCell<cmdq_item>>,
     pub flags: ::core::ffi::c_int,
     pub title: Option<std::ffi::CString>,
@@ -172,7 +173,7 @@ impl PopupGuard<'_> {
         self.handle.clone()
     }
 
-    unsafe fn is_current(&self, client: &Rc<UnsafeCell<client>>) -> bool {
+    unsafe fn is_current(&self, client: &ClientRef) -> bool {
         self.handle.0.is_alive()
             && client.with_overlay_data(|data| {
                 data.and_then(|data| data.downcast_ref::<refbox::RefBox<PopupState>>())
@@ -350,7 +351,7 @@ unsafe fn popup_reapply_styles(popup: &PopupGuard) {
 #[derive(Clone)]
 struct PopupRenderSnapshot {
     popup: PopupHandle,
-    client: Weak<UnsafeCell<client>>,
+    client: ClientWeak,
     palette: refbox::Weak<colour_palette>,
     defaults: grid_cell,
     xoff: u_int,
@@ -414,17 +415,17 @@ impl PopupRenderSnapshot {
     }
 }
 
-unsafe fn popup_mode(popup: &PopupGuard) -> Option<(std::ptr::NonNull<screen>, u_int, u_int)> {
+unsafe fn popup_mode(popup: &PopupGuard) -> Option<(ScreenMode, u_int, u_int)> {
     let pd = popup.as_ptr();
     if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
         Some((
-            std::ptr::NonNull::from(&mut (*pd).s),
+            ScreenMode::from(&(*pd).s),
             (*pd).px.wrapping_add((*pd).s.cx),
             (*pd).py.wrapping_add((*pd).s.cy),
         ))
     } else {
         Some((
-            std::ptr::NonNull::from(&mut (*pd).s),
+            ScreenMode::from(&(*pd).s),
             (*pd).px.wrapping_add(1).wrapping_add((*pd).s.cx),
             (*pd).py.wrapping_add(1).wrapping_add((*pd).s.cy),
         ))
@@ -445,7 +446,7 @@ unsafe fn popup_check(popup: &PopupGuard, px: u_int, py: u_int, nx: u_int) -> vi
     );
     ranges
 }
-unsafe fn popup_draw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
+unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
     let pd = popup.as_ptr();
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -552,7 +553,7 @@ unsafe fn popup_draw(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup
         screen_free(&mut s);
     });
 }
-unsafe fn popup_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, popup: &PopupGuard) {
+unsafe fn popup_resize(c_owner: &ClientRef, popup: &PopupGuard) {
     let (terminal_sx, terminal_sy) = c_owner.terminal_size();
     let pd = popup.as_ptr();
     if (*pd).psy > terminal_sy {
@@ -596,11 +597,7 @@ unsafe fn popup_resize(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, pop
         }
     }
 }
-unsafe fn popup_handle_drag(
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    popup: &PopupGuard,
-    mut m: *mut mouse_event,
-) {
+unsafe fn popup_handle_drag(c_owner: &ClientRef, popup: &PopupGuard, mut m: *mut mouse_event) {
     let (terminal_sx, terminal_sy) = c_owner.terminal_size();
     let pd = popup.as_ptr();
     let mut px: u_int = 0;
@@ -676,11 +673,7 @@ unsafe fn popup_handle_drag(
         c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
     }
 }
-unsafe fn popup_key(
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    popup: &PopupGuard,
-    event: *mut key_event,
-) -> i32 {
+unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: *mut key_event) -> i32 {
     let pd = popup.as_ptr();
     let mut current_block: u64;
     let mut m: *mut mouse_event = &raw mut (*event).m;
@@ -857,13 +850,13 @@ unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
         }
     }
 }
-pub unsafe fn popup_present(client: &Rc<UnsafeCell<client>>) -> i32 {
+pub unsafe fn popup_present(client: &ClientRef) -> i32 {
     client
         .with_overlay_data(|data| data.is_some_and(|data| data.is::<refbox::RefBox<PopupState>>()))
         as i32
 }
 pub unsafe fn popup_modify(
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    c_owner: &ClientRef,
     mut title: *const ::core::ffi::c_char,
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
@@ -990,7 +983,7 @@ pub unsafe fn popup_display(
     argv: &Vec<CString>,
     mut cwd: *const ::core::ffi::c_char,
     mut title: *const ::core::ffi::c_char,
-    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    c_owner: &ClientRef,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
@@ -1300,10 +1293,7 @@ mod tests {
         }
     }
 
-    unsafe fn close_during_dispatch<'a>(
-        handle: &'a PopupHandle,
-        c: &Rc<UnsafeCell<client>>,
-    ) -> PopupGuard<'a> {
+    unsafe fn close_during_dispatch<'a>(handle: &'a PopupHandle, c: &ClientRef) -> PopupGuard<'a> {
         let popup = handle.upgrade().unwrap();
         c.clear_overlay();
         assert!(handle.upgrade().is_none());
@@ -1312,62 +1302,119 @@ mod tests {
     }
 
     #[test]
-    fn every_overlay_dispatch_holds_the_owner_across_self_close() {
+    fn overlay_mode_snapshot_survives_explicit_overlay_close() {
         unsafe {
-            for kind in 0..5 {
-                let client_owner = client::new();
-                let client = client_owner.get();
+            for bordered in [false, true] {
+                let client = client::new();
                 let owner = owner();
                 let handle = PopupHandle(owner.downgrade());
                 let observer = handle.clone();
-                (*client).overlay_data = Some(Box::new(owner));
-                (*client).overlay_draw = Some(Box::new(|_| {}));
+                {
+                    let popup = handle.upgrade().unwrap();
+                    let data = &mut *popup.as_ptr();
+                    data.px = 10;
+                    data.py = 20;
+                    data.border_lines = if bordered {
+                        BOX_LINES_SINGLE
+                    } else {
+                        BOX_LINES_NONE
+                    };
+                    data.s.cx = 3;
+                    data.s.cy = 4;
+                    data.s.mode = crate::src::shared::screen::MODE_CURSOR;
+                    data.s.ccolour = 7;
+                    data.s.default_ccolour = 2;
+                    data.s.cstyle = crate::src::shared::display::SCREEN_CURSOR_BAR;
+                    data.s.default_cstyle = crate::src::shared::display::SCREEN_CURSOR_UNDERLINE;
+                    data.s.default_mode = crate::src::shared::screen::MODE_CURSOR_BLINKING;
+                }
+                client.set_overlay(
+                    None,
+                    Some(Box::new(move |_| popup_mode(&handle.upgrade().unwrap()))),
+                    Some(Box::new(|_| {})),
+                    None,
+                    None,
+                    None,
+                    Box::new(owner),
+                );
+                let (mode, x, y) = server_client_overlay_mode(&client).unwrap();
+                client.clear_overlay();
+                assert!(!observer.0.is_alive());
+                assert_eq!((x, y), if bordered { (14, 25) } else { (13, 24) });
+                assert_eq!((mode.cx, mode.cy), (3, 4));
+                assert_eq!(mode.mode, crate::src::shared::screen::MODE_CURSOR);
+                assert_eq!((mode.ccolour, mode.default_ccolour), (7, 2));
+                assert_eq!(mode.cstyle, crate::src::shared::display::SCREEN_CURSOR_BAR);
+                assert_eq!(
+                    mode.default_cstyle,
+                    crate::src::shared::display::SCREEN_CURSOR_UNDERLINE
+                );
+                assert_eq!(
+                    mode.default_mode,
+                    crate::src::shared::screen::MODE_CURSOR_BLINKING
+                );
+            }
+        }
+    }
 
+    #[test]
+    fn every_overlay_dispatch_holds_the_owner_across_self_close() {
+        unsafe {
+            for kind in 0..5 {
+                let client = client::new();
+                let owner = owner();
+                let handle = PopupHandle(owner.downgrade());
+                let observer = handle.clone();
+                let mut check: overlay_check_cb = None;
+                let mut mode: overlay_mode_cb = None;
+                let mut draw: overlay_draw_cb = Some(Box::new(|_| {}));
+                let mut key: overlay_key_cb = None;
+                let mut resize: overlay_resize_cb = None;
                 match kind {
                     0 => {
-                        (*client).overlay_draw = Some(Box::new(move |c| {
+                        draw = Some(Box::new(move |c| {
                             let _active = close_during_dispatch(&handle, c);
-                        }));
-                        server_client_overlay_draw(&client_owner);
-                        assert!((*client).overlay_draw.is_none());
+                        }))
                     }
                     1 => {
-                        (*client).overlay_key = Some(Box::new(move |c, _| {
+                        key = Some(Box::new(move |c, _| {
                             let _active = close_during_dispatch(&handle, c);
                             1
-                        }));
-                        let mut event = key_event::new(0, mouse_event::default(), None);
-                        assert_eq!(
-                            server_client_overlay_key(&client_owner, &mut event),
-                            Some(0)
-                        );
-                        assert!((*client).overlay_key.is_none());
+                        }))
                     }
                     2 => {
-                        (*client).overlay_resize = Some(Box::new(move |c| {
+                        resize = Some(Box::new(move |c| {
                             let _active = close_during_dispatch(&handle, c);
-                        }));
-                        server_client_overlay_resize(&client_owner);
-                        assert!((*client).overlay_resize.is_none());
+                        }))
                     }
                     3 => {
-                        (*client).overlay_mode = Some(Box::new(move |c| {
+                        mode = Some(Box::new(move |c| {
                             let active = close_during_dispatch(&handle, c);
                             popup_mode(&active)
-                        }));
-                        assert!(server_client_overlay_mode(&client_owner).is_none());
-                        assert!((*client).overlay_mode.is_none());
+                        }))
                     }
                     _ => {
-                        (*client).overlay_check = Some(Box::new(move |c, x, y, n| {
+                        check = Some(Box::new(move |c, x, y, n| {
                             let active = close_during_dispatch(&handle, c);
                             popup_check(&active, x, y, n)
-                        }));
-                        assert!(server_client_overlay_check(&client_owner, 0, 0, 10).is_none());
-                        assert!((*client).overlay_check.is_none());
+                        }))
                     }
                 }
-                assert!((*client).overlay_data.is_none());
+                client.set_overlay(check, mode, draw, key, None, resize, Box::new(owner));
+                match kind {
+                    0 => server_client_overlay_draw(&client),
+                    1 => {
+                        let mut event = key_event::new(0, mouse_event::default(), None);
+                        assert_eq!(server_client_overlay_key(&client, &mut event), Some(0));
+                        assert_eq!(server_client_overlay_key(&client, &mut event), None);
+                    }
+                    2 => server_client_overlay_resize(&client),
+                    3 => assert!(server_client_overlay_mode(&client).is_none()),
+                    _ => assert!(server_client_overlay_check(&client, 0, 0, 10).is_none()),
+                }
+                assert!(!client.has_overlay());
+                assert!(!client.clips_terminal_output());
+                assert!(client.with_overlay_data(|data| data.is_none()));
                 assert!(!observer.0.is_alive());
             }
         }

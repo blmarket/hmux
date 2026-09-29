@@ -1,4 +1,5 @@
 use super::*;
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use hmux_buffer::SegmentedBuf;
 
 type ClientFileIndex =
@@ -8,7 +9,7 @@ type ClientFileIndex =
 pub type client_files = Option<refbox::RefBox<ClientFileIndex>>;
 
 pub struct client_file {
-    pub(super) c: Option<Rc<UnsafeCell<client>>>,
+    pub(super) c: Option<ClientRef>,
     pub(super) peer: *mut tmuxpeer,
     pub(super) stream: ::core::ffi::c_int,
     pub(super) path: Option<std::ffi::CString>,
@@ -23,7 +24,7 @@ pub struct client_file {
     pub(super) wait_item:
         std::rc::Weak<std::cell::UnsafeCell<crate::src::shared::command::cmdq_item>>,
     pub(super) wait_active: bool,
-    pub(super) wait_client: std::rc::Weak<std::cell::UnsafeCell<client>>,
+    pub(super) wait_client: ClientWeak,
     pub(super) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(super) terminal_scheduled: bool,
     pub(super) read: super::stream::ReadState,
@@ -31,7 +32,7 @@ pub struct client_file {
 
 pub struct client_file_event<'a> {
     /// Borrowed retained client for this callback; clone to retain it afterward.
-    pub client: Option<&'a std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    pub client: Option<&'a ClientRef>,
     pub path: Option<&'a CStr>,
     pub error: i32,
     pub closed: bool,

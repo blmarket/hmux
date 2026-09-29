@@ -19,8 +19,9 @@ use crate::src::options::{
     options_create, options_get_number, options_get_string, options_set_string,
 };
 use crate::src::proc::proc_send;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::{
-    server_client_check_nested, server_client_get_cwd, server_client_open, server_client_set_flags,
+    server_client_get_cwd, server_client_open, server_client_set_flags,
     server_client_set_key_table, server_client_set_session,
 };
 use crate::src::session::Session;
@@ -31,6 +32,7 @@ use crate::src::session::{
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -114,18 +116,14 @@ unsafe fn cmd_new_session_exec(
 ) -> cmd_retval {
     let item = item_handle.get();
     let queue_client = cmdq_get_client((item).as_ref());
-    let queue_client_ptr = queue_client
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut current_block: u64;
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut as_0: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut groupwith: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
@@ -207,9 +205,7 @@ unsafe fn cmd_new_session_exec(
         let ename = format_single_cstring(
             Some(item_handle),
             tmp,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c.as_ref(),
             None,
             (refbox::Weak::new()).clone(),
             None,
@@ -234,9 +230,7 @@ unsafe fn cmd_new_session_exec(
         let ename = format_single_cstring(
             Some(item_handle),
             tmp,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c.as_ref(),
             None,
             (refbox::Weak::new()).clone(),
             None,
@@ -338,13 +332,23 @@ unsafe fn cmd_new_session_exec(
                     5193972633326621385 => {}
                     _ => {
                         detached = args_has(args, 'd' as i32 as u_char);
-                        if c.is_null() {
+                        if c.is_none() {
                             detached = 1 as ::core::ffi::c_int;
-                        } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+                        } else if c.as_ref().expect("live client").flags()
+                            & CLIENT_CONTROL as uint64_t
+                            != 0
+                        {
                             is_control = 1 as ::core::ffi::c_int;
                         }
                         already_attached = 0 as ::core::ffi::c_int;
-                        if !c.is_null() && !(*c).session_handle().is_none() {
+                        if !c.is_none()
+                            && !c
+                                .as_ref()
+                                .expect("live client")
+                                .attached_session()
+                                .upgrade()
+                                .is_none()
+                        {
                             already_attached = 1 as ::core::ffi::c_int;
                         }
                         tmp = args_get(&*(args), 'c' as i32 as u_char)
@@ -353,9 +357,7 @@ unsafe fn cmd_new_session_exec(
                             formatted_cwd = Some(format_single_cstring(
                                 Some(item_handle),
                                 tmp,
-                                (c).as_ref()
-                                    .and_then(|model| model.observer.upgrade())
-                                    .as_ref(),
+                                c.as_ref(),
                                 None,
                                 (refbox::Weak::new()).clone(),
                                 None,
@@ -373,18 +375,18 @@ unsafe fn cmd_new_session_exec(
                         }
                         if detached == 0
                             && already_attached == 0
-                            && (*c).fd != -(1 as ::core::ffi::c_int)
-                            && !(*c).flags & CLIENT_CONTROL as uint64_t != 0
+                            && c.as_ref().expect("live client").has_input_fd()
+                            && !c.as_ref().expect("live client").flags()
+                                & CLIENT_CONTROL as uint64_t
+                                != 0
                         {
-                            if server_client_check_nested(&*(queue_client_ptr)) != 0 {
+                            if queue_client_ptr.as_ref().expect("live client").is_nested() {
                                 cmdq_error(item_handle, |out| {
                                     out.write_all(b"sessions should be nested with care, unset $TMUX to force")
                                 });
                                 current_block = 5193972633326621385;
                             } else {
-                                if tcgetattr((*c).fd, &raw mut tio) != 0 as ::core::ffi::c_int {
-                                    fatal(|out| out.write_all(b"tcgetattr failed"));
-                                }
+                                tio = c.as_ref().expect("live client").capture_termios();
                                 tiop = &raw mut tio;
                                 current_block = 6545907279487748450;
                             }
@@ -421,8 +423,12 @@ unsafe fn cmd_new_session_exec(
                                                 b"-\0" as *const u8 as *const ::core::ffi::c_char,
                                             ) == 0 as ::core::ffi::c_int
                                             {
-                                                if !c.is_null() {
-                                                    dsx = (*c).tty.sx;
+                                                if !c.is_none() {
+                                                    dsx = c
+                                                        .as_ref()
+                                                        .expect("live client")
+                                                        .terminal_size()
+                                                        .0;
                                                 } else {
                                                     dsx = 80 as u_int;
                                                 }
@@ -463,8 +469,12 @@ unsafe fn cmd_new_session_exec(
                                                             as *const ::core::ffi::c_char,
                                                     ) == 0 as ::core::ffi::c_int
                                                     {
-                                                        if !c.is_null() {
-                                                            dsy = (*c).tty.sy;
+                                                        if !c.is_none() {
+                                                            dsy = c
+                                                                .as_ref()
+                                                                .expect("live client")
+                                                                .terminal_size()
+                                                                .1;
                                                         } else {
                                                             dsy = 24 as u_int;
                                                         }
@@ -495,8 +505,16 @@ unsafe fn cmd_new_session_exec(
                                                     5193972633326621385 => {}
                                                     _ => {
                                                         if detached == 0 && is_control == 0 {
-                                                            sx = (*c).tty.sx;
-                                                            sy = (*c).tty.sy;
+                                                            sx = c
+                                                                .as_ref()
+                                                                .expect("live client")
+                                                                .terminal_size()
+                                                                .0;
+                                                            sy = c
+                                                                .as_ref()
+                                                                .expect("live client")
+                                                                .terminal_size()
+                                                                .1;
                                                             if sy > 0 as u_int
                                                                 && options_get_number(
                                                                     global_s_options,
@@ -577,15 +595,20 @@ unsafe fn cmd_new_session_exec(
                                                             );
                                                         }
                                                         env = Some(environ_create());
-                                                        if !c.is_null()
+                                                        if !c.is_none()
                                                             && args_has(args, 'E' as i32 as u_char)
                                                                 == 0
                                                         {
+                                                            let client_environment = c
+                                                                .as_ref()
+                                                                .expect("live client")
+                                                                .with_environment(|env| {
+                                                                    env.expect("client environment")
+                                                                        .clone()
+                                                                });
                                                             environ_update(
                                                                 global_s_options,
-                                                                (*c).environ
-                                                                    .as_deref()
-                                                                    .expect("client environment"),
+                                                                &client_environment,
                                                                 env.as_deref_mut()
                                                                     .expect("new environment"),
                                                             );
@@ -715,9 +738,7 @@ unsafe fn cmd_new_session_exec(
                                                                 ) != 0
                                                                 {
                                                                     server_client_set_flags(
-                                                                        &(*(c))
-                                                                            .observer
-                                                                            .upgrade()
+                                                                        &c.clone()
                                                                             .expect("live client"),
                                                                         args_get(
                                                                             &*(args),
@@ -730,29 +751,30 @@ unsafe fn cmd_new_session_exec(
                                                                     );
                                                                 }
                                                                 if already_attached == 0 {
-                                                                    if !(*c).flags
+                                                                    if !c
+                                                                        .as_ref()
+                                                                        .expect("live client")
+                                                                        .flags()
                                                                         & CLIENT_CONTROL as uint64_t
                                                                         != 0
                                                                     {
-                                                                        proc_send(
-                                                                            (*c).peer,
-                                                                            MSG_READY,
-                                                                            -(1 as ::core::ffi::c_int),
-                                                                            ::core::ptr::null::<::core::ffi::c_void>(),
-                                                                            0 as size_t,
-                                                                        );
+                                                                        c.as_ref()
+                                                                            .expect("live client")
+                                                                            .send_ready();
                                                                     }
-                                                                } else if !(*c)
-                                                                    .session_handle()
+                                                                } else if !c
+                                                                    .as_ref()
+                                                                    .expect("live client")
+                                                                    .attached_session()
+                                                                    .upgrade()
                                                                     .is_none()
                                                                 {
-                                                                    (*c).last_session =
-                                                                        (*c).session.clone();
+                                                                    c.as_ref()
+                                                                        .expect("live client")
+                                                                        .remember_session();
                                                                 }
                                                                 server_client_set_session(
-                                                                    &(*(c))
-                                                                        .observer
-                                                                        .upgrade()
+                                                                    &c.clone()
                                                                         .expect("live client"),
                                                                     s.as_ref(),
                                                                 );
@@ -761,9 +783,7 @@ unsafe fn cmd_new_session_exec(
                                                                     != 0
                                                                 {
                                                                     server_client_set_key_table(
-                                                                        &(*(c))
-                                                                            .observer
-                                                                            .upgrade()
+                                                                        &c.clone()
                                                                             .expect("live client"),
                                                                         ::core::ptr::null::<
                                                                             ::core::ffi::c_char,
@@ -789,11 +809,7 @@ unsafe fn cmd_new_session_exec(
                                                                 let cp = format_single_cstring(
                                                                     Some(item_handle),
                                                                     template,
-                                                                    (c).as_ref()
-                                                                        .and_then(|model| {
-                                                                            model.observer.upgrade()
-                                                                        })
-                                                                        .as_ref(),
+                                                                    c.as_ref(),
                                                                     s.as_ref(),
                                                                     (s.as_ref()
                                                                         .expect("live session")
@@ -806,8 +822,12 @@ unsafe fn cmd_new_session_exec(
                                                                 });
                                                             }
                                                             if detached == 0 {
-                                                                (*c).flags |=
-                                                                    CLIENT_ATTACHED as uint64_t;
+                                                                c.as_ref()
+                                                                    .expect("live client")
+                                                                    .update_flags(
+                                                                        CLIENT_ATTACHED as uint64_t,
+                                                                        0,
+                                                                    );
                                                             }
                                                             if args_has(args, 'd' as i32 as u_char)
                                                                 == 0

@@ -11,7 +11,7 @@ use crate::src::shared::tty::{tty, tty_style_ctx};
 use crate::src::tty::{
     tty_attributes, tty_check_codeset, tty_cursor, tty_default_attributes, tty_fake_bce,
     tty_margin_off, tty_putc, tty_putcode, tty_putcode_i, tty_putn, tty_region_off,
-    tty_repeat_space, tty_update_mode,
+    tty_repeat_space, tty_update_mode, TerminalOutput,
 };
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
@@ -27,7 +27,7 @@ pub const TTY_DRAW_LINE_FIRST: tty_draw_line_state = 0;
 const TTY_DRAW_LINE_STATES: [&str; 7] = ["FIRST", "FLUSH", "NEW1", "NEW2", "EMPTY", "SAME", "DONE"];
 
 unsafe fn tty_draw_line_clear(
-    mut tty: *mut tty,
+    tty: &mut TerminalOutput<'_>,
     mut px: u_int,
     mut py: u_int,
     mut nx: u_int,
@@ -35,15 +35,10 @@ unsafe fn tty_draw_line_clear(
     mut bg: u_int,
     mut wrapped: ::core::ffi::c_int,
 ) {
-    let terminal_client_owner = (*tty)
-        .client
-        .upgrade()
-        .expect("terminal belongs to a live client");
-    let terminal_client = terminal_client_owner.get();
     if nx == 0 as u_int {
         return;
     }
-    if (*terminal_client).overlay_check.is_none()
+    if !tty.clips_output()
         && wrapped == 0
         && nx >= 10 as u_int
         && tty_fake_bce(&*tty, defaults, bg) == 0
@@ -116,7 +111,7 @@ fn tty_draw_line_get_empty(gc: &grid_cell, last: &grid_cell, mut nx: u_int) -> u
     return empty;
 }
 pub unsafe fn tty_draw_line(
-    mut tty: *mut tty,
+    tty: &mut TerminalOutput<'_>,
     s: &screen,
     mut px: u_int,
     mut py: u_int,
@@ -230,7 +225,7 @@ pub unsafe fn tty_draw_line(
     ));
     flags = (*tty).flags & TTY_NOCURSOR;
     (*tty).flags |= TTY_NOCURSOR;
-    tty_update_mode(tty, (*tty).mode, Some(s));
+    tty_update_mode(tty, (*tty).mode, Some(s.into()));
     tty_region_off(tty);
     tty_margin_off(tty);
     last = grid_default_cell;
@@ -320,7 +315,7 @@ pub unsafe fn tty_draw_line(
                         if empty != 0 as ::core::ffi::c_int {
                             gcp = &gc;
                         } else {
-                            converted = tty_check_codeset(&*tty, &gc);
+                            converted = tty_check_codeset(tty.utf8(), &gc);
                             gcp = &converted;
                             if gcp.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
                                 ngc = *gcp;
@@ -429,5 +424,5 @@ pub unsafe fn tty_draw_line(
         _ => {}
     }
     (*tty).flags = (*tty).flags & !TTY_NOCURSOR | flags;
-    tty_update_mode(tty, (*tty).mode, Some(s));
+    tty_update_mode(tty, (*tty).mode, Some(s.into()));
 }

@@ -7,10 +7,12 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
+use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::{session_find, session_find_by_id_str, sessions_minmax};
+use crate::src::shared::client::ClientRef;
 use crate::src::window::Window;
 use crate::src::window::{
     all_window_panes, window_find_by_id_str, window_find_string, window_has_pane,
@@ -139,15 +141,12 @@ static mut cmd_find_pane_table: [[*const ::core::ffi::c_char; 2]; 16] = [
     ],
 ];
 unsafe fn cmd_find_inside_pane(
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-    let c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let c = c_owner?;
+    let tty_name = c.tty_name();
     let mut inside_pane_owner = None;
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut envent: Option<&environ_entry> = None;
-    if c.is_null() {
-        return None;
-    }
+    let mut wp: *mut window_pane = std::ptr::null_mut();
     let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
     wp = indexed_pane_owner
         .as_ref()
@@ -156,9 +155,9 @@ unsafe fn cmd_find_inside_pane(
         if (*wp).fd != -(1 as ::core::ffi::c_int)
             && strcmp(
                 &raw mut (*wp).tty as *mut ::core::ffi::c_char,
-                ((*c).ttyname)
+                tty_name
                     .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    .map_or(std::ptr::null(), |name| name.as_ptr()),
             ) == 0 as ::core::ffi::c_int
         {
             break;
@@ -169,20 +168,16 @@ unsafe fn cmd_find_inside_pane(
             .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if wp.is_null() {
-        envent = environ_find(
-            (*c).environ.as_deref().expect("environment"),
-            b"TMUX_PANE\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        if !envent.is_none() {
-            inside_pane_owner = envent
-                .unwrap()
-                .value
-                .as_deref()
-                .and_then(|value| window_pane_find_by_id_str(value));
-            wp = inside_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-        }
+        let pane_id = c.with_environment(|environment| {
+            environ_find(environment.expect("environment"), c"TMUX_PANE".as_ptr())
+                .and_then(|entry| entry.value.clone())
+        });
+        inside_pane_owner = pane_id
+            .as_deref()
+            .and_then(|value| window_pane_find_by_id_str(value));
+        wp = inside_pane_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
     if !wp.is_null() {
         log_debug(format_args!(
@@ -197,25 +192,24 @@ unsafe fn cmd_find_inside_pane(
     }
     return inside_pane_owner;
 }
-fn cmd_find_client_better(c: &client, than: Option<&client>) -> bool {
+unsafe fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> bool {
     than.is_none_or(|than| {
-        (c.activity_time.tv_sec, c.activity_time.tv_usec)
-            > (than.activity_time.tv_sec, than.activity_time.tv_usec)
+        let (c, than) = (c.activity_time(), than.activity_time());
+        (c.tv_sec, c.tv_usec) > (than.tv_sec, than.tv_usec)
     })
 }
-pub unsafe fn cmd_find_best_client(s: &Rc<UnsafeCell<session>>) -> Option<Rc<UnsafeCell<client>>> {
-    let mut best: Option<Rc<UnsafeCell<client>>> = None;
+pub unsafe fn cmd_find_best_client(s: &Rc<UnsafeCell<session>>) -> Option<ClientRef> {
+    let mut best: Option<ClientRef> = None;
     let mut cursor = clients.first();
     while let Some(owner) = cursor {
         cursor = clients.next(&owner);
-        let candidate = &*owner.get();
-        let Some(attached) = candidate.session.upgrade() else {
+        let Some(attached) = owner.attached_session().upgrade() else {
             continue;
         };
         if s.is_attached() && !Rc::ptr_eq(&attached, s) {
             continue;
         }
-        if cmd_find_client_better(candidate, best.as_ref().map(|owner| &*owner.get())) {
+        if cmd_find_client_better(&owner, best.as_ref()) {
             best = Some(owner);
         }
     }
@@ -1477,20 +1471,29 @@ pub unsafe fn cmd_find_from_mouse(
 }
 pub unsafe fn cmd_find_from_client(
     mut fs: *mut cmd_find_state,
-    c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
+    c_owner: Option<&ClientRef>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: Option<ClientRef> = c_owner.cloned();
     let inside_pane_owner;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    if c.is_null() {
+    if c.is_none() {
         return cmd_find_from_nothing(fs, flags);
     }
-    if !(*c).session_handle().is_none() {
+    if !c
+        .as_ref()
+        .expect("live client")
+        .attached_session()
+        .upgrade()
+        .is_none()
+    {
         cmd_find_clear_state(fs, flags);
         (*fs).set_wp(
-            ((*((*c)
-                .session_handle()
+            ((*(c
+                .as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
                 .expect("live session")
                 .current_winlink())
             .get_unchecked()
@@ -1503,10 +1506,24 @@ pub unsafe fn cmd_find_from_client(
             .as_ref(),
         );
         if (*fs).pane_handle().is_none() {
-            cmd_find_from_session(fs, &(*c).session_handle().expect("live session"), flags);
+            cmd_find_from_session(
+                fs,
+                &c.as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
+                    .expect("live session"),
+                flags,
+            );
             return 0 as ::core::ffi::c_int;
         }
-        (*fs).set_s((*c).session_handle().as_ref());
+        (*fs).set_s(
+            c.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .as_ref(),
+        );
         (*fs).set_wl(
             ((*fs)
                 .session_handle()
@@ -1586,12 +1603,10 @@ pub unsafe fn cmd_find_target(
     let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mouse_pane_owner;
     let queue_client = cmdq_get_client((item).as_ref());
-    let queue_client_ptr = queue_client
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut queue_client_ptr: Option<ClientRef> = queue_client.clone();
     let mut current_block: u64;
     let mut m: *mut mouse_event = ::core::ptr::null_mut::<mouse_event>();
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut current: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -1716,14 +1731,8 @@ pub unsafe fn cmd_find_target(
         current_context = Some(queue_current);
         log_debug(format_args!("{}: current is from queue", "cmd_find_target"));
         current_block = 1836292691772056875;
-    } else if cmd_find_from_client(
-        &raw mut current,
-        (queue_client_ptr)
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-        flags,
-    ) == 0 as ::core::ffi::c_int
+    } else if cmd_find_from_client(&raw mut current, queue_client_ptr.as_ref(), flags)
+        == 0 as ::core::ffi::c_int
     {
         current_context = Some(current);
         log_debug(format_args!(
@@ -1759,22 +1768,33 @@ pub unsafe fn cmd_find_target(
                 ) == 0 as ::core::ffi::c_int
             {
                 c = queue_client_ptr;
-                if c.is_null() || (*c).session_handle().is_none() {
+                if c.is_none()
+                    || c.as_ref()
+                        .expect("live client")
+                        .attached_session()
+                        .upgrade()
+                        .is_none()
+                {
                     cmdq_error(item_handle.expect("command queue item"), |out| {
                         out.write_all(b"no current client")
                     });
                     current_block = 5193823237153215208;
                 } else {
                     (*fs).set_wl(
-                        ((*c)
-                            .session_handle()
+                        (c.as_ref()
+                            .expect("live client")
+                            .attached_session()
+                            .upgrade()
                             .expect("live session")
                             .current_winlink())
                         .clone(),
                     );
                     (*fs).set_wp(
-                        ((*((*c)
-                            .session_handle()
+                        ((*(c
+                            .as_ref()
+                            .expect("live client")
+                            .attached_session()
+                            .upgrade()
                             .expect("live session")
                             .current_winlink())
                         .get_unchecked()
@@ -1787,8 +1807,10 @@ pub unsafe fn cmd_find_target(
                         .as_ref(),
                     );
                     (*fs).set_w(
-                        (((*c)
-                            .session_handle()
+                        ((c.as_ref()
+                            .expect("live client")
+                            .attached_session()
+                            .upgrade()
                             .expect("live session")
                             .current_winlink())
                         .get_unchecked()
@@ -2243,10 +2265,10 @@ pub unsafe fn cmd_find_target(
 unsafe fn cmd_find_current_client(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut quiet: ::core::ffi::c_int,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
+) -> Option<ClientRef> {
     let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let inside_pane_owner;
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
     let mut found = None;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut fs: cmd_find_state = cmd_find_state {
@@ -2260,20 +2282,21 @@ unsafe fn cmd_find_current_client(
     let mut c_owner = None;
     if !item.is_null() {
         c_owner = cmdq_get_client((item).as_ref());
-        c = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        c = c_owner.clone();
     }
-    if !c.is_null() && !(*c).session_handle().is_none() {
+    if !c.is_none()
+        && !c
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+    {
         return c_owner;
     }
     found = None;
-    if !c.is_null() && {
-        inside_pane_owner = cmd_find_inside_pane(
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
+    if !c.is_none() && {
+        inside_pane_owner = cmd_find_inside_pane(c.as_ref());
         wp = inside_pane_owner
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
@@ -2308,7 +2331,7 @@ unsafe fn cmd_find_current_client(
         log_pointer(
             found
                 .as_ref()
-                .map_or(std::ptr::null(), |owner| owner.get().cast())
+                .map_or(std::ptr::null(), |owner| std::rc::Rc::as_ptr(owner).cast())
         )
     ));
     return found;
@@ -2317,85 +2340,50 @@ pub unsafe fn cmd_find_client(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut target: *const ::core::ffi::c_char,
     mut quiet: ::core::ffi::c_int,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<client>>> {
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+) -> Option<ClientRef> {
     if target.is_null() {
         return cmd_find_current_client(item_handle, quiet);
     }
     let target_bytes = CStr::from_ptr(target).to_bytes();
     let trimmed = target_bytes.strip_suffix(b":").unwrap_or(target_bytes);
     let copy = CString::new(trimmed).expect("client target came from a C string");
-    let copy_ptr = copy.as_ptr();
-    let mut registry_c_owner = clients.first();
-    c = registry_c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !c.is_null() {
-        if !(*c).session_handle().is_none() {
-            if strcmp(
-                copy_ptr,
-                ((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ) == 0 as ::core::ffi::c_int
+    let mut found = clients.first();
+    while let Some(client) = found.as_ref() {
+        if client.attached_session().upgrade().is_some() {
+            if client
+                .name()
+                .as_deref()
+                .is_some_and(|name| name == copy.as_c_str())
             {
                 break;
             }
-            if !(*(*c).ttyname.as_ref().unwrap().as_ptr() as ::core::ffi::c_int == '\0' as i32) {
-                if strcmp(
-                    copy_ptr,
-                    ((*c).ttyname)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                ) == 0 as ::core::ffi::c_int
+            if let Some(tty) = client.tty_name() {
+                let tty = tty.as_bytes();
+                if !tty.is_empty()
+                    && (tty == trimmed || tty.strip_prefix(b"/dev/") == Some(trimmed))
                 {
                     break;
                 }
-                if !(strncmp(
-                    ((*c).ttyname)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    _PATH_DEV.as_ptr(),
-                    (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t)
-                        .wrapping_sub(1 as size_t),
-                ) != 0 as ::core::ffi::c_int)
-                {
-                    if strcmp(
-                        copy_ptr,
-                        (*c).ttyname
-                            .as_ref()
-                            .unwrap()
-                            .as_ptr()
-                            .offset(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize
-                                as isize)
-                            .offset(-(1 as ::core::ffi::c_int as isize)),
-                    ) == 0 as ::core::ffi::c_int
-                    {
-                        break;
-                    }
-                }
             }
         }
-        registry_c_owner =
-            clients.next(registry_c_owner.as_ref().expect("current registry client"));
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        found = clients.next(client);
     }
-    if c.is_null() && quiet == 0 {
+    if found.is_none() && quiet == 0 {
         cmdq_error(item_handle.expect("command queue item"), |out| {
             out.write_all(b"can't find client: ")?;
-            write_cstr(out, copy_ptr)
+            out.write_all(copy.as_bytes())
         });
     }
-    drop(copy);
     log_debug(format_args!(
-        "{}: target {}, return {}",
-        "cmd_find_client",
-        log_cstr((target) as *const _),
-        log_pointer((c) as *const ::core::ffi::c_void)
+        "cmd_find_client: target {}, return {}",
+        log_cstr(target),
+        log_pointer(
+            found
+                .as_ref()
+                .map_or(std::ptr::null(), |owner| Rc::as_ptr(owner).cast())
+        )
     ));
-    return registry_c_owner;
+    found
 }
 
 #[cfg(test)]
@@ -2414,12 +2402,10 @@ mod target_observer_tests {
             );
             let session_owner = session::new();
             let other_session = session::new();
-            let first = client::new();
-            let second = client::new();
-            (*first.get()).set_session(Some(&session_owner));
-            (*second.get()).set_session(Some(&other_session));
-            (*first.get()).activity_time.tv_sec = 10;
-            (*second.get()).activity_time.tv_sec = 20;
+            let first = client::with_session_for_test(Some(&session_owner));
+            let second = client::with_session_for_test(Some(&other_session));
+            client::activity_for_test(&first, 10, 0);
+            client::activity_for_test(&second, 20, 0);
             clients.push_back(first.clone());
             clients.push_back(second.clone());
             crate::src::session::test_support::metadata(&session_owner, None, None, Some(1));
@@ -2432,18 +2418,16 @@ mod target_observer_tests {
                 &cmd_find_best_client(&session_owner).unwrap(),
                 &second
             ));
-            (*second.get()).activity_time.tv_sec = 10;
+            client::activity_for_test(&second, 10, 0);
             assert!(Rc::ptr_eq(
                 &cmd_find_best_client(&session_owner).unwrap(),
                 &first
             ));
-            (*second.get()).activity_time.tv_usec = 1;
+            client::activity_for_test(&second, 10, 1);
             let selected = cmd_find_best_client(&session_owner).unwrap();
             let observer = Rc::downgrade(&second);
             let registry = std::mem::replace(&mut clients, saved);
             drop(registry);
-            (*first.get()).set_session(None);
-            (*second.get()).set_session(None);
             drop(first);
             drop(second);
             assert!(observer.upgrade().is_some());

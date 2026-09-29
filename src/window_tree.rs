@@ -37,6 +37,7 @@ use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
@@ -230,7 +231,7 @@ pub static window_tree_mode: window_mode = {
             window_tree_key
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
-                    &std::rc::Rc<std::cell::UnsafeCell<client>>,
+                    &ClientRef,
                     refbox::Weak<winlink>,
                     key_code,
                     *mut mouse_event,
@@ -1771,7 +1772,7 @@ unsafe fn window_tree_search(
 }
 unsafe fn window_tree_menu(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
-    c: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    c: &ClientRef,
     mut key: key_code,
 ) {
     let data = mode_owner.get();
@@ -2226,7 +2227,7 @@ unsafe fn window_tree_get_target(
 unsafe fn window_tree_command_each(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     item: &window_tree_itemdata,
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
 ) {
     let data = mode_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
@@ -2262,7 +2263,7 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
     }))
 }
 unsafe fn window_tree_enqueue_command_done(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode: &Rc<UnsafeCell<window_tree_modedata>>,
 ) {
     let item_allocation = cmdq_get_callback_owned(
@@ -2274,7 +2275,7 @@ unsafe fn window_tree_enqueue_command_done(
 fn window_tree_prompt_callbacks(
     mode: Rc<UnsafeCell<window_tree_modedata>>,
     callback: unsafe fn(
-        Option<&Rc<UnsafeCell<client>>>,
+        Option<&ClientRef>,
         &Rc<UnsafeCell<window_tree_modedata>>,
         Option<&CStr>,
         prompt_key_result,
@@ -2295,7 +2296,7 @@ fn window_tree_prompt_callbacks(
 }
 
 unsafe fn window_tree_command_callback(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -2356,7 +2357,7 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
     }
 }
 unsafe fn window_tree_kill_current_callback(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -2406,7 +2407,7 @@ unsafe fn window_tree_kill_current_callback(
     return PROMPT_CLOSE;
 }
 unsafe fn window_tree_kill_tagged_callback(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     s: Option<&CStr>,
     _key: prompt_key_result,
@@ -2551,12 +2552,11 @@ unsafe fn window_tree_mouse(
 }
 unsafe fn window_tree_key(
     mut wme: refbox::Weak<window_mode_entry>,
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     _wl: refbox::Weak<winlink>,
     mut key: key_code,
     mut m: *mut mouse_event,
 ) {
-    let _c = client_owner.get();
     let mode_pane_owner = wme
         .get_unchecked()
         .wp

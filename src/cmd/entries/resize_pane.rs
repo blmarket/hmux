@@ -10,6 +10,7 @@ use crate::src::layout::{
     layout_resize_floating_pane_to, layout_resize_layout, layout_resize_pane,
     layout_resize_pane_to, layout_search_by_border, layout_set_size,
 };
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_window, server_redraw_window_borders, server_unzoom_window,
 };
@@ -17,6 +18,7 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -322,9 +324,7 @@ unsafe fn cmd_resize_pane_mouse_update(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
@@ -340,13 +340,23 @@ unsafe fn cmd_resize_pane_mouse_update(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null()
-        || c.is_null()
-        || !crate::src::shared::rc::same((*c).session_handle().as_ref(), s.as_ref())
+        || c.is_none()
+        || !crate::src::shared::rc::same(
+            c.as_ref()
+                .expect("live client")
+                .attached_session()
+                .upgrade()
+                .as_ref(),
+            s.as_ref(),
+        )
     {
         return CMD_RETURN_NORMAL;
     }
     if window_pane_is_floating(&*wp) == 0 {
-        (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
+        c.as_ref()
+            .expect("live client")
+            .borrow_terminal_mut()
+            .mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
             c_owner.as_ref().expect("live drag client"),
             cmd_resize_pane_mouse_resize_tiled,
         )));
@@ -367,7 +377,10 @@ unsafe fn cmd_resize_pane_mouse_update(
         &(*(wp)).observer.upgrade().expect("live window_pane"),
         1 as ::core::ffi::c_int,
     );
-    (*c).tty.mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
+    c.as_ref()
+        .expect("live client")
+        .borrow_terminal_mut()
+        .mouse_drag_update = Some(Box::new(crate::src::tty::tty_mouse_client_callback(
         c_owner.as_ref().expect("live drag client"),
         cmd_resize_pane_mouse_resize_move_floating,
     )));
@@ -378,10 +391,10 @@ unsafe fn cmd_resize_pane_mouse_update(
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_resize_pane_mouse_resize_move_floating(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     mut m: *mut mouse_event,
 ) {
-    let c = client_owner.get();
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mouse_pane_owner;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -405,7 +418,10 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() {
-        (*c).tty.mouse_drag_update = None;
+        c.as_ref()
+            .expect("live client")
+            .borrow_terminal_mut()
+            .mouse_drag_update = None;
         return;
     }
     w = wl
@@ -530,11 +546,8 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
         server_redraw_window_borders(&*(w));
     }
 }
-unsafe fn cmd_resize_pane_mouse_resize_tiled(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut m: *mut mouse_event,
-) {
-    let c = client_owner.get();
+unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &ClientRef, mut m: *mut mouse_event) {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut y: u_int = 0;
@@ -557,7 +570,10 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(
     let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
     wl = cmd_mouse_window(m, None);
     if !wl.is_alive() {
-        (*c).tty.mouse_drag_update = None;
+        c.as_ref()
+            .expect("live client")
+            .borrow_terminal_mut()
+            .mouse_drag_update = None;
         return;
     }
     w = wl

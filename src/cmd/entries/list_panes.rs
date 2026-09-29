@@ -6,12 +6,14 @@ use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
     format_true,
 };
+use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
 use crate::src::session::sessions_minmax;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
@@ -138,9 +140,7 @@ unsafe fn cmd_list_panes_window(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
-    let mut c: *mut client = c_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut c: Option<ClientRef> = c_owner.clone();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -202,9 +202,7 @@ unsafe fn cmd_list_panes_window(
         );
         format_defaults(
             ft,
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            c.as_ref(),
             Some(s_owner),
             wl.clone(),
             (wp).as_ref()

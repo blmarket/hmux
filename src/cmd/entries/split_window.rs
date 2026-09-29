@@ -22,6 +22,7 @@ use crate::src::options::{
 };
 use crate::src::screen::screen_set_title;
 use crate::src::server_client::server_client_remove_pane;
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_window, server_redraw_window_borders,
 };
@@ -29,6 +30,7 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::environment::environ;
@@ -139,9 +141,7 @@ unsafe fn cmd_split_window_exec(
     };
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut w: *mut window = wl
@@ -210,7 +210,7 @@ unsafe fn cmd_split_window_exec(
         }
     }
     if args_has(args, 'M' as i32 as u_char) != 0 && is_floating != 0 {
-        if event.is_null() || (*event).m.valid == 0 || tc.is_null() {
+        if event.is_null() || (*event).m.valid == 0 || tc.is_none() {
             return CMD_RETURN_NORMAL;
         }
     }
@@ -591,9 +591,15 @@ unsafe fn cmd_split_window_exec(
                                         if args_has(args, 'M' as i32 as u_char) != 0
                                             && is_floating != 0
                                         {
-                                            (*tc).tty.mouse_last_pane =
+                                            tc.as_ref()
+                                                .expect("live client")
+                                                .borrow_terminal_mut()
+                                                .mouse_last_pane =
                                                 (*new_wp).id as ::core::ffi::c_int;
-                                            (*tc).tty.mouse_drag_update = Some(Box::new(
+                                            tc.as_ref()
+                                                .expect("live client")
+                                                .borrow_terminal_mut()
+                                                .mouse_drag_update = Some(Box::new(
                                                 crate::src::tty::tty_mouse_client_callback(
                                                     tc_owner.as_ref().expect("live drag client"),
                                                     cmd_split_window_mouse_resize,
@@ -613,9 +619,7 @@ unsafe fn cmd_split_window_exec(
                                             let cp = format_single_cstring(
                                                 Some(item_handle),
                                                 template,
-                                                (tc).as_ref()
-                                                    .and_then(|model| model.observer.upgrade())
-                                                    .as_ref(),
+                                                tc.as_ref(),
                                                 s.as_ref(),
                                                 wl.clone(),
                                                 (new_wp)
@@ -695,11 +699,8 @@ unsafe fn cmd_split_window_exec(
     window_owner.release(c"cmd_split_window");
     return CMD_RETURN_ERROR;
 }
-unsafe fn cmd_split_window_mouse_resize(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    mut m: *mut mouse_event,
-) {
-    let c = client_owner.get();
+unsafe fn cmd_split_window_mouse_resize(client_owner: &ClientRef, mut m: *mut mouse_event) {
+    let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -711,15 +712,19 @@ unsafe fn cmd_split_window_mouse_resize(
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
     let mut border: ::core::ffi::c_int = 0;
-    if (*c).tty.mouse_last_pane == -(1 as ::core::ffi::c_int) {
+    let (last_pane, drag_x, drag_y) = {
+        let tty = client_owner.borrow_terminal();
+        (tty.mouse_last_pane, tty.mouse_drag_x, tty.mouse_drag_y)
+    };
+    if last_pane == -(1 as ::core::ffi::c_int) {
         return;
     }
-    let lookup_wp_owner = window_pane_find_by_id((*c).tty.mouse_last_pane as u_int);
+    let lookup_wp_owner = window_pane_find_by_id(last_pane as u_int);
     wp = lookup_wp_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if wp.is_null() || window_pane_is_floating(&*wp) == 0 {
-        (*c).tty.mouse_drag_update = None;
+        client_owner.borrow_terminal_mut().mouse_drag_update = None;
         return;
     }
     w = (*wp)
@@ -738,42 +743,22 @@ unsafe fn cmd_split_window_mouse_resize(
     border = (lines as ::core::ffi::c_uint
         != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int;
-    if x >= (*c).tty.mouse_drag_x as ::core::ffi::c_int {
-        xoff = (*c).tty.mouse_drag_x.wrapping_add(border as u_int) as ::core::ffi::c_int;
-        sx = (x as u_int)
-            .wrapping_sub((*c).tty.mouse_drag_x)
-            .wrapping_add(1 as u_int);
+    if x >= drag_x as ::core::ffi::c_int {
+        xoff = drag_x.wrapping_add(border as u_int) as ::core::ffi::c_int;
+        sx = (x as u_int).wrapping_sub(drag_x).wrapping_add(1 as u_int);
     } else {
-        sx = (*c)
-            .tty
-            .mouse_drag_x
-            .wrapping_sub(x as u_int)
-            .wrapping_add(1 as u_int);
-        xoff = (*c)
-            .tty
-            .mouse_drag_x
-            .wrapping_sub(sx)
-            .wrapping_add(1 as u_int) as ::core::ffi::c_int;
+        sx = drag_x.wrapping_sub(x as u_int).wrapping_add(1 as u_int);
+        xoff = drag_x.wrapping_sub(sx).wrapping_add(1 as u_int) as ::core::ffi::c_int;
         if border != 0 {
             xoff += 1;
         }
     }
-    if y >= (*c).tty.mouse_drag_y as ::core::ffi::c_int {
-        yoff = (*c).tty.mouse_drag_y.wrapping_add(border as u_int) as ::core::ffi::c_int;
-        sy = (y as u_int)
-            .wrapping_sub((*c).tty.mouse_drag_y)
-            .wrapping_add(1 as u_int);
+    if y >= drag_y as ::core::ffi::c_int {
+        yoff = drag_y.wrapping_add(border as u_int) as ::core::ffi::c_int;
+        sy = (y as u_int).wrapping_sub(drag_y).wrapping_add(1 as u_int);
     } else {
-        sy = (*c)
-            .tty
-            .mouse_drag_y
-            .wrapping_sub(y as u_int)
-            .wrapping_add(1 as u_int);
-        yoff = (*c)
-            .tty
-            .mouse_drag_y
-            .wrapping_sub(sy)
-            .wrapping_add(1 as u_int) as ::core::ffi::c_int;
+        sy = drag_y.wrapping_sub(y as u_int).wrapping_add(1 as u_int);
+        yoff = drag_y.wrapping_sub(sy).wrapping_add(1 as u_int) as ::core::ffi::c_int;
         if border != 0 {
             yoff += 1;
         }

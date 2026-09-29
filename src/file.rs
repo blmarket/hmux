@@ -17,11 +17,12 @@ use crate::src::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_once,
 };
-use crate::src::server_client::server_client_get_cwd;
 use crate::src::server_client::server_client_unref_owned;
+use crate::src::server_client::{server_client_get_cwd, Client as _};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
@@ -148,7 +149,7 @@ pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_fil
     }
 }
 
-unsafe fn file_get_path(c: Option<&client>, file: &CStr) -> CString {
+unsafe fn file_get_path(c: Option<&ClientRef>, file: &CStr) -> CString {
     let file = file.to_bytes();
     let path = if file.starts_with(b"~/") {
         let home = find_home_cstr().map_or(&[][..], CStr::to_bytes);
@@ -164,6 +165,21 @@ unsafe fn file_get_path(c: Option<&client>, file: &CStr) -> CString {
     };
     CString::new(full_path).expect("C string path fragments contain no NUL")
 }
+/// Client-backed transfers resolve protocol delivery through the model. A
+/// standalone peer transfer retains its existing explicit peer lifetime.
+unsafe fn file_send(
+    file: &client_file,
+    kind: msgtype,
+    fd: i32,
+    data: *const ::core::ffi::c_void,
+    size: usize,
+) -> i32 {
+    match file.c.as_ref() {
+        Some(client) => client.send_message(kind, fd, data, size),
+        None => proc_send(file.peer, kind, fd, data, size),
+    }
+}
+
 unsafe fn file_create_with_peer(
     mut peer: *mut tmuxpeer,
     files: &mut client_files,
@@ -180,21 +196,19 @@ unsafe fn file_create_with_peer(
     return owner;
 }
 unsafe fn file_create_with_client(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     stream: ::core::ffi::c_int,
     cb: client_file_cb,
 ) -> Rc<UnsafeCell<client_file>> {
     let client_owner =
-        client_owner.filter(|owner| (*owner.get()).flags & CLIENT_ATTACHED as uint64_t == 0);
+        client_owner.filter(|owner| owner.flags() & CLIENT_ATTACHED as uint64_t == 0);
     let owner = client_file::new();
     let cf = &mut *owner.get();
     cf.c = client_owner.cloned();
     cf.stream = stream;
     cf.cb = cb;
     if let Some(client_owner) = client_owner {
-        let client = &mut *client_owner.get();
-        cf.peer = client.peer;
-        client_files_insert(&mut client.files, owner.clone());
+        client_owner.register_file(&owner);
     }
     owner
 }
@@ -219,14 +233,10 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
         )
     };
     let dead = expired_wait
-        || client_owner
+        || client_owner.as_ref().is_some_and(|owner| owner.is_dead())
+        || wait_client
             .as_ref()
-            .is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
-        || wait_client.as_ref().is_some_and(|owner| {
-            owner
-                .as_ref()
-                .is_none_or(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
-        });
+            .is_some_and(|owner| owner.as_ref().is_none_or(|owner| owner.is_dead()));
     if dead {
         file_cancel_cmdq_wait(owner);
     } else {
@@ -289,14 +299,10 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let client_owner = cf.c.clone();
     let wait_client =
         (!Weak::ptr_eq(&cf.wait_client, &Weak::new())).then(|| cf.wait_client.upgrade());
-    let dead = client_owner
-        .as_ref()
-        .is_some_and(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
-        || wait_client.as_ref().is_some_and(|owner| {
-            owner
-                .as_ref()
-                .is_none_or(|owner| (*owner.get()).flags & CLIENT_DEAD as uint64_t != 0)
-        });
+    let dead = client_owner.as_ref().is_some_and(|owner| owner.is_dead())
+        || wait_client
+            .as_ref()
+            .is_some_and(|owner| owner.as_ref().is_none_or(|owner| owner.is_dead()));
     if dead || cf.cb.is_none() {
         return;
     }
@@ -322,12 +328,12 @@ unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     }
 }
 
-pub fn file_can_print(c: Option<&client>) -> ::core::ffi::c_int {
-    c.is_some_and(|c| c.flags & (CLIENT_ATTACHED | CLIENT_DEAD | CLIENT_CONTROL) as uint64_t == 0)
+pub unsafe fn file_can_print(c: Option<&ClientRef>) -> ::core::ffi::c_int {
+    c.is_some_and(|c| c.flags() & (CLIENT_ATTACHED | CLIENT_DEAD | CLIENT_CONTROL) as uint64_t == 0)
         as ::core::ffi::c_int
 }
 pub unsafe fn file_print(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let Some(client_owner) = client_owner else {
@@ -339,11 +345,11 @@ pub unsafe fn file_print(
         fd: 0,
         flags: 0,
     };
-    if file_can_print(Some(&*client_owner.get())) == 0 {
+    if file_can_print(Some(client_owner)) == 0 {
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
+    let file_owner = client_owner.find_file(find.stream);
     if file_owner.is_none() {
         let transfer_owner =
             file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
@@ -353,8 +359,7 @@ pub unsafe fn file_print(
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
-        proc_send(
-            (&*client_owner.get()).peer,
+        client_owner.send_message(
             MSG_WRITE_OPEN,
             -(1 as ::core::ffi::c_int),
             &raw mut msg as *const ::core::ffi::c_void,
@@ -366,7 +371,7 @@ pub unsafe fn file_print(
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
-pub unsafe fn file_print_buffer(client_owner: Option<&Rc<UnsafeCell<client>>>, data: &[u8]) {
+pub unsafe fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
     let Some(client_owner) = client_owner else {
         return;
     };
@@ -376,11 +381,11 @@ pub unsafe fn file_print_buffer(client_owner: Option<&Rc<UnsafeCell<client>>>, d
         fd: 0,
         flags: 0,
     };
-    if file_can_print(Some(&*client_owner.get())) == 0 {
+    if file_can_print(Some(client_owner)) == 0 {
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
+    let file_owner = client_owner.find_file(find.stream);
     if file_owner.is_none() {
         let transfer_owner =
             file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
@@ -390,8 +395,7 @@ pub unsafe fn file_print_buffer(client_owner: Option<&Rc<UnsafeCell<client>>>, d
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
-        proc_send(
-            (&*client_owner.get()).peer,
+        client_owner.send_message(
             MSG_WRITE_OPEN,
             -(1 as ::core::ffi::c_int),
             &raw mut msg as *const ::core::ffi::c_void,
@@ -404,7 +408,7 @@ pub unsafe fn file_print_buffer(client_owner: Option<&Rc<UnsafeCell<client>>>, d
     };
 }
 pub unsafe fn file_error(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let Some(client_owner) = client_owner else {
@@ -416,11 +420,11 @@ pub unsafe fn file_error(
         fd: 0,
         flags: 0,
     };
-    if file_can_print(Some(&*client_owner.get())) == 0 {
+    if file_can_print(Some(client_owner)) == 0 {
         return;
     }
     find.stream = 2 as ::core::ffi::c_int;
-    let file_owner = client_files_find(&(&*client_owner.get()).files, &find);
+    let file_owner = client_owner.find_file(find.stream);
     if file_owner.is_none() {
         let transfer_owner =
             file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
@@ -430,8 +434,7 @@ pub unsafe fn file_error(
         msg.stream = 2 as ::core::ffi::c_int;
         msg.fd = STDERR_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
-        proc_send(
-            (&*client_owner.get()).peer,
+        client_owner.send_message(
             MSG_WRITE_OPEN,
             -(1 as ::core::ffi::c_int),
             &raw mut msg as *const ::core::ffi::c_void,
@@ -445,7 +448,7 @@ pub unsafe fn file_error(
 }
 
 pub(crate) unsafe fn file_write_with_cmdq_wait(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     path: *const ::core::ffi::c_char,
     flags: ::core::ffi::c_int,
     bdata: *const ::core::ffi::c_void,
@@ -466,7 +469,7 @@ pub(crate) unsafe fn file_write_with_cmdq_wait(
 }
 
 unsafe fn file_write_impl(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut path: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
     mut bdata: *const ::core::ffi::c_void,
@@ -490,27 +493,17 @@ unsafe fn file_write_impl(
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
-        if client_owner.is_none_or(|owner| {
-            let client = &*owner.get();
-            client.flags & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0
-        }) {
+        if client_owner
+            .is_none_or(|owner| owner.flags() & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0)
+        {
             cf.error = EBADF;
             current_block = 4636144702248558238;
         } else {
             current_block = 8821498768635335055;
         }
     } else {
-        file_set_path(
-            cf,
-            file_get_path(
-                client_owner.map(|owner| &*owner.get()),
-                CStr::from_ptr(path),
-            ),
-        );
-        if client_owner.is_none_or(|owner| {
-            let client = &*owner.get();
-            client.flags & CLIENT_ATTACHED as uint64_t != 0
-        }) {
+        file_set_path(cf, file_get_path(client_owner, CStr::from_ptr(path)));
+        if client_owner.is_none_or(|owner| owner.flags() & CLIENT_ATTACHED as uint64_t != 0) {
             if flags & O_APPEND != 0 {
                 mode = b"ab\0" as *const u8 as *const ::core::ffi::c_char;
             } else {
@@ -572,8 +565,8 @@ unsafe fn file_write_impl(
                         as *const ::core::ffi::c_void,
                     msglen.wrapping_sub(::core::mem::size_of::<msg_write_open>() as size_t),
                 );
-                if proc_send(
-                    cf.peer,
+                if file_send(
+                    cf,
                     MSG_WRITE_OPEN,
                     -(1 as ::core::ffi::c_int),
                     msg.as_ptr().cast(),
@@ -592,7 +585,7 @@ unsafe fn file_write_impl(
 }
 
 pub(crate) unsafe fn file_read_with_cmdq_wait(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     path: *const ::core::ffi::c_char,
     cb: client_file_cb,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -604,7 +597,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait(
 /// Build the callback after allocating its file, before opening or scheduling
 /// any events. This lets a callback own its state without sharing startup data.
 pub(crate) unsafe fn file_read_with_cmdq_wait_init(
-    client_owner: Option<&Rc<UnsafeCell<client>>>,
+    client_owner: Option<&ClientRef>,
     mut path: *const ::core::ffi::c_char,
     callback: impl FnOnce(std::rc::Weak<std::cell::UnsafeCell<client_file>>) -> client_file_cb,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -628,27 +621,17 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
-        if client_owner.is_none_or(|owner| {
-            let client = &*owner.get();
-            client.flags & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0
-        }) {
+        if client_owner
+            .is_none_or(|owner| owner.flags() & (CLIENT_ATTACHED | CLIENT_CONTROL) as uint64_t != 0)
+        {
             cf.error = EBADF;
             current_block = 17369485759464587280;
         } else {
             current_block = 17710118112003399050;
         }
     } else {
-        file_set_path(
-            cf,
-            file_get_path(
-                client_owner.map(|owner| &*owner.get()),
-                CStr::from_ptr(path),
-            ),
-        );
-        if client_owner.is_none_or(|owner| {
-            let client = &*owner.get();
-            client.flags & CLIENT_ATTACHED as uint64_t != 0
-        }) {
+        file_set_path(cf, file_get_path(client_owner, CStr::from_ptr(path)));
+        if client_owner.is_none_or(|owner| owner.flags() & CLIENT_ATTACHED as uint64_t != 0) {
             f = fopen(
                 cf.path
                     .as_ref()
@@ -721,8 +704,8 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                     header_len,
                 );
                 msg[header_len..].copy_from_slice(path);
-                if proc_send(
-                    cf.peer,
+                if file_send(
+                    cf,
                     MSG_READ_OPEN,
                     -(1 as ::core::ffi::c_int),
                     msg.as_ptr().cast(),
@@ -748,8 +731,8 @@ pub unsafe fn file_cancel(cf: &mut client_file) {
     }
     (*cf).closed = 1 as ::core::ffi::c_int;
     msg.stream = (*cf).stream;
-    proc_send(
-        (*cf).peer,
+    file_send(
+        cf,
         MSG_READ_CANCEL,
         -(1 as ::core::ffi::c_int),
         &raw mut msg as *const ::core::ffi::c_void,
@@ -758,10 +741,11 @@ pub unsafe fn file_cancel(cf: &mut client_file) {
 }
 unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &*owner.get();
-    if cf.c.as_ref().is_none_or(|owner| {
-        let client = &*owner.get();
-        client.flags & CLIENT_DEAD as uint64_t == 0
-    }) {
+    if cf
+        .c
+        .as_ref()
+        .is_none_or(|owner| owner.flags() & CLIENT_DEAD as uint64_t == 0)
+    {
         file_push(owner);
     }
 }
@@ -800,8 +784,8 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
                 as *const ::core::ffi::c_void,
             sent,
         );
-        if proc_send(
-            cf.peer,
+        if file_send(
+            cf,
             MSG_WRITE,
             -(1 as ::core::ffi::c_int),
             msg.as_ptr().cast(),
@@ -824,17 +808,18 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         event_once(move |_, _| unsafe { file_push_cb(&owner) });
     } else if cf.stream > 2 as ::core::ffi::c_int {
         close_0.stream = cf.stream;
-        proc_send(
-            cf.peer,
+        file_send(
+            cf,
             MSG_WRITE_CLOSE,
             -(1 as ::core::ffi::c_int),
             &raw mut close_0 as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_close>() as size_t,
         );
-        if cf.c.as_ref().is_none_or(|owner| {
-            let client = &*owner.get();
-            client.flags & CLIENT_WRITE_ACK as uint64_t == 0
-        }) {
+        if cf
+            .c
+            .as_ref()
+            .is_none_or(|owner| owner.flags() & CLIENT_WRITE_ACK as uint64_t == 0)
+        {
             file_fire_done(file_owner);
         }
     }
@@ -876,8 +861,8 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
     }
     msg.stream = cf.stream;
     msg.error = cf.error;
-    proc_send(
-        cf.peer,
+    file_send(
+        cf,
         MSG_WRITE_DONE,
         -(1 as ::core::ffi::c_int),
         &raw mut msg as *const ::core::ffi::c_void,
@@ -1102,8 +1087,8 @@ unsafe fn file_read_error_callback(
     } else {
         0 as ::core::ffi::c_int
     };
-    proc_send(
-        cf.peer,
+    file_send(
+        cf,
         MSG_READ_DONE,
         -(1 as ::core::ffi::c_int),
         &raw mut msg as *const ::core::ffi::c_void,
@@ -1148,8 +1133,8 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
             header_len,
         );
         msg[header_len..].copy_from_slice(&chunk);
-        proc_send(
-            cf.peer,
+        file_send(
+            cf,
             MSG_READ,
             -(1 as ::core::ffi::c_int),
             msg.as_ptr().cast(),
@@ -1268,7 +1253,7 @@ pub unsafe fn file_read_cancel(files: &client_files, imsg: &imsg) {
     log_debug(format_args!("cancel file {}", (cf.stream) as i32));
     file_read_error_callback(0, &file_owner);
 }
-pub unsafe fn file_write_ready(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_write_ready(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_ready>() {
         return -1;
@@ -1276,7 +1261,7 @@ pub unsafe fn file_write_ready(files: &client_files, imsg: &imsg) -> ::core::ffi
     let msg = read_imsg_payload::<msg_write_ready>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = client_files_find(files, &find) else {
+    let Some(file_owner) = client.find_file(find.stream) else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
@@ -1288,7 +1273,7 @@ pub unsafe fn file_write_ready(files: &client_files, imsg: &imsg) -> ::core::ffi
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_write_done(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_write_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_write_done>() {
         return -1;
@@ -1296,14 +1281,15 @@ pub unsafe fn file_write_done(files: &client_files, imsg: &imsg) -> ::core::ffi:
     let msg = read_imsg_payload::<msg_write_done>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = client_files_find(files, &find) else {
+    let Some(file_owner) = client.find_file(find.stream) else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
-    if cf.c.as_ref().is_none_or(|owner| {
-        let client = &*owner.get();
-        client.flags & CLIENT_WRITE_ACK as uint64_t == 0
-    }) {
+    if cf
+        .c
+        .as_ref()
+        .is_none_or(|owner| owner.flags() & CLIENT_WRITE_ACK as uint64_t == 0)
+    {
         return 0 as ::core::ffi::c_int;
     }
     log_debug(format_args!("file {} write done", (cf.stream) as i32));
@@ -1311,7 +1297,7 @@ pub unsafe fn file_write_done(files: &client_files, imsg: &imsg) -> ::core::ffi:
     file_fire_done(&file_owner);
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_read_data(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_read_data(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen < ::core::mem::size_of::<msg_read_data>() {
         return -1;
@@ -1323,7 +1309,7 @@ pub unsafe fn file_read_data(files: &client_files, imsg: &imsg) -> ::core::ffi::
         .cast::<::core::ffi::c_void>();
     let bsize = msglen - ::core::mem::size_of::<msg_read_data>();
     find.stream = msg.stream;
-    let Some(file_owner) = client_files_find(files, &find) else {
+    let Some(file_owner) = client.find_file(find.stream) else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
@@ -1343,7 +1329,7 @@ pub unsafe fn file_read_data(files: &client_files, imsg: &imsg) -> ::core::ffi::
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn file_read_done(files: &client_files, imsg: &imsg) -> ::core::ffi::c_int {
+pub unsafe fn file_read_done(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_int {
     let msglen = imsg.data.len();
     if msglen != ::core::mem::size_of::<msg_read_done>() {
         return -1;
@@ -1351,7 +1337,7 @@ pub unsafe fn file_read_done(files: &client_files, imsg: &imsg) -> ::core::ffi::
     let msg = read_imsg_payload::<msg_read_done>(imsg).unwrap();
     let mut find: client_file = client_file::empty();
     find.stream = msg.stream;
-    let Some(file_owner) = client_files_find(files, &find) else {
+    let Some(file_owner) = client.find_file(find.stream) else {
         return 0 as ::core::ffi::c_int;
     };
     let cf = &mut *file_owner.get();
@@ -1369,14 +1355,21 @@ fn client_files_find(
     head: &client_files,
     elm: &client_file,
 ) -> Option<Rc<UnsafeCell<client_file>>> {
+    client_files_find_stream(head, client_files_key(elm))
+}
+
+pub(crate) fn client_files_find_stream(
+    head: &client_files,
+    stream: i32,
+) -> Option<Rc<UnsafeCell<client_file>>> {
     let owner = head.as_ref()?;
     let map = owner
         .try_borrow_mut()
         .expect("client file index already borrowed");
-    map.get(&client_files_key(elm)).cloned()
+    map.get(&stream).cloned()
 }
 
-unsafe fn client_files_insert(
+pub(crate) unsafe fn client_files_insert(
     head: &mut client_files,
     file: Rc<UnsafeCell<client_file>>,
 ) -> Option<Rc<UnsafeCell<client_file>>> {
@@ -1428,8 +1421,11 @@ pub(crate) unsafe fn client_files_has_pending_data(files: &client_files) -> bool
     })
 }
 
-pub(crate) unsafe fn client_files_interrupt(files: &client_files, error: i32) {
-    for file in client_files_iter(files) {
+pub(crate) unsafe fn client_files_interrupt(
+    files: impl Iterator<Item = Rc<UnsafeCell<client_file>>>,
+    error: i32,
+) {
+    for file in files {
         (*file.get()).error = error;
         file_fire_done(&file);
     }

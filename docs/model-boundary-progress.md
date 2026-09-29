@@ -4,6 +4,79 @@ The four traits are still being migrated. A passing test suite is not evidence
 that every external projection has been removed. The compiled trait definitions
 are authoritative; `trait-models.md` describes the original adapter design.
 
+## Client visibility checkpoint
+
+Client state and storage helpers now live in `server_client/model.rs` with
+`pub(super)` visibility. Only `server_client` implements Client internals; control,
+TTY, status, formatting, queues and command consumers remain outside that boundary.
+`ClientRef` and `ClientWeak` centralize the existing Rc/Weak cell type. No production
+RefCell conversion or per-field RefCell was introduced.
+
+External operations use Client methods or associated component guards. Terminal,
+status, control, queue and format-job guards can become mapped Ref/RefMut guards
+from one whole-model RefCell. Terminal output needs several Client fields together,
+so `with_terminal_output` supplies a bounded component view and copied metadata
+under a single borrow. Its helpers cannot query Client or dispatch model callbacks.
+Status screen output borrows the screen and terminal together inside Client.
+
+Callbacks retain Rc/Weak Client identities and reacquire components on execution:
+
+- Queue callbacks retain a weak queue owner, not a queue pointer. Dispatch and
+  explicit item cancellation happen after releasing the queue guard.
+- Format jobs retain Client/key/entry identities, reject callbacks from retired
+  entries, and run expansion, process startup, cancellation and notifications
+  outside cache borrows.
+- Overlay callbacks are taken out before invocation and restored only if their
+  generation remains current. Mode callbacks return copied ScreenMode values;
+  clipping returns owned ranges, including during nested queries.
+- TTY events retain Weak Client identities. Input decoding uses owned snapshots
+  that share one allocation while successive keys consume a read; it never keeps
+  a buffer pointer into Client across notifications or replies. Fresh reads replace
+  the snapshot without invalidating an already executing decoder.
+- Terminal diagnostics retain weak Client and term identities, then copy each
+  installed description under a fresh guard. The registry holds no term pointers.
+- File callbacks, source-file completion and input-request operations reacquire
+  Client indexes. Input contexts still own their independent request allocations;
+  selection/cancellation releases Client before explicit request cleanup.
+
+Prompt replacement detaches its old owner/screen before free callbacks. Status
+rendering clears its borrowed screen target before formatting and reacquires it
+without introducing additional flushes. Scene rendering owns its temporary cache
+and preserves a replacement installed by nested rendering. Control teardown keeps
+its established stream/monitor order and releases Client borrows before explicit
+frees. Existing deferred Client release and logical destruction remain in place.
+
+Validation:
+
+- `cargo test --workspace`: 793 passed, none failed or ignored, including 14 source
+  boundary tests and behavioral coverage for reentry, cancellation, byte output,
+  snapshot ownership, retired registry entries and callback identity.
+- `python3 tools/client_storage_boundary.py`: all targets compile with Client's
+  storage projection private to its implementation in a disposable source copy.
+  This catches inferred/unused `.get()` and storage-specific generic helpers that
+  field privacy alone misses. Production source/storage is not changed by the probe.
+- `python3 tools/model_boundary_inventory.py --model client`: zero external field
+  diagnostics and no unexpected errors (748 implementation-owned accesses).
+- Python inventory/probe tests: 5 passed. Formatting and `git diff --check` pass.
+- `python3 tools/client_boundary_smoke.py`: isolated PTY input, prompt completion,
+  menu rendering/selection/close, resize, terminal registry reporting, control
+  protocol reply and explicit detach pass. The temporary server is stopped.
+- Default Clippy remains blocked by `clippy::mut_from_ref` in
+  `hmux-refbox/src/internals.rs:161`. `-- --cap-lints warn` completes with warnings;
+  this is not a clean default lint run.
+
+The compiler probe establishes the external Client storage boundary, not arbitrary
+aliasing correctness. Syntax checks additionally reject model representation casts,
+whole-model signatures, raw queue/cache observations and borrowed overlay results.
+Behavior tests cover specific reentry paths, including component-only output under
+one test RefCell. The unsafe single-thread/lifecycle contracts remain necessary;
+this checkpoint does not claim that the existing model implementation is already
+ready to compile unchanged with RefCell.
+
+Window and WindowPane privacy work remains pending. Session's options exception
+below is unchanged: shared option access is necessary, but direct access through
+Session storage is still unfinished.
+
 ## Session visibility checkpoint (partial)
 
 `session.rs` is now `session/mod.rs`. Session state and methods that expose a
@@ -149,7 +222,7 @@ The full migration is not complete. Remaining work includes:
   customization and hook insertion (see the newer visibility checkpoint above).
 - Window layout/scene state and cross-model legacy helpers.
 - Pane base/current-screen pointers, input/parser and mode state, output paths.
-- Client terminal/status/prompt state and other control-mode helpers.
+- Client internal storage conversion itself remains a separate, future change.
 
 In particular, `screen_write_ctx::screen_ptr`, options-scope pointers, and helper
 conversions to whole-model references still prevent a whole-model RefCell swap.

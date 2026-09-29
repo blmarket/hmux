@@ -4,8 +4,10 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::paste::{
     paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
 };
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_parse;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{
@@ -71,9 +73,7 @@ unsafe fn cmd_set_buffer_exec(
     let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let tc = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut tc: Option<ClientRef> = tc_owner.clone();
     let name = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
     let mut bufname = (!name.is_null()).then(|| CStr::from_ptr(name).to_owned());
     let mut pb = bufname.as_deref().and_then(paste_get_name);
@@ -131,7 +131,7 @@ unsafe fn cmd_set_buffer_exec(
         }
     }
     bufdata.extend_from_slice(new_data);
-    let selection_data = (args_has(args, b'w') != 0 && !tc.is_null()).then(|| bufdata.clone());
+    let selection_data = (args_has(args, b'w') != 0 && !tc.is_none()).then(|| bufdata.clone());
     if paste_set_owned(
         bufdata.into_boxed_slice(),
         bufname.as_deref(),
@@ -144,7 +144,7 @@ unsafe fn cmd_set_buffer_exec(
         return CMD_RETURN_ERROR;
     }
     if let Some(selection_data) = selection_data.as_ref() {
-        tty_set_selection(&raw mut (*tc).tty, c"", selection_data);
+        tty_set_selection(tc.as_ref().expect("selection client"), c"", selection_data);
     }
     CMD_RETURN_NORMAL
 }

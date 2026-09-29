@@ -6,6 +6,7 @@ use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
     format_true,
 };
+use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -100,10 +101,10 @@ unsafe fn cmd_list_clients_exec(
     let clients_sorted = sort_get_clients(&raw mut sort_crit);
     i = 0 as u_int;
     while (i as usize) < clients_sorted.len() {
-        let c = clients_sorted[i as usize].get();
-        if !((*c).session_handle().is_none()
-            || !s.is_none()
-                && !crate::src::shared::rc::same(s.as_ref(), (*c).session_handle().as_ref()))
+        let c = &clients_sorted[i as usize];
+        let attached = c.attached_session().upgrade();
+        if !(attached.is_none()
+            || !s.is_none() && !crate::src::shared::rc::same(s.as_ref(), attached.as_ref()))
         {
             let mut ft_owner = format_create_with_client(
                 queue_client.as_ref(),
@@ -117,15 +118,7 @@ unsafe fn cmd_list_clients_exec(
                 b"line\0" as *const u8 as *const ::core::ffi::c_char,
                 |out| write!(out, "{}", (i) as u32),
             );
-            format_defaults(
-                ft,
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
-                None,
-                (refbox::Weak::new()).clone(),
-                None,
-            );
+            format_defaults(ft, Some(c), None, (refbox::Weak::new()).clone(), None);
             if !filter.is_null() {
                 let expanded = format_expand_cstring(ft, filter);
                 flag = format_true(expanded.as_ptr());

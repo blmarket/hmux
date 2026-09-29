@@ -7,6 +7,7 @@ use crate::src::format::{
 };
 use crate::src::job::job_print_summary;
 use crate::src::server::message_log;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -16,8 +17,8 @@ use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_
 use crate::src::shared::format::format_tree;
 use crate::src::shared::tty::tty_term;
 use crate::src::shared::tty::*;
+use crate::src::tty_term::tty_term_descriptions;
 use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::tty_term::tty_terms;
 use crate::src::tty_term::{tty_term_describe, tty_term_ncodes};
 
 pub const SHOW_MESSAGES_TEMPLATE: [::core::ffi::c_char; 37] = unsafe {
@@ -59,51 +60,37 @@ unsafe fn cmd_show_messages_terminals(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut term: *const tty_term = ::core::ptr::null::<tty_term>();
-    let mut i: u_int = 0;
-    let mut n: u_int = 0;
-    n = 0 as u_int;
-    term = tty_terms.lh_first;
-    while !term.is_null() {
-        if !(args_has(args, 't' as i32 as u_char) != 0
-            && !tc.is_null()
-            && term != tty_term_owner_ptr(&(*tc).tty.term).map_or(std::ptr::null(), |term| term))
-        {
-            if blank != 0 {
-                cmdq_print(item_handle, |out| {
-                    write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
-                });
-                blank = 0 as ::core::ffi::c_int;
-            }
-            cmdq_print(item_handle, |out| {
-                let owner = (*term).client.upgrade().expect("terminal client");
-                write!(out, "Terminal {}: ", (n) as u32)?;
-                write_cstr(out, ((*term).name).as_ptr().cast_mut())?;
-                out.write_all(b" for ")?;
-                write_cstr(
-                    out,
-                    ((*owner.get()).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )?;
-                write!(out, ", flags=0x{:x}:", ((*term).flags) as u32)
-            });
-            n = n.wrapping_add(1);
-            i = 0 as u_int;
-            while i < tty_term_ncodes() {
-                cmdq_print(item_handle, |out| {
-                    out.write_all(tty_term_describe(term, i as tty_code_code).as_bytes())
-                });
-                i = i.wrapping_add(1);
-            }
+    let target = if args_has(args, b't') != 0 {
+        tc_owner.as_ref()
+    } else {
+        None
+    };
+    let mut n = 0_u32;
+    for term in tty_term_descriptions(target) {
+        if blank != 0 {
+            cmdq_print(item_handle, |_| Ok(()));
+            blank = 0;
         }
-        term = (*term).entry.le_next;
+        cmdq_print(item_handle, |out| {
+            write!(out, "Terminal {}: ", n)?;
+            out.write_all(term.name.to_bytes())?;
+            out.write_all(b" for ")?;
+            write_cstr(
+                out,
+                term.client_name
+                    .as_deref()
+                    .map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+            )?;
+            write!(out, ", flags=0x{:x}:", term.flags as u32)
+        });
+        n = n.wrapping_add(1);
+        for code in term.codes {
+            cmdq_print(item_handle, |out| out.write_all(code.as_bytes()));
+        }
     }
-    return (n != 0 as u_int) as ::core::ffi::c_int;
+    i32::from(n != 0)
 }
+
 unsafe fn cmd_show_messages_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,

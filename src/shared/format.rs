@@ -1,4 +1,5 @@
 //! Authoritative format declarations.
+use crate::src::shared::client::{ClientRef, ClientWeak};
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
@@ -119,7 +120,7 @@ pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 #[repr(C)]
 pub struct format_tree {
     pub type_0: format_type,
-    pub c: std::rc::Weak<UnsafeCell<client>>,
+    pub c: ClientWeak,
     pub s: std::rc::Weak<UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
     pub w: std::rc::Weak<UnsafeCell<window>>,
@@ -127,7 +128,7 @@ pub struct format_tree {
     pub pb: Option<PasteBufferRef>,
     /// Queue item used for verbose output, observed without retaining it.
     pub item: std::rc::Weak<UnsafeCell<cmdq_item>>,
-    pub client: Option<Rc<UnsafeCell<client>>>,
+    pub client: Option<ClientRef>,
     pub flags: ::core::ffi::c_int,
     pub tag: u_int,
     pub m: mouse_event,
@@ -141,7 +142,7 @@ impl format_tree {
     }
 }
 
-// Jobs live in stable Rust allocations because process callbacks retain their addresses.
+// Jobs remain boxed; callbacks observe cache identity and reacquire an entry.
 // Keys own the original command bytes, ordered exactly like tag followed by strcmp.
 
 pub type format_job_tree = std::collections::BTreeMap<(u_int, Vec<u8>), Box<format_job>>;
@@ -184,8 +185,11 @@ pub type format_type = ::core::ffi::c_uint;
 
 #[repr(C)]
 pub struct format_job {
+    /// Allocation-independent identity rejects callbacks for a retired entry
+    /// when a replacement uses the same command key. It owns no resources.
+    pub(crate) identity: std::rc::Rc<()>,
     /// The client owns its job cache; callbacks only observe it.
-    pub client: std::rc::Weak<UnsafeCell<client>>,
+    pub client: ClientWeak,
     pub tag: u_int,
     pub cmd: std::ffi::CString,
     pub expanded: Option<std::ffi::CString>,

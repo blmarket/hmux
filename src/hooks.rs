@@ -36,6 +36,7 @@ use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::client_handle;
+use crate::src::shared::client::ClientWeak;
 use crate::src::shared::command::CMDQ_STATE_NOHOOKS;
 use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
@@ -86,7 +87,7 @@ pub struct hooks_data<'a> {
     pub fs: cmd_find_state,
     pub formats: Box<format_tree>,
     pub oo: *mut options,
-    pub client: Weak<UnsafeCell<client>>,
+    pub client: ClientWeak,
     pub expand: ::core::ffi::c_int,
 }
 #[repr(C)]
@@ -136,10 +137,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
     let client_owner = (*hd).client.upgrade();
     let mut ft_owner = format_create_defaults(
         None,
-        (client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        client_owner.as_ref(),
         fs.session_handle().as_ref(),
         (fs.winlink_handle()).clone(),
         (fs.pane_handle()
@@ -496,7 +494,6 @@ unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *m
 unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     let wl = change.wl.clone();
     let client_owner = change.c.upgrade();
-    let c = client_handle(&client_owner).map_or(std::ptr::null_mut(), |owner| owner.get());
     let session_owner = change.s.upgrade();
     let s = session_owner.clone();
     let pane_owner = window_pane_upgrade(&change.wp);
@@ -567,8 +564,8 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
             |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
         );
     }
-    if !c.is_null() {
-        event_payload_set_client(&mut *ep, (*(c)).observer.upgrade().expect("live client"));
+    if let Some(client) = client_owner.as_ref() {
+        event_payload_set_client(&mut *ep, client.clone());
     }
     if !s.is_none() {
         event_payload_set_session(

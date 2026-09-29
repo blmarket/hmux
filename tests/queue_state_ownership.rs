@@ -5,53 +5,6 @@ use hmux2::src::shared::key::key_event;
 use std::rc::Rc;
 
 #[test]
-fn shared_current_is_checked_and_event_snapshots_outlive_queue_items() {
-    unsafe {
-        let mut event = key_event::new(42, Default::default(), Some(vec![1, 2, 3]));
-        event.m.valid = 1;
-        let state = cmdq_new_state(std::ptr::null_mut(), &mut *event, 7);
-        let observed = Rc::downgrade(&state);
-        let client = client::new();
-        (*client.get()).queue = Some(cmdq_new());
-        let item_owner = cmdq_get_callback_owned(
-            c"state snapshot test",
-            Some(Box::new(|_| hmux2::src::shared::command::CMD_RETURN_NORMAL)),
-        );
-        let item = &mut *item_owner.get();
-        item.state = Some(state.clone());
-        let retained = cmdq_get_state_owned(&*item);
-        assert!(Rc::ptr_eq(&retained, &state));
-        {
-            let mut target = retained.current.borrow_mut();
-            target.idx = 19;
-            assert!(state.current.try_borrow().is_err());
-            // Other state fields remain accessible without a whole-state borrow.
-            let snapshot = cmdq_get_event(&*item);
-            assert_eq!(snapshot.key, 42);
-            assert!(snapshot.bytes.is_none());
-        }
-        assert_eq!(state.current.borrow().idx, 19);
-        let saved = state.current_snapshot();
-        state.current.borrow_mut().idx = 23;
-        assert_eq!(saved.idx, 19);
-        let mut snapshot = cmdq_get_event(&*item);
-        snapshot.m.valid = 0;
-        assert_eq!(cmdq_get_event(item).m.valid, 1);
-        drop(state);
-        cmdq_append(Some(&client), item_owner);
-        cmdq_next(Some(&client));
-        assert!(observed.upgrade().is_some());
-        assert_eq!(retained.flags, 7);
-        drop(retained);
-        assert!(observed.upgrade().is_none());
-        assert_eq!(snapshot.key, 42);
-        drop(client);
-        hmux2::src::reactor::event_loop();
-        hmux2::src::reactor::shutdown_runtime();
-    }
-}
-
-#[test]
 fn event_snapshots_observe_clients_and_never_redirect_expired_targets() {
     use hmux2::src::shared::client::client;
     use hmux2::src::shared::window::window;

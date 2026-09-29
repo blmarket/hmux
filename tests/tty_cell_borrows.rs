@@ -1,5 +1,6 @@
 use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
+use hmux2::src::server_client::Client as _;
 use hmux2::src::shared::client::{client, CLIENT_UTF8};
 use hmux2::src::shared::grid::{grid_cell, GRID_FLAG_PADDING};
 use hmux2::src::shared::screen::screen;
@@ -31,11 +32,13 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
             (true, b"A".as_slice(), 1, true, b"".as_slice()),
         ] {
             let client_owner = client::new();
-            let client = &mut *client_owner.get();
-            client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
+            client_owner.update_flags(
+                if utf8 { CLIENT_UTF8 as u64 } else { 0 },
+                if utf8 { 0 } else { CLIENT_UTF8 as u64 },
+            );
             let mut term = tty_term::empty();
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
-            let mut terminal = tty {
+            *client_owner.borrow_terminal_mut() = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
@@ -62,13 +65,21 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
                 },
                 ..Default::default()
             };
-            tty_cmd_cell(&raw mut terminal, &ctx, &screen, &source);
+            tty_cmd_cell(&client_owner, &ctx, &screen, &source);
             assert_eq!(
-                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default(),
+                evbuffer_pullup(
+                    client_owner
+                        .borrow_terminal_mut()
+                        .out
+                        .as_deref_mut()
+                        .unwrap(),
+                    -1
+                )
+                .unwrap_or_default(),
                 expected
             );
             assert_eq!(
-                terminal.cx,
+                client_owner.borrow_terminal().cx,
                 if expected.is_empty() { 0 } else { width as u32 }
             );
             assert!(grid_cells_equal(&source, &before));
@@ -80,13 +91,12 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
 fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
     unsafe {
         let client_owner = client::new();
-        let client = &mut *client_owner.get();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
         term.codes[TTYC_COLORS as usize] = tty_code::Number(8);
         term.codes[TTYC_SETAF as usize] = tty_code::String(c"F%p1%d".to_owned());
         term.codes[TTYC_SETAB as usize] = tty_code::String(c"B%p1%d".to_owned());
-        let mut terminal = tty {
+        *client_owner.borrow_terminal_mut() = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
@@ -107,12 +117,33 @@ fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
             defaults,
             ..Default::default()
         };
-        tty_cell(&raw mut terminal, &source, Some(&style));
-        assert_eq!((terminal.last_cell.fg, terminal.last_cell.bg), (2, 4));
-        tty_default_attributes(&raw mut terminal, 3, Some(&style));
-        assert_eq!((terminal.last_cell.fg, terminal.last_cell.bg), (2, 3));
+        tty_cell(&client_owner, &source, Some(&style));
         assert_eq!(
-            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+            (
+                client_owner.borrow_terminal().last_cell.fg,
+                client_owner.borrow_terminal().last_cell.bg
+            ),
+            (2, 4)
+        );
+        client_owner
+            .with_terminal_output(|terminal| tty_default_attributes(terminal, 3, Some(&style)));
+        assert_eq!(
+            (
+                client_owner.borrow_terminal().last_cell.fg,
+                client_owner.borrow_terminal().last_cell.bg
+            ),
+            (2, 3)
+        );
+        assert_eq!(
+            evbuffer_pullup(
+                client_owner
+                    .borrow_terminal_mut()
+                    .out
+                    .as_deref_mut()
+                    .unwrap(),
+                -1
+            )
+            .unwrap(),
             b"F2B4AB3"
         );
         assert!(grid_cells_equal(&source, &before));
@@ -135,11 +166,13 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
             (true, 1, 4, b" AB ".as_slice()),
         ] {
             let client_owner = client::new();
-            let client = &mut *client_owner.get();
-            client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
+            client_owner.update_flags(
+                if utf8 { CLIENT_UTF8 as u64 } else { 0 },
+                if utf8 { 0 } else { CLIENT_UTF8 as u64 },
+            );
             let mut term = tty_term::empty();
             term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
-            let mut terminal = tty {
+            *client_owner.borrow_terminal_mut() = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
@@ -179,12 +212,22 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
                 ..grid_default_cell
             };
             screen_set_selection(&mut screen, 3, 0, 3, 0, 0, 6, MODEKEY_VI, &selection_style);
-            tty_draw_line(&raw mut terminal, &screen, start, 0, width, 0, 0, None);
+            client_owner.with_terminal_output(|terminal| {
+                tty_draw_line(terminal, &screen, start, 0, width, 0, 0, None)
+            });
             assert_eq!(
-                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+                evbuffer_pullup(
+                    client_owner
+                        .borrow_terminal_mut()
+                        .out
+                        .as_deref_mut()
+                        .unwrap(),
+                    -1
+                )
+                .unwrap(),
                 expected
             );
-            assert_eq!(terminal.cx, width);
+            assert_eq!(client_owner.borrow_terminal().cx, width);
             for (x, before) in source.iter().enumerate() {
                 let mut after = grid_default_cell;
                 grid_get_cell(screen.grid(), x as u32, 0, &mut after);
@@ -207,13 +250,12 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
 
     unsafe {
         let client_owner = client::new();
-        let client = &mut *client_owner.get();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
         term.codes[TTYC_CNORM as usize] = tty_code::String(c"N".to_owned());
         term.codes[TTYC_CIVIS as usize] = tty_code::String(c"I".to_owned());
         term.codes[TTYC_SS as usize] = tty_code::String(c"S%p1%d".to_owned());
-        let mut terminal = tty {
+        *client_owner.borrow_terminal_mut() = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
@@ -225,23 +267,44 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         screen.default_ccolour = -1;
         screen.default_cstyle = SCREEN_CURSOR_UNDERLINE;
         screen.default_mode = MODE_CURSOR_BLINKING;
-        tty_update_mode(&raw mut terminal, MODE_CURSOR, Some(&screen));
-        assert_eq!(terminal.cstyle, SCREEN_CURSOR_UNDERLINE);
-        assert_eq!(terminal.mode, MODE_CURSOR | MODE_CURSOR_BLINKING);
+        client_owner.with_terminal_output(|terminal| {
+            tty_update_mode(terminal, MODE_CURSOR, Some((&screen).into()))
+        });
+        assert_eq!(
+            client_owner.borrow_terminal().cstyle,
+            SCREEN_CURSOR_UNDERLINE
+        );
+        assert_eq!(
+            client_owner.borrow_terminal().mode,
+            MODE_CURSOR | MODE_CURSOR_BLINKING
+        );
 
         // Without a screen, retain the previous style but use the requested blink mode.
-        tty_update_mode(&raw mut terminal, MODE_CURSOR, None);
-        assert_eq!(terminal.cstyle, SCREEN_CURSOR_UNDERLINE);
-        assert_eq!(terminal.mode, MODE_CURSOR);
+        client_owner.with_terminal_output(|terminal| tty_update_mode(terminal, MODE_CURSOR, None));
+        assert_eq!(
+            client_owner.borrow_terminal().cstyle,
+            SCREEN_CURSOR_UNDERLINE
+        );
+        assert_eq!(client_owner.borrow_terminal().mode, MODE_CURSOR);
 
         screen.cstyle = SCREEN_CURSOR_BAR;
-        tty_update_mode(&raw mut terminal, MODE_CURSOR, Some(&screen));
-        assert_eq!(terminal.cstyle, SCREEN_CURSOR_BAR);
-        assert_eq!(terminal.mode, MODE_CURSOR);
-        tty_update_mode(&raw mut terminal, 0, None);
-        assert_eq!(terminal.mode, 0);
+        client_owner.with_terminal_output(|terminal| {
+            tty_update_mode(terminal, MODE_CURSOR, Some((&screen).into()))
+        });
+        assert_eq!(client_owner.borrow_terminal().cstyle, SCREEN_CURSOR_BAR);
+        assert_eq!(client_owner.borrow_terminal().mode, MODE_CURSOR);
+        client_owner.with_terminal_output(|terminal| tty_update_mode(terminal, 0, None));
+        assert_eq!(client_owner.borrow_terminal().mode, 0);
         assert_eq!(
-            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+            evbuffer_pullup(
+                client_owner
+                    .borrow_terminal_mut()
+                    .out
+                    .as_deref_mut()
+                    .unwrap(),
+                -1
+            )
+            .unwrap(),
             b"NS3NS4NS6I"
         );
     }
@@ -255,15 +318,14 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
 
     unsafe {
         let client_owner = client::new();
-        let client = &mut *client_owner.get();
-        client.flags = CLIENT_UTF8 as u64;
+        client_owner.update_flags(CLIENT_UTF8 as u64, 0);
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
         term.codes[TTYC_COLORS as usize] = tty_code::Number(8);
         term.codes[TTYC_SETAF as usize] = tty_code::String(c"F%p1%d".to_owned());
         term.codes[TTYC_SETAB as usize] = tty_code::String(c"B%p1%d".to_owned());
         term.codes[TTYC_SETULC1 as usize] = tty_code::String(c"U%p1%d".to_owned());
-        let mut terminal = tty {
+        *client_owner.borrow_terminal_mut() = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
             out: Some(evbuffer_new()),
@@ -292,27 +354,35 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
             ..character(b"A", 1)
         };
         let before = source;
-        tty_cell(&raw mut terminal, &source, Some(&style));
+        tty_cell(&client_owner, &source, Some(&style));
         assert_eq!(
             (
-                terminal.last_cell.fg,
-                terminal.last_cell.bg,
-                terminal.last_cell.us
+                client_owner.borrow_terminal().last_cell.fg,
+                client_owner.borrow_terminal().last_cell.bg,
+                client_owner.borrow_terminal().last_cell.us
             ),
             (2, 6, 2)
         );
         colour_palette_set(Some(&mut palette.try_borrow_mut().unwrap()), 1, 5);
-        tty_cell(&raw mut terminal, &source, Some(&style));
+        tty_cell(&client_owner, &source, Some(&style));
         assert_eq!(
             (
-                terminal.last_cell.fg,
-                terminal.last_cell.bg,
-                terminal.last_cell.us
+                client_owner.borrow_terminal().last_cell.fg,
+                client_owner.borrow_terminal().last_cell.bg,
+                client_owner.borrow_terminal().last_cell.us
             ),
             (5, 6, 5)
         );
         assert_eq!(
-            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
+            evbuffer_pullup(
+                client_owner
+                    .borrow_terminal_mut()
+                    .out
+                    .as_deref_mut()
+                    .unwrap(),
+                -1
+            )
+            .unwrap(),
             b"F2B6U2AF5U5A"
         );
         assert!(grid_cells_equal(&source, &before));

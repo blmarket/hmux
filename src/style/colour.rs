@@ -3,8 +3,10 @@ use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, s
 use crate::src::ffi::libm::round;
 use crate::src::log::log_cstr;
 use crate::src::options::{options_array_get_index, options_get};
+use crate::src::server_client::Client;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::*;
 use crate::src::shared::colour::{
     COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME, COLOUR_THEME_COUNT,
@@ -426,7 +428,7 @@ pub fn colour_format_escape_into(
     Some(bytes.len())
 }
 
-fn colour_format_escape_resolved(
+pub(crate) fn colour_format_escape_resolved(
     mut colour: i32,
     background: bool,
     flags: i32,
@@ -463,40 +465,26 @@ fn colour_format_escape_resolved(
     Some(std::ffi::CString::new(text).expect("SGR contains no NUL"))
 }
 
-/// Resolve raw client state and return owned SGR text without shared scratch storage.
-/// # Safety
-/// A supplied client's non-null terminal pointer must be readable when it is open.
+/// Return owned SGR text through the retained client, or default capabilities.
 pub unsafe fn colour_format_escape_for_client(
-    c: Option<&client>,
+    client: Option<&ClientRef>,
     mut colour: i32,
     background: bool,
 ) -> Option<std::ffi::CString> {
-    let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
-    if let Some(client) = c {
-        if client.tty.flags & TTY_OPENED != 0
-            && !tty_term_owner_ptr(&client.tty.term)
-                .map_or(std::ptr::null(), |term| term)
-                .is_null()
-        {
-            flags =
-                (*tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term)).flags;
-        }
+    if let Some(client) = client {
+        return client.colour_escape(colour, background);
     }
     if colour & COLOUR_FLAG_THEME != 0 {
-        let n = (colour & 0xff) as usize;
-        colour = match c {
-            Some(client) if n < COLOUR_THEME_COUNT as usize => client.theme_colours[n],
-            _ => colour_theme_terminal_colour(n as u32),
-        };
+        colour = colour_theme_terminal_colour((colour & 0xff) as u32);
     }
-    colour_format_escape_resolved(colour, background, flags)
+    colour_format_escape_resolved(colour, background, TERM_256COLOURS | TERM_RGBCOLOURS)
 }
 
 /// C ABI only. Result is null for invalid colours, otherwise valid until the next
 /// call on this thread or thread exit. Do not free or concurrently access it.
 /// # Safety
 /// A non-null client and its open terminal must be readable for this call.
-pub unsafe fn colour_toescape(c: Option<&client>, colour: i32, bg: i32) -> *const libc::c_char {
+pub unsafe fn colour_toescape(c: Option<&ClientRef>, colour: i32, bg: i32) -> *const libc::c_char {
     thread_local! {
         static BUFFER: std::cell::RefCell<std::ffi::CString> =
             std::cell::RefCell::new(std::ffi::CString::default());

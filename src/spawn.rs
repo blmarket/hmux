@@ -37,9 +37,11 @@ use crate::src::resize::default_window_size;
 use crate::src::screen::screen_reinit;
 use crate::src::server::clients;
 use crate::src::server::server_proc;
+use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
 use crate::src::server_client::{server_client_get_cwd, server_client_remove_pane};
 use crate::src::session::Session;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
@@ -415,8 +417,8 @@ pub unsafe fn spawn_pane(
     let mut item: *mut cmdq_item = item_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut c: *mut client = ::core::ptr::null_mut::<client>();
-    let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
+    let mut c: Option<ClientRef> = None;
+    let mut loop_0: Option<ClientRef> = None;
     let session_owner = (*sc).s.upgrade().expect("spawn context session");
     let target_session_owner;
     let mut w: *mut window = ((*sc).winlink_handle())
@@ -426,7 +428,6 @@ pub unsafe fn spawn_pane(
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let new_pane_owner;
     let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut ee: Option<&environ_entry> = None;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
@@ -463,15 +464,11 @@ pub unsafe fn spawn_pane(
         target_session_owner =
             (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
         c_owner = cmdq_get_client((item).as_ref());
-        c = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        c = c_owner.clone();
     } else {
         target_session_owner = Some(session_owner.clone());
         c_owner = (*sc).tc.upgrade();
-        c = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        c = c_owner.clone();
     }
     spawn_log(
         b"spawn_pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -495,9 +492,7 @@ pub unsafe fn spawn_pane(
                     .and_then(|item| item.observer.upgrade())
                     .as_ref(),
                 requested_cwd.as_ptr(),
-                (c).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                c.as_ref(),
                 target_session_owner.as_ref(),
                 (refbox::Weak::new()).clone(),
                 None,
@@ -567,13 +562,11 @@ pub unsafe fn spawn_pane(
         (*source_pane).base_offset = 0 as size_t;
         (*source_pane).pipe_offset.used = 0 as size_t;
         let mut registry_loop_0_owner = clients.first();
-        loop_0 = registry_loop_0_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !loop_0.is_null() {
-            if (*loop_0).flags & CLIENT_CONTROL as uint64_t != 0 {
+        loop_0 = registry_loop_0_owner.clone();
+        while !loop_0.is_none() {
+            if loop_0.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
                 control_reset_pane(
-                    &(*(loop_0)).observer.upgrade().expect("live client"),
+                    &loop_0.clone().expect("live client"),
                     &(*(source_pane))
                         .observer
                         .upgrade()
@@ -585,9 +578,7 @@ pub unsafe fn spawn_pane(
                     .as_ref()
                     .expect("current registry client"),
             );
-            loop_0 = registry_loop_0_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            loop_0 = registry_loop_0_owner.clone();
         }
         new_pane_owner = source_pane_owner.as_ref().expect("respawn pane").clone();
         new_wp = new_pane_owner.get();
@@ -674,25 +665,26 @@ pub unsafe fn spawn_pane(
         0 as ::core::ffi::c_int,
         |out| write!(out, "%{}", ((*new_wp).id) as u32),
     );
-    if !c.is_null() && (*c).session_handle().is_none() {
-        ee = environ_find(
-            (*c).environ.as_deref().expect("environment"),
-            b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        if !ee.is_none() {
-            environ_set(
-                child,
-                b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-                |out| {
-                    write_cstr(
-                        out,
-                        (ee.unwrap().value)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
-                },
-            );
+    if !c.is_none()
+        && c.as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .is_none()
+    {
+        let path = c.as_ref().expect("live client").with_environment(|env| {
+            env.and_then(|env| env.find(c"PATH"))
+                .map(|entry| entry.value.clone())
+        });
+        if let Some(value) = path {
+            environ_set(child, c"PATH".as_ptr(), 0, |out| {
+                write_cstr(
+                    out,
+                    value
+                        .as_ref()
+                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                )
+            });
         }
     }
     if child.find(c"PATH").is_none() {
@@ -1144,7 +1136,7 @@ pub(crate) fn spawn_editor_write(stream: &CFile, bytes: &[u8]) -> bool {
 }
 
 pub(crate) unsafe fn spawn_editor(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+    client_owner: &ClientRef,
     write: impl FnOnce(&CFile) -> bool,
     mut cb: spawn_finish_edit_cb,
 ) -> Option<crate::src::shared::spawn::EditorHandle> {

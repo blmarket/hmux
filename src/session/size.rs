@@ -70,9 +70,8 @@ mod tests {
     }
 
     unsafe fn add_client(session: &Rc<UnsafeCell<session>>, flags: u64) {
-        let owner = client::new();
-        (*owner.get()).session = Rc::downgrade(session);
-        (*owner.get()).flags = flags;
+        let owner = client::with_session_for_test(Some(session));
+        owner.update_flags(flags, 0);
         clients.push_back(owner);
     }
 
