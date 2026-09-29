@@ -19,6 +19,19 @@ use crate::src::spawn::spawn_pane;
 
 pub trait Window {
     unsafe fn id(&self) -> u32;
+    /// Registry successor. The returned owner retains the explicit release duty.
+    unsafe fn next_window(&self) -> Option<Rc<UnsafeCell<window>>>;
+    /// Live association traversal; callbacks may change the list between calls.
+    unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink>;
+    /// Only alert bits, never the window's other bookkeeping flags.
+    unsafe fn pending_alerts(&self) -> i32;
+    unsafe fn reset_alert_timer(&self);
+    /// Record flags and claim queue membership. Some(true) transfers one release duty
+    /// to the alert queue. None means disabled; Some(false) means already queued.
+    unsafe fn queue_alerts(&self, flags: i32) -> Option<bool>;
+    /// Called after delivery, while the queue still retains this window.
+    unsafe fn finish_alerts(&self);
+
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr, untrusted: bool);
     unsafe fn active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>>;
@@ -80,6 +93,30 @@ pub trait Window {
 }
 
 impl Window for Rc<UnsafeCell<window>> {
+    unsafe fn next_window(&self) -> Option<Rc<UnsafeCell<window>>> {
+        windows_next(&*self.get())
+    }
+    unsafe fn next_winlink(&self, after: Option<refbox::Weak<winlink>>) -> refbox::Weak<winlink> {
+        if let Some(after) = after {
+            window_winlinks_next(Some(&*self.get()), after)
+        } else {
+            window_winlinks_first(Some(&*self.get()))
+        }
+    }
+    unsafe fn pending_alerts(&self) -> i32 {
+        (*self.get()).flags & crate::src::shared::window::WINDOW_ALERTFLAGS
+    }
+    unsafe fn reset_alert_timer(&self) {
+        super::alerts::reset_timer(self);
+    }
+    unsafe fn queue_alerts(&self, flags: i32) -> Option<bool> {
+        super::alerts::queue(self, flags)
+    }
+    unsafe fn finish_alerts(&self) {
+        (*self.get()).alerts_queued = 0;
+        (*self.get()).flags &= !crate::src::shared::window::WINDOW_ALERTFLAGS;
+    }
+
     unsafe fn id(&self) -> u32 {
         (*self.get()).id
     }

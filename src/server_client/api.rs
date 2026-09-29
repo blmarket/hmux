@@ -21,6 +21,8 @@ pub trait Client {
     unsafe fn reattach_after_session_destroy(&self, target: Option<&Rc<UnsafeCell<session>>>);
     unsafe fn is_dead(&self) -> bool;
     unsafe fn is_control(&self) -> bool;
+    /// Deliver the audible/visual part after Session has deduplicated the alert.
+    unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32);
     unsafe fn uses_legacy_layout_format(&self) -> bool;
     unsafe fn focuses_window(&self, window: &Rc<UnsafeCell<window>>) -> bool;
     unsafe fn participates_in_window_sizing(&self) -> bool;
@@ -124,6 +126,27 @@ pub trait Client {
 }
 
 impl Client for Rc<UnsafeCell<client>> {
+    unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
+        use crate::src::shared::alerts::{VISUAL_BOTH, VISUAL_OFF};
+        if visual == VISUAL_OFF || visual == VISUAL_BOTH {
+            crate::src::tty::tty_putcode(
+                &raw mut (*self.get()).tty,
+                crate::src::shared::tty::TTYC_BEL,
+            );
+        }
+        if visual != VISUAL_OFF {
+            // No client field reference survives status callbacks.
+            crate::src::status::status_message_set(Some(self), -1, 1, 0, 0, |out| {
+                out.write_all(kind.to_bytes())?;
+                if current {
+                    out.write_all(b" in current window")
+                } else {
+                    write!(out, " in window {}", index)
+                }
+            });
+        }
+    }
+
     unsafe fn attached_session(&self) -> Weak<UnsafeCell<session>> {
         (*self.get()).session.clone()
     }

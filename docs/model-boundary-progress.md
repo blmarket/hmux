@@ -38,3 +38,15 @@ Tests cover dirty-row resizing, timer cancellation without retaining the pane,
 explicit destruction, final parser cleanup, and palette-source expiration.
 The legacy screen-write target still exposes a screen pointer and is a remaining
 component-boundary migration; moving sync bookkeeping does not complete it.
+
+## Window alert queue
+
+Window owns alert flags, silence timers and queue membership. Alert dispatch uses
+trait operations and retains the queued owner until after delivery and flag
+clearing, then calls the existing explicit release. Session delivery uses Window
+association traversal and Client's audible/visual alert operation. No model borrow
+spans event delivery or status-message callbacks.
+
+Tests retain the queue's existing behavior when callbacks append at or before its
+tail, and cover disabled monitoring and duplicate queue membership. Layout and
+other Window consumers still require migration.

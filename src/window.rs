@@ -1,3 +1,4 @@
+mod alerts;
 mod api;
 pub use api::Window;
 
