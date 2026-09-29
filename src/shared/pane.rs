@@ -232,16 +232,14 @@ impl window_pane {
 
     /// Resolve the displayed screen while the pane and selected mode are live.
     pub unsafe fn screen_ptr(&self) -> *mut screen {
-        unsafe {
-            match &self.screen_source {
-                PaneScreenSource::Base => (&raw const self.base).cast_mut(),
-                PaneScreenSource::Mode(observer) => {
-                    if !observer.is_alive() {
-                        return std::ptr::null_mut();
-                    }
-                    let mode = observer.get_unchecked().mode;
-                    mode.display_screen.expect("mode display screen getter")(observer.clone())
+        match &self.screen_source {
+            PaneScreenSource::Base => (&raw const self.base).cast_mut(),
+            PaneScreenSource::Mode(observer) => {
+                if !observer.is_alive() {
+                    return std::ptr::null_mut();
                 }
+                let mode = observer.get_unchecked().mode;
+                mode.display_screen.expect("mode display screen getter")(observer.clone())
             }
         }
     }
@@ -272,9 +270,7 @@ pub enum PaneScreenSource {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
-    pub owner: refbox::Weak<
-        std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-    >,
+    pub owner: refbox::Weak<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>,
 }
 
 /// Ordered mode stack owned by a pane. Weak handles observe stable entries
@@ -292,19 +288,12 @@ pub struct window_pane_modes {
 
 impl window_pane_modes {
     pub fn is_empty(&self) -> bool {
-        self.storage
-            .as_ref()
-            .is_none_or(|storage| storage.entries.is_empty())
+        self.storage.as_ref().is_none_or(|storage| storage.entries.is_empty())
     }
 
     pub fn active_mode(&self) -> Option<&'static window_mode> {
         let entry = self.storage.as_ref()?.entries.first()?;
-        Some(
-            entry
-                .try_borrow_mut()
-                .expect("active pane mode already borrowed")
-                .mode,
-        )
+        Some(entry.try_borrow_mut().expect("active pane mode already borrowed").mode)
     }
 
     /// Observe the current entry without retaining the pane-owned allocation.
@@ -314,6 +303,8 @@ impl window_pane_modes {
             .and_then(|storage| storage.entries.first())
             .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
     }
+
+
 }
 
 /// Ordered, non-owning pane handles. Retained Rc references keep allocations
@@ -326,10 +317,7 @@ pub struct window_panes {
 impl window_panes {
     /// Retain every pane in display order for operations that may outlive membership.
     pub fn snapshot(&self) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.storage
-            .as_deref()
-            .into_iter()
-            .flatten()
+        self.storage.as_deref().into_iter().flatten()
             .map(|observer| observer.upgrade().expect("live pane in ordering"))
             .collect()
     }
@@ -341,14 +329,14 @@ impl window_panes {
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub fn next(
-        &self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub fn next(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         let Some(storage) = self.storage.as_deref() else {
             return None;
         };
-        let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
+        let Some(position) = storage
+            .iter()
+            .position(|weak| weak.ptr_eq(pane))
+        else {
             return None;
         };
         storage
@@ -363,20 +351,14 @@ impl window_panes {
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub fn previous(
-        &self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub fn previous(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         self.position(pane)
             .and_then(|position| position.checked_sub(1))
             .and_then(|position| self.storage.as_deref()?.get(position))
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub fn position(
-        &self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<usize> {
+    pub fn position(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<usize> {
         self.storage
             .as_deref()?
             .iter()
@@ -435,7 +417,10 @@ impl window_panes {
         let Some(storage) = self.storage.as_mut() else {
             return false;
         };
-        let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
+        let Some(position) = storage
+            .iter()
+            .position(|weak| weak.ptr_eq(pane))
+        else {
             return false;
         };
         storage.remove(position);
@@ -445,11 +430,7 @@ impl window_panes {
         true
     }
 
-    pub fn swap(
-        &mut self,
-        first: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-        second: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) {
+    pub fn swap(&mut self, first: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>, second: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) {
         let first_position = self
             .position(first)
             .expect("first pane is not in collection");
@@ -503,14 +484,14 @@ impl window_pane_history {
             .map(|weak| weak.upgrade().expect("live pane in ordering"))
     }
 
-    pub fn next(
-        &self,
-        pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
+    pub fn next(&self, pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         let Some(storage) = self.storage.as_deref() else {
             return None;
         };
-        let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
+        let Some(position) = storage
+            .iter()
+            .position(|weak| weak.ptr_eq(pane))
+        else {
             return None;
         };
         storage
@@ -542,9 +523,5 @@ impl window_pane_history {
 #[repr(C)]
 pub struct window_pane_tree {
     /// The global pane index owns both its map and the Rc pane records.
-    pub storage: Option<
-        refbox::RefBox<
-            std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-        >,
-    >,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>>>,
 }

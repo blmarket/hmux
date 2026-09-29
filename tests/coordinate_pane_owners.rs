@@ -10,10 +10,8 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         (*window.get()).sx = 20;
         (*window.get()).sy = 10;
         let mut options = options_create_owned(std::ptr::null_mut());
-        let definition = hmux2::src::options_table::options_table
-            .iter()
-            .find(|entry| entry.name == Some(c"pane-border-status"))
-            .unwrap();
+        let definition = hmux2::src::options_table::options_table.iter()
+            .find(|entry| entry.name == Some(c"pane-border-status")).unwrap();
         options_default(&mut *options, definition);
         options_set_number(&mut *options, c"pane-border-status".as_ptr(), 0);
         (*window.get()).options = Some(options);
@@ -29,16 +27,10 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         }
         (*window.get()).modal = Rc::downgrade(&first);
         hmux2::src::window::window_redraw_active_switch(&window, None);
-        assert!(Rc::ptr_eq(
-            &window_get_active_at(&window, 2, 2).unwrap(),
-            &first
-        ));
+        assert!(Rc::ptr_eq(&window_get_active_at(&window, 2, 2).unwrap(), &first));
         assert!(window_get_active_at(&window, 12, 2).is_none());
         (*window.get()).modal = std::rc::Weak::new();
-        assert!(Rc::ptr_eq(
-            &window_get_active_at(&window, 12, 2).unwrap(),
-            &second
-        ));
+        assert!(Rc::ptr_eq(&window_get_active_at(&window, 12, 2).unwrap(), &second));
         assert!(window_get_active_at(&window, 30, 2).is_none());
         assert!(window_find_string(&window, c"unknown").is_none());
         let selected = window_find_string(&window, c"right").unwrap();
@@ -56,15 +48,8 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         assert!(window_get_active_at(&window, 12, 2).is_none());
         (*window.get()).flags |= hmux2::src::window::WINDOW_WASZOOMED;
         assert_eq!(hmux2::src::window::window_pop_zoom(&window), 0);
-        assert_eq!(
-            (*window.get()).flags & hmux2::src::window::WINDOW_WASZOOMED,
-            0
-        );
-        options_set_number(
-            (*window.get()).options.as_deref_mut().unwrap(),
-            c"pane-border-status".as_ptr(),
-            1,
-        );
+        assert_eq!((*window.get()).flags & hmux2::src::window::WINDOW_WASZOOMED, 0);
+        options_set_number((*window.get()).options.as_deref_mut().unwrap(), c"pane-border-status".as_ptr(), 1);
         (*first.get()).yoff = 3;
         (*first.get()).border_status_line.ranges.push(Box::new(
             hmux2::src::shared::style::style_range {

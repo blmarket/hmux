@@ -2,7 +2,7 @@ use hmux2::src::session::{
     session_next_session, session_previous_session, sessions, sessions_insert, sessions_remove,
 };
 use hmux2::src::shared::session::session;
-use hmux2::src::shared::sort::{SORT_NAME, sort_criteria};
+use hmux2::src::shared::sort::{sort_criteria, SORT_NAME};
 use hmux2::src::sort::sort_get_sessions;
 use std::rc::Rc;
 
@@ -18,11 +18,7 @@ fn sorted_and_adjacent_results_survive_session_removal() {
         let last_weak = Rc::downgrade(&last);
         sessions_insert(&mut *head, last.clone());
         sessions_insert(&mut *head, first.clone());
-        let criteria = sort_criteria {
-            order: SORT_NAME,
-            reversed: 0,
-            order_seq: &[],
-        };
+        let criteria = sort_criteria { order: SORT_NAME, reversed: 0, order_seq: &[] };
         let sorted = sort_get_sessions(&criteria);
         assert!(Rc::ptr_eq(&sorted[0], &first));
         assert!(Rc::ptr_eq(&sorted[1], &last));

@@ -37,88 +37,75 @@ pub static cmd_unbind_key_entry: cmd_entry = {
         exec: Some(cmd_unbind_key_exec),
     }
 };
-unsafe fn cmd_unbind_key_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let mut key: key_code = 0;
-        let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut keystr: *const ::core::ffi::c_char =
-            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-        let mut quiet: ::core::ffi::c_int = args_has(args, 'q' as i32 as u_char);
-        if args_has(args, 'a' as i32 as u_char) != 0 {
-            if !keystr.is_null() {
-                if quiet == 0 {
-                    cmdq_error(item_handle, |out| out.write_all(b"key given with -a"));
-                }
-                return CMD_RETURN_ERROR;
-            }
-            tablename = args_get(&*(args), 'T' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-            if tablename.is_null() {
-                if args_has(args, 'n' as i32 as u_char) != 0 {
-                    tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
-                } else {
-                    tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
-                }
-            }
-            if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int)
-                .is_none()
-            {
-                if quiet == 0 {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"table ")?;
-                        write_cstr(out, tablename)?;
-                        out.write_all(b" doesn't exist")
-                    });
-                }
-                return CMD_RETURN_ERROR;
-            }
-            key_bindings_remove_table(std::ffi::CStr::from_ptr(tablename));
-            return CMD_RETURN_NORMAL;
-        }
-        if keystr.is_null() {
+unsafe fn cmd_unbind_key_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut key: key_code = 0;
+    let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut keystr: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut quiet: ::core::ffi::c_int = args_has(args, 'q' as i32 as u_char);
+    if args_has(args, 'a' as i32 as u_char) != 0 {
+        if !keystr.is_null() {
             if quiet == 0 {
-                cmdq_error(item_handle, |out| out.write_all(b"missing key"));
+                cmdq_error(item_handle, |out| out.write_all(b"key given with -a"));
             }
             return CMD_RETURN_ERROR;
         }
-        key = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
-        if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
-            || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
-        {
+        tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        if tablename.is_null() {
+            if args_has(args, 'n' as i32 as u_char) != 0 {
+                tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
+            } else {
+                tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
+            }
+        }
+        if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int).is_none() {
             if quiet == 0 {
                 cmdq_error(item_handle, |out| {
-                    out.write_all(b"unknown key: ")?;
-                    write_cstr(out, keystr)
+                    out.write_all(b"table ")?;
+                    write_cstr(out, tablename)?;
+                    out.write_all(b" doesn't exist")
                 });
             }
             return CMD_RETURN_ERROR;
         }
-        if args_has(args, 'T' as i32 as u_char) != 0 {
-            tablename = args_get(&*(args), 'T' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-            if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int)
-                .is_none()
-            {
-                if quiet == 0 {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"table ")?;
-                        write_cstr(out, tablename)?;
-                        out.write_all(b" doesn't exist")
-                    });
-                }
-                return CMD_RETURN_ERROR;
-            }
-        } else if args_has(args, 'n' as i32 as u_char) != 0 {
-            tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
-        } else {
-            tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
-        }
-        key_bindings_remove(std::ffi::CStr::from_ptr(tablename), key);
+        key_bindings_remove_table(std::ffi::CStr::from_ptr(tablename));
         return CMD_RETURN_NORMAL;
     }
+    if keystr.is_null() {
+        if quiet == 0 {
+            cmdq_error(item_handle, |out| out.write_all(b"missing key"));
+        }
+        return CMD_RETURN_ERROR;
+    }
+    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
+    if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
+        || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
+    {
+        if quiet == 0 {
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"unknown key: ")?;
+                write_cstr(out, keystr)
+            });
+        }
+        return CMD_RETURN_ERROR;
+    }
+    if args_has(args, 'T' as i32 as u_char) != 0 {
+        tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+        if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int).is_none() {
+            if quiet == 0 {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"table ")?;
+                    write_cstr(out, tablename)?;
+                    out.write_all(b" doesn't exist")
+                });
+            }
+            return CMD_RETURN_ERROR;
+        }
+    } else if args_has(args, 'n' as i32 as u_char) != 0 {
+        tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
+    } else {
+        tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
+    }
+    key_bindings_remove(std::ffi::CStr::from_ptr(tablename), key);
+    return CMD_RETURN_NORMAL;
 }

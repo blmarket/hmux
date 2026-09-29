@@ -6,19 +6,13 @@ use crate::src::grid::{
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 pub unsafe fn grid_view_get_cell(gd: &grid, px: u_int, py: u_int, gc: &mut grid_cell) {
-    unsafe {
-        grid_get_cell(gd, px, gd.hsize.wrapping_add(py), gc);
-    }
+    grid_get_cell(gd, px, gd.hsize.wrapping_add(py), gc);
 }
 pub unsafe fn grid_view_set_cell(gd: &mut grid, px: u_int, py: u_int, gc: &grid_cell) {
-    unsafe {
-        grid_set_cell(gd, px, gd.hsize.wrapping_add(py), gc);
-    }
+    grid_set_cell(gd, px, gd.hsize.wrapping_add(py), gc);
 }
 pub unsafe fn grid_view_set_padding(gd: &mut grid, px: u_int, py: u_int, bg: ::core::ffi::c_int) {
-    unsafe {
-        grid_set_padding(gd, px, gd.hsize.wrapping_add(py), bg);
-    }
+    grid_set_padding(gd, px, gd.hsize.wrapping_add(py), bg);
 }
 pub unsafe fn grid_view_set_cells(
     gd: &mut grid,
@@ -27,30 +21,26 @@ pub unsafe fn grid_view_set_cells(
     gc: &grid_cell,
     bytes: &[u8],
 ) {
-    unsafe {
-        grid_set_cells(gd, px, gd.hsize.wrapping_add(py), gc, bytes);
-    }
+    grid_set_cells(gd, px, gd.hsize.wrapping_add(py), gc, bytes);
 }
 pub unsafe fn grid_view_clear_history(gd: &mut grid, bg: u_int) {
-    unsafe {
-        let visible = &gd.linedata[gd.hsize as usize..gd.hsize.wrapping_add(gd.sy) as usize];
-        let last = visible
-            .iter()
-            .rposition(|line| line.cellused != 0)
-            .map_or(0, |row| row as u_int + 1);
-        if last == 0 {
-            grid_view_clear(gd, 0, 0, gd.sx, gd.sy, bg);
-            return;
-        }
-        for _ in 0..last {
-            grid_collect_history(gd, 0);
-            grid_scroll_history(gd, bg);
-        }
-        if last < gd.sy {
-            grid_view_clear(gd, 0, 0, gd.sx, gd.sy.wrapping_sub(last), bg);
-        }
-        gd.hscrolled = 0;
+    let visible = &gd.linedata[gd.hsize as usize..gd.hsize.wrapping_add(gd.sy) as usize];
+    let last = visible
+        .iter()
+        .rposition(|line| line.cellused != 0)
+        .map_or(0, |row| row as u_int + 1);
+    if last == 0 {
+        grid_view_clear(gd, 0, 0, gd.sx, gd.sy, bg);
+        return;
     }
+    for _ in 0..last {
+        grid_collect_history(gd, 0);
+        grid_scroll_history(gd, bg);
+    }
+    if last < gd.sy {
+        grid_view_clear(gd, 0, 0, gd.sx, gd.sy.wrapping_sub(last), bg);
+    }
+    gd.hscrolled = 0;
 }
 pub unsafe fn grid_view_clear(
     gd: &mut grid,
@@ -60,10 +50,8 @@ pub unsafe fn grid_view_clear(
     ny: u_int,
     bg: u_int,
 ) {
-    unsafe {
-        py = gd.hsize.wrapping_add(py);
-        grid_clear(gd, px, py, nx, ny, bg);
-    }
+    py = gd.hsize.wrapping_add(py);
+    grid_clear(gd, px, py, nx, ny, bg);
 }
 pub unsafe fn grid_view_scroll_region_up(
     gd: &mut grid,
@@ -71,28 +59,26 @@ pub unsafe fn grid_view_scroll_region_up(
     mut rlower: u_int,
     bg: u_int,
 ) {
-    unsafe {
-        if gd.flags & GRID_HISTORY != 0 {
-            grid_collect_history(gd, 0);
-            if rupper == 0 && rlower == gd.sy.wrapping_sub(1) {
-                grid_scroll_history(gd, bg);
-            } else {
-                rupper = gd.hsize.wrapping_add(rupper);
-                rlower = gd.hsize.wrapping_add(rlower);
-                grid_scroll_history_region(gd, rupper, rlower, bg);
-            }
+    if gd.flags & GRID_HISTORY != 0 {
+        grid_collect_history(gd, 0);
+        if rupper == 0 && rlower == gd.sy.wrapping_sub(1) {
+            grid_scroll_history(gd, bg);
         } else {
             rupper = gd.hsize.wrapping_add(rupper);
             rlower = gd.hsize.wrapping_add(rlower);
-            grid_move_lines(
-                gd,
-                rupper,
-                rupper.wrapping_add(1),
-                rlower.wrapping_sub(rupper),
-                bg,
-            );
-        };
-    }
+            grid_scroll_history_region(gd, rupper, rlower, bg);
+        }
+    } else {
+        rupper = gd.hsize.wrapping_add(rupper);
+        rlower = gd.hsize.wrapping_add(rlower);
+        grid_move_lines(
+            gd,
+            rupper,
+            rupper.wrapping_add(1),
+            rlower.wrapping_sub(rupper),
+            bg,
+        );
+    };
 }
 pub unsafe fn grid_view_scroll_region_down(
     gd: &mut grid,
@@ -100,30 +86,26 @@ pub unsafe fn grid_view_scroll_region_down(
     mut rlower: u_int,
     bg: u_int,
 ) {
-    unsafe {
-        rupper = gd.hsize.wrapping_add(rupper);
-        rlower = gd.hsize.wrapping_add(rlower);
-        grid_move_lines(
-            gd,
-            rupper.wrapping_add(1),
-            rupper,
-            rlower.wrapping_sub(rupper),
-            bg,
-        );
-    }
+    rupper = gd.hsize.wrapping_add(rupper);
+    rlower = gd.hsize.wrapping_add(rlower);
+    grid_move_lines(
+        gd,
+        rupper.wrapping_add(1),
+        rupper,
+        rlower.wrapping_sub(rupper),
+        bg,
+    );
 }
 pub unsafe fn grid_view_insert_lines(gd: &mut grid, mut py: u_int, ny: u_int, bg: u_int) {
-    unsafe {
-        py = gd.hsize.wrapping_add(py);
-        let sy = gd.hsize.wrapping_add(gd.sy);
-        grid_move_lines(
-            gd,
-            py.wrapping_add(ny),
-            py,
-            sy.wrapping_sub(py).wrapping_sub(ny),
-            bg,
-        );
-    }
+    py = gd.hsize.wrapping_add(py);
+    let sy = gd.hsize.wrapping_add(gd.sy);
+    grid_move_lines(
+        gd,
+        py.wrapping_add(ny),
+        py,
+        sy.wrapping_sub(py).wrapping_sub(ny),
+        bg,
+    );
 }
 pub unsafe fn grid_view_insert_lines_region(
     gd: &mut grid,
@@ -132,29 +114,25 @@ pub unsafe fn grid_view_insert_lines_region(
     ny: u_int,
     bg: u_int,
 ) {
-    unsafe {
-        rlower = gd.hsize.wrapping_add(rlower);
-        py = gd.hsize.wrapping_add(py);
-        let ny2 = rlower.wrapping_add(1).wrapping_sub(py).wrapping_sub(ny);
-        grid_move_lines(gd, rlower.wrapping_add(1).wrapping_sub(ny2), py, ny2, bg);
-        let width = gd.sx;
-        grid_clear(gd, 0, py.wrapping_add(ny2), width, ny.wrapping_sub(ny2), bg);
-    }
+    rlower = gd.hsize.wrapping_add(rlower);
+    py = gd.hsize.wrapping_add(py);
+    let ny2 = rlower.wrapping_add(1).wrapping_sub(py).wrapping_sub(ny);
+    grid_move_lines(gd, rlower.wrapping_add(1).wrapping_sub(ny2), py, ny2, bg);
+    let width = gd.sx;
+    grid_clear(gd, 0, py.wrapping_add(ny2), width, ny.wrapping_sub(ny2), bg);
 }
 pub unsafe fn grid_view_delete_lines(gd: &mut grid, mut py: u_int, ny: u_int, bg: u_int) {
-    unsafe {
-        py = gd.hsize.wrapping_add(py);
-        let sy = gd.hsize.wrapping_add(gd.sy);
-        grid_move_lines(
-            gd,
-            py,
-            py.wrapping_add(ny),
-            sy.wrapping_sub(py).wrapping_sub(ny),
-            bg,
-        );
-        let width = gd.sx;
-        grid_clear(gd, 0, sy.wrapping_sub(ny), width, ny, bg);
-    }
+    py = gd.hsize.wrapping_add(py);
+    let sy = gd.hsize.wrapping_add(gd.sy);
+    grid_move_lines(
+        gd,
+        py,
+        py.wrapping_add(ny),
+        sy.wrapping_sub(py).wrapping_sub(ny),
+        bg,
+    );
+    let width = gd.sx;
+    grid_clear(gd, 0, sy.wrapping_sub(ny), width, ny, bg);
 }
 pub unsafe fn grid_view_delete_lines_region(
     gd: &mut grid,
@@ -163,14 +141,12 @@ pub unsafe fn grid_view_delete_lines_region(
     ny: u_int,
     bg: u_int,
 ) {
-    unsafe {
-        rlower = gd.hsize.wrapping_add(rlower);
-        py = gd.hsize.wrapping_add(py);
-        let ny2 = rlower.wrapping_add(1).wrapping_sub(py).wrapping_sub(ny);
-        grid_move_lines(gd, py, py.wrapping_add(ny), ny2, bg);
-        let width = gd.sx;
-        grid_clear(gd, 0, py.wrapping_add(ny2), width, ny.wrapping_sub(ny2), bg);
-    }
+    rlower = gd.hsize.wrapping_add(rlower);
+    py = gd.hsize.wrapping_add(py);
+    let ny2 = rlower.wrapping_add(1).wrapping_sub(py).wrapping_sub(ny);
+    grid_move_lines(gd, py, py.wrapping_add(ny), ny2, bg);
+    let width = gd.sx;
+    grid_clear(gd, 0, py.wrapping_add(ny2), width, ny.wrapping_sub(ny2), bg);
 }
 pub unsafe fn grid_view_insert_cells(
     gd: &mut grid,
@@ -179,22 +155,20 @@ pub unsafe fn grid_view_insert_cells(
     nx: u_int,
     bg: u_int,
 ) {
-    unsafe {
-        py = gd.hsize.wrapping_add(py);
-        let sx = gd.sx;
-        if px >= sx.wrapping_sub(1) {
-            grid_clear(gd, px, py, 1, 1, bg);
-        } else {
-            grid_move_cells(
-                gd,
-                px.wrapping_add(nx),
-                px,
-                py,
-                sx.wrapping_sub(px).wrapping_sub(nx),
-                bg,
-            );
-        };
-    }
+    py = gd.hsize.wrapping_add(py);
+    let sx = gd.sx;
+    if px >= sx.wrapping_sub(1) {
+        grid_clear(gd, px, py, 1, 1, bg);
+    } else {
+        grid_move_cells(
+            gd,
+            px.wrapping_add(nx),
+            px,
+            py,
+            sx.wrapping_sub(px).wrapping_sub(nx),
+            bg,
+        );
+    };
 }
 pub unsafe fn grid_view_delete_cells(
     gd: &mut grid,
@@ -203,22 +177,20 @@ pub unsafe fn grid_view_delete_cells(
     nx: u_int,
     bg: u_int,
 ) {
-    unsafe {
-        py = gd.hsize.wrapping_add(py);
-        let sx = gd.sx;
-        grid_move_cells(
-            gd,
-            px,
-            px.wrapping_add(nx),
-            py,
-            sx.wrapping_sub(px).wrapping_sub(nx),
-            bg,
-        );
-        grid_clear(gd, sx.wrapping_sub(nx), py, nx, 1, bg);
-    }
+    py = gd.hsize.wrapping_add(py);
+    let sx = gd.sx;
+    grid_move_cells(
+        gd,
+        px,
+        px.wrapping_add(nx),
+        py,
+        sx.wrapping_sub(px).wrapping_sub(nx),
+        bg,
+    );
+    grid_clear(gd, sx.wrapping_sub(nx), py, nx, 1, bg);
 }
 pub unsafe fn grid_view_string_cells_bytes(gd: &grid, py: u_int, nx: u_int) -> Vec<u8> {
-    unsafe { grid_string_cells_bytes(gd, 0, gd.hsize.wrapping_add(py), nx, None, 0, None) }
+    grid_string_cells_bytes(gd, 0, gd.hsize.wrapping_add(py), nx, None, 0, None)
 }
 
 #[cfg(test)]
@@ -228,15 +200,13 @@ mod tests {
     use crate::src::shared::colour::COLOUR_FLAG_RGB;
 
     unsafe fn row_labels(gd: &grid) -> Vec<u8> {
-        unsafe {
-            (0..gd.hsize + gd.sy)
-                .map(|row| {
-                    let mut cell = grid_default_cell;
-                    grid_get_cell(gd, 0, row, &mut cell);
-                    cell.data.data[0]
-                })
-                .collect()
-        }
+        (0..gd.hsize + gd.sy)
+            .map(|row| {
+                let mut cell = grid_default_cell;
+                grid_get_cell(gd, 0, row, &mut cell);
+                cell.data.data[0]
+            })
+            .collect()
     }
 
     #[test]

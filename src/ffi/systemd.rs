@@ -1,6 +1,6 @@
 //! Foreign declarations supplied by systemd.
 
-use crate::src::shared::abi::{pid_t, size_t, uint8_t, uint64_t};
+use crate::src::shared::abi::{pid_t, size_t, uint64_t, uint8_t};
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sd_bus_error {
@@ -26,7 +26,7 @@ pub union sd_id128 {
 
 pub type sd_id128_t = sd_id128;
 
-unsafe extern "C" {
+extern "C" {
     pub type sd_bus;
     pub fn sd_bus_call(
         bus: *mut sd_bus,

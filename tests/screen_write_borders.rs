@@ -4,29 +4,25 @@ use hmux2::src::screen_write::{
     screen_write_box, screen_write_hline, screen_write_start, screen_write_stop, screen_write_vline,
 };
 use hmux2::src::shared::grid::{
-    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_NOPALETTE, grid_cell,
+    grid_cell, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_NOPALETTE,
 };
-use hmux2::src::shared::screen::{MODE_WRAP, screen};
+use hmux2::src::shared::screen::{screen, MODE_WRAP};
 use hmux2::src::shared::screen_write::screen_write_ctx;
 
 unsafe fn canvas() -> screen {
-    unsafe {
-        let mut s = screen::empty();
-        s.grid = Some(grid_create(12, 8, 0));
-        s.mode = MODE_WRAP;
-        s.rlower = 7;
-        s.cx = 2;
-        s.cy = 1;
-        s
-    }
+    let mut s = screen::empty();
+    s.grid = Some(grid_create(12, 8, 0));
+    s.mode = MODE_WRAP;
+    s.rlower = 7;
+    s.cx = 2;
+    s.cy = 1;
+    s
 }
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
-    unsafe {
-        let mut cell = grid_default_cell;
-        grid_view_get_cell(s.grid(), x, y, &mut cell);
-        cell
-    }
+    let mut cell = grid_default_cell;
+    grid_view_get_cell(s.grid(), x, y, &mut cell);
+    cell
 }
 
 #[test]

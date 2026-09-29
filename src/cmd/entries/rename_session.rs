@@ -49,89 +49,64 @@ pub static cmd_rename_session_entry: cmd_entry = {
         exec: Some(cmd_rename_session_exec),
     }
 };
-unsafe fn cmd_rename_session_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let mut target: *mut cmd_find_state =
-            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-        let mut s: *mut session = (*target)
-            .session_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        let mut fs: cmd_find_state = cmd_find_state {
-            flags: 0,
-            s: Default::default(),
-            wl: Default::default(),
-            w: Default::default(),
-            wp: Default::default(),
-            idx: 0,
-        };
-        let tmp = format_single_from_target_cstring(
-            item_handle,
-            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
-        );
-        if !check_name(&tmp) {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"invalid session name: ")?;
-                out.write_all(tmp.as_bytes())
-            });
-            return CMD_RETURN_ERROR;
-        }
-        let newname =
-            clean_name_cstring(tmp.as_c_str(), 0).expect("check_name validated the session name");
-        if strcmp(newname.as_ptr(), ((*s).name).as_ptr().cast_mut()) == 0 as ::core::ffi::c_int {
-            return CMD_RETURN_NORMAL;
-        }
-        if !session_find(&newname)
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
-            .is_null()
-        {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"duplicate session: ")?;
-                out.write_all(newname.as_bytes())
-            });
-            return CMD_RETURN_ERROR;
-        }
-        let mut ep = event_payload_create();
-        cmd_find_from_session(
-            &raw mut fs,
-            &(*(s)).observer.upgrade().expect("live session"),
-            0 as ::core::ffi::c_int,
-        );
-        event_payload_set_target(&mut *ep, &fs);
-        event_payload_set_session(
-            &mut *ep,
-            b"session\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(s)).observer.upgrade().expect("live session"),
-        );
-        event_payload_set_string(
-            &mut *ep,
-            b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, ((*s).name).as_ptr().cast_mut()),
-        );
-        event_payload_set_string(
-            &mut *ep,
-            b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(newname.as_bytes()),
-        );
-        let owner = sessions_remove(
-            &mut *std::ptr::addr_of_mut!(sessions),
-            &(*s).observer.upgrade().expect("indexed session"),
-        )
-        .expect("registered session owner");
-        drop(session_replace_name(&mut *s, newname));
-        sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
-        server_status_session(&*(s));
-        events_fire(
-            b"session-renamed\0" as *const u8 as *const ::core::ffi::c_char,
-            ep,
-        );
+unsafe fn cmd_rename_session_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut fs: cmd_find_state = cmd_find_state {
+        flags: 0,
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
+        idx: 0,
+    };
+    let tmp = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    if !check_name(&tmp) {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"invalid session name: ")?;
+            out.write_all(tmp.as_bytes())
+        });
+        return CMD_RETURN_ERROR;
+    }
+    let newname =
+        clean_name_cstring(tmp.as_c_str(), 0).expect("check_name validated the session name");
+    if strcmp(newname.as_ptr(), ((*s).name).as_ptr().cast_mut()) == 0 as ::core::ffi::c_int {
         return CMD_RETURN_NORMAL;
     }
+    if !session_find(&newname).as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr).is_null() {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"duplicate session: ")?;
+            out.write_all(newname.as_bytes())
+        });
+        return CMD_RETURN_ERROR;
+    }
+    let mut ep = event_payload_create();
+    cmd_find_from_session(&raw mut fs, &(*(s)).observer.upgrade().expect("live session"), 0 as ::core::ffi::c_int);
+    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_session(
+        &mut *ep,
+        b"session\0" as *const u8 as *const ::core::ffi::c_char,
+        (*(s)).observer.upgrade().expect("live session"),
+    );
+    event_payload_set_string(
+        &mut *ep,
+        b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, ((*s).name).as_ptr().cast_mut()),
+    );
+    event_payload_set_string(
+        &mut *ep,
+        b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| out.write_all(newname.as_bytes()),
+    );
+    let owner = sessions_remove(&mut *std::ptr::addr_of_mut!(sessions), &(*s).observer.upgrade().expect("indexed session")).expect("registered session owner");
+    drop(session_replace_name(&mut *s, newname));
+    sessions_insert(&mut *std::ptr::addr_of_mut!(sessions), owner);
+    server_status_session(&*(s));
+    events_fire(
+        b"session-renamed\0" as *const u8 as *const ::core::ffi::c_char,
+        ep,
+    );
+    return CMD_RETURN_NORMAL;
 }

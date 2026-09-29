@@ -6,11 +6,7 @@ use syn::visit::{self, Visit};
 struct ContainsJob(bool);
 impl<'ast> Visit<'ast> for ContainsJob {
     fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
-        self.0 |= ty
-            .path
-            .segments
-            .last()
-            .is_some_and(|part| part.ident == "job");
+        self.0 |= ty.path.segments.last().is_some_and(|part| part.ident == "job");
         visit::visit_type_path(self, ty);
     }
 }
@@ -25,12 +21,7 @@ impl<'ast> Visit<'ast> for RawJob {
         visit::visit_type_ptr(self, ty);
     }
     fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
-        if ty
-            .path
-            .segments
-            .last()
-            .is_some_and(|part| part.ident == "NonNull")
-        {
+        if ty.path.segments.last().is_some_and(|part| part.ident == "NonNull") {
             let mut job = ContainsJob::default();
             job.visit_type_path(ty);
             self.0 |= job.0;
@@ -59,12 +50,7 @@ fn jobs_have_no_raw_pointer_storage_arguments_returns_or_casts() {
 
 #[test]
 fn audit_recognizes_nested_job_pointers() {
-    for ty in [
-        "*mut job",
-        "*const job",
-        "Option<fn(*mut job)>",
-        "std::ptr::NonNull<job>",
-    ] {
+    for ty in ["*mut job", "*const job", "Option<fn(*mut job)>", "std::ptr::NonNull<job>"] {
         let mut raw = RawJob::default();
         raw.visit_type(&syn::parse_str(ty).unwrap());
         assert!(raw.0, "missed {ty}");

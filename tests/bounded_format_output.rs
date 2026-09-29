@@ -3,12 +3,12 @@ use hmux2::src::{
     input_keys::input_key_get_mouse,
     shared::{
         mouse::mouse_event,
-        screen::{MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, screen},
-        style::{STYLE_ALIGN_RIGHT, STYLE_LIST_ON, STYLE_RANGE_USER, style},
+        screen::{screen, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR},
+        style::{style, STYLE_ALIGN_RIGHT, STYLE_LIST_ON, STYLE_RANGE_USER},
     },
     style::{style_set, style_tostring},
 };
-use std::ffi::{CStr, c_char};
+use std::ffi::{c_char, CStr};
 
 #[test]
 fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {

@@ -206,9 +206,7 @@ impl Eq for RedrawPaneSpan {}
 
 impl PartialEq for RedrawStatusSpan {
     fn eq(&self, other: &Self) -> bool {
-        self.wp.ptr_eq(&other.wp)
-            && self.offset == other.offset
-            && self.cell_type == other.cell_type
+        self.wp.ptr_eq(&other.wp) && self.offset == other.offset && self.cell_type == other.cell_type
     }
 }
 impl Eq for RedrawStatusSpan {}

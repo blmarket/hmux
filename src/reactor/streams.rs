@@ -5,7 +5,7 @@ use hmux_buffer::{Buf, BufMut};
 use hmux_rt::Handle as _;
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short, c_void};
-use std::future::{Future, poll_fn};
+use std::future::{poll_fn, Future};
 use std::pin::pin;
 use std::rc::{Rc, Weak};
 use std::task::{LocalWaker, Poll};
@@ -28,14 +28,12 @@ pub struct StreamHandle(Weak<StreamState>);
 impl StreamHandle {
     /// The pointer must be null or refer to a stream registered by bufferevent_new.
     pub unsafe fn from_ptr(stream: *mut bufferevent) -> Self {
-        unsafe {
-            if stream.is_null() {
-                return Self::default();
-            }
-            Self(Rc::downgrade(
-                (*stream).state.as_ref().expect("registered stream"),
-            ))
+        if stream.is_null() {
+            return Self::default();
         }
+        Self(Rc::downgrade(
+            (*stream).state.as_ref().expect("registered stream"),
+        ))
     }
 
     /// Keep the stream's allocation slot borrowed for one synchronous operation.
@@ -269,73 +267,68 @@ pub unsafe fn bufferevent_new(
     writecb: bufferevent_data_cb,
     errorcb: bufferevent_event_cb,
 ) -> *mut bufferevent {
-    unsafe {
-        super::ensure_runtime();
-        let original_flags = if fd == -1 {
-            0
-        } else {
-            let flags = libc::fcntl(fd, libc::F_GETFL);
-            if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
-                return std::ptr::null_mut();
-            }
-            flags
-        };
-        let mut owner = Box::new(bufferevent {
-            readcb,
-            writecb,
-            errorcb,
-            enabled: 4,
-            ..Default::default()
-        });
-        let stream = &raw mut *owner;
-        let s = Rc::new(StreamState {
-            stream: RefCell::new(Some(owner)),
-            fd,
-            original_flags,
-            pid: std::process::id(),
-            live: Cell::new(true),
-            generation: Cell::new(0),
-            write_requested: Cell::new(false),
-            wake: RefCell::new(None),
-            task: RefCell::new(None),
-        });
-        // Explicit free breaks this ownership link, including streams without a task.
-        (*stream).state = Some(s.clone());
-        (*stream).input.stream = Rc::downgrade(&s);
-        (*stream).output.stream = Rc::downgrade(&s);
-        LIVE_STREAMS.with(|streams| {
-            let mut streams = streams.borrow_mut();
-            streams.retain(|stream| stream.strong_count() != 0);
-            streams.push(Rc::downgrade(&s));
-        });
-        if let Err(error) = start(&s) {
-            bufferevent_free(stream);
-            *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+    super::ensure_runtime();
+    let original_flags = if fd == -1 {
+        0
+    } else {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
             return std::ptr::null_mut();
         }
-        stream
+        flags
+    };
+    let mut owner = Box::new(bufferevent {
+        readcb,
+        writecb,
+        errorcb,
+        enabled: 4,
+        ..Default::default()
+    });
+    let stream = &raw mut *owner;
+    let s = Rc::new(StreamState {
+        stream: RefCell::new(Some(owner)),
+        fd,
+        original_flags,
+        pid: std::process::id(),
+        live: Cell::new(true),
+        generation: Cell::new(0),
+        write_requested: Cell::new(false),
+        wake: RefCell::new(None),
+        task: RefCell::new(None),
+    });
+    // Explicit free breaks this ownership link, including streams without a task.
+    (*stream).state = Some(s.clone());
+    (*stream).input.stream = Rc::downgrade(&s);
+    (*stream).output.stream = Rc::downgrade(&s);
+    LIVE_STREAMS.with(|streams| {
+        let mut streams = streams.borrow_mut();
+        streams.retain(|stream| stream.strong_count() != 0);
+        streams.push(Rc::downgrade(&s));
+    });
+    if let Err(error) = start(&s) {
+        bufferevent_free(stream);
+        *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+        return std::ptr::null_mut();
     }
+    stream
 }
 pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
-    unsafe {
-        if stream.is_null() {
-            return;
+    if stream.is_null() {
+        return;
+    }
+    let s = (*stream).state.take();
+    if let Some(s) = s {
+        s.live.set(false);
+        super::FDS.with(|f| f.borrow_mut().remove(&s.fd));
+        let task = s.task.borrow_mut().take();
+        drop(task);
+        if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {
+            libc::fcntl(s.fd, libc::F_SETFL, s.original_flags);
         }
-        let s = (*stream).state.take();
-        if let Some(s) = s {
-            s.live.set(false);
-            super::FDS.with(|f| f.borrow_mut().remove(&s.fd));
-            let task = s.task.borrow_mut().take();
-            drop(task);
-            if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0
-            {
-                libc::fcntl(s.fd, libc::F_SETFL, s.original_flags);
-            }
-            // Task state may still be retained by the callback that called free.
-            // Detach the allocation now and release the slot borrow before capture Drop.
-            let owner = s.stream.borrow_mut().take();
-            drop(owner);
-        }
+        // Task state may still be retained by the callback that called free.
+        // Detach the allocation now and release the slot borrow before capture Drop.
+        let owner = s.stream.borrow_mut().take();
+        drop(owner);
     }
 }
 
@@ -343,54 +336,46 @@ pub fn bufferevent_get_output(stream: &mut bufferevent) -> &mut evbuffer {
     &mut stream.output
 }
 pub unsafe fn bufferevent_enable(stream: *mut bufferevent, flags: c_short) -> c_int {
-    unsafe {
-        let previous = (*stream).enabled;
-        (*stream).enabled |= flags;
-        let s = state(&*stream);
-        if flags & 4 != 0 {
-            s.write_requested.set(true);
-        }
-        if previous != (*stream).enabled || flags & 4 != 0 {
-            s.wake();
-        }
-        0
+    let previous = (*stream).enabled;
+    (*stream).enabled |= flags;
+    let s = state(&*stream);
+    if flags & 4 != 0 {
+        s.write_requested.set(true);
     }
+    if previous != (*stream).enabled || flags & 4 != 0 {
+        s.wake();
+    }
+    0
 }
 pub unsafe fn bufferevent_disable(stream: *mut bufferevent, flags: c_short) -> c_int {
-    unsafe {
-        let previous = (*stream).enabled;
-        (*stream).enabled &= !flags;
-        if previous != (*stream).enabled {
-            state(&*stream).wake();
-        }
-        0
+    let previous = (*stream).enabled;
+    (*stream).enabled &= !flags;
+    if previous != (*stream).enabled {
+        state(&*stream).wake();
     }
+    0
 }
 pub unsafe fn bufferevent_write(
     stream: *mut bufferevent,
     data: *const c_void,
     size: usize,
 ) -> c_int {
-    unsafe { super::evbuffer_add(&mut *(*stream).output, data, size) }
+    super::evbuffer_add(&mut *(*stream).output, data, size)
 }
 pub unsafe fn bufferevent_write_buffer(stream: *mut bufferevent, buffer: &mut evbuffer) -> c_int {
-    unsafe {
-        if std::ptr::eq(buffer, &raw const *(*stream).output) {
-            return -1;
-        }
-        (*(*stream).output).put(&mut **buffer);
-        wake_buffer(buffer);
-        state(&*stream).wake();
-        0
+    if std::ptr::eq(buffer, &raw const *(*stream).output) {
+        return -1;
     }
+    (*(*stream).output).put(&mut **buffer);
+    wake_buffer(buffer);
+    state(&*stream).wake();
+    0
 }
 pub unsafe fn bufferevent_setwatermark(stream: *mut bufferevent) {
-    unsafe {
-        (*stream).wm_write.low = CONTROL_BUFFER_LOW as usize;
-        (*stream).wm_write.high = 0;
+    (*stream).wm_write.low = CONTROL_BUFFER_LOW as usize;
+    (*stream).wm_write.high = 0;
 
-        state(&*stream).wake();
-    }
+    state(&*stream).wake();
 }
 
 #[cfg(test)]

@@ -52,7 +52,110 @@ unsafe fn cmd_server_access_deny(
     mut type_0: *const ::core::ffi::c_char,
     mut name: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    unsafe {
+    if server_acl_find(id, flags) == 0 {
+        cmdq_error(item_handle, |out| {
+            write_cstr(out, type_0)?;
+            out.write_all(b" ")?;
+            write_cstr(out, name)?;
+            out.write_all(b" not found")
+        });
+        return CMD_RETURN_ERROR;
+    }
+    server_acl_deny(id, flags);
+    return CMD_RETURN_NORMAL;
+}
+unsafe fn cmd_server_access_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let c_owner = cmdq_get_target_client((item).as_ref());
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
+    let mut gr: *mut group = ::core::ptr::null_mut::<group>();
+    let mut id: id_t = 0;
+    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    if args_has(args, 'l' as i32 as u_char) != 0 {
+        server_acl_display(item_handle);
+        return CMD_RETURN_NORMAL;
+    }
+    if args_count(args) == 0 as u_int {
+        cmdq_error(item_handle, |out| out.write_all(b"missing user or group argument"));
+        return CMD_RETURN_ERROR;
+    }
+    let arg = format_single_cstring(
+        Some(item_handle),
+        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
+        None,
+        (refbox::Weak::new()).clone(),
+        None,
+    );
+    if args_has(args, 'g' as i32 as u_char) != 0 {
+        type_0 = b"group\0" as *const u8 as *const ::core::ffi::c_char;
+        gr = getgrnam(arg.as_ptr());
+        if !gr.is_null() {
+            id = (*gr).gr_gid as id_t;
+            name = (*gr).gr_name;
+            flags |= SERVER_ACL_IS_GROUP;
+        }
+    } else {
+        type_0 = b"user\0" as *const u8 as *const ::core::ffi::c_char;
+        pw = getpwnam(arg.as_ptr());
+        if !pw.is_null() {
+            id = (*pw).pw_uid as id_t;
+            name = (*pw).pw_name;
+        }
+    }
+    if name.is_null() {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"unknown ")?;
+            write_cstr(out, type_0)?;
+            out.write_all(b": ")?;
+            write_cstr(out, arg.as_ptr())
+        });
+        return CMD_RETURN_ERROR;
+    }
+    if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == getuid()) {
+        cmdq_error(item_handle, |out| {
+            write_cstr(out, name)?;
+            out.write_all(b" owns the server, can't change access")
+        });
+        return CMD_RETURN_ERROR;
+    }
+    if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'd' as i32 as u_char) != 0 {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"-a and -d cannot be used together")
+        });
+        return CMD_RETURN_ERROR;
+    }
+    if args_has(args, 'w' as i32 as u_char) != 0 && args_has(args, 'r' as i32 as u_char) != 0 {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"-r and -w cannot be used together")
+        });
+        return CMD_RETURN_ERROR;
+    }
+    if args_has(args, 'd' as i32 as u_char) != 0 {
+        return cmd_server_access_deny(item_handle, id, flags, type_0, name);
+    }
+    if args_has(args, 'a' as i32 as u_char) != 0 {
+        if server_acl_find(id, flags) != 0 {
+            cmdq_error(item_handle, |out| {
+                write_cstr(out, type_0)?;
+                out.write_all(b" ")?;
+                write_cstr(out, name)?;
+                out.write_all(b" is already added")
+            });
+            return CMD_RETURN_ERROR;
+        }
+        server_acl_allow(id, flags);
+    } else if args_has(args, 'r' as i32 as u_char) != 0 || args_has(args, 'w' as i32 as u_char) != 0
+    {
+        if server_acl_find(id, flags) == 0 {
+            server_acl_allow(id, flags);
+        }
+    }
+    if args_has(args, 'w' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
                 write_cstr(out, type_0)?;
@@ -62,139 +165,21 @@ unsafe fn cmd_server_access_deny(
             });
             return CMD_RETURN_ERROR;
         }
-        server_acl_deny(id, flags);
+        server_acl_allow_write(id, flags);
         return CMD_RETURN_NORMAL;
     }
-}
-unsafe fn cmd_server_access_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let c_owner = cmdq_get_target_client((item).as_ref());
-        let mut c: *mut client = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-        let mut gr: *mut group = ::core::ptr::null_mut::<group>();
-        let mut id: id_t = 0;
-        let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        if args_has(args, 'l' as i32 as u_char) != 0 {
-            server_acl_display(item_handle);
-            return CMD_RETURN_NORMAL;
-        }
-        if args_count(args) == 0 as u_int {
+    if args_has(args, 'r' as i32 as u_char) != 0 {
+        if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
-                out.write_all(b"missing user or group argument")
-            });
-            return CMD_RETURN_ERROR;
-        }
-        let arg = format_single_cstring(
-            Some(item_handle),
-            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
-            (c).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-            None,
-            (refbox::Weak::new()).clone(),
-            None,
-        );
-        if args_has(args, 'g' as i32 as u_char) != 0 {
-            type_0 = b"group\0" as *const u8 as *const ::core::ffi::c_char;
-            gr = getgrnam(arg.as_ptr());
-            if !gr.is_null() {
-                id = (*gr).gr_gid as id_t;
-                name = (*gr).gr_name;
-                flags |= SERVER_ACL_IS_GROUP;
-            }
-        } else {
-            type_0 = b"user\0" as *const u8 as *const ::core::ffi::c_char;
-            pw = getpwnam(arg.as_ptr());
-            if !pw.is_null() {
-                id = (*pw).pw_uid as id_t;
-                name = (*pw).pw_name;
-            }
-        }
-        if name.is_null() {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"unknown ")?;
                 write_cstr(out, type_0)?;
-                out.write_all(b": ")?;
-                write_cstr(out, arg.as_ptr())
-            });
-            return CMD_RETURN_ERROR;
-        }
-        if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == getuid()) {
-            cmdq_error(item_handle, |out| {
+                out.write_all(b" ")?;
                 write_cstr(out, name)?;
-                out.write_all(b" owns the server, can't change access")
+                out.write_all(b" not found")
             });
             return CMD_RETURN_ERROR;
         }
-        if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'd' as i32 as u_char) != 0 {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"-a and -d cannot be used together")
-            });
-            return CMD_RETURN_ERROR;
-        }
-        if args_has(args, 'w' as i32 as u_char) != 0 && args_has(args, 'r' as i32 as u_char) != 0 {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"-r and -w cannot be used together")
-            });
-            return CMD_RETURN_ERROR;
-        }
-        if args_has(args, 'd' as i32 as u_char) != 0 {
-            return cmd_server_access_deny(item_handle, id, flags, type_0, name);
-        }
-        if args_has(args, 'a' as i32 as u_char) != 0 {
-            if server_acl_find(id, flags) != 0 {
-                cmdq_error(item_handle, |out| {
-                    write_cstr(out, type_0)?;
-                    out.write_all(b" ")?;
-                    write_cstr(out, name)?;
-                    out.write_all(b" is already added")
-                });
-                return CMD_RETURN_ERROR;
-            }
-            server_acl_allow(id, flags);
-        } else if args_has(args, 'r' as i32 as u_char) != 0
-            || args_has(args, 'w' as i32 as u_char) != 0
-        {
-            if server_acl_find(id, flags) == 0 {
-                server_acl_allow(id, flags);
-            }
-        }
-        if args_has(args, 'w' as i32 as u_char) != 0 {
-            if server_acl_find(id, flags) == 0 {
-                cmdq_error(item_handle, |out| {
-                    write_cstr(out, type_0)?;
-                    out.write_all(b" ")?;
-                    write_cstr(out, name)?;
-                    out.write_all(b" not found")
-                });
-                return CMD_RETURN_ERROR;
-            }
-            server_acl_allow_write(id, flags);
-            return CMD_RETURN_NORMAL;
-        }
-        if args_has(args, 'r' as i32 as u_char) != 0 {
-            if server_acl_find(id, flags) == 0 {
-                cmdq_error(item_handle, |out| {
-                    write_cstr(out, type_0)?;
-                    out.write_all(b" ")?;
-                    write_cstr(out, name)?;
-                    out.write_all(b" not found")
-                });
-                return CMD_RETURN_ERROR;
-            }
-            server_acl_deny_write(id, flags);
-            return CMD_RETURN_NORMAL;
-        }
+        server_acl_deny_write(id, flags);
         return CMD_RETURN_NORMAL;
     }
+    return CMD_RETURN_NORMAL;
 }

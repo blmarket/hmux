@@ -1,6 +1,6 @@
 //! Foreign declarations supplied by utempter.
 
-unsafe extern "C" {
+extern "C" {
     pub fn utempter_add_record(
         master_fd: ::core::ffi::c_int,
         hostname: *const ::core::ffi::c_char,

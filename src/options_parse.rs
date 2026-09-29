@@ -149,8 +149,8 @@ pub fn match_option_name(
 #[cfg(test)]
 mod tests {
     use super::{
-        ArrayIndex, ArrayIndexError, OptionNameError, OptionNameMatch, OptionNameMatchError,
-        match_option_name, parse_array_index, parse_option_name,
+        match_option_name, parse_array_index, parse_option_name, ArrayIndex, ArrayIndexError,
+        OptionNameError, OptionNameMatch, OptionNameMatchError,
     };
 
     #[test]

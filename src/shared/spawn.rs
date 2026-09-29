@@ -45,16 +45,14 @@ impl EditorHandle {
         pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
         editor: std::ptr::NonNull<spawn_editor_state>,
     ) -> Self {
-        unsafe {
-            assert_eq!(
-                (*pane.get()).editor.as_ref().map(|state| state.id),
-                Some(editor.as_ref().id),
-                "editor must belong to the pane",
-            );
-            Self {
-                pane: std::rc::Rc::downgrade(pane),
-                id: editor.as_ref().id,
-            }
+        assert_eq!(
+            (*pane.get()).editor.as_ref().map(|state| state.id),
+            Some(editor.as_ref().id),
+            "editor must belong to the pane",
+        );
+        Self {
+            pane: std::rc::Rc::downgrade(pane),
+            id: editor.as_ref().id,
         }
     }
 
@@ -63,9 +61,7 @@ impl EditorHandle {
     }
 
     pub fn cancel(&self) {
-        let Some(pane) = self.pane.upgrade() else {
-            return;
-        };
+        let Some(pane) = self.pane.upgrade() else { return };
         let pane = unsafe { &mut *pane.get() };
         if let Some(editor) = pane.editor.as_mut().filter(|editor| editor.id == self.id) {
             editor.cb = None;
@@ -73,9 +69,7 @@ impl EditorHandle {
     }
 
     pub fn pid(&self) -> pid_t {
-        let Some(pane) = self.pane.upgrade() else {
-            return -1;
-        };
+        let Some(pane) = self.pane.upgrade() else { return -1 };
         let pane = unsafe { &*pane.get() };
         pane.editor
             .as_ref()

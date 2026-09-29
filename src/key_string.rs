@@ -22,13 +22,11 @@ pub struct C2RustUnnamed_1 {
 }
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    unsafe {
-        return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-            *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
-        } else {
-            __c
-        };
-    }
+    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
+        *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
+    } else {
+        __c
+    };
 }
 pub const MB_LEN_MAX: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 static key_string_table: [C2RustUnnamed_1; 1379] = [
@@ -5755,7 +5753,7 @@ pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
 /// # Safety
 /// `string` must point to a readable NUL-terminated string for this call.
 pub unsafe fn key_string_lookup_string(string: *const ::core::ffi::c_char) -> key_code {
-    unsafe { key_string_lookup_string_impl(CStr::from_ptr(string)) }
+    key_string_lookup_string_impl(CStr::from_ptr(string))
 }
 
 /// Format canonical key text into a caller-owned NUL-terminated buffer.

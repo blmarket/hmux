@@ -109,7 +109,7 @@ pub fn decode_utf8(input: &[u8]) -> DecodeResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{DecodeResult, decode_utf8};
+    use super::{decode_utf8, DecodeResult};
 
     #[test]
     fn truncated_sequences_are_incomplete() {

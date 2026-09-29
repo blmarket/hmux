@@ -9,7 +9,7 @@ use hmux2::src::screen::{
 use hmux2::src::screen_write::screen_write_make_list;
 use hmux2::src::shared::display::{PROGRESS_BAR_HIDDEN, PROGRESS_BAR_PAUSED};
 use hmux2::src::shared::key::MODEKEY_VI;
-use hmux2::src::shared::screen::{MODE_CRLF, MODE_CURSOR, MODE_WRAP, screen};
+use hmux2::src::shared::screen::{screen, MODE_CRLF, MODE_CURSOR, MODE_WRAP};
 use hmux2::src::tmux::global_options;
 
 #[test]

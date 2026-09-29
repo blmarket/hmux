@@ -25,17 +25,11 @@ fn directional_selection_preserves_order_activity_and_retained_result() {
             (*window.get()).panes.push_back(Rc::downgrade(owner));
         }
         assert!(window_pane_find_right(None).is_none());
-        assert!(Rc::ptr_eq(
-            &window_pane_find_right(Some(&source)).unwrap(),
-            &upper
-        ));
+        assert!(Rc::ptr_eq(&window_pane_find_right(Some(&source)).unwrap(), &upper));
         (*lower.get()).active_point = 1;
         let selected = window_pane_find_right(Some(&source)).unwrap();
         assert!(Rc::ptr_eq(&selected, &lower));
-        assert!(Rc::ptr_eq(
-            &window_pane_find_left(Some(&source)).unwrap(),
-            &lower
-        ));
+        assert!(Rc::ptr_eq(&window_pane_find_left(Some(&source)).unwrap(), &lower));
         let observer = Rc::downgrade(&lower);
         (*window.get()).panes.storage = None;
         drop(lower);

@@ -12,25 +12,24 @@ use crate::src::hooks::{
 };
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    OptionMatchFailure, options_array_item_key, options_get, options_get_fire_count,
-    options_get_fire_time, options_get_monitor_data, options_get_only, options_is_array,
-    options_is_string, options_match_owned, options_name, options_scope_from_flags,
-    options_scope_from_name, options_to_cstring,
+    options_array_item_key, options_get,
+    options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_only,
+    options_is_array, options_is_string, options_match_owned, options_name, options_scope_from_flags, options_scope_from_name, options_to_cstring, OptionMatchFailure,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::monitor::{
-    MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
-    monitor_type,
+    monitor_type, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION,
+    MONITOR_WINDOW,
 };
 use crate::src::shared::options::*;
-use crate::src::shared::options::{OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE};
 use crate::src::shared::options::{options, options_array_item, options_entry};
+use crate::src::shared::options::{OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE};
 use std::ffi::{CStr, CString};
 
 pub const SHOW_OPTIONS_TEMPLATE: [::core::ffi::c_char; 202] = unsafe {
@@ -121,177 +120,140 @@ pub static cmd_show_hooks_entry: cmd_entry = {
         exec: Some(cmd_show_options_exec),
     }
 };
-unsafe fn cmd_show_options_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let mut current_block: u64;
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let mut target: *mut cmd_find_state =
-            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-        let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-        let argument;
-        let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
-        let mut cause: Option<CString> = None;
-        let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
-        let mut window: ::core::ffi::c_int = 0;
-        let mut ambiguous: ::core::ffi::c_int = 0;
-        let mut parent: ::core::ffi::c_int = 0;
-        let mut print_parent: ::core::ffi::c_int = 0;
-        let mut scope: ::core::ffi::c_int = 0;
-        let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-        window = (std::ptr::eq(
-            cmd_get_entry(self_0.get_unchecked()),
-            &cmd_show_window_options_entry,
-        )) as ::core::ffi::c_int;
-        if args_count(args) == 0 as u_int {
-            scope = options_scope_from_flags(args, window, target, &raw mut oo, &raw mut cause);
-            if scope == OPTIONS_TABLE_NONE {
-                if args_has(args, 'q' as i32 as u_char) != 0 {
-                    return CMD_RETURN_NORMAL;
-                }
-                cmdq_error(item_handle, |out| {
-                    write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                });
-                return CMD_RETURN_ERROR;
-            }
-            if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
-                && args_has(args, 'B' as i32 as u_char) != 0
-            {
-                let o_root = oo;
-                let mut o_names = crate::src::options::options_iter(&*o_root)
-                    .map(|entry| entry.name.clone())
-                    .collect::<Vec<_>>()
-                    .into_iter();
-                o = o_names
-                    .next()
-                    .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
-                    .map_or(std::ptr::null_mut(), |entry| entry);
-                while !o.is_null() {
-                    cmd_show_hooks_print_monitor(self_0.clone(), item_handle, o);
-                    o = o_names
-                        .next()
-                        .and_then(|name| {
-                            crate::src::options::options_get_only_mut(&mut *o_root, &name)
-                        })
-                        .map_or(std::ptr::null_mut(), |entry| entry);
-                }
+unsafe fn cmd_show_options_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let mut current_block: u64;
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
+    let argument;
+    let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut cause: Option<CString> = None;
+    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut window: ::core::ffi::c_int = 0;
+    let mut ambiguous: ::core::ffi::c_int = 0;
+    let mut parent: ::core::ffi::c_int = 0;
+    let mut print_parent: ::core::ffi::c_int = 0;
+    let mut scope: ::core::ffi::c_int = 0;
+    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+    window = (std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_window_options_entry))
+        as ::core::ffi::c_int;
+    if args_count(args) == 0 as u_int {
+        scope = options_scope_from_flags(args, window, target, &raw mut oo, &raw mut cause);
+        if scope == OPTIONS_TABLE_NONE {
+            if args_has(args, 'q' as i32 as u_char) != 0 {
                 return CMD_RETURN_NORMAL;
             }
-            return cmd_show_options_all(self_0.clone(), item_handle, scope, oo);
+            cmdq_error(item_handle, |out| {
+                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+            });
+            return CMD_RETURN_ERROR;
         }
-        argument = format_single_from_target_cstring(
-            item_handle,
-            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
-        );
-        let matched = options_match_owned(argument.as_c_str());
-        if let Ok(parsed) = &matched {
-            name = parsed.name.as_ptr();
-            array_key = parsed
-                .array_key
-                .as_ref()
-                .map_or(::core::ptr::null(), |key| key.as_ptr());
+        if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
+            && args_has(args, 'B' as i32 as u_char) != 0
+        {
+            let o_root = oo;
+            let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+            o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
+            while !o.is_null() {
+                cmd_show_hooks_print_monitor(self_0.clone(), item_handle, o);
+                o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
+            }
+            return CMD_RETURN_NORMAL;
         }
-        // The tmux oracle reports malformed option syntax as ambiguous too.
-        ambiguous = matches!(
-            matched,
-            Err(OptionMatchFailure::Parse | OptionMatchFailure::Ambiguous)
-        ) as ::core::ffi::c_int;
-        if name.is_null() {
+        return cmd_show_options_all(self_0.clone(), item_handle, scope, oo);
+    }
+    argument = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
+    let matched = options_match_owned(argument.as_c_str());
+    if let Ok(parsed) = &matched {
+        name = parsed.name.as_ptr();
+        array_key = parsed
+            .array_key
+            .as_ref()
+            .map_or(::core::ptr::null(), |key| key.as_ptr());
+    }
+    // The tmux oracle reports malformed option syntax as ambiguous too.
+    ambiguous = matches!(
+        matched,
+        Err(OptionMatchFailure::Parse | OptionMatchFailure::Ambiguous)
+    ) as ::core::ffi::c_int;
+    if name.is_null() {
+        if args_has(args, 'q' as i32 as u_char) != 0 {
+            current_block = 9776955515550960483;
+        } else {
+            if ambiguous != 0 {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"ambiguous option: ")?;
+                    write_cstr(out, argument.as_ptr())
+                });
+            } else {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"invalid option: ")?;
+                    write_cstr(out, argument.as_ptr())
+                });
+            }
+            current_block = 18040240512796061664;
+        }
+    } else {
+        scope = options_scope_from_name(args, window, name, target, &raw mut oo, &raw mut cause);
+        if scope == OPTIONS_TABLE_NONE {
             if args_has(args, 'q' as i32 as u_char) != 0 {
                 current_block = 9776955515550960483;
             } else {
-                if ambiguous != 0 {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"ambiguous option: ")?;
-                        write_cstr(out, argument.as_ptr())
-                    });
+                cmdq_error(item_handle, |out| {
+                    write_cstr(out, cause.as_ref().unwrap().as_ptr())
+                });
+                current_block = 18040240512796061664;
+            }
+        } else {
+            o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
+            if args_has(args, 'A' as i32 as u_char) != 0 && o.is_null() {
+                o = options_get(oo, name);
+                parent = 1 as ::core::ffi::c_int;
+            } else {
+                parent = 0 as ::core::ffi::c_int;
+            }
+            if !o.is_null() {
+                if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
+                    && args_has(args, 'B' as i32 as u_char) != 0
+                {
+                    cmd_show_hooks_print_monitor(self_0.clone(), item_handle, o);
+                } else {
+                    print_parent = parent;
+                    if array_key.is_null()
+                        && options_is_array(o) != 0
+                        && crate::src::options::options_array_iter_mut(&mut *(o)).next().map_or(std::ptr::null_mut(), |item| item).is_null()
+                    {
+                        print_parent = 0 as ::core::ffi::c_int;
+                    }
+                    cmd_show_options_print(self_0.clone(), item_handle, o, array_key, print_parent);
+                }
+                current_block = 9776955515550960483;
+            } else if *name as ::core::ffi::c_int == '@' as i32 {
+                if args_has(args, 'q' as i32 as u_char) != 0 {
+                    current_block = 9776955515550960483;
                 } else {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"invalid option: ")?;
                         write_cstr(out, argument.as_ptr())
                     });
-                }
-                current_block = 18040240512796061664;
-            }
-        } else {
-            scope =
-                options_scope_from_name(args, window, name, target, &raw mut oo, &raw mut cause);
-            if scope == OPTIONS_TABLE_NONE {
-                if args_has(args, 'q' as i32 as u_char) != 0 {
-                    current_block = 9776955515550960483;
-                } else {
-                    cmdq_error(item_handle, |out| {
-                        write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                    });
                     current_block = 18040240512796061664;
                 }
             } else {
-                o = crate::src::options::options_get_only_mut(
-                    &mut *(oo),
-                    std::ffi::CStr::from_ptr(name),
-                )
-                .map_or(std::ptr::null_mut(), |entry| entry);
-                if args_has(args, 'A' as i32 as u_char) != 0 && o.is_null() {
-                    o = options_get(oo, name);
-                    parent = 1 as ::core::ffi::c_int;
-                } else {
-                    parent = 0 as ::core::ffi::c_int;
-                }
-                if !o.is_null() {
-                    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
-                        && args_has(args, 'B' as i32 as u_char) != 0
-                    {
-                        cmd_show_hooks_print_monitor(self_0.clone(), item_handle, o);
-                    } else {
-                        print_parent = parent;
-                        if array_key.is_null()
-                            && options_is_array(o) != 0
-                            && crate::src::options::options_array_iter_mut(&mut *(o))
-                                .next()
-                                .map_or(std::ptr::null_mut(), |item| item)
-                                .is_null()
-                        {
-                            print_parent = 0 as ::core::ffi::c_int;
-                        }
-                        cmd_show_options_print(
-                            self_0.clone(),
-                            item_handle,
-                            o,
-                            array_key,
-                            print_parent,
-                        );
-                    }
-                    current_block = 9776955515550960483;
-                } else if *name as ::core::ffi::c_int == '@' as i32 {
-                    if args_has(args, 'q' as i32 as u_char) != 0 {
-                        current_block = 9776955515550960483;
-                    } else {
-                        cmdq_error(item_handle, |out| {
-                            out.write_all(b"invalid option: ")?;
-                            write_cstr(out, argument.as_ptr())
-                        });
-                        current_block = 18040240512796061664;
-                    }
-                } else {
-                    current_block = 9776955515550960483;
-                }
+                current_block = 9776955515550960483;
             }
         }
-        match current_block {
-            18040240512796061664 => return CMD_RETURN_ERROR,
-            _ => return CMD_RETURN_NORMAL,
-        };
     }
+    match current_block {
+        18040240512796061664 => return CMD_RETURN_ERROR,
+        _ => return CMD_RETURN_NORMAL,
+    };
 }
 unsafe fn cmd_show_options_value(
     o: *mut options_entry,
     array_key: *const ::core::ffi::c_char,
 ) -> CString {
-    unsafe { options_to_cstring(o, array_key, 0) }
+    options_to_cstring(o, array_key, 0)
 }
 
 unsafe fn cmd_show_options_print(
@@ -301,242 +263,128 @@ unsafe fn cmd_show_options_print(
     mut array_key: *const ::core::ffi::c_char,
     mut parent: ::core::ffi::c_int,
 ) {
-    unsafe {
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-        let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-        let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
-        let mut template: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        let value: CString;
-        let mut tv: timeval = timeval {
-            tv_sec: 0 as __time_t,
-            tv_usec: 0,
-        };
-        let mut fire_count: u_int = 0;
-        let mut fire_time: time_t = 0;
-        let mut is_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut is_user: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut has_value: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-        let mut oe: *const options_table_entry = options_table_entry(&*(o))
-            .map_or(std::ptr::null(), |entry| {
-                entry as *const crate::src::shared::options::options_table_entry
-            });
-        if !array_key.is_null() {
-            value = cmd_show_options_value(o, array_key);
-        } else if options_is_array(o) != 0 {
-            let a_root = o;
-            let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-                .map(|item| item.key.clone())
-                .collect::<Vec<_>>()
-                .into_iter();
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(a_root, key.as_ptr())
-            });
-            if !a.is_null() {
-                while !a.is_null() {
-                    array_key = options_array_item_key(&*(a)).as_ptr();
-                    cmd_show_options_print(self_0.clone(), item_handle, o, array_key, parent);
-                    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                        crate::src::options::options_array_item(a_root, key.as_ptr())
-                    });
-                }
-                return;
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
+    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
+    let mut template: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let value: CString;
+    let mut tv: timeval = timeval {
+        tv_sec: 0 as __time_t,
+        tv_usec: 0,
+    };
+    let mut fire_count: u_int = 0;
+    let mut fire_time: time_t = 0;
+    let mut is_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut is_user: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut has_value: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+    let mut oe: *const options_table_entry = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry);
+    if !array_key.is_null() {
+        value = cmd_show_options_value(o, array_key);
+    } else if options_is_array(o) != 0 {
+        let a_root = o;
+        let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+        if !a.is_null() {
+            while !a.is_null() {
+                array_key = options_array_item_key(&*(a)).as_ptr();
+                cmd_show_options_print(self_0.clone(), item_handle, o, array_key, parent);
+                a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
             }
-            if template.is_null() && args_has(args, 'v' as i32 as u_char) != 0 {
-                return;
-            }
-            value = CString::default();
-            has_value = 0 as ::core::ffi::c_int;
-        } else {
-            value = cmd_show_options_value(o, ::core::ptr::null());
+            return;
         }
-        if template.is_null() {
-            template = SHOW_OPTIONS_TEMPLATE.as_ptr();
+        if template.is_null() && args_has(args, 'v' as i32 as u_char) != 0 {
+            return;
         }
-        if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
-            is_hook = 1 as ::core::ffi::c_int;
-        } else if oe.is_null() {
-            is_user = 1 as ::core::ffi::c_int;
-        }
-        let mut ft_owner = format_create_from_target(item_handle);
-        ft = &raw mut *ft_owner;
-        format_add(
-            ft,
-            b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, name),
-        );
-        format_add(
-            ft,
-            b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, value.as_ptr()),
-        );
-        format_add(
-            ft,
-            b"option_value_only\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (args_has(args, 'v' as i32 as u_char)) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_parent\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (parent) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (options_is_array(o)) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_string\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (options_is_string(o)) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (is_hook) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (is_user) as i32),
-        );
-        format_add(
-            ft,
-            b"option_has_value\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (has_value) as i32),
-        );
-        if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry) {
-            fire_count = options_get_fire_count(o);
-            format_add(
-                ft,
-                b"hook_fire_count\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (fire_count) as u32),
-            );
-            fire_time = options_get_fire_time(o);
-            if fire_time != 0 as time_t {
-                tv.tv_sec = fire_time as __time_t;
-                format_add_tv(
-                    ft,
-                    b"hook_fire_time\0" as *const u8 as *const ::core::ffi::c_char,
-                    &raw mut tv,
-                );
-            }
-        }
-        if !array_key.is_null() {
-            format_add(
-                ft,
-                b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write_cstr(out, array_key),
-            );
-            format_add(
-                ft,
-                b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| out.write_all(b"1"),
-            );
-        } else {
-            format_add(
-                ft,
-                b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
-            );
-            format_add(
-                ft,
-                b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| out.write_all(b"0"),
-            );
-        }
-        let line = format_expand_cstring(ft, template);
-        format_free(ft_owner);
-        cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
-        drop(value);
+        value = CString::default();
+        has_value = 0 as ::core::ffi::c_int;
+    } else {
+        value = cmd_show_options_value(o, ::core::ptr::null());
     }
-}
-unsafe fn cmd_show_hooks_print_monitor(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut o: *mut options_entry,
-) {
-    unsafe {
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-        let mut type_0: monitor_type = MONITOR_SESSION;
-        let mut template: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut tv: timeval = timeval {
-            tv_sec: 0 as __time_t,
-            tv_usec: 0,
-        };
-        let mut fire_count: u_int = 0;
-        let mut fire_time: time_t = 0;
-        let mut id: ::core::ffi::c_int = 0;
-        let Some(value) = hooks_monitor_to_cstring(o) else {
-            return;
-        };
-        if hooks_monitor_get(o, &raw mut type_0, &raw mut id, &raw mut format) == 0 {
-            return;
+    if template.is_null() {
+        template = SHOW_OPTIONS_TEMPLATE.as_ptr();
+    }
+    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
+        is_hook = 1 as ::core::ffi::c_int;
+    } else if oe.is_null() {
+        is_user = 1 as ::core::ffi::c_int;
+    }
+    let mut ft_owner = format_create_from_target(item_handle);
+    ft = &raw mut *ft_owner;
+    format_add(
+        ft,
+        b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, name),
+    );
+    format_add(
+        ft,
+        b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, value.as_ptr()),
+    );
+    format_add(
+        ft,
+        b"option_value_only\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (args_has(args, 'v' as i32 as u_char)) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_parent\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (parent) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (options_is_array(o)) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_string\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (options_is_string(o)) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (is_hook) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (is_user) as i32),
+    );
+    format_add(
+        ft,
+        b"option_has_value\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (has_value) as i32),
+    );
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry) {
+        fire_count = options_get_fire_count(o);
+        format_add(
+            ft,
+            b"hook_fire_count\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write!(out, "{}", (fire_count) as u32),
+        );
+        fire_time = options_get_fire_time(o);
+        if fire_time != 0 as time_t {
+            tv.tv_sec = fire_time as __time_t;
+            format_add_tv(
+                ft,
+                b"hook_fire_time\0" as *const u8 as *const ::core::ffi::c_char,
+                &raw mut tv,
+            );
         }
-        if template.is_null() {
-            template = SHOW_HOOKS_MONITOR_TEMPLATE.as_ptr();
-        }
-        let target = match type_0 {
-            MONITOR_SESSION => Some(CString::new("").unwrap()),
-            MONITOR_PANE => Some(CString::new(format!("%{id}")).unwrap()),
-            MONITOR_ALL_PANES => Some(CString::new("%*").unwrap()),
-            MONITOR_WINDOW => Some(CString::new(format!("@{id}")).unwrap()),
-            MONITOR_ALL_WINDOWS => Some(CString::new("@*").unwrap()),
-            _ => None,
-        };
-        let mut ft_owner = format_create_from_target(item_handle);
-        ft = &raw mut *ft_owner;
+    }
+    if !array_key.is_null() {
         format_add(
             ft,
-            b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, options_name(&*(o)).as_ptr()),
+            b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, array_key),
         );
         format_add(
             ft,
-            b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, value.as_ptr()),
+            b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| out.write_all(b"1"),
         );
-        format_add(
-            ft,
-            b"option_value_only\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_parent\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_string\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
-        );
-        format_add(
-            ft,
-            b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
-        );
-        format_add(
-            ft,
-            b"option_has_value\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
-        );
+    } else {
         format_add(
             ft,
             b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
@@ -547,41 +395,137 @@ unsafe fn cmd_show_hooks_print_monitor(
             b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
             |out| out.write_all(b"0"),
         );
-        format_add(
-            ft,
-            b"hook_monitor_target\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| {
-                write_cstr(
-                    out,
-                    target.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
-                )
-            },
-        );
-        format_add(
-            ft,
-            b"hook_monitor_format\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, format),
-        );
-        fire_count = hooks_monitor_get_fire_count(o);
-        format_add(
-            ft,
-            b"hook_fire_count\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (fire_count) as u32),
-        );
-        fire_time = hooks_monitor_get_fire_time(o);
-        if fire_time != 0 as time_t {
-            tv.tv_sec = fire_time as __time_t;
-            format_add_tv(
-                ft,
-                b"hook_fire_time\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut tv,
-            );
-        }
-        let line = format_expand_cstring(ft, template);
-        format_free(ft_owner);
-        cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
-        drop(target);
     }
+    let line = format_expand_cstring(ft, template);
+    format_free(ft_owner);
+    cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+    drop(value);
+}
+unsafe fn cmd_show_hooks_print_monitor(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    mut o: *mut options_entry,
+) {
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+    let mut type_0: monitor_type = MONITOR_SESSION;
+    let mut template: *const ::core::ffi::c_char = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut tv: timeval = timeval {
+        tv_sec: 0 as __time_t,
+        tv_usec: 0,
+    };
+    let mut fire_count: u_int = 0;
+    let mut fire_time: time_t = 0;
+    let mut id: ::core::ffi::c_int = 0;
+    let Some(value) = hooks_monitor_to_cstring(o) else {
+        return;
+    };
+    if hooks_monitor_get(o, &raw mut type_0, &raw mut id, &raw mut format) == 0 {
+        return;
+    }
+    if template.is_null() {
+        template = SHOW_HOOKS_MONITOR_TEMPLATE.as_ptr();
+    }
+    let target = match type_0 {
+        MONITOR_SESSION => Some(CString::new("").unwrap()),
+        MONITOR_PANE => Some(CString::new(format!("%{id}")).unwrap()),
+        MONITOR_ALL_PANES => Some(CString::new("%*").unwrap()),
+        MONITOR_WINDOW => Some(CString::new(format!("@{id}")).unwrap()),
+        MONITOR_ALL_WINDOWS => Some(CString::new("@*").unwrap()),
+        _ => None,
+    };
+    let mut ft_owner = format_create_from_target(item_handle);
+    ft = &raw mut *ft_owner;
+    format_add(
+        ft,
+        b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, options_name(&*(o)).as_ptr()),
+    );
+    format_add(
+        ft,
+        b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, value.as_ptr()),
+    );
+    format_add(
+        ft,
+        b"option_value_only\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_parent\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_array\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_string\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_hook\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
+    );
+    format_add(
+        ft,
+        b"option_is_user\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
+    );
+    format_add(
+        ft,
+        b"option_has_value\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (1 as ::core::ffi::c_int) as i32),
+    );
+    format_add(
+        ft,
+        b"option_array_key\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
+    );
+    format_add(
+        ft,
+        b"option_has_array_key\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| out.write_all(b"0"),
+    );
+    format_add(
+        ft,
+        b"hook_monitor_target\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| {
+            write_cstr(
+                out,
+                target.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
+            )
+        },
+    );
+    format_add(
+        ft,
+        b"hook_monitor_format\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write_cstr(out, format),
+    );
+    fire_count = hooks_monitor_get_fire_count(o);
+    format_add(
+        ft,
+        b"hook_fire_count\0" as *const u8 as *const ::core::ffi::c_char,
+        |out| write!(out, "{}", (fire_count) as u32),
+    );
+    fire_time = hooks_monitor_get_fire_time(o);
+    if fire_time != 0 as time_t {
+        tv.tv_sec = fire_time as __time_t;
+        format_add_tv(
+            ft,
+            b"hook_fire_time\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut tv,
+        );
+    }
+    let line = format_expand_cstring(ft, template);
+    format_free(ft_owner);
+    cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+    drop(target);
 }
 unsafe fn cmd_show_options_all(
     mut self_0: refbox::Weak<cmd>,
@@ -589,48 +533,26 @@ unsafe fn cmd_show_options_all(
     mut scope: ::core::ffi::c_int,
     mut oo: *mut options,
 ) -> cmd_retval {
-    unsafe {
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-        let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-        let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut parent: ::core::ffi::c_int = 0;
-        let mut is_user_hook: ::core::ffi::c_int = 0;
-        let o_root = oo;
-        let mut o_names = crate::src::options::options_iter(&*o_root)
-            .map(|entry| entry.name.clone())
-            .collect::<Vec<_>>()
-            .into_iter();
-        o = o_names
-            .next()
-            .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
-            .map_or(std::ptr::null_mut(), |entry| entry);
-        while !o.is_null() {
-            if options_table_entry(&*(o))
-                .map_or(std::ptr::null(), |entry| {
-                    entry as *const crate::src::shared::options::options_table_entry
-                })
-                .is_null()
-            {
-                name = options_name(&*(o)).as_ptr();
-                is_user_hook = 0 as ::core::ffi::c_int;
-                if *name as ::core::ffi::c_int == '@' as i32 {
-                    if hooks_is_event(name) != 0 || options_get_monitor_data(&mut *o).is_some() {
-                        is_user_hook = 1 as ::core::ffi::c_int;
-                    }
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
+    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut parent: ::core::ffi::c_int = 0;
+    let mut is_user_hook: ::core::ffi::c_int = 0;
+    let o_root = oo;
+    let mut o_names = crate::src::options::options_iter(&*o_root).map(|entry| entry.name.clone()).collect::<Vec<_>>().into_iter();
+    o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
+    while !o.is_null() {
+        if options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry).is_null() {
+            name = options_name(&*(o)).as_ptr();
+            is_user_hook = 0 as ::core::ffi::c_int;
+            if *name as ::core::ffi::c_int == '@' as i32 {
+                if hooks_is_event(name) != 0 || options_get_monitor_data(&mut *o).is_some() {
+                    is_user_hook = 1 as ::core::ffi::c_int;
                 }
-                if !std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry) {
-                    if is_user_hook == 0 || args_has(args, 'H' as i32 as u_char) != 0 {
-                        cmd_show_options_print(
-                            self_0.clone(),
-                            item_handle,
-                            o,
-                            ::core::ptr::null::<::core::ffi::c_char>(),
-                            0 as ::core::ffi::c_int,
-                        );
-                    }
-                } else if is_user_hook != 0 {
+            }
+            if !std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry) {
+                if is_user_hook == 0 || args_has(args, 'H' as i32 as u_char) != 0 {
                     cmd_show_options_print(
                         self_0.clone(),
                         item_handle,
@@ -639,59 +561,60 @@ unsafe fn cmd_show_options_all(
                         0 as ::core::ffi::c_int,
                     );
                 }
+            } else if is_user_hook != 0 {
+                cmd_show_options_print(
+                    self_0.clone(),
+                    item_handle,
+                    o,
+                    ::core::ptr::null::<::core::ffi::c_char>(),
+                    0 as ::core::ffi::c_int,
+                );
             }
-            o = o_names
-                .next()
-                .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
-                .map_or(std::ptr::null_mut(), |entry| entry);
         }
-        let mut current_block_25: u64;
-        oe = &raw const options_table as *const options_table_entry;
-        while !(*oe).name_ptr().is_null() {
-            if !(!(*oe).scope & scope != 0) {
-                if !(!std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
-                    && args_has(args, 'H' as i32 as u_char) == 0
-                    && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0
-                    || std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
-                        && !(*oe).flags & OPTIONS_TABLE_IS_HOOK != 0)
-                {
-                    o = crate::src::options::options_get_only_mut(
-                        &mut *(oo),
-                        std::ffi::CStr::from_ptr((*oe).name_ptr()),
-                    )
-                    .map_or(std::ptr::null_mut(), |entry| entry);
-                    if o.is_null() {
-                        if args_has(args, 'A' as i32 as u_char) == 0 {
+        o = o_names.next().and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name)).map_or(std::ptr::null_mut(), |entry| entry);
+    }
+    let mut current_block_25: u64;
+    oe = &raw const options_table as *const options_table_entry;
+    while !(*oe).name_ptr().is_null() {
+        if !(!(*oe).scope & scope != 0) {
+            if !(!std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
+                && args_has(args, 'H' as i32 as u_char) == 0
+                && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0
+                || std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry)
+                    && !(*oe).flags & OPTIONS_TABLE_IS_HOOK != 0)
+            {
+                o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr((*oe).name_ptr())).map_or(std::ptr::null_mut(), |entry| entry);
+                if o.is_null() {
+                    if args_has(args, 'A' as i32 as u_char) == 0 {
+                        current_block_25 = 2370887241019905314;
+                    } else {
+                        o = options_get(oo, (*oe).name_ptr());
+                        if o.is_null() {
                             current_block_25 = 2370887241019905314;
                         } else {
-                            o = options_get(oo, (*oe).name_ptr());
-                            if o.is_null() {
-                                current_block_25 = 2370887241019905314;
-                            } else {
-                                parent = 1 as ::core::ffi::c_int;
-                                current_block_25 = 15345278821338558188;
-                            }
+                            parent = 1 as ::core::ffi::c_int;
+                            current_block_25 = 15345278821338558188;
                         }
-                    } else {
-                        parent = 0 as ::core::ffi::c_int;
-                        current_block_25 = 15345278821338558188;
                     }
-                    match current_block_25 {
-                        2370887241019905314 => {}
-                        _ => {
-                            cmd_show_options_print(
-                                self_0.clone(),
-                                item_handle,
-                                o,
-                                ::core::ptr::null::<::core::ffi::c_char>(),
-                                parent,
-                            );
-                        }
+                } else {
+                    parent = 0 as ::core::ffi::c_int;
+                    current_block_25 = 15345278821338558188;
+                }
+                match current_block_25 {
+                    2370887241019905314 => {}
+                    _ => {
+                        cmd_show_options_print(
+                            self_0.clone(),
+                            item_handle,
+                            o,
+                            ::core::ptr::null::<::core::ffi::c_char>(),
+                            parent,
+                        );
                     }
                 }
             }
-            oe = oe.offset(1);
         }
-        return CMD_RETURN_NORMAL;
+        oe = oe.offset(1);
     }
+    return CMD_RETURN_NORMAL;
 }

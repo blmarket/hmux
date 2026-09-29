@@ -15,8 +15,8 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS};
 use crate::src::shared::command::*;
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_TARGET_WINDOW_USAGE};
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::src::shared::command::{CMD_AFTERHOOK, CMD_TARGET_WINDOW_USAGE};
 use crate::src::shared::layout::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{window, winlink};
@@ -97,143 +97,105 @@ pub static cmd_previous_layout_entry: cmd_entry = {
         exec: Some(cmd_select_layout_exec),
     }
 };
-unsafe fn cmd_select_layout_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let mut current_block: u64;
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let mut target: *mut cmd_find_state =
-            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-        let c_owner = cmdq_get_target_client((item).as_ref());
-        let mut c: *mut client = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-        let mut w: *mut window = wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        let mut wp: *mut window_pane = (*target)
-            .pane_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        let mut layoutname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut cause: Option<CString> = None;
-        let mut next: ::core::ffi::c_int = 0;
-        let mut previous: ::core::ffi::c_int = 0;
-        let mut layout: ::core::ffi::c_int = 0;
-        let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
-        next = (std::ptr::eq(
-            cmd_get_entry(self_0.get_unchecked()),
-            &cmd_next_layout_entry,
-        )) as ::core::ffi::c_int;
-        if args_has(args, 'n' as i32 as u_char) != 0 {
-            next = 1 as ::core::ffi::c_int;
-        }
-        previous = (std::ptr::eq(
-            cmd_get_entry(self_0.get_unchecked()),
-            &cmd_previous_layout_entry,
-        )) as ::core::ffi::c_int;
-        if args_has(args, 'p' as i32 as u_char) != 0 {
-            previous = 1 as ::core::ffi::c_int;
-        }
-        if !c.is_null()
-            && (*c).flags & CLIENT_CONTROL as uint64_t != 0
-            && !(*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_NEWLAYOUTS != 0
-        {
-            flags |= LAYOUT_CUSTOM_OLD_FORMAT;
-        }
-        let new_layout = layout_dump_owned(
-            (*w).layout_root_ptr()
-                .map_or(std::ptr::null_mut(), |root| root),
-            flags,
-        );
-        let mut oldlayout =
-            window_replace_old_layout(&(*(w)).observer.upgrade().expect("live window"), new_layout);
-        let oldlayout_ptr = oldlayout
-            .as_ref()
-            .map_or(::core::ptr::null(), |value| value.as_ptr());
-        if next != 0 || previous != 0 {
-            if next != 0 {
-                layout_set_next(&(*(w)).observer.upgrade().expect("live window"));
-            } else {
-                layout_set_previous(&(*(w)).observer.upgrade().expect("live window"));
-            }
-        } else if args_has(args, 'E' as i32 as u_char) != 0 {
-            layout_spread_out(&(*(wp)).observer.upgrade().expect("live window_pane"));
+unsafe fn cmd_select_layout_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let mut current_block: u64;
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let c_owner = cmdq_get_target_client((item).as_ref());
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+    let mut w: *mut window = wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut layoutname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut cause: Option<CString> = None;
+    let mut next: ::core::ffi::c_int = 0;
+    let mut previous: ::core::ffi::c_int = 0;
+    let mut layout: ::core::ffi::c_int = 0;
+    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
+    next = (std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_next_layout_entry)) as ::core::ffi::c_int;
+    if args_has(args, 'n' as i32 as u_char) != 0 {
+        next = 1 as ::core::ffi::c_int;
+    }
+    previous =
+        (std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_previous_layout_entry)) as ::core::ffi::c_int;
+    if args_has(args, 'p' as i32 as u_char) != 0 {
+        previous = 1 as ::core::ffi::c_int;
+    }
+    if !c.is_null()
+        && (*c).flags & CLIENT_CONTROL as uint64_t != 0
+        && !(*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_NEWLAYOUTS != 0
+    {
+        flags |= LAYOUT_CUSTOM_OLD_FORMAT;
+    }
+    let new_layout = layout_dump_owned((*w).layout_root_ptr().map_or(std::ptr::null_mut(), |root| root), flags);
+    let mut oldlayout = window_replace_old_layout(&(*(w)).observer.upgrade().expect("live window"), new_layout);
+    let oldlayout_ptr = oldlayout
+        .as_ref()
+        .map_or(::core::ptr::null(), |value| value.as_ptr());
+    if next != 0 || previous != 0 {
+        if next != 0 {
+            layout_set_next(&(*(w)).observer.upgrade().expect("live window"));
         } else {
-            if args_count(args) != 0 as u_int {
-                layoutname = args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr());
-            } else if args_has(args, 'o' as i32 as u_char) != 0 {
-                layoutname = oldlayout_ptr;
+            layout_set_previous(&(*(w)).observer.upgrade().expect("live window"));
+        }
+    } else if args_has(args, 'E' as i32 as u_char) != 0 {
+        layout_spread_out(&(*(wp)).observer.upgrade().expect("live window_pane"));
+    } else {
+        if args_count(args) != 0 as u_int {
+            layoutname = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+        } else if args_has(args, 'o' as i32 as u_char) != 0 {
+            layoutname = oldlayout_ptr;
+        } else {
+            layoutname = ::core::ptr::null::<::core::ffi::c_char>();
+        }
+        if args_has(args, 'o' as i32 as u_char) == 0 {
+            if layoutname.is_null() {
+                layout = (*w).lastlayout;
             } else {
-                layoutname = ::core::ptr::null::<::core::ffi::c_char>();
+                layout = layout_set_lookup(layoutname);
             }
-            if args_has(args, 'o' as i32 as u_char) == 0 {
-                if layoutname.is_null() {
-                    layout = (*w).lastlayout;
-                } else {
-                    layout = layout_set_lookup(layoutname);
-                }
-                if layout != -(1 as ::core::ffi::c_int) {
-                    layout_set_select(
-                        &(*(w)).observer.upgrade().expect("live window"),
-                        layout as u_int,
-                    );
-                    current_block = 16863505586472967431;
-                } else {
-                    current_block = 15125582407903384992;
-                }
+            if layout != -(1 as ::core::ffi::c_int) {
+                layout_set_select(&(*(w)).observer.upgrade().expect("live window"), layout as u_int);
+                current_block = 16863505586472967431;
             } else {
                 current_block = 15125582407903384992;
             }
-            match current_block {
-                16863505586472967431 => {}
-                _ => {
-                    if !layoutname.is_null() {
-                        if layout_parse(
-                            &(*(w)).observer.upgrade().expect("live window"),
-                            layoutname,
-                            &raw mut cause,
-                        ) == -(1 as ::core::ffi::c_int)
-                        {
-                            cmdq_error(item_handle, |out| {
-                                write_cstr(
-                                    out,
-                                    cause
-                                        .as_ref()
-                                        .map_or(::core::ptr::null(), |message| message.as_ptr()),
-                                )?;
-                                out.write_all(b": ")?;
-                                write_cstr(out, layoutname)
-                            });
-                            drop(window_replace_old_layout(
-                                &(*(w)).observer.upgrade().expect("live window"),
-                                oldlayout.take(),
-                            ));
-                            return CMD_RETURN_ERROR;
-                        }
-                    } else {
-                        drop(oldlayout);
-                        return CMD_RETURN_NORMAL;
+        } else {
+            current_block = 15125582407903384992;
+        }
+        match current_block {
+            16863505586472967431 => {}
+            _ => {
+                if !layoutname.is_null() {
+                    if layout_parse(&(*(w)).observer.upgrade().expect("live window"), layoutname, &raw mut cause) == -(1 as ::core::ffi::c_int) {
+                        cmdq_error(item_handle, |out| {
+                            write_cstr(
+                                out,
+                                cause
+                                    .as_ref()
+                                    .map_or(::core::ptr::null(), |message| message.as_ptr()),
+                            )?;
+                            out.write_all(b": ")?;
+                            write_cstr(out, layoutname)
+                        });
+                        drop(window_replace_old_layout(&(*(w)).observer.upgrade().expect("live window"), oldlayout.take()));
+                        return CMD_RETURN_ERROR;
                     }
+                } else {
+                    drop(oldlayout);
+                    return CMD_RETURN_NORMAL;
                 }
             }
         }
-        drop(oldlayout);
-        recalculate_sizes();
-        server_redraw_window(&*(w));
-        events_fire_window(
-            b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(w)).observer.upgrade().expect("live window"),
-        );
-        return CMD_RETURN_NORMAL;
     }
+    drop(oldlayout);
+    recalculate_sizes();
+    server_redraw_window(&*(w));
+    events_fire_window(
+        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        (*(w)).observer.upgrade().expect("live window"),
+    );
+    return CMD_RETURN_NORMAL;
 }

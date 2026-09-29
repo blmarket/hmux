@@ -7,15 +7,13 @@ use hmux2::src::window::{
 use refbox::BorrowError;
 
 unsafe fn window_indices(w: &window) -> Vec<i32> {
-    unsafe {
-        let mut result = Vec::new();
-        let mut link = window_winlinks_first(Some(w));
-        while link.is_alive() {
-            result.push(link.get_unchecked().idx);
-            link = window_winlinks_next(Some(w), link.clone());
-        }
-        result
+    let mut result = Vec::new();
+    let mut link = window_winlinks_first(Some(w));
+    while link.is_alive() {
+        result.push(link.get_unchecked().idx);
+        link = window_winlinks_next(Some(w), link.clone());
     }
+    result
 }
 
 #[test]
@@ -23,8 +21,10 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
         let session_owner = session::new();
         let owner = &mut *session_owner.get();
-        let first_owner = window::new();
-        let second_owner = window::new();
+        let first_owner =
+            window::new();
+        let second_owner =
+            window::new();
         let first_window = hmux2::src::shared::rc::as_ptr(&first_owner);
         let second_window = hmux2::src::shared::rc::as_ptr(&second_owner);
         (*first_window).entry.owner = refbox::Weak::new();
@@ -88,10 +88,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         assert_eq!(window_indices(&*first_window)[..2], [12, 18]);
         assert_eq!(window_indices(&*second_window), [30]);
         assert!(!window_winlinks_next((first_window).as_ref(), (second).clone()).is_alive());
-        assert_eq!(
-            window_winlinks_next((first_window).as_ref(), (first).clone()),
-            third
-        );
+        assert_eq!(window_winlinks_next((first_window).as_ref(), (first).clone()), third);
         winlink_set_window((second).clone(), &first_owner);
         assert_eq!(window_indices(&*first_window).last(), Some(&30));
 
@@ -128,12 +125,7 @@ fn close_notification_can_retain_the_last_window_reference() {
             c"window-closed",
             Rc::new(move |_, _| {
                 observed.set(true);
-                *retained_callback.borrow_mut() = Some(window_add_ref(
-                    &callback_window
-                        .upgrade()
-                        .expect("window lives through notification"),
-                    c"close callback".as_ptr(),
-                ));
+                *retained_callback.borrow_mut() = Some(window_add_ref(&callback_window.upgrade().expect("window lives through notification"), c"close callback".as_ptr()));
             }),
         );
         window_remove_ref(w_owner, c"original owner".as_ptr());
@@ -169,26 +161,11 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         let retained_callback = retained.clone();
         let callback_window = weak.clone();
         let callback_link = link.clone();
-        let sink = events_add_sink(
-            c"window-closed",
-            Rc::new(move |_, _| {
-                assert_eq!(
-                    callback_link
-                        .get_unchecked()
-                        .window_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                    w
-                );
-                calls.set(calls.get() + 1);
-                *retained_callback.borrow_mut() = Some(window_add_ref(
-                    &callback_window
-                        .upgrade()
-                        .expect("window lives through notification"),
-                    c"close observer".as_ptr(),
-                ));
-            }),
-        );
+        let sink = events_add_sink(c"window-closed", Rc::new(move |_, _| {
+            assert_eq!(callback_link.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), w);
+            calls.set(calls.get() + 1);
+            *retained_callback.borrow_mut() = Some(window_add_ref(&callback_window.upgrade().expect("window lives through notification"), c"close observer".as_ptr()));
+        }));
         winlink_remove(&mut links, link.clone());
         assert_eq!(count.get(), 1);
         assert!(links.storage.is_none());

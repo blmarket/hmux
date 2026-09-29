@@ -3,7 +3,7 @@ use crate::src::events_payload::{event_payload_create, event_payload_set_string}
 use crate::src::ffi::libc::time;
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
-use crate::src::shared::paste::{PasteBufferRef, paste_buffer};
+use crate::src::shared::paste::{paste_buffer, PasteBufferRef};
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
@@ -98,9 +98,7 @@ fn paste_time_tree_insert(
 ) -> Option<PasteBufferRef> {
     let key = paste_time_key(&elm.try_borrow_mut().unwrap());
     match head.entries.entry(key) {
-        std::collections::btree_map::Entry::Occupied(entry) => {
-            Some(PasteBufferRef::observe(entry.get()))
-        }
+        std::collections::btree_map::Entry::Occupied(entry) => Some(PasteBufferRef::observe(entry.get())),
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(elm);
             None
@@ -212,13 +210,11 @@ unsafe fn paste_fire_event(
     name: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    unsafe {
-        let mut ep = event_payload_create();
-        // Finish reading the buffer before dispatch: listeners may look up,
-        // replace, or rename buffers synchronously.
-        event_payload_set_string(&mut *ep, c"paste_buffer".as_ptr(), write);
-        events_fire(name.as_ptr(), ep);
-    }
+    let mut ep = event_payload_create();
+    // Finish reading the buffer before dispatch: listeners may look up,
+    // replace, or rename buffers synchronously.
+    event_payload_set_string(&mut *ep, c"paste_buffer".as_ptr(), write);
+    events_fire(name.as_ptr(), ep);
 }
 
 pub fn paste_buffer_name(pb: &paste_buffer) -> &CStr {
@@ -267,214 +263,202 @@ fn paste_is_registered(pb: &PasteBufferRef) -> bool {
         .is_some_and(|buffer| paste_get_name(&buffer.name).is_some_and(|current| current == *pb))
 }
 pub unsafe fn paste_free(pb: &PasteBufferRef) {
-    unsafe {
-        // A retained reader must never delete a replacement with the same name.
-        if !paste_is_registered(pb) {
-            return;
-        }
-        paste_fire_event(c"paste-buffer-deleted", |out| {
-            out.write_all(pb.borrow().name.as_bytes())
-        });
-        if !paste_is_registered(pb) {
-            return;
-        }
-        let buffer = pb.borrow();
-        paste_name_tree_remove_local(&buffer);
-        paste_time_tree_remove_local(&buffer);
-        if buffer.automatic != 0 {
-            paste_automatic_count_decrement();
-        }
+    // A retained reader must never delete a replacement with the same name.
+    if !paste_is_registered(pb) {
+        return;
+    }
+    paste_fire_event(c"paste-buffer-deleted", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
+    if !paste_is_registered(pb) {
+        return;
+    }
+    let buffer = pb.borrow();
+    paste_name_tree_remove_local(&buffer);
+    paste_time_tree_remove_local(&buffer);
+    if buffer.automatic != 0 {
+        paste_automatic_count_decrement();
     }
 }
 pub(crate) unsafe fn paste_add_owned(prefix: Option<CString>, data: Box<[u8]>) {
-    unsafe {
-        if data.is_empty() {
-            return;
-        }
-        let prefix_bytes = prefix
-            .as_ref()
-            .map_or(b"buffer".as_slice(), CString::as_bytes);
-        let limit = options_get_number(global_options, c"buffer-limit".as_ptr()) as u_int;
-        let mut next = paste_time_tree_minmax_local(RB_INF);
-        while let Some(pb) = next {
-            if paste_automatic_count() < limit {
-                break;
-            }
-            let Some(buffer) = pb.try_borrow() else {
-                // A deletion listener removed our next candidate. Restart at the
-                // oldest remaining entry, without retaining stale buffer data.
-                next = paste_time_tree_minmax_local(RB_INF);
-                continue;
-            };
-            next = paste_time_tree_prev_local(&buffer);
-            let automatic = buffer.automatic != 0;
-            drop(buffer);
-            if automatic {
-                paste_free(&pb);
-            }
-        }
-        let owner = loop {
-            let mut bytes = Vec::with_capacity(prefix_bytes.len() + 10);
-            bytes.extend_from_slice(prefix_bytes);
-            bytes.extend_from_slice(paste_next_index_take().to_string().as_bytes());
-            let name = CString::new(bytes).expect("generated buffer name has no NUL");
-            if paste_get_name(&name).is_none() {
-                break paste_new_owned(name);
-            }
-        };
-        let pb = PasteBufferRef::observe(&owner);
-        {
-            let mut buffer = pb.borrow_mut();
-            paste_store_data(&mut buffer, Some(data));
-            buffer.automatic = 1;
-            paste_automatic_count_increment();
-            buffer.created = time(std::ptr::null_mut());
-            buffer.order = paste_next_order_take();
-        }
-        paste_name_tree_insert_local(&pb);
-        paste_time_tree_insert_local(owner);
-        paste_fire_event(c"paste-buffer-changed", |out| {
-            out.write_all(pb.borrow().name.as_bytes())
-        });
+    if data.is_empty() {
+        return;
     }
+    let prefix_bytes = prefix
+        .as_ref()
+        .map_or(b"buffer".as_slice(), CString::as_bytes);
+    let limit = options_get_number(global_options, c"buffer-limit".as_ptr()) as u_int;
+    let mut next = paste_time_tree_minmax_local(RB_INF);
+    while let Some(pb) = next {
+        if paste_automatic_count() < limit {
+            break;
+        }
+        let Some(buffer) = pb.try_borrow() else {
+            // A deletion listener removed our next candidate. Restart at the
+            // oldest remaining entry, without retaining stale buffer data.
+            next = paste_time_tree_minmax_local(RB_INF);
+            continue;
+        };
+        next = paste_time_tree_prev_local(&buffer);
+        let automatic = buffer.automatic != 0;
+        drop(buffer);
+        if automatic {
+            paste_free(&pb);
+        }
+    }
+    let owner = loop {
+        let mut bytes = Vec::with_capacity(prefix_bytes.len() + 10);
+        bytes.extend_from_slice(prefix_bytes);
+        bytes.extend_from_slice(paste_next_index_take().to_string().as_bytes());
+        let name = CString::new(bytes).expect("generated buffer name has no NUL");
+        if paste_get_name(&name).is_none() {
+            break paste_new_owned(name);
+        }
+    };
+    let pb = PasteBufferRef::observe(&owner);
+    {
+        let mut buffer = pb.borrow_mut();
+        paste_store_data(&mut buffer, Some(data));
+        buffer.automatic = 1;
+        paste_automatic_count_increment();
+        buffer.created = time(std::ptr::null_mut());
+        buffer.order = paste_next_order_take();
+    }
+    paste_name_tree_insert_local(&pb);
+    paste_time_tree_insert_local(owner);
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
 }
 pub unsafe fn paste_rename(
     oldname: Option<&CStr>,
     newname: Option<&CStr>,
     mut cause: Option<&mut Option<CString>>,
 ) -> i32 {
-    unsafe {
-        if let Some(cause) = cause.as_deref_mut() {
-            *cause = None;
+    if let Some(cause) = cause.as_deref_mut() {
+        *cause = None;
+    }
+    let Some(oldname) = oldname.filter(|name| !name.is_empty()) else {
+        paste_name_cause(cause, b"no buffer", c"");
+        return -1;
+    };
+    let Some(newname) = newname.filter(|name| !name.is_empty()) else {
+        paste_name_cause(cause, b"new name is empty", c"");
+        return -1;
+    };
+    let Some(name) = clean_name_cstring(newname, 0) else {
+        paste_name_cause(cause, b"invalid buffer name: ", newname);
+        return -1;
+    };
+    let Some(pb) = paste_get_name(oldname) else {
+        paste_name_cause(cause, b"no buffer ", oldname);
+        return -1;
+    };
+    if let Some(replaced) = paste_get_name(&name) {
+        if pb == replaced {
+            return 0;
         }
-        let Some(oldname) = oldname.filter(|name| !name.is_empty()) else {
-            paste_name_cause(cause, b"no buffer", c"");
-            return -1;
-        };
-        let Some(newname) = newname.filter(|name| !name.is_empty()) else {
-            paste_name_cause(cause, b"new name is empty", c"");
-            return -1;
-        };
-        let Some(name) = clean_name_cstring(newname, 0) else {
-            paste_name_cause(cause, b"invalid buffer name: ", newname);
-            return -1;
-        };
-        let Some(pb) = paste_get_name(oldname) else {
+        paste_free(&replaced);
+        // A deletion listener may also have removed or replaced the source.
+        if !paste_is_registered(&pb) {
             paste_name_cause(cause, b"no buffer ", oldname);
             return -1;
-        };
-        if let Some(replaced) = paste_get_name(&name) {
-            if pb == replaced {
-                return 0;
-            }
-            paste_free(&replaced);
-            // A deletion listener may also have removed or replaced the source.
-            if !paste_is_registered(&pb) {
-                paste_name_cause(cause, b"no buffer ", oldname);
-                return -1;
-            }
         }
-        paste_name_tree_remove_local(&pb.borrow());
-        let previous = {
-            let mut buffer = pb.borrow_mut();
-            let previous = paste_replace_name(&mut buffer, name);
-            if buffer.automatic != 0 {
-                paste_automatic_count_decrement();
-            }
-            buffer.automatic = 0;
-            previous
-        };
-        paste_name_tree_insert_local(&pb);
-        let changed_name = pb.borrow().name.clone();
-        paste_fire_event(c"paste-buffer-deleted", |out| {
-            out.write_all(previous.as_bytes())
-        });
-        paste_fire_event(c"paste-buffer-changed", |out| {
-            out.write_all(changed_name.as_bytes())
-        });
-        0
     }
+    paste_name_tree_remove_local(&pb.borrow());
+    let previous = {
+        let mut buffer = pb.borrow_mut();
+        let previous = paste_replace_name(&mut buffer, name);
+        if buffer.automatic != 0 {
+            paste_automatic_count_decrement();
+        }
+        buffer.automatic = 0;
+        previous
+    };
+    paste_name_tree_insert_local(&pb);
+    let changed_name = pb.borrow().name.clone();
+    paste_fire_event(c"paste-buffer-deleted", |out| {
+        out.write_all(previous.as_bytes())
+    });
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(changed_name.as_bytes())
+    });
+    0
 }
 pub(crate) unsafe fn paste_set_owned(
     data: Box<[u8]>,
     name: Option<&CStr>,
     mut cause: Option<&mut Option<CString>>,
 ) -> i32 {
-    unsafe {
-        if let Some(cause) = cause.as_deref_mut() {
-            *cause = None;
-        }
-        if data.is_empty() {
-            return 0;
-        }
-        let Some(name) = name else {
-            paste_add_owned(None, data);
-            return 0;
-        };
-        if name.is_empty() {
-            paste_name_cause(cause, b"empty buffer name", c"");
-            return -1;
-        }
-        let Some(newname) = clean_name_cstring(name, 0) else {
-            paste_name_cause(cause, b"invalid buffer name: ", name);
-            return -1;
-        };
-        let owner = paste_new_owned(newname);
-        let pb = PasteBufferRef::observe(&owner);
-        {
-            let mut buffer = pb.borrow_mut();
-            paste_store_data(&mut buffer, Some(data));
-            buffer.order = paste_next_order_take();
-            buffer.created = time(std::ptr::null_mut());
-        }
-        let old = paste_get_name(&pb.borrow().name);
-        if let Some(old) = old {
-            paste_free(&old);
-        }
-        paste_name_tree_insert_local(&pb);
-        paste_time_tree_insert_local(owner);
-        paste_fire_event(c"paste-buffer-changed", |out| {
-            out.write_all(pb.borrow().name.as_bytes())
-        });
-        0
+    if let Some(cause) = cause.as_deref_mut() {
+        *cause = None;
     }
+    if data.is_empty() {
+        return 0;
+    }
+    let Some(name) = name else {
+        paste_add_owned(None, data);
+        return 0;
+    };
+    if name.is_empty() {
+        paste_name_cause(cause, b"empty buffer name", c"");
+        return -1;
+    }
+    let Some(newname) = clean_name_cstring(name, 0) else {
+        paste_name_cause(cause, b"invalid buffer name: ", name);
+        return -1;
+    };
+    let owner = paste_new_owned(newname);
+    let pb = PasteBufferRef::observe(&owner);
+    {
+        let mut buffer = pb.borrow_mut();
+        paste_store_data(&mut buffer, Some(data));
+        buffer.order = paste_next_order_take();
+        buffer.created = time(std::ptr::null_mut());
+    }
+    let old = paste_get_name(&pb.borrow().name);
+    if let Some(old) = old {
+        paste_free(&old);
+    }
+    paste_name_tree_insert_local(&pb);
+    paste_time_tree_insert_local(owner);
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(pb.borrow().name.as_bytes())
+    });
+    0
 }
 /// Replace the bytes while preserving the buffer identity and creation order.
 pub(crate) unsafe fn paste_replace_owned(pb: &PasteBufferRef, data: Box<[u8]>) {
-    unsafe {
-        let Some(mut buffer) = pb.try_borrow() else {
-            return;
-        };
-        paste_store_data(&mut buffer, Some(data));
-        let name = buffer.name.clone();
-        drop(buffer);
-        paste_fire_event(c"paste-buffer-changed", |out| {
-            out.write_all(name.as_bytes())
-        });
-    }
+    let Some(mut buffer) = pb.try_borrow() else {
+        return;
+    };
+    paste_store_data(&mut buffer, Some(data));
+    let name = buffer.name.clone();
+    drop(buffer);
+    paste_fire_event(c"paste-buffer-changed", |out| {
+        out.write_all(name.as_bytes())
+    });
 }
 
 pub(crate) unsafe fn paste_make_sample_cstring(pb: &paste_buffer) -> CString {
-    unsafe {
-        let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
-        let width = 200;
-        let len = pb.size.min(width);
-        let mut buffer = vec![0u8; len * 8 + 4];
-        let used = utf8_strvis(
-            &mut buffer,
-            &pb.data.as_deref().unwrap_or(&[])[..len],
-            flags,
-        );
-        if pb.size > width || used > width {
-            buffer[width..width + 4].copy_from_slice(b"...\0");
-        }
-        let length = CStr::from_bytes_until_nul(&buffer)
-            .expect("sample contains a terminating NUL")
-            .to_bytes_with_nul()
-            .len();
-        buffer.truncate(length);
-        CString::from_vec_with_nul(buffer).expect("sample contains one terminating NUL")
+    let flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
+    let width = 200;
+    let len = pb.size.min(width);
+    let mut buffer = vec![0u8; len * 8 + 4];
+    let used = utf8_strvis(
+        &mut buffer,
+        &pb.data.as_deref().unwrap_or(&[])[..len],
+        flags,
+    );
+    if pb.size > width || used > width {
+        buffer[width..width + 4].copy_from_slice(b"...\0");
     }
+    let length = CStr::from_bytes_until_nul(&buffer)
+        .expect("sample contains a terminating NUL")
+        .to_bytes_with_nul()
+        .len();
+    buffer.truncate(length);
+    CString::from_vec_with_nul(buffer).expect("sample contains one terminating NUL")
 }
 
 #[cfg(test)]
@@ -765,11 +749,8 @@ mod tests {
                     Rc::new(move |event, payload| {
                         let name = event_payload_get_string(payload).expect("paste buffer name");
                         let buffer = paste_get_name(name);
-                        seen.borrow_mut().push((
-                            event.to_owned(),
-                            name.to_owned(),
-                            buffer.is_some(),
-                        ));
+                        seen.borrow_mut()
+                            .push((event.to_owned(), name.to_owned(), buffer.is_some()));
                         if let Some(buffer) = buffer {
                             // No owner or index borrow may span dispatch.
                             buffer.borrow_mut().created = 17;

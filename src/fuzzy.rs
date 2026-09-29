@@ -63,120 +63,116 @@ fn fuzzy_add(cs: &mut Vec<fuzzy_char>, a: style_align, ud: &utf8_data, widths: &
     widths[a as usize] = widths[a as usize].wrapping_add(ud.width as u_int);
 }
 unsafe fn fuzzy_decode_one<'a>(input: &'a [u8], ud: &mut utf8_data) -> &'a [u8] {
-    unsafe {
-        let mut more = utf8_open(ud, input[0]);
-        if more == UTF8_MORE {
-            let mut consumed = 1;
-            while consumed < input.len() && more == UTF8_MORE {
-                more = utf8_append(ud, input[consumed]);
-                consumed += 1;
-            }
-            if more == UTF8_DONE {
-                return &input[consumed..];
-            }
+    let mut more = utf8_open(ud, input[0]);
+    if more == UTF8_MORE {
+        let mut consumed = 1;
+        while consumed < input.len() && more == UTF8_MORE {
+            more = utf8_append(ud, input[consumed]);
+            consumed += 1;
         }
-        utf8_set(ud, input[0]);
-        &input[1..]
+        if more == UTF8_DONE {
+            return &input[consumed..];
+        }
     }
+    utf8_set(ud, input[0]);
+    &input[1..]
 }
 unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
-    unsafe {
-        let mut cs = Vec::new();
-        let mut current: style_align = STYLE_ALIGN_LEFT;
-        let mut sy: style = style {
-            gc: grid_cell {
-                data: utf8_data {
-                    data: [0; 32],
-                    have: 0,
-                    size: 0,
-                    width: 0,
-                },
-                attr: 0,
-                flags: 0,
-                fg: 0,
-                bg: 0,
-                us: 0,
-                link: 0,
+    let mut cs = Vec::new();
+    let mut current: style_align = STYLE_ALIGN_LEFT;
+    let mut sy: style = style {
+        gc: grid_cell {
+            data: utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
             },
-            ignore: 0,
-            dim: 0,
-            fill: 0,
-            align: STYLE_ALIGN_DEFAULT,
-            list: STYLE_LIST_OFF,
-            range_type: STYLE_RANGE_NONE,
-            range_argument: 0,
-            range_string: [0; 16],
-            width: 0,
-            width_percentage: 0,
-            pad: 0,
-            default_type: STYLE_DEFAULT_BASE,
+            attr: 0,
+            flags: 0,
+            fg: 0,
+            bg: 0,
+            us: 0,
             link: 0,
-        };
-        let mut remaining = text.to_bytes();
-        let mut ud: utf8_data = utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        };
-        let mut hash: utf8_data = utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        };
-        let mut bracket: utf8_data = utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        };
-        widths.fill(0);
-        style_set(&mut sy, &grid_default_cell);
-        utf8_set(&mut hash, b'#');
-        utf8_set(&mut bracket, b'[');
-        while !remaining.is_empty() {
-            if remaining[0] == b'#' {
-                let hashes = remaining.iter().take_while(|&&byte| byte == b'#').count();
-                if remaining.get(hashes) != Some(&b'[') {
-                    for _ in 0..hashes.div_ceil(2) {
-                        fuzzy_add(&mut cs, current, &hash, widths);
-                    }
-                    remaining = &remaining[hashes..];
-                } else {
-                    for _ in 0..hashes / 2 {
-                        fuzzy_add(&mut cs, current, &hash, widths);
-                    }
-                    if hashes % 2 == 0 {
-                        fuzzy_add(&mut cs, current, &bracket, widths);
-                        remaining = &remaining[hashes + 1..];
-                    } else {
-                        // This suffix still belongs to the caller's CStr, including
-                        // its trailing NUL required by the shared style scanner.
-                        let style_start = &remaining[hashes + 1..];
-                        let start = style_start.as_ptr().cast();
-                        let end = format_skip(start);
-                        if end.is_null() {
-                            break;
-                        }
-                        let len = end.offset_from(start) as usize;
-                        let style_text = CString::new(&style_start[..len]).unwrap();
-                        if style_parse(&mut sy, &grid_default_cell, style_text.as_ptr()) == 0 {
-                            current = fuzzy_align(sy.align);
-                        }
-                        remaining = &style_start[len + 1..];
-                    }
+        },
+        ignore: 0,
+        dim: 0,
+        fill: 0,
+        align: STYLE_ALIGN_DEFAULT,
+        list: STYLE_LIST_OFF,
+        range_type: STYLE_RANGE_NONE,
+        range_argument: 0,
+        range_string: [0; 16],
+        width: 0,
+        width_percentage: 0,
+        pad: 0,
+        default_type: STYLE_DEFAULT_BASE,
+        link: 0,
+    };
+    let mut remaining = text.to_bytes();
+    let mut ud: utf8_data = utf8_data {
+        data: [0; 32],
+        have: 0,
+        size: 0,
+        width: 0,
+    };
+    let mut hash: utf8_data = utf8_data {
+        data: [0; 32],
+        have: 0,
+        size: 0,
+        width: 0,
+    };
+    let mut bracket: utf8_data = utf8_data {
+        data: [0; 32],
+        have: 0,
+        size: 0,
+        width: 0,
+    };
+    widths.fill(0);
+    style_set(&mut sy, &grid_default_cell);
+    utf8_set(&mut hash, b'#');
+    utf8_set(&mut bracket, b'[');
+    while !remaining.is_empty() {
+        if remaining[0] == b'#' {
+            let hashes = remaining.iter().take_while(|&&byte| byte == b'#').count();
+            if remaining.get(hashes) != Some(&b'[') {
+                for _ in 0..hashes.div_ceil(2) {
+                    fuzzy_add(&mut cs, current, &hash, widths);
                 }
+                remaining = &remaining[hashes..];
             } else {
-                remaining = fuzzy_decode_one(remaining, &mut ud);
-                if ud.size == 1 && (ud.data[0] <= 0x1f || ud.data[0] >= 0x7f) {
-                    continue;
+                for _ in 0..hashes / 2 {
+                    fuzzy_add(&mut cs, current, &hash, widths);
                 }
-                fuzzy_add(&mut cs, current, &ud, widths);
+                if hashes % 2 == 0 {
+                    fuzzy_add(&mut cs, current, &bracket, widths);
+                    remaining = &remaining[hashes + 1..];
+                } else {
+                    // This suffix still belongs to the caller's CStr, including
+                    // its trailing NUL required by the shared style scanner.
+                    let style_start = &remaining[hashes + 1..];
+                    let start = style_start.as_ptr().cast();
+                    let end = format_skip(start);
+                    if end.is_null() {
+                        break;
+                    }
+                    let len = end.offset_from(start) as usize;
+                    let style_text = CString::new(&style_start[..len]).unwrap();
+                    if style_parse(&mut sy, &grid_default_cell, style_text.as_ptr()) == 0 {
+                        current = fuzzy_align(sy.align);
+                    }
+                    remaining = &style_start[len + 1..];
+                }
             }
+        } else {
+            remaining = fuzzy_decode_one(remaining, &mut ud);
+            if ud.size == 1 && (ud.data[0] <= 0x1f || ud.data[0] >= 0x7f) {
+                continue;
+            }
+            fuzzy_add(&mut cs, current, &ud, widths);
         }
-        return cs;
     }
+    return cs;
 }
 fn fuzzy_column(
     fc: &fuzzy_char,
@@ -192,14 +188,12 @@ fn fuzzy_column(
 }
 
 unsafe fn fuzzy_decode<'a>(mut text: &[u8], out: &'a mut [utf8_data]) -> &'a [utf8_data] {
-    unsafe {
-        let mut count = 0;
-        while !text.is_empty() {
-            text = fuzzy_decode_one(text, &mut out[count]);
-            count += 1;
-        }
-        &out[..count]
+    let mut count = 0;
+    while !text.is_empty() {
+        text = fuzzy_decode_one(text, &mut out[count]);
+        count += 1;
     }
+    &out[..count]
 }
 
 fn fuzzy_score_positions(positions: &[usize], cs: &[fuzzy_char]) -> i32 {
@@ -374,29 +368,27 @@ unsafe fn fuzzy_match_term(
     fold: bool,
     matched: &mut [u8],
 ) -> Option<i32> {
-    unsafe {
-        let tok = fuzzy_decode(term.text, tok);
-        let value = if term.exact != 0 {
-            fuzzy_match_exact(
-                tok,
-                cs,
-                fold,
-                term.prefix != 0,
-                term.suffix != 0,
-                if term.inverse != 0 {
-                    None
-                } else {
-                    Some(matched)
-                },
-            )
-        } else {
-            fuzzy_match_fuzzy(tok, cs, fold, matched)
-        };
-        if term.inverse != 0 {
-            value.is_none().then_some(0)
-        } else {
-            value
-        }
+    let tok = fuzzy_decode(term.text, tok);
+    let value = if term.exact != 0 {
+        fuzzy_match_exact(
+            tok,
+            cs,
+            fold,
+            term.prefix != 0,
+            term.suffix != 0,
+            if term.inverse != 0 {
+                None
+            } else {
+                Some(matched)
+            },
+        )
+    } else {
+        fuzzy_match_fuzzy(tok, cs, fold, matched)
+    };
+    if term.inverse != 0 {
+        value.is_none().then_some(0)
+    } else {
+        value
     }
 }
 
@@ -407,19 +399,17 @@ unsafe fn fuzzy_match_group(
     fold: bool,
     matched: &mut [u8],
 ) -> Option<i32> {
-    unsafe {
-        let mut any = false;
-        let mut score = 0;
-        for text in group
-            .split(|byte| *byte == b' ')
-            .filter(|text| !text.is_empty())
-        {
-            let term = fuzzy_parse_term(text)?;
-            any = true;
-            score += fuzzy_match_term(&term, tok, cs, fold, matched)?;
-        }
-        any.then_some(score)
+    let mut any = false;
+    let mut score = 0;
+    for text in group
+        .split(|byte| *byte == b' ')
+        .filter(|text| !text.is_empty())
+    {
+        let term = fuzzy_parse_term(text)?;
+        any = true;
+        score += fuzzy_match_term(&term, tok, cs, fold, matched)?;
     }
+    any.then_some(score)
 }
 pub(crate) unsafe fn fuzzy_match_owned(
     pattern: &CStr,
@@ -427,140 +417,138 @@ pub(crate) unsafe fn fuzzy_match_owned(
     mut width: u_int,
     mut score: Option<&mut u_int>,
 ) -> Option<Vec<bitstr_t>> {
-    unsafe {
-        let mut cs: Vec<fuzzy_char>;
-        let mut matched: Vec<u8>;
-        let mut best: Vec<u8>;
-        let mut tok: Vec<utf8_data>;
-        let mut mask: Vec<bitstr_t>;
-        let ncs: u_int;
-        let mut i: u_int = 0;
-        let mut j: u_int = 0;
-        let mut widths: [u_int; 5] = [0; 5];
-        let mut start: [u_int; 5] = [0; 5];
-        let mut src: [u_int; 5] = [0; 5];
-        let mut vis: [u_int; 5] = [0; 5];
-        let mut wl: u_int = 0;
-        let mut wc: u_int = 0;
-        let mut wr: u_int = 0;
-        let mut wa: u_int = 0;
-        let mut bestscore: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        if width == 0 as u_int {
-            return None;
+    let mut cs: Vec<fuzzy_char>;
+    let mut matched: Vec<u8>;
+    let mut best: Vec<u8>;
+    let mut tok: Vec<utf8_data>;
+    let mut mask: Vec<bitstr_t>;
+    let ncs: u_int;
+    let mut i: u_int = 0;
+    let mut j: u_int = 0;
+    let mut widths: [u_int; 5] = [0; 5];
+    let mut start: [u_int; 5] = [0; 5];
+    let mut src: [u_int; 5] = [0; 5];
+    let mut vis: [u_int; 5] = [0; 5];
+    let mut wl: u_int = 0;
+    let mut wc: u_int = 0;
+    let mut wr: u_int = 0;
+    let mut wa: u_int = 0;
+    let mut bestscore: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    if width == 0 as u_int {
+        return None;
+    }
+    let pattern = pattern.to_bytes();
+    if pattern.iter().all(|byte| matches!(byte, b' ' | b'|')) {
+        if let Some(score) = score.as_deref_mut() {
+            *score = 0 as u_int;
         }
-        let pattern = pattern.to_bytes();
-        if pattern.iter().all(|byte| matches!(byte, b' ' | b'|')) {
-            if let Some(score) = score.as_deref_mut() {
-                *score = 0 as u_int;
-            }
-            return Some(vec![
-                0;
-                (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int)
-                    as usize
-            ]);
-        }
-        let fold = !pattern.iter().any(u8::is_ascii_uppercase);
-        cs = fuzzy_scan(text, &mut widths);
-        ncs = cs.len() as u_int;
-        matched = vec![0; ncs.max(1) as usize];
-        best = vec![0; ncs.max(1) as usize];
-        tok = vec![
-            utf8_data {
-                data: [0; 32],
-                have: 0,
-                size: 0,
-                width: 0,
-            };
-            pattern.len() + 1
-        ];
-        for group in pattern.split(|byte| *byte == b'|') {
-            matched.fill(0);
-            if let Some(groupscore) = fuzzy_match_group(group, &mut tok, &cs, fold, &mut matched) {
-                if found == 0 || groupscore > bestscore {
-                    found = 1 as ::core::ffi::c_int;
-                    bestscore = groupscore;
-                    best.copy_from_slice(&matched);
-                }
+        return Some(vec![
+            0;
+            (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int)
+                as usize
+        ]);
+    }
+    let fold = !pattern.iter().any(u8::is_ascii_uppercase);
+    cs = fuzzy_scan(text, &mut widths);
+    ncs = cs.len() as u_int;
+    matched = vec![0; ncs.max(1) as usize];
+    best = vec![0; ncs.max(1) as usize];
+    tok = vec![
+        utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        pattern.len() + 1
+    ];
+    for group in pattern.split(|byte| *byte == b'|') {
+        matched.fill(0);
+        if let Some(groupscore) = fuzzy_match_group(group, &mut tok, &cs, fold, &mut matched) {
+            if found == 0 || groupscore > bestscore {
+                found = 1 as ::core::ffi::c_int;
+                bestscore = groupscore;
+                best.copy_from_slice(&matched);
             }
         }
-        drop(tok);
-        if found == 0 {
-            drop(best);
-            drop(matched);
-            drop(cs);
-            return None;
-        }
-        wl = widths[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize];
-        wc = widths[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize];
-        wr = widths[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize];
-        wa = widths[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize];
-        while wl.wrapping_add(wc).wrapping_add(wr) > width {
-            if wc > 0 as u_int {
-                wc = wc.wrapping_sub(1);
-            } else if wr > 0 as u_int {
-                wr = wr.wrapping_sub(1);
-            } else {
-                wl = wl.wrapping_sub(1);
-            }
-        }
-        if wa > width {
-            wa = width;
-        }
-        start[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize] = 0 as u_int;
-        src[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize] = 0 as u_int;
-        vis[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize] = wl;
-        start[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize] = width.wrapping_sub(wr);
-        src[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize] =
-            widths[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize].wrapping_sub(wr);
-        vis[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize] = wr;
-        start[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize] = wl
-            .wrapping_add(
-                width
-                    .wrapping_sub(wr)
-                    .wrapping_sub(wl)
-                    .wrapping_div(2 as u_int),
-            )
-            .wrapping_sub(wc.wrapping_div(2 as u_int));
-        src[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize] = widths
-            [STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize]
-            .wrapping_div(2 as u_int)
-            .wrapping_sub(wc.wrapping_div(2 as u_int));
-        vis[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize] = wc;
-        start[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] =
-            width.wrapping_sub(wa).wrapping_div(2 as u_int);
-        src[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] = 0 as u_int;
-        vis[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] = wa;
-        mask = vec![0; (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize];
-        i = 0 as u_int;
-        while i < ncs {
-            if best[i as usize] != 0 {
-                if let Some(column) = fuzzy_column(&cs[i as usize], &start, &src, &vis) {
-                    j = 0 as u_int;
-                    while j < cs[i as usize].width && column.wrapping_add(j) < width {
-                        let ref mut fresh0 =
-                            mask[(column.wrapping_add(j) >> 3 as ::core::ffi::c_int) as usize];
-                        *fresh0 = (*fresh0 as ::core::ffi::c_int
-                            | (1 as ::core::ffi::c_int) << (column.wrapping_add(j) & 0x7 as u_int))
-                            as bitstr_t;
-                        j = j.wrapping_add(1);
-                    }
-                }
-            }
-            i = i.wrapping_add(1);
-        }
+    }
+    drop(tok);
+    if found == 0 {
         drop(best);
         drop(matched);
         drop(cs);
-        if let Some(score) = score.as_deref_mut() {
-            *score = if bestscore < 0 as ::core::ffi::c_int {
-                0 as u_int
-            } else {
-                bestscore as u_int
-            };
-        }
-        Some(mask)
+        return None;
     }
+    wl = widths[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize];
+    wc = widths[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize];
+    wr = widths[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize];
+    wa = widths[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize];
+    while wl.wrapping_add(wc).wrapping_add(wr) > width {
+        if wc > 0 as u_int {
+            wc = wc.wrapping_sub(1);
+        } else if wr > 0 as u_int {
+            wr = wr.wrapping_sub(1);
+        } else {
+            wl = wl.wrapping_sub(1);
+        }
+    }
+    if wa > width {
+        wa = width;
+    }
+    start[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize] = 0 as u_int;
+    src[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize] = 0 as u_int;
+    vis[STYLE_ALIGN_LEFT as ::core::ffi::c_int as usize] = wl;
+    start[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize] = width.wrapping_sub(wr);
+    src[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize] =
+        widths[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize].wrapping_sub(wr);
+    vis[STYLE_ALIGN_RIGHT as ::core::ffi::c_int as usize] = wr;
+    start[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize] = wl
+        .wrapping_add(
+            width
+                .wrapping_sub(wr)
+                .wrapping_sub(wl)
+                .wrapping_div(2 as u_int),
+        )
+        .wrapping_sub(wc.wrapping_div(2 as u_int));
+    src[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize] = widths
+        [STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize]
+        .wrapping_div(2 as u_int)
+        .wrapping_sub(wc.wrapping_div(2 as u_int));
+    vis[STYLE_ALIGN_CENTRE as ::core::ffi::c_int as usize] = wc;
+    start[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] =
+        width.wrapping_sub(wa).wrapping_div(2 as u_int);
+    src[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] = 0 as u_int;
+    vis[STYLE_ALIGN_ABSOLUTE_CENTRE as ::core::ffi::c_int as usize] = wa;
+    mask = vec![0; (width.wrapping_add(7 as u_int) >> 3 as ::core::ffi::c_int) as usize];
+    i = 0 as u_int;
+    while i < ncs {
+        if best[i as usize] != 0 {
+            if let Some(column) = fuzzy_column(&cs[i as usize], &start, &src, &vis) {
+                j = 0 as u_int;
+                while j < cs[i as usize].width && column.wrapping_add(j) < width {
+                    let ref mut fresh0 =
+                        mask[(column.wrapping_add(j) >> 3 as ::core::ffi::c_int) as usize];
+                    *fresh0 = (*fresh0 as ::core::ffi::c_int
+                        | (1 as ::core::ffi::c_int) << (column.wrapping_add(j) & 0x7 as u_int))
+                        as bitstr_t;
+                    j = j.wrapping_add(1);
+                }
+            }
+        }
+        i = i.wrapping_add(1);
+    }
+    drop(best);
+    drop(matched);
+    drop(cs);
+    if let Some(score) = score.as_deref_mut() {
+        *score = if bestscore < 0 as ::core::ffi::c_int {
+            0 as u_int
+        } else {
+            bestscore as u_int
+        };
+    }
+    Some(mask)
 }
 
 #[cfg(test)]

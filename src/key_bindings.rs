@@ -1,7 +1,7 @@
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_command, cmdq_insert_after,
-    cmdq_new_state,
+    cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_command,
+    cmdq_insert_after, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_print_cstring};
 use crate::src::ffi::libc::strcmp;
@@ -11,12 +11,12 @@ use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::src::server::clients;
 use crate::src::server_client::server_client_set_key_table;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::client::client;
+use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{CMD_READONLY, CMDQ_STATE_REPEAT};
 use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::src::shared::command::{CMDQ_STATE_REPEAT, CMD_READONLY};
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_bindings, key_event, key_table, key_table_entry};
@@ -25,11 +25,7 @@ use std::ffi::CStr;
 
 #[repr(C)]
 pub struct key_tables {
-    pub storage: Option<
-        refbox::RefBox<
-            std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>,
-        >,
-    >,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::RefCell<key_table>>>>>,
 }
 
 static mut key_tables: key_tables = key_tables { storage: None };
@@ -42,24 +38,20 @@ pub unsafe fn key_bindings_get_table(
     name: &CStr,
     create: i32,
 ) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    unsafe {
-        if let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() {
-            let map = index
-                .try_borrow_mut()
-                .expect("key table index already borrowed");
-            if let Some(table) = map.get(name.to_bytes()) {
-                return Some(table.clone());
-            }
+    if let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() {
+        let map = index.try_borrow_mut().expect("key table index already borrowed");
+        if let Some(table) = map.get(name.to_bytes()) {
+            return Some(table.clone());
         }
-        if create == 0 {
-            return None;
-        }
-        let mut value = key_table::empty();
-        value.name = name.to_owned();
-        let table = std::rc::Rc::new(std::cell::RefCell::new(value));
-        key_tables_insert(&raw mut key_tables, table.clone());
-        Some(table)
     }
+    if create == 0 {
+        return None;
+    }
+    let mut value = key_table::empty();
+    value.name = name.to_owned();
+    let table = std::rc::Rc::new(std::cell::RefCell::new(value));
+    key_tables_insert(&raw mut key_tables, table.clone());
+    Some(table)
 }
 pub fn key_bindings_get(table: &key_table, key: key_code) -> Option<&key_binding> {
     table.key_bindings.get(key)
@@ -71,15 +63,11 @@ pub fn key_bindings_get_default(table: &key_table, key: key_code) -> Option<&key
 
 /// Retain the tables while callers borrow their bindings for listing.
 pub unsafe fn key_bindings_tables() -> Vec<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    unsafe {
-        let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() else {
-            return Vec::new();
-        };
-        let map = index
-            .try_borrow_mut()
-            .expect("key table index already borrowed");
-        map.values().cloned().collect()
-    }
+    let Some(index) = (*std::ptr::addr_of!(key_tables)).storage.as_ref() else {
+        return Vec::new();
+    };
+    let map = index.try_borrow_mut().expect("key table index already borrowed");
+    map.values().cloned().collect()
 }
 
 pub unsafe fn key_bindings_add(
@@ -89,140 +77,113 @@ pub unsafe fn key_bindings_add(
     repeat: ::core::ffi::c_int,
     cmdlist: Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>,
 ) {
-    unsafe {
-        let owner = key_bindings_get_table(name, 1).expect("created key table");
-        let mut table = owner.borrow_mut();
-        let key = key & !KEYC_MASK_FLAGS;
-        let Some(cmdlist) = cmdlist else {
-            if let Some(bd) = table.key_bindings.get_mut(key) {
-                if let Some(note) = note {
-                    key_bindings_set_note(bd, Some(note));
-                }
-                if repeat != 0 {
-                    bd.flags |= KEY_BINDING_REPEAT;
-                }
+    let owner = key_bindings_get_table(name, 1).expect("created key table");
+    let mut table = owner.borrow_mut();
+    let key = key & !KEYC_MASK_FLAGS;
+    let Some(cmdlist) = cmdlist else {
+        if let Some(bd) = table.key_bindings.get_mut(key) {
+            if let Some(note) = note {
+                key_bindings_set_note(bd, Some(note));
             }
-            return;
-        };
-        drop(table.key_bindings.remove(key));
-        let bd = Box::new(key_binding {
-            key,
-            commands: cmdlist,
-            note: note.map(CStr::to_owned),
-            tablename: Some(table.name.clone()),
-            flags: if repeat != 0 { KEY_BINDING_REPEAT } else { 0 },
-        });
-        let s = cmd_list_print_cstring(&bd.cmdlist().borrow(), 0);
-        let key_string = key_string_format(key, true);
-        table.key_bindings.insert(bd);
-        log_debug(format_args!(
-            "key_bindings_add: {} {} = {}",
-            log_hex(key),
-            crate::src::log::log_bytes(key_string.as_bytes()),
-            crate::src::log::log_bytes(s.as_bytes())
-        ));
-    }
+            if repeat != 0 {
+                bd.flags |= KEY_BINDING_REPEAT;
+            }
+        }
+        return;
+    };
+    drop(table.key_bindings.remove(key));
+    let bd = Box::new(key_binding {
+        key,
+        commands: cmdlist,
+        note: note.map(CStr::to_owned),
+        tablename: Some(table.name.clone()),
+        flags: if repeat != 0 { KEY_BINDING_REPEAT } else { 0 },
+    });
+    let s = cmd_list_print_cstring(&bd.cmdlist().borrow(), 0);
+    let key_string = key_string_format(key, true);
+    table.key_bindings.insert(bd);
+    log_debug(format_args!(
+        "key_bindings_add: {} {} = {}",
+        log_hex(key),
+        crate::src::log::log_bytes(key_string.as_bytes()),
+        crate::src::log::log_bytes(s.as_bytes())
+    ));
 }
 
 pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
-    unsafe {
-        let Some(owner) = key_bindings_get_table(name, 0) else {
-            return;
-        };
-        let mut table = owner.borrow_mut();
-        let Some(bd) = table.key_bindings.remove(key & !KEYC_MASK_FLAGS) else {
-            return;
-        };
-        let key_string = key_string_format(bd.key, true);
-        log_debug(format_args!(
-            "key_bindings_remove: {} {}",
-            log_hex(bd.key),
-            crate::src::log::log_bytes(key_string.as_bytes())
-        ));
-        drop(bd);
-        if table.key_bindings.storage.is_none() && table.default_key_bindings.storage.is_none() {
-            drop(table);
-            drop(key_tables_remove(&raw mut key_tables, &owner));
-        }
+    let Some(owner) = key_bindings_get_table(name, 0) else { return; };
+    let mut table = owner.borrow_mut();
+    let Some(bd) = table.key_bindings.remove(key & !KEYC_MASK_FLAGS) else {
+        return;
+    };
+    let key_string = key_string_format(bd.key, true);
+    log_debug(format_args!(
+        "key_bindings_remove: {} {}",
+        log_hex(bd.key),
+        crate::src::log::log_bytes(key_string.as_bytes())
+    ));
+    drop(bd);
+    if table.key_bindings.storage.is_none() && table.default_key_bindings.storage.is_none() {
+        drop(table);
+        drop(key_tables_remove(&raw mut key_tables, &owner));
     }
 }
 
 pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
-    unsafe {
-        let Some(owner) = key_bindings_get_table(name, 0) else {
-            return;
-        };
-        let mut table = owner.borrow_mut();
-        let key = key & !KEYC_MASK_FLAGS;
-        let table_ref = &mut *table;
-        let Some(bd) = table_ref.key_bindings.get_mut(key) else {
-            return;
-        };
-        let Some(dd) = table_ref.default_key_bindings.get(key) else {
-            drop(table);
-            key_bindings_remove(name, key);
-            return;
-        };
-        bd.commands = std::rc::Rc::clone(&dd.commands);
-        bd.note = dd.note.clone();
-        bd.flags = dd.flags;
-    }
+    let Some(owner) = key_bindings_get_table(name, 0) else { return; };
+    let mut table = owner.borrow_mut();
+    let key = key & !KEYC_MASK_FLAGS;
+    let table_ref = &mut *table;
+    let Some(bd) = table_ref.key_bindings.get_mut(key) else {
+        return;
+    };
+    let Some(dd) = table_ref.default_key_bindings.get(key) else {
+        drop(table);
+        key_bindings_remove(name, key);
+        return;
+    };
+    bd.commands = std::rc::Rc::clone(&dd.commands);
+    bd.note = dd.note.clone();
+    bd.flags = dd.flags;
 }
 
 pub unsafe fn key_bindings_remove_table(name: &CStr) {
-    unsafe {
-        let mut c: *mut client = ::core::ptr::null_mut::<client>();
-        if let Some(owner) = key_bindings_get_table(name, 0) {
-            let detached = key_tables_remove(&raw mut key_tables, &owner);
-            let mut registry_c_owner = clients.first();
-            c = registry_c_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            while !c.is_null() {
-                if (*c)
-                    .keytable
-                    .as_ref()
-                    .is_some_and(|current| std::rc::Rc::ptr_eq(current, &owner))
-                {
-                    server_client_set_key_table(
-                        &(*(c)).observer.upgrade().expect("live client"),
-                        ::core::ptr::null::<::core::ffi::c_char>(),
-                    );
-                }
-                registry_c_owner =
-                    clients.next(registry_c_owner.as_ref().expect("current registry client"));
-                c = registry_c_owner
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    if let Some(owner) = key_bindings_get_table(name, 0) {
+        let detached = key_tables_remove(&raw mut key_tables, &owner);
+        let mut registry_c_owner = clients.first();
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+        while !c.is_null() {
+            if (*c).keytable.as_ref().is_some_and(|current| std::rc::Rc::ptr_eq(current, &owner)) {
+                server_client_set_key_table(&(*(c)).observer.upgrade().expect("live client"), ::core::ptr::null::<::core::ffi::c_char>());
             }
-            drop(detached);
+            registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+            c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
         }
+        drop(detached);
     }
 }
 
 /// Snapshot startup defaults with their own command-list reference and note.
 unsafe fn key_bindings_init_done() -> cmd_retval {
-    unsafe {
-        for owner in key_bindings_tables() {
-            let mut table = owner.borrow_mut();
-            let table_ref = &mut *table;
-            for bd in table_ref.key_bindings.iter() {
-                table_ref.default_key_bindings.insert(Box::new(key_binding {
-                    key: bd.key,
-                    commands: std::rc::Rc::clone(&bd.commands),
-                    note: bd.note.clone(),
-                    tablename: None,
-                    flags: bd.flags,
-                }));
-            }
+    for owner in key_bindings_tables() {
+        let mut table = owner.borrow_mut();
+        let table_ref = &mut *table;
+        for bd in table_ref.key_bindings.iter() {
+            table_ref.default_key_bindings.insert(Box::new(key_binding {
+                key: bd.key,
+                commands: std::rc::Rc::clone(&bd.commands),
+                note: bd.note.clone(),
+                tablename: None,
+                flags: bd.flags,
+            }));
         }
-        CMD_RETURN_NORMAL
     }
+    CMD_RETURN_NORMAL
 }
 
 pub unsafe fn key_bindings_init() {
-    unsafe {
-        static mut defaults: [*const ::core::ffi::c_char; 308] = [
+    static mut defaults: [*const ::core::ffi::c_char; 308] = [
         b"bind -N 'Send the prefix key' C-b { send-prefix }\0" as *const u8
             as *const ::core::ffi::c_char,
         b"bind -N 'Rotate through the panes' C-o { rotate-window }\0" as *const u8
@@ -840,57 +801,52 @@ pub unsafe fn key_bindings_init() {
         b"bind -Tcopy-mode-vi C-Down { send -X scroll-down }\0" as *const u8
             as *const ::core::ffi::c_char,
     ];
-        let mut i: u_int = 0;
-        let mut pr: cmd_parse_result = cmd_parse_result::empty();
-        i = 0 as u_int;
-        while (i as usize)
-            < (::core::mem::size_of::<[*const ::core::ffi::c_char; 308]>() as usize)
-                .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
+    let mut i: u_int = 0;
+    let mut pr: cmd_parse_result = cmd_parse_result::empty();
+    i = 0 as u_int;
+    while (i as usize)
+        < (::core::mem::size_of::<[*const ::core::ffi::c_char; 308]>() as usize)
+            .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
+    {
+        pr = cmd_parse_from_string(
+            CStr::from_ptr(defaults[i as usize]),
+            ::core::ptr::null_mut::<cmd_parse_input>(),
+        );
+        if pr.status as ::core::ffi::c_uint
+            != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            pr = cmd_parse_from_string(
-                CStr::from_ptr(defaults[i as usize]),
-                ::core::ptr::null_mut::<cmd_parse_input>(),
-            );
-            if pr.status as ::core::ffi::c_uint
-                != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                log_debug(format_args!(
-                    "{}",
-                    log_cstr(
-                        (pr.error
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |cause| cause.as_ptr()))
-                            as *const _
-                    )
-                ));
-                fatalx(|out| {
-                    out.write_all(b"bad default key: ")?;
-                    write_cstr(out, defaults[i as usize])
-                });
-            }
-            cmdq_append(
-                None,
-                cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None),
-            );
-            drop(pr.cmdlist.take());
-            i = i.wrapping_add(1);
+            log_debug(format_args!(
+                "{}",
+                log_cstr(
+                    (pr.error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()))
+                        as *const _
+                )
+            ));
+            fatalx(|out| {
+                out.write_all(b"bad default key: ")?;
+                write_cstr(out, defaults[i as usize])
+            });
         }
         cmdq_append(
             None,
-            cmdq_get_callback_owned(
-                c"key_bindings_init_done",
-                Some(Box::new(|_| unsafe { key_bindings_init_done() })),
-            ),
+            cmdq_get_command(pr.cmdlist.as_ref().expect("successful command parse"), None),
         );
+        drop(pr.cmdlist.take());
+        i = i.wrapping_add(1);
     }
+    cmdq_append(
+        None,
+        cmdq_get_callback_owned(
+            c"key_bindings_init_done",
+            Some(Box::new(|_| unsafe { key_bindings_init_done() })),
+        ),
+    );
 }
-unsafe fn key_bindings_read_only(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-        return CMD_RETURN_ERROR;
-    }
+unsafe fn key_bindings_read_only(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
+    return CMD_RETURN_ERROR;
 }
 pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,
@@ -899,34 +855,35 @@ pub unsafe fn key_bindings_dispatch(
     mut event: *mut key_event,
     mut fs: *mut cmd_find_state,
 ) -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> {
-    unsafe {
-        let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-        let new_item_allocation;
-        let new_state;
-        let mut readonly: ::core::ffi::c_int = 0;
-        let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
-            readonly = 1 as ::core::ffi::c_int;
-        } else {
-            readonly = cmd_list_all_have(&bd.cmdlist().borrow());
+    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let new_item_allocation;
+    let new_state;
+    let mut readonly: ::core::ffi::c_int = 0;
+    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
+        readonly = 1 as ::core::ffi::c_int;
+    } else {
+        readonly = cmd_list_all_have(&bd.cmdlist().borrow());
+    }
+    if readonly == 0 {
+        new_item_allocation = cmdq_get_callback_owned(
+            c"key_bindings_read_only",
+            Some(Box::new(|item| unsafe {
+                key_bindings_read_only(item)
+            })),
+        );
+    } else {
+        if bd.flags & KEY_BINDING_REPEAT != 0 {
+            flags |= CMDQ_STATE_REPEAT;
         }
-        if readonly == 0 {
-            new_item_allocation = cmdq_get_callback_owned(
-                c"key_bindings_read_only",
-                Some(Box::new(|item| unsafe { key_bindings_read_only(item) })),
-            );
-        } else {
-            if bd.flags & KEY_BINDING_REPEAT != 0 {
-                flags |= CMDQ_STATE_REPEAT;
-            }
-            new_state = cmdq_new_state(fs, event, flags);
-            new_item_allocation = cmdq_get_command(&bd.commands, Some(&new_state));
-        }
-        if let Some(item) = item_handle {
-            cmdq_insert_after(item, new_item_allocation)
-        } else {
-            cmdq_append(c_owner, new_item_allocation)
-        }
+        new_state = cmdq_new_state(fs, event, flags);
+        new_item_allocation = cmdq_get_command(&bd.commands, Some(&new_state));
+
+    }
+    if let Some(item) = item_handle {
+        cmdq_insert_after(item, new_item_allocation)
+    } else {
+        cmdq_append(c_owner, new_item_allocation)
     }
 }
 
@@ -934,67 +891,37 @@ pub fn key_bindings_has_repeat(bindings: &[&key_binding]) -> bool {
     bindings.iter().any(|bd| bd.flags & KEY_BINDING_REPEAT != 0)
 }
 
-pub fn key_tables_find(
-    head: &key_tables,
-    elm: &key_table,
-) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+pub fn key_tables_find(head: &key_tables, elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
     let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
+    let map = owner.try_borrow_mut().expect("key table index already borrowed");
     map.get(elm.name.as_bytes()).cloned()
 }
-pub unsafe fn key_tables_insert(
-    head: *mut key_tables,
-    table: std::rc::Rc<std::cell::RefCell<key_table>>,
-) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    unsafe {
-        let key = table.borrow().name.as_bytes().to_vec();
-        let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
-        let observer = owner.downgrade();
-        let mut map = owner
-            .try_borrow_mut()
-            .expect("key table index already borrowed");
-        if let Some(existing) = map.get(&key) {
-            return Some(existing.clone());
-        }
-        table.borrow_mut().entry.owner = observer;
-        map.insert(key, table);
-        None
-    }
+pub unsafe fn key_tables_insert(head: *mut key_tables, table: std::rc::Rc<std::cell::RefCell<key_table>>) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+    let key = table.borrow().name.as_bytes().to_vec();
+    let owner = (*head).storage.get_or_insert_with(refbox::RefBox::default);
+    let observer = owner.downgrade();
+    let mut map = owner.try_borrow_mut().expect("key table index already borrowed");
+    if let Some(existing) = map.get(&key) { return Some(existing.clone()); }
+    table.borrow_mut().entry.owner = observer;
+    map.insert(key, table);
+    None
 }
-pub unsafe fn key_tables_remove(
-    head: *mut key_tables,
-    table: &std::rc::Rc<std::cell::RefCell<key_table>>,
-) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
-    unsafe {
-        let key = table.borrow().name.as_bytes().to_vec();
-        let owner = (*head).storage.as_ref()?;
-        let (detached, empty) = {
-            let mut map = owner
-                .try_borrow_mut()
-                .expect("key table index already borrowed");
-            if !map
-                .get(&key)
-                .is_some_and(|candidate| std::rc::Rc::ptr_eq(candidate, table))
-            {
-                return None;
-            }
-            let detached = map.remove(&key).expect("matching key table");
-            (detached, map.is_empty())
-        };
-        table.borrow_mut().entry.owner = refbox::Weak::new();
-        if empty {
-            (*head).storage = None;
-        }
-        Some(detached)
-    }
+pub unsafe fn key_tables_remove(head: *mut key_tables, table: &std::rc::Rc<std::cell::RefCell<key_table>>) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
+    let key = table.borrow().name.as_bytes().to_vec();
+    let owner = (*head).storage.as_ref()?;
+    let (detached, empty) = {
+        let mut map = owner.try_borrow_mut().expect("key table index already borrowed");
+        if !map.get(&key).is_some_and(|candidate| std::rc::Rc::ptr_eq(candidate, table)) { return None; }
+        let detached = map.remove(&key).expect("matching key table");
+        (detached, map.is_empty())
+    };
+    table.borrow_mut().entry.owner = refbox::Weak::new();
+    if empty { (*head).storage = None; }
+    Some(detached)
 }
 pub fn key_tables_minmax(head: &key_tables) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
     let owner = head.storage.as_ref()?;
-    let map = owner
-        .try_borrow_mut()
-        .expect("key table index already borrowed");
+    let map = owner.try_borrow_mut().expect("key table index already borrowed");
     map.first_key_value().map(|(_, table)| table.clone())
 }
 pub fn key_tables_next(elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell<key_table>>> {
@@ -1004,13 +931,10 @@ pub fn key_tables_next(elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell
         Err(refbox::BorrowError::Dropped) => return None,
         Err(refbox::BorrowError::Borrowed) => panic!("key table index already borrowed"),
     };
-    map.range::<[u8], _>((
-        std::ops::Bound::Excluded(elm.name.as_bytes()),
-        std::ops::Bound::Unbounded,
-    ))
-    .next()
-    .map(|(_, table)| table.clone())
+    map.range::<[u8], _>((std::ops::Bound::Excluded(elm.name.as_bytes()), std::ops::Bound::Unbounded))
+        .next().map(|(_, table)| table.clone())
 }
+
 
 #[cfg(test)]
 mod ownership_tests {
@@ -1020,15 +944,13 @@ mod ownership_tests {
     use std::rc::Rc;
 
     unsafe fn binding(key: key_code) -> Box<key_binding> {
-        unsafe {
-            Box::new(key_binding {
-                key,
-                commands: cmd_list_new(),
-                note: None,
-                tablename: None,
-                flags: 0,
-            })
-        }
+        Box::new(key_binding {
+            key,
+            commands: cmd_list_new(),
+            note: None,
+            tablename: None,
+            flags: 0,
+        })
     }
 
     #[test]
@@ -1048,10 +970,7 @@ mod ownership_tests {
             assert_ne!(a.borrow().identity, duplicate.borrow().identity);
             assert!(key_tables_insert(&mut index, a.clone()).is_none());
             assert!(key_tables_insert(&mut index, b.clone()).is_none());
-            assert!(Rc::ptr_eq(
-                &key_tables_insert(&mut index, duplicate.clone()).unwrap(),
-                &a
-            ));
+            assert!(Rc::ptr_eq(&key_tables_insert(&mut index, duplicate.clone()).unwrap(), &a));
             assert!(key_tables_remove(&mut index, &duplicate).is_none());
             assert!(Rc::ptr_eq(&key_tables_minmax(&index).unwrap(), &a));
             assert!(Rc::ptr_eq(&key_tables_next(&a.borrow()).unwrap(), &b));
@@ -1102,31 +1021,13 @@ mod ownership_tests {
             let name = c"binding-owner-defaults";
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = c"original".as_ptr();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                1,
-                Some(original),
-            );
+            key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = c"original".as_ptr(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 1, Some(original));
             let table_owner = key_bindings_get_table(name, 0).unwrap();
             key_bindings_init_done();
             assert_eq!(original_lifetime.strong_count(), 2);
             let replacement = cmd_list_new();
             let replacement_lifetime = std::rc::Rc::downgrade(&replacement);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = c"replacement".as_ptr();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                Some(replacement),
-            );
+            key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = c"replacement".as_ptr(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0, Some(replacement));
             assert_eq!(original_lifetime.strong_count(), 1);
             key_bindings_reset(name, 65);
             assert!(replacement_lifetime.upgrade().is_none());
@@ -1134,41 +1035,13 @@ mod ownership_tests {
             let bd = key_bindings_get(&table_borrow, 65).unwrap();
             assert_eq!(bd.note.as_deref(), Some(c"original"));
             assert_eq!(bd.flags, KEY_BINDING_REPEAT);
-            assert!(std::rc::Weak::ptr_eq(
-                &std::rc::Rc::downgrade(bd.cmdlist()),
-                &original_lifetime
-            ));
+            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(bd.cmdlist()), &original_lifetime));
             assert_eq!(original_lifetime.strong_count(), 2);
             drop(table_borrow);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = c"note only".as_ptr();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                None,
-            );
-            assert!(std::rc::Weak::ptr_eq(
-                &std::rc::Rc::downgrade(
-                    key_bindings_get(&table_owner.borrow(), 65)
-                        .unwrap()
-                        .cmdlist()
-                ),
-                &original_lifetime
-            ));
+            key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = c"note only".as_ptr(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0, None);
+            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(key_bindings_get(&table_owner.borrow(), 65).unwrap().cmdlist()), &original_lifetime));
             assert_eq!(original_lifetime.strong_count(), 2);
-            key_bindings_add(
-                name,
-                66,
-                {
-                    let note: *const ::core::ffi::c_char = std::ptr::null();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                Some(cmd_list_new()),
-            );
+            key_bindings_add(name, 66, { let note: *const ::core::ffi::c_char = std::ptr::null(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0, Some(cmd_list_new()));
             key_bindings_reset(name, 66);
             assert!(key_bindings_get(&table_owner.borrow(), 66).is_none());
             drop(table_owner);
@@ -1183,36 +1056,13 @@ mod ownership_tests {
             let name = c"binding-owner-dispatch";
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = std::ptr::null();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                1,
-                Some(original),
-            );
+            key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = std::ptr::null(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 1, Some(original));
             let table_owner = key_bindings_get_table(name, 0).unwrap();
             let table_lifetime = Rc::downgrade(&table_owner);
             let retained_table = table_lifetime.upgrade().unwrap();
-            let command = key_bindings_get(&table_owner.borrow(), 65)
-                .unwrap()
-                .command();
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = std::ptr::null();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                Some(cmd_list_new()),
-            );
-            assert!(std::rc::Weak::ptr_eq(
-                &std::rc::Rc::downgrade(command.cmdlist()),
-                &original_lifetime
-            ));
+            let command = key_bindings_get(&table_owner.borrow(), 65).unwrap().command();
+            key_bindings_add(name, 65, { let note: *const ::core::ffi::c_char = std::ptr::null(); (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note)) }, 0, Some(cmd_list_new()));
+            assert!(std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(command.cmdlist()), &original_lifetime));
             assert_eq!(command.key, 65);
             assert_eq!(command.flags, KEY_BINDING_REPEAT);
             assert_eq!(original_lifetime.strong_count(), 1);

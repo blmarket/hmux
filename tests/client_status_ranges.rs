@@ -1,5 +1,5 @@
 use hmux2::src::shared::client::client;
-use hmux2::src::shared::style::{STYLE_RANGE_CONTROL, style_range};
+use hmux2::src::shared::style::{style_range, STYLE_RANGE_CONTROL};
 use hmux2::src::status::status_get_range;
 
 #[test]

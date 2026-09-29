@@ -2,7 +2,10 @@ use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::{options_array_item_value, options_get, options_get_string};
+use crate::src::options::{
+    options_array_item_value, options_get,
+    options_get_string,
+};
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
 use crate::src::xmalloc::xcalloc;
 use std::ffi::{CStr, CString, NulError};
@@ -138,7 +141,7 @@ pub unsafe fn environ_find<'a>(
     env: &'a environ,
     name: *const ::core::ffi::c_char,
 ) -> Option<&'a environ_entry> {
-    unsafe { env.find(CStr::from_ptr(name)) }
+    env.find(CStr::from_ptr(name))
 }
 
 pub unsafe fn environ_set(
@@ -147,16 +150,12 @@ pub unsafe fn environ_set(
     flags: ::core::ffi::c_int,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    unsafe {
-        let value = format_message_with(write);
-        env.set_cstr(CStr::from_ptr(name), flags, &value);
-    }
+    let value = format_message_with(write);
+    env.set_cstr(CStr::from_ptr(name), flags, &value);
 }
 
 pub unsafe fn environ_clear(env: &mut environ, name: *const ::core::ffi::c_char) {
-    unsafe {
-        env.clear_cstr(CStr::from_ptr(name));
-    }
+    env.clear_cstr(CStr::from_ptr(name));
 }
 
 pub unsafe fn environ_put(
@@ -164,135 +163,108 @@ pub unsafe fn environ_put(
     var: *const ::core::ffi::c_char,
     flags: ::core::ffi::c_int,
 ) {
-    unsafe {
-        let var = CStr::from_ptr(var).to_bytes_with_nul();
-        let Some(equals) = var[..var.len() - 1].iter().position(|&byte| byte == b'=') else {
-            return;
-        };
-        let name = CString::new(&var[..equals]).expect("environment name contains no NUL");
-        let value = CStr::from_bytes_with_nul(&var[equals + 1..])
-            .expect("environment value ends at input NUL");
-        env.set_cstr(&name, flags, value);
-    }
+    let var = CStr::from_ptr(var).to_bytes_with_nul();
+    let Some(equals) = var[..var.len() - 1].iter().position(|&byte| byte == b'=') else {
+        return;
+    };
+    let name = CString::new(&var[..equals]).expect("environment name contains no NUL");
+    let value =
+        CStr::from_bytes_with_nul(&var[equals + 1..]).expect("environment value ends at input NUL");
+    env.set_cstr(&name, flags, value);
 }
 
 pub unsafe fn environ_unset(env: &mut environ, name: *const ::core::ffi::c_char) {
-    unsafe {
-        env.unset_cstr(CStr::from_ptr(name));
-    }
+    env.unset_cstr(CStr::from_ptr(name));
 }
 
 pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut environ) {
-    unsafe {
-        let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-        let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-        let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
-        let mut found: ::core::ffi::c_int = 0;
-        o = options_get(
-            oo,
-            b"update-environment\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        if o.is_null() {
-            return;
-        }
-        let a_root = o;
-        let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-            .map(|item| item.key.clone())
-            .collect::<Vec<_>>()
-            .into_iter();
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
-        });
-        while !a.is_null() {
-            ov = (crate::src::options::options_array_item_value_mut(&mut *(a))
-                as *mut crate::src::shared::options::options_value);
-            found = 0 as ::core::ffi::c_int;
-            for envent in environ_iter(src) {
-                if fnmatch(
-                    (*ov)
-                        .string_ptr()
-                        .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
+    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
+    let mut found: ::core::ffi::c_int = 0;
+    o = options_get(
+        oo,
+        b"update-environment\0" as *const u8 as *const ::core::ffi::c_char,
+    );
+    if o.is_null() {
+        return;
+    }
+    let a_root = o;
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+    while !a.is_null() {
+        ov = (crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value);
+        found = 0 as ::core::ffi::c_int;
+        for envent in environ_iter(src) {
+            if fnmatch(
+                (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                ((*envent).name).as_ptr().cast_mut(),
+                0 as ::core::ffi::c_int,
+            ) == 0 as ::core::ffi::c_int
+            {
+                environ_set(
+                    dst,
                     ((*envent).name).as_ptr().cast_mut(),
                     0 as ::core::ffi::c_int,
-                ) == 0 as ::core::ffi::c_int
-                {
-                    environ_set(
-                        dst,
-                        ((*envent).name).as_ptr().cast_mut(),
-                        0 as ::core::ffi::c_int,
-                        |out| {
-                            write_cstr(
-                                out,
-                                ((*envent).value)
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| {
-                                        value.as_ptr().cast_mut()
-                                    }),
-                            )
-                        },
-                    );
-                    found = 1 as ::core::ffi::c_int;
-                }
-            }
-            if found == 0 {
-                environ_clear(
-                    dst,
-                    (*ov)
-                        .string_ptr()
-                        .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    |out| {
+                        write_cstr(
+                            out,
+                            ((*envent).value)
+                                .as_ref()
+                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                        )
+                    },
                 );
+                found = 1 as ::core::ffi::c_int;
             }
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(a_root, key.as_ptr())
-            });
         }
+        if found == 0 {
+            environ_clear(dst, (*ov).string_ptr().map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()));
+        }
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     }
 }
 pub unsafe fn environ_push(env: &environ) {
-    unsafe {
-        let seed = xcalloc(::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t)
-            as *mut *mut ::core::ffi::c_char;
-        environ = seed;
-        let seed_owner = ProcessEnvironmentSeed(seed);
-        for envent in environ_iter(env) {
-            if !(*envent).value.is_none()
-                && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
-                && !(*envent).flags & ENVIRON_HIDDEN != 0
-            {
-                setenv(
-                    ((*envent).name).as_ptr().cast_mut(),
-                    ((*envent).value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    1 as ::core::ffi::c_int,
-                );
-            }
+    let seed = xcalloc(::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t)
+        as *mut *mut ::core::ffi::c_char;
+    environ = seed;
+    let seed_owner = ProcessEnvironmentSeed(seed);
+    for envent in environ_iter(env) {
+        if !(*envent).value.is_none()
+            && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
+            && !(*envent).flags & ENVIRON_HIDDEN != 0
+        {
+            setenv(
+                ((*envent).name).as_ptr().cast_mut(),
+                ((*envent).value)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                1 as ::core::ffi::c_int,
+            );
         }
-        drop(seed_owner);
     }
+    drop(seed_owner);
 }
 pub unsafe fn environ_log(
     env: &environ,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    unsafe {
-        let prefix = format_message_with(write);
-        for envent in environ_iter(env) {
-            if !(*envent).value.is_none()
-                && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
-            {
-                log_debug(format_args!(
-                    "{}{}={}",
-                    log_cstr((prefix.as_ptr()) as *const _),
-                    log_cstr((((*envent).name).as_ptr().cast_mut()) as *const _),
-                    log_cstr(
-                        (((*envent).value)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
-                    )
-                ));
-            }
+    let prefix = format_message_with(write);
+    for envent in environ_iter(env) {
+        if !(*envent).value.is_none()
+            && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
+        {
+            log_debug(format_args!(
+                "{}{}={}",
+                log_cstr((prefix.as_ptr()) as *const _),
+                log_cstr((((*envent).name).as_ptr().cast_mut()) as *const _),
+                log_cstr(
+                    (((*envent).value)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                )
+            ));
         }
     }
 }
@@ -300,82 +272,80 @@ pub unsafe fn environ_for_session(
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
     mut no_TERM: ::core::ffi::c_int,
 ) -> Box<environ> {
-    unsafe {
-        let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-        let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut idx: ::core::ffi::c_int = 0;
-        let mut env = environ_create();
+    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut idx: ::core::ffi::c_int = 0;
+    let mut env = environ_create();
+    environ_copy(
+        global_environ.as_deref().expect("global environment"),
+        &mut env,
+    );
+    if !s.is_null() {
         environ_copy(
-            global_environ.as_deref().expect("global environment"),
+            (*s).environ.as_deref().expect("session environment"),
             &mut env,
         );
-        if !s.is_null() {
-            environ_copy(
-                (*s).environ.as_deref().expect("session environment"),
-                &mut env,
-            );
-        }
-        if no_TERM == 0 {
-            value = options_get_string(
-                global_options,
-                b"default-terminal\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            environ_set(
-                &mut env,
-                b"TERM\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-                |out| write_cstr(out, value),
-            );
-            environ_set(
-                &mut env,
-                b"TERM_PROGRAM\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-                |out| write_cstr(out, b"tmux\0" as *const u8 as *const ::core::ffi::c_char),
-            );
-            environ_set(
-                &mut env,
-                b"TERM_PROGRAM_VERSION\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-                |out| write_cstr(out, getversion()),
-            );
-            environ_set(
-                &mut env,
-                b"COLORTERM\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-                |out| out.write_all(b"truecolor"),
-            );
-        }
-        environ_clear(
-            &mut env,
-            b"LISTEN_PID\0" as *const u8 as *const ::core::ffi::c_char,
+    }
+    if no_TERM == 0 {
+        value = options_get_string(
+            global_options,
+            b"default-terminal\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        environ_clear(
-            &mut env,
-            b"LISTEN_FDS\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        environ_clear(
-            &mut env,
-            b"LISTEN_FDNAMES\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        if !s.is_null() {
-            idx = (*s).id as ::core::ffi::c_int;
-        } else {
-            idx = -(1 as ::core::ffi::c_int);
-        }
         environ_set(
             &mut env,
-            b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,
+            b"TERM\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            |out| {
-                write_cstr(out, socket_path)?;
-                write!(
-                    out,
-                    ",{},{}",
-                    (getpid() as ::core::ffi::c_long) as ::core::ffi::c_long,
-                    (idx) as i32
-                )
-            },
+            |out| write_cstr(out, value),
         );
-        return env;
+        environ_set(
+            &mut env,
+            b"TERM_PROGRAM\0" as *const u8 as *const ::core::ffi::c_char,
+            0 as ::core::ffi::c_int,
+            |out| write_cstr(out, b"tmux\0" as *const u8 as *const ::core::ffi::c_char),
+        );
+        environ_set(
+            &mut env,
+            b"TERM_PROGRAM_VERSION\0" as *const u8 as *const ::core::ffi::c_char,
+            0 as ::core::ffi::c_int,
+            |out| write_cstr(out, getversion()),
+        );
+        environ_set(
+            &mut env,
+            b"COLORTERM\0" as *const u8 as *const ::core::ffi::c_char,
+            0 as ::core::ffi::c_int,
+            |out| out.write_all(b"truecolor"),
+        );
     }
+    environ_clear(
+        &mut env,
+        b"LISTEN_PID\0" as *const u8 as *const ::core::ffi::c_char,
+    );
+    environ_clear(
+        &mut env,
+        b"LISTEN_FDS\0" as *const u8 as *const ::core::ffi::c_char,
+    );
+    environ_clear(
+        &mut env,
+        b"LISTEN_FDNAMES\0" as *const u8 as *const ::core::ffi::c_char,
+    );
+    if !s.is_null() {
+        idx = (*s).id as ::core::ffi::c_int;
+    } else {
+        idx = -(1 as ::core::ffi::c_int);
+    }
+    environ_set(
+        &mut env,
+        b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,
+        0 as ::core::ffi::c_int,
+        |out| {
+            write_cstr(out, socket_path)?;
+            write!(
+                out,
+                ",{},{}",
+                (getpid() as ::core::ffi::c_long) as ::core::ffi::c_long,
+                (idx) as i32
+            )
+        },
+    );
+    return env;
 }

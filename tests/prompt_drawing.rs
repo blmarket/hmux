@@ -1,4 +1,4 @@
-use hmux2::src::environ::environ_create;
+use hmux2::src::environ::{environ_create};
 use hmux2::src::grid::{grid_default_cell, grid_get_cell, grid_string_cells_bytes};
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
@@ -8,7 +8,7 @@ use hmux2::src::screen_write::{screen_write_start, screen_write_stop};
 use hmux2::src::shared::display::{SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE};
 use hmux2::src::shared::grid::{GRID_ATTR_UNDERSCORE, GRID_STRING_TRIM_SPACES};
 use hmux2::src::shared::prompt::*;
-use hmux2::src::shared::screen::{MODE_CURSOR, MODE_CURSOR_BLINKING, screen};
+use hmux2::src::shared::screen::{screen, MODE_CURSOR, MODE_CURSOR_BLINKING};
 use hmux2::src::shared::screen_write::screen_write_ctx;
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::ffi::CStr;
@@ -185,15 +185,8 @@ fn drawing_preserves_tmux_alignment_clipping_completion_and_cursor_style() {
                 command_ccolour: 2,
                 ..Default::default()
             });
-            prompt
-                .try_borrow_mut()
-                .expect("live unborrowed prompt")
-                .index = index;
-            prompt
-                .try_borrow_mut()
-                .expect("live unborrowed prompt")
-                .completion
-                .display = completion.map(CStr::to_owned);
+            prompt.try_borrow_mut().expect("live unborrowed prompt").index = index;
+            prompt.try_borrow_mut().expect("live unborrowed prompt").completion.display = completion.map(CStr::to_owned);
             let mut s = screen::empty();
             screen_init(&mut s, 80, 1, 0);
             let mut ctx = screen_write_ctx::default();

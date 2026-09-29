@@ -1,4 +1,4 @@
-use hmux2::src::environ::environ_create;
+use hmux2::src::environ::{environ_create};
 use hmux2::src::menu::{menu_add_item, menu_add_items, menu_create};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::shared::client::client;

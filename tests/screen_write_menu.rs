@@ -3,19 +3,17 @@ use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
 use hmux2::src::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
-use hmux2::src::shared::grid::{GRID_ATTR_DIM, grid_cell};
-use hmux2::src::shared::menu::{MenuRow, menu};
-use hmux2::src::shared::screen::{MODE_WRAP, screen};
+use hmux2::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
+use hmux2::src::shared::menu::{menu, MenuRow};
+use hmux2::src::shared::screen::{screen, MODE_WRAP};
 use hmux2::src::shared::screen_write::screen_write_ctx;
 use hmux2::src::tmux::global_options;
 use std::ffi::CStr;
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {
-    unsafe {
-        let mut cell = grid_default_cell;
-        grid_view_get_cell(s.grid(), x, y, &mut cell);
-        cell
-    }
+    let mut cell = grid_default_cell;
+    grid_view_get_cell(s.grid(), x, y, &mut cell);
+    cell
 }
 
 #[test]

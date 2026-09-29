@@ -13,7 +13,7 @@
 //! assert_eq!(value.as_bytes(), b"client 7: \xffx (002a)");
 //! ```
 
-use std::ffi::{CStr, CString, NulError, c_char, c_int};
+use std::ffi::{c_char, c_int, CStr, CString, NulError};
 use std::fmt;
 use std::io::{self, Write};
 
@@ -83,7 +83,7 @@ pub fn format_message_with(write: impl FnOnce(&mut dyn Write) -> io::Result<()>)
 /// # Safety
 /// A non-null pointer must reference a readable NUL-terminated string.
 pub unsafe fn write_cstr(out: &mut dyn Write, value: *const c_char) -> io::Result<()> {
-    unsafe { write_cstr_n(out, value, -1) }
+    write_cstr_n(out, value, -1)
 }
 
 /// Write at most `precision` bytes, stopping at NUL; negative means unlimited.
@@ -95,21 +95,19 @@ pub unsafe fn write_cstr_n(
     value: *const c_char,
     precision: c_int,
 ) -> io::Result<()> {
-    unsafe {
-        let bytes = if value.is_null() {
-            if precision >= 0 && precision < 6 {
-                b"".as_slice()
-            } else {
-                b"(null)".as_slice()
-            }
-        } else if precision < 0 {
-            CStr::from_ptr(value).to_bytes()
+    let bytes = if value.is_null() {
+        if precision >= 0 && precision < 6 {
+            b"".as_slice()
         } else {
-            let len = libc::strnlen(value, precision as usize);
-            std::slice::from_raw_parts(value.cast(), len)
-        };
-        out.write_all(bytes)
-    }
+            b"(null)".as_slice()
+        }
+    } else if precision < 0 {
+        CStr::from_ptr(value).to_bytes()
+    } else {
+        let len = libc::strnlen(value, precision as usize);
+        std::slice::from_raw_parts(value.cast(), len)
+    };
+    out.write_all(bytes)
 }
 
 /// Format into an existing C-character buffer without allocating.

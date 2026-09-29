@@ -1,7 +1,9 @@
 use crate::src::compat::utf8proc::utf8proc_wcwidth;
 use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
-use crate::src::options::{options_array_item_value, options_get};
+use crate::src::options::{
+    options_array_item_value, options_get,
+};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
@@ -10,7 +12,7 @@ use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_cache::{UTF8_ITEMS, UTF8_WIDTHS};
-use crate::src::text::utf8_decode::{DecodeResult, decode_utf8};
+use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
 use crate::src::text::utf8_width::parse_width_override;
 use crate::src::tmux::global_options;
 use std::ffi::{CStr, CString};
@@ -23,138 +25,110 @@ fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
 }
 
 unsafe fn utf8_insert_width_cache(wc: wchar_t, width: u_int) {
-    unsafe {
-        log_debug(format_args!(
-            "Unicode width cache: {:08X}={}",
-            wc as u_int, width
-        ));
-        UTF8_WIDTHS
-            .lock()
-            .expect("UTF-8 width cache poisoned")
-            .insert(wc, width);
-    }
+    log_debug(format_args!(
+        "Unicode width cache: {:08X}={}",
+        wc as u_int, width
+    ));
+    UTF8_WIDTHS
+        .lock()
+        .expect("UTF-8 width cache poisoned")
+        .insert(wc, width);
 }
 unsafe fn utf8_add_to_width_cache(input: &CStr) {
-    unsafe {
-        if let Some(parsed) = parse_width_override(input) {
-            for codepoint in parsed.codepoints {
-                utf8_insert_width_cache(codepoint, parsed.width);
-            }
+    if let Some(parsed) = parse_width_override(input) {
+        for codepoint in parsed.codepoints {
+            utf8_insert_width_cache(codepoint, parsed.width);
         }
     }
 }
 pub unsafe fn utf8_update_width_cache() {
-    unsafe {
-        UTF8_WIDTHS
-            .lock()
-            .expect("UTF-8 width cache poisoned")
-            .reset_defaults();
-        let mut o: *mut options_entry;
-        let mut a: *mut options_array_item;
-        o = options_get(
-            global_options,
-            b"codepoint-widths\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        let a_root = o;
-        let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-            .map(|item| item.key.clone())
-            .collect::<Vec<_>>()
-            .into_iter();
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
-        });
-        while !a.is_null() {
-            utf8_add_to_width_cache(
-                (*(crate::src::options::options_array_item_value_mut(&mut *(a))
-                    as *mut crate::src::shared::options::options_value))
-                    .string_ptr()
-                    .expect("string option"),
-            );
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(a_root, key.as_ptr())
-            });
-        }
+    UTF8_WIDTHS
+        .lock()
+        .expect("UTF-8 width cache poisoned")
+        .reset_defaults();
+    let mut o: *mut options_entry;
+    let mut a: *mut options_array_item;
+    o = options_get(
+        global_options,
+        b"codepoint-widths\0" as *const u8 as *const ::core::ffi::c_char,
+    );
+    let a_root = o;
+    let mut a_keys = crate::src::options::options_array_iter(&*a_root).map(|item| item.key.clone()).collect::<Vec<_>>().into_iter();
+    a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
+    while !a.is_null() {
+        utf8_add_to_width_cache((*(crate::src::options::options_array_item_value_mut(&mut *(a)) as *mut crate::src::shared::options::options_value)).string_ptr().expect("string option"));
+        a = a_keys.next().map_or(std::ptr::null_mut(), |key| crate::src::options::options_array_item(a_root, key.as_ptr()));
     }
 }
 unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
-    unsafe {
-        let (index, inserted) = UTF8_ITEMS
-            .lock()
-            .expect("UTF-8 item cache poisoned")
-            .intern(data)?;
-        log_debug(format_args!(
-            "utf8_put_item: {} {} = {}",
-            if inserted { "added" } else { "found" },
-            log_bytes(data),
-            index,
-        ));
-        Some(index)
-    }
+    let (index, inserted) = UTF8_ITEMS
+        .lock()
+        .expect("UTF-8 item cache poisoned")
+        .intern(data)?;
+    log_debug(format_args!(
+        "utf8_put_item: {} {} = {}",
+        if inserted { "added" } else { "found" },
+        log_bytes(data),
+        index,
+    ));
+    Some(index)
 }
 
 pub unsafe fn utf8_from_data(ud: &utf8_data, uc: &mut utf8_char) -> utf8_state {
-    unsafe {
-        if ud.width > 2 {
-            fatalx(|out| write!(out, "invalid UTF-8 width: {}", ud.width));
-        }
-        let index = if ud.size as usize > ud.data.len() {
-            None
-        } else if ud.size <= 3 {
-            Some(
-                (u32::from(ud.data[2]) << 16)
-                    | (u32::from(ud.data[1]) << 8)
-                    | u32::from(ud.data[0]),
-            )
-        } else {
-            utf8_put_item(&ud.data[..ud.size as usize])
-        };
-        if let Some(index) = index {
-            *uc = (u32::from(ud.size) << 24) | ((u32::from(ud.width) + 1) << 29) | index;
-            log_debug(format_args!(
-                "utf8_from_data: ({} {} {}) -> {:08x}",
-                ud.width,
-                ud.size,
-                log_bytes(&ud.data[..ud.size as usize]),
-                *uc,
-            ));
-            return UTF8_DONE;
-        }
-        *uc = match ud.width {
-            0 => 1 << 29,
-            1 => (1 << 24) | (2 << 29) | 0x20,
-            _ => (1 << 24) | (2 << 29) | 0x2020,
-        };
-        UTF8_ERROR
+    if ud.width > 2 {
+        fatalx(|out| write!(out, "invalid UTF-8 width: {}", ud.width));
     }
-}
-
-pub unsafe fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
-    unsafe {
-        *ud = utf8_data::default();
-        ud.have = ((uc >> 24) & 0x1f) as u_char;
-        ud.size = ud.have;
-        ud.width = (uc >> 29).wrapping_sub(1) as u_char;
-        if ud.size <= 3 {
-            ud.data[2] = (uc >> 16) as u_char;
-            ud.data[1] = (uc >> 8) as u_char;
-            ud.data[0] = uc as u_char;
-        } else {
-            let cache = UTF8_ITEMS.lock().expect("UTF-8 item cache poisoned");
-            let data = &mut ud.data[..ud.size as usize];
-            if let Some(item) = cache.get(uc & 0xffffff) {
-                data.copy_from_slice(&item[..data.len()]);
-            } else {
-                data.fill(b' ');
-            }
-        }
+    let index = if ud.size as usize > ud.data.len() {
+        None
+    } else if ud.size <= 3 {
+        Some((u32::from(ud.data[2]) << 16) | (u32::from(ud.data[1]) << 8) | u32::from(ud.data[0]))
+    } else {
+        utf8_put_item(&ud.data[..ud.size as usize])
+    };
+    if let Some(index) = index {
+        *uc = (u32::from(ud.size) << 24) | ((u32::from(ud.width) + 1) << 29) | index;
         log_debug(format_args!(
-            "utf8_to_data: {:08x} -> ({} {} {})",
-            uc,
+            "utf8_from_data: ({} {} {}) -> {:08x}",
             ud.width,
             ud.size,
             log_bytes(&ud.data[..ud.size as usize]),
+            *uc,
         ));
+        return UTF8_DONE;
     }
+    *uc = match ud.width {
+        0 => 1 << 29,
+        1 => (1 << 24) | (2 << 29) | 0x20,
+        _ => (1 << 24) | (2 << 29) | 0x2020,
+    };
+    UTF8_ERROR
+}
+
+pub unsafe fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
+    *ud = utf8_data::default();
+    ud.have = ((uc >> 24) & 0x1f) as u_char;
+    ud.size = ud.have;
+    ud.width = (uc >> 29).wrapping_sub(1) as u_char;
+    if ud.size <= 3 {
+        ud.data[2] = (uc >> 16) as u_char;
+        ud.data[1] = (uc >> 8) as u_char;
+        ud.data[0] = uc as u_char;
+    } else {
+        let cache = UTF8_ITEMS.lock().expect("UTF-8 item cache poisoned");
+        let data = &mut ud.data[..ud.size as usize];
+        if let Some(item) = cache.get(uc & 0xffffff) {
+            data.copy_from_slice(&item[..data.len()]);
+        } else {
+            data.fill(b' ');
+        }
+    }
+    log_debug(format_args!(
+        "utf8_to_data: {:08x} -> ({} {} {})",
+        uc,
+        ud.width,
+        ud.size,
+        log_bytes(&ud.data[..ud.size as usize]),
+    ));
 }
 pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
     return (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
@@ -181,46 +155,42 @@ pub fn utf8_copy(from: &utf8_data) -> utf8_data {
 }
 
 unsafe fn utf8_width(ud: &utf8_data) -> Option<i32> {
-    unsafe {
-        let mut wc = 0;
-        if utf8_towc(ud, &mut wc) != UTF8_DONE {
-            return None;
-        }
-        if let Some(cached) = utf8_find_in_width_cache(wc) {
-            log_debug(format_args!(
-                "cached width for {:08X} is {}",
-                wc as u_int, cached
-            ));
-            return Some(cached as i32);
-        }
-        let width = utf8proc_wcwidth(wc);
-        log_debug(format_args!(
-            "utf8proc_wcwidth({:05X}) returned {}",
-            wc as u_int, width
-        ));
-        (0..=0xff).contains(&width).then_some(width)
+    let mut wc = 0;
+    if utf8_towc(ud, &mut wc) != UTF8_DONE {
+        return None;
     }
+    if let Some(cached) = utf8_find_in_width_cache(wc) {
+        log_debug(format_args!(
+            "cached width for {:08X} is {}",
+            wc as u_int, cached
+        ));
+        return Some(cached as i32);
+    }
+    let width = utf8proc_wcwidth(wc);
+    log_debug(format_args!(
+        "utf8proc_wcwidth({:05X}) returned {}",
+        wc as u_int, width
+    ));
+    (0..=0xff).contains(&width).then_some(width)
 }
 
 pub unsafe fn utf8_towc(ud: &utf8_data, wc: &mut wchar_t) -> utf8_state {
-    unsafe {
-        let Some(bytes) = ud.data.get(..ud.size as usize) else {
-            return UTF8_ERROR;
-        };
-        match decode_utf8(bytes) {
-            DecodeResult::Complete { codepoint, .. } => {
-                *wc = codepoint as wchar_t;
-                log_debug(format_args!(
-                    "UTF-8 {} is U+{:06X}",
-                    log_bytes(bytes),
-                    *wc as u_int
-                ));
-                UTF8_DONE
-            }
-            _ => {
-                log_debug(format_args!("UTF-8 {} is invalid", log_bytes(bytes)));
-                UTF8_ERROR
-            }
+    let Some(bytes) = ud.data.get(..ud.size as usize) else {
+        return UTF8_ERROR;
+    };
+    match decode_utf8(bytes) {
+        DecodeResult::Complete { codepoint, .. } => {
+            *wc = codepoint as wchar_t;
+            log_debug(format_args!(
+                "UTF-8 {} is U+{:06X}",
+                log_bytes(bytes),
+                *wc as u_int
+            ));
+            UTF8_DONE
+        }
+        _ => {
+            log_debug(format_args!("UTF-8 {} is invalid", log_bytes(bytes)));
+            UTF8_ERROR
         }
     }
 }
@@ -268,118 +238,110 @@ pub fn utf8_has_whitespace(ud: &utf8_data) -> ::core::ffi::c_int {
 }
 
 pub unsafe fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
-    unsafe {
-        let size = match crate::src::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
-            Ok(size) => size,
-            Err(error) => {
-                log_debug(format_args!("UTF-8 {}, wctomb() {}", wc, error));
-                crate::src::ffi::utf8proc::reset_wctomb();
-                return UTF8_ERROR;
-            }
-        };
-        if size == 0 {
+    let size = match crate::src::ffi::utf8proc::encode_cell(wc, &mut ud.data) {
+        Ok(size) => size,
+        Err(error) => {
+            log_debug(format_args!("UTF-8 {}, wctomb() {}", wc, error));
+            crate::src::ffi::utf8proc::reset_wctomb();
             return UTF8_ERROR;
         }
-        ud.have = size as u_char;
-        ud.size = ud.have;
-        if let Some(width) = utf8_width(ud) {
-            ud.width = width as u_char;
-            UTF8_DONE
-        } else {
-            UTF8_ERROR
-        }
+    };
+    if size == 0 {
+        return UTF8_ERROR;
+    }
+    ud.have = size as u_char;
+    ud.size = ud.have;
+    if let Some(width) = utf8_width(ud) {
+        ud.width = width as u_char;
+        UTF8_DONE
+    } else {
+        UTF8_ERROR
     }
 }
 
 pub unsafe fn utf8_open(ud: &mut utf8_data, ch: u_char) -> utf8_state {
-    unsafe {
-        *ud = utf8_data::default();
-        let DecodeResult::Incomplete { expected } = decode_utf8(&[ch]) else {
-            return UTF8_ERROR;
-        };
-        if !(2..=4).contains(&expected) {
-            return UTF8_ERROR;
-        }
-        ud.size = expected as u_char;
-        utf8_append(ud, ch);
-        UTF8_MORE
+    *ud = utf8_data::default();
+    let DecodeResult::Incomplete { expected } = decode_utf8(&[ch]) else {
+        return UTF8_ERROR;
+    };
+    if !(2..=4).contains(&expected) {
+        return UTF8_ERROR;
     }
+    ud.size = expected as u_char;
+    utf8_append(ud, ch);
+    UTF8_MORE
 }
 
 pub unsafe fn utf8_append(ud: &mut utf8_data, ch: u_char) -> utf8_state {
-    unsafe {
-        if ud.have >= ud.size {
-            fatalx(|out| out.write_all(b"UTF-8 character overflow"));
-        }
-        if ud.size as usize > ud.data.len() {
-            fatalx(|out| out.write_all(b"UTF-8 character size too large"));
-        }
-        if ud.have != 0 && ch & 0xc0 != 0x80 {
-            ud.width = 0xff;
-        }
-        ud.data[ud.have as usize] = ch;
-        ud.have += 1;
-        match decode_utf8(&ud.data[..ud.have as usize]) {
-            DecodeResult::Complete { len, .. } if ud.have == ud.size && len == ud.size as usize => {
-                if ud.width == 0xff {
-                    return UTF8_ERROR;
-                }
-                let Some(width) = utf8_width(ud) else {
-                    return UTF8_ERROR;
-                };
-                ud.width = width as u_char;
-                UTF8_DONE
+    if ud.have >= ud.size {
+        fatalx(|out| out.write_all(b"UTF-8 character overflow"));
+    }
+    if ud.size as usize > ud.data.len() {
+        fatalx(|out| out.write_all(b"UTF-8 character size too large"));
+    }
+    if ud.have != 0 && ch & 0xc0 != 0x80 {
+        ud.width = 0xff;
+    }
+    ud.data[ud.have as usize] = ch;
+    ud.have += 1;
+    match decode_utf8(&ud.data[..ud.have as usize]) {
+        DecodeResult::Complete { len, .. } if ud.have == ud.size && len == ud.size as usize => {
+            if ud.width == 0xff {
+                return UTF8_ERROR;
             }
-            DecodeResult::Invalid { .. } if ud.have == ud.size => UTF8_ERROR,
-            _ => UTF8_MORE,
+            let Some(width) = utf8_width(ud) else {
+                return UTF8_ERROR;
+            };
+            ud.width = width as u_char;
+            UTF8_DONE
         }
+        DecodeResult::Invalid { .. } if ud.have == ud.size => UTF8_ERROR,
+        _ => UTF8_MORE,
     }
 }
 pub unsafe fn utf8_strvis(dst: &mut [u8], src: &[u8], flag: i32) -> usize {
-    unsafe {
-        let capacity = src
-            .len()
-            .checked_mul(4)
-            .and_then(|size| size.checked_add(1))
-            .expect("escaped UTF-8 string is too large");
-        assert!(dst.len() >= capacity, "escape destination is too small");
-        let mut cell = utf8_data::default();
-        let mut offset = 0;
-        let mut written = 0;
-        while offset < src.len() {
-            let start = offset;
-            let mut more = utf8_open(&mut cell, src[offset]);
-            if more == UTF8_MORE {
-                offset += 1;
-                while offset < src.len() && more == UTF8_MORE {
-                    more = utf8_append(&mut cell, src[offset]);
-                    offset += 1;
-                }
-                if more == UTF8_DONE {
-                    let size = cell.size as usize;
-                    dst[written..written + size].copy_from_slice(&cell.data[..size]);
-                    written += size;
-                    continue;
-                }
-                offset = start;
-            }
-            let next = src.get(offset + 1).copied();
-            if flag & VIS_DQ != 0 && src[offset] == b'$' && next.is_some() {
-                let next = next.unwrap();
-                if is_alpha(next) || matches!(next, b'_' | b'{') {
-                    dst[written] = b'\\';
-                    written += 1;
-                }
-                dst[written] = b'$';
-                written += 1;
-            } else {
-                written += vis_into(&mut dst[written..], src[offset], flag, next.unwrap_or(0));
-            }
+    let capacity = src
+        .len()
+        .checked_mul(4)
+        .and_then(|size| size.checked_add(1))
+        .expect("escaped UTF-8 string is too large");
+    assert!(dst.len() >= capacity, "escape destination is too small");
+    let mut cell = utf8_data::default();
+    let mut offset = 0;
+    let mut written = 0;
+    while offset < src.len() {
+        let start = offset;
+        let mut more = utf8_open(&mut cell, src[offset]);
+        if more == UTF8_MORE {
             offset += 1;
+            while offset < src.len() && more == UTF8_MORE {
+                more = utf8_append(&mut cell, src[offset]);
+                offset += 1;
+            }
+            if more == UTF8_DONE {
+                let size = cell.size as usize;
+                dst[written..written + size].copy_from_slice(&cell.data[..size]);
+                written += size;
+                continue;
+            }
+            offset = start;
         }
-        dst[written] = 0;
-        written
+        let next = src.get(offset + 1).copied();
+        if flag & VIS_DQ != 0 && src[offset] == b'$' && next.is_some() {
+            let next = next.unwrap();
+            if is_alpha(next) || matches!(next, b'_' | b'{') {
+                dst[written] = b'\\';
+                written += 1;
+            }
+            dst[written] = b'$';
+            written += 1;
+        } else {
+            written += vis_into(&mut dst[written..], src[offset], flag, next.unwrap_or(0));
+        }
+        offset += 1;
     }
+    dst[written] = 0;
+    written
 }
 /// Escape a C string using the same byte conversion as `utf8_strvis`, with
 /// the result owned by Rust.

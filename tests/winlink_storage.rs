@@ -84,10 +84,7 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
             assert!(winlink_add(&mut old, idx).is_alive());
         }
         assert_eq!(weak, first);
-        assert_eq!(
-            winlinks_next(first.get_unchecked()),
-            winlink_find_by_index(&mut old, 6)
-        );
+        assert_eq!(winlinks_next(first.get_unchecked()), winlink_find_by_index(&mut old, 6));
         assert!(!winlinks_next(replacement.get_unchecked()).is_alive());
         while old.storage.is_some() {
             let node = winlinks_minmax(&old, -1);
@@ -147,10 +144,7 @@ fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry(
         let mut links = winlinks { storage: None };
         let mut link = winlink_add(&mut links, 1);
         link.get_mut_unchecked().session = observer.clone();
-        assert!(std::rc::Rc::ptr_eq(
-            &link.get_unchecked().session.upgrade().unwrap(),
-            &owner
-        ));
+        assert!(std::rc::Rc::ptr_eq(&link.get_unchecked().session.upgrade().unwrap(), &owner));
         drop(owner);
         assert!(link.get_unchecked().session.upgrade().is_none());
         winlink_remove(&mut links, link.clone());

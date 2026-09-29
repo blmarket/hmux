@@ -3,7 +3,7 @@
 use crate::src::shared::terminal::term;
 pub type TERMINAL = term;
 
-unsafe extern "C" {
+extern "C" {
     pub static mut cur_term: *mut TERMINAL;
     pub fn del_curterm(_: *mut TERMINAL) -> ::core::ffi::c_int;
     pub fn setupterm(

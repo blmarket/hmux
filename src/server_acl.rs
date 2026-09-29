@@ -85,7 +85,7 @@ unsafe fn server_acl_entries_remove(
     head: *mut server_acl_entries,
     entry: *mut server_acl_entry,
 ) -> Option<Box<server_acl_entry>> {
-    unsafe { (*head).entries.remove(&server_acl_entry_key(&*entry)) }
+    (*head).entries.remove(&server_acl_entry_key(&*entry))
 }
 
 fn server_acl_entries_clear(head: &mut server_acl_entries) {
@@ -93,189 +93,164 @@ fn server_acl_entries_clear(head: &mut server_acl_entries) {
 }
 
 unsafe fn server_acl_check(c_value: &client) -> *mut server_acl_entry {
-    unsafe {
-        let c: *mut client = c_value as *const _ as *mut _;
-        let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        let mut uid: uid_t = 0;
-        let mut gid: gid_t = 0;
-        uid = proc_get_peer_uid((*c).peer);
-        if uid == -(1 as ::core::ffi::c_int) as uid_t {
-            return ::core::ptr::null_mut::<server_acl_entry>();
-        }
-        entry = server_acl_entry_find(&*(&raw mut server_acl_entries), uid as id_t, 0);
-        if !entry.is_null() {
-            return entry;
-        }
-        gid = proc_get_peer_gid((*c).peer);
-        if gid == -(1 as ::core::ffi::c_int) as gid_t {
-            return ::core::ptr::null_mut::<server_acl_entry>();
-        }
-        return server_acl_entry_find(
-            &*(&raw mut server_acl_entries),
-            gid as id_t,
-            SERVER_ACL_IS_GROUP,
-        );
+    let c: *mut client = c_value as *const _ as *mut _;
+    let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    let mut uid: uid_t = 0;
+    let mut gid: gid_t = 0;
+    uid = proc_get_peer_uid((*c).peer);
+    if uid == -(1 as ::core::ffi::c_int) as uid_t {
+        return ::core::ptr::null_mut::<server_acl_entry>();
     }
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), uid as id_t, 0);
+    if !entry.is_null() {
+        return entry;
+    }
+    gid = proc_get_peer_gid((*c).peer);
+    if gid == -(1 as ::core::ffi::c_int) as gid_t {
+        return ::core::ptr::null_mut::<server_acl_entry>();
+    }
+    return server_acl_entry_find(
+        &*(&raw mut server_acl_entries),
+        gid as id_t,
+        SERVER_ACL_IS_GROUP,
+    );
 }
 unsafe fn server_acl_update() {
-    unsafe {
-        let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        let mut c: *mut client = ::core::ptr::null_mut::<client>();
-        let mut registry_c_owner = clients.first();
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !c.is_null() {
-            entry = server_acl_check(&*(c));
-            if entry.is_null() {
-                server_client_set_exit_message(
-                    &mut *c,
-                    Some(CString::new("access not allowed").unwrap()),
-                );
-                (*c).flags |= CLIENT_EXIT as uint64_t;
-            } else if (*entry).flags & SERVER_ACL_READONLY != 0 {
-                (*c).flags |= CLIENT_READONLY as uint64_t;
-            } else {
-                (*c).flags &= !CLIENT_READONLY as uint64_t;
-            }
-            registry_c_owner =
-                clients.next(registry_c_owner.as_ref().expect("current registry client"));
-            c = registry_c_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    while !c.is_null() {
+        entry = server_acl_check(&*(c));
+        if entry.is_null() {
+            server_client_set_exit_message(
+                &mut *c,
+                Some(CString::new("access not allowed").unwrap()),
+            );
+            (*c).flags |= CLIENT_EXIT as uint64_t;
+        } else if (*entry).flags & SERVER_ACL_READONLY != 0 {
+            (*c).flags |= CLIENT_READONLY as uint64_t;
+        } else {
+            (*c).flags &= !CLIENT_READONLY as uint64_t;
         }
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn server_acl_init() {
-    unsafe {
-        server_acl_entries_clear(&mut *(&raw mut server_acl_entries));
-        if getuid() != 0 as __uid_t {
-            server_acl_allow(0 as id_t, 0 as ::core::ffi::c_int);
-        }
-        server_acl_allow(getuid() as id_t, 0 as ::core::ffi::c_int);
+    server_acl_entries_clear(&mut *(&raw mut server_acl_entries));
+    if getuid() != 0 as __uid_t {
+        server_acl_allow(0 as id_t, 0 as ::core::ffi::c_int);
     }
+    server_acl_allow(getuid() as id_t, 0 as ::core::ffi::c_int);
 }
 pub unsafe fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    unsafe {
-        return (server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags)
-            != NULL as *mut server_acl_entry) as ::core::ffi::c_int;
-    }
+    return (server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags)
+        != NULL as *mut server_acl_entry) as ::core::ffi::c_int;
 }
 pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
-    unsafe {
-        let mut loop_0: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-        let mut gr: *mut group = ::core::ptr::null_mut::<group>();
-        let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut type_0: ::core::ffi::c_char = 0;
-        let mut current_block_12: u64;
-        loop_0 = server_acl_entries_minmax(&*(&raw mut server_acl_entries));
-        while !loop_0.is_null() {
-            if !(*loop_0).flags & SERVER_ACL_IS_GROUP != 0 {
-                if (*loop_0).id == 0 as id_t {
-                    current_block_12 = 14916268686031723178;
-                } else {
-                    pw = getpwuid((*loop_0).id as __uid_t);
-                    if !pw.is_null() {
-                        name = (*pw).pw_name;
-                    } else {
-                        name = b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
-                    }
-                    type_0 = 'U' as i32 as ::core::ffi::c_char;
-                    current_block_12 = 11050875288958768710;
-                }
+    let mut loop_0: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
+    let mut gr: *mut group = ::core::ptr::null_mut::<group>();
+    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut type_0: ::core::ffi::c_char = 0;
+    let mut current_block_12: u64;
+    loop_0 = server_acl_entries_minmax(&*(&raw mut server_acl_entries));
+    while !loop_0.is_null() {
+        if !(*loop_0).flags & SERVER_ACL_IS_GROUP != 0 {
+            if (*loop_0).id == 0 as id_t {
+                current_block_12 = 14916268686031723178;
             } else {
-                gr = getgrgid((*loop_0).id as __gid_t);
-                if !gr.is_null() {
-                    name = (*gr).gr_name;
+                pw = getpwuid((*loop_0).id as __uid_t);
+                if !pw.is_null() {
+                    name = (*pw).pw_name;
                 } else {
                     name = b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
                 }
-                type_0 = 'G' as i32 as ::core::ffi::c_char;
+                type_0 = 'U' as i32 as ::core::ffi::c_char;
                 current_block_12 = 11050875288958768710;
             }
-            match current_block_12 {
-                11050875288958768710 => {
-                    if (*loop_0).flags & SERVER_ACL_READONLY != 0 {
-                        cmdq_print(item_handle, |out| {
-                            write_cstr(out, name)?;
-                            out.write_all(b" (")?;
-                            out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
-                            out.write_all(b",R)")
-                        });
-                    } else {
-                        cmdq_print(item_handle, |out| {
-                            write_cstr(out, name)?;
-                            out.write_all(b" (")?;
-                            out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
-                            out.write_all(b",W)")
-                        });
-                    }
-                }
-                _ => {}
+        } else {
+            gr = getgrgid((*loop_0).id as __gid_t);
+            if !gr.is_null() {
+                name = (*gr).gr_name;
+            } else {
+                name = b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
             }
-            loop_0 = server_acl_entries_next(&*(&raw mut server_acl_entries), &*loop_0);
+            type_0 = 'G' as i32 as ::core::ffi::c_char;
+            current_block_12 = 11050875288958768710;
         }
+        match current_block_12 {
+            11050875288958768710 => {
+                if (*loop_0).flags & SERVER_ACL_READONLY != 0 {
+                    cmdq_print(item_handle, |out| {
+                        write_cstr(out, name)?;
+                        out.write_all(b" (")?;
+                        out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
+                        out.write_all(b",R)")
+                    });
+                } else {
+                    cmdq_print(item_handle, |out| {
+                        write_cstr(out, name)?;
+                        out.write_all(b" (")?;
+                        out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
+                        out.write_all(b",W)")
+                    });
+                }
+            }
+            _ => {}
+        }
+        loop_0 = server_acl_entries_next(&*(&raw mut server_acl_entries), &*loop_0);
     }
 }
 pub unsafe fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
-    unsafe {
-        let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
-        if entry.is_null() {
-            server_acl_entries_insert(
-                &mut *(&raw mut server_acl_entries),
-                Box::new(server_acl_entry {
-                    id,
-                    flags: flags & SERVER_ACL_IS_GROUP,
-                }),
-            );
-        }
+    let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    if entry.is_null() {
+        server_acl_entries_insert(
+            &mut *(&raw mut server_acl_entries),
+            Box::new(server_acl_entry {
+                id,
+                flags: flags & SERVER_ACL_IS_GROUP,
+            }),
+        );
     }
 }
 pub unsafe fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
-    unsafe {
-        let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
-        if !entry.is_null() {
-            server_acl_entries_remove(&raw mut server_acl_entries, entry);
-            server_acl_update();
-        }
+    let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    if !entry.is_null() {
+        server_acl_entries_remove(&raw mut server_acl_entries, entry);
+        server_acl_update();
     }
 }
 pub unsafe fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
-    unsafe {
-        let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
-        if entry.is_null() {
-            return;
-        }
-        (*entry).flags &= !SERVER_ACL_READONLY;
-        server_acl_update();
+    let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    if entry.is_null() {
+        return;
     }
+    (*entry).flags &= !SERVER_ACL_READONLY;
+    server_acl_update();
 }
 pub unsafe fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
-    unsafe {
-        let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
-        if entry.is_null() {
-            return;
-        }
-        (*entry).flags |= SERVER_ACL_READONLY;
-        server_acl_update();
+    let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    if entry.is_null() {
+        return;
     }
+    (*entry).flags |= SERVER_ACL_READONLY;
+    server_acl_update();
 }
 pub unsafe fn server_acl_join(c_value: &mut client) -> ::core::ffi::c_int {
-    unsafe {
-        let c: *mut client = c_value as *mut _;
-        let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        entry = server_acl_check(&*(c));
-        if entry.is_null() {
-            return 0 as ::core::ffi::c_int;
-        }
-        if (*entry).flags & SERVER_ACL_READONLY != 0 {
-            (*c).flags |= CLIENT_READONLY as uint64_t;
-        }
-        return 1 as ::core::ffi::c_int;
+    let c: *mut client = c_value as *mut _;
+    let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
+    entry = server_acl_check(&*(c));
+    if entry.is_null() {
+        return 0 as ::core::ffi::c_int;
     }
+    if (*entry).flags & SERVER_ACL_READONLY != 0 {
+        (*c).flags |= CLIENT_READONLY as uint64_t;
+    }
+    return 1 as ::core::ffi::c_int;
 }

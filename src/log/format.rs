@@ -4,7 +4,7 @@
 //! `strvis` again: doing so would double the backslashes in these arguments.
 use crate::src::compat::vis::vis;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_void, CStr};
 use std::fmt;
 
 /// Display bytes using the logger's existing escaping, stopping at the first NUL.

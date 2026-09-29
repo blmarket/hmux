@@ -1,8 +1,8 @@
 use crate::src::ffi::libc::{strcasecmp, strcmp, strlen, strsep};
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::shared::abi::*;
-use crate::src::shared::client::CLIENT_UTF8;
 use crate::src::shared::client::client;
+use crate::src::shared::client::CLIENT_UTF8;
 use crate::src::shared::tty::tty_term;
 use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_RGBCOLOURS, TERM_SIXEL,
@@ -215,15 +215,13 @@ pub unsafe fn tty_parse_client_features(
     mut s: *const ::core::ffi::c_char,
     mut sep: *const ::core::ffi::c_char,
 ) {
-    unsafe {
-        let c: *mut client = c_value as *mut _;
-        tty_parse_features(
-            s,
-            sep,
-            &raw mut (*c).term_features,
-            &raw mut (*c).term_nofeatures,
-        );
-    }
+    let c: *mut client = c_value as *mut _;
+    tty_parse_features(
+        s,
+        sep,
+        &raw mut (*c).term_features,
+        &raw mut (*c).term_nofeatures,
+    );
 }
 pub unsafe fn tty_parse_features(
     mut s: *const ::core::ffi::c_char,
@@ -231,66 +229,63 @@ pub unsafe fn tty_parse_features(
     mut enabled: *mut ::core::ffi::c_int,
     mut disabled: *mut ::core::ffi::c_int,
 ) {
-    unsafe {
-        let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
-        let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut loop_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut i: u_int = 0;
-        let mut remove: ::core::ffi::c_int = 0;
-        log_debug(format_args!(
-            "adding terminal features {}",
-            log_cstr((s) as *const _)
-        ));
-        // strsep and the trailing-@ removal both write into this local copy.
-        let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
-        loop_0 = copy.as_mut_ptr().cast();
-        loop {
-            next = strsep(&raw mut loop_0, sep);
-            if next.is_null() {
+    let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
+    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut loop_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut i: u_int = 0;
+    let mut remove: ::core::ffi::c_int = 0;
+    log_debug(format_args!(
+        "adding terminal features {}",
+        log_cstr((s) as *const _)
+    ));
+    // strsep and the trailing-@ removal both write into this local copy.
+    let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    loop_0 = copy.as_mut_ptr().cast();
+    loop {
+        next = strsep(&raw mut loop_0, sep);
+        if next.is_null() {
+            break;
+        }
+        remove = (*next as ::core::ffi::c_int != '\0' as i32
+            && *next.offset(strlen(next).wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
+                == '@' as i32) as ::core::ffi::c_int;
+        if remove != 0 {
+            *next.offset(strlen(next).wrapping_sub(1 as size_t) as isize) =
+                '\0' as i32 as ::core::ffi::c_char;
+        }
+        i = 0 as u_int;
+        while (i as usize) < tty_features.len() {
+            tf = tty_features[i as usize];
+            if strcasecmp((*tf).name.as_ptr(), next) == 0 as ::core::ffi::c_int {
                 break;
             }
-            remove = (*next as ::core::ffi::c_int != '\0' as i32
-                && *next.offset(strlen(next).wrapping_sub(1 as size_t) as isize)
-                    as ::core::ffi::c_int
-                    == '@' as i32) as ::core::ffi::c_int;
-            if remove != 0 {
-                *next.offset(strlen(next).wrapping_sub(1 as size_t) as isize) =
-                    '\0' as i32 as ::core::ffi::c_char;
+            i = i.wrapping_add(1);
+        }
+        if i as usize == tty_features.len() {
+            log_debug(format_args!(
+                "unknown terminal feature: {}",
+                log_cstr((next) as *const _)
+            ));
+            break;
+        } else if remove != 0 {
+            log_debug(format_args!(
+                "removing terminal feature: {}",
+                crate::src::log::log_bytes((*tf).name.to_bytes())
+            ));
+            *enabled &= !((1 as ::core::ffi::c_int) << i);
+            if !disabled.is_null() {
+                *disabled |= (1 as ::core::ffi::c_int) << i;
             }
-            i = 0 as u_int;
-            while (i as usize) < tty_features.len() {
-                tf = tty_features[i as usize];
-                if strcasecmp((*tf).name.as_ptr(), next) == 0 as ::core::ffi::c_int {
-                    break;
-                }
-                i = i.wrapping_add(1);
+        } else {
+            if !disabled.is_null() && *disabled & (1 as ::core::ffi::c_int) << i != 0 {
+                continue;
             }
-            if i as usize == tty_features.len() {
+            if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
                 log_debug(format_args!(
-                    "unknown terminal feature: {}",
-                    log_cstr((next) as *const _)
-                ));
-                break;
-            } else if remove != 0 {
-                log_debug(format_args!(
-                    "removing terminal feature: {}",
+                    "adding terminal feature: {}",
                     crate::src::log::log_bytes((*tf).name.to_bytes())
                 ));
-                *enabled &= !((1 as ::core::ffi::c_int) << i);
-                if !disabled.is_null() {
-                    *disabled |= (1 as ::core::ffi::c_int) << i;
-                }
-            } else {
-                if !disabled.is_null() && *disabled & (1 as ::core::ffi::c_int) << i != 0 {
-                    continue;
-                }
-                if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
-                    log_debug(format_args!(
-                        "adding terminal feature: {}",
-                        crate::src::log::log_bytes((*tf).name.to_bytes())
-                    ));
-                    *enabled |= (1 as ::core::ffi::c_int) << i;
-                }
+                *enabled |= (1 as ::core::ffi::c_int) << i;
             }
         }
     }
@@ -311,108 +306,103 @@ pub unsafe fn tty_feature_present(
     mut term: *const tty_term,
     mut name: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    unsafe {
-        let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
-        let mut i: u_int = 0;
-        if strcmp(name, b"utf8\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
-            let owner = (*term).client.upgrade().expect("terminal client");
-            return ((*owner.get()).flags & CLIENT_UTF8 as uint64_t != 0 as uint64_t)
-                as ::core::ffi::c_int;
-        }
-        i = 0 as u_int;
-        while (i as usize) < tty_features.len() {
-            tf = tty_features[i as usize];
-            if strcmp((*tf).name.as_ptr(), name) == 0 as ::core::ffi::c_int {
-                if (*term).applied_features & (1 as ::core::ffi::c_int) << i != 0 {
-                    return 1 as ::core::ffi::c_int;
-                }
-                break;
-            } else {
-                i = i.wrapping_add(1);
-            }
-        }
-        if tf.is_null()
-            || strcmp(
-                name,
-                b"ignorefkeys\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if (*tf).flags != 0 as ::core::ffi::c_int && (*term).flags & (*tf).flags != (*tf).flags {
-            return 0 as ::core::ffi::c_int;
-        }
-        let Some(capabilities) = (*tf).capabilities else {
-            return 0;
-        };
-        for capability in capabilities {
-            let mut copy = capability.to_bytes_with_nul().to_vec();
-            if let Some(equal) = copy.iter().position(|&byte| byte == b'=') {
-                copy[equal] = 0;
-            }
-            if tty_term_has_name(term, copy.as_ptr().cast()) == 0 {
-                return 0 as ::core::ffi::c_int;
-            }
-        }
-        return 1 as ::core::ffi::c_int;
-    }
-}
-pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int {
-    unsafe {
+    let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
+    let mut i: u_int = 0;
+    if strcmp(name, b"utf8\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
         let owner = (*term).client.upgrade().expect("terminal client");
-        let c = owner.get();
-        let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
-        let mut feat: ::core::ffi::c_int = 0;
-        let mut i: u_int = 0;
-        feat = (*c).term_features & !(*c).term_nofeatures;
-        if feat == 0 as ::core::ffi::c_int {
-            return 0 as ::core::ffi::c_int;
-        }
-        log_debug(format_args!(
-            "applying terminal features: {}",
-            log_cstr(tty_get_features(feat).as_ptr())
-        ));
-        i = 0 as u_int;
-        while (i as usize) < tty_features.len() {
-            if !((*term).applied_features & (1 as ::core::ffi::c_int) << i != 0
-                || !feat & (1 as ::core::ffi::c_int) << i != 0)
-            {
-                tf = tty_features[i as usize];
-                log_debug(format_args!(
-                    "applying terminal feature: {}",
-                    crate::src::log::log_bytes((*tf).name.to_bytes())
-                ));
-                if let Some(capabilities) = (*tf).capabilities {
-                    for capability in capabilities {
-                        log_debug(format_args!(
-                            "adding capability: {}",
-                            crate::src::log::log_bytes(capability.to_bytes())
-                        ));
-                        tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int);
-                    }
-                }
-                (*term).flags |= (*tf).flags;
-                if tf == &raw const tty_feature_utf8 {
-                    (*c).flags |= CLIENT_UTF8 as uint64_t;
-                }
+        return ((*owner.get()).flags & CLIENT_UTF8 as uint64_t != 0 as uint64_t)
+            as ::core::ffi::c_int;
+    }
+    i = 0 as u_int;
+    while (i as usize) < tty_features.len() {
+        tf = tty_features[i as usize];
+        if strcmp((*tf).name.as_ptr(), name) == 0 as ::core::ffi::c_int {
+            if (*term).applied_features & (1 as ::core::ffi::c_int) << i != 0 {
+                return 1 as ::core::ffi::c_int;
             }
+            break;
+        } else {
             i = i.wrapping_add(1);
         }
-        if (*term).applied_features | feat == (*term).applied_features {
+    }
+    if tf.is_null()
+        || strcmp(
+            name,
+            b"ignorefkeys\0" as *const u8 as *const ::core::ffi::c_char,
+        ) == 0 as ::core::ffi::c_int
+    {
+        return 0 as ::core::ffi::c_int;
+    }
+    if (*tf).flags != 0 as ::core::ffi::c_int && (*term).flags & (*tf).flags != (*tf).flags {
+        return 0 as ::core::ffi::c_int;
+    }
+    let Some(capabilities) = (*tf).capabilities else {
+        return 0;
+    };
+    for capability in capabilities {
+        let mut copy = capability.to_bytes_with_nul().to_vec();
+        if let Some(equal) = copy.iter().position(|&byte| byte == b'=') {
+            copy[equal] = 0;
+        }
+        if tty_term_has_name(term, copy.as_ptr().cast()) == 0 {
             return 0 as ::core::ffi::c_int;
         }
-        (*term).applied_features |= feat;
-        return 1 as ::core::ffi::c_int;
     }
+    return 1 as ::core::ffi::c_int;
+}
+pub unsafe fn tty_apply_features(mut term: *mut tty_term) -> ::core::ffi::c_int {
+    let owner = (*term).client.upgrade().expect("terminal client");
+    let c = owner.get();
+    let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
+    let mut feat: ::core::ffi::c_int = 0;
+    let mut i: u_int = 0;
+    feat = (*c).term_features & !(*c).term_nofeatures;
+    if feat == 0 as ::core::ffi::c_int {
+        return 0 as ::core::ffi::c_int;
+    }
+    log_debug(format_args!(
+        "applying terminal features: {}",
+        log_cstr(tty_get_features(feat).as_ptr())
+    ));
+    i = 0 as u_int;
+    while (i as usize) < tty_features.len() {
+        if !((*term).applied_features & (1 as ::core::ffi::c_int) << i != 0
+            || !feat & (1 as ::core::ffi::c_int) << i != 0)
+        {
+            tf = tty_features[i as usize];
+            log_debug(format_args!(
+                "applying terminal feature: {}",
+                crate::src::log::log_bytes((*tf).name.to_bytes())
+            ));
+            if let Some(capabilities) = (*tf).capabilities {
+                for capability in capabilities {
+                    log_debug(format_args!(
+                        "adding capability: {}",
+                        crate::src::log::log_bytes(capability.to_bytes())
+                    ));
+                    tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int);
+                }
+            }
+            (*term).flags |= (*tf).flags;
+            if tf == &raw const tty_feature_utf8 {
+                (*c).flags |= CLIENT_UTF8 as uint64_t;
+            }
+        }
+        i = i.wrapping_add(1);
+    }
+    if (*term).applied_features | feat == (*term).applied_features {
+        return 0 as ::core::ffi::c_int;
+    }
+    (*term).applied_features |= feat;
+    return 1 as ::core::ffi::c_int;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::src::shared::tty::{
-        TTYC_AX, TTYC_MS, TTYC_SETAB, TTYC_SETAF, TTYC_SETRGBB, TTYC_SETRGBF, tty_code,
+        tty_code, TTYC_AX, TTYC_MS, TTYC_SETAB, TTYC_SETAF, TTYC_SETRGBB, TTYC_SETRGBF,
     };
     use crate::src::tty_term::tty_term_ncodes;
 
@@ -439,9 +429,8 @@ mod tests {
     }
 }
 pub unsafe fn tty_default_features(c_value: &mut client, mut name: *const ::core::ffi::c_char) {
-    unsafe {
-        let c: *mut client = c_value as *mut _;
-        static table: [C2RustUnnamed_35; 9] = [
+    let c: *mut client = c_value as *mut _;
+    static table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
             name: c"mintty",
             version: 0,
@@ -488,20 +477,19 @@ pub unsafe fn tty_default_features(c_value: &mut client, mut name: *const ::core
             features: c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus",
         },
     ];
-        let mut i: u_int = 0;
-        i = 0 as u_int;
-        while (i as usize)
-            < (::core::mem::size_of::<[C2RustUnnamed_35; 9]>() as usize)
-                .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-        {
-            if !(strcmp(table[i as usize].name.as_ptr(), name) != 0 as ::core::ffi::c_int) {
-                tty_parse_client_features(
-                    &mut *(c),
-                    table[i as usize].features.as_ptr(),
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
-                );
-            }
-            i = i.wrapping_add(1);
+    let mut i: u_int = 0;
+    i = 0 as u_int;
+    while (i as usize)
+        < (::core::mem::size_of::<[C2RustUnnamed_35; 9]>() as usize)
+            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
+    {
+        if !(strcmp(table[i as usize].name.as_ptr(), name) != 0 as ::core::ffi::c_int) {
+            tty_parse_client_features(
+                &mut *(c),
+                table[i as usize].features.as_ptr(),
+                b",\0" as *const u8 as *const ::core::ffi::c_char,
+            );
         }
+        i = i.wrapping_add(1);
     }
 }

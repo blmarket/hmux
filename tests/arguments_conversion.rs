@@ -3,12 +3,13 @@ use std::ffi::{CStr, CString};
 use std::rc::Rc;
 
 use hmux2::src::arguments::{
-    ArgumentValueError, args_copy, args_create, args_first_value, args_parse as parse_args,
+    args_copy, args_create, args_first_value, args_parse as parse_args,
     args_percentage_result, args_push_positional_commands, args_set_owned_commands, args_string,
     args_string_percentage_result, args_strtonum_result, parse_number, parse_percentage,
+    ArgumentValueError,
 };
 use hmux2::src::cmd::{cmd_list_new, cmd_list_print};
-use hmux2::src::shared::arguments::{ARGS_PARSE_COMMANDS, ArgumentValue, args, args_parse};
+use hmux2::src::shared::arguments::{args, args_parse, ArgumentValue, ARGS_PARSE_COMMANDS};
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")
@@ -135,10 +136,8 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
 
         let mut args = args_create();
         args_push_positional_commands(&mut args, cmd_list_new());
-        let first =
-            args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr());
-        let second =
-            args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr());
+        let first = args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr());
+        let second = args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr());
         assert_eq!(first, second);
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
         drop(args);
@@ -186,9 +185,7 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         count: core::ffi::c_uint,
     ) -> Result<core::ffi::c_uint, hmux2::src::shared::arguments::ArgsParseError> {
         if count == 1 {
-            unsafe {
-                args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr())
-            };
+            unsafe { args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr()) };
         }
         Ok(ARGS_PARSE_COMMANDS)
     }
@@ -214,19 +211,13 @@ fn positional_command_cache_survives_array_growth_and_copy() {
         let first = (&(*args).values)[0].cached.as_ref().unwrap().as_ptr();
         assert!(!first.is_null());
         assert_eq!(CStr::from_ptr(first).to_bytes(), b"");
-        assert_eq!(
-            args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr()),
-            first
-        );
-        let second =
-            args_string(&mut *(&mut *args), 1).map_or(std::ptr::null(), |value| value.as_ptr());
+        assert_eq!(args_string(&mut *(&mut *args), 0).map_or(std::ptr::null(), |value| value.as_ptr()), first);
+        let second = args_string(&mut *(&mut *args), 1).map_or(std::ptr::null(), |value| value.as_ptr());
         assert_ne!(first, second);
 
         let mut copied = args_copy(&args, &Vec::new());
-        let copied_first =
-            args_string(&mut *(&mut *copied), 0).map_or(std::ptr::null(), |value| value.as_ptr());
-        let copied_second =
-            args_string(&mut *(&mut *copied), 1).map_or(std::ptr::null(), |value| value.as_ptr());
+        let copied_first = args_string(&mut *(&mut *copied), 0).map_or(std::ptr::null(), |value| value.as_ptr());
+        let copied_second = args_string(&mut *(&mut *copied), 1).map_or(std::ptr::null(), |value| value.as_ptr());
         assert_ne!(copied_first, first);
         assert_ne!(copied_second, second);
         assert_eq!(CStr::from_ptr(copied_first).to_bytes(), b"");

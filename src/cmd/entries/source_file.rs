@@ -19,11 +19,11 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::{client, client_file_cb};
 use crate::src::shared::command::*;
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::ctype::_ISalnum;
 use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
 use crate::src::shared::event::*;
@@ -130,67 +130,41 @@ unsafe fn cmd_source_file_complete_cb(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut cdata: Box<cmd_source_file_data>,
 ) -> cmd_retval {
-    unsafe {
-        cdata.decrement_depth();
-        cfg_print_causes(item_handle);
-        CMD_RETURN_NORMAL
-    }
+    cdata.decrement_depth();
+    cfg_print_causes(item_handle);
+    CMD_RETURN_NORMAL
 }
 
 unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
-    unsafe {
-        let c = cdata
-            .client_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if cfg_finished == 0 {
-            // Startup completion does not decrement nesting depth in tmux.
-            // Cancellation during an active read still decrements it.
-            cdata.depth_active = false;
-            return;
-        }
-        if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session_handle().is_none() {
-            (*c).retval = 1;
-        }
-        let Some(after_owner) = cdata.after.upgrade().or_else(|| cdata.item.upgrade()) else {
-            return;
-        };
-        let after = after_owner.get();
-        let new_item_allocation = cmdq_get_callback_owned(
-            c"cmd_source_file_complete_cb",
-            Some(Box::new(move |item| unsafe {
-                cmd_source_file_complete_cb(item, cdata)
-            })),
-        );
-        cmdq_insert_after(
-            &(*(after))
-                .observer
-                .upgrade()
-                .expect("queued insertion anchor"),
-            new_item_allocation,
-        );
+    let c = cdata.client_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    if cfg_finished == 0 {
+        // Startup completion does not decrement nesting depth in tmux.
+        // Cancellation during an active read still decrements it.
+        cdata.depth_active = false;
+        return;
     }
+    if cdata.retval == CMD_RETURN_ERROR && !c.is_null() && (*c).session_handle().is_none() {
+        (*c).retval = 1;
+    }
+    let Some(after_owner) = cdata.after.upgrade().or_else(|| cdata.item.upgrade()) else {
+        return;
+    };
+    let after = after_owner.get();
+    let new_item_allocation = cmdq_get_callback_owned(
+        c"cmd_source_file_complete_cb",
+        Some(Box::new(move |item| unsafe {
+            cmd_source_file_complete_cb(item, cdata)
+        })),
+    );
+    cmdq_insert_after(&(*(after)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
 }
 
 unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
-    unsafe {
-        let Some(item_owner) = cdata.item.upgrade() else {
-            return;
-        };
-        let client_owner = cdata.client.clone();
-        let item = item_owner.get();
-        let path = cdata.files[cdata.current as usize].as_ptr();
-        file_read_with_cmdq_wait(
-            client_owner.as_ref(),
-            path,
-            cdata.into_read_callback(),
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-            None,
-        );
-    }
+    let Some(item_owner) = cdata.item.upgrade() else { return };
+    let client_owner = cdata.client.clone();
+    let item = item_owner.get();
+    let path = cdata.files[cdata.current as usize].as_ptr();
+    file_read_with_cmdq_wait(client_owner.as_ref(), path, cdata.into_read_callback(), &(*(item)).observer.upgrade().expect("live command queue item"), None);
 }
 
 unsafe fn cmd_source_file_done(
@@ -199,235 +173,206 @@ unsafe fn cmd_source_file_done(
     error: ::core::ffi::c_int,
     buffer: &mut evbuffer,
 ) {
-    unsafe {
-        let Some(item_owner) = cdata.item.upgrade() else {
-            return;
-        };
-        let item = item_owner.get();
-        let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
-        // Progress does not coalesce the buffer; only complete files are parsed.
-        let bdata = evbuffer_pullup(buffer, -1)
-            .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-            .cast();
-        let bsize = evbuffer_get_length(buffer);
-        let mut new_item = Weak::new();
-        let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-        if error != 0 {
-            cmdq_error(
-                &(*(item))
-                    .observer
-                    .upgrade()
-                    .expect("live command queue item"),
-                |out| {
-                    write_cstr(out, strerror(error))?;
-                    out.write_all(b": ")?;
-                    write_cstr(out, path)
-                },
-            );
-        } else if bsize != 0 {
-            let after_owner = cdata
-                .after
-                .upgrade()
-                .unwrap_or_else(|| Rc::clone(&item_owner));
-            if load_cfg_from_buffer(
-                bdata,
-                bsize,
-                path,
-                cdata.client.as_ref(),
-                (after_owner.get())
-                    .as_ref()
-                    .and_then(|item| item.observer.upgrade())
-                    .as_ref(),
-                target,
-                cdata.flags,
-                Some(&mut new_item),
-            ) < 0
-            {
-                cdata.retval = CMD_RETURN_ERROR;
-            } else if new_item.strong_count() != 0 {
-                cdata.after = new_item;
-            }
+    let Some(item_owner) = cdata.item.upgrade() else { return };
+    let item = item_owner.get();
+    let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
+    // Progress does not coalesce the buffer; only complete files are parsed.
+    let bdata = evbuffer_pullup(buffer, -1)
+        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+        .cast();
+    let bsize = evbuffer_get_length(buffer);
+    let mut new_item = Weak::new();
+    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    if error != 0 {
+        cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| {
+            write_cstr(out, strerror(error))?;
+            out.write_all(b": ")?;
+            write_cstr(out, path)
+        });
+    } else if bsize != 0 {
+        let after_owner = cdata.after.upgrade().unwrap_or_else(|| Rc::clone(&item_owner));
+        if load_cfg_from_buffer(
+            bdata,
+            bsize,
+            path,
+            cdata.client.as_ref(),
+            (after_owner.get()).as_ref().and_then(|item| item.observer.upgrade()).as_ref(),
+            target,
+            cdata.flags,
+            Some(&mut new_item),
+        ) < 0
+        {
+            cdata.retval = CMD_RETURN_ERROR;
+        } else if new_item.strong_count() != 0 {
+            cdata.after = new_item;
         }
-        cdata.current = cdata.current.wrapping_add(1);
-        if (cdata.current as usize) < cdata.files.len() {
-            cmd_source_file_read(cdata);
-        } else {
-            cmd_source_file_complete(cdata);
-            cmdq_continue(
-                &(*(item))
-                    .observer
-                    .upgrade()
-                    .expect("live command queue item"),
-            );
-        }
+    }
+    cdata.current = cdata.current.wrapping_add(1);
+    if (cdata.current as usize) < cdata.files.len() {
+        cmd_source_file_read(cdata);
+    } else {
+        cmd_source_file_complete(cdata);
+        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
     }
 }
 unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
-    unsafe {
-        log_debug(format_args!(
-            "{}: {}",
-            "cmd_source_file_add",
-            log_cstr((path.as_ptr()) as *const _)
-        ));
-        cdata.files.push(path.to_owned());
-    }
+    log_debug(format_args!(
+        "{}: {}",
+        "cmd_source_file_add",
+        log_cstr((path.as_ptr()) as *const _)
+    ));
+    cdata.files.push(path.to_owned());
 }
 unsafe fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
-    unsafe {
-        let mut quoted = Vec::new();
-        for &byte in path.to_bytes() {
-            if byte < 128
-                && *(*__ctype_b_loc()).offset(byte as isize) as ::core::ffi::c_int
-                    & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                    == 0
-                && byte != b'/'
-            {
-                quoted.push(b'\\');
-            }
-            quoted.push(byte);
+    let mut quoted = Vec::new();
+    for &byte in path.to_bytes() {
+        if byte < 128
+            && *(*__ctype_b_loc()).offset(byte as isize) as ::core::ffi::c_int
+                & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
+                == 0
+            && byte != b'/'
+        {
+            quoted.push(b'\\');
         }
-        CString::new(quoted).expect("C string path has no interior NUL")
+        quoted.push(byte);
     }
+    CString::new(quoted).expect("C string path has no interior NUL")
 }
-unsafe fn cmd_source_file_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let c_owner = cmdq_get_client((item).as_ref());
-        let mut c: *mut client = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        let mut retval: cmd_retval = CMD_RETURN_NORMAL;
-        let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut parse_flags: ::core::ffi::c_int = 0;
-        let mut i: u_int = 0;
-        let mut j: u_int = 0;
-        if c.is_null() {
-            if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
-                cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
-                return CMD_RETURN_ERROR;
-            }
-            cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
-            log_debug(format_args!(
-                "{}: depth now {}",
-                "cmd_source_file_exec",
-                (cmd_source_file_depth) as u32
-            ));
+unsafe fn cmd_source_file_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let c_owner = cmdq_get_client((item).as_ref());
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let mut retval: cmd_retval = CMD_RETURN_NORMAL;
+    let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut error: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut parse_flags: ::core::ffi::c_int = 0;
+    let mut i: u_int = 0;
+    let mut j: u_int = 0;
+    if c.is_null() {
+        if cmd_source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
+            cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
+            return CMD_RETURN_ERROR;
+        }
+        cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
+        log_debug(format_args!(
+            "{}: depth now {}",
+            "cmd_source_file_exec",
+            (cmd_source_file_depth) as u32
+        ));
+    } else {
+        if (*c).source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
+            cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
+            return CMD_RETURN_ERROR;
+        }
+        (*c).source_file_depth = (*c).source_file_depth.wrapping_add(1);
+        log_debug(format_args!(
+            "{}: depth now {}",
+            "cmd_source_file_exec",
+            ((*c).source_file_depth) as u32
+        ));
+    }
+    let mut cdata = Box::new(cmd_source_file_data {
+        item: (*item).observer.clone(),
+        client: if c.is_null() {
+            None
         } else {
-            if (*c).source_file_depth >= CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
-                cmdq_error(item_handle, |out| out.write_all(b"too many nested files"));
-                return CMD_RETURN_ERROR;
-            }
-            (*c).source_file_depth = (*c).source_file_depth.wrapping_add(1);
-            log_debug(format_args!(
-                "{}: depth now {}",
-                "cmd_source_file_exec",
-                ((*c).source_file_depth) as u32
-            ));
+            Some(
+                (*c).observer
+                    .upgrade()
+                    .expect("live source-file client"),
+            )
+        },
+        depth_active: true,
+        flags: 0,
+        after: Weak::new(),
+        retval: CMD_RETURN_NORMAL,
+        current: 0,
+        files: Vec::new(),
+    });
+    if args_has(args, 'q' as i32 as u_char) != 0 {
+        cdata.flags |= CMD_PARSE_QUIET;
+    }
+    if args_has(args, 'n' as i32 as u_char) != 0 {
+        cdata.flags |= CMD_PARSE_PARSEONLY;
+    }
+    if c.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+        parse_flags = cmd_get_parse_flags(self_0.clone());
+        if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
+            cdata.flags |= CMD_PARSE_VERBOSE;
         }
-        let mut cdata = Box::new(cmd_source_file_data {
-            item: (*item).observer.clone(),
-            client: if c.is_null() {
-                None
+    }
+    let cwd_owner = server_client_get_cwd(c.as_ref(), None).expect("source working directory");
+    let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
+    i = 0 as u_int;
+    while i < args_count(args) {
+        path = args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr());
+        let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
+            Some(format_single_from_target_cstring(item_handle, path))
+        } else {
+            None
+        };
+        if let Some(expanded) = expanded.as_ref() {
+            path = expanded.as_ptr();
+        }
+        if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char)
+            == 0 as ::core::ffi::c_int
+        {
+            cmd_source_file_add(&mut cdata, c"-");
+        } else {
+            let pattern = if *path as ::core::ffi::c_int == '/' as i32 {
+                CStr::from_ptr(path).to_owned()
             } else {
-                Some((*c).observer.upgrade().expect("live source-file client"))
-            },
-            depth_active: true,
-            flags: 0,
-            after: Weak::new(),
-            retval: CMD_RETURN_NORMAL,
-            current: 0,
-            files: Vec::new(),
-        });
-        if args_has(args, 'q' as i32 as u_char) != 0 {
-            cdata.flags |= CMD_PARSE_QUIET;
-        }
-        if args_has(args, 'n' as i32 as u_char) != 0 {
-            cdata.flags |= CMD_PARSE_PARSEONLY;
-        }
-        if c.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            parse_flags = cmd_get_parse_flags(self_0.clone());
-            if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
-                cdata.flags |= CMD_PARSE_VERBOSE;
-            }
-        }
-        let cwd_owner = server_client_get_cwd(c.as_ref(), None).expect("source working directory");
-        let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
-        i = 0 as u_int;
-        while i < args_count(args) {
-            path = args_string(&mut *(args), i).map_or(std::ptr::null(), |value| value.as_ptr());
-            let expanded = if args_has(args, 'F' as i32 as u_char) != 0 {
-                Some(format_single_from_target_cstring(item_handle, path))
-            } else {
-                None
+                let cwd_bytes = cwd.to_bytes();
+                let path_bytes = CStr::from_ptr(path).to_bytes();
+                let mut bytes = Vec::with_capacity(cwd_bytes.len() + 1 + path_bytes.len());
+                bytes.extend_from_slice(cwd_bytes);
+                bytes.push(b'/');
+                bytes.extend_from_slice(path_bytes);
+                CString::new(bytes).expect("C strings have no interior NUL")
             };
-            if let Some(expanded) = expanded.as_ref() {
-                path = expanded.as_ptr();
-            }
-            if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-            {
-                cmd_source_file_add(&mut cdata, c"-");
+            log_debug(format_args!(
+                "{}: {}",
+                "cmd_source_file_exec",
+                log_cstr((pattern.as_ptr()) as *const _)
+            ));
+            let (matches, result) = GlobResult::run(pattern.as_c_str());
+            if result != 0 as ::core::ffi::c_int {
+                if result != GLOB_NOMATCH || !cdata.flags & CMD_PARSE_QUIET != 0 {
+                    if result == GLOB_NOMATCH {
+                        error = strerror(ENOENT);
+                    } else if result == GLOB_NOSPACE {
+                        error = strerror(ENOMEM);
+                    } else {
+                        error = strerror(EINVAL);
+                    }
+                    cmdq_error(item_handle, |out| {
+                        write_cstr(out, error)?;
+                        out.write_all(b": ")?;
+                        write_cstr(out, path)
+                    });
+                    retval = CMD_RETURN_ERROR;
+                }
+                drop(pattern);
             } else {
-                let pattern = if *path as ::core::ffi::c_int == '/' as i32 {
-                    CStr::from_ptr(path).to_owned()
-                } else {
-                    let cwd_bytes = cwd.to_bytes();
-                    let path_bytes = CStr::from_ptr(path).to_bytes();
-                    let mut bytes = Vec::with_capacity(cwd_bytes.len() + 1 + path_bytes.len());
-                    bytes.extend_from_slice(cwd_bytes);
-                    bytes.push(b'/');
-                    bytes.extend_from_slice(path_bytes);
-                    CString::new(bytes).expect("C strings have no interior NUL")
-                };
-                log_debug(format_args!(
-                    "{}: {}",
-                    "cmd_source_file_exec",
-                    log_cstr((pattern.as_ptr()) as *const _)
-                ));
-                let (matches, result) = GlobResult::run(pattern.as_c_str());
-                if result != 0 as ::core::ffi::c_int {
-                    if result != GLOB_NOMATCH || !cdata.flags & CMD_PARSE_QUIET != 0 {
-                        if result == GLOB_NOMATCH {
-                            error = strerror(ENOENT);
-                        } else if result == GLOB_NOSPACE {
-                            error = strerror(ENOMEM);
-                        } else {
-                            error = strerror(EINVAL);
-                        }
-                        cmdq_error(item_handle, |out| {
-                            write_cstr(out, error)?;
-                            out.write_all(b": ")?;
-                            write_cstr(out, path)
-                        });
-                        retval = CMD_RETURN_ERROR;
-                    }
-                    drop(pattern);
-                } else {
-                    drop(pattern);
-                    j = 0 as u_int;
-                    while (j as __size_t) < matches.len() {
-                        cmd_source_file_add(&mut cdata, CStr::from_ptr(matches.path(j as usize)));
-                        j = j.wrapping_add(1);
-                    }
+                drop(pattern);
+                j = 0 as u_int;
+                while (j as __size_t) < matches.len() {
+                    cmd_source_file_add(&mut cdata, CStr::from_ptr(matches.path(j as usize)));
+                    j = j.wrapping_add(1);
                 }
             }
-            i = i.wrapping_add(1);
         }
-        cdata.after = (*item).observer.clone();
-        cdata.retval = retval;
-        if !cdata.files.is_empty() {
-            cmd_source_file_read(cdata);
-            retval = CMD_RETURN_WAIT;
-        } else {
-            cmd_source_file_complete(cdata);
-        }
-        drop(cwd);
-        return retval;
+        i = i.wrapping_add(1);
     }
+    cdata.after = (*item).observer.clone();
+    cdata.retval = retval;
+    if !cdata.files.is_empty() {
+        cmd_source_file_read(cdata);
+        retval = CMD_RETURN_WAIT;
+    } else {
+        cmd_source_file_complete(cdata);
+    }
+    drop(cwd);
+    return retval;
 }

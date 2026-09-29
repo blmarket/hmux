@@ -1,10 +1,11 @@
 use hmux2::src::arguments::{
-    ARGS_ENTRY_OPTIONAL_VALUE, args_create, args_print, args_push_positional_commands,
-    args_set_flag, args_set_owned_commands, args_set_owned_string, args_to_vector,
+    args_create, args_print, args_push_positional_commands, args_set_flag, args_set_owned_commands,
+    args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
 };
 use hmux2::src::cmd::{
-    CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, cmd, cmd_list_append, cmd_list_append_all,
-    cmd_list_copy, cmd_list_move, cmd_list_new, cmd_list_print, cmd_parse, cmd_print,
+    cmd, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_move,
+    cmd_list_new, cmd_list_print, cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED,
+    CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux2::src::shared::arguments::ArgumentValue;
 use std::ffi::CString;
@@ -49,11 +50,8 @@ fn argument_printer_preserves_zero_and_non_utf8_flag_bytes() {
 }
 
 unsafe fn display_message_command() -> refbox::RefBox<cmd> {
-    unsafe {
-        let value = ArgumentValue::borrowed_string(c"display-message");
-        cmd_parse(std::slice::from_ref(&value), None, 0, 0)
-            .expect("command parse reported an error")
-    }
+    let value = ArgumentValue::borrowed_string(c"display-message");
+    cmd_parse(std::slice::from_ref(&value), None, 0, 0).expect("command parse reported an error")
 }
 
 #[test]
@@ -149,10 +147,7 @@ fn list_splice_copy_and_refcount_keep_command_addresses_stable() {
         cmd_list_append(&source, second);
         cmd_list_append_all(&destination, &source);
         assert!(source.borrow_mut().list.is_empty());
-        assert_eq!(
-            addresses(&destination.borrow()),
-            [first_address, second_address]
-        );
+        assert_eq!(addresses(&destination.borrow()), [first_address, second_address]);
 
         let tail = cmd_list_new();
         let third = display_message_command();

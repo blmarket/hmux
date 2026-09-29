@@ -38,11 +38,7 @@ fn global_index_observes_windows_and_lookups_retain_them() {
         let mut other = hmux2::src::shared::window::windows { storage: None };
         assert!(!windows_remove(&mut other, &first));
         assert!(windows_remove(&mut *head, &second));
-        assert_eq!(
-            Rc::strong_count(&second),
-            1,
-            "removal must not retain window"
-        );
+        assert_eq!(Rc::strong_count(&second), 1, "removal must not retain window");
         assert!(window_find_by_id(125).is_none());
         assert!(windows_next(&*first.get()).is_none());
         assert!(

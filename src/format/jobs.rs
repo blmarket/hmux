@@ -1,5 +1,5 @@
-use crate::src::log::{log_cstr, log_pointer};
 use crate::src::shared::client::client_handle;
+use crate::src::log::{log_cstr, log_pointer};
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
 // lifecycle.  It calls the parent facade for expansion, logging, and allocation.
@@ -40,197 +40,180 @@ static mut format_jobs: format_job_tree = format_job_tree {
     entries: std::collections::BTreeMap::new(),
 };
 pub(super) unsafe fn format_job_update(job: &refbox::Weak<job>, mut fj: *mut format_job) {
-    unsafe {
-        let evb: &mut evbuffer = &mut *(*job_get_event(job)).input;
-        let mut line: Option<Vec<u8>> = None;
-        let mut t: time_t = 0;
-        loop {
-            let Some(next) = evbuffer_readline(evb) else {
-                break;
-            };
-            line = Some(next);
-        }
-        let Some(line) = line else {
-            return;
+    let evb: &mut evbuffer = &mut *(*job_get_event(job)).input;
+    let mut line: Option<Vec<u8>> = None;
+    let mut t: time_t = 0;
+    loop {
+        let Some(next) = evbuffer_readline(evb) else {
+            break;
         };
-        (*fj).updated = 1 as ::core::ffi::c_int;
-        format_job_set_out_from_line(&mut *fj, &line);
-        log_debug(format_args!(
-            "{}: {} {}: {}",
-            "format_job_update",
-            log_pointer((fj) as *const ::core::ffi::c_void),
-            log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _),
-            log_cstr(
-                (((*fj).out)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
-        ));
-        t = time(::core::ptr::null_mut::<time_t>());
-        if (*fj).status != 0 && (*fj).last != t {
-            if let Some(client) = (*fj).client.upgrade() {
-                server_status_client(&mut *(client.get()));
-            }
-            (*fj).last = t;
+        line = Some(next);
+    }
+    let Some(line) = line else {
+        return;
+    };
+    (*fj).updated = 1 as ::core::ffi::c_int;
+    format_job_set_out_from_line(&mut *fj, &line);
+    log_debug(format_args!(
+        "{}: {} {}: {}",
+        "format_job_update",
+        log_pointer((fj) as *const ::core::ffi::c_void),
+        log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _),
+        log_cstr(
+            (((*fj).out)
+                .as_ref()
+                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                as *const _
+        )
+    ));
+    t = time(::core::ptr::null_mut::<time_t>());
+    if (*fj).status != 0 && (*fj).last != t {
+        if let Some(client) = (*fj).client.upgrade() {
+            server_status_client(&mut *(client.get()));
         }
+        (*fj).last = t;
     }
 }
 pub(super) unsafe fn format_job_complete(completion: JobCompletion, mut fj: *mut format_job) {
-    unsafe {
-        let mut evb = evbuffer_new();
-        if !completion.output.is_empty() {
-            evbuffer_add(
-                &mut *evb,
-                completion.output.as_ptr().cast(),
-                completion.output.len(),
-            );
+    let mut evb = evbuffer_new();
+    if !completion.output.is_empty() {
+        evbuffer_add(
+            &mut *evb,
+            completion.output.as_ptr().cast(),
+            completion.output.len(),
+        );
+    }
+    (*fj).job = refbox::Weak::new();
+    let line = evbuffer_readline(&mut *evb);
+    let output = if let Some(line) = line {
+        let visible = line
+            .iter()
+            .position(|&byte| byte == 0)
+            .unwrap_or(line.len());
+        CString::new(&line[..visible]).expect("visible job output contains no NUL")
+    } else {
+        let len = evbuffer_get_length(&evb);
+        let bytes = evbuffer_pullup(&mut evb, -1).unwrap_or_default();
+        // The old malloc buffer was treated as a C string after copying all
+        // bytes, so only bytes before the first NUL became visible output.
+        let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);
+        CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
+    };
+    log_debug(format_args!(
+        "{}: {} {}: {}",
+        "format_job_complete",
+        log_pointer((fj) as *const ::core::ffi::c_void),
+        log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _),
+        log_cstr((output.as_ptr()) as *const _)
+    ));
+    if !output.as_bytes().is_empty() || (*fj).updated == 0 {
+        format_job_set_out(&mut *fj, output);
+    }
+    if (*fj).status != 0 {
+        if let Some(client) = (*fj).client.upgrade() {
+            server_status_client(&mut *(client.get()));
         }
-        (*fj).job = refbox::Weak::new();
-        let line = evbuffer_readline(&mut *evb);
-        let output = if let Some(line) = line {
-            let visible = line
-                .iter()
-                .position(|&byte| byte == 0)
-                .unwrap_or(line.len());
-            CString::new(&line[..visible]).expect("visible job output contains no NUL")
-        } else {
-            let len = evbuffer_get_length(&evb);
-            let bytes = evbuffer_pullup(&mut evb, -1).unwrap_or_default();
-            // The old malloc buffer was treated as a C string after copying all
-            // bytes, so only bytes before the first NUL became visible output.
-            let visible = bytes.iter().position(|&byte| byte == 0).unwrap_or(len);
-            CString::new(&bytes[..visible]).expect("visible job output contains no NUL")
-        };
-        log_debug(format_args!(
-            "{}: {} {}: {}",
-            "format_job_complete",
-            log_pointer((fj) as *const ::core::ffi::c_void),
-            log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _),
-            log_cstr((output.as_ptr()) as *const _)
-        ));
-        if !output.as_bytes().is_empty() || (*fj).updated == 0 {
-            format_job_set_out(&mut *fj, output);
-        }
-        if (*fj).status != 0 {
-            if let Some(client) = (*fj).client.upgrade() {
-                server_status_client(&mut *(client.get()));
-            }
-            (*fj).status = 0 as ::core::ffi::c_int;
-        }
+        (*fj).status = 0 as ::core::ffi::c_int;
     }
 }
 pub(super) unsafe fn format_job_get(
     mut es: *mut format_expand_state,
     mut cmd: *const ::core::ffi::c_char,
 ) -> CString {
-    unsafe {
-        let mut ft: *mut format_tree = (*es).ft;
-        let mut jobs: *mut format_job_tree = ::core::ptr::null_mut::<format_job_tree>();
-        let mut fj: *mut format_job = ::core::ptr::null_mut::<format_job>();
-        let mut t: time_t = 0;
-        let mut force: ::core::ffi::c_int = 0;
-        let mut next: format_expand_state = format_expand_state {
-            ft: ::core::ptr::null_mut::<format_tree>(),
-            loop_0: 0,
-            start_time: 0,
-            flags: 0,
-            time: 0,
-            tm: tm {
-                tm_sec: 0,
-                tm_min: 0,
-                tm_hour: 0,
-                tm_mday: 0,
-                tm_mon: 0,
-                tm_year: 0,
-                tm_wday: 0,
-                tm_yday: 0,
-                tm_isdst: 0,
-                tm_gmtoff: 0,
-                tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-            },
-        };
-        if client_handle(&(*ft).client)
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            .is_null()
-        {
-            jobs = &raw mut format_jobs as *mut format_job_tree;
-        } else {
-            jobs = &mut **(*client_handle(&(*ft).client)
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .jobs
-            .get_or_insert_with(Default::default);
-        }
-        fj = format_job_find_or_insert(
-            &mut *jobs,
-            (*ft).client.as_ref(),
-            (*ft).tag,
-            CStr::from_ptr(cmd),
-        );
-        format_copy_state(
-            &raw mut next,
-            es,
-            FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE,
-        );
-        next.flags &= !FORMAT_EXPAND_TIME;
-        let expanded = format_expand1_cstring(&raw mut next, cmd);
-        if (*fj).expanded.is_none()
-            || strcmp(
-                expanded.as_ptr(),
-                ((*fj).expanded)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            ) != 0 as ::core::ffi::c_int
-        {
-            format_job_set_expanded(&mut *fj, expanded.clone());
-            force = 1 as ::core::ffi::c_int;
-        } else {
-            force = (*ft).flags & FORMAT_FORCE;
-        }
-        t = time(::core::ptr::null_mut::<time_t>());
-        if force != 0 && !(*fj).job.is_empty() {
-            job_free(&(*fj).job);
-        }
-        if force != 0 || (*fj).job.is_empty() && (*fj).last != t {
-            let cwd = server_client_get_cwd((*ft).client.as_ref().map(|owner| &*owner.get()), None);
-            (*fj).job = job_run(
-                Some(expanded.as_c_str()),
-                &Vec::new(),
-                None,
-                None,
-                cwd.as_deref(),
-                job_update_callback(move |job| unsafe { format_job_update(job, fj) }),
-                Some(Box::new(move |completion| unsafe {
-                    format_job_complete(completion, fj)
-                })),
-                None,
-                JOB_NOWAIT,
-                -(1 as ::core::ffi::c_int),
-                -(1 as ::core::ffi::c_int),
-            );
-            if (*fj).job.is_empty() {
-                let message = format_job_message(&*fj, b"' didn't start>");
-                format_job_set_out(&mut *fj, message);
-            }
-            (*fj).last = t;
-            (*fj).updated = 0 as ::core::ffi::c_int;
-        } else if !(*fj).job.is_empty() && t - (*fj).last > 1 as time_t && (*fj).out.is_none() {
-            let message = format_job_message(&*fj, b"' not ready>");
-            format_job_set_out(&mut *fj, message);
-        }
-        if (*ft).flags & FORMAT_STATUS != 0 {
-            (*fj).status = 1 as ::core::ffi::c_int;
-        }
-        if (*fj).out.is_none() {
-            return CString::default();
-        }
-        return format_expand1_cstring(
-            &raw mut next,
-            ((*fj).out)
+    let mut ft: *mut format_tree = (*es).ft;
+    let mut jobs: *mut format_job_tree = ::core::ptr::null_mut::<format_job_tree>();
+    let mut fj: *mut format_job = ::core::ptr::null_mut::<format_job>();
+    let mut t: time_t = 0;
+    let mut force: ::core::ffi::c_int = 0;
+    let mut next: format_expand_state = format_expand_state {
+        ft: ::core::ptr::null_mut::<format_tree>(),
+        loop_0: 0,
+        start_time: 0,
+        flags: 0,
+        time: 0,
+        tm: tm {
+            tm_sec: 0,
+            tm_min: 0,
+            tm_hour: 0,
+            tm_mday: 0,
+            tm_mon: 0,
+            tm_year: 0,
+            tm_wday: 0,
+            tm_yday: 0,
+            tm_isdst: 0,
+            tm_gmtoff: 0,
+            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
+        },
+    };
+    if client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get()).is_null() {
+        jobs = &raw mut format_jobs as *mut format_job_tree;
+    } else {
+        jobs = &mut **(*client_handle(&(*ft).client).map_or(std::ptr::null_mut(), |owner| owner.get())).jobs.get_or_insert_with(Default::default);
+    }
+    fj = format_job_find_or_insert(&mut *jobs, (*ft).client.as_ref(), (*ft).tag, CStr::from_ptr(cmd));
+    format_copy_state(
+        &raw mut next,
+        es,
+        FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE,
+    );
+    next.flags &= !FORMAT_EXPAND_TIME;
+    let expanded = format_expand1_cstring(&raw mut next, cmd);
+    if (*fj).expanded.is_none()
+        || strcmp(
+            expanded.as_ptr(),
+            ((*fj).expanded)
                 .as_ref()
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
+        ) != 0 as ::core::ffi::c_int
+    {
+        format_job_set_expanded(&mut *fj, expanded.clone());
+        force = 1 as ::core::ffi::c_int;
+    } else {
+        force = (*ft).flags & FORMAT_FORCE;
     }
+    t = time(::core::ptr::null_mut::<time_t>());
+    if force != 0 && !(*fj).job.is_empty() {
+        job_free(&(*fj).job);
+    }
+    if force != 0 || (*fj).job.is_empty() && (*fj).last != t {
+        let cwd = server_client_get_cwd((*ft).client.as_ref().map(|owner| &*owner.get()), None);
+        (*fj).job = job_run(
+            Some(expanded.as_c_str()),
+            &Vec::new(),
+            None,
+            None,
+            cwd.as_deref(),
+            job_update_callback(move |job| unsafe { format_job_update(job, fj) }),
+            Some(Box::new(move |completion| unsafe {
+                format_job_complete(completion, fj)
+            })),
+            None,
+            JOB_NOWAIT,
+            -(1 as ::core::ffi::c_int),
+            -(1 as ::core::ffi::c_int),
+        );
+        if (*fj).job.is_empty() {
+            let message = format_job_message(&*fj, b"' didn't start>");
+            format_job_set_out(&mut *fj, message);
+        }
+        (*fj).last = t;
+        (*fj).updated = 0 as ::core::ffi::c_int;
+    } else if !(*fj).job.is_empty() && t - (*fj).last > 1 as time_t && (*fj).out.is_none() {
+        let message = format_job_message(&*fj, b"' not ready>");
+        format_job_set_out(&mut *fj, message);
+    }
+    if (*ft).flags & FORMAT_STATUS != 0 {
+        (*fj).status = 1 as ::core::ffi::c_int;
+    }
+    if (*fj).out.is_none() {
+        return CString::default();
+    }
+    return format_expand1_cstring(
+        &raw mut next,
+        ((*fj).out)
+            .as_ref()
+            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+    );
 }
 // Do not retain a map borrow across format expansion or process callbacks.
 unsafe fn format_job_find_or_insert(
@@ -263,79 +246,60 @@ unsafe fn format_job_find_or_insert(
 }
 
 pub(super) unsafe fn format_job_tidy(jobs: *mut format_job_tree, force: ::core::ffi::c_int) {
-    unsafe {
-        format_job_tidy_at(jobs, force, time(::core::ptr::null_mut()));
-    }
+    format_job_tidy_at(jobs, force, time(::core::ptr::null_mut()));
 }
 
 unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_int, now: time_t) {
-    unsafe {
-        // Snapshot keys in tree order, then remove before cleanup, just like the
-        // old traversal. No iterator or map borrow survives a call to job_free.
-        let expired: Vec<_> = (*jobs)
-            .entries
-            .iter()
-            .filter_map(|(key, fj)| {
-                if force == 0 && ((*fj).last > now || now - (*fj).last < 3600) {
-                    None
-                } else {
-                    Some(key.clone())
-                }
-            })
-            .collect();
-        for key in expired {
-            let fj = (*jobs)
-                .entries
-                .remove(&key)
-                .expect("format job still cached");
-            log_debug(format_args!(
-                "{}: {}",
-                "format_job_tidy",
-                log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _)
-            ));
-            if !(*fj).job.is_empty() {
-                job_free(&(*fj).job);
+    // Snapshot keys in tree order, then remove before cleanup, just like the
+    // old traversal. No iterator or map borrow survives a call to job_free.
+    let expired: Vec<_> = (*jobs)
+        .entries
+        .iter()
+        .filter_map(|(key, fj)| {
+            if force == 0 && ((*fj).last > now || now - (*fj).last < 3600) {
+                None
+            } else {
+                Some(key.clone())
             }
-            drop(fj);
+        })
+        .collect();
+    for key in expired {
+        let fj = (*jobs)
+            .entries
+            .remove(&key)
+            .expect("format job still cached");
+        log_debug(format_args!(
+            "{}: {}",
+            "format_job_tidy",
+            log_cstr((((*fj).cmd).as_ptr().cast_mut()) as *const _)
+        ));
+        if !(*fj).job.is_empty() {
+            job_free(&(*fj).job);
         }
+        drop(fj);
     }
 }
 pub unsafe fn format_tidy_jobs() {
-    unsafe {
-        let mut c: *mut client = ::core::ptr::null_mut::<client>();
-        format_job_tidy(&raw mut format_jobs, 0 as ::core::ffi::c_int);
-        let mut registry_c_owner = clients.first();
-        c = registry_c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !c.is_null() {
-            let jobs = (*c)
-                .jobs
-                .as_deref_mut()
-                .map(|jobs| jobs as *mut format_job_tree);
-            if let Some(jobs) = jobs {
-                format_job_tidy(jobs, 0);
-            }
-            registry_c_owner =
-                clients.next(registry_c_owner.as_ref().expect("current registry client"));
-            c = registry_c_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let mut c: *mut client = ::core::ptr::null_mut::<client>();
+    format_job_tidy(&raw mut format_jobs, 0 as ::core::ffi::c_int);
+    let mut registry_c_owner = clients.first();
+    c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
+    while !c.is_null() {
+        let jobs = (*c).jobs.as_deref_mut().map(|jobs| jobs as *mut format_job_tree);
+        if let Some(jobs) = jobs {
+            format_job_tidy(jobs, 0);
         }
+        registry_c_owner = clients.next(registry_c_owner.as_ref().expect("current registry client"));
+        c = registry_c_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
 pub unsafe fn format_lost_client(c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    unsafe {
-        let mut c = c_owner.get();
-        let jobs = (*c)
-            .jobs
-            .as_deref_mut()
-            .map(|jobs| jobs as *mut format_job_tree);
-        if let Some(jobs) = jobs {
-            // Keep the cache installed through job cancellation, as before.
-            format_job_tidy(jobs, 1);
-            drop((*c).jobs.take());
-        }
+    let mut c = c_owner.get();
+    let jobs = (*c).jobs.as_deref_mut().map(|jobs| jobs as *mut format_job_tree);
+    if let Some(jobs) = jobs {
+        // Keep the cache installed through job cancellation, as before.
+        format_job_tidy(jobs, 1);
+        drop((*c).jobs.take());
     }
 }
 
@@ -355,13 +319,10 @@ mod tests {
             (*job).status = 1;
             drop(client);
             assert!((*job).client.upgrade().is_none());
-            format_job_complete(
-                JobCompletion {
-                    status: crate::src::shared::job::JobExitStatus::Exited(0),
-                    output: b"completed\n".to_vec(),
-                },
-                job,
-            );
+            format_job_complete(JobCompletion {
+                status: crate::src::shared::job::JobExitStatus::Exited(0),
+                output: b"completed\n".to_vec(),
+            }, job);
             assert_eq!((*job).out.as_deref(), Some(c"completed"));
             assert_eq!((*job).status, 0);
             format_job_tidy_at(&mut cache, 1, 0);
@@ -429,12 +390,7 @@ mod tests {
             let c = &mut *owner.get();
             c.jobs = Some(Box::default());
             let cmd = CString::new("job").unwrap();
-            let fj = format_job_find_or_insert(
-                c.jobs.as_deref_mut().unwrap(),
-                Some(&owner),
-                0,
-                cmd.as_c_str(),
-            );
+            let fj = format_job_find_or_insert(c.jobs.as_deref_mut().unwrap(), Some(&owner), 0, cmd.as_c_str());
             (*fj).last = time(std::ptr::null_mut()) + 3600;
             format_lost_client(&(*(c)).observer.upgrade().expect("live client"));
             assert!(c.jobs.is_none());
@@ -465,18 +421,10 @@ mod tests {
             format_job_tidy_at(&mut cache, 0, now);
             assert_eq!(cache.entries.len(), 3);
             for (cmd, fj) in survivors {
+                assert_eq!(cache.entries.get(&(0, cmd.as_bytes().to_vec())).map(|job| &**job as *const format_job), Some(fj as *const format_job));
                 assert_eq!(
-                    cache
-                        .entries
-                        .get(&(0, cmd.as_bytes().to_vec()))
-                        .map(|job| &**job as *const format_job),
-                    Some(fj as *const format_job)
-                );
-                assert_eq!(
-                    ((*fj).out)
-                        .as_deref()
-                        .expect("string is present")
-                        .to_bytes(),
+                    ((*fj).out).as_deref().expect("string is present")
+                    .to_bytes(),
                     cmd.as_bytes()
                 );
             }
@@ -494,27 +442,21 @@ mod tests {
             let fj = format_job_find_or_insert(&mut cache, None, 1, cmd.as_c_str());
             format_job_set_out_from_line(&mut *fj, b"first\0ignored");
             assert_eq!(
-                ((*fj).out)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
+                ((*fj).out).as_deref().expect("string is present")
+                .to_bytes(),
                 b"first"
             );
             format_job_set_expanded(&mut *fj, CString::new(b"expanded\xff".to_vec()).unwrap());
             let message = format_job_message(&*fj, b"' not ready>");
             format_job_set_out(&mut *fj, message);
             assert_eq!(
-                ((*fj).out)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
+                ((*fj).out).as_deref().expect("string is present")
+                .to_bytes(),
                 b"<'printf '\xff'' not ready>"
             );
             assert_eq!(
-                ((*fj).expanded)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
+                ((*fj).expanded).as_deref().expect("string is present")
+                .to_bytes(),
                 b"expanded\xff"
             );
             assert_eq!(

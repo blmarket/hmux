@@ -4,10 +4,10 @@ use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_lock, server_lock_client, server_lock_session};
 use crate::src::shared::arguments::args_parse;
 use crate::src::shared::command::*;
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,
 };
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 pub static cmd_lock_server_entry: cmd_entry = {
     cmd_entry {
         name: c"lock-server",
@@ -83,29 +83,17 @@ pub static cmd_lock_client_entry: cmd_entry = {
         exec: Some(cmd_lock_server_exec),
     }
 };
-unsafe fn cmd_lock_server_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let mut target: *mut cmd_find_state =
-            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-        let tc_owner = cmdq_get_target_client((item).as_ref());
-        if std::ptr::eq(
-            cmd_get_entry(self_0.get_unchecked()),
-            &cmd_lock_server_entry,
-        ) {
-            server_lock();
-        } else if std::ptr::eq(
-            cmd_get_entry(self_0.get_unchecked()),
-            &cmd_lock_session_entry,
-        ) {
-            server_lock_session(&(*target).s.upgrade().expect("live target session"));
-        } else {
-            server_lock_client(tc_owner.as_ref().expect("lock target client"));
-        }
-        recalculate_sizes();
-        return CMD_RETURN_NORMAL;
+unsafe fn cmd_lock_server_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let tc_owner = cmdq_get_target_client((item).as_ref());
+    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_lock_server_entry) {
+        server_lock();
+    } else if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_lock_session_entry) {
+        server_lock_session(&(*target).s.upgrade().expect("live target session"));
+    } else {
+        server_lock_client(tc_owner.as_ref().expect("lock target client"));
     }
+    recalculate_sizes();
+    return CMD_RETURN_NORMAL;
 }

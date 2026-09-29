@@ -1,4 +1,4 @@
-use hmux2::src::json::{PARSE_DEPTH_MAX, json_parse, json_to_string};
+use hmux2::src::json::{json_parse, json_to_string, PARSE_DEPTH_MAX};
 use std::ffi::CString;
 
 #[test]
@@ -96,12 +96,10 @@ fn recursive_borrows_preserve_depth_limit_and_restore_depth_for_siblings() {
                 drop(root);
             } else {
                 assert!(root.is_none());
-                assert!(
-                    cause
-                        .unwrap()
-                        .as_bytes()
-                        .starts_with(b"parse depth exceeded")
-                );
+                assert!(cause
+                    .unwrap()
+                    .as_bytes()
+                    .starts_with(b"parse depth exceeded"));
                 assert!(json_parse(&input, None).is_none());
             }
         }

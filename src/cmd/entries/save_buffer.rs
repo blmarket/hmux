@@ -9,11 +9,11 @@ use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
 use crate::src::reactor::{evbuffer_add, evbuffer_new};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::client::client;
+use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::src::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
 use crate::src::shared::event::*;
 use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
 use std::ffi::CStr;
@@ -73,107 +73,86 @@ unsafe fn cmd_save_buffer_done(
     mut error: ::core::ffi::c_int,
     mut closed: ::core::ffi::c_int,
 ) {
-    unsafe {
-        if closed == 0 {
-            return;
-        }
-        if error != 0 as ::core::ffi::c_int {
-            cmdq_error(item_handle, |out| {
-                write_cstr(out, strerror(error))?;
-                out.write_all(b": ")?;
-                write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
-            });
-        }
-        cmdq_continue(item_handle);
+    if closed == 0 {
+        return;
     }
-}
-unsafe fn cmd_save_buffer_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let queue_client = cmdq_get_client((item).as_ref());
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let c_owner = cmdq_get_client((item).as_ref());
-        let mut c: *mut client = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        let pb;
-        let mut flags: ::core::ffi::c_int = 0;
-        let mut bufname: *const ::core::ffi::c_char = args_get(&*(args), 'b' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        if bufname.is_null() {
-            pb = paste_get_top(None);
-            if pb.is_none() {
-                cmdq_error(item_handle, |out| out.write_all(b"no buffers"));
-                return CMD_RETURN_ERROR;
-            }
-        } else {
-            pb = paste_get_name(CStr::from_ptr(bufname));
-            if pb.is_none() {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"no buffer ")?;
-                    write_cstr(out, bufname)
-                });
-                return CMD_RETURN_ERROR;
-            }
-        }
-        let pb = pb.expect("buffer lookup checked above");
-        let show_buffer = std::ptr::eq(
-            cmd_get_entry(self_0.get_unchecked()),
-            &cmd_show_buffer_entry,
-        );
-        if show_buffer {
-            if !(*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                let mut evb = evbuffer_new();
-                {
-                    let buffer = pb.borrow();
-                    let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-                    evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
-                }
-                cmdq_print_data(item_handle, &mut *evb);
-                return CMD_RETURN_NORMAL;
-            }
-        }
-        let expanded_path = (!show_buffer).then(|| {
-            format_single_from_target_cstring(
-                item_handle,
-                args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
-            )
+    if error != 0 as ::core::ffi::c_int {
+        cmdq_error(item_handle, |out| {
+            write_cstr(out, strerror(error))?;
+            out.write_all(b": ")?;
+            write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
         });
-        let dash_path = CStr::from_bytes_with_nul(b"-\0").unwrap();
-        let path: *const ::core::ffi::c_char = expanded_path
-            .as_ref()
-            .map_or(dash_path.as_ptr(), |path| path.as_ptr());
-        if args_has(args, 'a' as i32 as u_char) != 0 {
-            flags = O_APPEND;
-        } else {
-            flags = O_TRUNC;
-        }
-        let buffer = pb.borrow();
-        let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-        let waiting_item = std::rc::Rc::downgrade(item_handle);
-        file_write_with_cmdq_wait(
-            queue_client.as_ref(),
-            path,
-            flags,
-            bufdata.as_ptr().cast(),
-            bufdata.len(),
-            Some(Box::new(move |event| unsafe {
-                cmd_save_buffer_done(
-                    &waiting_item
-                        .upgrade()
-                        .expect("file wait retains command item"),
-                    event.path,
-                    event.error,
-                    event.closed as ::core::ffi::c_int,
-                )
-            })),
-            item_handle,
-        );
-        return CMD_RETURN_WAIT;
     }
+    cmdq_continue(item_handle);
+}
+unsafe fn cmd_save_buffer_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let queue_client = cmdq_get_client((item).as_ref());
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let c_owner = cmdq_get_client((item).as_ref());
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let pb;
+    let mut flags: ::core::ffi::c_int = 0;
+    let mut bufname: *const ::core::ffi::c_char = args_get(&*(args), 'b' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    if bufname.is_null() {
+        pb = paste_get_top(None);
+        if pb.is_none() {
+            cmdq_error(item_handle, |out| out.write_all(b"no buffers"));
+            return CMD_RETURN_ERROR;
+        }
+    } else {
+        pb = paste_get_name(CStr::from_ptr(bufname));
+        if pb.is_none() {
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"no buffer ")?;
+                write_cstr(out, bufname)
+            });
+            return CMD_RETURN_ERROR;
+        }
+    }
+    let pb = pb.expect("buffer lookup checked above");
+    let show_buffer = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_buffer_entry);
+    if show_buffer {
+        if !(*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+            let mut evb = evbuffer_new();
+            {
+                let buffer = pb.borrow();
+                let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
+                evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
+            }
+            cmdq_print_data(item_handle, &mut *evb);
+            return CMD_RETURN_NORMAL;
+        }
+    }
+    let expanded_path = (!show_buffer)
+        .then(|| format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr())));
+    let dash_path = CStr::from_bytes_with_nul(b"-\0").unwrap();
+    let path: *const ::core::ffi::c_char = expanded_path
+        .as_ref()
+        .map_or(dash_path.as_ptr(), |path| path.as_ptr());
+    if args_has(args, 'a' as i32 as u_char) != 0 {
+        flags = O_APPEND;
+    } else {
+        flags = O_TRUNC;
+    }
+    let buffer = pb.borrow();
+    let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
+    let waiting_item = std::rc::Rc::downgrade(item_handle);
+    file_write_with_cmdq_wait(
+        queue_client.as_ref(),
+        path,
+        flags,
+        bufdata.as_ptr().cast(),
+        bufdata.len(),
+        Some(Box::new(move |event| unsafe {
+            cmd_save_buffer_done(
+                &waiting_item.upgrade().expect("file wait retains command item"),
+                event.path,
+                event.error,
+                event.closed as ::core::ffi::c_int,
+            )
+        })),
+        item_handle,
+    );
+    return CMD_RETURN_WAIT;
 }

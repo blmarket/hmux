@@ -112,7 +112,7 @@ impl AttachedClient {
                         .iter()
                         .all(|part| output.windows(part.len()).any(|window| window == *part)) =>
                 {
-                    return output;
+                    return output
                 }
                 Err(error) if error.kind() == ErrorKind::WouldBlock => {}
                 result => panic!("reading attached client: {result:?}"),

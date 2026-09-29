@@ -1,7 +1,7 @@
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::shared::client::client;
 use hmux2::src::shared::tty::{
-    TERM_NOAM, TTY_BLOCK, TTY_NOBLOCK, tty, tty_command_data, tty_ctx, tty_term,
+    tty, tty_command_data, tty_ctx, tty_term, TERM_NOAM, TTY_BLOCK, TTY_NOBLOCK,
 };
 use hmux2::src::tty::{tty_cmd_rawstring, tty_putn, tty_repeat_space};
 

@@ -1,7 +1,7 @@
 use hmux2::src::shared::{pane::window_pane, window::window};
 use hmux2::src::window::{
-    window_pane_list_insert_back, window_pane_swap_order, window_pane_z_insert_back,
-    window_pane_z_swap_order,
+    window_pane_list_insert_back, window_pane_swap_order,
+    window_pane_z_insert_back, window_pane_z_swap_order,
 };
 use std::rc::Rc;
 

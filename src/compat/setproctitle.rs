@@ -4,28 +4,26 @@ use crate::src::shared::abi::*;
 
 pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
 pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
-    unsafe {
-        let mut title: [::core::ffi::c_char; 16] = [0; 16];
-        let mut name: [::core::ffi::c_char; 16] = [0; 16];
-        let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut used: ::core::ffi::c_int = 0;
-        let formatted = crate::src::format::bytes::format_message_with(write);
-        for (dst, &byte) in title[..15].iter_mut().zip(formatted.as_bytes()) {
-            *dst = byte as ::core::ffi::c_char;
-        }
-        used = snprintf(
-            &raw mut name as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-            getprogname(),
-            &raw mut title as *mut ::core::ffi::c_char,
-        );
-        if used >= ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as ::core::ffi::c_int {
-            cp = strrchr(&raw mut name as *mut ::core::ffi::c_char, ' ' as i32);
-            if !cp.is_null() {
-                *cp = '\0' as i32 as ::core::ffi::c_char;
-            }
-        }
-        prctl(PR_SET_NAME, &raw mut name as *mut ::core::ffi::c_char);
+    let mut title: [::core::ffi::c_char; 16] = [0; 16];
+    let mut name: [::core::ffi::c_char; 16] = [0; 16];
+    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut used: ::core::ffi::c_int = 0;
+    let formatted = crate::src::format::bytes::format_message_with(write);
+    for (dst, &byte) in title[..15].iter_mut().zip(formatted.as_bytes()) {
+        *dst = byte as ::core::ffi::c_char;
     }
+    used = snprintf(
+        &raw mut name as *mut ::core::ffi::c_char,
+        ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
+        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
+        getprogname(),
+        &raw mut title as *mut ::core::ffi::c_char,
+    );
+    if used >= ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as ::core::ffi::c_int {
+        cp = strrchr(&raw mut name as *mut ::core::ffi::c_char, ' ' as i32);
+        if !cp.is_null() {
+            *cp = '\0' as i32 as ::core::ffi::c_char;
+        }
+    }
+    prctl(PR_SET_NAME, &raw mut name as *mut ::core::ffi::c_char);
 }

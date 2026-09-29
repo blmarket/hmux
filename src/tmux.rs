@@ -36,13 +36,13 @@ use crate::src::shared::client::{
 };
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
+use crate::src::shared::options::{options, options_table_entry};
 use crate::src::shared::options::{
     OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
-use crate::src::shared::options::{options, options_table_entry};
 use crate::src::shared::posix_io::stat;
 use crate::src::shared::posix_io::{O_NONBLOCK, S_IRWXU, X_OK};
-use crate::src::shared::time::{CLOCK_REALTIME, timespec};
+use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::src::tty_features::tty_parse_features;
@@ -404,19 +404,17 @@ static mut global_s_options_owner: Option<Box<options>> = None;
 static mut global_w_options_owner: Option<Box<options>> = None;
 
 pub(crate) unsafe fn free_global_options() {
-    unsafe {
-        if let Some(owner) = (*(&raw mut global_options_owner)).take() {
-            crate::src::options::options_free(owner);
-            global_options = std::ptr::null_mut();
-        }
-        if let Some(owner) = (*(&raw mut global_s_options_owner)).take() {
-            crate::src::options::options_free(owner);
-            global_s_options = std::ptr::null_mut();
-        }
-        if let Some(owner) = (*(&raw mut global_w_options_owner)).take() {
-            crate::src::options::options_free(owner);
-            global_w_options = std::ptr::null_mut();
-        }
+    if let Some(owner) = (*(&raw mut global_options_owner)).take() {
+        crate::src::options::options_free(owner);
+        global_options = std::ptr::null_mut();
+    }
+    if let Some(owner) = (*(&raw mut global_s_options_owner)).take() {
+        crate::src::options::options_free(owner);
+        global_s_options = std::ptr::null_mut();
+    }
+    if let Some(owner) = (*(&raw mut global_w_options_owner)).take() {
+        crate::src::options::options_free(owner);
+        global_w_options = std::ptr::null_mut();
     }
 }
 
@@ -433,168 +431,154 @@ pub static mut ptm_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub static mut shell_command: *const ::core::ffi::c_char =
     ::core::ptr::null::<::core::ffi::c_char>();
 unsafe fn usage(mut status: ::core::ffi::c_int) -> ! {
-    unsafe {
-        fprintf(
+    fprintf(
         if status != 0 { stderr } else { stdout },
         b"usage: %s [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n\0"
             as *const u8 as *const ::core::ffi::c_char,
         getprogname(),
     );
-        exit(status);
-    }
+    exit(status);
 }
 unsafe fn getshell() -> *const ::core::ffi::c_char {
-    unsafe {
-        let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-        let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        shell = getenv(b"SHELL\0" as *const u8 as *const ::core::ffi::c_char);
-        if checkshell(shell) != 0 {
-            return shell;
-        }
-        pw = getpwuid(getuid());
-        if !pw.is_null() && checkshell((*pw).pw_shell) != 0 {
-            return (*pw).pw_shell;
-        }
-        return b"/bin/sh\0" as *const u8 as *const ::core::ffi::c_char;
+    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
+    let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    shell = getenv(b"SHELL\0" as *const u8 as *const ::core::ffi::c_char);
+    if checkshell(shell) != 0 {
+        return shell;
     }
+    pw = getpwuid(getuid());
+    if !pw.is_null() && checkshell((*pw).pw_shell) != 0 {
+        return (*pw).pw_shell;
+    }
+    return b"/bin/sh\0" as *const u8 as *const ::core::ffi::c_char;
 }
 pub unsafe fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    unsafe {
-        if shell.is_null() || *shell as ::core::ffi::c_int != '/' as i32 {
-            return 0 as ::core::ffi::c_int;
-        }
-        if areshell(shell) != 0 {
-            return 0 as ::core::ffi::c_int;
-        }
-        if access(shell, X_OK) != 0 as ::core::ffi::c_int {
-            return 0 as ::core::ffi::c_int;
-        }
-        return 1 as ::core::ffi::c_int;
-    }
-}
-unsafe fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    unsafe {
-        let mut progname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        ptr = strrchr(shell, '/' as i32);
-        if !ptr.is_null() {
-            ptr = ptr.offset(1);
-        } else {
-            ptr = shell;
-        }
-        progname = getprogname();
-        if *progname as ::core::ffi::c_int == '-' as i32 {
-            progname = progname.offset(1);
-        }
-        if strcmp(ptr, progname) == 0 as ::core::ffi::c_int {
-            return 1 as ::core::ffi::c_int;
-        }
+    if shell.is_null() || *shell as ::core::ffi::c_int != '/' as i32 {
         return 0 as ::core::ffi::c_int;
     }
+    if areshell(shell) != 0 {
+        return 0 as ::core::ffi::c_int;
+    }
+    if access(shell, X_OK) != 0 as ::core::ffi::c_int {
+        return 0 as ::core::ffi::c_int;
+    }
+    return 1 as ::core::ffi::c_int;
+}
+unsafe fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+    let mut progname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut ptr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    ptr = strrchr(shell, '/' as i32);
+    if !ptr.is_null() {
+        ptr = ptr.offset(1);
+    } else {
+        ptr = shell;
+    }
+    progname = getprogname();
+    if *progname as ::core::ffi::c_int == '-' as i32 {
+        progname = progname.offset(1);
+    }
+    if strcmp(ptr, progname) == 0 as ::core::ffi::c_int {
+        return 1 as ::core::ffi::c_int;
+    }
+    return 0 as ::core::ffi::c_int;
 }
 unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
-    unsafe {
-        let mut value: Option<&environ_entry> = None;
-        let path_bytes = path.to_bytes();
-        if path_bytes.starts_with(b"~/") {
-            let mut expanded = home?.to_bytes().to_vec();
-            expanded.extend_from_slice(&path_bytes[1..]);
-            return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
-        }
-        if path_bytes.first() == Some(&b'$') {
-            let slash = path_bytes.iter().position(|byte| *byte == b'/');
-            let name_end = slash.unwrap_or(path_bytes.len());
-            let name = CString::new(&path_bytes[1..name_end])
-                .expect("variable name comes from a C string");
-            value = environ_find(
-                global_environ.as_deref().expect("environment"),
-                name.as_ptr(),
-            );
-            if value.is_none() {
-                return None;
-            }
-            // On glibc, the previous `%s` rendered a cleared environment value
-            // as `(null)`. Keep that behavior if this entry has no value.
-            let mut expanded = if value.unwrap().value.is_none() {
-                b"(null)".to_vec()
-            } else {
-                (value.unwrap().value)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes()
-                    .to_vec()
-            };
-            if let Some(slash) = slash {
-                expanded.extend_from_slice(&path_bytes[slash..]);
-            }
-            return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
-        }
-        Some(path.to_owned())
+    let mut value: Option<&environ_entry> = None;
+    let path_bytes = path.to_bytes();
+    if path_bytes.starts_with(b"~/") {
+        let mut expanded = home?.to_bytes().to_vec();
+        expanded.extend_from_slice(&path_bytes[1..]);
+        return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
     }
+    if path_bytes.first() == Some(&b'$') {
+        let slash = path_bytes.iter().position(|byte| *byte == b'/');
+        let name_end = slash.unwrap_or(path_bytes.len());
+        let name =
+            CString::new(&path_bytes[1..name_end]).expect("variable name comes from a C string");
+        value = environ_find(
+            global_environ.as_deref().expect("environment"),
+            name.as_ptr(),
+        );
+        if value.is_none() {
+            return None;
+        }
+        // On glibc, the previous `%s` rendered a cleared environment value
+        // as `(null)`. Keep that behavior if this entry has no value.
+        let mut expanded = if value.unwrap().value.is_none() {
+            b"(null)".to_vec()
+        } else {
+            (value.unwrap().value).as_deref().expect("string is present")
+            .to_bytes()
+            .to_vec()
+        };
+        if let Some(slash) = slash {
+            expanded.extend_from_slice(&path_bytes[slash..]);
+        }
+        return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
+    }
+    Some(path.to_owned())
 }
 unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
-    unsafe {
-        let home = find_home_cstr();
-        let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
-        let mut paths = Vec::new();
-        // strsep rewrites separators in place; keep its borrowed token pointers
-        // backed by one stable, NUL-terminated allocation for the entire loop.
-        let mut copy = s.to_bytes_with_nul().to_vec();
-        tmp = copy.as_mut_ptr().cast();
-        loop {
-            next = strsep(
-                &raw mut tmp,
-                b":\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            if next.is_null() {
-                break;
-            }
-            if let Some(expanded) = expand_path(CStr::from_ptr(next), home) {
-                let path = if no_realpath {
-                    Some(expanded)
-                } else {
-                    let path = if realpath(
-                        expanded.as_ptr(),
-                        &raw mut resolved as *mut ::core::ffi::c_char,
-                    )
-                    .is_null()
-                    {
-                        log_debug(format_args!(
-                            "{}: realpath(\"{}\") failed: {}",
-                            "expand_paths",
-                            log_cstr((expanded.as_ptr()) as *const _),
-                            log_cstr((strerror(*__errno_location())) as *const _)
-                        ));
-                        None
-                    } else {
-                        Some(CStr::from_ptr(resolved.as_ptr()).to_owned())
-                    };
-                    drop(expanded);
-                    path
-                };
-                if let Some(path) = path {
-                    if paths.iter().any(|existing| existing == &path) {
-                        log_debug(format_args!(
-                            "{}: duplicate path: {}",
-                            "expand_paths",
-                            log_cstr((path.as_ptr()) as *const _)
-                        ));
-                    } else {
-                        paths.push(path);
-                    }
-                }
-            } else {
-                log_debug(format_args!(
-                    "{}: invalid path: {}",
-                    "expand_paths",
-                    log_cstr((next) as *const _)
-                ));
-            }
+    let home = find_home_cstr();
+    let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
+    let mut paths = Vec::new();
+    // strsep rewrites separators in place; keep its borrowed token pointers
+    // backed by one stable, NUL-terminated allocation for the entire loop.
+    let mut copy = s.to_bytes_with_nul().to_vec();
+    tmp = copy.as_mut_ptr().cast();
+    loop {
+        next = strsep(
+            &raw mut tmp,
+            b":\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        if next.is_null() {
+            break;
         }
-        paths
+        if let Some(expanded) = expand_path(CStr::from_ptr(next), home) {
+            let path = if no_realpath {
+                Some(expanded)
+            } else {
+                let path = if realpath(
+                    expanded.as_ptr(),
+                    &raw mut resolved as *mut ::core::ffi::c_char,
+                )
+                .is_null()
+                {
+                    log_debug(format_args!(
+                        "{}: realpath(\"{}\") failed: {}",
+                        "expand_paths",
+                        log_cstr((expanded.as_ptr()) as *const _),
+                        log_cstr((strerror(*__errno_location())) as *const _)
+                    ));
+                    None
+                } else {
+                    Some(CStr::from_ptr(resolved.as_ptr()).to_owned())
+                };
+                drop(expanded);
+                path
+            };
+            if let Some(path) = path {
+                if paths.iter().any(|existing| existing == &path) {
+                    log_debug(format_args!(
+                        "{}: duplicate path: {}",
+                        "expand_paths",
+                        log_cstr((path.as_ptr()) as *const _)
+                    ));
+                } else {
+                    paths.push(path);
+                }
+            }
+        } else {
+            log_debug(format_args!(
+                "{}: invalid path: {}",
+                "expand_paths",
+                log_cstr((next) as *const _)
+            ));
+        }
     }
+    paths
 }
 fn make_label_cause(parts: &[&[u8]]) -> CString {
     let mut bytes = Vec::new();
@@ -605,77 +589,75 @@ fn make_label_cause(parts: &[&[u8]]) -> CString {
 }
 
 unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
-    unsafe {
-        let mut sb: stat = stat {
-            st_dev: 0,
-            st_ino: 0,
-            st_nlink: 0,
-            st_mode: 0,
-            st_uid: 0,
-            st_gid: 0,
-            __pad0: 0,
-            st_rdev: 0,
-            st_size: 0,
-            st_blksize: 0,
-            st_blocks: 0,
-            st_atim: timespec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            },
-            st_mtim: timespec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            },
-            st_ctim: timespec {
-                tv_sec: 0,
-                tv_nsec: 0,
-            },
-            __glibc_reserved: [0; 3],
-        };
-        let mut uid: uid_t = 0;
-        uid = getuid() as uid_t;
-        let paths = expand_paths(c"$TMUX_TMPDIR:/tmp/", false);
-        if paths.is_empty() {
-            return Err(c"no suitable socket path".to_owned());
-        }
-        let mut base_bytes = paths[0].to_bytes().to_vec();
-        base_bytes.extend_from_slice(b"/tmux-");
-        base_bytes.extend_from_slice((uid as ::core::ffi::c_long).to_string().as_bytes());
-        let base = CString::new(base_bytes).expect("socket base contains no NUL");
-        if mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int
-            && *__errno_location() != EEXIST
-        {
-            let error = CStr::from_ptr(strerror(*__errno_location()));
-            return Err(make_label_cause(&[
-                b"couldn't create directory ",
-                base.to_bytes(),
-                b" (",
-                error.to_bytes(),
-                b")",
-            ]));
-        } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
-            let error = CStr::from_ptr(strerror(*__errno_location()));
-            return Err(make_label_cause(&[
-                b"couldn't read directory ",
-                base.to_bytes(),
-                b" (",
-                error.to_bytes(),
-                b")",
-            ]));
-        } else if !(sb.st_mode & __S_IFMT as __mode_t == 0o40000 as __mode_t) {
-            return Err(make_label_cause(&[base.to_bytes(), b" is not a directory"]));
-        } else if sb.st_uid != uid || sb.st_mode & TMUX_SOCK_PERM as __mode_t != 0 as __mode_t {
-            return Err(make_label_cause(&[
-                b"directory ",
-                base.to_bytes(),
-                b" has unsafe permissions",
-            ]));
-        } else {
-            let mut path = base.into_bytes();
-            path.push(b'/');
-            path.extend_from_slice(label.unwrap_or(c"default").to_bytes());
-            return Ok(CString::new(path).expect("socket label path contains no NUL"));
-        }
+    let mut sb: stat = stat {
+        st_dev: 0,
+        st_ino: 0,
+        st_nlink: 0,
+        st_mode: 0,
+        st_uid: 0,
+        st_gid: 0,
+        __pad0: 0,
+        st_rdev: 0,
+        st_size: 0,
+        st_blksize: 0,
+        st_blocks: 0,
+        st_atim: timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        },
+        st_mtim: timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        },
+        st_ctim: timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        },
+        __glibc_reserved: [0; 3],
+    };
+    let mut uid: uid_t = 0;
+    uid = getuid() as uid_t;
+    let paths = expand_paths(c"$TMUX_TMPDIR:/tmp/", false);
+    if paths.is_empty() {
+        return Err(c"no suitable socket path".to_owned());
+    }
+    let mut base_bytes = paths[0].to_bytes().to_vec();
+    base_bytes.extend_from_slice(b"/tmux-");
+    base_bytes.extend_from_slice((uid as ::core::ffi::c_long).to_string().as_bytes());
+    let base = CString::new(base_bytes).expect("socket base contains no NUL");
+    if mkdir(base.as_ptr(), S_IRWXU as __mode_t) != 0 as ::core::ffi::c_int
+        && *__errno_location() != EEXIST
+    {
+        let error = CStr::from_ptr(strerror(*__errno_location()));
+        return Err(make_label_cause(&[
+            b"couldn't create directory ",
+            base.to_bytes(),
+            b" (",
+            error.to_bytes(),
+            b")",
+        ]));
+    } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
+        let error = CStr::from_ptr(strerror(*__errno_location()));
+        return Err(make_label_cause(&[
+            b"couldn't read directory ",
+            base.to_bytes(),
+            b" (",
+            error.to_bytes(),
+            b")",
+        ]));
+    } else if !(sb.st_mode & __S_IFMT as __mode_t == 0o40000 as __mode_t) {
+        return Err(make_label_cause(&[base.to_bytes(), b" is not a directory"]));
+    } else if sb.st_uid != uid || sb.st_mode & TMUX_SOCK_PERM as __mode_t != 0 as __mode_t {
+        return Err(make_label_cause(&[
+            b"directory ",
+            base.to_bytes(),
+            b" has unsafe permissions",
+        ]));
+    } else {
+        let mut path = base.into_bytes();
+        path.push(b'/');
+        path.extend_from_slice(label.unwrap_or(c"default").to_bytes());
+        return Ok(CString::new(path).expect("socket label path contains no NUL"));
     }
 }
 pub(crate) unsafe fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
@@ -692,35 +674,31 @@ pub(crate) unsafe fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CStrin
     CString::new(argv0).expect("shell path contains no NUL")
 }
 pub unsafe fn setblocking(mut fd: ::core::ffi::c_int, mut state: ::core::ffi::c_int) {
-    unsafe {
-        let mut mode: ::core::ffi::c_int = 0;
-        mode = fcntl(fd, F_GETFL);
-        if mode != -(1 as ::core::ffi::c_int) {
-            if state == 0 {
-                mode |= O_NONBLOCK;
-            } else {
-                mode &= !O_NONBLOCK;
-            }
-            fcntl(fd, F_SETFL, mode);
+    let mut mode: ::core::ffi::c_int = 0;
+    mode = fcntl(fd, F_GETFL);
+    if mode != -(1 as ::core::ffi::c_int) {
+        if state == 0 {
+            mode |= O_NONBLOCK;
+        } else {
+            mode &= !O_NONBLOCK;
         }
+        fcntl(fd, F_SETFL, mode);
     }
 }
 pub unsafe fn get_timer() -> uint64_t {
-    unsafe {
-        let mut ts: timespec = timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
-        if clock_gettime(CLOCK_MONOTONIC, &raw mut ts) != 0 as ::core::ffi::c_int {
-            clock_gettime(CLOCK_REALTIME, &raw mut ts);
-        }
-        return (ts.tv_sec as ::core::ffi::c_ulonglong)
-            .wrapping_mul(1000 as ::core::ffi::c_ulonglong)
-            .wrapping_add(
-                (ts.tv_nsec as ::core::ffi::c_ulonglong)
-                    .wrapping_div(1000000 as ::core::ffi::c_ulonglong),
-            ) as uint64_t;
+    let mut ts: timespec = timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    if clock_gettime(CLOCK_MONOTONIC, &raw mut ts) != 0 as ::core::ffi::c_int {
+        clock_gettime(CLOCK_REALTIME, &raw mut ts);
     }
+    return (ts.tv_sec as ::core::ffi::c_ulonglong)
+        .wrapping_mul(1000 as ::core::ffi::c_ulonglong)
+        .wrapping_add(
+            (ts.tv_nsec as ::core::ffi::c_ulonglong)
+                .wrapping_div(1000000 as ::core::ffi::c_ulonglong),
+        ) as uint64_t;
 }
 /// Escape a validated name once before moving it into its Rust owner.
 pub fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> Option<CString> {
@@ -744,369 +722,360 @@ pub fn check_name(name: &CStr) -> bool {
     utf8_isvalid(name)
 }
 pub unsafe fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    unsafe {
-        static mut s: [::core::ffi::c_char; 11] = [0; 11];
-        xformat(&mut *(&raw mut s), format_args!("{}", signo as i32));
-        return &raw mut s as *mut ::core::ffi::c_char;
-    }
+    static mut s: [::core::ffi::c_char; 11] = [0; 11];
+    xformat(&mut *(&raw mut s), format_args!("{}", signo as i32));
+    return &raw mut s as *mut ::core::ffi::c_char;
 }
 pub unsafe fn find_cwd() -> *const ::core::ffi::c_char {
-    unsafe {
-        let mut resolved1: [::core::ffi::c_char; 4096] = [0; 4096];
-        let mut resolved2: [::core::ffi::c_char; 4096] = [0; 4096];
-        static mut cwd: [::core::ffi::c_char; 4096] = [0; 4096];
-        let mut pwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        if getcwd(
-            &raw mut cwd as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 4096]>() as size_t,
-        )
-        .is_null()
-        {
-            return ::core::ptr::null::<::core::ffi::c_char>();
-        }
-        pwd = getenv(b"PWD\0" as *const u8 as *const ::core::ffi::c_char);
-        if pwd.is_null() || *pwd as ::core::ffi::c_int == '\0' as i32 {
-            return &raw mut cwd as *mut ::core::ffi::c_char;
-        }
-        if realpath(pwd, &raw mut resolved1 as *mut ::core::ffi::c_char).is_null() {
-            return &raw mut cwd as *mut ::core::ffi::c_char;
-        }
-        if realpath(
-            &raw mut cwd as *mut ::core::ffi::c_char,
-            &raw mut resolved2 as *mut ::core::ffi::c_char,
-        )
-        .is_null()
-        {
-            return &raw mut cwd as *mut ::core::ffi::c_char;
-        }
-        if strcmp(
-            &raw mut resolved1 as *mut ::core::ffi::c_char,
-            &raw mut resolved2 as *mut ::core::ffi::c_char,
-        ) != 0 as ::core::ffi::c_int
-        {
-            return &raw mut cwd as *mut ::core::ffi::c_char;
-        }
-        return pwd;
+    let mut resolved1: [::core::ffi::c_char; 4096] = [0; 4096];
+    let mut resolved2: [::core::ffi::c_char; 4096] = [0; 4096];
+    static mut cwd: [::core::ffi::c_char; 4096] = [0; 4096];
+    let mut pwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    if getcwd(
+        &raw mut cwd as *mut ::core::ffi::c_char,
+        ::core::mem::size_of::<[::core::ffi::c_char; 4096]>() as size_t,
+    )
+    .is_null()
+    {
+        return ::core::ptr::null::<::core::ffi::c_char>();
     }
+    pwd = getenv(b"PWD\0" as *const u8 as *const ::core::ffi::c_char);
+    if pwd.is_null() || *pwd as ::core::ffi::c_int == '\0' as i32 {
+        return &raw mut cwd as *mut ::core::ffi::c_char;
+    }
+    if realpath(pwd, &raw mut resolved1 as *mut ::core::ffi::c_char).is_null() {
+        return &raw mut cwd as *mut ::core::ffi::c_char;
+    }
+    if realpath(
+        &raw mut cwd as *mut ::core::ffi::c_char,
+        &raw mut resolved2 as *mut ::core::ffi::c_char,
+    )
+    .is_null()
+    {
+        return &raw mut cwd as *mut ::core::ffi::c_char;
+    }
+    if strcmp(
+        &raw mut resolved1 as *mut ::core::ffi::c_char,
+        &raw mut resolved2 as *mut ::core::ffi::c_char,
+    ) != 0 as ::core::ffi::c_int
+    {
+        return &raw mut cwd as *mut ::core::ffi::c_char;
+    }
+    return pwd;
 }
 /// Return the cached home directory as a borrowed C string. A missing result
 /// is retried on the next call, matching the old null-sentinel cache behavior.
 pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
-    unsafe {
-        let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-        static HOME: OnceLock<CString> = OnceLock::new();
-        if let Some(home) = HOME.get() {
-            return Some(home.as_c_str());
-        }
-        let mut home = getenv(b"HOME\0" as *const u8 as *const ::core::ffi::c_char);
-        if home.is_null() || *home as ::core::ffi::c_int == '\0' as i32 {
-            pw = getpwuid(getuid());
-            if !pw.is_null() {
-                home = (*pw).pw_dir;
-            } else {
-                return None;
-            }
-        }
-        let owned = CStr::from_ptr(home).to_owned();
-        let _ = HOME.set(owned);
-        HOME.get().map(CString::as_c_str)
+    let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
+    static HOME: OnceLock<CString> = OnceLock::new();
+    if let Some(home) = HOME.get() {
+        return Some(home.as_c_str());
     }
+    let mut home = getenv(b"HOME\0" as *const u8 as *const ::core::ffi::c_char);
+    if home.is_null() || *home as ::core::ffi::c_int == '\0' as i32 {
+        pw = getpwuid(getuid());
+        if !pw.is_null() {
+            home = (*pw).pw_dir;
+        } else {
+            return None;
+        }
+    }
+    let owned = CStr::from_ptr(home).to_owned();
+    let _ = HOME.set(owned);
+    HOME.get().map(CString::as_c_str)
 }
 
 pub unsafe fn getversion() -> *const ::core::ffi::c_char {
     return b"next-3.9\0" as *const u8 as *const ::core::ffi::c_char;
 }
 unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
-    unsafe {
-        let mut argc = ::core::ffi::c_int::try_from(args.len()).expect("argv length exceeds c_int");
-        let mut argv_view: Vec<_> = args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
-        argv_view.push(::core::ptr::null_mut());
-        let mut argv = argv_view.as_mut_ptr();
-        let mut path: Option<CString> = None;
-        // BSDoptarg points into argv, which main keeps alive through main_0.
-        let mut label: Option<&CStr> = None;
-        let mut var: *mut *mut ::core::ffi::c_char =
-            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-        let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut opt: ::core::ffi::c_int = 0;
-        let mut keys: ::core::ffi::c_int = 0;
-        let mut feat: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut fflag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut flags: uint64_t = 0 as uint64_t;
-        let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-        if setlocale(
+    let mut argc = ::core::ffi::c_int::try_from(args.len()).expect("argv length exceeds c_int");
+    let mut argv_view: Vec<_> = args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
+    argv_view.push(::core::ptr::null_mut());
+    let mut argv = argv_view.as_mut_ptr();
+    let mut path: Option<CString> = None;
+    // BSDoptarg points into argv, which main keeps alive through main_0.
+    let mut label: Option<&CStr> = None;
+    let mut var: *mut *mut ::core::ffi::c_char =
+        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
+    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut opt: ::core::ffi::c_int = 0;
+    let mut keys: ::core::ffi::c_int = 0;
+    let mut feat: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut fflag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+    let mut flags: uint64_t = 0 as uint64_t;
+    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
+    if setlocale(
+        LC_CTYPE,
+        b"en_US.UTF-8\0" as *const u8 as *const ::core::ffi::c_char,
+    )
+    .is_null()
+        && setlocale(
             LC_CTYPE,
-            b"en_US.UTF-8\0" as *const u8 as *const ::core::ffi::c_char,
+            b"C.UTF-8\0" as *const u8 as *const ::core::ffi::c_char,
         )
         .is_null()
-            && setlocale(
-                LC_CTYPE,
-                b"C.UTF-8\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-            .is_null()
-        {
-            if setlocale(LC_CTYPE, b"\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
-                errx(
-                    1 as ::core::ffi::c_int,
-                    b"invalid LC_ALL, LC_CTYPE or LANG\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                );
-            }
-            s = nl_langinfo(CODESET as ::core::ffi::c_int as nl_item);
-            if strcasecmp(s, b"UTF-8\0" as *const u8 as *const ::core::ffi::c_char)
+    {
+        if setlocale(LC_CTYPE, b"\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+            errx(
+                1 as ::core::ffi::c_int,
+                b"invalid LC_ALL, LC_CTYPE or LANG\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+        }
+        s = nl_langinfo(CODESET as ::core::ffi::c_int as nl_item);
+        if strcasecmp(s, b"UTF-8\0" as *const u8 as *const ::core::ffi::c_char)
+            != 0 as ::core::ffi::c_int
+            && strcasecmp(s, b"UTF8\0" as *const u8 as *const ::core::ffi::c_char)
                 != 0 as ::core::ffi::c_int
-                && strcasecmp(s, b"UTF8\0" as *const u8 as *const ::core::ffi::c_char)
-                    != 0 as ::core::ffi::c_int
-            {
-                errx(
-                    1 as ::core::ffi::c_int,
-                    b"need UTF-8 locale (LC_CTYPE) but have %s\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                    s,
+        {
+            errx(
+                1 as ::core::ffi::c_int,
+                b"need UTF-8 locale (LC_CTYPE) but have %s\0" as *const u8
+                    as *const ::core::ffi::c_char,
+                s,
+            );
+        }
+    }
+    setlocale(LC_TIME, b"\0" as *const u8 as *const ::core::ffi::c_char);
+    tzset();
+    if args.first().and_then(|arg| arg.as_bytes().first()) == Some(&b'-') {
+        flags = CLIENT_LOGIN as uint64_t;
+    }
+    global_environ = Some(environ_create());
+    var = environ;
+    while !(*var).is_null() {
+        environ_put(
+            global_environ.as_deref_mut().expect("environment"),
+            *var,
+            0 as ::core::ffi::c_int,
+        );
+        var = var.offset(1);
+    }
+    cwd = find_cwd();
+    if !cwd.is_null() {
+        environ_set(
+            global_environ.as_deref_mut().expect("environment"),
+            b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
+            0 as ::core::ffi::c_int,
+            |out| write_cstr(out, cwd),
+        );
+    }
+    let mut config_paths = expand_paths(CStr::from_ptr(TMUX_CONF.as_ptr()), true);
+    loop {
+        opt = BSDgetopt(
+            argc,
+            argv,
+            b"2c:CDdf:hlL:NqS:T:uUvV\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        if !(opt != -(1 as ::core::ffi::c_int)) {
+            break;
+        }
+        match opt {
+            50 => {
+                tty_parse_features(
+                    b"256\0" as *const u8 as *const ::core::ffi::c_char,
+                    b":,\0" as *const u8 as *const ::core::ffi::c_char,
+                    &raw mut feat,
+                    ::core::ptr::null_mut::<::core::ffi::c_int>(),
                 );
             }
-        }
-        setlocale(LC_TIME, b"\0" as *const u8 as *const ::core::ffi::c_char);
-        tzset();
-        if args.first().and_then(|arg| arg.as_bytes().first()) == Some(&b'-') {
-            flags = CLIENT_LOGIN as uint64_t;
-        }
-        global_environ = Some(environ_create());
-        var = environ;
-        while !(*var).is_null() {
-            environ_put(
-                global_environ.as_deref_mut().expect("environment"),
-                *var,
-                0 as ::core::ffi::c_int,
-            );
-            var = var.offset(1);
-        }
-        cwd = find_cwd();
-        if !cwd.is_null() {
-            environ_set(
-                global_environ.as_deref_mut().expect("environment"),
-                b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-                |out| write_cstr(out, cwd),
-            );
-        }
-        let mut config_paths = expand_paths(CStr::from_ptr(TMUX_CONF.as_ptr()), true);
-        loop {
-            opt = BSDgetopt(
-                argc,
-                argv,
-                b"2c:CDdf:hlL:NqS:T:uUvV\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            if !(opt != -(1 as ::core::ffi::c_int)) {
-                break;
+            99 => {
+                shell_command = BSDoptarg;
             }
-            match opt {
-                50 => {
-                    tty_parse_features(
-                        b"256\0" as *const u8 as *const ::core::ffi::c_char,
-                        b":,\0" as *const u8 as *const ::core::ffi::c_char,
-                        &raw mut feat,
-                        ::core::ptr::null_mut::<::core::ffi::c_int>(),
-                    );
-                }
-                99 => {
-                    shell_command = BSDoptarg;
-                }
-                68 => {
-                    flags |= CLIENT_NOFORK as uint64_t;
-                }
-                67 => {
-                    if flags & CLIENT_CONTROL as uint64_t != 0 {
-                        flags |= CLIENT_CONTROLCONTROL as uint64_t;
-                    } else {
-                        flags |= CLIENT_CONTROL as uint64_t;
-                    }
-                }
-                102 => {
-                    if fflag == 0 {
-                        fflag = 1 as ::core::ffi::c_int;
-                        config_paths.clear();
-                    }
-                    config_paths.push(CStr::from_ptr(BSDoptarg).to_owned());
-                    cfg_quiet = 0 as ::core::ffi::c_int;
-                }
-                104 => {
-                    usage(0 as ::core::ffi::c_int);
-                }
-                86 => {
-                    printf(
-                        b"tmux %s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                        getversion(),
-                    );
-                    exit(0 as ::core::ffi::c_int);
-                }
-                108 => {
-                    flags |= CLIENT_LOGIN as uint64_t;
-                }
-                76 => {
-                    label = Some(CStr::from_ptr(BSDoptarg));
-                }
-                78 => {
-                    flags |= CLIENT_NOSTARTSERVER as uint64_t;
-                }
-                113 => {}
-                83 => {
-                    path = Some(CStr::from_ptr(BSDoptarg).to_owned());
-                }
-                84 => {
-                    tty_parse_features(
-                        BSDoptarg,
-                        b":,\0" as *const u8 as *const ::core::ffi::c_char,
-                        &raw mut feat,
-                        ::core::ptr::null_mut::<::core::ffi::c_int>(),
-                    );
-                }
-                117 => {
-                    flags |= CLIENT_UTF8 as uint64_t;
-                }
-                118 => {
-                    log_add_level();
-                }
-                _ => {
-                    usage(1 as ::core::ffi::c_int);
+            68 => {
+                flags |= CLIENT_NOFORK as uint64_t;
+            }
+            67 => {
+                if flags & CLIENT_CONTROL as uint64_t != 0 {
+                    flags |= CLIENT_CONTROLCONTROL as uint64_t;
+                } else {
+                    flags |= CLIENT_CONTROL as uint64_t;
                 }
             }
-        }
-        cfg_set_files(config_paths);
-        argc -= BSDoptind;
-        argv = argv.offset(BSDoptind as isize);
-        if !shell_command.is_null() && argc != 0 as ::core::ffi::c_int {
-            usage(1 as ::core::ffi::c_int);
-        }
-        if flags & CLIENT_NOFORK as uint64_t != 0 && argc != 0 as ::core::ffi::c_int {
-            usage(1 as ::core::ffi::c_int);
-        }
-        ptm_fd = getptmfd();
-        if ptm_fd == -(1 as ::core::ffi::c_int) {
-            err(
-                1 as ::core::ffi::c_int,
-                b"getptmfd\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-        }
-        if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-            err(
-                1 as ::core::ffi::c_int,
-                b"pledge\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-        }
-        if !getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
-            flags |= CLIENT_UTF8 as uint64_t;
-        } else {
-            s = getenv(b"LC_ALL\0" as *const u8 as *const ::core::ffi::c_char);
-            if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-                s = getenv(b"LC_CTYPE\0" as *const u8 as *const ::core::ffi::c_char);
+            102 => {
+                if fflag == 0 {
+                    fflag = 1 as ::core::ffi::c_int;
+                    config_paths.clear();
+                }
+                config_paths.push(CStr::from_ptr(BSDoptarg).to_owned());
+                cfg_quiet = 0 as ::core::ffi::c_int;
             }
-            if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-                s = getenv(b"LANG\0" as *const u8 as *const ::core::ffi::c_char);
+            104 => {
+                usage(0 as ::core::ffi::c_int);
             }
-            if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-                s = b"\0" as *const u8 as *const ::core::ffi::c_char;
+            86 => {
+                printf(
+                    b"tmux %s\n\0" as *const u8 as *const ::core::ffi::c_char,
+                    getversion(),
+                );
+                exit(0 as ::core::ffi::c_int);
             }
-            if !strcasestr(s, b"UTF-8\0" as *const u8 as *const ::core::ffi::c_char).is_null()
-                || !strcasestr(s, b"UTF8\0" as *const u8 as *const ::core::ffi::c_char).is_null()
-            {
+            108 => {
+                flags |= CLIENT_LOGIN as uint64_t;
+            }
+            76 => {
+                label = Some(CStr::from_ptr(BSDoptarg));
+            }
+            78 => {
+                flags |= CLIENT_NOSTARTSERVER as uint64_t;
+            }
+            113 => {}
+            83 => {
+                path = Some(CStr::from_ptr(BSDoptarg).to_owned());
+            }
+            84 => {
+                tty_parse_features(
+                    BSDoptarg,
+                    b":,\0" as *const u8 as *const ::core::ffi::c_char,
+                    &raw mut feat,
+                    ::core::ptr::null_mut::<::core::ffi::c_int>(),
+                );
+            }
+            117 => {
                 flags |= CLIENT_UTF8 as uint64_t;
             }
-        }
-        global_options_owner = Some(options_create(std::ptr::null_mut()));
-        global_options = (*(&raw mut global_options_owner)).as_deref_mut().unwrap();
-        global_s_options_owner = Some(options_create(std::ptr::null_mut()));
-        global_s_options = (*(&raw mut global_s_options_owner)).as_deref_mut().unwrap();
-        global_w_options_owner = Some(options_create(std::ptr::null_mut()));
-        global_w_options = (*(&raw mut global_w_options_owner)).as_deref_mut().unwrap();
-        oe = &raw const options_table as *const options_table_entry;
-        while !(*oe).name_ptr().is_null() {
-            if (*oe).scope & OPTIONS_TABLE_SERVER != 0 {
-                options_default(global_options, oe);
+            118 => {
+                log_add_level();
             }
-            if (*oe).scope & OPTIONS_TABLE_SESSION != 0 {
-                options_default(global_s_options, oe);
-            }
-            if (*oe).scope & OPTIONS_TABLE_WINDOW != 0 {
-                options_default(global_w_options, oe);
-            }
-            oe = oe.offset(1);
-        }
-        options_set_string(
-            global_s_options,
-            b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, getshell()),
-        );
-        s = getenv(b"VISUAL\0" as *const u8 as *const ::core::ffi::c_char);
-        if !s.is_null() || {
-            s = getenv(b"EDITOR\0" as *const u8 as *const ::core::ffi::c_char);
-            !s.is_null()
-        } {
-            options_set_string(
-                global_options,
-                b"editor\0" as *const u8 as *const ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-                |out| write_cstr(out, s),
-            );
-            if !strrchr(s, '/' as i32).is_null() {
-                s = strrchr(s, '/' as i32).offset(1 as ::core::ffi::c_int as isize);
-            }
-            if !strstr(s, b"vi\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
-                keys = MODEKEY_VI;
-            } else {
-                keys = MODEKEY_EMACS;
-            }
-            options_set_number(
-                global_s_options,
-                b"status-keys\0" as *const u8 as *const ::core::ffi::c_char,
-                keys as ::core::ffi::c_longlong,
-            );
-            options_set_number(
-                global_w_options,
-                b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
-                keys as ::core::ffi::c_longlong,
-            );
-        }
-        if path.is_none() && label.is_none() {
-            s = getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char);
-            if !s.is_null()
-                && *s as ::core::ffi::c_int != '\0' as i32
-                && *s as ::core::ffi::c_int != ',' as i32
-            {
-                let tmux = CStr::from_ptr(s).to_bytes();
-                let end = tmux
-                    .iter()
-                    .position(|byte| *byte == b',')
-                    .unwrap_or(tmux.len());
-                path = Some(CString::new(&tmux[..end]).expect("TMUX socket path contains no NUL"));
+            _ => {
+                usage(1 as ::core::ffi::c_int);
             }
         }
-        if path.is_none() {
-            path = Some(match make_label(label.as_deref()) {
-                Ok(path) => path,
-                Err(cause) => {
-                    fprintf(
-                        stderr,
-                        b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause.as_ptr(),
-                    );
-                    drop(cause);
-                    exit(1 as ::core::ffi::c_int);
-                }
-            });
-            flags |= CLIENT_DEFAULTSOCKET as uint64_t;
-        }
-        // The global pointer borrows this owner through client_main, including
-        // the server fork. Systemd activation may replace the global separately.
-        socket_path = path.as_ref().expect("socket path was selected").as_ptr();
-        let command_argv: Vec<CString> = (0..argc)
-            .map(|i| CStr::from_ptr(*argv.add(i as usize)).to_owned())
-            .collect();
-        osdep_event_init();
-        exit(client_main(&command_argv, flags, feat));
     }
+    cfg_set_files(config_paths);
+    argc -= BSDoptind;
+    argv = argv.offset(BSDoptind as isize);
+    if !shell_command.is_null() && argc != 0 as ::core::ffi::c_int {
+        usage(1 as ::core::ffi::c_int);
+    }
+    if flags & CLIENT_NOFORK as uint64_t != 0 && argc != 0 as ::core::ffi::c_int {
+        usage(1 as ::core::ffi::c_int);
+    }
+    ptm_fd = getptmfd();
+    if ptm_fd == -(1 as ::core::ffi::c_int) {
+        err(
+            1 as ::core::ffi::c_int,
+            b"getptmfd\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+    }
+    if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
+        err(
+            1 as ::core::ffi::c_int,
+            b"pledge\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+    }
+    if !getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+        flags |= CLIENT_UTF8 as uint64_t;
+    } else {
+        s = getenv(b"LC_ALL\0" as *const u8 as *const ::core::ffi::c_char);
+        if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
+            s = getenv(b"LC_CTYPE\0" as *const u8 as *const ::core::ffi::c_char);
+        }
+        if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
+            s = getenv(b"LANG\0" as *const u8 as *const ::core::ffi::c_char);
+        }
+        if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
+            s = b"\0" as *const u8 as *const ::core::ffi::c_char;
+        }
+        if !strcasestr(s, b"UTF-8\0" as *const u8 as *const ::core::ffi::c_char).is_null()
+            || !strcasestr(s, b"UTF8\0" as *const u8 as *const ::core::ffi::c_char).is_null()
+        {
+            flags |= CLIENT_UTF8 as uint64_t;
+        }
+    }
+    global_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_options = (*(&raw mut global_options_owner)).as_deref_mut().unwrap();
+    global_s_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_s_options = (*(&raw mut global_s_options_owner)).as_deref_mut().unwrap();
+    global_w_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_w_options = (*(&raw mut global_w_options_owner)).as_deref_mut().unwrap();
+    oe = &raw const options_table as *const options_table_entry;
+    while !(*oe).name_ptr().is_null() {
+        if (*oe).scope & OPTIONS_TABLE_SERVER != 0 {
+            options_default(global_options, oe);
+        }
+        if (*oe).scope & OPTIONS_TABLE_SESSION != 0 {
+            options_default(global_s_options, oe);
+        }
+        if (*oe).scope & OPTIONS_TABLE_WINDOW != 0 {
+            options_default(global_w_options, oe);
+        }
+        oe = oe.offset(1);
+    }
+    options_set_string(
+        global_s_options,
+        b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
+        0 as ::core::ffi::c_int,
+        |out| write_cstr(out, getshell()),
+    );
+    s = getenv(b"VISUAL\0" as *const u8 as *const ::core::ffi::c_char);
+    if !s.is_null() || {
+        s = getenv(b"EDITOR\0" as *const u8 as *const ::core::ffi::c_char);
+        !s.is_null()
+    } {
+        options_set_string(
+            global_options,
+            b"editor\0" as *const u8 as *const ::core::ffi::c_char,
+            0 as ::core::ffi::c_int,
+            |out| write_cstr(out, s),
+        );
+        if !strrchr(s, '/' as i32).is_null() {
+            s = strrchr(s, '/' as i32).offset(1 as ::core::ffi::c_int as isize);
+        }
+        if !strstr(s, b"vi\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+            keys = MODEKEY_VI;
+        } else {
+            keys = MODEKEY_EMACS;
+        }
+        options_set_number(
+            global_s_options,
+            b"status-keys\0" as *const u8 as *const ::core::ffi::c_char,
+            keys as ::core::ffi::c_longlong,
+        );
+        options_set_number(
+            global_w_options,
+            b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
+            keys as ::core::ffi::c_longlong,
+        );
+    }
+    if path.is_none() && label.is_none() {
+        s = getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char);
+        if !s.is_null()
+            && *s as ::core::ffi::c_int != '\0' as i32
+            && *s as ::core::ffi::c_int != ',' as i32
+        {
+            let tmux = CStr::from_ptr(s).to_bytes();
+            let end = tmux
+                .iter()
+                .position(|byte| *byte == b',')
+                .unwrap_or(tmux.len());
+            path = Some(CString::new(&tmux[..end]).expect("TMUX socket path contains no NUL"));
+        }
+    }
+    if path.is_none() {
+        path = Some(match make_label(label.as_deref()) {
+            Ok(path) => path,
+            Err(cause) => {
+                fprintf(
+                    stderr,
+                    b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
+                    cause.as_ptr(),
+                );
+                drop(cause);
+                exit(1 as ::core::ffi::c_int);
+            }
+        });
+        flags |= CLIENT_DEFAULTSOCKET as uint64_t;
+    }
+    // The global pointer borrows this owner through client_main, including
+    // the server fork. Systemd activation may replace the global separately.
+    socket_path = path.as_ref().expect("socket path was selected").as_ptr();
+    let command_argv: Vec<CString> = (0..argc)
+        .map(|i| CStr::from_ptr(*argv.add(i as usize)).to_owned())
+        .collect();
+    osdep_event_init();
+    exit(client_main(&command_argv, flags, feat));
 }
 pub const TMUX_CONF: [::core::ffi::c_char; 85] = unsafe {
     ::core::mem::transmute::<[u8; 85], [::core::ffi::c_char; 85]>(

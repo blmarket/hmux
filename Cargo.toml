@@ -10,7 +10,7 @@ name = "hmux2"
 authors = ["C2Rust"]
 version = "0.0.0"
 publish = false
-edition = "2024"
+edition = "2021"
 autobins = false
 
 [lib]

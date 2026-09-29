@@ -1,6 +1,6 @@
 use hmux2::src::shared::borders::{CELL_LR, CELL_RD};
-use hmux2::src::shared::client::{CLIENT_UTF8, client};
-use hmux2::src::shared::tty::{TTYC_U8, tty, tty_code, tty_term};
+use hmux2::src::shared::client::{client, CLIENT_UTF8};
+use hmux2::src::shared::tty::{tty, tty_code, tty_term, TTYC_U8};
 use hmux2::src::tty_acs::{
     tty_acs_double_borders, tty_acs_get, tty_acs_heavy_borders, tty_acs_needed,
     tty_acs_reverse_get, tty_acs_rounded_borders,
@@ -30,8 +30,7 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
             (true, Some(0), true),
         ] {
             client.flags = if utf8 { CLIENT_UTF8 as u64 } else { 0 };
-            terminal.term.as_deref_mut().unwrap().codes[TTYC_U8 as usize] =
-                u8_cap.map_or(tty_code::None, tty_code::Number);
+            terminal.term.as_deref_mut().unwrap().codes[TTYC_U8 as usize] = u8_cap.map_or(tty_code::None, tty_code::Number);
             assert_eq!(tty_acs_needed(Some(&terminal)) != 0, legacy);
             let mapped = tty_acs_get(Some(&terminal), b'q').unwrap();
             assert_eq!(
@@ -43,10 +42,7 @@ fn terminal_capabilities_choose_unicode_or_inline_legacy_mappings() {
                 }
             );
             if legacy {
-                assert_eq!(
-                    mapped.to_bytes().as_ptr(),
-                    terminal.term.as_deref().unwrap().acs[b'q' as usize].as_ptr()
-                );
+                assert_eq!(mapped.to_bytes().as_ptr(), terminal.term.as_deref().unwrap().acs[b'q' as usize].as_ptr());
             }
             assert!(tty_acs_get(Some(&terminal), b'A').is_none());
         }

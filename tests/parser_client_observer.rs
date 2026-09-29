@@ -1,7 +1,7 @@
 use hmux2::src::cmd::{cmd_list_print, parse::cmd_parse_from_string};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::shared::client::client;
-use hmux2::src::shared::command::{CMD_PARSE_NOALIAS, CMD_PARSE_SUCCESS, cmd_parse_input};
+use hmux2::src::shared::command::{cmd_parse_input, CMD_PARSE_NOALIAS, CMD_PARSE_SUCCESS};
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::rc::Rc;
 

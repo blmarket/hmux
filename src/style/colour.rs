@@ -1,3 +1,4 @@
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
@@ -12,7 +13,6 @@ use crate::src::shared::colour::{
 use crate::src::shared::ctype::_ISxdigit;
 use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_OPENED};
-use crate::src::tty_term::tty_term_owner_ptr;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -134,76 +134,74 @@ unsafe fn colour_to_6cube(mut v: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return (v - 35 as ::core::ffi::c_int) / 40 as ::core::ffi::c_int;
 }
 pub unsafe fn colour_find_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
-    unsafe {
-        const q2c: [::core::ffi::c_int; 6] = [
-            0 as ::core::ffi::c_int,
-            0x5f as ::core::ffi::c_int,
-            0x87 as ::core::ffi::c_int,
-            0xaf as ::core::ffi::c_int,
-            0xd7 as ::core::ffi::c_int,
-            0xff as ::core::ffi::c_int,
-        ];
-        let mut qr: ::core::ffi::c_int = 0;
-        let mut qg: ::core::ffi::c_int = 0;
-        let mut qb: ::core::ffi::c_int = 0;
-        let mut cr: ::core::ffi::c_int = 0;
-        let mut cg: ::core::ffi::c_int = 0;
-        let mut cb: ::core::ffi::c_int = 0;
-        let mut d: ::core::ffi::c_int = 0;
-        let mut idx: ::core::ffi::c_int = 0;
-        let mut grey_avg: ::core::ffi::c_int = 0;
-        let mut grey_idx: ::core::ffi::c_int = 0;
-        let mut grey: ::core::ffi::c_int = 0;
-        qr = colour_to_6cube(r as ::core::ffi::c_int);
-        cr = q2c[qr as usize];
-        qg = colour_to_6cube(g as ::core::ffi::c_int);
-        cg = q2c[qg as usize];
-        qb = colour_to_6cube(b as ::core::ffi::c_int);
-        cb = q2c[qb as usize];
-        if cr == r as ::core::ffi::c_int
-            && cg == g as ::core::ffi::c_int
-            && cb == b as ::core::ffi::c_int
-        {
-            return 16 as ::core::ffi::c_int
-                + 36 as ::core::ffi::c_int * qr
-                + 6 as ::core::ffi::c_int * qg
-                + qb
-                | COLOUR_FLAG_256;
-        }
-        grey_avg = (r as ::core::ffi::c_int + g as ::core::ffi::c_int + b as ::core::ffi::c_int)
-            / 3 as ::core::ffi::c_int;
-        if grey_avg > 238 as ::core::ffi::c_int {
-            grey_idx = 23 as ::core::ffi::c_int;
-        } else {
-            grey_idx = (grey_avg - 3 as ::core::ffi::c_int) / 10 as ::core::ffi::c_int;
-        }
-        grey = 8 as ::core::ffi::c_int + 10 as ::core::ffi::c_int * grey_idx;
-        d = colour_dist_sq(
-            cr,
-            cg,
-            cb,
-            r as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-        );
-        if colour_dist_sq(
-            grey,
-            grey,
-            grey,
-            r as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-        ) < d
-        {
-            idx = 232 as ::core::ffi::c_int + grey_idx;
-        } else {
-            idx = 16 as ::core::ffi::c_int
-                + 36 as ::core::ffi::c_int * qr
-                + 6 as ::core::ffi::c_int * qg
-                + qb;
-        }
-        return idx | COLOUR_FLAG_256;
+    const q2c: [::core::ffi::c_int; 6] = [
+        0 as ::core::ffi::c_int,
+        0x5f as ::core::ffi::c_int,
+        0x87 as ::core::ffi::c_int,
+        0xaf as ::core::ffi::c_int,
+        0xd7 as ::core::ffi::c_int,
+        0xff as ::core::ffi::c_int,
+    ];
+    let mut qr: ::core::ffi::c_int = 0;
+    let mut qg: ::core::ffi::c_int = 0;
+    let mut qb: ::core::ffi::c_int = 0;
+    let mut cr: ::core::ffi::c_int = 0;
+    let mut cg: ::core::ffi::c_int = 0;
+    let mut cb: ::core::ffi::c_int = 0;
+    let mut d: ::core::ffi::c_int = 0;
+    let mut idx: ::core::ffi::c_int = 0;
+    let mut grey_avg: ::core::ffi::c_int = 0;
+    let mut grey_idx: ::core::ffi::c_int = 0;
+    let mut grey: ::core::ffi::c_int = 0;
+    qr = colour_to_6cube(r as ::core::ffi::c_int);
+    cr = q2c[qr as usize];
+    qg = colour_to_6cube(g as ::core::ffi::c_int);
+    cg = q2c[qg as usize];
+    qb = colour_to_6cube(b as ::core::ffi::c_int);
+    cb = q2c[qb as usize];
+    if cr == r as ::core::ffi::c_int
+        && cg == g as ::core::ffi::c_int
+        && cb == b as ::core::ffi::c_int
+    {
+        return 16 as ::core::ffi::c_int
+            + 36 as ::core::ffi::c_int * qr
+            + 6 as ::core::ffi::c_int * qg
+            + qb
+            | COLOUR_FLAG_256;
     }
+    grey_avg = (r as ::core::ffi::c_int + g as ::core::ffi::c_int + b as ::core::ffi::c_int)
+        / 3 as ::core::ffi::c_int;
+    if grey_avg > 238 as ::core::ffi::c_int {
+        grey_idx = 23 as ::core::ffi::c_int;
+    } else {
+        grey_idx = (grey_avg - 3 as ::core::ffi::c_int) / 10 as ::core::ffi::c_int;
+    }
+    grey = 8 as ::core::ffi::c_int + 10 as ::core::ffi::c_int * grey_idx;
+    d = colour_dist_sq(
+        cr,
+        cg,
+        cb,
+        r as ::core::ffi::c_int,
+        g as ::core::ffi::c_int,
+        b as ::core::ffi::c_int,
+    );
+    if colour_dist_sq(
+        grey,
+        grey,
+        grey,
+        r as ::core::ffi::c_int,
+        g as ::core::ffi::c_int,
+        b as ::core::ffi::c_int,
+    ) < d
+    {
+        idx = 232 as ::core::ffi::c_int + grey_idx;
+    } else {
+        idx = 16 as ::core::ffi::c_int
+            + 36 as ::core::ffi::c_int * qr
+            + 6 as ::core::ffi::c_int * qg
+            + qb;
+    }
+    return idx | COLOUR_FLAG_256;
 }
 pub unsafe fn colour_join_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
     return (r as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) << 16 as ::core::ffi::c_int
@@ -219,52 +217,48 @@ pub fn colour_split_rgb(colour: i32) -> (u_char, u_char, u_char) {
     )
 }
 pub unsafe fn colour_force_rgb(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    unsafe {
-        if c & COLOUR_FLAG_RGB != 0 {
-            return c;
-        }
-        if c & COLOUR_FLAG_256 != 0 {
-            return colour_256toRGB(c);
-        }
-        if c >= 0 as ::core::ffi::c_int && c <= 7 as ::core::ffi::c_int {
-            return colour_256toRGB(c);
-        }
-        if c >= 90 as ::core::ffi::c_int && c <= 97 as ::core::ffi::c_int {
-            return colour_256toRGB(8 as ::core::ffi::c_int + c - 90 as ::core::ffi::c_int);
-        }
-        return -(1 as ::core::ffi::c_int);
+    if c & COLOUR_FLAG_RGB != 0 {
+        return c;
     }
+    if c & COLOUR_FLAG_256 != 0 {
+        return colour_256toRGB(c);
+    }
+    if c >= 0 as ::core::ffi::c_int && c <= 7 as ::core::ffi::c_int {
+        return colour_256toRGB(c);
+    }
+    if c >= 90 as ::core::ffi::c_int && c <= 97 as ::core::ffi::c_int {
+        return colour_256toRGB(8 as ::core::ffi::c_int + c - 90 as ::core::ffi::c_int);
+    }
+    return -(1 as ::core::ffi::c_int);
 }
 pub unsafe fn colour_dim(mut c: ::core::ffi::c_int, mut dim: u_int) -> ::core::ffi::c_int {
-    unsafe {
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
-        if dim == 0 as u_int
-            || (c == 8 as ::core::ffi::c_int || c == 9 as ::core::ffi::c_int)
-            || c & COLOUR_FLAG_THEME != 0
-        {
-            return c;
-        }
-        if dim >= 100 as u_int {
-            return colour_join_rgb(0 as u_char, 0 as u_char, 0 as u_char);
-        }
-        c = colour_force_rgb(c);
-        if c == -(1 as ::core::ffi::c_int) {
-            return -(1 as ::core::ffi::c_int);
-        }
-        (r, g, b) = colour_split_rgb(c);
-        r = (r as u_int)
-            .wrapping_mul((100 as u_int).wrapping_sub(dim))
-            .wrapping_div(100 as u_int) as u_char;
-        g = (g as u_int)
-            .wrapping_mul((100 as u_int).wrapping_sub(dim))
-            .wrapping_div(100 as u_int) as u_char;
-        b = (b as u_int)
-            .wrapping_mul((100 as u_int).wrapping_sub(dim))
-            .wrapping_div(100 as u_int) as u_char;
-        return colour_join_rgb(r, g, b);
+    let mut r: u_char = 0;
+    let mut g: u_char = 0;
+    let mut b: u_char = 0;
+    if dim == 0 as u_int
+        || (c == 8 as ::core::ffi::c_int || c == 9 as ::core::ffi::c_int)
+        || c & COLOUR_FLAG_THEME != 0
+    {
+        return c;
     }
+    if dim >= 100 as u_int {
+        return colour_join_rgb(0 as u_char, 0 as u_char, 0 as u_char);
+    }
+    c = colour_force_rgb(c);
+    if c == -(1 as ::core::ffi::c_int) {
+        return -(1 as ::core::ffi::c_int);
+    }
+    (r, g, b) = colour_split_rgb(c);
+    r = (r as u_int)
+        .wrapping_mul((100 as u_int).wrapping_sub(dim))
+        .wrapping_div(100 as u_int) as u_char;
+    g = (g as u_int)
+        .wrapping_mul((100 as u_int).wrapping_sub(dim))
+        .wrapping_div(100 as u_int) as u_char;
+    b = (b as u_int)
+        .wrapping_mul((100 as u_int).wrapping_sub(dim))
+        .wrapping_div(100 as u_int) as u_char;
+    return colour_join_rgb(r, g, b);
 }
 const COLOUR_THEME_NAMES: &[&[u8]] = &[
     b"themeblack",
@@ -477,28 +471,20 @@ pub unsafe fn colour_format_escape_for_client(
     mut colour: i32,
     background: bool,
 ) -> Option<std::ffi::CString> {
-    unsafe {
-        let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
-        if let Some(client) = c {
-            if client.tty.flags & TTY_OPENED != 0
-                && !tty_term_owner_ptr(&client.tty.term)
-                    .map_or(std::ptr::null(), |term| term)
-                    .is_null()
-            {
-                flags = (*tty_term_owner_ptr(&client.tty.term)
-                    .map_or(std::ptr::null(), |term| term))
-                .flags;
-            }
+    let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
+    if let Some(client) = c {
+        if client.tty.flags & TTY_OPENED != 0 && !tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term).is_null() {
+            flags = (*tty_term_owner_ptr(&client.tty.term).map_or(std::ptr::null(), |term| term)).flags;
         }
-        if colour & COLOUR_FLAG_THEME != 0 {
-            let n = (colour & 0xff) as usize;
-            colour = match c {
-                Some(client) if n < COLOUR_THEME_COUNT as usize => client.theme_colours[n],
-                _ => colour_theme_terminal_colour(n as u32),
-            };
-        }
-        colour_format_escape_resolved(colour, background, flags)
     }
+    if colour & COLOUR_FLAG_THEME != 0 {
+        let n = (colour & 0xff) as usize;
+        colour = match c {
+            Some(client) if n < COLOUR_THEME_COUNT as usize => client.theme_colours[n],
+            _ => colour_theme_terminal_colour(n as u32),
+        };
+    }
+    colour_format_escape_resolved(colour, background, flags)
 }
 
 /// C ABI only. Result is null for invalid colours, otherwise valid until the next
@@ -506,282 +492,255 @@ pub unsafe fn colour_format_escape_for_client(
 /// # Safety
 /// A non-null client and its open terminal must be readable for this call.
 pub unsafe fn colour_toescape(c: Option<&client>, colour: i32, bg: i32) -> *const libc::c_char {
-    unsafe {
-        thread_local! {
-            static BUFFER: std::cell::RefCell<std::ffi::CString> =
-                std::cell::RefCell::new(std::ffi::CString::default());
-        }
-        let Some(text) = colour_format_escape_for_client(c, colour, bg != 0) else {
-            return std::ptr::null();
-        };
-        BUFFER.with(|buffer| {
-            let mut buffer = buffer.borrow_mut();
-            *buffer = text;
-            buffer.as_ptr()
-        })
+    thread_local! {
+        static BUFFER: std::cell::RefCell<std::ffi::CString> =
+            std::cell::RefCell::new(std::ffi::CString::default());
     }
+    let Some(text) = colour_format_escape_for_client(c, colour, bg != 0) else {
+        return std::ptr::null();
+    };
+    BUFFER.with(|buffer| {
+        let mut buffer = buffer.borrow_mut();
+        *buffer = text;
+        buffer.as_ptr()
+    })
 }
 pub unsafe fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
-    unsafe {
-        let mut r: ::core::ffi::c_int = 0;
-        let mut g: ::core::ffi::c_int = 0;
-        let mut b: ::core::ffi::c_int = 0;
-        let mut brightness: ::core::ffi::c_int = 0;
-        if c == -(1 as ::core::ffi::c_int) {
-            return THEME_UNKNOWN;
-        }
-        if c & COLOUR_FLAG_RGB != 0 {
-            r = c >> 16 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int;
-            g = c >> 8 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int;
-            b = c >> 0 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int;
-            brightness = r + g + b;
-            if brightness > 382 as ::core::ffi::c_int {
-                return THEME_LIGHT;
-            }
-            return THEME_DARK;
-        }
-        if c & COLOUR_FLAG_256 != 0 {
-            return colour_totheme(colour_256toRGB(c));
-        }
-        match c {
-            0 | 90 => return THEME_DARK,
-            7 | 97 => return THEME_LIGHT,
-            _ => {
-                if c >= 0 as ::core::ffi::c_int && c <= 7 as ::core::ffi::c_int {
-                    return colour_totheme(colour_256toRGB(c));
-                }
-                if c >= 90 as ::core::ffi::c_int && c <= 97 as ::core::ffi::c_int {
-                    return colour_totheme(colour_256toRGB(
-                        8 as ::core::ffi::c_int + c - 90 as ::core::ffi::c_int,
-                    ));
-                }
-            }
-        }
+    let mut r: ::core::ffi::c_int = 0;
+    let mut g: ::core::ffi::c_int = 0;
+    let mut b: ::core::ffi::c_int = 0;
+    let mut brightness: ::core::ffi::c_int = 0;
+    if c == -(1 as ::core::ffi::c_int) {
         return THEME_UNKNOWN;
     }
+    if c & COLOUR_FLAG_RGB != 0 {
+        r = c >> 16 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int;
+        g = c >> 8 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int;
+        b = c >> 0 as ::core::ffi::c_int & 0xff as ::core::ffi::c_int;
+        brightness = r + g + b;
+        if brightness > 382 as ::core::ffi::c_int {
+            return THEME_LIGHT;
+        }
+        return THEME_DARK;
+    }
+    if c & COLOUR_FLAG_256 != 0 {
+        return colour_totheme(colour_256toRGB(c));
+    }
+    match c {
+        0 | 90 => return THEME_DARK,
+        7 | 97 => return THEME_LIGHT,
+        _ => {
+            if c >= 0 as ::core::ffi::c_int && c <= 7 as ::core::ffi::c_int {
+                return colour_totheme(colour_256toRGB(c));
+            }
+            if c >= 90 as ::core::ffi::c_int && c <= 97 as ::core::ffi::c_int {
+                return colour_totheme(colour_256toRGB(
+                    8 as ::core::ffi::c_int + c - 90 as ::core::ffi::c_int,
+                ));
+            }
+        }
+    }
+    return THEME_UNKNOWN;
 }
 unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
-    unsafe {
-        let s = input.as_ptr();
-        let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut n: ::core::ffi::c_int = 0;
-        let mut r: u_char = 0;
-        let mut g: u_char = 0;
-        let mut b: u_char = 0;
-        let mut i: u_int = 0;
-        if *s as ::core::ffi::c_int == '#' as i32 && strlen(s) == 7 as size_t {
-            cp = s.offset(1 as ::core::ffi::c_int as isize);
-            while *(*__ctype_b_loc()).offset(*cp as u_char as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
-                & _ISxdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                != 0
-            {
-                cp = cp.offset(1);
-            }
-            if *cp as ::core::ffi::c_int != '\0' as i32 {
-                return -(1 as ::core::ffi::c_int);
-            }
-            n = sscanf(
-                s.offset(1 as ::core::ffi::c_int as isize),
-                b"%2hhx%2hhx%2hhx\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut r,
-                &raw mut g,
-                &raw mut b,
-            );
-            if n != 3 as ::core::ffi::c_int {
-                return -(1 as ::core::ffi::c_int);
-            }
-            return colour_join_rgb(r, g, b);
-        }
-        if strncasecmp(
-            s,
-            b"colour\0" as *const u8 as *const ::core::ffi::c_char,
-            (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as size_t)
-                .wrapping_sub(1 as size_t),
-        ) == 0 as ::core::ffi::c_int
+    let s = input.as_ptr();
+    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut n: ::core::ffi::c_int = 0;
+    let mut r: u_char = 0;
+    let mut g: u_char = 0;
+    let mut b: u_char = 0;
+    let mut i: u_int = 0;
+    if *s as ::core::ffi::c_int == '#' as i32 && strlen(s) == 7 as size_t {
+        cp = s.offset(1 as ::core::ffi::c_int as isize);
+        while *(*__ctype_b_loc()).offset(*cp as u_char as ::core::ffi::c_int as isize)
+            as ::core::ffi::c_int
+            & _ISxdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
+            != 0
         {
-            n = strtonum(
-                s.offset(::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize as isize)
-                    .offset(-(1 as ::core::ffi::c_int as isize)),
-                0 as ::core::ffi::c_longlong,
-                255 as ::core::ffi::c_longlong,
-                &raw mut errstr,
-            ) as ::core::ffi::c_int;
-            if !errstr.is_null() {
-                return -(1 as ::core::ffi::c_int);
-            }
-            return n | COLOUR_FLAG_256;
+            cp = cp.offset(1);
         }
-        if strncasecmp(
-            s,
-            b"color\0" as *const u8 as *const ::core::ffi::c_char,
-            (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t)
-                .wrapping_sub(1 as size_t),
-        ) == 0 as ::core::ffi::c_int
-        {
-            n = strtonum(
-                s.offset(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize as isize)
-                    .offset(-(1 as ::core::ffi::c_int as isize)),
-                0 as ::core::ffi::c_longlong,
-                255 as ::core::ffi::c_longlong,
-                &raw mut errstr,
-            ) as ::core::ffi::c_int;
-            if !errstr.is_null() {
-                return -(1 as ::core::ffi::c_int);
-            }
-            return n | COLOUR_FLAG_256;
+        if *cp as ::core::ffi::c_int != '\0' as i32 {
+            return -(1 as ::core::ffi::c_int);
         }
-        if strcasecmp(s, b"default\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
-            return 8 as ::core::ffi::c_int;
+        n = sscanf(
+            s.offset(1 as ::core::ffi::c_int as isize),
+            b"%2hhx%2hhx%2hhx\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut r,
+            &raw mut g,
+            &raw mut b,
+        );
+        if n != 3 as ::core::ffi::c_int {
+            return -(1 as ::core::ffi::c_int);
         }
-        if strcasecmp(s, b"terminal\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
-            return 9 as ::core::ffi::c_int;
-        }
-        i = 0 as u_int;
-        while (i as usize)
-            < (::core::mem::size_of::<[C2RustUnnamed_36; 10]>() as usize)
-                .wrapping_div(::core::mem::size_of::<C2RustUnnamed_36>() as usize)
-        {
-            if strcasecmp(s, colour_theme_table[i as usize].name.as_ptr())
-                == 0 as ::core::ffi::c_int
-            {
-                return (i | COLOUR_FLAG_THEME as u_int) as ::core::ffi::c_int;
-            }
-            i = i.wrapping_add(1);
-        }
-        if strcasecmp(s, b"black\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"0\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"red\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"1\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 1 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"green\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"2\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 2 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"yellow\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"3\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 3 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"blue\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"4\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 4 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"magenta\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"5\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 5 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"cyan\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"6\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 6 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"white\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"7\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 7 as ::core::ffi::c_int;
-        }
-        if strcasecmp(
-            s,
-            b"brightblack\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(s, b"90\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 90 as ::core::ffi::c_int;
-        }
-        if strcasecmp(s, b"brightred\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(s, b"91\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 91 as ::core::ffi::c_int;
-        }
-        if strcasecmp(
-            s,
-            b"brightgreen\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(s, b"92\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 92 as ::core::ffi::c_int;
-        }
-        if strcasecmp(
-            s,
-            b"brightyellow\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(s, b"93\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 93 as ::core::ffi::c_int;
-        }
-        if strcasecmp(
-            s,
-            b"brightblue\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(s, b"94\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 94 as ::core::ffi::c_int;
-        }
-        if strcasecmp(
-            s,
-            b"brightmagenta\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(s, b"95\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 95 as ::core::ffi::c_int;
-        }
-        if strcasecmp(
-            s,
-            b"brightcyan\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(s, b"96\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 96 as ::core::ffi::c_int;
-        }
-        if strcasecmp(
-            s,
-            b"brightwhite\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(s, b"97\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-        {
-            return 97 as ::core::ffi::c_int;
-        }
-        return colour_byname_impl(input);
+        return colour_join_rgb(r, g, b);
     }
+    if strncasecmp(
+        s,
+        b"colour\0" as *const u8 as *const ::core::ffi::c_char,
+        (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as size_t).wrapping_sub(1 as size_t),
+    ) == 0 as ::core::ffi::c_int
+    {
+        n = strtonum(
+            s.offset(::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize as isize)
+                .offset(-(1 as ::core::ffi::c_int as isize)),
+            0 as ::core::ffi::c_longlong,
+            255 as ::core::ffi::c_longlong,
+            &raw mut errstr,
+        ) as ::core::ffi::c_int;
+        if !errstr.is_null() {
+            return -(1 as ::core::ffi::c_int);
+        }
+        return n | COLOUR_FLAG_256;
+    }
+    if strncasecmp(
+        s,
+        b"color\0" as *const u8 as *const ::core::ffi::c_char,
+        (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t).wrapping_sub(1 as size_t),
+    ) == 0 as ::core::ffi::c_int
+    {
+        n = strtonum(
+            s.offset(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize as isize)
+                .offset(-(1 as ::core::ffi::c_int as isize)),
+            0 as ::core::ffi::c_longlong,
+            255 as ::core::ffi::c_longlong,
+            &raw mut errstr,
+        ) as ::core::ffi::c_int;
+        if !errstr.is_null() {
+            return -(1 as ::core::ffi::c_int);
+        }
+        return n | COLOUR_FLAG_256;
+    }
+    if strcasecmp(s, b"default\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+    {
+        return 8 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"terminal\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+    {
+        return 9 as ::core::ffi::c_int;
+    }
+    i = 0 as u_int;
+    while (i as usize)
+        < (::core::mem::size_of::<[C2RustUnnamed_36; 10]>() as usize)
+            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_36>() as usize)
+    {
+        if strcasecmp(s, colour_theme_table[i as usize].name.as_ptr()) == 0 as ::core::ffi::c_int {
+            return (i | COLOUR_FLAG_THEME as u_int) as ::core::ffi::c_int;
+        }
+        i = i.wrapping_add(1);
+    }
+    if strcasecmp(s, b"black\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"0\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 0 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"red\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"1\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 1 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"green\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"2\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 2 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"yellow\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"3\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 3 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"blue\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"4\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 4 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"magenta\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"5\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 5 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"cyan\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"6\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 6 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"white\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"7\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 7 as ::core::ffi::c_int;
+    }
+    if strcasecmp(
+        s,
+        b"brightblack\0" as *const u8 as *const ::core::ffi::c_char,
+    ) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"90\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 90 as ::core::ffi::c_int;
+    }
+    if strcasecmp(s, b"brightred\0" as *const u8 as *const ::core::ffi::c_char)
+        == 0 as ::core::ffi::c_int
+        || strcmp(s, b"91\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 91 as ::core::ffi::c_int;
+    }
+    if strcasecmp(
+        s,
+        b"brightgreen\0" as *const u8 as *const ::core::ffi::c_char,
+    ) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"92\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 92 as ::core::ffi::c_int;
+    }
+    if strcasecmp(
+        s,
+        b"brightyellow\0" as *const u8 as *const ::core::ffi::c_char,
+    ) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"93\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 93 as ::core::ffi::c_int;
+    }
+    if strcasecmp(
+        s,
+        b"brightblue\0" as *const u8 as *const ::core::ffi::c_char,
+    ) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"94\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 94 as ::core::ffi::c_int;
+    }
+    if strcasecmp(
+        s,
+        b"brightmagenta\0" as *const u8 as *const ::core::ffi::c_char,
+    ) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"95\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 95 as ::core::ffi::c_int;
+    }
+    if strcasecmp(
+        s,
+        b"brightcyan\0" as *const u8 as *const ::core::ffi::c_char,
+    ) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"96\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 96 as ::core::ffi::c_int;
+    }
+    if strcasecmp(
+        s,
+        b"brightwhite\0" as *const u8 as *const ::core::ffi::c_char,
+    ) == 0 as ::core::ffi::c_int
+        || strcmp(s, b"97\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    {
+        return 97 as ::core::ffi::c_int;
+    }
+    return colour_byname_impl(input);
 }
 pub unsafe fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     const RGB_TABLE: [::core::ffi::c_int; 256] = [
@@ -1306,2477 +1265,2473 @@ pub unsafe fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     return ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int;
 }
 unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
-    unsafe {
-        let name = name.as_ptr();
-        const colours: [C2RustUnnamed_37; 578] = [
-            C2RustUnnamed_37 {
-                name: c"AliceBlue",
-                c: 0xf0f8ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"AntiqueWhite",
-                c: 0xfaebd7 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"AntiqueWhite1",
-                c: 0xffefdb as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"AntiqueWhite2",
-                c: 0xeedfcc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"AntiqueWhite3",
-                c: 0xcdc0b0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"AntiqueWhite4",
-                c: 0x8b8378 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"BlanchedAlmond",
-                c: 0xffebcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"BlueViolet",
-                c: 0x8a2be2 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"CadetBlue",
-                c: 0x5f9ea0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"CadetBlue1",
-                c: 0x98f5ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"CadetBlue2",
-                c: 0x8ee5ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"CadetBlue3",
-                c: 0x7ac5cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"CadetBlue4",
-                c: 0x53868b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"CornflowerBlue",
-                c: 0x6495ed as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkBlue",
-                c: 0x8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkCyan",
-                c: 0x8b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGoldenrod",
-                c: 0xb8860b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGoldenrod1",
-                c: 0xffb90f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGoldenrod2",
-                c: 0xeead0e as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGoldenrod3",
-                c: 0xcd950c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGoldenrod4",
-                c: 0x8b6508 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGray",
-                c: 0xa9a9a9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGreen",
-                c: 0x6400 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkGrey",
-                c: 0xa9a9a9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkKhaki",
-                c: 0xbdb76b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkMagenta",
-                c: 0x8b008b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOliveGreen",
-                c: 0x556b2f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOliveGreen1",
-                c: 0xcaff70 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOliveGreen2",
-                c: 0xbcee68 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOliveGreen3",
-                c: 0xa2cd5a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOliveGreen4",
-                c: 0x6e8b3d as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrange",
-                c: 0xff8c00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrange1",
-                c: 0xff7f00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrange2",
-                c: 0xee7600 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrange3",
-                c: 0xcd6600 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrange4",
-                c: 0x8b4500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrchid",
-                c: 0x9932cc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrchid1",
-                c: 0xbf3eff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrchid2",
-                c: 0xb23aee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrchid3",
-                c: 0x9a32cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkOrchid4",
-                c: 0x68228b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkRed",
-                c: 0x8b0000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSalmon",
-                c: 0xe9967a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSeaGreen",
-                c: 0x8fbc8f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSeaGreen1",
-                c: 0xc1ffc1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSeaGreen2",
-                c: 0xb4eeb4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSeaGreen3",
-                c: 0x9bcd9b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSeaGreen4",
-                c: 0x698b69 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSlateBlue",
-                c: 0x483d8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSlateGray",
-                c: 0x2f4f4f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSlateGray1",
-                c: 0x97ffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSlateGray2",
-                c: 0x8deeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSlateGray3",
-                c: 0x79cdcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSlateGray4",
-                c: 0x528b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkSlateGrey",
-                c: 0x2f4f4f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkTurquoise",
-                c: 0xced1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DarkViolet",
-                c: 0x9400d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepPink",
-                c: 0xff1493 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepPink1",
-                c: 0xff1493 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepPink2",
-                c: 0xee1289 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepPink3",
-                c: 0xcd1076 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepPink4",
-                c: 0x8b0a50 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepSkyBlue",
-                c: 0xbfff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepSkyBlue1",
-                c: 0xbfff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepSkyBlue2",
-                c: 0xb2ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepSkyBlue3",
-                c: 0x9acd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DeepSkyBlue4",
-                c: 0x688b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DimGray",
-                c: 0x696969 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DimGrey",
-                c: 0x696969 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DodgerBlue",
-                c: 0x1e90ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DodgerBlue1",
-                c: 0x1e90ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DodgerBlue2",
-                c: 0x1c86ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DodgerBlue3",
-                c: 0x1874cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"DodgerBlue4",
-                c: 0x104e8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"FloralWhite",
-                c: 0xfffaf0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"ForestGreen",
-                c: 0x228b22 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"GhostWhite",
-                c: 0xf8f8ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"GreenYellow",
-                c: 0xadff2f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"HotPink",
-                c: 0xff69b4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"HotPink1",
-                c: 0xff6eb4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"HotPink2",
-                c: 0xee6aa7 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"HotPink3",
-                c: 0xcd6090 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"HotPink4",
-                c: 0x8b3a62 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"IndianRed",
-                c: 0xcd5c5c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"IndianRed1",
-                c: 0xff6a6a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"IndianRed2",
-                c: 0xee6363 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"IndianRed3",
-                c: 0xcd5555 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"IndianRed4",
-                c: 0x8b3a3a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LavenderBlush",
-                c: 0xfff0f5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LavenderBlush1",
-                c: 0xfff0f5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LavenderBlush2",
-                c: 0xeee0e5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LavenderBlush3",
-                c: 0xcdc1c5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LavenderBlush4",
-                c: 0x8b8386 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LawnGreen",
-                c: 0x7cfc00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LemonChiffon",
-                c: 0xfffacd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LemonChiffon1",
-                c: 0xfffacd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LemonChiffon2",
-                c: 0xeee9bf as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LemonChiffon3",
-                c: 0xcdc9a5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LemonChiffon4",
-                c: 0x8b8970 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightBlue",
-                c: 0xadd8e6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightBlue1",
-                c: 0xbfefff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightBlue2",
-                c: 0xb2dfee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightBlue3",
-                c: 0x9ac0cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightBlue4",
-                c: 0x68838b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightCoral",
-                c: 0xf08080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightCyan",
-                c: 0xe0ffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightCyan1",
-                c: 0xe0ffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightCyan2",
-                c: 0xd1eeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightCyan3",
-                c: 0xb4cdcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightCyan4",
-                c: 0x7a8b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGoldenrod",
-                c: 0xeedd82 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGoldenrod1",
-                c: 0xffec8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGoldenrod2",
-                c: 0xeedc82 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGoldenrod3",
-                c: 0xcdbe70 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGoldenrod4",
-                c: 0x8b814c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGoldenrodYellow",
-                c: 0xfafad2 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGray",
-                c: 0xd3d3d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGreen",
-                c: 0x90ee90 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightGrey",
-                c: 0xd3d3d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightPink",
-                c: 0xffb6c1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightPink1",
-                c: 0xffaeb9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightPink2",
-                c: 0xeea2ad as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightPink3",
-                c: 0xcd8c95 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightPink4",
-                c: 0x8b5f65 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSalmon",
-                c: 0xffa07a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSalmon1",
-                c: 0xffa07a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSalmon2",
-                c: 0xee9572 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSalmon3",
-                c: 0xcd8162 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSalmon4",
-                c: 0x8b5742 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSeaGreen",
-                c: 0x20b2aa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSkyBlue",
-                c: 0x87cefa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSkyBlue1",
-                c: 0xb0e2ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSkyBlue2",
-                c: 0xa4d3ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSkyBlue3",
-                c: 0x8db6cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSkyBlue4",
-                c: 0x607b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSlateBlue",
-                c: 0x8470ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSlateGray",
-                c: 0x778899 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSlateGrey",
-                c: 0x778899 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSteelBlue",
-                c: 0xb0c4de as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSteelBlue1",
-                c: 0xcae1ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSteelBlue2",
-                c: 0xbcd2ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSteelBlue3",
-                c: 0xa2b5cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightSteelBlue4",
-                c: 0x6e7b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightYellow",
-                c: 0xffffe0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightYellow1",
-                c: 0xffffe0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightYellow2",
-                c: 0xeeeed1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightYellow3",
-                c: 0xcdcdb4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LightYellow4",
-                c: 0x8b8b7a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"LimeGreen",
-                c: 0x32cd32 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumAquamarine",
-                c: 0x66cdaa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumBlue",
-                c: 0xcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumOrchid",
-                c: 0xba55d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumOrchid1",
-                c: 0xe066ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumOrchid2",
-                c: 0xd15fee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumOrchid3",
-                c: 0xb452cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumOrchid4",
-                c: 0x7a378b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumPurple",
-                c: 0x9370db as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumPurple1",
-                c: 0xab82ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumPurple2",
-                c: 0x9f79ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumPurple3",
-                c: 0x8968cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumPurple4",
-                c: 0x5d478b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumSeaGreen",
-                c: 0x3cb371 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumSlateBlue",
-                c: 0x7b68ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumSpringGreen",
-                c: 0xfa9a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumTurquoise",
-                c: 0x48d1cc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MediumVioletRed",
-                c: 0xc71585 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MidnightBlue",
-                c: 0x191970 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MintCream",
-                c: 0xf5fffa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MistyRose",
-                c: 0xffe4e1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MistyRose1",
-                c: 0xffe4e1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MistyRose2",
-                c: 0xeed5d2 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MistyRose3",
-                c: 0xcdb7b5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"MistyRose4",
-                c: 0x8b7d7b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"NavajoWhite",
-                c: 0xffdead as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"NavajoWhite1",
-                c: 0xffdead as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"NavajoWhite2",
-                c: 0xeecfa1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"NavajoWhite3",
-                c: 0xcdb38b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"NavajoWhite4",
-                c: 0x8b795e as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"NavyBlue",
-                c: 0x80 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OldLace",
-                c: 0xfdf5e6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OliveDrab",
-                c: 0x6b8e23 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OliveDrab1",
-                c: 0xc0ff3e as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OliveDrab2",
-                c: 0xb3ee3a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OliveDrab3",
-                c: 0x9acd32 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OliveDrab4",
-                c: 0x698b22 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OrangeRed",
-                c: 0xff4500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OrangeRed1",
-                c: 0xff4500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OrangeRed2",
-                c: 0xee4000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OrangeRed3",
-                c: 0xcd3700 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"OrangeRed4",
-                c: 0x8b2500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleGoldenrod",
-                c: 0xeee8aa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleGreen",
-                c: 0x98fb98 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleGreen1",
-                c: 0x9aff9a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleGreen2",
-                c: 0x90ee90 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleGreen3",
-                c: 0x7ccd7c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleGreen4",
-                c: 0x548b54 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleTurquoise",
-                c: 0xafeeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleTurquoise1",
-                c: 0xbbffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleTurquoise2",
-                c: 0xaeeeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleTurquoise3",
-                c: 0x96cdcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleTurquoise4",
-                c: 0x668b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleVioletRed",
-                c: 0xdb7093 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleVioletRed1",
-                c: 0xff82ab as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleVioletRed2",
-                c: 0xee799f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleVioletRed3",
-                c: 0xcd6889 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PaleVioletRed4",
-                c: 0x8b475d as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PapayaWhip",
-                c: 0xffefd5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PeachPuff",
-                c: 0xffdab9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PeachPuff1",
-                c: 0xffdab9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PeachPuff2",
-                c: 0xeecbad as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PeachPuff3",
-                c: 0xcdaf95 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PeachPuff4",
-                c: 0x8b7765 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"PowderBlue",
-                c: 0xb0e0e6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RebeccaPurple",
-                c: 0x663399 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RosyBrown",
-                c: 0xbc8f8f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RosyBrown1",
-                c: 0xffc1c1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RosyBrown2",
-                c: 0xeeb4b4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RosyBrown3",
-                c: 0xcd9b9b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RosyBrown4",
-                c: 0x8b6969 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RoyalBlue",
-                c: 0x4169e1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RoyalBlue1",
-                c: 0x4876ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RoyalBlue2",
-                c: 0x436eee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RoyalBlue3",
-                c: 0x3a5fcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"RoyalBlue4",
-                c: 0x27408b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SaddleBrown",
-                c: 0x8b4513 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SandyBrown",
-                c: 0xf4a460 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SeaGreen",
-                c: 0x2e8b57 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SeaGreen1",
-                c: 0x54ff9f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SeaGreen2",
-                c: 0x4eee94 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SeaGreen3",
-                c: 0x43cd80 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SeaGreen4",
-                c: 0x2e8b57 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SkyBlue",
-                c: 0x87ceeb as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SkyBlue1",
-                c: 0x87ceff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SkyBlue2",
-                c: 0x7ec0ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SkyBlue3",
-                c: 0x6ca6cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SkyBlue4",
-                c: 0x4a708b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateBlue",
-                c: 0x6a5acd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateBlue1",
-                c: 0x836fff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateBlue2",
-                c: 0x7a67ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateBlue3",
-                c: 0x6959cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateBlue4",
-                c: 0x473c8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateGray",
-                c: 0x708090 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateGray1",
-                c: 0xc6e2ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateGray2",
-                c: 0xb9d3ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateGray3",
-                c: 0x9fb6cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateGray4",
-                c: 0x6c7b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SlateGrey",
-                c: 0x708090 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SpringGreen",
-                c: 0xff7f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SpringGreen1",
-                c: 0xff7f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SpringGreen2",
-                c: 0xee76 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SpringGreen3",
-                c: 0xcd66 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SpringGreen4",
-                c: 0x8b45 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SteelBlue",
-                c: 0x4682b4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SteelBlue1",
-                c: 0x63b8ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SteelBlue2",
-                c: 0x5cacee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SteelBlue3",
-                c: 0x4f94cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"SteelBlue4",
-                c: 0x36648b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"VioletRed",
-                c: 0xd02090 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"VioletRed1",
-                c: 0xff3e96 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"VioletRed2",
-                c: 0xee3a8c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"VioletRed3",
-                c: 0xcd3278 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"VioletRed4",
-                c: 0x8b2252 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"WebGray",
-                c: 0x808080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"WebGreen",
-                c: 0x8000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"WebGrey",
-                c: 0x808080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"WebMaroon",
-                c: 0x800000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"WebPurple",
-                c: 0x800080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"WhiteSmoke",
-                c: 0xf5f5f5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"X11Gray",
-                c: 0xbebebe as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"X11Green",
-                c: 0xff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"X11Grey",
-                c: 0xbebebe as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"X11Maroon",
-                c: 0xb03060 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"X11Purple",
-                c: 0xa020f0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"YellowGreen",
-                c: 0x9acd32 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"alice blue",
-                c: 0xf0f8ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"antique white",
-                c: 0xfaebd7 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"aqua",
-                c: 0xffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"aquamarine",
-                c: 0x7fffd4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"aquamarine1",
-                c: 0x7fffd4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"aquamarine2",
-                c: 0x76eec6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"aquamarine3",
-                c: 0x66cdaa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"aquamarine4",
-                c: 0x458b74 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"azure",
-                c: 0xf0ffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"azure1",
-                c: 0xf0ffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"azure2",
-                c: 0xe0eeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"azure3",
-                c: 0xc1cdcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"azure4",
-                c: 0x838b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"beige",
-                c: 0xf5f5dc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"bisque",
-                c: 0xffe4c4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"bisque1",
-                c: 0xffe4c4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"bisque2",
-                c: 0xeed5b7 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"bisque3",
-                c: 0xcdb79e as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"bisque4",
-                c: 0x8b7d6b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"black",
-                c: 0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"blanched almond",
-                c: 0xffebcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"blue violet",
-                c: 0x8a2be2 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"blue",
-                c: 0xff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"blue1",
-                c: 0xff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"blue2",
-                c: 0xee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"blue3",
-                c: 0xcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"blue4",
-                c: 0x8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"brown",
-                c: 0xa52a2a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"brown1",
-                c: 0xff4040 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"brown2",
-                c: 0xee3b3b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"brown3",
-                c: 0xcd3333 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"brown4",
-                c: 0x8b2323 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"burlywood",
-                c: 0xdeb887 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"burlywood1",
-                c: 0xffd39b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"burlywood2",
-                c: 0xeec591 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"burlywood3",
-                c: 0xcdaa7d as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"burlywood4",
-                c: 0x8b7355 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cadet blue",
-                c: 0x5f9ea0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chartreuse",
-                c: 0x7fff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chartreuse1",
-                c: 0x7fff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chartreuse2",
-                c: 0x76ee00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chartreuse3",
-                c: 0x66cd00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chartreuse4",
-                c: 0x458b00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chocolate",
-                c: 0xd2691e as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chocolate1",
-                c: 0xff7f24 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chocolate2",
-                c: 0xee7621 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chocolate3",
-                c: 0xcd661d as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"chocolate4",
-                c: 0x8b4513 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"coral",
-                c: 0xff7f50 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"coral1",
-                c: 0xff7256 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"coral2",
-                c: 0xee6a50 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"coral3",
-                c: 0xcd5b45 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"coral4",
-                c: 0x8b3e2f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cornflower blue",
-                c: 0x6495ed as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cornsilk",
-                c: 0xfff8dc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cornsilk1",
-                c: 0xfff8dc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cornsilk2",
-                c: 0xeee8cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cornsilk3",
-                c: 0xcdc8b1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cornsilk4",
-                c: 0x8b8878 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"crimson",
-                c: 0xdc143c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cyan",
-                c: 0xffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cyan1",
-                c: 0xffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cyan2",
-                c: 0xeeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cyan3",
-                c: 0xcdcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"cyan4",
-                c: 0x8b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark blue",
-                c: 0x8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark cyan",
-                c: 0x8b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark goldenrod",
-                c: 0xb8860b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark gray",
-                c: 0xa9a9a9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark green",
-                c: 0x6400 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark grey",
-                c: 0xa9a9a9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark khaki",
-                c: 0xbdb76b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark magenta",
-                c: 0x8b008b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark olive green",
-                c: 0x556b2f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark orange",
-                c: 0xff8c00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark orchid",
-                c: 0x9932cc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark red",
-                c: 0x8b0000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark salmon",
-                c: 0xe9967a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark sea green",
-                c: 0x8fbc8f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark slate blue",
-                c: 0x483d8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark slate gray",
-                c: 0x2f4f4f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark slate grey",
-                c: 0x2f4f4f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark turquoise",
-                c: 0xced1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dark violet",
-                c: 0x9400d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"deep pink",
-                c: 0xff1493 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"deep sky blue",
-                c: 0xbfff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dim gray",
-                c: 0x696969 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dim grey",
-                c: 0x696969 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"dodger blue",
-                c: 0x1e90ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"firebrick",
-                c: 0xb22222 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"firebrick1",
-                c: 0xff3030 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"firebrick2",
-                c: 0xee2c2c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"firebrick3",
-                c: 0xcd2626 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"firebrick4",
-                c: 0x8b1a1a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"floral white",
-                c: 0xfffaf0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"forest green",
-                c: 0x228b22 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"fuchsia",
-                c: 0xff00ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"gainsboro",
-                c: 0xdcdcdc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"ghost white",
-                c: 0xf8f8ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"gold",
-                c: 0xffd700 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"gold1",
-                c: 0xffd700 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"gold2",
-                c: 0xeec900 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"gold3",
-                c: 0xcdad00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"gold4",
-                c: 0x8b7500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"goldenrod",
-                c: 0xdaa520 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"goldenrod1",
-                c: 0xffc125 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"goldenrod2",
-                c: 0xeeb422 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"goldenrod3",
-                c: 0xcd9b1d as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"goldenrod4",
-                c: 0x8b6914 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"green yellow",
-                c: 0xadff2f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"green",
-                c: 0xff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"green1",
-                c: 0xff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"green2",
-                c: 0xee00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"green3",
-                c: 0xcd00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"green4",
-                c: 0x8b00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"honeydew",
-                c: 0xf0fff0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"honeydew1",
-                c: 0xf0fff0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"honeydew2",
-                c: 0xe0eee0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"honeydew3",
-                c: 0xc1cdc1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"honeydew4",
-                c: 0x838b83 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"hot pink",
-                c: 0xff69b4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"indian red",
-                c: 0xcd5c5c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"indigo",
-                c: 0x4b0082 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"ivory",
-                c: 0xfffff0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"ivory1",
-                c: 0xfffff0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"ivory2",
-                c: 0xeeeee0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"ivory3",
-                c: 0xcdcdc1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"ivory4",
-                c: 0x8b8b83 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"khaki",
-                c: 0xf0e68c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"khaki1",
-                c: 0xfff68f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"khaki2",
-                c: 0xeee685 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"khaki3",
-                c: 0xcdc673 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"khaki4",
-                c: 0x8b864e as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"lavender blush",
-                c: 0xfff0f5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"lavender",
-                c: 0xe6e6fa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"lawn green",
-                c: 0x7cfc00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"lemon chiffon",
-                c: 0xfffacd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light blue",
-                c: 0xadd8e6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light coral",
-                c: 0xf08080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light cyan",
-                c: 0xe0ffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light goldenrod yellow",
-                c: 0xfafad2 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light goldenrod",
-                c: 0xeedd82 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light gray",
-                c: 0xd3d3d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light green",
-                c: 0x90ee90 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light grey",
-                c: 0xd3d3d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light pink",
-                c: 0xffb6c1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light salmon",
-                c: 0xffa07a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light sea green",
-                c: 0x20b2aa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light sky blue",
-                c: 0x87cefa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light slate blue",
-                c: 0x8470ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light slate gray",
-                c: 0x778899 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light slate grey",
-                c: 0x778899 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light steel blue",
-                c: 0xb0c4de as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"light yellow",
-                c: 0xffffe0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"lime green",
-                c: 0x32cd32 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"lime",
-                c: 0xff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"linen",
-                c: 0xfaf0e6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"magenta",
-                c: 0xff00ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"magenta1",
-                c: 0xff00ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"magenta2",
-                c: 0xee00ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"magenta3",
-                c: 0xcd00cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"magenta4",
-                c: 0x8b008b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"maroon",
-                c: 0xb03060 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"maroon1",
-                c: 0xff34b3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"maroon2",
-                c: 0xee30a7 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"maroon3",
-                c: 0xcd2990 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"maroon4",
-                c: 0x8b1c62 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium aquamarine",
-                c: 0x66cdaa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium blue",
-                c: 0xcd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium orchid",
-                c: 0xba55d3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium purple",
-                c: 0x9370db as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium sea green",
-                c: 0x3cb371 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium slate blue",
-                c: 0x7b68ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium spring green",
-                c: 0xfa9a as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium turquoise",
-                c: 0x48d1cc as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"medium violet red",
-                c: 0xc71585 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"midnight blue",
-                c: 0x191970 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"mint cream",
-                c: 0xf5fffa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"misty rose",
-                c: 0xffe4e1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"moccasin",
-                c: 0xffe4b5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"navajo white",
-                c: 0xffdead as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"navy blue",
-                c: 0x80 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"navy",
-                c: 0x80 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"old lace",
-                c: 0xfdf5e6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"olive drab",
-                c: 0x6b8e23 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"olive",
-                c: 0x808000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orange red",
-                c: 0xff4500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orange",
-                c: 0xffa500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orange1",
-                c: 0xffa500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orange2",
-                c: 0xee9a00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orange3",
-                c: 0xcd8500 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orange4",
-                c: 0x8b5a00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orchid",
-                c: 0xda70d6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orchid1",
-                c: 0xff83fa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orchid2",
-                c: 0xee7ae9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orchid3",
-                c: 0xcd69c9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"orchid4",
-                c: 0x8b4789 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pale goldenrod",
-                c: 0xeee8aa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pale green",
-                c: 0x98fb98 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pale turquoise",
-                c: 0xafeeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pale violet red",
-                c: 0xdb7093 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"papaya whip",
-                c: 0xffefd5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"peach puff",
-                c: 0xffdab9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"peru",
-                c: 0xcd853f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pink",
-                c: 0xffc0cb as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pink1",
-                c: 0xffb5c5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pink2",
-                c: 0xeea9b8 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pink3",
-                c: 0xcd919e as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"pink4",
-                c: 0x8b636c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"plum",
-                c: 0xdda0dd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"plum1",
-                c: 0xffbbff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"plum2",
-                c: 0xeeaeee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"plum3",
-                c: 0xcd96cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"plum4",
-                c: 0x8b668b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"powder blue",
-                c: 0xb0e0e6 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"purple",
-                c: 0xa020f0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"purple1",
-                c: 0x9b30ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"purple2",
-                c: 0x912cee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"purple3",
-                c: 0x7d26cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"purple4",
-                c: 0x551a8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"rebecca purple",
-                c: 0x663399 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"red",
-                c: 0xff0000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"red1",
-                c: 0xff0000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"red2",
-                c: 0xee0000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"red3",
-                c: 0xcd0000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"red4",
-                c: 0x8b0000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"rosy brown",
-                c: 0xbc8f8f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"royal blue",
-                c: 0x4169e1 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"saddle brown",
-                c: 0x8b4513 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"salmon",
-                c: 0xfa8072 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"salmon1",
-                c: 0xff8c69 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"salmon2",
-                c: 0xee8262 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"salmon3",
-                c: 0xcd7054 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"salmon4",
-                c: 0x8b4c39 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sandy brown",
-                c: 0xf4a460 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sea green",
-                c: 0x2e8b57 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"seashell",
-                c: 0xfff5ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"seashell1",
-                c: 0xfff5ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"seashell2",
-                c: 0xeee5de as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"seashell3",
-                c: 0xcdc5bf as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"seashell4",
-                c: 0x8b8682 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sienna",
-                c: 0xa0522d as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sienna1",
-                c: 0xff8247 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sienna2",
-                c: 0xee7942 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sienna3",
-                c: 0xcd6839 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sienna4",
-                c: 0x8b4726 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"silver",
-                c: 0xc0c0c0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"sky blue",
-                c: 0x87ceeb as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"slate blue",
-                c: 0x6a5acd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"slate gray",
-                c: 0x708090 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"slate grey",
-                c: 0x708090 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"snow",
-                c: 0xfffafa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"snow1",
-                c: 0xfffafa as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"snow2",
-                c: 0xeee9e9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"snow3",
-                c: 0xcdc9c9 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"snow4",
-                c: 0x8b8989 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"spring green",
-                c: 0xff7f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"steel blue",
-                c: 0x4682b4 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tan",
-                c: 0xd2b48c as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tan1",
-                c: 0xffa54f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tan2",
-                c: 0xee9a49 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tan3",
-                c: 0xcd853f as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tan4",
-                c: 0x8b5a2b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"teal",
-                c: 0x8080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"thistle",
-                c: 0xd8bfd8 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"thistle1",
-                c: 0xffe1ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"thistle2",
-                c: 0xeed2ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"thistle3",
-                c: 0xcdb5cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"thistle4",
-                c: 0x8b7b8b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tomato",
-                c: 0xff6347 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tomato1",
-                c: 0xff6347 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tomato2",
-                c: 0xee5c42 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tomato3",
-                c: 0xcd4f39 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"tomato4",
-                c: 0x8b3626 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"turquoise",
-                c: 0x40e0d0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"turquoise1",
-                c: 0xf5ff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"turquoise2",
-                c: 0xe5ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"turquoise3",
-                c: 0xc5cd as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"turquoise4",
-                c: 0x868b as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"violet red",
-                c: 0xd02090 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"violet",
-                c: 0xee82ee as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"web gray",
-                c: 0x808080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"web green",
-                c: 0x8000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"web grey",
-                c: 0x808080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"web maroon",
-                c: 0x800000 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"web purple",
-                c: 0x800080 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"wheat",
-                c: 0xf5deb3 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"wheat1",
-                c: 0xffe7ba as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"wheat2",
-                c: 0xeed8ae as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"wheat3",
-                c: 0xcdba96 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"wheat4",
-                c: 0x8b7e66 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"white smoke",
-                c: 0xf5f5f5 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"white",
-                c: 0xffffff as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"x11 gray",
-                c: 0xbebebe as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"x11 green",
-                c: 0xff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"x11 grey",
-                c: 0xbebebe as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"x11 maroon",
-                c: 0xb03060 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"x11 purple",
-                c: 0xa020f0 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"yellow green",
-                c: 0x9acd32 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"yellow",
-                c: 0xffff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"yellow1",
-                c: 0xffff00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"yellow2",
-                c: 0xeeee00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"yellow3",
-                c: 0xcdcd00 as ::core::ffi::c_int,
-            },
-            C2RustUnnamed_37 {
-                name: c"yellow4",
-                c: 0x8b8b00 as ::core::ffi::c_int,
-            },
-        ];
-        let mut i: u_int = 0;
-        let mut c: ::core::ffi::c_int = 0;
-        let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        if strncasecmp(
+    let name = name.as_ptr();
+    const colours: [C2RustUnnamed_37; 578] = [
+        C2RustUnnamed_37 {
+            name: c"AliceBlue",
+            c: 0xf0f8ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"AntiqueWhite",
+            c: 0xfaebd7 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"AntiqueWhite1",
+            c: 0xffefdb as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"AntiqueWhite2",
+            c: 0xeedfcc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"AntiqueWhite3",
+            c: 0xcdc0b0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"AntiqueWhite4",
+            c: 0x8b8378 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"BlanchedAlmond",
+            c: 0xffebcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"BlueViolet",
+            c: 0x8a2be2 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"CadetBlue",
+            c: 0x5f9ea0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"CadetBlue1",
+            c: 0x98f5ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"CadetBlue2",
+            c: 0x8ee5ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"CadetBlue3",
+            c: 0x7ac5cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"CadetBlue4",
+            c: 0x53868b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"CornflowerBlue",
+            c: 0x6495ed as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkBlue",
+            c: 0x8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkCyan",
+            c: 0x8b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGoldenrod",
+            c: 0xb8860b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGoldenrod1",
+            c: 0xffb90f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGoldenrod2",
+            c: 0xeead0e as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGoldenrod3",
+            c: 0xcd950c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGoldenrod4",
+            c: 0x8b6508 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGray",
+            c: 0xa9a9a9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGreen",
+            c: 0x6400 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkGrey",
+            c: 0xa9a9a9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkKhaki",
+            c: 0xbdb76b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkMagenta",
+            c: 0x8b008b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOliveGreen",
+            c: 0x556b2f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOliveGreen1",
+            c: 0xcaff70 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOliveGreen2",
+            c: 0xbcee68 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOliveGreen3",
+            c: 0xa2cd5a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOliveGreen4",
+            c: 0x6e8b3d as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrange",
+            c: 0xff8c00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrange1",
+            c: 0xff7f00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrange2",
+            c: 0xee7600 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrange3",
+            c: 0xcd6600 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrange4",
+            c: 0x8b4500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrchid",
+            c: 0x9932cc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrchid1",
+            c: 0xbf3eff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrchid2",
+            c: 0xb23aee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrchid3",
+            c: 0x9a32cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkOrchid4",
+            c: 0x68228b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkRed",
+            c: 0x8b0000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSalmon",
+            c: 0xe9967a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSeaGreen",
+            c: 0x8fbc8f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSeaGreen1",
+            c: 0xc1ffc1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSeaGreen2",
+            c: 0xb4eeb4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSeaGreen3",
+            c: 0x9bcd9b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSeaGreen4",
+            c: 0x698b69 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSlateBlue",
+            c: 0x483d8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSlateGray",
+            c: 0x2f4f4f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSlateGray1",
+            c: 0x97ffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSlateGray2",
+            c: 0x8deeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSlateGray3",
+            c: 0x79cdcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSlateGray4",
+            c: 0x528b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkSlateGrey",
+            c: 0x2f4f4f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkTurquoise",
+            c: 0xced1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DarkViolet",
+            c: 0x9400d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepPink",
+            c: 0xff1493 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepPink1",
+            c: 0xff1493 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepPink2",
+            c: 0xee1289 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepPink3",
+            c: 0xcd1076 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepPink4",
+            c: 0x8b0a50 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepSkyBlue",
+            c: 0xbfff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepSkyBlue1",
+            c: 0xbfff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepSkyBlue2",
+            c: 0xb2ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepSkyBlue3",
+            c: 0x9acd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DeepSkyBlue4",
+            c: 0x688b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DimGray",
+            c: 0x696969 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DimGrey",
+            c: 0x696969 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DodgerBlue",
+            c: 0x1e90ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DodgerBlue1",
+            c: 0x1e90ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DodgerBlue2",
+            c: 0x1c86ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DodgerBlue3",
+            c: 0x1874cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"DodgerBlue4",
+            c: 0x104e8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"FloralWhite",
+            c: 0xfffaf0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"ForestGreen",
+            c: 0x228b22 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"GhostWhite",
+            c: 0xf8f8ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"GreenYellow",
+            c: 0xadff2f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"HotPink",
+            c: 0xff69b4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"HotPink1",
+            c: 0xff6eb4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"HotPink2",
+            c: 0xee6aa7 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"HotPink3",
+            c: 0xcd6090 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"HotPink4",
+            c: 0x8b3a62 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"IndianRed",
+            c: 0xcd5c5c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"IndianRed1",
+            c: 0xff6a6a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"IndianRed2",
+            c: 0xee6363 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"IndianRed3",
+            c: 0xcd5555 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"IndianRed4",
+            c: 0x8b3a3a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LavenderBlush",
+            c: 0xfff0f5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LavenderBlush1",
+            c: 0xfff0f5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LavenderBlush2",
+            c: 0xeee0e5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LavenderBlush3",
+            c: 0xcdc1c5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LavenderBlush4",
+            c: 0x8b8386 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LawnGreen",
+            c: 0x7cfc00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LemonChiffon",
+            c: 0xfffacd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LemonChiffon1",
+            c: 0xfffacd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LemonChiffon2",
+            c: 0xeee9bf as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LemonChiffon3",
+            c: 0xcdc9a5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LemonChiffon4",
+            c: 0x8b8970 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightBlue",
+            c: 0xadd8e6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightBlue1",
+            c: 0xbfefff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightBlue2",
+            c: 0xb2dfee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightBlue3",
+            c: 0x9ac0cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightBlue4",
+            c: 0x68838b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightCoral",
+            c: 0xf08080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightCyan",
+            c: 0xe0ffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightCyan1",
+            c: 0xe0ffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightCyan2",
+            c: 0xd1eeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightCyan3",
+            c: 0xb4cdcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightCyan4",
+            c: 0x7a8b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGoldenrod",
+            c: 0xeedd82 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGoldenrod1",
+            c: 0xffec8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGoldenrod2",
+            c: 0xeedc82 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGoldenrod3",
+            c: 0xcdbe70 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGoldenrod4",
+            c: 0x8b814c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGoldenrodYellow",
+            c: 0xfafad2 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGray",
+            c: 0xd3d3d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGreen",
+            c: 0x90ee90 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightGrey",
+            c: 0xd3d3d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightPink",
+            c: 0xffb6c1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightPink1",
+            c: 0xffaeb9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightPink2",
+            c: 0xeea2ad as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightPink3",
+            c: 0xcd8c95 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightPink4",
+            c: 0x8b5f65 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSalmon",
+            c: 0xffa07a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSalmon1",
+            c: 0xffa07a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSalmon2",
+            c: 0xee9572 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSalmon3",
+            c: 0xcd8162 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSalmon4",
+            c: 0x8b5742 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSeaGreen",
+            c: 0x20b2aa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSkyBlue",
+            c: 0x87cefa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSkyBlue1",
+            c: 0xb0e2ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSkyBlue2",
+            c: 0xa4d3ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSkyBlue3",
+            c: 0x8db6cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSkyBlue4",
+            c: 0x607b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSlateBlue",
+            c: 0x8470ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSlateGray",
+            c: 0x778899 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSlateGrey",
+            c: 0x778899 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSteelBlue",
+            c: 0xb0c4de as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSteelBlue1",
+            c: 0xcae1ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSteelBlue2",
+            c: 0xbcd2ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSteelBlue3",
+            c: 0xa2b5cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightSteelBlue4",
+            c: 0x6e7b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightYellow",
+            c: 0xffffe0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightYellow1",
+            c: 0xffffe0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightYellow2",
+            c: 0xeeeed1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightYellow3",
+            c: 0xcdcdb4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LightYellow4",
+            c: 0x8b8b7a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"LimeGreen",
+            c: 0x32cd32 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumAquamarine",
+            c: 0x66cdaa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumBlue",
+            c: 0xcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumOrchid",
+            c: 0xba55d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumOrchid1",
+            c: 0xe066ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumOrchid2",
+            c: 0xd15fee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumOrchid3",
+            c: 0xb452cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumOrchid4",
+            c: 0x7a378b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumPurple",
+            c: 0x9370db as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumPurple1",
+            c: 0xab82ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumPurple2",
+            c: 0x9f79ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumPurple3",
+            c: 0x8968cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumPurple4",
+            c: 0x5d478b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumSeaGreen",
+            c: 0x3cb371 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumSlateBlue",
+            c: 0x7b68ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumSpringGreen",
+            c: 0xfa9a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumTurquoise",
+            c: 0x48d1cc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MediumVioletRed",
+            c: 0xc71585 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MidnightBlue",
+            c: 0x191970 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MintCream",
+            c: 0xf5fffa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MistyRose",
+            c: 0xffe4e1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MistyRose1",
+            c: 0xffe4e1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MistyRose2",
+            c: 0xeed5d2 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MistyRose3",
+            c: 0xcdb7b5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"MistyRose4",
+            c: 0x8b7d7b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"NavajoWhite",
+            c: 0xffdead as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"NavajoWhite1",
+            c: 0xffdead as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"NavajoWhite2",
+            c: 0xeecfa1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"NavajoWhite3",
+            c: 0xcdb38b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"NavajoWhite4",
+            c: 0x8b795e as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"NavyBlue",
+            c: 0x80 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OldLace",
+            c: 0xfdf5e6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OliveDrab",
+            c: 0x6b8e23 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OliveDrab1",
+            c: 0xc0ff3e as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OliveDrab2",
+            c: 0xb3ee3a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OliveDrab3",
+            c: 0x9acd32 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OliveDrab4",
+            c: 0x698b22 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OrangeRed",
+            c: 0xff4500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OrangeRed1",
+            c: 0xff4500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OrangeRed2",
+            c: 0xee4000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OrangeRed3",
+            c: 0xcd3700 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"OrangeRed4",
+            c: 0x8b2500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleGoldenrod",
+            c: 0xeee8aa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleGreen",
+            c: 0x98fb98 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleGreen1",
+            c: 0x9aff9a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleGreen2",
+            c: 0x90ee90 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleGreen3",
+            c: 0x7ccd7c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleGreen4",
+            c: 0x548b54 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleTurquoise",
+            c: 0xafeeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleTurquoise1",
+            c: 0xbbffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleTurquoise2",
+            c: 0xaeeeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleTurquoise3",
+            c: 0x96cdcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleTurquoise4",
+            c: 0x668b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleVioletRed",
+            c: 0xdb7093 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleVioletRed1",
+            c: 0xff82ab as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleVioletRed2",
+            c: 0xee799f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleVioletRed3",
+            c: 0xcd6889 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PaleVioletRed4",
+            c: 0x8b475d as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PapayaWhip",
+            c: 0xffefd5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PeachPuff",
+            c: 0xffdab9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PeachPuff1",
+            c: 0xffdab9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PeachPuff2",
+            c: 0xeecbad as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PeachPuff3",
+            c: 0xcdaf95 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PeachPuff4",
+            c: 0x8b7765 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"PowderBlue",
+            c: 0xb0e0e6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RebeccaPurple",
+            c: 0x663399 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RosyBrown",
+            c: 0xbc8f8f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RosyBrown1",
+            c: 0xffc1c1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RosyBrown2",
+            c: 0xeeb4b4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RosyBrown3",
+            c: 0xcd9b9b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RosyBrown4",
+            c: 0x8b6969 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RoyalBlue",
+            c: 0x4169e1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RoyalBlue1",
+            c: 0x4876ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RoyalBlue2",
+            c: 0x436eee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RoyalBlue3",
+            c: 0x3a5fcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"RoyalBlue4",
+            c: 0x27408b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SaddleBrown",
+            c: 0x8b4513 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SandyBrown",
+            c: 0xf4a460 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SeaGreen",
+            c: 0x2e8b57 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SeaGreen1",
+            c: 0x54ff9f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SeaGreen2",
+            c: 0x4eee94 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SeaGreen3",
+            c: 0x43cd80 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SeaGreen4",
+            c: 0x2e8b57 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SkyBlue",
+            c: 0x87ceeb as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SkyBlue1",
+            c: 0x87ceff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SkyBlue2",
+            c: 0x7ec0ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SkyBlue3",
+            c: 0x6ca6cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SkyBlue4",
+            c: 0x4a708b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateBlue",
+            c: 0x6a5acd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateBlue1",
+            c: 0x836fff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateBlue2",
+            c: 0x7a67ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateBlue3",
+            c: 0x6959cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateBlue4",
+            c: 0x473c8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateGray",
+            c: 0x708090 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateGray1",
+            c: 0xc6e2ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateGray2",
+            c: 0xb9d3ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateGray3",
+            c: 0x9fb6cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateGray4",
+            c: 0x6c7b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SlateGrey",
+            c: 0x708090 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SpringGreen",
+            c: 0xff7f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SpringGreen1",
+            c: 0xff7f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SpringGreen2",
+            c: 0xee76 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SpringGreen3",
+            c: 0xcd66 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SpringGreen4",
+            c: 0x8b45 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SteelBlue",
+            c: 0x4682b4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SteelBlue1",
+            c: 0x63b8ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SteelBlue2",
+            c: 0x5cacee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SteelBlue3",
+            c: 0x4f94cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"SteelBlue4",
+            c: 0x36648b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"VioletRed",
+            c: 0xd02090 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"VioletRed1",
+            c: 0xff3e96 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"VioletRed2",
+            c: 0xee3a8c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"VioletRed3",
+            c: 0xcd3278 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"VioletRed4",
+            c: 0x8b2252 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"WebGray",
+            c: 0x808080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"WebGreen",
+            c: 0x8000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"WebGrey",
+            c: 0x808080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"WebMaroon",
+            c: 0x800000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"WebPurple",
+            c: 0x800080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"WhiteSmoke",
+            c: 0xf5f5f5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"X11Gray",
+            c: 0xbebebe as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"X11Green",
+            c: 0xff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"X11Grey",
+            c: 0xbebebe as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"X11Maroon",
+            c: 0xb03060 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"X11Purple",
+            c: 0xa020f0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"YellowGreen",
+            c: 0x9acd32 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"alice blue",
+            c: 0xf0f8ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"antique white",
+            c: 0xfaebd7 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"aqua",
+            c: 0xffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"aquamarine",
+            c: 0x7fffd4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"aquamarine1",
+            c: 0x7fffd4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"aquamarine2",
+            c: 0x76eec6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"aquamarine3",
+            c: 0x66cdaa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"aquamarine4",
+            c: 0x458b74 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"azure",
+            c: 0xf0ffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"azure1",
+            c: 0xf0ffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"azure2",
+            c: 0xe0eeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"azure3",
+            c: 0xc1cdcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"azure4",
+            c: 0x838b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"beige",
+            c: 0xf5f5dc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"bisque",
+            c: 0xffe4c4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"bisque1",
+            c: 0xffe4c4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"bisque2",
+            c: 0xeed5b7 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"bisque3",
+            c: 0xcdb79e as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"bisque4",
+            c: 0x8b7d6b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"black",
+            c: 0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"blanched almond",
+            c: 0xffebcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"blue violet",
+            c: 0x8a2be2 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"blue",
+            c: 0xff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"blue1",
+            c: 0xff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"blue2",
+            c: 0xee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"blue3",
+            c: 0xcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"blue4",
+            c: 0x8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"brown",
+            c: 0xa52a2a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"brown1",
+            c: 0xff4040 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"brown2",
+            c: 0xee3b3b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"brown3",
+            c: 0xcd3333 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"brown4",
+            c: 0x8b2323 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"burlywood",
+            c: 0xdeb887 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"burlywood1",
+            c: 0xffd39b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"burlywood2",
+            c: 0xeec591 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"burlywood3",
+            c: 0xcdaa7d as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"burlywood4",
+            c: 0x8b7355 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cadet blue",
+            c: 0x5f9ea0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chartreuse",
+            c: 0x7fff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chartreuse1",
+            c: 0x7fff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chartreuse2",
+            c: 0x76ee00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chartreuse3",
+            c: 0x66cd00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chartreuse4",
+            c: 0x458b00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chocolate",
+            c: 0xd2691e as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chocolate1",
+            c: 0xff7f24 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chocolate2",
+            c: 0xee7621 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chocolate3",
+            c: 0xcd661d as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"chocolate4",
+            c: 0x8b4513 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"coral",
+            c: 0xff7f50 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"coral1",
+            c: 0xff7256 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"coral2",
+            c: 0xee6a50 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"coral3",
+            c: 0xcd5b45 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"coral4",
+            c: 0x8b3e2f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cornflower blue",
+            c: 0x6495ed as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cornsilk",
+            c: 0xfff8dc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cornsilk1",
+            c: 0xfff8dc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cornsilk2",
+            c: 0xeee8cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cornsilk3",
+            c: 0xcdc8b1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cornsilk4",
+            c: 0x8b8878 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"crimson",
+            c: 0xdc143c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cyan",
+            c: 0xffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cyan1",
+            c: 0xffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cyan2",
+            c: 0xeeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cyan3",
+            c: 0xcdcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"cyan4",
+            c: 0x8b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark blue",
+            c: 0x8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark cyan",
+            c: 0x8b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark goldenrod",
+            c: 0xb8860b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark gray",
+            c: 0xa9a9a9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark green",
+            c: 0x6400 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark grey",
+            c: 0xa9a9a9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark khaki",
+            c: 0xbdb76b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark magenta",
+            c: 0x8b008b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark olive green",
+            c: 0x556b2f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark orange",
+            c: 0xff8c00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark orchid",
+            c: 0x9932cc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark red",
+            c: 0x8b0000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark salmon",
+            c: 0xe9967a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark sea green",
+            c: 0x8fbc8f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark slate blue",
+            c: 0x483d8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark slate gray",
+            c: 0x2f4f4f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark slate grey",
+            c: 0x2f4f4f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark turquoise",
+            c: 0xced1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dark violet",
+            c: 0x9400d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"deep pink",
+            c: 0xff1493 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"deep sky blue",
+            c: 0xbfff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dim gray",
+            c: 0x696969 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dim grey",
+            c: 0x696969 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"dodger blue",
+            c: 0x1e90ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"firebrick",
+            c: 0xb22222 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"firebrick1",
+            c: 0xff3030 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"firebrick2",
+            c: 0xee2c2c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"firebrick3",
+            c: 0xcd2626 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"firebrick4",
+            c: 0x8b1a1a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"floral white",
+            c: 0xfffaf0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"forest green",
+            c: 0x228b22 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"fuchsia",
+            c: 0xff00ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"gainsboro",
+            c: 0xdcdcdc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"ghost white",
+            c: 0xf8f8ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"gold",
+            c: 0xffd700 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"gold1",
+            c: 0xffd700 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"gold2",
+            c: 0xeec900 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"gold3",
+            c: 0xcdad00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"gold4",
+            c: 0x8b7500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"goldenrod",
+            c: 0xdaa520 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"goldenrod1",
+            c: 0xffc125 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"goldenrod2",
+            c: 0xeeb422 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"goldenrod3",
+            c: 0xcd9b1d as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"goldenrod4",
+            c: 0x8b6914 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"green yellow",
+            c: 0xadff2f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"green",
+            c: 0xff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"green1",
+            c: 0xff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"green2",
+            c: 0xee00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"green3",
+            c: 0xcd00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"green4",
+            c: 0x8b00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"honeydew",
+            c: 0xf0fff0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"honeydew1",
+            c: 0xf0fff0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"honeydew2",
+            c: 0xe0eee0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"honeydew3",
+            c: 0xc1cdc1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"honeydew4",
+            c: 0x838b83 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"hot pink",
+            c: 0xff69b4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"indian red",
+            c: 0xcd5c5c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"indigo",
+            c: 0x4b0082 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"ivory",
+            c: 0xfffff0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"ivory1",
+            c: 0xfffff0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"ivory2",
+            c: 0xeeeee0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"ivory3",
+            c: 0xcdcdc1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"ivory4",
+            c: 0x8b8b83 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"khaki",
+            c: 0xf0e68c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"khaki1",
+            c: 0xfff68f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"khaki2",
+            c: 0xeee685 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"khaki3",
+            c: 0xcdc673 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"khaki4",
+            c: 0x8b864e as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"lavender blush",
+            c: 0xfff0f5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"lavender",
+            c: 0xe6e6fa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"lawn green",
+            c: 0x7cfc00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"lemon chiffon",
+            c: 0xfffacd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light blue",
+            c: 0xadd8e6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light coral",
+            c: 0xf08080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light cyan",
+            c: 0xe0ffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light goldenrod yellow",
+            c: 0xfafad2 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light goldenrod",
+            c: 0xeedd82 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light gray",
+            c: 0xd3d3d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light green",
+            c: 0x90ee90 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light grey",
+            c: 0xd3d3d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light pink",
+            c: 0xffb6c1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light salmon",
+            c: 0xffa07a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light sea green",
+            c: 0x20b2aa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light sky blue",
+            c: 0x87cefa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light slate blue",
+            c: 0x8470ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light slate gray",
+            c: 0x778899 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light slate grey",
+            c: 0x778899 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light steel blue",
+            c: 0xb0c4de as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"light yellow",
+            c: 0xffffe0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"lime green",
+            c: 0x32cd32 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"lime",
+            c: 0xff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"linen",
+            c: 0xfaf0e6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"magenta",
+            c: 0xff00ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"magenta1",
+            c: 0xff00ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"magenta2",
+            c: 0xee00ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"magenta3",
+            c: 0xcd00cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"magenta4",
+            c: 0x8b008b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"maroon",
+            c: 0xb03060 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"maroon1",
+            c: 0xff34b3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"maroon2",
+            c: 0xee30a7 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"maroon3",
+            c: 0xcd2990 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"maroon4",
+            c: 0x8b1c62 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium aquamarine",
+            c: 0x66cdaa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium blue",
+            c: 0xcd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium orchid",
+            c: 0xba55d3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium purple",
+            c: 0x9370db as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium sea green",
+            c: 0x3cb371 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium slate blue",
+            c: 0x7b68ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium spring green",
+            c: 0xfa9a as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium turquoise",
+            c: 0x48d1cc as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"medium violet red",
+            c: 0xc71585 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"midnight blue",
+            c: 0x191970 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"mint cream",
+            c: 0xf5fffa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"misty rose",
+            c: 0xffe4e1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"moccasin",
+            c: 0xffe4b5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"navajo white",
+            c: 0xffdead as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"navy blue",
+            c: 0x80 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"navy",
+            c: 0x80 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"old lace",
+            c: 0xfdf5e6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"olive drab",
+            c: 0x6b8e23 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"olive",
+            c: 0x808000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orange red",
+            c: 0xff4500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orange",
+            c: 0xffa500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orange1",
+            c: 0xffa500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orange2",
+            c: 0xee9a00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orange3",
+            c: 0xcd8500 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orange4",
+            c: 0x8b5a00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orchid",
+            c: 0xda70d6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orchid1",
+            c: 0xff83fa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orchid2",
+            c: 0xee7ae9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orchid3",
+            c: 0xcd69c9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"orchid4",
+            c: 0x8b4789 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pale goldenrod",
+            c: 0xeee8aa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pale green",
+            c: 0x98fb98 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pale turquoise",
+            c: 0xafeeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pale violet red",
+            c: 0xdb7093 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"papaya whip",
+            c: 0xffefd5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"peach puff",
+            c: 0xffdab9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"peru",
+            c: 0xcd853f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pink",
+            c: 0xffc0cb as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pink1",
+            c: 0xffb5c5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pink2",
+            c: 0xeea9b8 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pink3",
+            c: 0xcd919e as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"pink4",
+            c: 0x8b636c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"plum",
+            c: 0xdda0dd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"plum1",
+            c: 0xffbbff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"plum2",
+            c: 0xeeaeee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"plum3",
+            c: 0xcd96cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"plum4",
+            c: 0x8b668b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"powder blue",
+            c: 0xb0e0e6 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"purple",
+            c: 0xa020f0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"purple1",
+            c: 0x9b30ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"purple2",
+            c: 0x912cee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"purple3",
+            c: 0x7d26cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"purple4",
+            c: 0x551a8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"rebecca purple",
+            c: 0x663399 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"red",
+            c: 0xff0000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"red1",
+            c: 0xff0000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"red2",
+            c: 0xee0000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"red3",
+            c: 0xcd0000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"red4",
+            c: 0x8b0000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"rosy brown",
+            c: 0xbc8f8f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"royal blue",
+            c: 0x4169e1 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"saddle brown",
+            c: 0x8b4513 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"salmon",
+            c: 0xfa8072 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"salmon1",
+            c: 0xff8c69 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"salmon2",
+            c: 0xee8262 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"salmon3",
+            c: 0xcd7054 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"salmon4",
+            c: 0x8b4c39 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sandy brown",
+            c: 0xf4a460 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sea green",
+            c: 0x2e8b57 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"seashell",
+            c: 0xfff5ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"seashell1",
+            c: 0xfff5ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"seashell2",
+            c: 0xeee5de as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"seashell3",
+            c: 0xcdc5bf as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"seashell4",
+            c: 0x8b8682 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sienna",
+            c: 0xa0522d as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sienna1",
+            c: 0xff8247 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sienna2",
+            c: 0xee7942 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sienna3",
+            c: 0xcd6839 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sienna4",
+            c: 0x8b4726 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"silver",
+            c: 0xc0c0c0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"sky blue",
+            c: 0x87ceeb as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"slate blue",
+            c: 0x6a5acd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"slate gray",
+            c: 0x708090 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"slate grey",
+            c: 0x708090 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"snow",
+            c: 0xfffafa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"snow1",
+            c: 0xfffafa as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"snow2",
+            c: 0xeee9e9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"snow3",
+            c: 0xcdc9c9 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"snow4",
+            c: 0x8b8989 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"spring green",
+            c: 0xff7f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"steel blue",
+            c: 0x4682b4 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tan",
+            c: 0xd2b48c as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tan1",
+            c: 0xffa54f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tan2",
+            c: 0xee9a49 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tan3",
+            c: 0xcd853f as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tan4",
+            c: 0x8b5a2b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"teal",
+            c: 0x8080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"thistle",
+            c: 0xd8bfd8 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"thistle1",
+            c: 0xffe1ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"thistle2",
+            c: 0xeed2ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"thistle3",
+            c: 0xcdb5cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"thistle4",
+            c: 0x8b7b8b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tomato",
+            c: 0xff6347 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tomato1",
+            c: 0xff6347 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tomato2",
+            c: 0xee5c42 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tomato3",
+            c: 0xcd4f39 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"tomato4",
+            c: 0x8b3626 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"turquoise",
+            c: 0x40e0d0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"turquoise1",
+            c: 0xf5ff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"turquoise2",
+            c: 0xe5ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"turquoise3",
+            c: 0xc5cd as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"turquoise4",
+            c: 0x868b as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"violet red",
+            c: 0xd02090 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"violet",
+            c: 0xee82ee as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"web gray",
+            c: 0x808080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"web green",
+            c: 0x8000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"web grey",
+            c: 0x808080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"web maroon",
+            c: 0x800000 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"web purple",
+            c: 0x800080 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"wheat",
+            c: 0xf5deb3 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"wheat1",
+            c: 0xffe7ba as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"wheat2",
+            c: 0xeed8ae as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"wheat3",
+            c: 0xcdba96 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"wheat4",
+            c: 0x8b7e66 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"white smoke",
+            c: 0xf5f5f5 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"white",
+            c: 0xffffff as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"x11 gray",
+            c: 0xbebebe as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"x11 green",
+            c: 0xff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"x11 grey",
+            c: 0xbebebe as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"x11 maroon",
+            c: 0xb03060 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"x11 purple",
+            c: 0xa020f0 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"yellow green",
+            c: 0x9acd32 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"yellow",
+            c: 0xffff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"yellow1",
+            c: 0xffff00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"yellow2",
+            c: 0xeeee00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"yellow3",
+            c: 0xcdcd00 as ::core::ffi::c_int,
+        },
+        C2RustUnnamed_37 {
+            name: c"yellow4",
+            c: 0x8b8b00 as ::core::ffi::c_int,
+        },
+    ];
+    let mut i: u_int = 0;
+    let mut c: ::core::ffi::c_int = 0;
+    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    if strncasecmp(
+        name,
+        b"grey\0" as *const u8 as *const ::core::ffi::c_char,
+        4 as size_t,
+    ) == 0 as ::core::ffi::c_int
+        || strncasecmp(
             name,
-            b"grey\0" as *const u8 as *const ::core::ffi::c_char,
+            b"gray\0" as *const u8 as *const ::core::ffi::c_char,
             4 as size_t,
         ) == 0 as ::core::ffi::c_int
-            || strncasecmp(
-                name,
-                b"gray\0" as *const u8 as *const ::core::ffi::c_char,
-                4 as size_t,
-            ) == 0 as ::core::ffi::c_int
-        {
-            if *name.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32 {
-                return 0xbebebe as ::core::ffi::c_int | COLOUR_FLAG_RGB;
-            }
-            c = strtonum(
-                name.offset(4 as ::core::ffi::c_int as isize),
-                0 as ::core::ffi::c_longlong,
-                100 as ::core::ffi::c_longlong,
-                &raw mut errstr,
-            ) as ::core::ffi::c_int;
-            if !errstr.is_null() {
-                return -(1 as ::core::ffi::c_int);
-            }
-            c = round(2.55f64 * c as ::core::ffi::c_double) as ::core::ffi::c_int;
-            if c < 0 as ::core::ffi::c_int || c > 255 as ::core::ffi::c_int {
-                return -(1 as ::core::ffi::c_int);
-            }
-            return colour_join_rgb(c as u_char, c as u_char, c as u_char);
+    {
+        if *name.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32 {
+            return 0xbebebe as ::core::ffi::c_int | COLOUR_FLAG_RGB;
         }
-        i = 0 as u_int;
-        while (i as usize)
-            < (::core::mem::size_of::<[C2RustUnnamed_37; 578]>() as usize)
-                .wrapping_div(::core::mem::size_of::<C2RustUnnamed_37>() as usize)
-        {
-            if strcasecmp(colours[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
-                return colours[i as usize].c | COLOUR_FLAG_RGB;
-            }
-            i = i.wrapping_add(1);
+        c = strtonum(
+            name.offset(4 as ::core::ffi::c_int as isize),
+            0 as ::core::ffi::c_longlong,
+            100 as ::core::ffi::c_longlong,
+            &raw mut errstr,
+        ) as ::core::ffi::c_int;
+        if !errstr.is_null() {
+            return -(1 as ::core::ffi::c_int);
         }
-        return -(1 as ::core::ffi::c_int);
+        c = round(2.55f64 * c as ::core::ffi::c_double) as ::core::ffi::c_int;
+        if c < 0 as ::core::ffi::c_int || c > 255 as ::core::ffi::c_int {
+            return -(1 as ::core::ffi::c_int);
+        }
+        return colour_join_rgb(c as u_char, c as u_char, c as u_char);
     }
+    i = 0 as u_int;
+    while (i as usize)
+        < (::core::mem::size_of::<[C2RustUnnamed_37; 578]>() as usize)
+            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_37>() as usize)
+    {
+        if strcasecmp(colours[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
+            return colours[i as usize].c | COLOUR_FLAG_RGB;
+        }
+        i = i.wrapping_add(1);
+    }
+    return -(1 as ::core::ffi::c_int);
 }
 unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
-    unsafe {
-        let p = input.as_ptr();
-        let mut c: ::core::ffi::c_double = 0.;
-        let mut m: ::core::ffi::c_double = 0.;
-        let mut y: ::core::ffi::c_double = 0.;
-        let mut k: ::core::ffi::c_double = 0 as ::core::ffi::c_int as ::core::ffi::c_double;
-        let mut r: u_int = 0;
-        let mut g: u_int = 0;
-        let mut b: u_int = 0;
-        let mut len: size_t = input.to_bytes().len();
-        let mut colour: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-        if len == 12 as size_t
-            && sscanf(
-                p,
-                b"rgb:%02x/%02x/%02x\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut r,
-                &raw mut g,
-                &raw mut b,
-            ) == 3 as ::core::ffi::c_int
-            || len == 7 as size_t
-                && sscanf(
-                    p,
-                    b"#%02x%02x%02x\0" as *const u8 as *const ::core::ffi::c_char,
-                    &raw mut r,
-                    &raw mut g,
-                    &raw mut b,
-                ) == 3 as ::core::ffi::c_int
-            || sscanf(
-                p,
-                b"%d,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut r,
-                &raw mut g,
-                &raw mut b,
-            ) == 3 as ::core::ffi::c_int
-        {
-            colour = colour_join_rgb(r as u_char, g as u_char, b as u_char);
-        } else if len == 18 as size_t
-            && sscanf(
-                p,
-                b"rgb:%04x/%04x/%04x\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut r,
-                &raw mut g,
-                &raw mut b,
-            ) == 3 as ::core::ffi::c_int
-            || len == 13 as size_t
-                && sscanf(
-                    p,
-                    b"#%04x%04x%04x\0" as *const u8 as *const ::core::ffi::c_char,
-                    &raw mut r,
-                    &raw mut g,
-                    &raw mut b,
-                ) == 3 as ::core::ffi::c_int
-        {
-            colour = colour_join_rgb(
-                (r >> 8 as ::core::ffi::c_int) as u_char,
-                (g >> 8 as ::core::ffi::c_int) as u_char,
-                (b >> 8 as ::core::ffi::c_int) as u_char,
-            );
-        } else if (sscanf(
+    let p = input.as_ptr();
+    let mut c: ::core::ffi::c_double = 0.;
+    let mut m: ::core::ffi::c_double = 0.;
+    let mut y: ::core::ffi::c_double = 0.;
+    let mut k: ::core::ffi::c_double = 0 as ::core::ffi::c_int as ::core::ffi::c_double;
+    let mut r: u_int = 0;
+    let mut g: u_int = 0;
+    let mut b: u_int = 0;
+    let mut len: size_t = input.to_bytes().len();
+    let mut colour: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
+    if len == 12 as size_t
+        && sscanf(
             p,
-            b"cmyk:%lf/%lf/%lf/%lf\0" as *const u8 as *const ::core::ffi::c_char,
+            b"rgb:%02x/%02x/%02x\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut r,
+            &raw mut g,
+            &raw mut b,
+        ) == 3 as ::core::ffi::c_int
+        || len == 7 as size_t
+            && sscanf(
+                p,
+                b"#%02x%02x%02x\0" as *const u8 as *const ::core::ffi::c_char,
+                &raw mut r,
+                &raw mut g,
+                &raw mut b,
+            ) == 3 as ::core::ffi::c_int
+        || sscanf(
+            p,
+            b"%d,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut r,
+            &raw mut g,
+            &raw mut b,
+        ) == 3 as ::core::ffi::c_int
+    {
+        colour = colour_join_rgb(r as u_char, g as u_char, b as u_char);
+    } else if len == 18 as size_t
+        && sscanf(
+            p,
+            b"rgb:%04x/%04x/%04x\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut r,
+            &raw mut g,
+            &raw mut b,
+        ) == 3 as ::core::ffi::c_int
+        || len == 13 as size_t
+            && sscanf(
+                p,
+                b"#%04x%04x%04x\0" as *const u8 as *const ::core::ffi::c_char,
+                &raw mut r,
+                &raw mut g,
+                &raw mut b,
+            ) == 3 as ::core::ffi::c_int
+    {
+        colour = colour_join_rgb(
+            (r >> 8 as ::core::ffi::c_int) as u_char,
+            (g >> 8 as ::core::ffi::c_int) as u_char,
+            (b >> 8 as ::core::ffi::c_int) as u_char,
+        );
+    } else if (sscanf(
+        p,
+        b"cmyk:%lf/%lf/%lf/%lf\0" as *const u8 as *const ::core::ffi::c_char,
+        &raw mut c,
+        &raw mut m,
+        &raw mut y,
+        &raw mut k,
+    ) == 4 as ::core::ffi::c_int
+        || sscanf(
+            p,
+            b"cmy:%lf/%lf/%lf\0" as *const u8 as *const ::core::ffi::c_char,
             &raw mut c,
             &raw mut m,
             &raw mut y,
-            &raw mut k,
-        ) == 4 as ::core::ffi::c_int
-            || sscanf(
-                p,
-                b"cmy:%lf/%lf/%lf\0" as *const u8 as *const ::core::ffi::c_char,
-                &raw mut c,
-                &raw mut m,
-                &raw mut y,
-            ) == 3 as ::core::ffi::c_int)
-            && c >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-            && c <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-            && m >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-            && m <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-            && y >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-            && y <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-            && k >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
-            && k <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
-        {
-            colour = colour_join_rgb(
-                ((1 as ::core::ffi::c_int as ::core::ffi::c_double - c)
-                    * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
-                    * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
-                ((1 as ::core::ffi::c_int as ::core::ffi::c_double - m)
-                    * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
-                    * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
-                ((1 as ::core::ffi::c_int as ::core::ffi::c_double - y)
-                    * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
-                    * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
-            );
-        } else {
-            let bytes = input.to_bytes();
-            let mut start = 0;
-            while start < bytes.len() && bytes[start] == b' ' {
-                start += 1;
-            }
-            len = bytes.len() - start;
-            while len != 0 as size_t && bytes[start + len - 1] == b' ' {
-                len = len.wrapping_sub(1);
-            }
-            let trimmed = &bytes[start..start + len];
-            let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
-            colour = colour_byname_impl(&copy);
+        ) == 3 as ::core::ffi::c_int)
+        && c >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
+        && c <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
+        && m >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
+        && m <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
+        && y >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
+        && y <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
+        && k >= 0 as ::core::ffi::c_int as ::core::ffi::c_double
+        && k <= 1 as ::core::ffi::c_int as ::core::ffi::c_double
+    {
+        colour = colour_join_rgb(
+            ((1 as ::core::ffi::c_int as ::core::ffi::c_double - c)
+                * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
+                * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
+            ((1 as ::core::ffi::c_int as ::core::ffi::c_double - m)
+                * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
+                * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
+            ((1 as ::core::ffi::c_int as ::core::ffi::c_double - y)
+                * (1 as ::core::ffi::c_int as ::core::ffi::c_double - k)
+                * 255 as ::core::ffi::c_int as ::core::ffi::c_double) as u_char,
+        );
+    } else {
+        let bytes = input.to_bytes();
+        let mut start = 0;
+        while start < bytes.len() && bytes[start] == b' ' {
+            start += 1;
         }
-        return colour;
+        len = bytes.len() - start;
+        while len != 0 as size_t && bytes[start + len - 1] == b' ' {
+            len = len.wrapping_sub(1);
+        }
+        let trimmed = &bytes[start..start + len];
+        let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
+        colour = colour_byname_impl(&copy);
     }
+    return colour;
 }
 pub fn colour_palette_init(p: &mut colour_palette) {
     *p = colour_palette {
@@ -3840,27 +3795,20 @@ pub fn colour_palette_set(
     1
 }
 pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mut options) {
-    unsafe {
-        let Some(p) = p else {
-            return;
-        };
-        let o = options_get(oo, c"pane-colours".as_ptr());
-        if crate::src::options::options_array_iter_mut(&mut *(o))
-            .next()
-            .map_or(std::ptr::null_mut(), |item| item)
-            .is_null()
-        {
-            p.default_palette = None;
-            return;
-        }
-        let palette = p.default_palette.get_or_insert_with(|| Box::new([-1; 256]));
-        palette.fill(-1);
-        for (i, colour) in palette.iter_mut().enumerate() {
-            let ov = crate::src::options::options_array_get_index_mut(&mut *(o), i as u_int)
-                .map_or(std::ptr::null_mut(), |value| value);
-            if !ov.is_null() {
-                *colour = (*ov).number() as ::core::ffi::c_int;
-            }
+    let Some(p) = p else {
+        return;
+    };
+    let o = options_get(oo, c"pane-colours".as_ptr());
+    if crate::src::options::options_array_iter_mut(&mut *(o)).next().map_or(std::ptr::null_mut(), |item| item).is_null() {
+        p.default_palette = None;
+        return;
+    }
+    let palette = p.default_palette.get_or_insert_with(|| Box::new([-1; 256]));
+    palette.fill(-1);
+    for (i, colour) in palette.iter_mut().enumerate() {
+        let ov = crate::src::options::options_array_get_index_mut(&mut *(o), i as u_int).map_or(std::ptr::null_mut(), |value| value);
+        if !ov.is_null() {
+            *colour = (*ov).number() as ::core::ffi::c_int;
         }
     }
 }
@@ -3883,7 +3831,7 @@ pub fn colour_parse_cstr(input: &std::ffi::CStr) -> Option<i32> {
 /// # Safety
 /// Input must point to a readable NUL-terminated string for this call.
 pub unsafe fn colour_fromstring(input: *const libc::c_char) -> i32 {
-    unsafe { colour_parse_cstr(std::ffi::CStr::from_ptr(input)).unwrap_or(-1) }
+    colour_parse_cstr(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
 }
 
 /// Parse an entire byte slice with the existing C locale grammar.
@@ -3918,17 +3866,15 @@ pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
 /// # Safety
 /// Call on the application thread, where the global debug log is managed.
 pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
-    unsafe {
-        let value = colour_parse_x11_cstr(input);
-        let formatted = colour_format(value.unwrap_or(-1));
-        crate::src::log::log_debug(format_args!(
-            "{}: {} = {}",
-            "colour_parseX11",
-            log_cstr((input.as_ptr()) as *const _),
-            log_cstr((formatted.as_ptr()) as *const _)
-        ));
-        value
-    }
+    let value = colour_parse_x11_cstr(input);
+    let formatted = colour_format(value.unwrap_or(-1));
+    crate::src::log::log_debug(format_args!(
+        "{}: {} = {}",
+        "colour_parseX11",
+        log_cstr((input.as_ptr()) as *const _),
+        log_cstr((formatted.as_ptr()) as *const _)
+    ));
+    value
 }
 
 /// C ABI compatibility shim.
@@ -3936,5 +3882,5 @@ pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
 /// Input must point to a readable NUL-terminated string for this call.
 /// Call on the application thread, where the global debug log is managed.
 pub unsafe fn colour_parseX11(input: *const libc::c_char) -> i32 {
-    unsafe { colour_parse_x11_logged(std::ffi::CStr::from_ptr(input)).unwrap_or(-1) }
+    colour_parse_x11_logged(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
 }

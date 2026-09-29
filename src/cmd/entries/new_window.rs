@@ -67,258 +67,200 @@ pub static cmd_new_window_entry: cmd_entry = {
         exec: Some(cmd_new_window_exec),
     }
 };
-unsafe fn cmd_new_window_exec(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-) -> cmd_retval {
-    unsafe {
-        let item = item_handle.get();
-        let mut args: *mut args =
-            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-        let c_owner = cmdq_get_client((item).as_ref());
-        let mut c: *mut client = c_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        let current = cmdq_get_state_owned(&*(item));
-        let target = cmdq_get_target(&*item).clone();
-        let mut sc: spawn_context = spawn_context {
-            item: std::rc::Weak::new(),
-            s: std::rc::Weak::new(),
-            wl: refbox::Weak::new(),
-            tc: std::rc::Weak::new(),
-            wp0: std::rc::Weak::new(),
-            lc: ::core::ptr::null_mut::<layout_cell>(),
-            name: None,
-            argv: Vec::new(),
-            environ: None,
-            idx: 0,
-            cwd: None,
-            flags: 0,
-        };
-        let mut argv_owner = Vec::new();
-        let tc_owner = cmdq_get_target_client((item).as_ref());
-        let mut tc: *mut client = tc_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        let session_owner = target.session_handle().expect("new-window target session");
-        let s = session_owner.get();
-        let mut wl: refbox::Weak<winlink> = target.winlink_handle();
-        let mut new_wl: refbox::Weak<winlink> = refbox::Weak::new();
-        let mut idx: ::core::ffi::c_int = target.idx;
-        let mut before: ::core::ffi::c_int = 0;
-        let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
-        let mut cause: Option<std::ffi::CString> = None;
-        let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
-        let mut wname_owned: Option<CString> = None;
-        let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut fs: cmd_find_state = cmd_find_state {
-            flags: 0,
-            s: Default::default(),
-            wl: Default::default(),
-            w: Default::default(),
-            wp: Default::default(),
-            idx: 0,
-        };
-        if args_has(args, 'E' as i32 as u_char) != 0
-            && count != 0 as ::core::ffi::c_int
-            && (count != 1 as ::core::ffi::c_int
-                || *args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr())
-                    as ::core::ffi::c_int
-                    != '\0' as i32)
-        {
+unsafe fn cmd_new_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
+    let item = item_handle.get();
+    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+    let c_owner = cmdq_get_client((item).as_ref());
+    let mut c: *mut client = c_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let current = cmdq_get_state_owned(&*(item));
+    let target = cmdq_get_target(&*item).clone();
+    let mut sc: spawn_context = spawn_context {
+        item: std::rc::Weak::new(),
+        s: std::rc::Weak::new(),
+        wl: refbox::Weak::new(),
+        tc: std::rc::Weak::new(),
+        wp0: std::rc::Weak::new(),
+        lc: ::core::ptr::null_mut::<layout_cell>(),
+        name: None,
+        argv: Vec::new(),
+        environ: None,
+        idx: 0,
+        cwd: None,
+        flags: 0,
+    };
+    let mut argv_owner = Vec::new();
+    let tc_owner = cmdq_get_target_client((item).as_ref());
+    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+    let session_owner = target.session_handle().expect("new-window target session");
+    let s = session_owner.get();
+    let mut wl: refbox::Weak<winlink> = target.winlink_handle();
+    let mut new_wl: refbox::Weak<winlink> = refbox::Weak::new();
+    let mut idx: ::core::ffi::c_int = target.idx;
+    let mut before: ::core::ffi::c_int = 0;
+    let mut count: ::core::ffi::c_int = args_count(args) as ::core::ffi::c_int;
+    let mut cause: Option<std::ffi::CString> = None;
+    let mut wname: *const ::core::ffi::c_char = ::core::ptr::null();
+    let mut wname_owned: Option<CString> = None;
+    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut fs: cmd_find_state = cmd_find_state {
+        flags: 0,
+        s: Default::default(),
+        wl: Default::default(),
+        w: Default::default(),
+        wp: Default::default(),
+        idx: 0,
+    };
+    if args_has(args, 'E' as i32 as u_char) != 0
+        && count != 0 as ::core::ffi::c_int
+        && (count != 1 as ::core::ffi::c_int
+            || *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int != '\0' as i32)
+    {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"command cannot be given for empty pane")
+        });
+        return CMD_RETURN_ERROR;
+    }
+    name = args_get(&*(args), 'n' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+    if !name.is_null() {
+        let expanded = format_single_cstring(
+            Some(item_handle),
+            name,
+            c_owner.as_ref(),
+            Some(&session_owner),
+            (refbox::Weak::new()).clone(),
+            None,
+        );
+        if !check_name(&expanded) {
             cmdq_error(item_handle, |out| {
-                out.write_all(b"command cannot be given for empty pane")
+                out.write_all(b"invalid window name: ")?;
+                out.write_all(expanded.as_bytes())
             });
             return CMD_RETURN_ERROR;
         }
-        name = args_get(&*(args), 'n' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        if !name.is_null() {
+        wname_owned = Some(
+            clean_name_cstring(expanded.as_c_str(), 0)
+                .expect("check_name validated the window name"),
+        );
+        wname = wname_owned
+            .as_ref()
+            .expect("window name was cleaned")
+            .as_ptr();
+    }
+    if args_has(args, 'S' as i32 as u_char) != 0 {
+        if idx != -(1 as ::core::ffi::c_int) {
+            new_wl = winlink_find_by_index(&raw mut (*s).windows, idx);
+        } else if !wname.is_null() {
             let expanded = format_single_cstring(
                 Some(item_handle),
-                name,
+                wname,
                 c_owner.as_ref(),
                 Some(&session_owner),
                 (refbox::Weak::new()).clone(),
                 None,
             );
-            if !check_name(&expanded) {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"invalid window name: ")?;
-                    out.write_all(expanded.as_bytes())
-                });
-                return CMD_RETURN_ERROR;
-            }
-            wname_owned = Some(
-                clean_name_cstring(expanded.as_c_str(), 0)
-                    .expect("check_name validated the window name"),
-            );
-            wname = wname_owned
-                .as_ref()
-                .expect("window name was cleaned")
-                .as_ptr();
-        }
-        if args_has(args, 'S' as i32 as u_char) != 0 {
-            if idx != -(1 as ::core::ffi::c_int) {
-                new_wl = winlink_find_by_index(&raw mut (*s).windows, idx);
-            } else if !wname.is_null() {
-                let expanded = format_single_cstring(
-                    Some(item_handle),
-                    wname,
-                    c_owner.as_ref(),
-                    Some(&session_owner),
-                    (refbox::Weak::new()).clone(),
-                    None,
-                );
-                wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-                while wl.is_alive() {
-                    if !(strcmp(
-                        (*wl.get_unchecked()
-                            .window_handle()
-                            .as_ref()
-                            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                        .name
-                        .as_ptr(),
-                        expanded.as_ptr(),
-                    ) != 0 as ::core::ffi::c_int)
-                    {
-                        if !new_wl.is_alive() {
-                            new_wl = wl.clone();
-                        } else {
-                            cmdq_error(item_handle, |out| {
-                                out.write_all(b"multiple windows named ")?;
-                                write_cstr(out, wname)
-                            });
-                            return CMD_RETURN_ERROR;
-                        }
+            wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
+            while wl.is_alive() {
+                if !(strcmp((*wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).name.as_ptr(), expanded.as_ptr())
+                    != 0 as ::core::ffi::c_int)
+                {
+                    if !new_wl.is_alive() {
+                        new_wl = wl.clone();
+                    } else {
+                        cmdq_error(item_handle, |out| {
+                            out.write_all(b"multiple windows named ")?;
+                            write_cstr(out, wname)
+                        });
+                        return CMD_RETURN_ERROR;
                     }
-                    wl = winlinks_next(wl.get_unchecked());
                 }
+                wl = winlinks_next(wl.get_unchecked());
             }
         }
-        if new_wl.is_alive() {
-            if args_has(args, 'd' as i32 as u_char) != 0 {
-                return CMD_RETURN_NORMAL;
-            }
-            if session_set_current(
-                &(*s).observer.upgrade().expect("live session"),
-                (new_wl).clone(),
-            ) == 0 as ::core::ffi::c_int
-            {
-                server_redraw_session(&*(s));
-            }
-            if !c.is_null() && !(*c).session_handle().is_none() {
-                (*((*s).current_winlink())
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .latest = c
-                    .as_ref()
-                    .map_or_else(std::rc::Weak::new, |client| client.observer.clone());
-            }
-            recalculate_sizes();
-            return CMD_RETURN_NORMAL;
-        }
-        before = args_has(args, 'b' as i32 as u_char);
-        if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
-            idx = winlink_shuffle_up(&session_owner, wl.clone(), before);
-            if idx == -(1 as ::core::ffi::c_int) {
-                idx = target.idx;
-            }
-        }
-        sc.item = std::rc::Rc::downgrade(item_handle);
-        sc.s = (*s).observer.clone();
-        sc.tc = tc_owner
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
-        argv_owner = args_to_vector(&*args);
-        sc.argv = argv_owner;
-        sc.environ = Some(environ_create());
-        for av in args_flag_values(&*args, 'e' as i32 as u_char) {
-            environ_put(
-                sc.environ.as_deref_mut().expect("environment"),
-                av.string_ptr(),
-                0 as ::core::ffi::c_int,
-            );
-        }
-        sc.idx = idx;
-        sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned);
-        sc.flags = 0 as ::core::ffi::c_int;
-        if args_has(args, 'E' as i32 as u_char) != 0
-            || count == 1 as ::core::ffi::c_int
-                && *args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr())
-                    as ::core::ffi::c_int
-                    == '\0' as i32
-        {
-            sc.flags |= SPAWN_EMPTY;
-        }
-        if args_has(args, 'd' as i32 as u_char) != 0 {
-            sc.flags |= SPAWN_DETACHED;
-        }
-        if args_has(args, 'k' as i32 as u_char) != 0 {
-            sc.flags |= SPAWN_KILL;
-        }
-        new_wl = spawn_window(&raw mut sc, &raw mut cause);
-        if !new_wl.is_alive() {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"create window failed: ")?;
-                write_cstr(
-                    out,
-                    cause
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                )
-            });
-            drop(sc.environ.take());
-            return CMD_RETURN_ERROR;
-        } else {
-            if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).current_winlink() {
-                cmd_find_from_winlink(
-                    &mut *current.current.borrow_mut(),
-                    (new_wl).clone(),
-                    0 as ::core::ffi::c_int,
-                );
-                server_redraw_session_group(&*(s));
-            } else {
-                server_status_session_group(&*(s));
-            }
-            if args_has(args, 'P' as i32 as u_char) != 0 {
-                template = args_get(&*(args), 'F' as i32 as u_char)
-                    .map_or(std::ptr::null(), |value| value.as_ptr());
-                if template.is_null() {
-                    template = NEW_WINDOW_TEMPLATE.as_ptr();
-                }
-                let cp = format_single_cstring(
-                    Some(item_handle),
-                    template,
-                    tc_owner.as_ref(),
-                    Some(&session_owner),
-                    (new_wl).clone(),
-                    ((*new_wl
-                        .get_unchecked()
-                        .window_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                    .active_pane()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                    .as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
-                );
-                cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
-            }
-            cmd_find_from_winlink(&raw mut fs, (new_wl).clone(), 0 as ::core::ffi::c_int);
-            cmdq_insert_hook(Some(&session_owner), item_handle, &raw mut fs, |out| {
-                out.write_all(b"after-new-window")
-            });
-            drop(sc.environ.take());
-            return CMD_RETURN_NORMAL;
-        };
     }
+    if new_wl.is_alive() {
+        if args_has(args, 'd' as i32 as u_char) != 0 {
+            return CMD_RETURN_NORMAL;
+        }
+        if session_set_current(&(*s).observer.upgrade().expect("live session"), (new_wl).clone()) == 0 as ::core::ffi::c_int {
+            server_redraw_session(&*(s));
+        }
+        if !c.is_null() && !(*c).session_handle().is_none() {
+            (*((*s).current_winlink()).get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).latest = c.as_ref().map_or_else(std::rc::Weak::new, |client| client.observer.clone());
+        }
+        recalculate_sizes();
+        return CMD_RETURN_NORMAL;
+    }
+    before = args_has(args, 'b' as i32 as u_char);
+    if args_has(args, 'a' as i32 as u_char) != 0 || before != 0 {
+        idx = winlink_shuffle_up(&session_owner, wl.clone(), before);
+        if idx == -(1 as ::core::ffi::c_int) {
+            idx = target.idx;
+        }
+    }
+    sc.item = std::rc::Rc::downgrade(item_handle);
+    sc.s = (*s).observer.clone();
+    sc.tc = tc_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    sc.name = (!wname.is_null()).then(|| CStr::from_ptr(wname).to_owned());
+    argv_owner = args_to_vector(&*args);
+    sc.argv = argv_owner;
+    sc.environ = Some(environ_create());
+    for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+        environ_put(
+            sc.environ.as_deref_mut().expect("environment"),
+            av.string_ptr(),
+            0 as ::core::ffi::c_int,
+        );
+    }
+    sc.idx = idx;
+    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned);
+    sc.flags = 0 as ::core::ffi::c_int;
+    if args_has(args, 'E' as i32 as u_char) != 0
+        || count == 1 as ::core::ffi::c_int
+            && *args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()) as ::core::ffi::c_int == '\0' as i32
+    {
+        sc.flags |= SPAWN_EMPTY;
+    }
+    if args_has(args, 'd' as i32 as u_char) != 0 {
+        sc.flags |= SPAWN_DETACHED;
+    }
+    if args_has(args, 'k' as i32 as u_char) != 0 {
+        sc.flags |= SPAWN_KILL;
+    }
+    new_wl = spawn_window(&raw mut sc, &raw mut cause);
+    if !new_wl.is_alive() {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"create window failed: ")?;
+            write_cstr(
+                out,
+                cause
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+            )
+        });
+        drop(sc.environ.take());
+        return CMD_RETURN_ERROR;
+    } else {
+        if args_has(args, 'd' as i32 as u_char) == 0 || new_wl == (*s).current_winlink() {
+            cmd_find_from_winlink(&mut *current.current.borrow_mut(), (new_wl).clone(), 0 as ::core::ffi::c_int);
+            server_redraw_session_group(&*(s));
+        } else {
+            server_status_session_group(&*(s));
+        }
+        if args_has(args, 'P' as i32 as u_char) != 0 {
+            template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
+            if template.is_null() {
+                template = NEW_WINDOW_TEMPLATE.as_ptr();
+            }
+            let cp =
+                format_single_cstring(Some(item_handle), template, tc_owner.as_ref(), Some(&session_owner), (new_wl).clone(), ((*new_wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).active_pane().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).as_ref().and_then(|model| model.observer.upgrade()).as_ref());
+            cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
+        }
+        cmd_find_from_winlink(&raw mut fs, (new_wl).clone(), 0 as ::core::ffi::c_int);
+        cmdq_insert_hook(Some(&session_owner), item_handle, &raw mut fs, |out| {
+            out.write_all(b"after-new-window")
+        });
+        drop(sc.environ.take());
+        return CMD_RETURN_NORMAL;
+    };
 }

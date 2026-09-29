@@ -3,7 +3,7 @@
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new, evbuffer_pullup};
 use crate::src::shared::abi::int64_t;
 use crate::src::shared::event::evbuffer;
-use crate::src::shared::json::{JsonValue, json_node, json_node_type};
+use crate::src::shared::json::{json_node, json_node_type, JsonValue};
 use hmux_buffer::BufMut;
 use std::ffi::{CStr, CString};
 

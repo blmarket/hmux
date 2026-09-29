@@ -72,9 +72,7 @@ impl session {
             attached: Default::default(),
             tio: Default::default(),
             environ: Default::default(),
-            entry: session_entry {
-                owner: refbox::Weak::new(),
-            },
+            entry: session_entry { owner: refbox::Weak::new() },
         }
     }
 }
@@ -82,18 +80,12 @@ impl session {
 #[repr(C)]
 pub struct session_entry {
     /// Weak traversal handle into the session index.
-    pub owner: refbox::Weak<
-        std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    >,
+    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>,
 }
 
 #[repr(C)]
 pub struct sessions {
-    pub storage: Option<
-        refbox::RefBox<
-            std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>,
-        >,
-    >,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>>>,
 }
 
 #[repr(C)]
@@ -108,9 +100,7 @@ impl session_group {
     pub fn empty() -> Self {
         Self {
             name: Default::default(),
-            entry: session_group_entry {
-                owner: refbox::Weak::new(),
-            },
+            entry: session_group_entry { owner: refbox::Weak::new() },
             members: Default::default(),
         }
     }
@@ -134,9 +124,7 @@ mod retained_session_tests {
 
     #[test]
     fn group_membership_is_weak_but_traversal_retains_live_sessions() {
-        use crate::src::session::{
-            session_group_attached_count, session_group_count, session_group_members,
-        };
+        use crate::src::session::{session_group_attached_count, session_group_count, session_group_members};
         use std::rc::Rc;
 
         unsafe {
@@ -148,11 +136,7 @@ mod retained_session_tests {
             let first_weak = Rc::downgrade(&first);
             let last_weak = Rc::downgrade(&last);
             let mut group = session_group::empty();
-            group.members = vec![
-                first_weak.clone(),
-                Rc::downgrade(&expired),
-                last_weak.clone(),
-            ];
+            group.members = vec![first_weak.clone(), Rc::downgrade(&expired), last_weak.clone()];
             assert_eq!(Rc::strong_count(&first), 1);
             drop(expired);
             assert_eq!(session_group_count(&mut group), 2);

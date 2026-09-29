@@ -1,5 +1,5 @@
 //! Authoritative stdio declarations, shared by the C translation units.
-use super::abi::{__off_t, __off64_t, __uint64_t};
+use super::abi::{__off64_t, __off_t, __uint64_t};
 pub use crate::src::ffi::libc::{_IO_codecvt, _IO_marker, _IO_wide_data};
 
 #[derive(Copy, Clone, BitfieldStruct)]

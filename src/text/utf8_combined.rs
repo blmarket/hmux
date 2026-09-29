@@ -3,8 +3,8 @@ use crate::src::shared::grid::*;
 use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::shared::utf8::{
-    HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE, HANGULJAMO_STATE_NOT_COMPOSABLE,
-    HANGULJAMO_STATE_NOT_HANGULJAMO, hanguljamo_state,
+    hanguljamo_state, HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE,
+    HANGULJAMO_STATE_NOT_COMPOSABLE, HANGULJAMO_STATE_NOT_HANGULJAMO,
 };
 use crate::src::text::utf8::utf8_towc;
 
@@ -54,48 +54,46 @@ fn utf8_regional_count(ud: &utf8_data) -> u_int {
         .count() as u_int
 }
 pub unsafe fn utf8_should_combine(with: &utf8_data, add: &utf8_data) -> ::core::ffi::c_int {
-    unsafe {
-        let mut w: wchar_t = 0;
-        let mut a: wchar_t = 0;
-        if utf8_towc(with, &mut w) as ::core::ffi::c_uint
-            != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if utf8_towc(add, &mut a) as ::core::ffi::c_uint
-            != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if a >= 0x1f1e6 as wchar_t
-            && a <= 0x1f1ff as wchar_t
-            && (w >= 0x1f1e6 as wchar_t && w <= 0x1f1ff as wchar_t)
-        {
-            if utf8_regional_count(with) != 1 as u_int {
-                return 0 as ::core::ffi::c_int;
-            }
-            if utf8_regional_count(add) != 1 as u_int {
-                return 0 as ::core::ffi::c_int;
-            }
-            return 1 as ::core::ffi::c_int;
-        }
-        match a {
-            128075 | 128076 | 128077 | 128078 | 128079 | 128080 | 128102 | 128103 | 128104
-            | 128105 | 128110 | 128112 | 128113 | 128114 | 128115 | 128116 | 128117 | 128118
-            | 128119 | 128120 | 128124 | 128129 | 128130 | 128131 | 128133 | 128134 | 128135
-            | 128170 | 128373 | 128378 | 128400 | 128405 | 128406 | 128581 | 128582 | 128583
-            | 128587 | 128588 | 128589 | 128590 | 128591 | 128692 | 128693 | 128694 | 129318
-            | 129335 | 129336 | 129337 | 129341 | 129342 | 129461 | 129462 | 129464 | 129465
-            | 129485 | 129486 | 129487 | 129489 | 129490 | 129491 | 129492 | 129493 | 129494
-            | 129495 | 129496 | 129497 | 129498 | 129499 | 129500 | 129501 | 129502 | 129503 => {
-                if w >= 0x1f3fb as wchar_t && w <= 0x1f3ff as wchar_t {
-                    return 1 as ::core::ffi::c_int;
-                }
-            }
-            _ => {}
-        }
+    let mut w: wchar_t = 0;
+    let mut a: wchar_t = 0;
+    if utf8_towc(with, &mut w) as ::core::ffi::c_uint
+        != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
+    {
         return 0 as ::core::ffi::c_int;
     }
+    if utf8_towc(add, &mut a) as ::core::ffi::c_uint
+        != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
+    {
+        return 0 as ::core::ffi::c_int;
+    }
+    if a >= 0x1f1e6 as wchar_t
+        && a <= 0x1f1ff as wchar_t
+        && (w >= 0x1f1e6 as wchar_t && w <= 0x1f1ff as wchar_t)
+    {
+        if utf8_regional_count(with) != 1 as u_int {
+            return 0 as ::core::ffi::c_int;
+        }
+        if utf8_regional_count(add) != 1 as u_int {
+            return 0 as ::core::ffi::c_int;
+        }
+        return 1 as ::core::ffi::c_int;
+    }
+    match a {
+        128075 | 128076 | 128077 | 128078 | 128079 | 128080 | 128102 | 128103 | 128104 | 128105
+        | 128110 | 128112 | 128113 | 128114 | 128115 | 128116 | 128117 | 128118 | 128119
+        | 128120 | 128124 | 128129 | 128130 | 128131 | 128133 | 128134 | 128135 | 128170
+        | 128373 | 128378 | 128400 | 128405 | 128406 | 128581 | 128582 | 128583 | 128587
+        | 128588 | 128589 | 128590 | 128591 | 128692 | 128693 | 128694 | 129318 | 129335
+        | 129336 | 129337 | 129341 | 129342 | 129461 | 129462 | 129464 | 129465 | 129485
+        | 129486 | 129487 | 129489 | 129490 | 129491 | 129492 | 129493 | 129494 | 129495
+        | 129496 | 129497 | 129498 | 129499 | 129500 | 129501 | 129502 | 129503 => {
+            if w >= 0x1f3fb as wchar_t && w <= 0x1f3ff as wchar_t {
+                return 1 as ::core::ffi::c_int;
+            }
+        }
+        _ => {}
+    }
+    return 0 as ::core::ffi::c_int;
 }
 fn hanguljamo_get_subclass(s: &[u_char; 3]) -> hanguljamo_subclass {
     match s[0] as ::core::ffi::c_int {
