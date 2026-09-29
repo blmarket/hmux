@@ -15,7 +15,7 @@ pub type utf8proc_bool = bool;
 
 pub type utf8proc_category_t = ::core::ffi::c_uint;
 
-extern "C" {
+unsafe extern "C" {
     pub fn utf8proc_category(codepoint: utf8proc_int32_t) -> utf8proc_category_t;
     pub fn utf8proc_charwidth(codepoint: utf8proc_int32_t) -> ::core::ffi::c_int;
     pub fn utf8proc_codepoint_valid(codepoint: utf8proc_int32_t) -> utf8proc_bool;

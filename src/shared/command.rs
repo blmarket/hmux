@@ -61,9 +61,11 @@ mod owned_argv_tests {
         assert_eq!(argv[0].as_bytes(), b"a");
         assert_eq!(argv[1].as_bytes(), b"");
         assert_eq!(argv[2].as_bytes(), &[0xff]);
-        assert!(unpack_argv(&mut [], 0)
-            .expect("empty argv is valid")
-            .is_empty());
+        assert!(
+            unpack_argv(&mut [], 0)
+                .expect("empty argv is valid")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -243,7 +245,9 @@ pub struct cmd_entry {
     pub target: cmd_entry_flag,
     pub flags: ::core::ffi::c_int,
     // The dispatching queue item retains the command-list owner through this call.
-    pub exec: Option<unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>,
+    pub exec: Option<
+        unsafe fn(refbox::Weak<cmd>, &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval,
+    >,
 }
 
 #[repr(C)]
@@ -262,7 +266,8 @@ impl cmdq_state {
     }
 }
 
-pub type cmdq_cb = Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>>;
+pub type cmdq_cb =
+    Option<Box<dyn FnOnce(&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval>>;
 
 pub type cmdq_type = ::core::ffi::c_uint;
 

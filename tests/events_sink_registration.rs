@@ -1,6 +1,6 @@
 use hmux2::src::events::{events_add_sink, events_fire, events_remove_sink};
 use hmux2::src::events_payload::event_payload_create;
-use hmux2::src::shared::events::{events_callback, EventSinkId};
+use hmux2::src::shared::events::{EventSinkId, events_callback};
 use std::cell::Cell;
 use std::rc::Rc;
 

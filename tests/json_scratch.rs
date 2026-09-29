@@ -72,11 +72,13 @@ fn token_growth_keeps_late_keys_and_cleans_up_on_error() {
         } else {
             assert!(object.is_none());
             assert!(cause.is_some());
-            assert!(cause
-                .as_ref()
-                .unwrap()
-                .to_bytes()
-                .starts_with(b"unexpected value"));
+            assert!(
+                cause
+                    .as_ref()
+                    .unwrap()
+                    .to_bytes()
+                    .starts_with(b"unexpected value")
+            );
         }
     }
 }

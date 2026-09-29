@@ -1,7 +1,3 @@
-use crate::src::server_client::server_client_unref_owned;
-use std::cell::UnsafeCell;
-use std::rc::{Rc, Weak};
-use crate::src::shared::client::{client_retain, client_handle};
 use crate::src::arguments::{
     args_count, args_has, args_make_commands, args_make_commands_now, args_make_commands_prepare,
     args_string,
@@ -16,12 +12,14 @@ use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
-use crate::src::server_client::{server_client_get_cwd};
+use crate::src::server_client::server_client_get_cwd;
+use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
+use crate::src::shared::client::{client_handle, client_retain};
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
@@ -32,6 +30,8 @@ use crate::src::shared::job::{JobCompletion, JobExitStatus};
 use crate::src::shared::rc;
 use crate::src::shared::session::session;
 use crate::src::status::status_message_set;
+use std::cell::UnsafeCell;
+use std::rc::{Rc, Weak};
 
 pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,
@@ -74,149 +74,209 @@ fn cmd_if_shell_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_if_shell_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let item = item_handle.get();
-    let queue_client = cmdq_get_client((item).as_ref());
-    let queue_client_ptr = queue_client.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let new_item_allocation;
-    let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut count: u_int = args_count(args);
-    let mut wait: ::core::ffi::c_int =
-        (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    let shellcmd = format_single_from_target_cstring(item_handle, args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()));
-    if args_has(args, 'F' as i32 as u_char) != 0 {
-        let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
-            && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
-        {
-            args_make_commands_now(self_0.clone(), item_handle, 1 as u_int, 0 as ::core::ffi::c_int)
-        } else if count == 3 as u_int {
-            args_make_commands_now(self_0.clone(), item_handle, 2 as u_int, 0 as ::core::ffi::c_int)
-        } else {
+unsafe fn cmd_if_shell_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    unsafe {
+        let item = item_handle.get();
+        let queue_client = cmdq_get_client((item).as_ref());
+        let queue_client_ptr = queue_client
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        let mut args: *mut args =
+            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+        let mut target: *mut cmd_find_state =
+            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+        let new_item_allocation;
+        let tc_owner = cmdq_get_target_client((item).as_ref());
+        let mut tc: *mut client = tc_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        let mut s: *mut session = (*target)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        let mut count: u_int = args_count(args);
+        let mut wait: ::core::ffi::c_int =
+            (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        let shellcmd = format_single_from_target_cstring(
+            item_handle,
+            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        );
+        if args_has(args, 'F' as i32 as u_char) != 0 {
+            let cmdlist = if *shellcmd.as_ptr() as ::core::ffi::c_int != '0' as i32
+                && *shellcmd.as_ptr() as ::core::ffi::c_int != '\0' as i32
+            {
+                args_make_commands_now(
+                    self_0.clone(),
+                    item_handle,
+                    1 as u_int,
+                    0 as ::core::ffi::c_int,
+                )
+            } else if count == 3 as u_int {
+                args_make_commands_now(
+                    self_0.clone(),
+                    item_handle,
+                    2 as u_int,
+                    0 as ::core::ffi::c_int,
+                )
+            } else {
+                return CMD_RETURN_NORMAL;
+            };
+            let Some(cmdlist) = cmdlist else {
+                return CMD_RETURN_ERROR;
+            };
+            new_item_allocation = cmdq_get_command(&cmdlist, (*item).state.as_ref());
+            cmdq_insert_after(item_handle, new_item_allocation);
+            drop(cmdlist);
             return CMD_RETURN_NORMAL;
-        };
-        let Some(cmdlist) = cmdlist else {
-            return CMD_RETURN_ERROR;
-        };
-        new_item_allocation = cmdq_get_command(&cmdlist, (*item).state.as_ref());
-        cmdq_insert_after(item_handle, new_item_allocation);
-        drop(cmdlist);
-        return CMD_RETURN_NORMAL;
-    }
-    let mut cdata = Box::new(cmd_if_shell_data {
-        cmd_if: None,
-        cmd_else: None,
-        client: None,
-        item: Weak::new(),
-        wait: wait != 0,
-    });
-    cdata.cmd_if = Some(args_make_commands_prepare(
-        self_0.clone(),
-        item_handle,
-        1 as u_int,
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        wait,
-        0 as ::core::ffi::c_int,
-    ));
-    if count == 3 as u_int {
-        cdata.cmd_else = Some(args_make_commands_prepare(
+        }
+        let mut cdata = Box::new(cmd_if_shell_data {
+            cmd_if: None,
+            cmd_else: None,
+            client: None,
+            item: Weak::new(),
+            wait: wait != 0,
+        });
+        cdata.cmd_if = Some(args_make_commands_prepare(
             self_0.clone(),
             item_handle,
-            2 as u_int,
+            1 as u_int,
             ::core::ptr::null::<::core::ffi::c_char>(),
             wait,
             0 as ::core::ffi::c_int,
         ));
+        if count == 3 as u_int {
+            cdata.cmd_else = Some(args_make_commands_prepare(
+                self_0.clone(),
+                item_handle,
+                2 as u_int,
+                ::core::ptr::null::<::core::ffi::c_char>(),
+                wait,
+                0 as ::core::ffi::c_int,
+            ));
+        }
+        if wait != 0 {
+            cdata.client = cmdq_get_client((item).as_ref());
+            cdata.item = (*item).observer.clone();
+        } else {
+            cdata.client = client_retain((tc).as_ref());
+        }
+        let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
+        let job = job_run(
+            Some(shellcmd.as_c_str()),
+            &Vec::new(),
+            None,
+            (s).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            cwd.as_deref(),
+            None,
+            None,
+            None,
+            0 as ::core::ffi::c_int,
+            -(1 as ::core::ffi::c_int),
+            -(1 as ::core::ffi::c_int),
+        );
+        if job.is_empty() {
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"failed to run command: ")?;
+                write_cstr(out, shellcmd.as_ptr())
+            });
+            return CMD_RETURN_ERROR;
+        }
+        // The job takes ownership only after startup succeeds. The record also
+        // drops when the completion callback is cancelled without being invoked.
+        job.try_borrow_mut()
+            .expect("newly registered job")
+            .completecb = Some(Box::new(move |completion| unsafe {
+            cmd_if_shell_callback(completion, &mut cdata);
+        }));
+        if wait == 0 {
+            return CMD_RETURN_NORMAL;
+        }
+        return CMD_RETURN_WAIT;
     }
-    if wait != 0 {
-        cdata.client = cmdq_get_client((item).as_ref());
-        cdata.item = (*item).observer.clone();
-    } else {
-        cdata.client = client_retain((tc).as_ref());
-    }
-    let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
-    let job = job_run(
-        Some(shellcmd.as_c_str()),
-        &Vec::new(),
-        None,
-        (s).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        cwd.as_deref(),
-        None,
-        None,
-        None,
-        0 as ::core::ffi::c_int,
-        -(1 as ::core::ffi::c_int),
-        -(1 as ::core::ffi::c_int),
-    );
-    if job.is_empty() {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"failed to run command: ")?;
-            write_cstr(out, shellcmd.as_ptr())
-        });
-        return CMD_RETURN_ERROR;
-    }
-    // The job takes ownership only after startup succeeds. The record also
-    // drops when the completion callback is cancelled without being invoked.
-    job.try_borrow_mut().expect("newly registered job").completecb = Some(Box::new(move |completion| unsafe {
-        cmd_if_shell_callback(completion, &mut cdata);
-    }));
-    if wait == 0 {
-        return CMD_RETURN_NORMAL;
-    }
-    return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_shell_data) {
-    let item_owner = cdata.item.upgrade();
-    if cdata.wait && item_owner.is_none() {
-        return;
-    }
-    let mut c: *mut client = client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get());
-    let item = item_owner.as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let new_item_allocation;
-    let state = if completion.status == JobExitStatus::Exited(0) {
-        cdata.cmd_if.as_deref_mut()
-    } else {
-        cdata.cmd_else.as_deref_mut()
-    };
-    if let Some(state) = state {
-        match args_make_commands(state, &Vec::new()) {
-            Err(mut error) => {
-                if !cdata.wait {
-                    cmd_parse_error_uppercase_first(&mut error);
+    unsafe {
+        let item_owner = cdata.item.upgrade();
+        if cdata.wait && item_owner.is_none() {
+            return;
+        }
+        let mut c: *mut client =
+            client_handle(&cdata.client).map_or(std::ptr::null_mut(), |owner| owner.get());
+        let item = item_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        let new_item_allocation;
+        let state = if completion.status == JobExitStatus::Exited(0) {
+            cdata.cmd_if.as_deref_mut()
+        } else {
+            cdata.cmd_else.as_deref_mut()
+        };
+        if let Some(state) = state {
+            match args_make_commands(state, &Vec::new()) {
+                Err(mut error) => {
+                    if !cdata.wait {
+                        cmd_parse_error_uppercase_first(&mut error);
+                    }
+                    let error_ptr = error
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |cause| cause.as_ptr());
+                    if !cdata.wait {
+                        status_message_set(
+                            (c).as_ref()
+                                .and_then(|model| model.observer.upgrade())
+                                .as_ref(),
+                            -(1 as ::core::ffi::c_int),
+                            1 as ::core::ffi::c_int,
+                            0 as ::core::ffi::c_int,
+                            0 as ::core::ffi::c_int,
+                            |out| write_cstr(out, error_ptr),
+                        );
+                    } else {
+                        cmdq_error(
+                            &(*(item))
+                                .observer
+                                .upgrade()
+                                .expect("live command queue item"),
+                            |out| write_cstr(out, error_ptr),
+                        );
+                    }
                 }
-                let error_ptr = error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr());
-                if !cdata.wait {
-                    status_message_set(
-                        (c).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                        -(1 as ::core::ffi::c_int),
-                        1 as ::core::ffi::c_int,
-                        0 as ::core::ffi::c_int,
-                        0 as ::core::ffi::c_int,
-                        |out| write_cstr(out, error_ptr),
+                Ok(commands) if !cdata.wait => {
+                    new_item_allocation = cmdq_get_command(&commands, None);
+                    cmdq_append(
+                        c.as_ref()
+                            .map(|client| client.observer.upgrade().expect("queue client is live"))
+                            .as_ref(),
+                        new_item_allocation,
                     );
-                } else {
-                    cmdq_error(&(*(item)).observer.upgrade().expect("live command queue item"), |out| write_cstr(out, error_ptr));
+                    drop(commands);
                 }
-            }
-            Ok(commands) if !cdata.wait => {
-                new_item_allocation = cmdq_get_command(&commands, None);
-                cmdq_append(c.as_ref().map(|client| client.observer.upgrade().expect("queue client is live")).as_ref(), new_item_allocation);
-                drop(commands);
-            }
-            Ok(commands) => {
-                new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
-                cmdq_insert_after(&(*(item)).observer.upgrade().expect("queued insertion anchor"), new_item_allocation);
-                drop(commands);
+                Ok(commands) => {
+                    new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
+                    cmdq_insert_after(
+                        &(*(item))
+                            .observer
+                            .upgrade()
+                            .expect("queued insertion anchor"),
+                        new_item_allocation,
+                    );
+                    drop(commands);
+                }
             }
         }
-    }
-    if cdata.wait {
-        cmdq_continue(&(*(item)).observer.upgrade().expect("live command queue item"));
+        if cdata.wait {
+            cmdq_continue(
+                &(*(item))
+                    .observer
+                    .upgrade()
+                    .expect("live command queue item"),
+            );
+        }
     }
 }
 impl Drop for cmd_if_shell_data {
@@ -246,7 +306,10 @@ mod tests {
         };
         unsafe {
             cmd_if_shell_callback(
-                JobCompletion { status: JobExitStatus::Exited(0), output: Vec::new() },
+                JobCompletion {
+                    status: JobExitStatus::Exited(0),
+                    output: Vec::new(),
+                },
                 &mut data,
             );
         }

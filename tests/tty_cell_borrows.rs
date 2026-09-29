@@ -1,10 +1,10 @@
 use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
-use hmux2::src::shared::client::{client, CLIENT_UTF8};
-use hmux2::src::shared::grid::{grid_cell, GRID_FLAG_PADDING};
+use hmux2::src::shared::client::{CLIENT_UTF8, client};
+use hmux2::src::shared::grid::{GRID_FLAG_PADDING, grid_cell};
 use hmux2::src::shared::screen::screen;
 use hmux2::src::shared::tty::{
-    tty, tty_code, tty_ctx, tty_style_ctx, tty_term, TTYC_COLORS, TTYC_SETAB, TTYC_SETAF,
+    TTYC_COLORS, TTYC_SETAB, TTYC_SETAF, tty, tty_code, tty_ctx, tty_style_ctx, tty_term,
 };
 use hmux2::src::tty::{tty_cell, tty_cmd_cell, tty_default_attributes};
 use hmux2::src::tty_term::tty_term_ncodes;
@@ -249,7 +249,7 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
 
 #[test]
 fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
-    use hmux2::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
+    use hmux2::src::shared::colour::{COLOUR_FLAG_256, colour_palette};
     use hmux2::src::shared::tty::TTYC_SETULC1;
     use hmux2::src::style::colour::{colour_palette_init, colour_palette_set};
 

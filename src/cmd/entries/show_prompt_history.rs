@@ -66,16 +66,61 @@ unsafe fn cmd_show_prompt_history_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let typestr: *const ::core::ffi::c_char = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
-    let mut t: u_int = 0;
-    let mut h: u_int = 0;
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_clear_prompt_history_entry) {
+    unsafe {
+        let mut args: *mut args =
+            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+        let typestr: *const ::core::ffi::c_char = args_get(&*(args), 'T' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
+        let mut type_0: prompt_type = PROMPT_TYPE_COMMAND;
+        let mut t: u_int = 0;
+        let mut h: u_int = 0;
+        if std::ptr::eq(
+            cmd_get_entry(self_0.get_unchecked()),
+            &cmd_clear_prompt_history_entry,
+        ) {
+            if typestr.is_null() {
+                t = 0 as u_int;
+                while t < PROMPT_NTYPES as u_int {
+                    prompt_history_clear(t as prompt_type);
+                    t = t.wrapping_add(1);
+                }
+            } else {
+                type_0 = prompt_type(CStr::from_ptr(typestr));
+                if type_0 as ::core::ffi::c_uint
+                    == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
+                {
+                    cmdq_error(item_handle, |out| {
+                        out.write_all(b"invalid type: ")?;
+                        write_cstr(out, typestr)
+                    });
+                    return CMD_RETURN_ERROR;
+                }
+                prompt_history_clear(type_0);
+            }
+            return CMD_RETURN_NORMAL;
+        }
         if typestr.is_null() {
             t = 0 as u_int;
             while t < PROMPT_NTYPES as u_int {
-                prompt_history_clear(t as prompt_type);
+                let type_name = prompt_type_string(t as prompt_type);
+                cmdq_print(item_handle, |out| {
+                    out.write_all(b"History for ")?;
+                    out.write_all(type_name.to_bytes())?;
+                    out.write_all(b":\n")
+                });
+                h = 0 as u_int;
+                while h < prompt_history_size(t as prompt_type) {
+                    let value =
+                        prompt_history_get(t as prompt_type, h).expect("existing history entry");
+                    cmdq_print(item_handle, |out| {
+                        write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
+                        out.write_all(value.to_bytes())
+                    });
+                    h = h.wrapping_add(1);
+                }
+                cmdq_print(item_handle, |out| {
+                    write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
+                });
                 t = t.wrapping_add(1);
             }
         } else {
@@ -89,23 +134,14 @@ unsafe fn cmd_show_prompt_history_exec(
                 });
                 return CMD_RETURN_ERROR;
             }
-            prompt_history_clear(type_0);
-        }
-        return CMD_RETURN_NORMAL;
-    }
-    if typestr.is_null() {
-        t = 0 as u_int;
-        while t < PROMPT_NTYPES as u_int {
-            let type_name = prompt_type_string(t as prompt_type);
             cmdq_print(item_handle, |out| {
                 out.write_all(b"History for ")?;
-                out.write_all(type_name.to_bytes())?;
+                out.write_all(prompt_type_string(type_0).to_bytes())?;
                 out.write_all(b":\n")
             });
             h = 0 as u_int;
-            while h < prompt_history_size(t as prompt_type) {
-                let value =
-                    prompt_history_get(t as prompt_type, h).expect("existing history entry");
+            while h < prompt_history_size(type_0) {
+                let value = prompt_history_get(type_0, h).expect("existing history entry");
                 cmdq_print(item_handle, |out| {
                     write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
                     out.write_all(value.to_bytes())
@@ -115,36 +151,7 @@ unsafe fn cmd_show_prompt_history_exec(
             cmdq_print(item_handle, |out| {
                 write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
             });
-            t = t.wrapping_add(1);
         }
-    } else {
-        type_0 = prompt_type(CStr::from_ptr(typestr));
-        if type_0 as ::core::ffi::c_uint
-            == PROMPT_TYPE_INVALID as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"invalid type: ")?;
-                write_cstr(out, typestr)
-            });
-            return CMD_RETURN_ERROR;
-        }
-        cmdq_print(item_handle, |out| {
-            out.write_all(b"History for ")?;
-            out.write_all(prompt_type_string(type_0).to_bytes())?;
-            out.write_all(b":\n")
-        });
-        h = 0 as u_int;
-        while h < prompt_history_size(type_0) {
-            let value = prompt_history_get(type_0, h).expect("existing history entry");
-            cmdq_print(item_handle, |out| {
-                write!(out, "{}: ", (h.wrapping_add(1 as u_int)) as i32)?;
-                out.write_all(value.to_bytes())
-            });
-            h = h.wrapping_add(1);
-        }
-        cmdq_print(item_handle, |out| {
-            write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
-        });
+        return CMD_RETURN_NORMAL;
     }
-    return CMD_RETURN_NORMAL;
 }

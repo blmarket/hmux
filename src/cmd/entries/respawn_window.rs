@@ -42,67 +42,87 @@ pub static cmd_respawn_window_entry: cmd_entry = {
         exec: Some(cmd_respawn_window_exec),
     }
 };
-unsafe fn cmd_respawn_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut sc: spawn_context = spawn_context {
-        item: std::rc::Weak::new(),
-        s: std::rc::Weak::new(),
-        wl: refbox::Weak::new(),
-        tc: std::rc::Weak::new(),
-        wp0: std::rc::Weak::new(),
-        lc: ::core::ptr::null_mut::<layout_cell>(),
-        name: None,
-        argv: Vec::new(),
-        environ: None,
-        idx: 0,
-        cwd: None,
-        flags: 0,
-    };
-    let mut argv_owner = Vec::new();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut s: *mut session = (*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut cause: Option<std::ffi::CString> = None;
-    sc.item = (*item).observer.clone();
-    sc.s = (*s).observer.clone();
-    sc.set_wl(wl.clone());
-    sc.tc = tc_owner.as_ref().map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    argv_owner = args_to_vector(&*args);
-    sc.argv = argv_owner;
-    sc.environ = Some(environ_create());
-    for av in args_flag_values(&*args, 'e' as i32 as u_char) {
-        environ_put(
-            sc.environ.as_deref_mut().expect("environment"),
-            av.string_ptr(),
-            0 as ::core::ffi::c_int,
+unsafe fn cmd_respawn_window_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    unsafe {
+        let item = item_handle.get();
+        let mut args: *mut args =
+            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+        let mut target: *mut cmd_find_state =
+            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+        let mut sc: spawn_context = spawn_context {
+            item: std::rc::Weak::new(),
+            s: std::rc::Weak::new(),
+            wl: refbox::Weak::new(),
+            tc: std::rc::Weak::new(),
+            wp0: std::rc::Weak::new(),
+            lc: ::core::ptr::null_mut::<layout_cell>(),
+            name: None,
+            argv: Vec::new(),
+            environ: None,
+            idx: 0,
+            cwd: None,
+            flags: 0,
+        };
+        let mut argv_owner = Vec::new();
+        let tc_owner = cmdq_get_target_client((item).as_ref());
+        let mut tc: *mut client = tc_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        let mut s: *mut session = (*target)
+            .session_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
+        let mut cause: Option<std::ffi::CString> = None;
+        sc.item = (*item).observer.clone();
+        sc.s = (*s).observer.clone();
+        sc.set_wl(wl.clone());
+        sc.tc = tc_owner
+            .as_ref()
+            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+        argv_owner = args_to_vector(&*args);
+        sc.argv = argv_owner;
+        sc.environ = Some(environ_create());
+        for av in args_flag_values(&*args, 'e' as i32 as u_char) {
+            environ_put(
+                sc.environ.as_deref_mut().expect("environment"),
+                av.string_ptr(),
+                0 as ::core::ffi::c_int,
+            );
+        }
+        sc.idx = -(1 as ::core::ffi::c_int);
+        sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(|value| value.to_owned());
+        sc.flags = SPAWN_RESPAWN;
+        if args_has(args, 'E' as i32 as u_char) != 0 {
+            sc.flags |= SPAWN_EMPTY;
+        }
+        if args_has(args, 'k' as i32 as u_char) != 0 {
+            sc.flags |= SPAWN_KILL;
+        }
+        if !spawn_window(&raw mut sc, &raw mut cause).is_alive() {
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"respawn window failed: ")?;
+                write_cstr(
+                    out,
+                    cause
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                )
+            });
+            drop(sc.environ.take());
+            return CMD_RETURN_ERROR;
+        }
+        server_redraw_window(
+            &*(wl
+                .get_unchecked()
+                .window_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())),
         );
-    }
-    sc.idx = -(1 as ::core::ffi::c_int);
-    sc.cwd = args_get(&*(args), 'c' as i32 as u_char).map(|value| value.to_owned());
-    sc.flags = SPAWN_RESPAWN;
-    if args_has(args, 'E' as i32 as u_char) != 0 {
-        sc.flags |= SPAWN_EMPTY;
-    }
-    if args_has(args, 'k' as i32 as u_char) != 0 {
-        sc.flags |= SPAWN_KILL;
-    }
-    if !spawn_window(&raw mut sc, &raw mut cause).is_alive() {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"respawn window failed: ")?;
-            write_cstr(
-                out,
-                cause
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            )
-        });
         drop(sc.environ.take());
-        return CMD_RETURN_ERROR;
+        return CMD_RETURN_NORMAL;
     }
-    server_redraw_window(&*(wl.get_unchecked().window_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())));
-    drop(sc.environ.take());
-    return CMD_RETURN_NORMAL;
 }

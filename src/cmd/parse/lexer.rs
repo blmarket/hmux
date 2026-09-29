@@ -7,7 +7,7 @@ use crate::src::shared::ctype::{_ISalnum, _ISdigit};
 use crate::src::shared::stdio::{EOF, FILE};
 use crate::src::tmux::global_environ;
 use hmux_cmdparse::{Token, TokenText};
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 
 type LocatedToken = (usize, Token, usize);
 

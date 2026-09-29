@@ -41,7 +41,10 @@ fn pane_order_and_visit_history_preserve_stable_weak_entries() {
     }
     assert!(Rc::ptr_eq(&order.first().unwrap(), &owners[0]));
     assert!(Rc::ptr_eq(&order.next(&observers[0]).unwrap(), &owners[1]));
-    assert!(Rc::ptr_eq(&order.previous(&observers[3]).unwrap(), &owners[2]));
+    assert!(Rc::ptr_eq(
+        &order.previous(&observers[3]).unwrap(),
+        &owners[2]
+    ));
     order.insert_before(&observers[2], observers[3].clone());
     order.swap(&observers[1], &observers[3]);
     assert!(Rc::ptr_eq(&order.next(&observers[0]).unwrap(), &owners[3]));
@@ -53,11 +56,18 @@ fn pane_order_and_visit_history_preserve_stable_weak_entries() {
     history.push_front(observers[2].clone());
     history.push_front(observers[1].clone());
     assert!(Rc::ptr_eq(&history.first().unwrap(), &owners[1]));
-    assert!(Rc::ptr_eq(&history.next(&observers[1]).unwrap(), &owners[2]));
+    assert!(Rc::ptr_eq(
+        &history.next(&observers[1]).unwrap(),
+        &owners[2]
+    ));
     assert!(history.remove(&observers[2]));
     assert!(history.next(&observers[1]).is_none());
     drop(owners);
-    assert!(observers.iter().all(|observer| observer.upgrade().is_none()));
+    assert!(
+        observers
+            .iter()
+            .all(|observer| observer.upgrade().is_none())
+    );
 }
 
 #[test]
@@ -95,7 +105,10 @@ fn global_lookup_preserves_pane_identity_and_retains_removed_pane() {
         assert!(window_pane_tree_insert(&mut *head, owner.clone()).is_none());
         let retained = window_pane_find_by_id(123).unwrap();
         assert!(Rc::ptr_eq(&retained, &owner));
-        assert!(Rc::ptr_eq(&window_pane_find_by_id_str(c"%123").unwrap(), &owner));
+        assert!(Rc::ptr_eq(
+            &window_pane_find_by_id_str(c"%123").unwrap(),
+            &owner
+        ));
         for invalid in [c"123", c"%", c"%x", c"%-1", c"%4294967296"] {
             assert!(window_pane_find_by_id_str(invalid).is_none());
         }

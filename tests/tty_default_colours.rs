@@ -28,7 +28,14 @@ fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes(
             (true, 2, 3, 2, 3, 50),
             (false, 2, 3, 1, 4, 20),
         ] {
-            window.set_active((if active { pane as *mut window_pane } else { std::ptr::null_mut() }).as_ref());
+            window.set_active(
+                (if active {
+                    pane as *mut window_pane
+                } else {
+                    std::ptr::null_mut()
+                })
+                .as_ref(),
+            );
             pane.cached_active_gc = grid_cell {
                 fg: foreground,
                 bg: background,

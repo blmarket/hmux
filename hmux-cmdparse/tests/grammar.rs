@@ -1,4 +1,4 @@
-use hmux_cmdparse::{parse, Context, LexError, ParseArgument, ParseCommand, Token, TokenText};
+use hmux_cmdparse::{Context, LexError, ParseArgument, ParseCommand, Token, TokenText, parse};
 
 #[derive(Default)]
 struct Host {
@@ -152,11 +152,13 @@ fn assignments_respect_all_enclosing_scopes_and_hidden_flag() {
 #[test]
 fn trailing_assignment_discards_accumulated_commands() {
     use Token::*;
-    assert!(run(
-        &mut Host::default(),
-        vec![word("one"), Semicolon, Equals(text("A=1")), Newline]
-    )
-    .is_empty());
+    assert!(
+        run(
+            &mut Host::default(),
+            vec![word("one"), Semicolon, Equals(text("A=1")), Newline]
+        )
+        .is_empty()
+    );
 }
 
 #[test]
@@ -166,11 +168,13 @@ fn errors_and_empty_input() {
         vec![Token::CloseBrace, Token::Newline],
         vec![Token::If, word("1"), Token::Newline],
     ] {
-        assert!(parse(
-            &mut Host::default(),
-            tokens.into_iter().map(|t| Ok((0, t, 0)))
-        )
-        .is_err());
+        assert!(
+            parse(
+                &mut Host::default(),
+                tokens.into_iter().map(|t| Ok((0, t, 0)))
+            )
+            .is_err()
+        );
     }
     assert!(parse(&mut Host::default(), [Err(LexError)]).is_err());
 }

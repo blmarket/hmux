@@ -1,5 +1,5 @@
 use hmux2::src::options::*;
-use hmux2::src::shared::colour::{colour_palette, COLOUR_FLAG_256};
+use hmux2::src::shared::colour::{COLOUR_FLAG_256, colour_palette};
 use hmux2::src::style::colour::*;
 use std::ptr::null_mut;
 

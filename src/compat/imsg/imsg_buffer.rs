@@ -1,4 +1,4 @@
-use super::message::{msgbuf, OwnedIbuf};
+use super::message::{OwnedIbuf, msgbuf};
 use crate::src::ffi::libc::{__errno_location, readv, recvmsg, sendmsg, writev};
 use crate::src::shared::abi::uint32_t;
 use crate::src::shared::abi::*;
@@ -279,10 +279,10 @@ fn msgbuf_new_reader_with(
 pub(super) fn msgbuf_new_reader_owned(
     hdrsz: size_t,
     callback: impl FnMut(
-            &[u8],
-            Option<OwnedFd>,
-        ) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>
-        + 'static,
+        &[u8],
+        Option<OwnedFd>,
+    ) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>
+    + 'static,
 ) -> Result<Box<msgbuf>, ::core::ffi::c_int> {
     msgbuf_new_reader_with(hdrsz, Some(Box::new(callback)))
 }

@@ -28,8 +28,8 @@ use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::names::parse_window_name_cstring;
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_item_key, options_get,
-    options_get_number, options_get_string, options_is_array, options_name, options_parse_owned, options_to_cstring,
+    options_array_item_key, options_get, options_get_number, options_get_string, options_is_array,
+    options_name, options_parse_owned, options_to_cstring,
 };
 use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
@@ -38,8 +38,8 @@ use crate::src::paste::{
 };
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
-    evbuffer_readline, event_add, event_initialized, event_pending, event_set,
+    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readline, event_add,
+    event_initialized, event_pending, event_set,
 };
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
@@ -99,25 +99,25 @@ use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
-pub use crate::src::shared::format::{
-    format_entry, format_entry_tree, format_job, format_job_tree, format_tree, format_type,
-};
 use crate::src::shared::format::{
-    FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,
-    FORMAT_CLIENT_TERMCAP, FORMAT_CLIENT_TERMFEAT, FORMAT_COLOUR, FORMAT_COLOUR_ESC_BG,
+    FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENT_ENVIRON, FORMAT_CLIENT_TERMCAP,
+    FORMAT_CLIENT_TERMFEAT, FORMAT_CLIENTS, FORMAT_COLOUR, FORMAT_COLOUR_ESC_BG,
     FORMAT_COLOUR_ESC_FG, FORMAT_CYCLE, FORMAT_CYCLE_PERIOD, FORMAT_DIFFERENCE, FORMAT_DIRNAME,
-    FORMAT_ENVIRON, FORMAT_EXPAND, FORMAT_EXPANDTIME, FORMAT_EXPAND_NOCYCLE, FORMAT_EXPAND_NOJOBS,
-    FORMAT_EXPAND_TIME, FORMAT_FORCE, FORMAT_LENGTH, FORMAT_LITERAL, FORMAT_LOOP_LIMIT,
+    FORMAT_ENVIRON, FORMAT_EXPAND, FORMAT_EXPAND_NOCYCLE, FORMAT_EXPAND_NOJOBS, FORMAT_EXPAND_TIME,
+    FORMAT_EXPANDTIME, FORMAT_FORCE, FORMAT_LENGTH, FORMAT_LITERAL, FORMAT_LOOP_LIMIT,
     FORMAT_MAX_PRECISION, FORMAT_MAX_REPEAT, FORMAT_MAX_WIDTH, FORMAT_NOJOBS, FORMAT_NONE,
     FORMAT_NOT, FORMAT_NOT_NOT, FORMAT_OPTIONS, FORMAT_PANE, FORMAT_PANES, FORMAT_PRETTY,
     FORMAT_QUOTE_ARGUMENTS, FORMAT_QUOTE_SHELL, FORMAT_QUOTE_SHELL_SQ, FORMAT_QUOTE_STYLE,
-    FORMAT_RELATIVE, FORMAT_REPEAT, FORMAT_SESSIONS, FORMAT_SESSION_NAME, FORMAT_STATUS,
-    FORMAT_TIMESTRING, FORMAT_TIME_LIMIT, FORMAT_TIME_LOOP_CHECK, FORMAT_VERBOSE, FORMAT_WIDTH,
-    FORMAT_WINDOW, FORMAT_WINDOWS, FORMAT_WINDOW_NAME,
+    FORMAT_RELATIVE, FORMAT_REPEAT, FORMAT_SESSION_NAME, FORMAT_SESSIONS, FORMAT_STATUS,
+    FORMAT_TIME_LIMIT, FORMAT_TIME_LOOP_CHECK, FORMAT_TIMESTRING, FORMAT_VERBOSE, FORMAT_WIDTH,
+    FORMAT_WINDOW, FORMAT_WINDOW_NAME, FORMAT_WINDOWS,
+};
+pub use crate::src::shared::format::{
+    format_entry, format_entry_tree, format_job, format_job_tree, format_tree, format_type,
 };
 use crate::src::shared::grid::*;
 use crate::src::shared::job::JOB_NOWAIT;
-use crate::src::shared::job::{job, job_update_callback, JobCompletion};
+use crate::src::shared::job::{JobCompletion, job, job_update_callback};
 use crate::src::shared::key::key_event;
 use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::*;
@@ -127,18 +127,17 @@ use crate::src::shared::options::*;
 use crate::src::shared::options::{options, options_array_item, options_entry};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
-    PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN,
-    PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES, PANE_ZOOMED,
+    PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUS_BOTTOM,
+    PANE_STATUS_TOP, PANE_STATUSDRAWN, PANE_STATUSREADY, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
-use libc::{REG_EXTENDED, REG_ICASE};
 use crate::src::shared::screen::{
-    screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
-    MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
-    MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD,
-    MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
-    MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
+    ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_CURSOR_BLINKING,
+    MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR,
+    MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
+    MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC,
+    MODE_THEME_UPDATES, MODE_WRAP, screen,
 };
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
@@ -149,11 +148,12 @@ use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::tty::tty_term;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_STARTED};
-use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::shared::window::{
     WINDOW_PANE_NO_MODE, WINDOW_SIZE_MANUAL, WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS,
     WINLINK_BELL, WINLINK_SILENCE,
 };
+use crate::src::shared::window::{window, window_mode_entry, winlink};
+use libc::{REG_EXTENDED, REG_ICASE};
 
 /*
  * This module is the stable facade for format handling.  The private
@@ -170,8 +170,9 @@ mod tree;
 pub use tree::format_add_owned_cb;
 use tree::*;
 pub use tree::{
-    format_add, format_add_cstr, format_add_tv, format_create, format_create_with_client, format_create_owned, format_owner_ptr, format_each, format_free,
-    format_get_pane, format_log_debug, format_merge,
+    format_add, format_add_cstr, format_add_tv, format_create, format_create_owned,
+    format_create_with_client, format_each, format_free, format_get_pane, format_log_debug,
+    format_merge, format_owner_ptr,
 };
 mod jobs;
 use jobs::*;
@@ -302,30 +303,44 @@ static mut format_lower: [*const ::core::ffi::c_char; 26] = [
 ];
 #[inline]
 unsafe fn format_logging(mut ft: *mut format_tree) -> ::core::ffi::c_int {
-    return (log_get_level() != 0 as ::core::ffi::c_int || (*ft).flags & FORMAT_VERBOSE != 0)
-        as ::core::ffi::c_int;
+    unsafe {
+        return (log_get_level() != 0 as ::core::ffi::c_int || (*ft).flags & FORMAT_VERBOSE != 0)
+            as ::core::ffi::c_int;
+    }
 }
 unsafe fn format_log1(
     mut es: *mut format_expand_state,
     mut from: *const ::core::ffi::c_char,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut ft: *mut format_tree = (*es).ft;
-    if format_logging(ft) == 0 {
-        return;
-    }
-    let s = format_message_with(write);
-    log_debug(format_args!(
-        "{}: {}",
-        log_cstr((from) as *const _),
-        log_cstr((s.as_ptr()) as *const _)
-    ));
-    if let Some(item) = (*ft).item.upgrade().filter(|_| (*ft).flags & FORMAT_VERBOSE != 0) {
-        cmdq_print(&(*(item.get())).observer.upgrade().expect("live command queue item"), |out| {
-            out.write_all(b"#")?;
-            write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
-            write_cstr(out, s.as_ptr())
-        });
+    unsafe {
+        let mut ft: *mut format_tree = (*es).ft;
+        if format_logging(ft) == 0 {
+            return;
+        }
+        let s = format_message_with(write);
+        log_debug(format_args!(
+            "{}: {}",
+            log_cstr((from) as *const _),
+            log_cstr((s.as_ptr()) as *const _)
+        ));
+        if let Some(item) = (*ft)
+            .item
+            .upgrade()
+            .filter(|_| (*ft).flags & FORMAT_VERBOSE != 0)
+        {
+            cmdq_print(
+                &(*(item.get()))
+                    .observer
+                    .upgrade()
+                    .expect("live command queue item"),
+                |out| {
+                    out.write_all(b"#")?;
+                    write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
+                    write_cstr(out, s.as_ptr())
+                },
+            );
+        }
     }
 }
 unsafe fn format_copy_state(
@@ -333,16 +348,18 @@ unsafe fn format_copy_state(
     mut from: *mut format_expand_state,
     mut flags: ::core::ffi::c_int,
 ) {
-    (*to).ft = (*from).ft;
-    (*to).loop_0 = (*from).loop_0;
-    (*to).time = (*from).time;
-    memcpy(
-        &raw mut (*to).tm as *mut ::core::ffi::c_void,
-        &raw mut (*from).tm as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<tm>() as size_t,
-    );
-    (*to).flags = (*from).flags | flags;
-    (*to).start_time = (*from).start_time;
+    unsafe {
+        (*to).ft = (*from).ft;
+        (*to).loop_0 = (*from).loop_0;
+        (*to).time = (*from).time;
+        memcpy(
+            &raw mut (*to).tm as *mut ::core::ffi::c_void,
+            &raw mut (*from).tm as *const ::core::ffi::c_void,
+            ::core::mem::size_of::<tm>() as size_t,
+        );
+        (*to).flags = (*from).flags | flags;
+        (*to).start_time = (*from).start_time;
+    }
 }
 pub unsafe fn format_create_defaults(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
@@ -351,40 +368,57 @@ pub unsafe fn format_create_defaults(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
-    let queue_client = cmdq_get_client((item).as_ref());
-    let mut owner;
-    if !item.is_null() {
-        owner = format_create_with_client(
-            queue_client.as_ref(),
-            item_handle,
-            FORMAT_NONE,
-            0 as ::core::ffi::c_int,
-        );
-    } else {
-        owner = format_create(
-            None,
-            item_handle,
-            FORMAT_NONE,
-            0 as ::core::ffi::c_int,
-        );
+    unsafe {
+        let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
+        let queue_client = cmdq_get_client((item).as_ref());
+        let mut owner;
+        if !item.is_null() {
+            owner = format_create_with_client(
+                queue_client.as_ref(),
+                item_handle,
+                FORMAT_NONE,
+                0 as ::core::ffi::c_int,
+            );
+        } else {
+            owner = format_create(None, item_handle, FORMAT_NONE, 0 as ::core::ffi::c_int);
+        }
+        let ft = &raw mut *owner;
+        format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
+        return owner;
     }
-    let ft = &raw mut *owner;
-    format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
-    return owner;
 }
 pub unsafe fn format_create_from_state(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<client>>>,
     fs: &cmd_find_state,
 ) -> Box<format_tree> {
-    return format_create_defaults(item_handle, c_owner, fs.s.upgrade().as_ref(), (fs.winlink_handle()).clone(), fs.wp.upgrade().as_ref());
+    unsafe {
+        return format_create_defaults(
+            item_handle,
+            c_owner,
+            fs.s.upgrade().as_ref(),
+            (fs.winlink_handle()).clone(),
+            fs.wp.upgrade().as_ref(),
+        );
+    }
 }
-pub unsafe fn format_create_from_target(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> Box<format_tree> {
-    let item = item_handle.get();
-    let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    return format_create_from_state(Some(item_handle), (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(), &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item));
+pub unsafe fn format_create_from_target(
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> Box<format_tree> {
+    unsafe {
+        let item = item_handle.get();
+        let tc_owner = cmdq_get_target_client((item).as_ref());
+        let mut tc: *mut client = tc_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        return format_create_from_state(
+            Some(item_handle),
+            (tc).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
+        );
+    }
 }
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,
@@ -393,120 +427,158 @@ pub unsafe fn format_defaults(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
-    let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !c.is_null() && !(*c).name.is_none() {
-        log_debug(format_args!(
-            "{}: c={}",
-            "format_defaults",
-            log_cstr(
-                (((*c).name)
+    unsafe {
+        let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+        let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+        let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+        if !c.is_null() && !(*c).name.is_none() {
+            log_debug(format_args!(
+                "{}: c={}",
+                "format_defaults",
+                log_cstr(
+                    (((*c).name)
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                )
+            ));
+        } else {
+            log_debug(format_args!("{}: c=none", "format_defaults"));
+        }
+        if !s.is_null() {
+            log_debug(format_args!(
+                "{}: s=${}",
+                "format_defaults",
+                ((*s).id) as u32
+            ));
+        } else {
+            log_debug(format_args!("{}: s=none", "format_defaults"));
+        }
+        if wl.is_alive() {
+            log_debug(format_args!(
+                "{}: wl={}",
+                "format_defaults",
+                (wl.get_unchecked().idx) as u32
+            ));
+        } else {
+            log_debug(format_args!("{}: wl=none", "format_defaults"));
+        }
+        if !wp.is_null() {
+            log_debug(format_args!(
+                "{}: wp=%{}",
+                "format_defaults",
+                ((*wp).id) as u32
+            ));
+        } else {
+            log_debug(format_args!("{}: wp=none", "format_defaults"));
+        }
+        if !c.is_null()
+            && !s.is_null()
+            && (*c)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get())
+                != s
+        {
+            log_debug(format_args!(
+                "{}: session does not match",
+                "format_defaults"
+            ));
+        }
+        if !wp.is_null() {
+            (*ft).type_0 = FORMAT_TYPE_PANE;
+        } else if wl.is_alive() {
+            (*ft).type_0 = FORMAT_TYPE_WINDOW;
+        } else if !s.is_null() {
+            (*ft).type_0 = FORMAT_TYPE_SESSION;
+        } else {
+            (*ft).type_0 = FORMAT_TYPE_UNKNOWN;
+        }
+        let session_owner = s_owner
+            .cloned()
+            .or_else(|| c_owner.and_then(|owner| (*owner.get()).session.upgrade()));
+        if !wl.is_alive() {
+            wl = session_owner
+                .as_ref()
+                .map_or_else(refbox::Weak::new, |owner| (*owner.get()).current_winlink());
+        }
+        let pane_owner = wp_owner.cloned().or_else(|| {
+            wl.try_borrow_mut().ok().and_then(|link| {
+                link.window_owner
                     .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
-        ));
-    } else {
-        log_debug(format_args!("{}: c=none", "format_defaults"));
-    }
-    if !s.is_null() {
-        log_debug(format_args!(
-            "{}: s=${}",
-            "format_defaults",
-            ((*s).id) as u32
-        ));
-    } else {
-        log_debug(format_args!("{}: s=none", "format_defaults"));
-    }
-    if wl.is_alive() {
-        log_debug(format_args!(
-            "{}: wl={}",
-            "format_defaults",
-            (wl.get_unchecked().idx) as u32
-        ));
-    } else {
-        log_debug(format_args!("{}: wl=none", "format_defaults"));
-    }
-    if !wp.is_null() {
-        log_debug(format_args!(
-            "{}: wp=%{}",
-            "format_defaults",
-            ((*wp).id) as u32
-        ));
-    } else {
-        log_debug(format_args!("{}: wp=none", "format_defaults"));
-    }
-    if !c.is_null() && !s.is_null() && (*c).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()) != s {
-        log_debug(format_args!(
-            "{}: session does not match",
-            "format_defaults"
-        ));
-    }
-    if !wp.is_null() {
-        (*ft).type_0 = FORMAT_TYPE_PANE;
-    } else if wl.is_alive() {
-        (*ft).type_0 = FORMAT_TYPE_WINDOW;
-    } else if !s.is_null() {
-        (*ft).type_0 = FORMAT_TYPE_SESSION;
-    } else {
-        (*ft).type_0 = FORMAT_TYPE_UNKNOWN;
-    }
-    let session_owner = s_owner.cloned().or_else(|| {
-        c_owner.and_then(|owner| (*owner.get()).session.upgrade())
-    });
-    if !wl.is_alive() {
-        wl = session_owner.as_ref().map_or_else(refbox::Weak::new, |owner| (*owner.get()).current_winlink());
-    }
-    let pane_owner = wp_owner.cloned().or_else(|| {
-        wl.try_borrow_mut().ok()
-            .and_then(|link| link.window_owner.as_ref().and_then(|owner| (*owner.get()).active.upgrade()))
-    });
-    if let Some(client) = c_owner {
-        format_defaults_client(ft, client);
-    }
-    if let Some(session) = session_owner.as_ref() {
-        format_defaults_session(ft, session);
-    }
-    if wl.is_alive() {
-        format_defaults_winlink(ft, wl.clone());
-    }
-    if let Some(pane) = pane_owner.as_ref() {
-        format_defaults_pane(ft, pane);
-    }
-    if let Some(pb) = paste_get_top(None) {
-        format_defaults_paste_buffer(&mut *ft, &pb);
+                    .and_then(|owner| (*owner.get()).active.upgrade())
+            })
+        });
+        if let Some(client) = c_owner {
+            format_defaults_client(ft, client);
+        }
+        if let Some(session) = session_owner.as_ref() {
+            format_defaults_session(ft, session);
+        }
+        if wl.is_alive() {
+            format_defaults_winlink(ft, wl.clone());
+        }
+        if let Some(pane) = pane_owner.as_ref() {
+            format_defaults_pane(ft, pane);
+        }
+        if let Some(pb) = paste_get_top(None) {
+            format_defaults_paste_buffer(&mut *ft, &pb);
+        }
     }
 }
-unsafe fn format_defaults_session(mut ft: *mut format_tree, s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
-    (*ft).s = std::rc::Rc::downgrade(s_owner);
-}
-unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
-    let mut c = c_owner.get();
-    if (*ft).s.upgrade().is_none() {
-    (*ft).s = (*c).session.clone();
+unsafe fn format_defaults_session(
+    mut ft: *mut format_tree,
+    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+) {
+    unsafe {
+        (*ft).s = std::rc::Rc::downgrade(s_owner);
     }
-    (*ft).c = std::rc::Rc::downgrade(c_owner);
 }
-pub unsafe fn format_defaults_window(mut ft: *mut format_tree, w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>) {
-    (*ft).w = w_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+unsafe fn format_defaults_client(
+    mut ft: *mut format_tree,
+    c_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
+) {
+    unsafe {
+        let mut c = c_owner.get();
+        if (*ft).s.upgrade().is_none() {
+            (*ft).s = (*c).session.clone();
+        }
+        (*ft).c = std::rc::Rc::downgrade(c_owner);
+    }
+}
+pub unsafe fn format_defaults_window(
+    mut ft: *mut format_tree,
+    w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>,
+) {
+    unsafe {
+        (*ft).w = w_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+    }
 }
 unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak<winlink>) {
-    if (*ft).w.upgrade().is_none() {
-        format_defaults_window(ft, wl.get_unchecked().window_owner.as_ref());
+    unsafe {
+        if (*ft).w.upgrade().is_none() {
+            format_defaults_window(ft, wl.get_unchecked().window_owner.as_ref());
+        }
+        (*ft).wl = wl.get_unchecked().observer.clone();
     }
-    (*ft).wl = wl.get_unchecked().observer.clone();
 }
-pub unsafe fn format_defaults_pane(mut ft: *mut format_tree, wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-    let mut wp = wp_owner.get();
-    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    if (*ft).w.upgrade().is_none() {
-        format_defaults_window(ft, (*wp).window.upgrade().as_ref());
-    }
-    (*ft).wp = std::rc::Rc::downgrade(wp_owner);
-    wme = (*wp).modes.active_weak();
-    if !!wme.is_alive() && (*wme.get_unchecked().mode).formats.is_some() {
-        (*wme.get_unchecked().mode).formats.expect("non-null function pointer")(wme, ft);
+pub unsafe fn format_defaults_pane(
+    mut ft: *mut format_tree,
+    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) {
+    unsafe {
+        let mut wp = wp_owner.get();
+        let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
+        if (*ft).w.upgrade().is_none() {
+            format_defaults_window(ft, (*wp).window.upgrade().as_ref());
+        }
+        (*ft).wp = std::rc::Rc::downgrade(wp_owner);
+        wme = (*wp).modes.active_weak();
+        if !!wme.is_alive() && (*wme.get_unchecked().mode).formats.is_some() {
+            (*wme.get_unchecked().mode)
+                .formats
+                .expect("non-null function pointer")(wme, ft);
+        }
     }
 }
 pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &PasteBufferRef) {
@@ -522,145 +594,149 @@ fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> bool {
     gc.data.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int && gc.data.data[0] == b' '
 }
 pub unsafe fn format_grid_word(gd: &grid, x: u_int, y: u_int) -> Option<CString> {
-    format_grid_word_cstring(gd, x, y)
+    unsafe { format_grid_word_cstring(gd, x, y) }
 }
 pub(crate) unsafe fn format_grid_word_cstring(
     gd: &grid,
     mut x: u_int,
     mut y: u_int,
 ) -> Option<CString> {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let ws: &CStr;
-    let mut ud: Vec<utf8_data> = Vec::new();
-    let mut end: u_int = 0;
-    let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut s = None;
-    ws = CStr::from_ptr(options_get_string(
-        global_s_options,
-        b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
-    ));
-    loop {
-        grid_get_cell(gd, x, y, &mut gc);
-        if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
-            && format_is_word_separator(ws, &gc)
-        {
-            found = 1 as ::core::ffi::c_int;
-            break;
-        } else {
-            if x == 0 as u_int {
-                if y == 0 as u_int {
-                    break;
-                }
-                let gl = grid_peek_line(gd, y.wrapping_sub(1 as u_int))?;
-                if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
-                    break;
-                }
-                y = y.wrapping_sub(1);
-                x = grid_line_length(gd, y);
-                if x == 0 as u_int {
-                    break;
-                }
-            }
-            x = x.wrapping_sub(1);
-        }
-    }
-    loop {
-        if found != 0 {
-            end = grid_line_length(gd, y);
-            if end == 0 as u_int || x == end.wrapping_sub(1 as u_int) {
-                if y == gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
-                    break;
-                }
-                let gl = grid_peek_line(gd, y)?;
-                if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
-                    break;
-                }
-                y = y.wrapping_add(1);
-                x = 0 as u_int;
+    unsafe {
+        let mut gc: grid_cell = grid_cell {
+            data: utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            },
+            attr: 0,
+            flags: 0,
+            fg: 0,
+            bg: 0,
+            us: 0,
+            link: 0,
+        };
+        let ws: &CStr;
+        let mut ud: Vec<utf8_data> = Vec::new();
+        let mut end: u_int = 0;
+        let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+        let mut s = None;
+        ws = CStr::from_ptr(options_get_string(
+            global_s_options,
+            b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
+        ));
+        loop {
+            grid_get_cell(gd, x, y, &mut gc);
+            if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
+                && format_is_word_separator(ws, &gc)
+            {
+                found = 1 as ::core::ffi::c_int;
+                break;
             } else {
-                x = x.wrapping_add(1);
+                if x == 0 as u_int {
+                    if y == 0 as u_int {
+                        break;
+                    }
+                    let gl = grid_peek_line(gd, y.wrapping_sub(1 as u_int))?;
+                    if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+                        break;
+                    }
+                    y = y.wrapping_sub(1);
+                    x = grid_line_length(gd, y);
+                    if x == 0 as u_int {
+                        break;
+                    }
+                }
+                x = x.wrapping_sub(1);
             }
         }
-        found = 1 as ::core::ffi::c_int;
-        grid_get_cell(gd, x, y, &mut gc);
-        if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-            continue;
+        loop {
+            if found != 0 {
+                end = grid_line_length(gd, y);
+                if end == 0 as u_int || x == end.wrapping_sub(1 as u_int) {
+                    if y == gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
+                        break;
+                    }
+                    let gl = grid_peek_line(gd, y)?;
+                    if !(gl.flags as ::core::ffi::c_int) & GRID_LINE_WRAPPED != 0 {
+                        break;
+                    }
+                    y = y.wrapping_add(1);
+                    x = 0 as u_int;
+                } else {
+                    x = x.wrapping_add(1);
+                }
+            }
+            found = 1 as ::core::ffi::c_int;
+            grid_get_cell(gd, x, y, &mut gc);
+            if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+                continue;
+            }
+            if format_is_word_separator(ws, &gc) {
+                break;
+            }
+            ud.push(gc.data);
         }
-        if format_is_word_separator(ws, &gc) {
-            break;
+        if !ud.is_empty() {
+            ud.push(utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            });
+            s = Some(utf8_tocstr_cstring(&ud));
         }
-        ud.push(gc.data);
+        return s;
     }
-    if !ud.is_empty() {
-        ud.push(utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        });
-        s = Some(utf8_tocstr_cstring(&ud));
-    }
-    return s;
 }
 pub unsafe fn format_grid_line(gd: &grid, y: u_int) -> Option<CString> {
-    format_grid_line_cstring(gd, y)
+    unsafe { format_grid_line_cstring(gd, y) }
 }
 pub(crate) unsafe fn format_grid_line_cstring(gd: &grid, mut y: u_int) -> Option<CString> {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut ud: Vec<utf8_data> = Vec::new();
-    let mut x: u_int = 0;
-    let mut s = None;
-    x = 0 as u_int;
-    while x < grid_line_length(gd, y) {
-        grid_get_cell(gd, x, y, &mut gc);
-        if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
-            if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-                let mut tab = gc.data;
-                utf8_set(&mut tab, '\t' as i32 as u_char);
-                ud.push(tab);
-            } else {
-                ud.push(gc.data);
+    unsafe {
+        let mut gc: grid_cell = grid_cell {
+            data: utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            },
+            attr: 0,
+            flags: 0,
+            fg: 0,
+            bg: 0,
+            us: 0,
+            link: 0,
+        };
+        let mut ud: Vec<utf8_data> = Vec::new();
+        let mut x: u_int = 0;
+        let mut s = None;
+        x = 0 as u_int;
+        while x < grid_line_length(gd, y) {
+            grid_get_cell(gd, x, y, &mut gc);
+            if !(gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
+                if gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
+                    let mut tab = gc.data;
+                    utf8_set(&mut tab, '\t' as i32 as u_char);
+                    ud.push(tab);
+                } else {
+                    ud.push(gc.data);
+                }
             }
+            x = x.wrapping_add(1);
         }
-        x = x.wrapping_add(1);
+        if !ud.is_empty() {
+            ud.push(utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            });
+            s = Some(utf8_tocstr_cstring(&ud));
+            drop(ud);
+        }
+        return s;
     }
-    if !ud.is_empty() {
-        ud.push(utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        });
-        s = Some(utf8_tocstr_cstring(&ud));
-        drop(ud);
-    }
-    return s;
 }
 pub(crate) unsafe fn format_grid_hyperlink_cstring(
     gd: &grid,
@@ -668,34 +744,36 @@ pub(crate) unsafe fn format_grid_hyperlink_cstring(
     mut y: u_int,
     s: &screen,
 ) -> Option<CString> {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    loop {
-        grid_get_cell(gd, x, y, &mut gc);
-        if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
-            break;
+    unsafe {
+        let mut gc: grid_cell = grid_cell {
+            data: utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            },
+            attr: 0,
+            flags: 0,
+            fg: 0,
+            bg: 0,
+            us: 0,
+            link: 0,
+        };
+        loop {
+            grid_get_cell(gd, x, y, &mut gc);
+            if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
+                break;
+            }
+            if x == 0 as u_int {
+                return None;
+            }
+            x = x.wrapping_sub(1);
         }
-        if x == 0 as u_int {
+        if s.hyperlinks.is_none() || gc.link == 0 as u_int {
             return None;
         }
-        x = x.wrapping_sub(1);
+        hyperlinks_get(s.hyperlinks.as_ref()?, gc.link).map(|link| link.uri.clone())
     }
-    if s.hyperlinks.is_none() || gc.link == 0 as u_int {
-        return None;
-    }
-    hyperlinks_get(s.hyperlinks.as_ref()?, gc.link).map(|link| link.uri.clone())
 }
 
 pub const FORMAT_TYPE_PANE: format_type = 3;

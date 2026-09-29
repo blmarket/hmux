@@ -74,7 +74,7 @@ pub type clockid_t = __clockid_t;
 
 #[cfg(test)]
 mod tests {
-    use super::{timeval, NULL};
+    use super::{NULL, timeval};
     use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]

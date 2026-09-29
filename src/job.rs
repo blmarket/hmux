@@ -24,19 +24,19 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::job::{
-    job, job_complete_cb, job_free_cb, job_state, job_update_cb, JobCompletion, JobExitStatus,
+    JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR,
 };
 use crate::src::shared::job::{
-    JOB_DEFAULTSHELL, JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, JOB_SHOWSTDERR,
+    JobCompletion, JobExitStatus, job, job_complete_cb, job_free_cb, job_state, job_update_cb,
 };
 use crate::src::shared::options::options;
 use crate::src::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
-use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
+use crate::src::shared::posix_terminal::{TIOCSWINSZ, winsize};
 use crate::src::shared::session::session;
 use crate::src::shared::signal::{
-    __sigset_t, sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
+    __sigset_t, SIG_BLOCK, SIG_SETMASK, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, sigset_t,
 };
 use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::terminal::*;
@@ -73,17 +73,21 @@ pub const O_RDWR: ::core::ffi::c_int = 0o2 as ::core::ffi::c_int;
 static mut all_jobs: Vec<RefBox<job>> = Vec::new();
 
 unsafe fn job_insert(owner: RefBox<job>) -> Weak<job> {
-    let observer = owner.downgrade();
-    // Keep the previous newest-first traversal order.
-    (*(&raw mut all_jobs)).insert(0, owner);
-    observer
+    unsafe {
+        let observer = owner.downgrade();
+        // Keep the previous newest-first traversal order.
+        (*(&raw mut all_jobs)).insert(0, owner);
+        observer
+    }
 }
 
 unsafe fn job_snapshot() -> Vec<Weak<job>> {
-    (*(&raw const all_jobs))
-        .iter()
-        .map(RefBox::downgrade)
-        .collect()
+    unsafe {
+        (*(&raw const all_jobs))
+            .iter()
+            .map(RefBox::downgrade)
+            .collect()
+    }
 }
 
 /// Start a registry-owned job and return its nonowning identity.
@@ -100,314 +104,318 @@ pub unsafe fn job_run(
     mut sx: ::core::ffi::c_int,
     mut sy: ::core::ffi::c_int,
 ) -> Weak<job> {
-    let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut current_block: u64;
-    let mut pid: pid_t = 0;
-    let mut nullfd: ::core::ffi::c_int = 0;
-    let mut out: [::core::ffi::c_int; 2] = [0; 2];
-    let mut master: ::core::ffi::c_int = 0;
-    let mut do_close: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut set: sigset_t = __sigset_t { __val: [0; 16] };
-    let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
-    let mut ws: winsize = winsize {
-        ws_row: 0,
-        ws_col: 0,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    let mut argvp: *mut *mut ::core::ffi::c_char =
-        ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    let mut tty: [::core::ffi::c_char; 32] = [0; 32];
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    // This environment is forked for the job and never escapes `job_run`.
-    // Keep ownership in a Rust local rather than putting a Drop-bearing value
-    // in the C-managed job record. The child reaches exec/_exit, while the
-    // parent drops the same owner on both success and failure paths.
-    let mut env_owner = Some(environ_for_session(
-        s_owner,
-        (cfg_finished == 0) as ::core::ffi::c_int,
-    ));
-    let env = env_owner
-        .as_deref_mut()
-        .expect("job environment owner must exist");
-    if let Some(e) = e {
-        environ_copy(e, env);
-    }
-    if !flags & JOB_DEFAULTSHELL != 0 {
-        shell = _PATH_BSHELL.as_ptr();
-    } else {
-        if !s.is_null() {
-            oo = options_owner_ptr(&mut (*s).options)
-                .map_or(std::ptr::null_mut(), |options| options);
-        } else {
-            oo = global_s_options;
+    unsafe {
+        let mut s = s_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
+        let mut current_block: u64;
+        let mut pid: pid_t = 0;
+        let mut nullfd: ::core::ffi::c_int = 0;
+        let mut out: [::core::ffi::c_int; 2] = [0; 2];
+        let mut master: ::core::ffi::c_int = 0;
+        let mut do_close: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+        let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut set: sigset_t = __sigset_t { __val: [0; 16] };
+        let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
+        let mut ws: winsize = winsize {
+            ws_row: 0,
+            ws_col: 0,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        let mut argvp: *mut *mut ::core::ffi::c_char =
+            ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
+        let mut tty: [::core::ffi::c_char; 32] = [0; 32];
+        let mut oo: *mut options = ::core::ptr::null_mut::<options>();
+        // This environment is forked for the job and never escapes `job_run`.
+        // Keep ownership in a Rust local rather than putting a Drop-bearing value
+        // in the C-managed job record. The child reaches exec/_exit, while the
+        // parent drops the same owner on both success and failure paths.
+        let mut env_owner = Some(environ_for_session(
+            s_owner,
+            (cfg_finished == 0) as ::core::ffi::c_int,
+        ));
+        let env = env_owner
+            .as_deref_mut()
+            .expect("job environment owner must exist");
+        if let Some(e) = e {
+            environ_copy(e, env);
         }
-        shell = options_get_string(
-            oo,
-            b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        if checkshell(shell) == 0 {
+        if !flags & JOB_DEFAULTSHELL != 0 {
             shell = _PATH_BSHELL.as_ptr();
-        }
-    }
-    let argv0 = shell_argv0_cstring(CStr::from_ptr(shell), false);
-    sigfillset(&raw mut set);
-    sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
-    if flags & JOB_PTY != 0 {
-        memset(
-            &raw mut ws as *mut ::core::ffi::c_void,
-            0 as ::core::ffi::c_int,
-            ::core::mem::size_of::<winsize>() as size_t,
-        );
-        ws.ws_col = sx as ::core::ffi::c_ushort;
-        ws.ws_row = sy as ::core::ffi::c_ushort;
-        pid = fdforkpty(
-            ptm_fd,
-            &raw mut master,
-            &raw mut tty as *mut ::core::ffi::c_char,
-            ::core::ptr::null_mut::<termios>(),
-            &raw mut ws,
-        );
-        current_block = 224731115979188411;
-    } else if socketpair(
-        AF_UNIX,
-        SOCK_STREAM as ::core::ffi::c_int,
-        PF_UNSPEC,
-        &raw mut out as *mut ::core::ffi::c_int,
-    ) != 0 as ::core::ffi::c_int
-    {
-        current_block = 12393940290395533062;
-    } else {
-        pid = fork() as pid_t;
-        current_block = 224731115979188411;
-    }
-    match current_block {
-        224731115979188411 => {
-            if cmd.is_none() {
-                cmd_log_argv(argv, c"job_run:");
-                log_debug(format_args!(
-                    "{}: cwd={}, shell={}",
-                    "job_run",
-                    log_cstr(
-                        (cwd.map_or(
-                            b"\0" as *const u8 as *const ::core::ffi::c_char,
-                            CStr::as_ptr,
-                        )) as *const _
-                    ),
-                    log_cstr((shell) as *const _)
-                ));
+        } else {
+            if !s.is_null() {
+                oo = options_owner_ptr(&mut (*s).options)
+                    .map_or(std::ptr::null_mut(), |options| options);
             } else {
-                log_debug(format_args!(
-                    "{}: cmd={}, cwd={}, shell={}",
-                    "job_run",
-                    log_cstr((cmd.unwrap().as_ptr()) as *const _),
-                    log_cstr(
-                        (cwd.map_or(
-                            b"\0" as *const u8 as *const ::core::ffi::c_char,
-                            CStr::as_ptr,
-                        )) as *const _
-                    ),
-                    log_cstr((shell) as *const _)
-                ));
+                oo = global_s_options;
             }
-            match pid {
-                -1 => {
-                    if !flags & JOB_PTY != 0 {
-                        close(out[0 as ::core::ffi::c_int as usize]);
-                        close(out[1 as ::core::ffi::c_int as usize]);
-                    }
+            shell = options_get_string(
+                oo,
+                b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            if checkshell(shell) == 0 {
+                shell = _PATH_BSHELL.as_ptr();
+            }
+        }
+        let argv0 = shell_argv0_cstring(CStr::from_ptr(shell), false);
+        sigfillset(&raw mut set);
+        sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
+        if flags & JOB_PTY != 0 {
+            memset(
+                &raw mut ws as *mut ::core::ffi::c_void,
+                0 as ::core::ffi::c_int,
+                ::core::mem::size_of::<winsize>() as size_t,
+            );
+            ws.ws_col = sx as ::core::ffi::c_ushort;
+            ws.ws_row = sy as ::core::ffi::c_ushort;
+            pid = fdforkpty(
+                ptm_fd,
+                &raw mut master,
+                &raw mut tty as *mut ::core::ffi::c_char,
+                ::core::ptr::null_mut::<termios>(),
+                &raw mut ws,
+            );
+            current_block = 224731115979188411;
+        } else if socketpair(
+            AF_UNIX,
+            SOCK_STREAM as ::core::ffi::c_int,
+            PF_UNSPEC,
+            &raw mut out as *mut ::core::ffi::c_int,
+        ) != 0 as ::core::ffi::c_int
+        {
+            current_block = 12393940290395533062;
+        } else {
+            pid = fork() as pid_t;
+            current_block = 224731115979188411;
+        }
+        match current_block {
+            224731115979188411 => {
+                if cmd.is_none() {
+                    cmd_log_argv(argv, c"job_run:");
+                    log_debug(format_args!(
+                        "{}: cwd={}, shell={}",
+                        "job_run",
+                        log_cstr(
+                            (cwd.map_or(
+                                b"\0" as *const u8 as *const ::core::ffi::c_char,
+                                CStr::as_ptr,
+                            )) as *const _
+                        ),
+                        log_cstr((shell) as *const _)
+                    ));
+                } else {
+                    log_debug(format_args!(
+                        "{}: cmd={}, cwd={}, shell={}",
+                        "job_run",
+                        log_cstr((cmd.unwrap().as_ptr()) as *const _),
+                        log_cstr(
+                            (cwd.map_or(
+                                b"\0" as *const u8 as *const ::core::ffi::c_char,
+                                CStr::as_ptr,
+                            )) as *const _
+                        ),
+                        log_cstr((shell) as *const _)
+                    ));
                 }
-                0 => {
-                    proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
-                    sigprocmask(
-                        SIG_SETMASK,
-                        &raw mut oldset,
-                        ::core::ptr::null_mut::<sigset_t>(),
-                    );
-                    if let Some(cwd) = cwd {
-                        if chdir(cwd.as_ptr()) == 0 as ::core::ffi::c_int {
-                            environ_set(
-                                env,
-                                b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
-                                0 as ::core::ffi::c_int,
-                                |out| write_cstr(out, cwd.as_ptr()),
-                            );
-                        } else {
-                            home = find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
-                            if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
+                match pid {
+                    -1 => {
+                        if !flags & JOB_PTY != 0 {
+                            close(out[0 as ::core::ffi::c_int as usize]);
+                            close(out[1 as ::core::ffi::c_int as usize]);
+                        }
+                    }
+                    0 => {
+                        proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
+                        sigprocmask(
+                            SIG_SETMASK,
+                            &raw mut oldset,
+                            ::core::ptr::null_mut::<sigset_t>(),
+                        );
+                        if let Some(cwd) = cwd {
+                            if chdir(cwd.as_ptr()) == 0 as ::core::ffi::c_int {
                                 environ_set(
                                     env,
                                     b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
                                     0 as ::core::ffi::c_int,
-                                    |out| write_cstr(out, home),
-                                );
-                            } else if chdir(b"/\0" as *const u8 as *const ::core::ffi::c_char)
-                                == 0 as ::core::ffi::c_int
-                            {
-                                environ_set(
-                                    env,
-                                    b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
-                                    0 as ::core::ffi::c_int,
-                                    |out| out.write_all(b"/"),
+                                    |out| write_cstr(out, cwd.as_ptr()),
                                 );
                             } else {
-                                _exit(1 as ::core::ffi::c_int);
+                                home = find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
+                                if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
+                                    environ_set(
+                                        env,
+                                        b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
+                                        0 as ::core::ffi::c_int,
+                                        |out| write_cstr(out, home),
+                                    );
+                                } else if chdir(b"/\0" as *const u8 as *const ::core::ffi::c_char)
+                                    == 0 as ::core::ffi::c_int
+                                {
+                                    environ_set(
+                                        env,
+                                        b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
+                                        0 as ::core::ffi::c_int,
+                                        |out| out.write_all(b"/"),
+                                    );
+                                } else {
+                                    _exit(1 as ::core::ffi::c_int);
+                                }
                             }
                         }
-                    }
-                    environ_push(env);
-                    // The child has a private copy after fork. The parent
-                    // keeps its owner for the parent-side return path.
-                    drop(env_owner.take());
-                    if !flags & JOB_PTY != 0 {
-                        if dup2(out[1 as ::core::ffi::c_int as usize], STDIN_FILENO)
-                            == -(1 as ::core::ffi::c_int)
-                        {
-                            _exit(1 as ::core::ffi::c_int);
-                        }
-                        do_close = (do_close != 0
-                            && out[1 as ::core::ffi::c_int as usize] != STDIN_FILENO)
-                            as ::core::ffi::c_int;
-                        if dup2(out[1 as ::core::ffi::c_int as usize], STDOUT_FILENO)
-                            == -(1 as ::core::ffi::c_int)
-                        {
-                            _exit(1 as ::core::ffi::c_int);
-                        }
-                        do_close = (do_close != 0
-                            && out[1 as ::core::ffi::c_int as usize] != STDOUT_FILENO)
-                            as ::core::ffi::c_int;
-                        if flags & JOB_SHOWSTDERR != 0 {
-                            if dup2(out[1 as ::core::ffi::c_int as usize], STDERR_FILENO)
+                        environ_push(env);
+                        // The child has a private copy after fork. The parent
+                        // keeps its owner for the parent-side return path.
+                        drop(env_owner.take());
+                        if !flags & JOB_PTY != 0 {
+                            if dup2(out[1 as ::core::ffi::c_int as usize], STDIN_FILENO)
                                 == -(1 as ::core::ffi::c_int)
                             {
                                 _exit(1 as ::core::ffi::c_int);
                             }
                             do_close = (do_close != 0
-                                && out[1 as ::core::ffi::c_int as usize] != STDERR_FILENO)
+                                && out[1 as ::core::ffi::c_int as usize] != STDIN_FILENO)
                                 as ::core::ffi::c_int;
-                        } else {
-                            nullfd = open(_PATH_DEVNULL.as_ptr(), O_RDWR);
-                            if nullfd == -(1 as ::core::ffi::c_int) {
+                            if dup2(out[1 as ::core::ffi::c_int as usize], STDOUT_FILENO)
+                                == -(1 as ::core::ffi::c_int)
+                            {
                                 _exit(1 as ::core::ffi::c_int);
                             }
-                            if dup2(nullfd, STDERR_FILENO) == -(1 as ::core::ffi::c_int) {
-                                _exit(1 as ::core::ffi::c_int);
+                            do_close = (do_close != 0
+                                && out[1 as ::core::ffi::c_int as usize] != STDOUT_FILENO)
+                                as ::core::ffi::c_int;
+                            if flags & JOB_SHOWSTDERR != 0 {
+                                if dup2(out[1 as ::core::ffi::c_int as usize], STDERR_FILENO)
+                                    == -(1 as ::core::ffi::c_int)
+                                {
+                                    _exit(1 as ::core::ffi::c_int);
+                                }
+                                do_close = (do_close != 0
+                                    && out[1 as ::core::ffi::c_int as usize] != STDERR_FILENO)
+                                    as ::core::ffi::c_int;
+                            } else {
+                                nullfd = open(_PATH_DEVNULL.as_ptr(), O_RDWR);
+                                if nullfd == -(1 as ::core::ffi::c_int) {
+                                    _exit(1 as ::core::ffi::c_int);
+                                }
+                                if dup2(nullfd, STDERR_FILENO) == -(1 as ::core::ffi::c_int) {
+                                    _exit(1 as ::core::ffi::c_int);
+                                }
+                                if nullfd != STDERR_FILENO {
+                                    close(nullfd);
+                                }
                             }
-                            if nullfd != STDERR_FILENO {
-                                close(nullfd);
+                            if do_close != 0 {
+                                close(out[1 as ::core::ffi::c_int as usize]);
                             }
+                            close(out[0 as ::core::ffi::c_int as usize]);
                         }
-                        if do_close != 0 {
-                            close(out[1 as ::core::ffi::c_int as usize]);
-                        }
-                        close(out[0 as ::core::ffi::c_int as usize]);
-                    }
-                    closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
-                    if let Some(cmd) = cmd {
-                        if flags & JOB_DEFAULTSHELL != 0 {
-                            setenv(
-                                b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
+                        closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
+                        if let Some(cmd) = cmd {
+                            if flags & JOB_DEFAULTSHELL != 0 {
+                                setenv(
+                                    b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
+                                    shell,
+                                    1 as ::core::ffi::c_int,
+                                );
+                            }
+                            execl(
                                 shell,
-                                1 as ::core::ffi::c_int,
+                                argv0.as_ptr(),
+                                b"-c\0" as *const u8 as *const ::core::ffi::c_char,
+                                cmd.as_ptr(),
+                                NULL as *mut ::core::ffi::c_char,
                             );
+                            _exit(1 as ::core::ffi::c_int);
+                        } else {
+                            let mut pointer_view: Vec<_> =
+                                argv.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
+                            pointer_view.push(::core::ptr::null_mut());
+                            argvp = pointer_view.as_mut_ptr();
+                            execvp(
+                                *argvp.offset(0 as ::core::ffi::c_int as isize),
+                                argvp as *const *mut ::core::ffi::c_char,
+                            );
+                            _exit(1 as ::core::ffi::c_int);
                         }
-                        execl(
-                            shell,
-                            argv0.as_ptr(),
-                            b"-c\0" as *const u8 as *const ::core::ffi::c_char,
-                            cmd.as_ptr(),
-                            NULL as *mut ::core::ffi::c_char,
+                    }
+                    _ => {
+                        sigprocmask(
+                            SIG_SETMASK,
+                            &raw mut oldset,
+                            ::core::ptr::null_mut::<sigset_t>(),
                         );
-                        _exit(1 as ::core::ffi::c_int);
-                    } else {
-                        let mut pointer_view: Vec<_> =
-                            argv.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
-                        pointer_view.push(::core::ptr::null_mut());
-                        argvp = pointer_view.as_mut_ptr();
-                        execvp(
-                            *argvp.offset(0 as ::core::ffi::c_int as isize),
-                            argvp as *const *mut ::core::ffi::c_char,
+                        drop(env_owner.take());
+                        drop(argv0);
+                        let cmd_owner = if let Some(cmd) = cmd {
+                            Some(cmd.to_owned())
+                        } else {
+                            cmd_stringify_argv_cstring(argv)
+                        };
+                        let mut value = job {
+                            cmd: cmd_owner,
+                            state: JOB_RUNNING,
+                            flags,
+                            pid,
+                            updatecb,
+                            completecb,
+                            freecb,
+                            ..job::empty()
+                        };
+                        if flags & JOB_PTY != 0 {
+                            value.tty = tty;
+                        }
+                        if flags & JOB_PTY == 0 {
+                            close(out[1]);
+                            value.fd = out[0];
+                        } else {
+                            value.fd = master;
+                        }
+                        setblocking(value.fd, 0);
+                        let fd = value.fd;
+                        let job = job_insert(RefBox::new(value));
+                        let read_job = job.clone();
+                        let write_job = job.clone();
+                        let error_job = job.clone();
+                        let stream = bufferevent_new(
+                            fd,
+                            bufferevent_data_callback(move |_| unsafe {
+                                job_read_callback(&read_job)
+                            }),
+                            bufferevent_data_callback(move |_| unsafe {
+                                job_write_callback(&write_job)
+                            }),
+                            bufferevent_event_callback(move |_, _| unsafe {
+                                job_error_callback(&error_job)
+                            }),
                         );
-                        _exit(1 as ::core::ffi::c_int);
+                        if stream.is_null() {
+                            fatalx(|out| out.write_all(b"out of memory"));
+                        }
+                        job.try_borrow_mut().expect("registered job").event =
+                            crate::src::reactor::StreamHandle::from_ptr(stream);
+                        bufferevent_enable(stream, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
+                        {
+                            let value = job.try_borrow_mut().expect("registered job");
+                            log_debug(format_args!(
+                                "run job: {}, pid {}",
+                                log_bytes(value.cmd.as_deref().unwrap_or(c"(null)").to_bytes()),
+                                value.pid
+                            ));
+                        }
+                        return job;
                     }
-                }
-                _ => {
-                    sigprocmask(
-                        SIG_SETMASK,
-                        &raw mut oldset,
-                        ::core::ptr::null_mut::<sigset_t>(),
-                    );
-                    drop(env_owner.take());
-                    drop(argv0);
-                    let cmd_owner = if let Some(cmd) = cmd {
-                        Some(cmd.to_owned())
-                    } else {
-                        cmd_stringify_argv_cstring(argv)
-                    };
-                    let mut value = job {
-                        cmd: cmd_owner,
-                        state: JOB_RUNNING,
-                        flags,
-                        pid,
-                        updatecb,
-                        completecb,
-                        freecb,
-                        ..job::empty()
-                    };
-                    if flags & JOB_PTY != 0 {
-                        value.tty = tty;
-                    }
-                    if flags & JOB_PTY == 0 {
-                        close(out[1]);
-                        value.fd = out[0];
-                    } else {
-                        value.fd = master;
-                    }
-                    setblocking(value.fd, 0);
-                    let fd = value.fd;
-                    let job = job_insert(RefBox::new(value));
-                    let read_job = job.clone();
-                    let write_job = job.clone();
-                    let error_job = job.clone();
-                    let stream = bufferevent_new(
-                        fd,
-                        bufferevent_data_callback(move |_| unsafe { job_read_callback(&read_job) }),
-                        bufferevent_data_callback(move |_| unsafe {
-                            job_write_callback(&write_job)
-                        }),
-                        bufferevent_event_callback(move |_, _| unsafe {
-                            job_error_callback(&error_job)
-                        }),
-                    );
-                    if stream.is_null() {
-                        fatalx(|out| out.write_all(b"out of memory"));
-                    }
-                    job.try_borrow_mut().expect("registered job").event =
-                        crate::src::reactor::StreamHandle::from_ptr(stream);
-                    bufferevent_enable(stream, (EV_READ | EV_WRITE) as ::core::ffi::c_short);
-                    {
-                        let value = job.try_borrow_mut().expect("registered job");
-                        log_debug(format_args!(
-                            "run job: {}, pid {}",
-                            log_bytes(value.cmd.as_deref().unwrap_or(c"(null)").to_bytes()),
-                            value.pid
-                        ));
-                    }
-                    return job;
                 }
             }
+            _ => {}
         }
-        _ => {}
+        sigprocmask(
+            SIG_SETMASK,
+            &raw mut oldset,
+            ::core::ptr::null_mut::<sigset_t>(),
+        );
+        drop(argv0);
+        return Weak::new();
     }
-    sigprocmask(
-        SIG_SETMASK,
-        &raw mut oldset,
-        ::core::ptr::null_mut::<sigset_t>(),
-    );
-    drop(argv0);
-    return Weak::new();
 }
 fn job_borrow_live(handle: &Weak<job>) -> Option<refbox::Borrow<'_, job>> {
     match handle.try_borrow_mut() {
@@ -418,65 +426,71 @@ fn job_borrow_live(handle: &Weak<job>) -> Option<refbox::Borrow<'_, job>> {
 }
 
 unsafe fn job_log(action: &str, job: &job) {
-    log_debug(format_args!(
-        "{} job: {}, pid {}",
-        action,
-        log_bytes(job.cmd.as_deref().unwrap_or(c"(null)").to_bytes()),
-        job.pid
-    ));
+    unsafe {
+        log_debug(format_args!(
+            "{} job: {}, pid {}",
+            action,
+            log_bytes(job.cmd.as_deref().unwrap_or(c"(null)").to_bytes()),
+            job.pid
+        ));
+    }
 }
 
 /// Remove ownership before callbacks, but keep the allocation and resources alive
 /// until the free callback returns. Reentrant cancellation is a no-op.
 pub unsafe fn job_free(handle: &Weak<job>) {
-    let owner = {
-        let owners = &mut *(&raw mut all_jobs);
-        let Some(index) = owners.iter().position(|owner| handle.is(owner)) else {
-            return;
+    unsafe {
+        let owner = {
+            let owners = &mut *(&raw mut all_jobs);
+            let Some(index) = owners.iter().position(|owner| handle.is(owner)) else {
+                return;
+            };
+            owners.remove(index)
         };
-        owners.remove(index)
-    };
-    let callback = {
-        let mut job = owner
-            .try_borrow_mut()
-            .expect("unborrowed job during cleanup");
-        job_log("free", &job);
-        job.freecb.take()
-    };
-    if let Some(callback) = callback {
-        callback();
-    }
-    {
-        let mut job = owner
-            .try_borrow_mut()
-            .expect("unborrowed job after cleanup callback");
-        if job.pid != -1 {
-            kill(job.pid as __pid_t, SIGTERM);
-            job.pid = -1;
+        let callback = {
+            let mut job = owner
+                .try_borrow_mut()
+                .expect("unborrowed job during cleanup");
+            job_log("free", &job);
+            job.freecb.take()
+        };
+        if let Some(callback) = callback {
+            callback();
         }
-        job.event.free();
-        if job.fd != -1 {
-            close(job.fd);
-            job.fd = -1;
+        {
+            let mut job = owner
+                .try_borrow_mut()
+                .expect("unborrowed job after cleanup callback");
+            if job.pid != -1 {
+                kill(job.pid as __pid_t, SIGTERM);
+                job.pid = -1;
+            }
+            job.event.free();
+            if job.fd != -1 {
+                close(job.fd);
+                job.fd = -1;
+            }
         }
+        drop(owner);
     }
-    drop(owner);
 }
 
 pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
-    let job = handle.try_borrow_mut().expect("live popup job");
-    if job.fd == -1 || job.flags & JOB_PTY == 0 {
-        return;
-    }
-    log_debug(format_args!("resize job: {}x{}", sx, sy));
-    let ws = winsize {
-        ws_row: sy as _,
-        ws_col: sx as _,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    if ioctl(job.fd, TIOCSWINSZ as ::core::ffi::c_ulong, &ws) == -1 {
-        fatal(|out| out.write_all(b"ioctl failed"));
+    unsafe {
+        let job = handle.try_borrow_mut().expect("live popup job");
+        if job.fd == -1 || job.flags & JOB_PTY == 0 {
+            return;
+        }
+        log_debug(format_args!("resize job: {}x{}", sx, sy));
+        let ws = winsize {
+            ws_row: sy as _,
+            ws_col: sx as _,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        if ioctl(job.fd, TIOCSWINSZ as ::core::ffi::c_ulong, &ws) == -1 {
+            fatal(|out| out.write_all(b"ioctl failed"));
+        }
     }
 }
 
@@ -502,91 +516,99 @@ unsafe fn job_read_callback(handle: &Weak<job>) {
 }
 
 unsafe fn job_write_callback(handle: &Weak<job>) {
-    let Some(job) = job_borrow_live(handle) else {
-        return;
-    };
-    let Some(len) = job
-        .event
-        .with_ptr(|stream| evbuffer_get_length(&*bufferevent_get_output(&mut *stream)))
-    else {
-        return;
-    };
-    job_log("write", &job);
-    log_debug(format_args!("job output left {}", len));
-    if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
-        shutdown(job.fd, SHUT_WR as _);
-        job.event.with_ptr(|stream| {
-            bufferevent_disable(stream, EV_WRITE as _);
-        });
+    unsafe {
+        let Some(job) = job_borrow_live(handle) else {
+            return;
+        };
+        let Some(len) = job
+            .event
+            .with_ptr(|stream| evbuffer_get_length(&*bufferevent_get_output(&mut *stream)))
+        else {
+            return;
+        };
+        job_log("write", &job);
+        log_debug(format_args!("job output left {}", len));
+        if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
+            shutdown(job.fd, SHUT_WR as _);
+            job.event.with_ptr(|stream| {
+                bufferevent_disable(stream, EV_WRITE as _);
+            });
+        }
     }
 }
 
 unsafe fn job_finish(handle: &Weak<job>) {
-    let completion = {
-        let Some(mut job) = job_borrow_live(handle) else {
-            return;
+    unsafe {
+        let completion = {
+            let Some(mut job) = job_borrow_live(handle) else {
+                return;
+            };
+            job.completecb
+                .take()
+                .map(|callback| (callback, job_completion(&job)))
         };
-        job.completecb
-            .take()
-            .map(|callback| (callback, job_completion(&job)))
-    };
-    if let Some((callback, result)) = completion {
-        callback(result);
+        if let Some((callback, result)) = completion {
+            callback(result);
+        }
+        // Completion may already have cancelled the job, or its owning popup/cache.
+        job_free(handle);
     }
-    // Completion may already have cancelled the job, or its owning popup/cache.
-    job_free(handle);
 }
 
 unsafe fn job_error_callback(handle: &Weak<job>) {
-    let complete = {
-        let Some(mut job) = job_borrow_live(handle) else {
-            return;
+    unsafe {
+        let complete = {
+            let Some(mut job) = job_borrow_live(handle) else {
+                return;
+            };
+            job_log("error", &job);
+            if job.state == JOB_DEAD {
+                true
+            } else {
+                job.event.with_ptr(|stream| {
+                    bufferevent_disable(stream, EV_READ as _);
+                });
+                job.state = JOB_CLOSED;
+                false
+            }
         };
-        job_log("error", &job);
-        if job.state == JOB_DEAD {
-            true
-        } else {
-            job.event.with_ptr(|stream| {
-                bufferevent_disable(stream, EV_READ as _);
-            });
-            job.state = JOB_CLOSED;
-            false
+        if complete {
+            job_finish(handle);
         }
-    };
-    if complete {
-        job_finish(handle);
     }
 }
 
 pub unsafe fn job_check_died(pid: pid_t, status: ::core::ffi::c_int) {
-    let Some(handle) = job_snapshot()
-        .into_iter()
-        .find(|handle| handle.try_borrow_mut().expect("registered job").pid == pid)
-    else {
-        return;
-    };
-    let complete = {
-        let mut job = handle.try_borrow_mut().expect("registered job");
-        if status & 0xff == 0x7f {
-            let signal = (status & 0xff00) >> 8;
-            if signal != SIGTTIN && signal != SIGTTOU {
-                killpg(job.pid as __pid_t, SIGCONT);
-            }
+    unsafe {
+        let Some(handle) = job_snapshot()
+            .into_iter()
+            .find(|handle| handle.try_borrow_mut().expect("registered job").pid == pid)
+        else {
             return;
+        };
+        let complete = {
+            let mut job = handle.try_borrow_mut().expect("registered job");
+            if status & 0xff == 0x7f {
+                let signal = (status & 0xff00) >> 8;
+                if signal != SIGTTIN && signal != SIGTTOU {
+                    killpg(job.pid as __pid_t, SIGCONT);
+                }
+                return;
+            }
+            job_log("died", &job);
+            job.status = status;
+            // The child is reaped; cleanup must not signal its old PID.
+            job.pid = -1;
+            if job.state == JOB_CLOSED {
+                true
+            } else {
+                job.state = JOB_DEAD;
+                false
+            }
+        };
+        if complete {
+            job_finish(&handle);
         }
-        job_log("died", &job);
-        job.status = status;
-        // The child is reaped; cleanup must not signal its old PID.
-        job.pid = -1;
-        if job.state == JOB_CLOSED {
-            true
-        } else {
-            job.state = JOB_DEAD;
-            false
-        }
-    };
-    if complete {
-        job_finish(&handle);
     }
 }
 
@@ -599,39 +621,45 @@ pub unsafe fn job_get_event(handle: &Weak<job>) -> *mut bufferevent {
 }
 
 pub unsafe fn job_kill_all() {
-    for handle in job_snapshot() {
-        let job = handle.try_borrow_mut().expect("registered job");
-        if job.pid != -1 {
-            kill(job.pid as __pid_t, SIGTERM);
+    unsafe {
+        for handle in job_snapshot() {
+            let job = handle.try_borrow_mut().expect("registered job");
+            if job.pid != -1 {
+                kill(job.pid as __pid_t, SIGTERM);
+            }
         }
     }
 }
 
 pub unsafe fn job_still_running() -> ::core::ffi::c_int {
-    job_snapshot().iter().any(|handle| {
-        let job = handle.try_borrow_mut().expect("registered job");
-        job.flags & JOB_NOWAIT == 0 && job.state == JOB_RUNNING
-    }) as _
+    unsafe {
+        job_snapshot().iter().any(|handle| {
+            let job = handle.try_borrow_mut().expect("registered job");
+            job.flags & JOB_NOWAIT == 0 && job.state == JOB_RUNNING
+        }) as _
+    }
 }
 
 pub unsafe fn job_print_summary(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut blank: ::core::ffi::c_int,
 ) {
-    for (n, handle) in job_snapshot().into_iter().enumerate() {
-        let (cmd, fd, pid, status) = {
-            let job = handle.try_borrow_mut().expect("registered job");
-            (job.cmd.clone(), job.fd, job.pid, job.status)
-        };
-        if blank != 0 {
-            cmdq_print(item_handle, |_| Ok(()));
-            blank = 0;
+    unsafe {
+        for (n, handle) in job_snapshot().into_iter().enumerate() {
+            let (cmd, fd, pid, status) = {
+                let job = handle.try_borrow_mut().expect("registered job");
+                (job.cmd.clone(), job.fd, job.pid, job.status)
+            };
+            if blank != 0 {
+                cmdq_print(item_handle, |_| Ok(()));
+                blank = 0;
+            }
+            cmdq_print(item_handle, |out| {
+                write!(out, "Job {}: ", n)?;
+                out.write_all(cmd.as_deref().unwrap_or(c"(null)").to_bytes())?;
+                write!(out, " [fd={}, pid={}, status={}]", fd, pid, status)
+            });
         }
-        cmdq_print(item_handle, |out| {
-            write!(out, "Job {}: ", n)?;
-            out.write_all(cmd.as_deref().unwrap_or(c"(null)").to_bytes())?;
-            write!(out, " [fd={}, pid={}, status={}]", fd, pid, status)
-        });
     }
 }
 
@@ -765,9 +793,11 @@ mod job_stream_tests {
             );
             owner.try_borrow_mut().unwrap().event.free();
             assert!(job_get_event(&handle).is_null());
-            assert!(job_completion(&owner.try_borrow_mut().unwrap())
-                .output
-                .is_empty());
+            assert!(
+                job_completion(&owner.try_borrow_mut().unwrap())
+                    .output
+                    .is_empty()
+            );
             crate::src::reactor::shutdown_runtime();
         }
     }

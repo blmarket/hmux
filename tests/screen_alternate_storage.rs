@@ -2,13 +2,15 @@ use hmux2::src::grid::{
     grid_create, grid_default_cell, grid_get_cell, grid_scroll_history, grid_set_cell,
 };
 use hmux2::src::screen::{screen_alternate_off, screen_alternate_on, screen_free, screen_resize};
-use hmux2::src::shared::grid::{grid, grid_cell, GRID_HISTORY};
+use hmux2::src::shared::grid::{GRID_HISTORY, grid, grid_cell};
 use hmux2::src::shared::screen::screen;
 
 unsafe fn cell_at(grid: &grid, x: u32, y: u32) -> grid_cell {
-    let mut cell = grid_default_cell;
-    grid_get_cell(grid, x, y, &mut cell);
-    cell
+    unsafe {
+        let mut cell = grid_default_cell;
+        grid_get_cell(grid, x, y, &mut cell);
+        cell
+    }
 }
 
 #[test]

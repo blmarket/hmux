@@ -1,7 +1,7 @@
 //! Authoritative screen_write declarations, shared by the C translation units.
 
 use super::abi::u_int;
-use super::grid::{grid_cell, GridArray};
+use super::grid::{GridArray, grid_cell};
 use super::pane::window_pane;
 use super::screen::screen;
 use super::tty::tty_ctx;
@@ -65,7 +65,9 @@ impl screen_write_ctx {
         match &self.target.0 {
             ScreenWriteTargetKind::None => std::ptr::null_mut(),
             ScreenWriteTargetKind::PaneBase(observer) => {
-                let owner = observer.upgrade().expect("active pane base write has an owner");
+                let owner = observer
+                    .upgrade()
+                    .expect("active pane base write has an owner");
                 unsafe { &raw mut (*owner.get()).base }
             }
             ScreenWriteTargetKind::Borrowed(screen) => screen.as_ptr(),
@@ -73,9 +75,9 @@ impl screen_write_ctx {
     }
 
     pub fn use_pane_base(&mut self, pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-        self.target = ScreenWriteTarget(ScreenWriteTargetKind::PaneBase(
-            std::rc::Rc::downgrade(pane),
-        ));
+        self.target = ScreenWriteTarget(ScreenWriteTargetKind::PaneBase(std::rc::Rc::downgrade(
+            pane,
+        )));
     }
 
     /// # Safety

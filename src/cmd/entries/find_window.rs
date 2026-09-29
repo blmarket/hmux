@@ -36,59 +36,72 @@ pub static cmd_find_window_entry: cmd_entry = {
         exec: Some(cmd_find_window_exec),
     }
 };
-unsafe fn cmd_find_window_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target).pane_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut s: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut star: *const ::core::ffi::c_char = b"*\0" as *const u8 as *const ::core::ffi::c_char;
-    let filter_value: CString;
-    let mut C: ::core::ffi::c_int = 0;
-    let mut N: ::core::ffi::c_int = 0;
-    let mut T: ::core::ffi::c_int = 0;
-    C = args_has(args, 'C' as i32 as u_char);
-    N = args_has(args, 'N' as i32 as u_char);
-    T = args_has(args, 'T' as i32 as u_char);
-    if args_has(args, 'r' as i32 as u_char) != 0 {
-        star = b"\0" as *const u8 as *const ::core::ffi::c_char;
+unsafe fn cmd_find_window_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    unsafe {
+        let item = item_handle.get();
+        let mut args: *mut args =
+            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+        let mut target: *mut cmd_find_state =
+            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+        let mut wp: *mut window_pane = (*target)
+            .pane_handle()
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        let mut s: *const ::core::ffi::c_char =
+            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+        let mut suffix: *const ::core::ffi::c_char =
+            b"\0" as *const u8 as *const ::core::ffi::c_char;
+        let mut star: *const ::core::ffi::c_char =
+            b"*\0" as *const u8 as *const ::core::ffi::c_char;
+        let filter_value: CString;
+        let mut C: ::core::ffi::c_int = 0;
+        let mut N: ::core::ffi::c_int = 0;
+        let mut T: ::core::ffi::c_int = 0;
+        C = args_has(args, 'C' as i32 as u_char);
+        N = args_has(args, 'N' as i32 as u_char);
+        T = args_has(args, 'T' as i32 as u_char);
+        if args_has(args, 'r' as i32 as u_char) != 0 {
+            star = b"\0" as *const u8 as *const ::core::ffi::c_char;
+        }
+        if args_has(args, 'r' as i32 as u_char) != 0 && args_has(args, 'i' as i32 as u_char) != 0 {
+            suffix = b"/ri\0" as *const u8 as *const ::core::ffi::c_char;
+        } else if args_has(args, 'r' as i32 as u_char) != 0 {
+            suffix = b"/r\0" as *const u8 as *const ::core::ffi::c_char;
+        } else if args_has(args, 'i' as i32 as u_char) != 0 {
+            suffix = b"/i\0" as *const u8 as *const ::core::ffi::c_char;
+        }
+        if C == 0 && N == 0 && T == 0 {
+            T = 1 as ::core::ffi::c_int;
+            N = T;
+            C = N;
+        }
+        filter_value = find_window_filter(
+            CStr::from_ptr(s),
+            CStr::from_ptr(suffix),
+            CStr::from_ptr(star),
+            C != 0,
+            N != 0,
+            T != 0,
+        );
+        let mut new_args = args_create();
+        if args_has(args, 'Z' as i32 as u_char) != 0 {
+            args_set_flag(&mut *new_args, 'Z' as i32 as u_char, 0);
+        }
+        args_set_owned_string(&mut *new_args, filter_value);
+        window_pane_set_mode(
+            &(*wp).observer.upgrade().expect("mode target pane"),
+            None,
+            &window_tree_mode,
+            Some(item_handle),
+            target,
+            &mut *new_args,
+        );
+        drop(new_args);
+        return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'r' as i32 as u_char) != 0 && args_has(args, 'i' as i32 as u_char) != 0 {
-        suffix = b"/ri\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if args_has(args, 'r' as i32 as u_char) != 0 {
-        suffix = b"/r\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if args_has(args, 'i' as i32 as u_char) != 0 {
-        suffix = b"/i\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    if C == 0 && N == 0 && T == 0 {
-        T = 1 as ::core::ffi::c_int;
-        N = T;
-        C = N;
-    }
-    filter_value = find_window_filter(
-        CStr::from_ptr(s),
-        CStr::from_ptr(suffix),
-        CStr::from_ptr(star),
-        C != 0,
-        N != 0,
-        T != 0,
-    );
-    let mut new_args = args_create();
-    if args_has(args, 'Z' as i32 as u_char) != 0 {
-        args_set_flag(&mut *new_args, 'Z' as i32 as u_char, 0);
-    }
-    args_set_owned_string(&mut *new_args, filter_value);
-    window_pane_set_mode(
-        &(*wp).observer.upgrade().expect("mode target pane"),
-        None,
-        &window_tree_mode,
-        Some(item_handle),
-        target,
-        &mut *new_args,
-    );
-    drop(new_args);
-    return CMD_RETURN_NORMAL;
 }
 
 fn append_find_window_c_match(out: &mut Vec<u8>, suffix: &[u8], pattern: &[u8]) {

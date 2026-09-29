@@ -1,12 +1,12 @@
 use super::{descriptor, ensure_runtime, handle};
 use crate::src::shared::abi::timeval;
 use crate::src::shared::event::EV_TIMEOUT;
-use crate::src::shared::event::{event, event_base, EventCallback};
+use crate::src::shared::event::{EventCallback, event, event_base};
 use hmux_rt::{Handle as _, Runtime as _, Signals as _};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_short};
-use std::future::{poll_fn, Future};
+use std::future::{Future, poll_fn};
 use std::pin::pin;
 use std::rc::Rc;
 use std::task::Poll;
@@ -207,25 +207,29 @@ pub unsafe fn event_set<F>(ev: *mut event, fd: c_int, flags: c_short, callback: 
 where
     F: FnMut(c_int, c_short) + 'static,
 {
-    event_del(ev);
-    *ev = event {
-        initialized: true,
-        fd,
-        flags,
-        callback: Some(std::rc::Rc::new(RefCell::new(Box::new(callback)))),
-    };
+    unsafe {
+        event_del(ev);
+        *ev = event {
+            initialized: true,
+            fd,
+            flags,
+            callback: Some(std::rc::Rc::new(RefCell::new(Box::new(callback)))),
+        };
+    }
 }
 pub unsafe fn event_add(ev: *mut event, timeout: *const timeval) -> c_int {
-    ensure_runtime();
-    event_del(ev);
-    let state = configure(&*ev, timeout.as_ref().map(delay));
-    EVENTS.with(|e| e.borrow_mut().insert(ev as usize, state.clone()));
-    if let Err(error) = start(&state) {
-        remove(ev as usize);
-        *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
-        return -1;
+    unsafe {
+        ensure_runtime();
+        event_del(ev);
+        let state = configure(&*ev, timeout.as_ref().map(delay));
+        EVENTS.with(|e| e.borrow_mut().insert(ev as usize, state.clone()));
+        if let Err(error) = start(&state) {
+            remove(ev as usize);
+            *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+            return -1;
+        }
+        0
     }
-    0
 }
 fn activate(state: &Rc<EventState>) {
     if state.activation.borrow().is_some() {
@@ -243,33 +247,37 @@ fn activate(state: &Rc<EventState>) {
     *state.activation.borrow_mut() = Some(task);
 }
 pub unsafe fn event_active(ev: *mut event) {
-    let flags: c_int = EV_TIMEOUT;
-    ensure_runtime();
-    let existing = EVENTS.with(|e| e.borrow().get(&(ev as usize)).cloned());
-    let state = existing.unwrap_or_else(|| {
-        let s = configure(&*ev, None);
-        EVENTS.with(|e| e.borrow_mut().insert(ev as usize, s.clone()));
-        s
-    });
-    state.active.set(state.active.get() | flags as c_short);
-    activate(&state);
+    unsafe {
+        let flags: c_int = EV_TIMEOUT;
+        ensure_runtime();
+        let existing = EVENTS.with(|e| e.borrow().get(&(ev as usize)).cloned());
+        let state = existing.unwrap_or_else(|| {
+            let s = configure(&*ev, None);
+            EVENTS.with(|e| e.borrow_mut().insert(ev as usize, s.clone()));
+            s
+        });
+        state.active.set(state.active.get() | flags as c_short);
+        activate(&state);
+    }
 }
 pub unsafe fn event_once<F>(cb: F) -> c_int
 where
     F: FnMut(c_int, c_short) + 'static,
 {
-    let mut ev: Box<event> = Box::default();
-    event_set(&mut *ev, -1, EV_TIMEOUT as c_short, cb);
-    let zero = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    let result = event_add(&mut *ev, &zero);
-    if result == 0 {
-        let key = &*ev as *const event as usize;
-        EVENTS.with(|e| *e.borrow().get(&key).unwrap().owned.borrow_mut() = Some(ev));
+    unsafe {
+        let mut ev: Box<event> = Box::default();
+        event_set(&mut *ev, -1, EV_TIMEOUT as c_short, cb);
+        let zero = timeval {
+            tv_sec: 0,
+            tv_usec: 0,
+        };
+        let result = event_add(&mut *ev, &zero);
+        if result == 0 {
+            let key = &*ev as *const event as usize;
+            EVENTS.with(|e| *e.borrow().get(&key).unwrap().owned.borrow_mut() = Some(ev));
+        }
+        result
     }
-    result
 }
 /// Schedule a one-shot callback that owns a record containing its event handle.
 ///
@@ -313,26 +321,28 @@ pub fn event_once_owned<T: 'static>(
     0
 }
 pub unsafe fn event_pending(ev: *const event, flags: c_short, out: *mut timeval) -> c_int {
-    EVENTS.with(|e| {
-        let e = e.borrow();
-        let Some(s) = e.get(&(ev as usize)) else {
-            return 0;
-        };
-        let mut pending = s.flags & 14;
-        if let Some(deadline) = s.deadline.get() {
-            pending |= 1;
-            if !out.is_null() {
-                let absolute = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .saturating_add(deadline.saturating_duration_since(Instant::now()));
-                (*out).tv_sec = absolute.as_secs() as _;
-                (*out).tv_usec = absolute.subsec_micros() as _;
+    unsafe {
+        EVENTS.with(|e| {
+            let e = e.borrow();
+            let Some(s) = e.get(&(ev as usize)) else {
+                return 0;
+            };
+            let mut pending = s.flags & 14;
+            if let Some(deadline) = s.deadline.get() {
+                pending |= 1;
+                if !out.is_null() {
+                    let absolute = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .saturating_add(deadline.saturating_duration_since(Instant::now()));
+                    (*out).tv_sec = absolute.as_secs() as _;
+                    (*out).tv_usec = absolute.subsec_micros() as _;
+                }
             }
-        }
-        pending |= s.active.get();
-        (pending & flags) as c_int
-    })
+            pending |= s.active.get();
+            (pending & flags) as c_int
+        })
+    }
 }
 pub unsafe fn event_get_method() -> *const c_char {
     c"mio".as_ptr()

@@ -1001,12 +1001,18 @@ mod tests {
         let expired = owner.downgrade();
         drop(owner);
         for mut weak in [crate::Weak::<i32>::new(), expired] {
-            assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
-                let _ = weak.get_unchecked();
-            })).is_err());
-            assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
-                let _ = weak.get_mut_unchecked();
-            })).is_err());
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| unsafe {
+                    let _ = weak.get_unchecked();
+                }))
+                .is_err()
+            );
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| unsafe {
+                    let _ = weak.get_mut_unchecked();
+                }))
+                .is_err()
+            );
         }
 
         let owner = RefBox::new(7);
@@ -1027,12 +1033,18 @@ mod tests {
         let mut weak = owner.downgrade();
         let borrow = borrowed_weak.try_borrow_mut().unwrap();
         drop(owner);
-        assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
-            let _ = weak.get_unchecked();
-        })).is_err());
-        assert!(catch_unwind(AssertUnwindSafe(|| unsafe {
-            let _ = weak.get_mut_unchecked();
-        })).is_err());
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| unsafe {
+                let _ = weak.get_unchecked();
+            }))
+            .is_err()
+        );
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| unsafe {
+                let _ = weak.get_mut_unchecked();
+            }))
+            .is_err()
+        );
         // The existing guard remains valid until it releases the payload.
         assert_eq!(*borrow, 7);
     }

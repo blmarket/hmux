@@ -19,7 +19,7 @@ impl std::ops::DerefMut for evbuffer {
     }
 }
 use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf as ByteBuffer};
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_void};
 
 pub fn evbuffer_new() -> Box<evbuffer> {
     Box::new(evbuffer::default())
@@ -28,11 +28,13 @@ pub fn evbuffer_get_length(b: &evbuffer) -> size_t {
     b.remaining() as size_t
 }
 pub unsafe fn evbuffer_add(b: &mut evbuffer, data: *const c_void, len: size_t) -> c_int {
-    if len != 0 {
-        b.put_slice(std::slice::from_raw_parts(data.cast(), len));
+    unsafe {
+        if len != 0 {
+            b.put_slice(std::slice::from_raw_parts(data.cast(), len));
+        }
+        super::wake_buffer(b);
+        0
     }
-    super::wake_buffer(b);
-    0
 }
 pub fn evbuffer_drain(b: &mut evbuffer, len: size_t) -> c_int {
     let count = len.min(b.remaining());
@@ -55,46 +57,50 @@ pub fn evbuffer_pullup(b: &mut evbuffer, size: ssize_t) -> Option<&mut [u8]> {
     }
 }
 pub unsafe fn evbuffer_read(b: &mut evbuffer, fd: c_int, limit: c_int) -> c_int {
-    let count = if limit < 0 {
-        65536
-    } else {
-        (limit as usize).min(65536)
-    };
-    let mut bytes = Vec::<u8>::with_capacity(count);
-    let n = libc::read(fd, bytes.as_mut_ptr().cast(), count);
-    if n > 0 {
-        // read initialized exactly n bytes of the allocation.
-        bytes.set_len(n as usize);
-        b.put(ByteBuffer::from(bytes));
-        super::wake_buffer(b);
+    unsafe {
+        let count = if limit < 0 {
+            65536
+        } else {
+            (limit as usize).min(65536)
+        };
+        let mut bytes = Vec::<u8>::with_capacity(count);
+        let n = libc::read(fd, bytes.as_mut_ptr().cast(), count);
+        if n > 0 {
+            // read initialized exactly n bytes of the allocation.
+            bytes.set_len(n as usize);
+            b.put(ByteBuffer::from(bytes));
+            super::wake_buffer(b);
+        }
+        n as c_int
     }
-    n as c_int
 }
 pub unsafe fn evbuffer_write(b: &mut evbuffer, fd: c_int) -> c_int {
-    let mut chunks = [libc::iovec {
-        iov_base: std::ptr::null_mut(),
-        iov_len: 0,
-    }; 64];
-    let mut count = 0;
-    let mut remaining = 65536;
-    for chunk in b.chunks().take(64) {
-        let len = chunk.len().min(remaining);
-        chunks[count] = libc::iovec {
-            iov_base: chunk.as_ptr() as *mut c_void,
-            iov_len: len,
-        };
-        count += 1;
-        remaining -= len;
-        if remaining == 0 {
-            break;
+    unsafe {
+        let mut chunks = [libc::iovec {
+            iov_base: std::ptr::null_mut(),
+            iov_len: 0,
+        }; 64];
+        let mut count = 0;
+        let mut remaining = 65536;
+        for chunk in b.chunks().take(64) {
+            let len = chunk.len().min(remaining);
+            chunks[count] = libc::iovec {
+                iov_base: chunk.as_ptr() as *mut c_void,
+                iov_len: len,
+            };
+            count += 1;
+            remaining -= len;
+            if remaining == 0 {
+                break;
+            }
         }
+        let n = libc::writev(fd, chunks.as_ptr(), count as c_int);
+        if n > 0 {
+            b.advance(n as usize);
+            super::wake_buffer(b);
+        }
+        n as c_int
     }
-    let n = libc::writev(fd, chunks.as_ptr(), count as c_int);
-    if n > 0 {
-        b.advance(n as usize);
-        super::wake_buffer(b);
-    }
-    n as c_int
 }
 
 fn read_line(b: &mut evbuffer, ending: LineEnding) -> Option<Vec<u8>> {

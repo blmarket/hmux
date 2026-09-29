@@ -71,8 +71,8 @@ pub fn match_bracketed_paste_boundary(input: &[u8]) -> BracketedPasteBoundaryMat
 #[cfg(test)]
 mod tests {
     use super::{
-        match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
-        BRACKETED_PASTE_END, BRACKETED_PASTE_START,
+        BRACKETED_PASTE_END, BRACKETED_PASTE_START, BracketedPasteBoundary,
+        BracketedPasteBoundaryMatch, match_bracketed_paste_boundary,
     };
 
     #[test]

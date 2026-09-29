@@ -490,7 +490,9 @@ impl PaletteSource {
     pub fn resolve(&self) -> PaletteGuard<'_> {
         match self {
             Self::None => PaletteGuard::None,
-            Self::Pane(pane) => pane.upgrade().map_or(PaletteGuard::None, PaletteGuard::Pane),
+            Self::Pane(pane) => pane
+                .upgrade()
+                .map_or(PaletteGuard::None, PaletteGuard::Pane),
             Self::Popup(palette) => match palette.try_borrow_mut() {
                 Ok(borrowed) => PaletteGuard::Popup(borrowed),
                 Err(refbox::BorrowError::Dropped) => PaletteGuard::None,
@@ -519,7 +521,10 @@ mod palette_source_tests {
         drop(pane);
         assert!(pane_source.with_palette(|palette| palette.is_none()));
 
-        let popup = refbox::RefBox::new(colour_palette { fg: 5, ..Default::default() });
+        let popup = refbox::RefBox::new(colour_palette {
+            fg: 5,
+            ..Default::default()
+        });
         let popup_source = PaletteSource::Popup(popup.downgrade());
         let snapshot = PaletteSource::Snapshot(Box::new(popup.try_borrow_mut().unwrap().clone()));
         assert_eq!(popup_source.with_palette(|palette| palette.unwrap().fg), 5);

@@ -42,7 +42,7 @@ pub struct pollfd {
 
 pub use ::libc::msghdr;
 
-extern "C" {
+unsafe extern "C" {
     pub type _IO_codecvt;
     pub type _IO_marker;
     pub type _IO_wide_data;

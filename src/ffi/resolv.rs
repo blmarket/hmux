@@ -2,7 +2,7 @@
 
 use crate::src::shared::abi::size_t;
 
-extern "C" {
+unsafe extern "C" {
     pub fn __b64_ntop(
         _: *const ::core::ffi::c_uchar,
         _: size_t,

@@ -112,7 +112,7 @@ impl AttachedClient {
                         .iter()
                         .all(|part| output.windows(part.len()).any(|window| window == *part)) =>
                 {
-                    return output
+                    return output;
                 }
                 Err(error) if error.kind() == ErrorKind::WouldBlock => {}
                 result => panic!("reading attached client: {result:?}"),
@@ -162,7 +162,9 @@ fn preview_renders_long_line_then_short_escaped_line() {
     client.read_until(&[b"[preview]"]);
     server.command(&["choose-buffer", "-t", "preview:0.0"]);
     let output = client.read_until(&[b" AAAAAAAAAA", br" \tshort"]);
-    assert!(output
-        .windows(b"sample (sort: creation)".len())
-        .any(|window| { window == b"sample (sort: creation)" }));
+    assert!(
+        output
+            .windows(b"sample (sort: creation)".len())
+            .any(|window| { window == b"sample (sort: creation)" })
+    );
 }

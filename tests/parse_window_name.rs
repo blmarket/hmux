@@ -2,9 +2,11 @@ use hmux2::src::names::parse_window_name_cstring;
 use std::ffi::CStr;
 
 unsafe fn parsed(input: &[u8]) -> Vec<u8> {
-    let end = input.iter().position(|&byte| byte == 0).unwrap();
-    let input = CStr::from_bytes_with_nul(&input[..=end]).unwrap();
-    parse_window_name_cstring(input).into_bytes()
+    unsafe {
+        let end = input.iter().position(|&byte| byte == 0).unwrap();
+        let input = CStr::from_bytes_with_nul(&input[..=end]).unwrap();
+        parse_window_name_cstring(input).into_bytes()
+    }
 }
 
 #[test]

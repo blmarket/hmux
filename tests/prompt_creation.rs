@@ -1,4 +1,4 @@
-use hmux2::src::environ::{environ_create};
+use hmux2::src::environ::environ_create;
 use hmux2::src::options::{options_create, options_default, options_free};
 use hmux2::src::options_table::options_table;
 use hmux2::src::prompt::{
@@ -7,11 +7,7 @@ use hmux2::src::prompt::{
 use hmux2::src::shared::command::cmd_find_state;
 use hmux2::src::shared::prompt::*;
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
-use std::{
-    cell::RefCell,
-    ffi::CString,
-    rc::Rc,
-};
+use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 fn input_bytes(prompt: &prompt) -> Vec<u8> {
     prompt
@@ -100,20 +96,41 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
             let prompt = prompt_create(pd);
             drop(label);
             drop(input);
-            assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").string.as_c_str(), c"label: ");
-            assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").state.idx, 9);
-            assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").state.flags, 0);
+            assert_eq!(
+                prompt
+                    .try_borrow_mut()
+                    .expect("live unborrowed prompt")
+                    .string
+                    .as_c_str(),
+                c"label: "
+            );
+            assert_eq!(
+                prompt
+                    .try_borrow_mut()
+                    .expect("live unborrowed prompt")
+                    .state
+                    .idx,
+                9
+            );
+            assert_eq!(
+                prompt
+                    .try_borrow_mut()
+                    .expect("live unborrowed prompt")
+                    .state
+                    .flags,
+                0
+            );
             {
                 let state = prompt.try_borrow_mut().unwrap();
-            assert_eq!(
-                (
-                    state.style_str.as_ptr(),
-                    state.command_style_str.as_ptr(),
-                    state.message_format.as_ptr(),
-                    state.word_separators.as_ptr()
-                ),
-                option_addresses
-            );
+                assert_eq!(
+                    (
+                        state.style_str.as_ptr(),
+                        state.command_style_str.as_ptr(),
+                        state.message_format.as_ptr(),
+                        state.word_separators.as_ptr()
+                    ),
+                    option_addresses
+                );
             }
             let expected = if flags & PROMPT_NOFORMAT != 0 {
                 c"#{==:a,a}漢"
@@ -121,16 +138,44 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
                 c"1漢"
             };
             if flags & PROMPT_INCREMENTAL != 0 {
-                assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").last.as_deref(), Some(expected));
-                assert_eq!(prompt.try_borrow_mut().expect("live unborrowed prompt").index, 0);
-                assert_eq!(input_bytes(&prompt.try_borrow_mut().expect("live unborrowed prompt")), b"");
-            } else {
-                assert!(prompt.try_borrow_mut().expect("live unborrowed prompt").last.is_none());
                 assert_eq!(
-                    prompt.try_borrow_mut().expect("live unborrowed prompt").index,
+                    prompt
+                        .try_borrow_mut()
+                        .expect("live unborrowed prompt")
+                        .last
+                        .as_deref(),
+                    Some(expected)
+                );
+                assert_eq!(
+                    prompt
+                        .try_borrow_mut()
+                        .expect("live unborrowed prompt")
+                        .index,
+                    0
+                );
+                assert_eq!(
+                    input_bytes(&prompt.try_borrow_mut().expect("live unborrowed prompt")),
+                    b""
+                );
+            } else {
+                assert!(
+                    prompt
+                        .try_borrow_mut()
+                        .expect("live unborrowed prompt")
+                        .last
+                        .is_none()
+                );
+                assert_eq!(
+                    prompt
+                        .try_borrow_mut()
+                        .expect("live unborrowed prompt")
+                        .index,
                     expected.to_str().unwrap().chars().count()
                 );
-                assert_eq!(input_bytes(&prompt.try_borrow_mut().expect("live unborrowed prompt")), expected.to_bytes());
+                assert_eq!(
+                    input_bytes(&prompt.try_borrow_mut().expect("live unborrowed prompt")),
+                    expected.to_bytes()
+                );
             }
             assert!(events.borrow().is_empty());
             prompt_incremental_start(&prompt.downgrade());

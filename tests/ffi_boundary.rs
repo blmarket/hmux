@@ -1,8 +1,8 @@
 //! Parse Rust syntax so comments, wrapping, visibility, and symbol aliases cannot
 //! hide a Rust definition behind a foreign declaration.
 use syn::{
-    visit::{self, Visit},
     Attribute, Expr, ForeignItem, Item, Lit, Meta,
+    visit::{self, Visit},
 };
 
 fn symbol(attrs: &[Attribute], attr: &str, fallback: &str) -> String {

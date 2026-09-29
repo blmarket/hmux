@@ -7,7 +7,9 @@ pub struct InefficientList<T> {
 
 impl<T> Default for InefficientList<T> {
     fn default() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 }
 

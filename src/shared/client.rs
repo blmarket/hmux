@@ -101,8 +101,8 @@ pub const CLIENT_NODETACHFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_EXIT;
 #[cfg(test)]
 mod tests {
     use super::{
-        client_exit_reason, client_exit_type, CLIENT_EXIT_DETACH, CLIENT_EXIT_DETACHED,
-        CLIENT_EXIT_MESSAGE_PROVIDED, CLIENT_EXIT_NONE,
+        CLIENT_EXIT_DETACH, CLIENT_EXIT_DETACHED, CLIENT_EXIT_MESSAGE_PROVIDED, CLIENT_EXIT_NONE,
+        client_exit_reason, client_exit_type,
     };
     use ::core::mem::{align_of, size_of};
 
@@ -357,7 +357,9 @@ impl client_file {
             error: Default::default(),
             closed: Default::default(),
             cb: Default::default(),
-            entry: client_file_entry { owner: refbox::Weak::new() },
+            entry: client_file_entry {
+                owner: refbox::Weak::new(),
+            },
             wait_item: Default::default(),
             wait_active: false,
             wait_client: Default::default(),
@@ -412,7 +414,13 @@ mod retained_client_tests {
         unsafe {
             client.set_session((session.get()).as_ref());
         }
-        assert_eq!(client.session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get()), session.get());
+        assert_eq!(
+            client
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()),
+            session.get()
+        );
         assert_eq!(Rc::strong_count(&session), 1);
         drop(session);
         assert!(observer.upgrade().is_none());

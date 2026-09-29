@@ -1,6 +1,6 @@
 use hmux2::src::monitor::{
-    monitor_parse_owned, MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION,
-    MONITOR_WINDOW,
+    MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
+    monitor_parse_owned,
 };
 use std::ffi::CString;
 

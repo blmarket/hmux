@@ -11,7 +11,7 @@ use super::key::key_code;
 use super::layout::layout_cell;
 use super::mouse::mouse_event;
 use super::options::options;
-use super::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
+use super::pane::{PANE_MINIMUM, window_pane, window_pane_history, window_panes};
 use super::screen::screen;
 use super::session::session;
 
@@ -61,7 +61,8 @@ pub struct winlink {
 #[derive(Default)]
 #[repr(C)]
 pub struct winlink_entry {
-    pub owner: refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
+    pub owner:
+        refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
 }
 
 /// Explicit cleanup is separate from the lifetime of retained Rc allocations.
@@ -133,10 +134,8 @@ pub struct window {
 }
 
 /// The global index observes windows; winlinks and callbacks own them.
-pub type WindowIndex = std::collections::BTreeMap<
-    u_int,
-    std::rc::Weak<std::cell::UnsafeCell<window>>,
->;
+pub type WindowIndex =
+    std::collections::BTreeMap<u_int, std::rc::Weak<std::cell::UnsafeCell<window>>>;
 
 #[derive(Default)]
 #[repr(C)]
@@ -184,9 +183,9 @@ impl window_mode_entry {
 
     /// Retain an Rc-backed payload across callbacks that may remove this entry.
     pub fn retained_data<T: std::any::Any>(&self) -> Option<std::rc::Rc<T>> {
-        self.data_owner.as_ref().map(|owner| {
-            owner.clone().downcast::<T>().expect("mode payload type")
-        })
+        self.data_owner
+            .as_ref()
+            .map(|owner| owner.clone().downcast::<T>().expect("mode payload type"))
     }
 }
 

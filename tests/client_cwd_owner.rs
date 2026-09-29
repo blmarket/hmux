@@ -22,11 +22,15 @@ fn startup_observer_and_owned_directory_preserve_lifetime_and_precedence() {
         assert!((&*std::ptr::addr_of!(cfg_client)).upgrade().is_none());
         assert_eq!(saved.as_c_str(), c"/startup");
         assert_eq!(
-            server_client_get_cwd(Some(&*other.get()), Some(&*session.get())).unwrap().as_c_str(),
+            server_client_get_cwd(Some(&*other.get()), Some(&*session.get()))
+                .unwrap()
+                .as_c_str(),
             c"/other",
         );
         assert_eq!(
-            server_client_get_cwd(None, Some(&*session.get())).unwrap().as_c_str(),
+            server_client_get_cwd(None, Some(&*session.get()))
+                .unwrap()
+                .as_c_str(),
             c"/session",
         );
         cfg_client = Weak::new();

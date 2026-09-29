@@ -1,13 +1,13 @@
 //! Authoritative monitor declarations, shared by the C translation units.
 
 use super::abi::{time_t, u_int};
-use std::cell::UnsafeCell;
-use std::rc::{Rc, Weak};
 use super::client::client;
 use super::event::event;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::winlink;
+use std::cell::UnsafeCell;
+use std::rc::{Rc, Weak};
 pub type monitor_type = ::core::ffi::c_uint;
 pub const MONITOR_ALL_WINDOWS: monitor_type = 4;
 pub const MONITOR_WINDOW: monitor_type = 3;
@@ -79,7 +79,9 @@ impl monitor_item {
             windows: monitor_windows { storage: None },
             fire_count: Default::default(),
             fire_time: Default::default(),
-            entry: monitor_item_entry { owner: refbox::Weak::new() },
+            entry: monitor_item_entry {
+                owner: refbox::Weak::new(),
+            },
         }
     }
 }
@@ -112,7 +114,9 @@ impl monitor_window {
             idx: Default::default(),
             last: Default::default(),
             generation: Default::default(),
-            entry: monitor_window_entry { owner: refbox::Weak::new() },
+            entry: monitor_window_entry {
+                owner: refbox::Weak::new(),
+            },
         }
     }
 }
@@ -144,7 +148,9 @@ impl monitor_pane {
             idx: Default::default(),
             last: Default::default(),
             generation: Default::default(),
-            entry: monitor_pane_entry { owner: refbox::Weak::new() },
+            entry: monitor_pane_entry {
+                owner: refbox::Weak::new(),
+            },
         }
     }
 }

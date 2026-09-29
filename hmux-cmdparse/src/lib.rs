@@ -17,7 +17,7 @@ pub trait Context {
     /// Validate every assignment, including inactive ones. Only apply it when
     /// `active` and the application's parse-only setting permit side effects.
     fn put_environ(&mut self, token: TokenText, hidden: bool, active: bool)
-        -> Result<(), LexError>;
+    -> Result<(), LexError>;
     fn is_true(&self, token: &TokenText) -> bool;
 }
 

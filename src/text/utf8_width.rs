@@ -3,7 +3,7 @@
 
 use crate::src::ffi::numbers::{decimal_in_range, hexadecimal_prefix};
 use crate::src::shared::utf8::wchar_t;
-use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
+use crate::src::text::utf8_decode::{DecodeResult, decode_utf8};
 use std::ffi::CStr;
 use std::ops::RangeInclusive;
 

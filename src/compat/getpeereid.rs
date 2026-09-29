@@ -17,23 +17,25 @@ pub unsafe fn getpeereid(
     mut uid: *mut uid_t,
     mut gid: *mut gid_t,
 ) -> ::core::ffi::c_int {
-    let mut uc: ucred = ucred {
-        pid: 0,
-        uid: 0,
-        gid: 0,
-    };
-    let mut len: socklen_t = ::core::mem::size_of::<ucred>() as socklen_t;
-    if getsockopt(
-        s,
-        SOL_SOCKET,
-        SO_PEERCRED,
-        &raw mut uc as *mut ::core::ffi::c_void,
-        &raw mut len,
-    ) == -(1 as ::core::ffi::c_int)
-    {
-        return -(1 as ::core::ffi::c_int);
+    unsafe {
+        let mut uc: ucred = ucred {
+            pid: 0,
+            uid: 0,
+            gid: 0,
+        };
+        let mut len: socklen_t = ::core::mem::size_of::<ucred>() as socklen_t;
+        if getsockopt(
+            s,
+            SOL_SOCKET,
+            SO_PEERCRED,
+            &raw mut uc as *mut ::core::ffi::c_void,
+            &raw mut len,
+        ) == -(1 as ::core::ffi::c_int)
+        {
+            return -(1 as ::core::ffi::c_int);
+        }
+        *uid = uc.uid;
+        *gid = uc.gid;
+        return 0 as ::core::ffi::c_int;
     }
-    *uid = uc.uid;
-    *gid = uc.gid;
-    return 0 as ::core::ffi::c_int;
 }

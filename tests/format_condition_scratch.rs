@@ -1,5 +1,5 @@
 //! Exercise conditional scratch strings through public format expansion.
-use hmux2::src::environ::{environ_create};
+use hmux2::src::environ::environ_create;
 use hmux2::src::format::bytes::write_cstr;
 use hmux2::src::format::{format_add, format_create, format_expand_cstring, format_free};
 use hmux2::src::options::{options_create, options_free};

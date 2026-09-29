@@ -2,7 +2,7 @@
 
 pub use libc::regmatch_t as RegexMatch;
 use libc::{regcomp, regex_t, regexec, regfree};
-use std::ffi::{c_int, CStr};
+use std::ffi::{CStr, c_int};
 use std::mem::MaybeUninit;
 
 /// Reusable compilation storage. Successful compilation transfers ownership

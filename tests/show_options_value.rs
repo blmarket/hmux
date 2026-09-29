@@ -83,9 +83,11 @@ fn scalar_empty_array_and_recursive_array_values() {
         server.successful(&["show-options", "-g", "status-format"]),
         b"status-format\n"
     );
-    assert!(server
-        .successful(&["show-options", "-gv", "status-format"])
-        .is_empty());
+    assert!(
+        server
+            .successful(&["show-options", "-gv", "status-format"])
+            .is_empty()
+    );
     assert_eq!(
         server.successful(&[
             "show-options",

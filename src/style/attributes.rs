@@ -139,5 +139,5 @@ pub unsafe fn attributes_tostring(attr: i32) -> *const libc::c_char {
 /// # Safety
 /// Input must point to a readable NUL-terminated string for this call.
 pub unsafe fn attributes_fromstring(input: *const libc::c_char) -> i32 {
-    attributes_parse_cstr(CStr::from_ptr(input)).unwrap_or(-1)
+    unsafe { attributes_parse_cstr(CStr::from_ptr(input)).unwrap_or(-1) }
 }

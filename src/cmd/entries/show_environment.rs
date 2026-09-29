@@ -6,8 +6,8 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::tmux::global_environ;
@@ -53,98 +53,117 @@ unsafe fn cmd_show_environment_print(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     envent: &environ_entry,
 ) {
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
-        return;
-    }
-    if args_has(args, 'h' as i32 as u_char) != 0 && !(*envent).flags & ENVIRON_HIDDEN != 0 {
-        return;
-    }
-    if args_has(args, 's' as i32 as u_char) == 0 {
+    unsafe {
+        let mut args: *mut args =
+            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+        if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
+            return;
+        }
+        if args_has(args, 'h' as i32 as u_char) != 0 && !(*envent).flags & ENVIRON_HIDDEN != 0 {
+            return;
+        }
+        if args_has(args, 's' as i32 as u_char) == 0 {
+            if let Some(value) = envent.value.as_deref() {
+                cmdq_print(item_handle, |out| {
+                    out.write_all(envent.name.as_bytes())?;
+                    out.write_all(b"=")?;
+                    out.write_all(value.to_bytes())
+                });
+            } else {
+                cmdq_print(item_handle, |out| {
+                    out.write_all(b"-")?;
+                    out.write_all(envent.name.as_bytes())
+                });
+            }
+            return;
+        }
         if let Some(value) = envent.value.as_deref() {
+            let escaped = cmd_show_environment_escape(value);
             cmdq_print(item_handle, |out| {
                 out.write_all(envent.name.as_bytes())?;
-                out.write_all(b"=")?;
-                out.write_all(value.to_bytes())
+                out.write_all(b"=\"")?;
+                out.write_all(escaped.as_bytes())?;
+                out.write_all(b"\"; export ")?;
+                out.write_all(envent.name.as_bytes())?;
+                out.write_all(b";")
             });
         } else {
             cmdq_print(item_handle, |out| {
-                out.write_all(b"-")?;
-                out.write_all(envent.name.as_bytes())
+                out.write_all(b"unset ")?;
+                out.write_all(envent.name.as_bytes())?;
+                out.write_all(b";")
             });
-        }
-        return;
+        };
     }
-    if let Some(value) = envent.value.as_deref() {
-        let escaped = cmd_show_environment_escape(value);
-        cmdq_print(item_handle, |out| {
-            out.write_all(envent.name.as_bytes())?;
-            out.write_all(b"=\"")?;
-            out.write_all(escaped.as_bytes())?;
-            out.write_all(b"\"; export ")?;
-            out.write_all(envent.name.as_bytes())?;
-            out.write_all(b";")
-        });
-    } else {
-        cmdq_print(item_handle, |out| {
-            out.write_all(b"unset ")?;
-            out.write_all(envent.name.as_bytes())?;
-            out.write_all(b";")
-        });
-    };
 }
-unsafe fn cmd_show_environment_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let item = item_handle.get();
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let env: &environ;
-    let mut envent: Option<&environ_entry> = None;
-    let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tflag.is_null() {
-        if (*target).session_handle().is_none() {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"no such session: ")?;
-                write_cstr(out, tflag)
-            });
-            return CMD_RETURN_ERROR;
-        }
-    }
-    if args_has(args, 'g' as i32 as u_char) != 0 {
-        env = global_environ.as_deref().expect("environment");
-    } else {
-        if (*target).session_handle().is_none() {
-            tflag = args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-            if !tflag.is_null() {
+unsafe fn cmd_show_environment_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    unsafe {
+        let item = item_handle.get();
+        let mut args: *mut args =
+            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+        let mut target: *mut cmd_find_state =
+            crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+        let env: &environ;
+        let mut envent: Option<&environ_entry> = None;
+        let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut name: *const ::core::ffi::c_char =
+            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+        tflag = args_get(&*(args), 't' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
+        if !tflag.is_null() {
+            if (*target).session_handle().is_none() {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"no such session: ")?;
                     write_cstr(out, tflag)
                 });
-            } else {
-                cmdq_error(item_handle, |out| out.write_all(b"no current session"));
+                return CMD_RETURN_ERROR;
             }
-            return CMD_RETURN_ERROR;
         }
-        env = (*(*target).session_handle().as_ref().map_or(std::ptr::null_mut(), |owner| owner.get())).environ.as_deref().expect("environment");
-    }
-    if !name.is_null() {
-        envent = environ_find(env, name);
-        if envent.is_none() {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"unknown variable: ")?;
-                write_cstr(out, name)
-            });
-            return CMD_RETURN_ERROR;
+        if args_has(args, 'g' as i32 as u_char) != 0 {
+            env = global_environ.as_deref().expect("environment");
+        } else {
+            if (*target).session_handle().is_none() {
+                tflag = args_get(&*(args), 't' as i32 as u_char)
+                    .map_or(std::ptr::null(), |value| value.as_ptr());
+                if !tflag.is_null() {
+                    cmdq_error(item_handle, |out| {
+                        out.write_all(b"no such session: ")?;
+                        write_cstr(out, tflag)
+                    });
+                } else {
+                    cmdq_error(item_handle, |out| out.write_all(b"no current session"));
+                }
+                return CMD_RETURN_ERROR;
+            }
+            env = (*(*target)
+                .session_handle()
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .environ
+            .as_deref()
+            .expect("environment");
         }
-        cmd_show_environment_print(self_0.clone(), item_handle, envent.unwrap());
+        if !name.is_null() {
+            envent = environ_find(env, name);
+            if envent.is_none() {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"unknown variable: ")?;
+                    write_cstr(out, name)
+                });
+                return CMD_RETURN_ERROR;
+            }
+            cmd_show_environment_print(self_0.clone(), item_handle, envent.unwrap());
+            return CMD_RETURN_NORMAL;
+        }
+        for entry in environ_iter(&*env) {
+            let envent = entry;
+            cmd_show_environment_print(self_0.clone(), item_handle, envent);
+        }
         return CMD_RETURN_NORMAL;
     }
-    for entry in environ_iter(&*env) {
-        let envent = entry;
-        cmd_show_environment_print(self_0.clone(), item_handle, envent);
-    }
-    return CMD_RETURN_NORMAL;
 }
 
 #[cfg(test)]

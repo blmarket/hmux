@@ -12,5 +12,7 @@ pub unsafe fn fdforkpty(
     mut tio: *mut termios,
     mut ws: *mut winsize,
 ) -> pid_t {
-    return forkpty(master, name, tio, ws) as pid_t;
+    unsafe {
+        return forkpty(master, name, tio, ws) as pid_t;
+    }
 }

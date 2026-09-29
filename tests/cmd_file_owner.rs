@@ -4,9 +4,12 @@ use hmux2::src::cmd::{cmd_copy, cmd_parse};
 use hmux2::src::shared::arguments::ArgumentValue;
 
 unsafe fn parse_display_message(file: Option<&CStr>) -> refbox::RefBox<hmux2::src::cmd::cmd> {
-    let command_name = c"display-message";
-    let value = ArgumentValue::borrowed_string(command_name);
-    cmd_parse(std::slice::from_ref(&value), file, 37, 0).expect("command parse reported an error")
+    unsafe {
+        let command_name = c"display-message";
+        let value = ArgumentValue::borrowed_string(command_name);
+        cmd_parse(std::slice::from_ref(&value), file, 37, 0)
+            .expect("command parse reported an error")
+    }
 }
 
 #[test]
@@ -17,12 +20,30 @@ fn filename_survives_input_mutation_and_original_command_free() {
         let copied = cmd_copy(&command.try_borrow_mut().unwrap(), &Vec::new());
 
         assert_ne!(
-            command.try_borrow_mut().unwrap().file.as_ref().unwrap().as_ptr(),
+            command
+                .try_borrow_mut()
+                .unwrap()
+                .file
+                .as_ref()
+                .unwrap()
+                .as_ptr(),
             filename.as_ptr().cast()
         );
         assert_ne!(
-            copied.try_borrow_mut().unwrap().file.as_ref().unwrap().as_ptr(),
-            command.try_borrow_mut().unwrap().file.as_ref().unwrap().as_ptr()
+            copied
+                .try_borrow_mut()
+                .unwrap()
+                .file
+                .as_ref()
+                .unwrap()
+                .as_ptr(),
+            command
+                .try_borrow_mut()
+                .unwrap()
+                .file
+                .as_ref()
+                .unwrap()
+                .as_ptr()
         );
 
         // The parser must retain its own bytes, including non-UTF-8 bytes.

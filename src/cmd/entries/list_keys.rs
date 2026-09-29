@@ -12,15 +12,15 @@ use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::options::options_get_number;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_CONTROL;
+use crate::src::shared::client::client;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{
     CMD_AFTERHOOK, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, CMD_STARTSERVER,
 };
-use crate::src::shared::format::format_tree;
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::format::FORMAT_NONE;
+use crate::src::shared::format::format_tree;
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_table};
@@ -71,18 +71,22 @@ pub static cmd_list_keys_entry: cmd_entry = {
     }
 };
 unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
-    let mut prefix: key_code = 0;
-    if args_has(args, 'P' as i32 as u_char) != 0 {
-        return args_get(&*(args), 'P' as i32 as u_char).expect("argument is present").to_owned();
+    unsafe {
+        let mut prefix: key_code = 0;
+        if args_has(args, 'P' as i32 as u_char) != 0 {
+            return args_get(&*(args), 'P' as i32 as u_char)
+                .expect("argument is present")
+                .to_owned();
+        }
+        prefix = options_get_number(
+            global_s_options,
+            b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
+        ) as key_code;
+        if prefix == KEYC_NONE as ::core::ffi::c_ulong as key_code {
+            return CString::default();
+        }
+        key_string_format(prefix, false)
     }
-    prefix = options_get_number(
-        global_s_options,
-        b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as key_code;
-    if prefix == KEYC_NONE as ::core::ffi::c_ulong as key_code {
-        return CString::default();
-    }
-    key_string_format(prefix, false)
 }
 unsafe fn cmd_list_keys_get_width(bindings: &[&key_binding]) -> u_int {
     bindings
@@ -105,15 +109,17 @@ unsafe fn cmd_list_keys_get_root_and_prefix<'a>(
     tables: &'a [std::cell::Ref<'_, key_table>],
     sort_crit: &sort_criteria,
 ) -> Vec<&'a key_binding> {
-    let mut bindings = Vec::new();
-    for name in [c"prefix", c"root"] {
-        let table = tables
-            .iter()
-            .map(|table| &**table)
-            .find(|table| table.name.as_c_str() == name);
-        bindings.extend(sort_get_key_bindings_table(table, sort_crit));
+    unsafe {
+        let mut bindings = Vec::new();
+        for name in [c"prefix", c"root"] {
+            let table = tables
+                .iter()
+                .map(|table| &**table)
+                .find(|table| table.name.as_c_str() == name);
+            bindings.extend(sort_get_key_bindings_table(table, sort_crit));
+        }
+        bindings
     }
-    bindings
 }
 unsafe fn cmd_list_keys_filter_key_list(
     filter_notes: ::core::ffi::c_int,
@@ -132,217 +138,241 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     bd: &key_binding,
     prefix: &CStr,
 ) {
-    if bd.flags & KEY_BINDING_REPEAT != 0 {
+    unsafe {
+        if bd.flags & KEY_BINDING_REPEAT != 0 {
+            format_add(
+                ft,
+                b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"1"),
+            );
+        } else {
+            format_add(
+                ft,
+                b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| out.write_all(b"0"),
+            );
+        }
+        if bd.note.is_some() {
+            format_add(
+                ft,
+                b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| {
+                    write_cstr(
+                        out,
+                        bd.note
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    )
+                },
+            );
+        } else {
+            format_add(
+                ft,
+                b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
+                |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
+            );
+        }
+        let key_string = key_string_format(bd.key, false);
         format_add(
             ft,
-            b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
-    } else {
-        format_add(
-            ft,
-            b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
-    }
-    if bd.note.is_some() {
-        format_add(
-            ft,
-            b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
+            b"key_prefix\0" as *const u8 as *const ::core::ffi::c_char,
             |out| {
                 write_cstr(
-                    out,
-                    bd.note
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+                    out, // format_add copies the bytes synchronously; this pointer cannot escape.
+                    prefix.as_ptr(),
                 )
             },
         );
-    } else {
         format_add(
             ft,
-            b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
+            b"key_table\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| {
+                write_cstr(
+                    out,
+                    bd.tablename
+                        .as_ref()
+                        .map_or(::core::ptr::null(), |s| s.as_ptr()),
+                )
+            },
+        );
+        format_add(
+            ft,
+            b"key_string\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, key_string.as_ptr()),
+        );
+        let command = cmd_list_print_cstring(
+            &bd.cmdlist().borrow(),
+            CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
+        );
+        format_add(
+            ft,
+            b"key_command\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write_cstr(out, command.as_ptr()),
         );
     }
-    let key_string = key_string_format(bd.key, false);
-    format_add(
-        ft,
-        b"key_prefix\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write_cstr(
-                out, // format_add copies the bytes synchronously; this pointer cannot escape.
-                prefix.as_ptr(),
-            )
-        },
-    );
-    format_add(
-        ft,
-        b"key_table\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write_cstr(
-                out,
-                bd.tablename
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |s| s.as_ptr()),
-            )
-        },
-    );
-    format_add(
-        ft,
-        b"key_string\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, key_string.as_ptr()),
-    );
-    let command = cmd_list_print_cstring(
-        &bd.cmdlist().borrow(),
-        CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
-    );
-    format_add(
-        ft,
-        b"key_command\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, command.as_ptr()),
-    );
 }
-unsafe fn cmd_list_keys_exec(mut self_0: refbox::Weak<cmd>, item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) -> cmd_retval {
-    let item = item_handle.get();
-    let queue_client = cmdq_get_client((item).as_ref());
-    let mut args: *mut args = cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: *mut client = tc_owner.as_ref().map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut table = None;
-    let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-    let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut single: ::core::ffi::c_int = 0;
-    let mut notes_only: ::core::ffi::c_int = 0;
-    let mut filter_notes: ::core::ffi::c_int = 0;
-    let mut filter_key: ::core::ffi::c_int = 0;
-    let mut sort_crit: sort_criteria = sort_criteria {
-        order: SORT_ACTIVITY,
-        reversed: 0,
-        order_seq: &[],
-    };
-    keystr = args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !keystr.is_null() {
-        only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
-        if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
+unsafe fn cmd_list_keys_exec(
+    mut self_0: refbox::Weak<cmd>,
+    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+) -> cmd_retval {
+    unsafe {
+        let item = item_handle.get();
+        let queue_client = cmdq_get_client((item).as_ref());
+        let mut args: *mut args =
+            cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
+        let tc_owner = cmdq_get_target_client((item).as_ref());
+        let mut tc: *mut client = tc_owner
+            .as_ref()
+            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
+        let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+        let mut table = None;
+        let mut only: key_code = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+        let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut single: ::core::ffi::c_int = 0;
+        let mut notes_only: ::core::ffi::c_int = 0;
+        let mut filter_notes: ::core::ffi::c_int = 0;
+        let mut filter_key: ::core::ffi::c_int = 0;
+        let mut sort_crit: sort_criteria = sort_criteria {
+            order: SORT_ACTIVITY,
+            reversed: 0,
+            order_seq: &[],
+        };
+        keystr =
+            args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
+        if !keystr.is_null() {
+            only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
+            if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"invalid key: ")?;
+                    write_cstr(out, keystr)
+                });
+                return CMD_RETURN_ERROR;
+            }
+            only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
+        }
+        sort_crit.order = sort_order_from_string(
+            args_get(&*(args), 'O' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+        );
+        if sort_crit.order as ::core::ffi::c_uint
+            == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
+            && args_has(args, 'O' as i32 as u_char) != 0
+        {
+            cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
+            return CMD_RETURN_ERROR;
+        }
+        sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
+        tablename = args_get(&*(args), 'T' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
+        if !tablename.is_null() {
+            table = key_bindings_get_table(
+                std::ffi::CStr::from_ptr(tablename),
+                0 as ::core::ffi::c_int,
+            );
+            if table.is_none() {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"table ")?;
+                    write_cstr(out, tablename)?;
+                    out.write_all(b" doesn't exist")
+                });
+                return CMD_RETURN_ERROR;
+            }
+        }
+        let prefix = cmd_list_keys_get_prefix(args);
+        single = args_has(args, '1' as i32 as u_char);
+        notes_only = args_has(args, 'N' as i32 as u_char);
+        template = args_get(&*(args), 'F' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
+        if template.is_null() {
+            template = LIST_KEYS_TEMPLATE.as_ptr();
+        }
+        let table_owners = key_bindings_tables();
+        let tables: Vec<_> = table_owners.iter().map(|table| table.borrow()).collect();
+        let table_borrow = table.as_ref().map(|table| table.borrow());
+        let mut bindings = if let Some(table) = table_borrow.as_ref() {
+            sort_get_key_bindings_table(Some(table), &sort_crit)
+        } else if notes_only != 0 {
+            cmd_list_keys_get_root_and_prefix(&tables, &sort_crit)
+        } else {
+            sort_get_key_bindings(&tables, &sort_crit)
+        };
+        filter_notes =
+            (notes_only != 0 && args_has(args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
+        filter_key =
+            (only != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code) as ::core::ffi::c_int;
+        if filter_notes != 0 || filter_key != 0 {
+            cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);
+        }
+        if filter_key != 0 && bindings.is_empty() {
             cmdq_error(item_handle, |out| {
-                out.write_all(b"invalid key: ")?;
+                out.write_all(b"unknown key: ")?;
                 write_cstr(out, keystr)
             });
             return CMD_RETURN_ERROR;
         }
-        only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
-    }
-    sort_crit.order = sort_order_from_string(args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()));
-    if sort_crit.order as ::core::ffi::c_uint
-        == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
-    {
-        cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
-        return CMD_RETURN_ERROR;
-    }
-    sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
-    tablename = args_get(&*(args), 'T' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tablename.is_null() {
-        table = key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int);
-        if table.is_none() {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"table ")?;
-                write_cstr(out, tablename)?;
-                out.write_all(b" doesn't exist")
-            });
-            return CMD_RETURN_ERROR;
-        }
-    }
-    let prefix = cmd_list_keys_get_prefix(args);
-    single = args_has(args, '1' as i32 as u_char);
-    notes_only = args_has(args, 'N' as i32 as u_char);
-    template = args_get(&*(args), 'F' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if template.is_null() {
-        template = LIST_KEYS_TEMPLATE.as_ptr();
-    }
-    let table_owners = key_bindings_tables();
-    let tables: Vec<_> = table_owners.iter().map(|table| table.borrow()).collect();
-    let table_borrow = table.as_ref().map(|table| table.borrow());
-    let mut bindings = if let Some(table) = table_borrow.as_ref() {
-        sort_get_key_bindings_table(Some(table), &sort_crit)
-    } else if notes_only != 0 {
-        cmd_list_keys_get_root_and_prefix(&tables, &sort_crit)
-    } else {
-        sort_get_key_bindings(&tables, &sort_crit)
-    };
-    filter_notes =
-        (notes_only != 0 && args_has(args, 'a' as i32 as u_char) == 0) as ::core::ffi::c_int;
-    filter_key = (only != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code) as ::core::ffi::c_int;
-    if filter_notes != 0 || filter_key != 0 {
-        cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut bindings);
-    }
-    if filter_key != 0 && bindings.is_empty() {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"unknown key: ")?;
-            write_cstr(out, keystr)
-        });
-        return CMD_RETURN_ERROR;
-    }
-    if single != 0 {
-        bindings.truncate(1);
-    }
-    let mut ft_owner = format_create_with_client(
-        queue_client.as_ref(),
-        Some(item_handle),
-        FORMAT_NONE,
-        0 as ::core::ffi::c_int,
-    );
-    ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-        None,
-        (refbox::Weak::new()).clone(),
-        None,
-    );
-    format_add(
-        ft,
-        b"notes_only\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (notes_only) as i32),
-    );
-    format_add(
-        ft,
-        b"key_has_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (key_bindings_has_repeat(&bindings)) as i32),
-    );
-    format_add(
-        ft,
-        b"key_string_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (cmd_list_keys_get_width(&bindings)) as u32),
-    );
-    format_add(
-        ft,
-        b"key_table_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (cmd_list_keys_get_table_width(&bindings)) as u32),
-    );
-    for &bd in &bindings {
-        cmd_list_keys_format_add_key_binding(ft, &*bd, &prefix);
-        let line = format_expand_cstring(ft, template);
-        if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
-            status_message_set(
-                (tc).as_ref().and_then(|model| model.observer.upgrade()).as_ref(),
-                -(1 as ::core::ffi::c_int),
-                1 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                |out| write_cstr(out, line.as_ptr()),
-            );
-        } else if !line.is_empty() {
-            cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
-        }
         if single != 0 {
-            break;
+            bindings.truncate(1);
         }
+        let mut ft_owner = format_create_with_client(
+            queue_client.as_ref(),
+            Some(item_handle),
+            FORMAT_NONE,
+            0 as ::core::ffi::c_int,
+        );
+        ft = &raw mut *ft_owner;
+        format_defaults(
+            ft,
+            (tc).as_ref()
+                .and_then(|model| model.observer.upgrade())
+                .as_ref(),
+            None,
+            (refbox::Weak::new()).clone(),
+            None,
+        );
+        format_add(
+            ft,
+            b"notes_only\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write!(out, "{}", (notes_only) as i32),
+        );
+        format_add(
+            ft,
+            b"key_has_repeat\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write!(out, "{}", (key_bindings_has_repeat(&bindings)) as i32),
+        );
+        format_add(
+            ft,
+            b"key_string_width\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write!(out, "{}", (cmd_list_keys_get_width(&bindings)) as u32),
+        );
+        format_add(
+            ft,
+            b"key_table_width\0" as *const u8 as *const ::core::ffi::c_char,
+            |out| write!(out, "{}", (cmd_list_keys_get_table_width(&bindings)) as u32),
+        );
+        for &bd in &bindings {
+            cmd_list_keys_format_add_key_binding(ft, &*bd, &prefix);
+            let line = format_expand_cstring(ft, template);
+            if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
+                status_message_set(
+                    (tc).as_ref()
+                        .and_then(|model| model.observer.upgrade())
+                        .as_ref(),
+                    -(1 as ::core::ffi::c_int),
+                    1 as ::core::ffi::c_int,
+                    0 as ::core::ffi::c_int,
+                    0 as ::core::ffi::c_int,
+                    |out| write_cstr(out, line.as_ptr()),
+                );
+            } else if !line.is_empty() {
+                cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+            }
+            if single != 0 {
+                break;
+            }
+        }
+        format_free(ft_owner);
+        return CMD_RETURN_NORMAL;
     }
-    format_free(ft_owner);
-    return CMD_RETURN_NORMAL;
 }

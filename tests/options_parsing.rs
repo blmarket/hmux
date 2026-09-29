@@ -1,6 +1,6 @@
 //! Isolated option-name regressions for set-option/show-options parsing.
 
-use hmux2::src::options::{options_match_owned, options_parse_owned, OptionMatchFailure};
+use hmux2::src::options::{OptionMatchFailure, options_match_owned, options_parse_owned};
 use std::ffi::CString;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -19,23 +19,25 @@ fn cstring_until_nul(input: &[u8]) -> CString {
 }
 
 unsafe fn run_match(input: &[u8]) -> MatchOutcome {
-    let input = CString::new(input).expect("test input has no embedded NUL");
-    match options_match_owned(input.as_c_str()) {
-        Ok(parsed) => MatchOutcome {
-            name: Some(parsed.name.into_bytes()),
-            key: parsed.array_key.map(CString::into_bytes),
-            ambiguous: 0,
-        },
-        Err(OptionMatchFailure::Ambiguous) => MatchOutcome {
-            name: None,
-            key: None,
-            ambiguous: 1,
-        },
-        Err(OptionMatchFailure::Parse | OptionMatchFailure::Invalid) => MatchOutcome {
-            name: None,
-            key: None,
-            ambiguous: 0,
-        },
+    unsafe {
+        let input = CString::new(input).expect("test input has no embedded NUL");
+        match options_match_owned(input.as_c_str()) {
+            Ok(parsed) => MatchOutcome {
+                name: Some(parsed.name.into_bytes()),
+                key: parsed.array_key.map(CString::into_bytes),
+                ambiguous: 0,
+            },
+            Err(OptionMatchFailure::Ambiguous) => MatchOutcome {
+                name: None,
+                key: None,
+                ambiguous: 1,
+            },
+            Err(OptionMatchFailure::Parse | OptionMatchFailure::Invalid) => MatchOutcome {
+                name: None,
+                key: None,
+                ambiguous: 0,
+            },
+        }
     }
 }
 

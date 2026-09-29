@@ -2,10 +2,10 @@ use hmux2::src::{
     grid::{grid_create, grid_default_cell, grid_set_cell, grid_string_cells_bytes},
     input_keys::input_key_get_mouse,
     shared::{
-        client::{client, CLIENT_UTF8},
-        grid::{grid_cell, GRID_ATTR_CHARSET, GRID_FLAG_TAB, GRID_STRING_WITH_SEQUENCES},
+        client::{CLIENT_UTF8, client},
+        grid::{GRID_ATTR_CHARSET, GRID_FLAG_TAB, GRID_STRING_WITH_SEQUENCES, grid_cell},
         mouse::mouse_event,
-        screen::{screen, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_UTF8},
+        screen::{MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_UTF8, screen},
         tty::tty,
     },
     tty::tty_check_codeset,

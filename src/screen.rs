@@ -1,8 +1,8 @@
 use crate::src::ffi::libc::{memcpy, snprintf};
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
-    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create,
-    grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
+    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_duplicate_lines,
+    grid_empty_line, grid_reflow, grid_unwrap_position, grid_wrap_position,
 };
 use crate::src::hyperlinks::{hyperlinks_init, hyperlinks_reset};
 use crate::src::log::{fatal, fatalx, log_debug};
@@ -16,11 +16,11 @@ use crate::src::shared::key::MODEKEY_EMACS;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 pub use crate::src::shared::screen::{
-    screen, screen_sel, ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR,
-    MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
-    MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD,
-    MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
-    MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
+    ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING,
+    MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR,
+    MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
+    MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC,
+    MODE_THEME_UPDATES, MODE_WRAP, screen, screen_sel,
 };
 use crate::src::style::style_apply;
 use crate::src::text::utf8::{utf8_copy, utf8_to_data};
@@ -33,52 +33,56 @@ fn screen_free_titles(s: &mut screen) {
     s.titles = VecDeque::new();
 }
 pub unsafe fn screen_init(s: &mut screen, mut sx: u_int, mut sy: u_int, mut hlimit: u_int) {
-    s.grid = Some(grid_create(sx, sy, hlimit));
-    s.saved_grid = None;
-    s.title = CString::default();
-    s.titles = VecDeque::new();
-    s.path = None;
-    s.cstyle = SCREEN_CURSOR_DEFAULT;
-    s.default_cstyle = SCREEN_CURSOR_DEFAULT;
-    s.mode = MODE_CURSOR;
-    s.default_mode = 0 as ::core::ffi::c_int;
-    s.ccolour = -(1 as ::core::ffi::c_int);
-    s.default_ccolour = -(1 as ::core::ffi::c_int);
-    s.tabs = Vec::new();
-    s.sel = None;
-    s.write_list = None;
-    s.hyperlinks = None;
-    screen_reinit(s, 1 as ::core::ffi::c_int);
+    unsafe {
+        s.grid = Some(grid_create(sx, sy, hlimit));
+        s.saved_grid = None;
+        s.title = CString::default();
+        s.titles = VecDeque::new();
+        s.path = None;
+        s.cstyle = SCREEN_CURSOR_DEFAULT;
+        s.default_cstyle = SCREEN_CURSOR_DEFAULT;
+        s.mode = MODE_CURSOR;
+        s.default_mode = 0 as ::core::ffi::c_int;
+        s.ccolour = -(1 as ::core::ffi::c_int);
+        s.default_ccolour = -(1 as ::core::ffi::c_int);
+        s.tabs = Vec::new();
+        s.sel = None;
+        s.write_list = None;
+        s.hyperlinks = None;
+        screen_reinit(s, 1 as ::core::ffi::c_int);
+    }
 }
 pub unsafe fn screen_reinit(s: &mut screen, mut check: ::core::ffi::c_int) {
-    s.cx = 0 as u_int;
-    s.cy = 0 as u_int;
-    s.rupper = 0 as u_int;
-    s.rlower = s.grid().sy.wrapping_sub(1 as u_int);
-    s.mode = MODE_CURSOR | MODE_WRAP | s.mode & MODE_CRLF;
-    if options_get_number(
-        global_options,
-        b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 2 as ::core::ffi::c_longlong
-    {
-        s.mode = s.mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
+    unsafe {
+        s.cx = 0 as u_int;
+        s.cy = 0 as u_int;
+        s.rupper = 0 as u_int;
+        s.rlower = s.grid().sy.wrapping_sub(1 as u_int);
+        s.mode = MODE_CURSOR | MODE_WRAP | s.mode & MODE_CRLF;
+        if options_get_number(
+            global_options,
+            b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
+        ) == 2 as ::core::ffi::c_longlong
+        {
+            s.mode = s.mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
+        }
+        if s.saved_grid.is_some() {
+            screen_alternate_off(s, None, 0);
+        }
+        s.saved_cx = UINT_MAX as u_int;
+        s.saved_cy = UINT_MAX as u_int;
+        screen_reset_tabs(s);
+        if check != 0 {
+            grid_check_is_clear();
+        }
+        let hsize = s.grid().hsize;
+        let sy = s.grid().sy;
+        grid_clear_lines(s.grid_mut(), hsize, sy, 8);
+        screen_clear_selection(s);
+        screen_free_titles(s);
+        screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
+        screen_reset_hyperlinks(s);
     }
-    if s.saved_grid.is_some() {
-        screen_alternate_off(s, None, 0);
-    }
-    s.saved_cx = UINT_MAX as u_int;
-    s.saved_cy = UINT_MAX as u_int;
-    screen_reset_tabs(s);
-    if check != 0 {
-        grid_check_is_clear();
-    }
-    let hsize = s.grid().hsize;
-    let sy = s.grid().sy;
-    grid_clear_lines(s.grid_mut(), hsize, sy, 8);
-    screen_clear_selection(s);
-    screen_free_titles(s);
-    screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0 as ::core::ffi::c_int);
-    screen_reset_hyperlinks(s);
 }
 pub fn screen_reset_hyperlinks(s: &mut screen) {
     if let Some(table) = s.hyperlinks.as_ref() {
@@ -88,80 +92,89 @@ pub fn screen_reset_hyperlinks(s: &mut screen) {
     }
 }
 pub unsafe fn screen_free(s: &mut screen) {
-    drop(s.sel.take());
-    s.tabs = Vec::new();
-    s.path = None;
-    s.title = CString::default();
-    if s.write_list.is_some() {
-        screen_write_free_list(s);
+    unsafe {
+        drop(s.sel.take());
+        s.tabs = Vec::new();
+        s.path = None;
+        s.title = CString::default();
+        if s.write_list.is_some() {
+            screen_write_free_list(s);
+        }
+        drop(s.saved_grid.take());
+        drop(s.grid.take());
+        drop(s.hyperlinks.take());
+        screen_free_titles(s);
     }
-    drop(s.saved_grid.take());
-    drop(s.grid.take());
-    drop(s.hyperlinks.take());
-    screen_free_titles(s);
 }
 pub unsafe fn screen_reset_tabs(s: &mut screen) {
-    let bytes = (s.grid().sx as usize).div_ceil(8);
-    s.tabs.clear();
-    if s.tabs.try_reserve_exact(bytes).is_err() {
-        fatal(|out| out.write_all(b"bit_alloc failed"));
-    }
-    s.tabs.resize(bytes, 0);
-    let mut i: u_int = 8;
-    while i < s.grid().sx {
-        let fresh0 = &mut s.tabs[(i >> 3) as usize];
-        *fresh0 = (*fresh0 as ::core::ffi::c_int | (1 as ::core::ffi::c_int) << (i & 0x7 as u_int))
-            as bitstr_t;
-        i = i.wrapping_add(8 as u_int);
+    unsafe {
+        let bytes = (s.grid().sx as usize).div_ceil(8);
+        s.tabs.clear();
+        if s.tabs.try_reserve_exact(bytes).is_err() {
+            fatal(|out| out.write_all(b"bit_alloc failed"));
+        }
+        s.tabs.resize(bytes, 0);
+        let mut i: u_int = 8;
+        while i < s.grid().sx {
+            let fresh0 = &mut s.tabs[(i >> 3) as usize];
+            *fresh0 = (*fresh0 as ::core::ffi::c_int
+                | (1 as ::core::ffi::c_int) << (i & 0x7 as u_int))
+                as bitstr_t;
+            i = i.wrapping_add(8 as u_int);
+        }
     }
 }
 pub(crate) fn screen_share_hyperlinks(dst: &mut screen, src: &screen) {
     dst.hyperlinks = src.hyperlinks.clone();
 }
 pub(crate) unsafe fn screen_has_tab(s: &screen, column: u_int) -> bool {
-    *s.tabs.get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0
+    unsafe { *s.tabs.get_unchecked(column as usize / 8) & (1 << (column % 8)) != 0 }
 }
 pub(crate) unsafe fn screen_set_tab(s: &mut screen, column: u_int, set: bool) {
-    let byte = s.tabs.get_unchecked_mut(column as usize / 8);
-    let mask = 1 << (column % 8);
-    if set {
-        *byte |= mask;
-    } else {
-        *byte &= !mask;
+    unsafe {
+        let byte = s.tabs.get_unchecked_mut(column as usize / 8);
+        let mask = 1 << (column % 8);
+        if set {
+            *byte |= mask;
+        } else {
+            *byte &= !mask;
+        }
     }
 }
 pub(crate) fn screen_clear_tabs(s: &mut screen) {
     s.tabs.fill(0);
 }
 pub unsafe fn screen_set_default_cursor(s: &mut screen, mut oo: *mut options) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut c: ::core::ffi::c_int = 0;
-    style_apply(
-        &raw mut gc,
-        oo,
-        b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
-    s.default_ccolour = gc.fg;
-    c = options_get_number(
-        oo,
-        b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
-    s.default_mode = 0 as ::core::ffi::c_int;
-    screen_set_cursor_style(c as u_int, &mut s.default_cstyle, &mut s.default_mode);
+    unsafe {
+        let mut gc: grid_cell = grid_cell {
+            data: utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            },
+            attr: 0,
+            flags: 0,
+            fg: 0,
+            bg: 0,
+            us: 0,
+            link: 0,
+        };
+        let mut c: ::core::ffi::c_int = 0;
+        style_apply(
+            &raw mut gc,
+            oo,
+            b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
+            ::core::ptr::null_mut::<format_tree>(),
+        );
+        s.default_ccolour = gc.fg;
+        c = options_get_number(
+            oo,
+            b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
+        ) as ::core::ffi::c_int;
+        s.default_mode = 0 as ::core::ffi::c_int;
+        screen_set_cursor_style(c as u_int, &mut s.default_cstyle, &mut s.default_mode);
+    }
 }
 pub fn screen_set_cursor_style(
     style: u_int,
@@ -222,29 +235,33 @@ pub fn screen_set_path(s: &mut screen, path: &CStr) -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn screen_push_title(s: &mut screen) {
-    log_debug(format_args!(
-        "{}: {}",
-        "screen_push_title",
-        s.titles.len() as u_int
-    ));
-    while s.titles.len() >= 10 {
-        let Some(_title) = s.titles.pop_back() else {
-            break;
-        };
+    unsafe {
+        log_debug(format_args!(
+            "{}: {}",
+            "screen_push_title",
+            s.titles.len() as u_int
+        ));
+        while s.titles.len() >= 10 {
+            let Some(_title) = s.titles.pop_back() else {
+                break;
+            };
+        }
+        s.titles.push_front(s.title.clone());
     }
-    s.titles.push_front(s.title.clone());
 }
 pub unsafe fn screen_pop_title(s: &mut screen) {
-    if s.titles.is_empty() {
-        return;
-    }
-    log_debug(format_args!(
-        "{}: {}",
-        "screen_pop_title",
-        s.titles.len() as u_int
-    ));
-    if let Some(title) = s.titles.pop_front() {
-        s.title = title;
+    unsafe {
+        if s.titles.is_empty() {
+            return;
+        }
+        log_debug(format_args!(
+            "{}: {}",
+            "screen_pop_title",
+            s.titles.len() as u_int
+        ));
+        if let Some(title) = s.titles.pop_front() {
+            s.title = title;
+        }
     }
 }
 pub fn screen_set_progress_bar(s: &mut screen, pbs: progress_bar_state, p: ::core::ffi::c_int) {
@@ -264,70 +281,74 @@ pub unsafe fn screen_resize_cursor(
     eat_empty: ::core::ffi::c_int,
     cursor: ::core::ffi::c_int,
 ) {
-    let mut cx: u_int = s.cx;
-    let mut cy: u_int = s.grid().hsize.wrapping_add(s.cy);
-    let had_write_list = s.write_list.is_some();
-    if had_write_list {
-        screen_write_free_list(s);
-    }
-    log_debug(format_args!(
-        "{}: new size {}x{}, now {}x{} (cursor {},{} = {},{})",
-        "screen_resize_cursor",
-        (sx) as u32,
-        (sy) as u32,
-        (s.grid().sx) as u32,
-        (s.grid().sy) as u32,
-        (s.cx) as u32,
-        (s.cy) as u32,
-        (cx) as u32,
-        (cy) as u32
-    ));
-    if sx < 1 as u_int {
-        sx = 1 as u_int;
-    }
-    if sy < 1 as u_int {
-        sy = 1 as u_int;
-    }
-    if sx != s.grid().sx {
-        s.grid_mut().sx = sx;
-        screen_reset_tabs(s);
-    } else {
-        reflow = 0 as ::core::ffi::c_int;
-    }
-    if sy != s.grid().sy {
-        cy = screen_resize_y(s, sy, eat_empty, cy);
-    }
-    if reflow != 0 {
-        (cx, cy) = screen_reflow(s, sx, cx, cy, cursor);
-    }
-    if cy >= s.grid().hsize {
-        s.cx = cx;
-        s.cy = cy.wrapping_sub(s.grid().hsize);
-    } else {
-        s.cx = 0 as u_int;
-        s.cy = 0 as u_int;
-    }
-    log_debug(format_args!(
-        "{}: cursor finished at {},{} = {},{}",
-        "screen_resize_cursor",
-        (s.cx) as u32,
-        (s.cy) as u32,
-        (cx) as u32,
-        (cy) as u32
-    ));
-    if had_write_list {
-        screen_write_make_list(s);
+    unsafe {
+        let mut cx: u_int = s.cx;
+        let mut cy: u_int = s.grid().hsize.wrapping_add(s.cy);
+        let had_write_list = s.write_list.is_some();
+        if had_write_list {
+            screen_write_free_list(s);
+        }
+        log_debug(format_args!(
+            "{}: new size {}x{}, now {}x{} (cursor {},{} = {},{})",
+            "screen_resize_cursor",
+            (sx) as u32,
+            (sy) as u32,
+            (s.grid().sx) as u32,
+            (s.grid().sy) as u32,
+            (s.cx) as u32,
+            (s.cy) as u32,
+            (cx) as u32,
+            (cy) as u32
+        ));
+        if sx < 1 as u_int {
+            sx = 1 as u_int;
+        }
+        if sy < 1 as u_int {
+            sy = 1 as u_int;
+        }
+        if sx != s.grid().sx {
+            s.grid_mut().sx = sx;
+            screen_reset_tabs(s);
+        } else {
+            reflow = 0 as ::core::ffi::c_int;
+        }
+        if sy != s.grid().sy {
+            cy = screen_resize_y(s, sy, eat_empty, cy);
+        }
+        if reflow != 0 {
+            (cx, cy) = screen_reflow(s, sx, cx, cy, cursor);
+        }
+        if cy >= s.grid().hsize {
+            s.cx = cx;
+            s.cy = cy.wrapping_sub(s.grid().hsize);
+        } else {
+            s.cx = 0 as u_int;
+            s.cy = 0 as u_int;
+        }
+        log_debug(format_args!(
+            "{}: cursor finished at {},{} = {},{}",
+            "screen_resize_cursor",
+            (s.cx) as u32,
+            (s.cy) as u32,
+            (cx) as u32,
+            (cy) as u32
+        ));
+        if had_write_list {
+            screen_write_make_list(s);
+        }
     }
 }
 pub unsafe fn screen_resize(s: &mut screen, sx: u_int, sy: u_int, reflow: ::core::ffi::c_int) {
-    screen_resize_cursor(
-        s,
-        sx,
-        sy,
-        reflow,
-        1 as ::core::ffi::c_int,
-        1 as ::core::ffi::c_int,
-    );
+    unsafe {
+        screen_resize_cursor(
+            s,
+            sx,
+            sy,
+            reflow,
+            1 as ::core::ffi::c_int,
+            1 as ::core::ffi::c_int,
+        );
+    }
 }
 unsafe fn screen_resize_y(
     s: &mut screen,
@@ -335,65 +356,67 @@ unsafe fn screen_resize_y(
     eat_empty: ::core::ffi::c_int,
     mut cy: u_int,
 ) -> u_int {
-    let viewport_cy = s.cy;
-    let gd = s.grid_mut();
-    let mut needed: u_int = 0;
-    let mut available: u_int = 0;
-    let mut oldy: u_int = 0;
-    let mut i: u_int = 0;
-    if sy == 0 as u_int {
-        fatalx(|out| out.write_all(b"zero size"));
-    }
-    oldy = gd.sy;
-    if sy < oldy {
-        needed = oldy.wrapping_sub(sy);
-        if eat_empty != 0 {
-            available = oldy.wrapping_sub(1 as u_int).wrapping_sub(viewport_cy);
-            if available > 0 as u_int {
+    unsafe {
+        let viewport_cy = s.cy;
+        let gd = s.grid_mut();
+        let mut needed: u_int = 0;
+        let mut available: u_int = 0;
+        let mut oldy: u_int = 0;
+        let mut i: u_int = 0;
+        if sy == 0 as u_int {
+            fatalx(|out| out.write_all(b"zero size"));
+        }
+        oldy = gd.sy;
+        if sy < oldy {
+            needed = oldy.wrapping_sub(sy);
+            if eat_empty != 0 {
+                available = oldy.wrapping_sub(1 as u_int).wrapping_sub(viewport_cy);
+                if available > 0 as u_int {
+                    if available > needed {
+                        available = needed;
+                    }
+                    grid_view_delete_lines(gd, oldy.wrapping_sub(available), available, 8 as u_int);
+                }
+                needed = needed.wrapping_sub(available);
+            }
+            available = viewport_cy;
+            if gd.flags & GRID_HISTORY != 0 {
+                gd.hscrolled = gd.hscrolled.wrapping_add(needed);
+                gd.hsize = gd.hsize.wrapping_add(needed);
+            } else if needed > 0 as u_int && available > 0 as u_int {
                 if available > needed {
                     available = needed;
                 }
-                grid_view_delete_lines(gd, oldy.wrapping_sub(available), available, 8 as u_int);
+                grid_view_delete_lines(gd, 0 as u_int, available, 8 as u_int);
+                cy = cy.wrapping_sub(available);
+            }
+        }
+        let lines = gd.hsize.wrapping_add(sy);
+        grid_adjust_lines(gd, lines);
+        if sy > oldy {
+            needed = sy.wrapping_sub(oldy);
+            available = gd.hscrolled;
+            if gd.flags & GRID_HISTORY != 0 && available > 0 as u_int {
+                if available > needed {
+                    available = needed;
+                }
+                gd.hscrolled = gd.hscrolled.wrapping_sub(available);
+                gd.hsize = gd.hsize.wrapping_sub(available);
+            } else {
+                available = 0 as u_int;
             }
             needed = needed.wrapping_sub(available);
-        }
-        available = viewport_cy;
-        if gd.flags & GRID_HISTORY != 0 {
-            gd.hscrolled = gd.hscrolled.wrapping_add(needed);
-            gd.hsize = gd.hsize.wrapping_add(needed);
-        } else if needed > 0 as u_int && available > 0 as u_int {
-            if available > needed {
-                available = needed;
+            i = gd.hsize.wrapping_add(sy).wrapping_sub(needed);
+            while i < gd.hsize.wrapping_add(sy) {
+                grid_empty_line(gd, i, 8 as u_int);
+                i = i.wrapping_add(1);
             }
-            grid_view_delete_lines(gd, 0 as u_int, available, 8 as u_int);
-            cy = cy.wrapping_sub(available);
         }
+        gd.sy = sy;
+        s.rupper = 0 as u_int;
+        s.rlower = sy.wrapping_sub(1 as u_int);
+        cy
     }
-    let lines = gd.hsize.wrapping_add(sy);
-    grid_adjust_lines(gd, lines);
-    if sy > oldy {
-        needed = sy.wrapping_sub(oldy);
-        available = gd.hscrolled;
-        if gd.flags & GRID_HISTORY != 0 && available > 0 as u_int {
-            if available > needed {
-                available = needed;
-            }
-            gd.hscrolled = gd.hscrolled.wrapping_sub(available);
-            gd.hsize = gd.hsize.wrapping_sub(available);
-        } else {
-            available = 0 as u_int;
-        }
-        needed = needed.wrapping_sub(available);
-        i = gd.hsize.wrapping_add(sy).wrapping_sub(needed);
-        while i < gd.hsize.wrapping_add(sy) {
-            grid_empty_line(gd, i, 8 as u_int);
-            i = i.wrapping_add(1);
-        }
-    }
-    gd.sy = sy;
-    s.rupper = 0 as u_int;
-    s.rlower = sy.wrapping_sub(1 as u_int);
-    cy
 }
 pub fn screen_set_selection(
     s: &mut screen,
@@ -564,115 +587,121 @@ unsafe fn screen_reflow(
     mut cy: u_int,
     cursor: ::core::ffi::c_int,
 ) -> (u_int, u_int) {
-    let mut wx: u_int = 0;
-    let mut wy: u_int = 0;
-    if cursor != 0 {
-        (wx, wy) = grid_wrap_position(s.grid(), cx, cy);
-        log_debug(format_args!(
-            "{}: cursor {},{} is {},{}",
-            "screen_reflow",
-            cx as u32,
-            cy as u32,
-            (wx) as u32,
-            (wy) as u32
-        ));
+    unsafe {
+        let mut wx: u_int = 0;
+        let mut wy: u_int = 0;
+        if cursor != 0 {
+            (wx, wy) = grid_wrap_position(s.grid(), cx, cy);
+            log_debug(format_args!(
+                "{}: cursor {},{} is {},{}",
+                "screen_reflow",
+                cx as u32,
+                cy as u32,
+                (wx) as u32,
+                (wy) as u32
+            ));
+        }
+        grid_reflow(s.grid_mut(), new_x);
+        if cursor != 0 {
+            (cx, cy) = grid_unwrap_position(s.grid(), wx, wy);
+            log_debug(format_args!(
+                "{}: new cursor is {},{}",
+                "screen_reflow", cx as u32, cy as u32
+            ));
+        } else {
+            cx = 0 as u_int;
+            cy = s.grid().hsize;
+        };
+        (cx, cy)
     }
-    grid_reflow(s.grid_mut(), new_x);
-    if cursor != 0 {
-        (cx, cy) = grid_unwrap_position(s.grid(), wx, wy);
-        log_debug(format_args!(
-            "{}: new cursor is {},{}",
-            "screen_reflow", cx as u32, cy as u32
-        ));
-    } else {
-        cx = 0 as u_int;
-        cy = s.grid().hsize;
-    };
-    (cx, cy)
 }
 pub unsafe fn screen_alternate_on(
     s: &mut screen,
     gc: &grid_cell,
     cursor: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    if s.saved_grid.is_some() {
-        return 0 as ::core::ffi::c_int;
+    unsafe {
+        let mut sx: u_int = 0;
+        let mut sy: u_int = 0;
+        if s.saved_grid.is_some() {
+            return 0 as ::core::ffi::c_int;
+        }
+        sx = s.grid().sx;
+        sy = s.grid().sy;
+        s.saved_grid = Some(grid_create(sx, sy, 0));
+        grid_duplicate_lines(
+            s.saved_grid
+                .as_deref_mut()
+                .expect("saved grid was just created"),
+            0 as u_int,
+            s.grid.as_deref().expect("screen is initialized"),
+            s.grid.as_deref().expect("screen is initialized").hsize,
+            sy,
+        );
+        if cursor != 0 {
+            s.saved_cx = s.cx;
+            s.saved_cy = s.cy;
+        }
+        s.saved_cell = *gc;
+        grid_view_clear(s.grid_mut(), 0 as u_int, 0 as u_int, sx, sy, 8 as u_int);
+        s.saved_flags = s.grid().flags;
+        s.grid_mut().flags &= !GRID_HISTORY;
+        return 1 as ::core::ffi::c_int;
     }
-    sx = s.grid().sx;
-    sy = s.grid().sy;
-    s.saved_grid = Some(grid_create(sx, sy, 0));
-    grid_duplicate_lines(
-        s.saved_grid
-            .as_deref_mut()
-            .expect("saved grid was just created"),
-        0 as u_int,
-        s.grid.as_deref().expect("screen is initialized"),
-        s.grid.as_deref().expect("screen is initialized").hsize,
-        sy,
-    );
-    if cursor != 0 {
-        s.saved_cx = s.cx;
-        s.saved_cy = s.cy;
-    }
-    s.saved_cell = *gc;
-    grid_view_clear(s.grid_mut(), 0 as u_int, 0 as u_int, sx, sy, 8 as u_int);
-    s.saved_flags = s.grid().flags;
-    s.grid_mut().flags &= !GRID_HISTORY;
-    return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn screen_alternate_off(
     s: &mut screen,
     gc: Option<&mut grid_cell>,
     cursor: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut sx: u_int = s.grid().sx;
-    let mut sy: u_int = s.grid().sy;
-    if let Some(saved) = s.saved_grid.as_deref() {
-        let (width, height) = (saved.sx, saved.sy);
-        screen_resize(s, width, height, 0);
-    }
-    if cursor != 0 && s.saved_cx != UINT_MAX && s.saved_cy != UINT_MAX {
-        s.cx = s.saved_cx;
-        s.cy = s.saved_cy;
-        if let Some(gc) = gc {
-            *gc = s.saved_cell;
+    unsafe {
+        let mut sx: u_int = s.grid().sx;
+        let mut sy: u_int = s.grid().sy;
+        if let Some(saved) = s.saved_grid.as_deref() {
+            let (width, height) = (saved.sx, saved.sy);
+            screen_resize(s, width, height, 0);
         }
-    }
-    if s.saved_grid.is_none() {
+        if cursor != 0 && s.saved_cx != UINT_MAX && s.saved_cy != UINT_MAX {
+            s.cx = s.saved_cx;
+            s.cy = s.saved_cy;
+            if let Some(gc) = gc {
+                *gc = s.saved_cell;
+            }
+        }
+        if s.saved_grid.is_none() {
+            if s.cx > s.grid().sx.wrapping_sub(1 as u_int) {
+                s.cx = s.grid().sx.wrapping_sub(1 as u_int);
+            }
+            if s.cy > s.grid().sy.wrapping_sub(1 as u_int) {
+                s.cy = s.grid().sy.wrapping_sub(1 as u_int);
+            }
+            return 0 as ::core::ffi::c_int;
+        }
+        let history = s.grid().hsize;
+        let saved = s
+            .saved_grid
+            .as_deref()
+            .expect("alternate screen has a saved grid");
+        grid_duplicate_lines(
+            s.grid.as_deref_mut().expect("screen is initialized"),
+            history,
+            saved,
+            0 as u_int,
+            saved.sy,
+        );
+        if s.saved_flags & GRID_HISTORY != 0 {
+            s.grid_mut().flags |= GRID_HISTORY;
+        }
+        screen_resize(s, sx, sy, 1 as ::core::ffi::c_int);
+        drop(s.saved_grid.take());
         if s.cx > s.grid().sx.wrapping_sub(1 as u_int) {
             s.cx = s.grid().sx.wrapping_sub(1 as u_int);
         }
         if s.cy > s.grid().sy.wrapping_sub(1 as u_int) {
             s.cy = s.grid().sy.wrapping_sub(1 as u_int);
         }
-        return 0 as ::core::ffi::c_int;
+        return 1 as ::core::ffi::c_int;
     }
-    let history = s.grid().hsize;
-    let saved = s
-        .saved_grid
-        .as_deref()
-        .expect("alternate screen has a saved grid");
-    grid_duplicate_lines(
-        s.grid.as_deref_mut().expect("screen is initialized"),
-        history,
-        saved,
-        0 as u_int,
-        saved.sy,
-    );
-    if s.saved_flags & GRID_HISTORY != 0 {
-        s.grid_mut().flags |= GRID_HISTORY;
-    }
-    screen_resize(s, sx, sy, 1 as ::core::ffi::c_int);
-    drop(s.saved_grid.take());
-    if s.cx > s.grid().sx.wrapping_sub(1 as u_int) {
-        s.cx = s.grid().sx.wrapping_sub(1 as u_int);
-    }
-    if s.cy > s.grid().sy.wrapping_sub(1 as u_int) {
-        s.cy = s.grid().sy.wrapping_sub(1 as u_int);
-    }
-    return 1 as ::core::ffi::c_int;
 }
 struct ScreenModeNames(i32);
 
@@ -726,114 +755,116 @@ pub unsafe fn screen_print(
     mut s: *mut screen,
     mut line: ::core::ffi::c_int,
 ) -> *const ::core::ffi::c_char {
-    // The exported result remains valid until the next call, as before.
-    static mut PRINT_BUFFER: [::core::ffi::c_char; 16384] = [0; 16384];
-    let buf = (&raw mut PRINT_BUFFER).cast::<::core::ffi::c_char>();
-    let len: size_t = 16384;
-    let mut acs: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
-    let mut last: size_t = 0 as size_t;
-    let mut ud: utf8_data = utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    };
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
-    y = 0 as u_int;
-    's_28: while y < (*s).grid().hsize.wrapping_add((*s).grid().sy) {
-        if !(line >= 0 as ::core::ffi::c_int && y != line as u_int) {
-            n = snprintf(
-                buf.offset(last as isize),
-                len.wrapping_sub(last),
-                b"%.4d \"\0" as *const u8 as *const ::core::ffi::c_char,
-                y,
-            );
-            if n <= 0 as ::core::ffi::c_int || n as u_int as size_t >= len.wrapping_sub(last) {
-                break;
-            }
-            last = last.wrapping_add(n as size_t);
-            gl = (*s).grid_mut().linedata.as_mut_ptr().offset(y as isize) as *mut grid_line;
-            x = 0 as u_int;
-            while x < (*gl).cellused as u_int {
-                gce = (*gl).celldata.as_mut_ptr().offset(x as isize) as *mut grid_cell_entry;
-                if !((*gce).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
-                    if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-                        if last.wrapping_add(2 as size_t) >= len {
-                            break 's_28;
-                        }
-                        let fresh1 = last;
-                        last = last.wrapping_add(1);
-                        *buf.offset(fresh1 as isize) =
-                            (*gce).c2rust_unnamed.data.data as ::core::ffi::c_char;
-                    } else if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-                        if last.wrapping_add(2 as size_t) >= len {
-                            break 's_28;
-                        }
-                        let fresh2 = last;
-                        last = last.wrapping_add(1);
-                        *buf.offset(fresh2 as isize) = '\t' as i32 as ::core::ffi::c_char;
-                    } else if (*gce).flags as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
-                        if let Some(text) = tty_acs_get(None, (*gce).c2rust_unnamed.data.data) {
-                            acs = text.as_ptr();
-                            n = text.to_bytes().len() as ::core::ffi::c_int;
-                        } else {
-                            acs = &raw mut (*gce).c2rust_unnamed.data.data
-                                as *const ::core::ffi::c_char;
-                            n = 1 as ::core::ffi::c_int;
-                        }
-                        if last.wrapping_add(n as size_t).wrapping_add(1 as size_t) >= len {
-                            break 's_28;
-                        }
-                        memcpy(
-                            buf.offset(last as isize) as *mut ::core::ffi::c_void,
-                            acs as *const ::core::ffi::c_void,
-                            n as size_t,
-                        );
-                        last = last.wrapping_add(n as size_t);
-                    } else {
-                        utf8_to_data(
-                            (*(*gl)
-                                .extddata
-                                .as_mut_ptr()
-                                .offset((*gce).c2rust_unnamed.offset as isize))
-                            .data,
-                            &mut ud,
-                        );
-                        if ud.size as ::core::ffi::c_int > 0 as ::core::ffi::c_int {
-                            if last
-                                .wrapping_add(ud.size as size_t)
-                                .wrapping_add(1 as size_t)
-                                >= len
-                            {
+    unsafe {
+        // The exported result remains valid until the next call, as before.
+        static mut PRINT_BUFFER: [::core::ffi::c_char; 16384] = [0; 16384];
+        let buf = (&raw mut PRINT_BUFFER).cast::<::core::ffi::c_char>();
+        let len: size_t = 16384;
+        let mut acs: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut x: u_int = 0;
+        let mut y: u_int = 0;
+        let mut n: ::core::ffi::c_int = 0;
+        let mut last: size_t = 0 as size_t;
+        let mut ud: utf8_data = utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
+        let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
+        y = 0 as u_int;
+        's_28: while y < (*s).grid().hsize.wrapping_add((*s).grid().sy) {
+            if !(line >= 0 as ::core::ffi::c_int && y != line as u_int) {
+                n = snprintf(
+                    buf.offset(last as isize),
+                    len.wrapping_sub(last),
+                    b"%.4d \"\0" as *const u8 as *const ::core::ffi::c_char,
+                    y,
+                );
+                if n <= 0 as ::core::ffi::c_int || n as u_int as size_t >= len.wrapping_sub(last) {
+                    break;
+                }
+                last = last.wrapping_add(n as size_t);
+                gl = (*s).grid_mut().linedata.as_mut_ptr().offset(y as isize) as *mut grid_line;
+                x = 0 as u_int;
+                while x < (*gl).cellused as u_int {
+                    gce = (*gl).celldata.as_mut_ptr().offset(x as isize) as *mut grid_cell_entry;
+                    if !((*gce).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
+                        if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
+                            if last.wrapping_add(2 as size_t) >= len {
+                                break 's_28;
+                            }
+                            let fresh1 = last;
+                            last = last.wrapping_add(1);
+                            *buf.offset(fresh1 as isize) =
+                                (*gce).c2rust_unnamed.data.data as ::core::ffi::c_char;
+                        } else if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
+                            if last.wrapping_add(2 as size_t) >= len {
+                                break 's_28;
+                            }
+                            let fresh2 = last;
+                            last = last.wrapping_add(1);
+                            *buf.offset(fresh2 as isize) = '\t' as i32 as ::core::ffi::c_char;
+                        } else if (*gce).flags as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
+                            if let Some(text) = tty_acs_get(None, (*gce).c2rust_unnamed.data.data) {
+                                acs = text.as_ptr();
+                                n = text.to_bytes().len() as ::core::ffi::c_int;
+                            } else {
+                                acs = &raw mut (*gce).c2rust_unnamed.data.data
+                                    as *const ::core::ffi::c_char;
+                                n = 1 as ::core::ffi::c_int;
+                            }
+                            if last.wrapping_add(n as size_t).wrapping_add(1 as size_t) >= len {
                                 break 's_28;
                             }
                             memcpy(
                                 buf.offset(last as isize) as *mut ::core::ffi::c_void,
-                                &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
-                                ud.size as size_t,
+                                acs as *const ::core::ffi::c_void,
+                                n as size_t,
                             );
-                            last = last.wrapping_add(ud.size as size_t);
+                            last = last.wrapping_add(n as size_t);
+                        } else {
+                            utf8_to_data(
+                                (*(*gl)
+                                    .extddata
+                                    .as_mut_ptr()
+                                    .offset((*gce).c2rust_unnamed.offset as isize))
+                                .data,
+                                &mut ud,
+                            );
+                            if ud.size as ::core::ffi::c_int > 0 as ::core::ffi::c_int {
+                                if last
+                                    .wrapping_add(ud.size as size_t)
+                                    .wrapping_add(1 as size_t)
+                                    >= len
+                                {
+                                    break 's_28;
+                                }
+                                memcpy(
+                                    buf.offset(last as isize) as *mut ::core::ffi::c_void,
+                                    &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
+                                    ud.size as size_t,
+                                );
+                                last = last.wrapping_add(ud.size as size_t);
+                            }
                         }
                     }
+                    x = x.wrapping_add(1);
                 }
-                x = x.wrapping_add(1);
+                if last.wrapping_add(3 as size_t) >= len {
+                    break;
+                }
+                let fresh3 = last;
+                last = last.wrapping_add(1);
+                *buf.offset(fresh3 as isize) = '"' as i32 as ::core::ffi::c_char;
+                let fresh4 = last;
+                last = last.wrapping_add(1);
+                *buf.offset(fresh4 as isize) = '\n' as i32 as ::core::ffi::c_char;
             }
-            if last.wrapping_add(3 as size_t) >= len {
-                break;
-            }
-            let fresh3 = last;
-            last = last.wrapping_add(1);
-            *buf.offset(fresh3 as isize) = '"' as i32 as ::core::ffi::c_char;
-            let fresh4 = last;
-            last = last.wrapping_add(1);
-            *buf.offset(fresh4 as isize) = '\n' as i32 as ::core::ffi::c_char;
+            y = y.wrapping_add(1);
         }
-        y = y.wrapping_add(1);
+        *buf.offset(last as isize) = '\0' as i32 as ::core::ffi::c_char;
+        return buf;
     }
-    *buf.offset(last as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return buf;
 }

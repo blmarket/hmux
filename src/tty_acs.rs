@@ -1,9 +1,9 @@
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::CLIENT_UTF8;
 use crate::src::shared::grid::*;
 use crate::src::shared::tty::tty;
 use crate::src::shared::tty::*;
+use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::{tty_term_has, tty_term_number};
 use std::ffi::CStr;
 
@@ -634,30 +634,46 @@ pub fn tty_acs_rounded_borders(cell_type: ::core::ffi::c_int) -> &'static utf8_d
     &tty_acs_rounded_borders_list[cell_type as usize]
 }
 pub unsafe fn tty_acs_needed(terminal: Option<&tty>) -> ::core::ffi::c_int {
-    let Some(terminal) = terminal else {
-        return 0;
-    };
-    if tty_term_has(tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term), TTYC_U8) != 0 && tty_term_number(tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term), TTYC_U8) == 0 {
-        return 1;
+    unsafe {
+        let Some(terminal) = terminal else {
+            return 0;
+        };
+        if tty_term_has(
+            tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term),
+            TTYC_U8,
+        ) != 0
+            && tty_term_number(
+                tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term),
+                TTYC_U8,
+            ) == 0
+        {
+            return 1;
+        }
+        let owner = terminal.client.upgrade().expect("terminal client");
+        ((*owner.get()).flags & CLIENT_UTF8 as uint64_t == 0) as ::core::ffi::c_int
     }
-    let owner = terminal.client.upgrade().expect("terminal client");
-    ((*owner.get()).flags & CLIENT_UTF8 as uint64_t == 0) as ::core::ffi::c_int
 }
 
 /// The terminal and its capabilities must remain valid while the result is borrowed.
 pub unsafe fn tty_acs_get(terminal: Option<&tty>, ch: u_char) -> Option<&CStr> {
-    if tty_acs_needed(terminal) != 0 {
-        let term = terminal.expect("legacy ACS requires a terminal").term.as_deref().expect("terminal capabilities");
-        let bytes = &term.acs[ch as usize];
-        if bytes[0] == 0 {
-            return None;
+    unsafe {
+        if tty_acs_needed(terminal) != 0 {
+            let term = terminal
+                .expect("legacy ACS requires a terminal")
+                .term
+                .as_deref()
+                .expect("terminal capabilities");
+            let bytes = &term.acs[ch as usize];
+            if bytes[0] == 0 {
+                return None;
+            }
+            return Some(CStr::from_bytes_with_nul(bytes).expect("ACS entries are terminated"));
         }
-        return Some(CStr::from_bytes_with_nul(bytes).expect("ACS entries are terminated"));
+        tty_acs_table
+            .binary_search_by_key(&ch, |entry| entry.key)
+            .ok()
+            .map(|index| tty_acs_table[index].string)
     }
-    tty_acs_table
-        .binary_search_by_key(&ch, |entry| entry.key)
-        .ok()
-        .map(|index| tty_acs_table[index].string)
 }
 
 pub fn tty_acs_reverse_get(s: &CStr, slen: usize) -> Option<u_char> {

@@ -97,44 +97,48 @@ pub fn layout_cells_last(parent: &layout_cell) -> *mut layout_cell {
 
 #[inline]
 pub unsafe fn layout_cell_next(cell: *mut layout_cell) -> *mut layout_cell {
-    if cell.is_null() || (*cell).parent.is_null() {
-        return std::ptr::null_mut();
+    unsafe {
+        if cell.is_null() || (*cell).parent.is_null() {
+            return std::ptr::null_mut();
+        }
+        let children = &(*(*cell).parent).cells.children;
+        let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
+        let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
+            Some(index)
+        } else {
+            children
+                .iter()
+                .position(|child| layout_cell_ptr(child) == cell)
+        };
+        index
+            .and_then(|index| children.get(index + 1).map(layout_cell_ptr))
+            .unwrap_or(std::ptr::null_mut())
     }
-    let children = &(*(*cell).parent).cells.children;
-    let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
-    let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
-        Some(index)
-    } else {
-        children
-            .iter()
-            .position(|child| layout_cell_ptr(child) == cell)
-    };
-    index
-        .and_then(|index| children.get(index + 1).map(layout_cell_ptr))
-        .unwrap_or(std::ptr::null_mut())
 }
 
 #[inline]
 pub unsafe fn layout_cell_prev(cell: *mut layout_cell) -> *mut layout_cell {
-    if cell.is_null() || (*cell).parent.is_null() {
-        return std::ptr::null_mut();
+    unsafe {
+        if cell.is_null() || (*cell).parent.is_null() {
+            return std::ptr::null_mut();
+        }
+        let children = &(*(*cell).parent).cells.children;
+        let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
+        let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
+            Some(index)
+        } else {
+            children
+                .iter()
+                .position(|child| layout_cell_ptr(child) == cell)
+        };
+        index
+            .and_then(|index| {
+                index
+                    .checked_sub(1)
+                    .and_then(|prev| children.get(prev).map(layout_cell_ptr))
+            })
+            .unwrap_or(std::ptr::null_mut())
     }
-    let children = &(*(*cell).parent).cells.children;
-    let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
-    let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
-        Some(index)
-    } else {
-        children
-            .iter()
-            .position(|child| layout_cell_ptr(child) == cell)
-    };
-    index
-        .and_then(|index| {
-            index
-                .checked_sub(1)
-                .and_then(|prev| children.get(prev).map(layout_cell_ptr))
-        })
-        .unwrap_or(std::ptr::null_mut())
 }
 
 #[inline]
@@ -142,37 +146,43 @@ pub unsafe fn layout_cells_remove(
     parent: *mut layout_cell,
     child: *mut layout_cell,
 ) -> Option<Box<layout_cell>> {
-    let children = &mut (*parent).cells.children;
-    let hinted = (*child).sibling_index;
-    let index = if children.get(hinted).map(layout_cell_ptr) == Some(child) {
-        Some(hinted)
-    } else {
-        children
-            .iter()
-            .position(|item| layout_cell_ptr(item) == child)
-    }?;
-    let mut removed = children.remove(index);
-    removed.sibling_index = 0;
-    removed.parent = std::ptr::null_mut();
-    for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index) {
-        sibling.sibling_index = sibling_index;
+    unsafe {
+        let children = &mut (*parent).cells.children;
+        let hinted = (*child).sibling_index;
+        let index = if children.get(hinted).map(layout_cell_ptr) == Some(child) {
+            Some(hinted)
+        } else {
+            children
+                .iter()
+                .position(|item| layout_cell_ptr(item) == child)
+        }?;
+        let mut removed = children.remove(index);
+        removed.sibling_index = 0;
+        removed.parent = std::ptr::null_mut();
+        for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index) {
+            sibling.sibling_index = sibling_index;
+        }
+        Some(removed)
     }
-    Some(removed)
 }
 
 #[inline]
 pub unsafe fn layout_cells_push_back(parent: *mut layout_cell, mut child: Box<layout_cell>) {
-    child.parent = parent;
-    child.sibling_index = (*parent).cells.children.len();
-    (*parent).cells.children.push(child);
+    unsafe {
+        child.parent = parent;
+        child.sibling_index = (*parent).cells.children.len();
+        (*parent).cells.children.push(child);
+    }
 }
 
 #[inline]
 pub unsafe fn layout_cells_push_front(parent: *mut layout_cell, mut child: Box<layout_cell>) {
-    child.parent = parent;
-    (*parent).cells.children.insert(0, child);
-    for (index, sibling) in (*parent).cells.children.iter_mut().enumerate() {
-        sibling.sibling_index = index;
+    unsafe {
+        child.parent = parent;
+        (*parent).cells.children.insert(0, child);
+        for (index, sibling) in (*parent).cells.children.iter_mut().enumerate() {
+            sibling.sibling_index = index;
+        }
     }
 }
 
@@ -182,15 +192,17 @@ pub unsafe fn layout_cells_insert_before(
     reference: *mut layout_cell,
     mut child: Box<layout_cell>,
 ) {
-    child.parent = parent;
-    let children = &mut (*parent).cells.children;
-    let index = children
-        .iter()
-        .position(|item| layout_cell_ptr(item) == reference)
-        .expect("layout cell reference must be a child of its parent");
-    children.insert(index, child);
-    for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index) {
-        sibling.sibling_index = sibling_index;
+    unsafe {
+        child.parent = parent;
+        let children = &mut (*parent).cells.children;
+        let index = children
+            .iter()
+            .position(|item| layout_cell_ptr(item) == reference)
+            .expect("layout cell reference must be a child of its parent");
+        children.insert(index, child);
+        for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index) {
+            sibling.sibling_index = sibling_index;
+        }
     }
 }
 
@@ -200,15 +212,17 @@ pub unsafe fn layout_cells_insert_after(
     reference: *mut layout_cell,
     mut child: Box<layout_cell>,
 ) {
-    child.parent = parent;
-    let children = &mut (*parent).cells.children;
-    let index = children
-        .iter()
-        .position(|item| layout_cell_ptr(item) == reference)
-        .expect("layout cell reference must be a child of its parent");
-    children.insert(index + 1, child);
-    for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index + 1) {
-        sibling.sibling_index = sibling_index;
+    unsafe {
+        child.parent = parent;
+        let children = &mut (*parent).cells.children;
+        let index = children
+            .iter()
+            .position(|item| layout_cell_ptr(item) == reference)
+            .expect("layout cell reference must be a child of its parent");
+        children.insert(index + 1, child);
+        for (sibling_index, sibling) in children.iter_mut().enumerate().skip(index + 1) {
+            sibling.sibling_index = sibling_index;
+        }
     }
 }
 
@@ -218,17 +232,19 @@ pub unsafe fn layout_cells_replace(
     old: *mut layout_cell,
     mut new: Box<layout_cell>,
 ) -> Box<layout_cell> {
-    let children = &mut (*parent).cells.children;
-    let index = children
-        .iter()
-        .position(|item| layout_cell_ptr(item) == old)
-        .expect("layout cell to replace must be a child of its parent");
-    new.parent = parent;
-    new.sibling_index = index;
-    let mut detached = std::mem::replace(&mut children[index], new);
-    detached.parent = std::ptr::null_mut();
-    detached.sibling_index = 0;
-    detached
+    unsafe {
+        let children = &mut (*parent).cells.children;
+        let index = children
+            .iter()
+            .position(|item| layout_cell_ptr(item) == old)
+            .expect("layout cell to replace must be a child of its parent");
+        new.parent = parent;
+        new.sibling_index = index;
+        let mut detached = std::mem::replace(&mut children[index], new);
+        detached.parent = std::ptr::null_mut();
+        detached.sibling_index = 0;
+        detached
+    }
 }
 
 impl Drop for layout_cell {

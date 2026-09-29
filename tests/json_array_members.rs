@@ -1,6 +1,6 @@
 use hmux2::src::json::{
-    json_array_members, json_find, json_get_number, json_parse, json_to_string, NODE_ARRAY,
-    NODE_OBJECT,
+    NODE_ARRAY, NODE_OBJECT, json_array_members, json_find, json_get_number, json_parse,
+    json_to_string,
 };
 use std::ffi::CString;
 
@@ -31,9 +31,11 @@ fn array_owned_members_preserve_order_and_iteration() {
 #[test]
 fn empty_array_has_no_members() {
     let root = json_parse(c"{\"items\":[]}", None).unwrap();
-    assert!(json_array_members(json_find(&root, c"items").unwrap())
-        .unwrap()
-        .is_empty());
+    assert!(
+        json_array_members(json_find(&root, c"items").unwrap())
+            .unwrap()
+            .is_empty()
+    );
     assert!(json_array_members(&root).is_none());
 }
 
