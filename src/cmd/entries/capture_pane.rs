@@ -13,7 +13,7 @@ use crate::src::grid::{
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::input::input_pending;
 use crate::src::paste::paste_set_owned;
-use crate::src::reactor::EventBuffer;
+use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::screen::screen_reset_hyperlinks;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::ssize_t;
@@ -260,9 +260,9 @@ unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &mut window_pane) -> Vec
     let mut i: u_int = 0;
     let pending = input_pending(wp.ictx.as_deref_mut().expect("pane input context"));
     line =
-        pending.pullup(-1)
+        evbuffer_pullup(pending, -1)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
-    linelen = pending.len();
+    linelen = evbuffer_get_length(&*pending);
     if args_has(args, 'C' as i32 as u_char) != 0 {
         i = 0 as u_int;
         while (i as size_t) < linelen {

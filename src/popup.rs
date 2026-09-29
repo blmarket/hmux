@@ -1,3 +1,7 @@
+use crate::src::server_client::server_client_unref_owned;
+use std::rc::Rc;
+use crate::src::shared::client::{client_retain, client_handle};
+use crate::src::options::options_owner_ptr;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::{format_create_defaults, format_free};
@@ -6,16 +10,15 @@ use crate::src::input::{input_free, input_init, input_parse_screen};
 use crate::src::input_keys::{input_key, input_key_get_mouse};
 use crate::src::job::{job_free, job_get_event, job_resize, job_run};
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
-use crate::src::reactor::bufferevent_write;
-use crate::src::reactor::EventBuffer;
+use crate::src::reactor::{
+    bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
+};
 use crate::src::screen::screen_share_hyperlinks;
 use crate::src::screen::{screen_free, screen_init, screen_resize, screen_set_default_cursor};
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_start, screen_write_stop,
 };
-use crate::src::server_client::server_client_unref_owned;
 use crate::src::server_client::{
     server_client_clear_overlay, server_client_overlay_range, server_client_set_overlay,
 };
@@ -27,7 +30,6 @@ use crate::src::shared::client::{
     client, overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
-use crate::src::shared::client::{client_handle, client_retain};
 use crate::src::shared::colour::*;
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::display::visible_ranges;
@@ -66,7 +68,6 @@ use crate::src::tty::tty_resize;
 use crate::src::tty_draw::tty_draw_line;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::rc::Rc;
 use std::rc::Weak;
 
 pub struct popup_data {
@@ -846,10 +847,10 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let evb: &mut evbuffer = &mut *(*job_get_event(job)).input;
     let mut c: *mut client = client_handle(&(*pd).c).map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut screen = &raw mut (*pd).s;
-    let mut data: *mut ::core::ffi::c_void = evb.pullup(-1)
+    let mut data: *mut ::core::ffi::c_void = evbuffer_pullup(evb, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *mut ::core::ffi::c_void;
-    let mut size: size_t = (*(evb)).len();
+    let mut size: size_t = evbuffer_get_length(&*(evb));
     if size == 0 as size_t {
         return;
     }
@@ -863,7 +864,7 @@ unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
         size,
     );
     popup_restore_check(&(*(c)).observer.upgrade().expect("live client"), popup);
-    evb.drain(size);
+    evbuffer_drain(evb, size);
 }
 unsafe fn popup_job_complete_cb(completion: JobCompletion, popup: &PopupGuard) {
     let pd = popup.as_ptr();

@@ -1,3 +1,5 @@
+use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::options::options_owner_ptr;
 use crate::src::alerts::alerts_check_session;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
@@ -35,20 +37,21 @@ use crate::src::format::{
     format_lost_client,
 };
 use crate::src::input::input_cancel_requests;
-use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bindings_get_table};
+use crate::src::key_bindings::{
+    key_bindings_dispatch, key_bindings_get, key_bindings_get_table,
+};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
 use crate::src::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
 use crate::src::names::check_window_name;
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{
     options_get_command, options_get_number, options_get_string, options_set_number,
 };
 use crate::src::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::src::prompt::prompt_free;
-use crate::src::reactor::EventBuffer;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, event_add, event_del, event_initialized, event_once,
+    bufferevent_disable, bufferevent_enable, evbuffer_add, evbuffer_drain, evbuffer_get_length,
+    evbuffer_pullup, evbuffer_readln, event_add, event_del, event_initialized, event_once,
     event_pending, event_set,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
@@ -80,7 +83,6 @@ use crate::src::tty::{
 };
 use crate::src::tty_features::tty_get_features;
 use crate::src::tty_term::tty_term_has;
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::{
     all_window_panes, window_get_active_at, window_pane_clear_resizes, window_pane_contains,
@@ -3524,9 +3526,7 @@ unsafe fn server_client_check_pane_resize(pane_owner: &std::rc::Rc<std::cell::Un
     }
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);
 }
-unsafe fn server_client_check_pane_buffer(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) {
+unsafe fn server_client_check_pane_buffer(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     let mut minimum: size_t = 0;
     let mut off: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -3595,7 +3595,7 @@ unsafe fn server_client_check_pane_buffer(
     minimum = minimum.wrapping_sub((*wp).base_offset);
     if !(minimum == 0 as size_t) {
         let buffer_len = (*wp).event.with_ptr(|event| unsafe {
-            (*(*event).input).len()
+            evbuffer_get_length(&*(*event).input)
         }).unwrap_or(0);
         log_debug(format_args!(
             "{}: %{} has {} minimum (of {}) bytes used",
@@ -3605,7 +3605,7 @@ unsafe fn server_client_check_pane_buffer(
             (buffer_len) as usize
         ));
         let _ = (*wp).event.with_ptr(|event| unsafe {
-            (*(*event).input).drain(minimum);
+            evbuffer_drain(&mut *(*event).input, minimum);
         });
         if (*wp).base_offset > (SIZE_MAX as size_t).wrapping_sub(minimum) {
             log_debug(format_args!(
@@ -4053,10 +4053,7 @@ unsafe fn server_client_exit_timer(owner: &std::rc::Rc<std::cell::UnsafeCell<cli
         server_client_check_exit(owner, 1 as ::core::ffi::c_int);
     }
 }
-unsafe fn server_client_check_exit(
-    client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-    force: ::core::ffi::c_int,
-) {
+unsafe fn server_client_check_exit(client_owner: &std::rc::Rc<std::cell::UnsafeCell<client>>, force: ::core::ffi::c_int) {
     let c = client_owner.get();
     let mut name: *const ::core::ffi::c_char = ((*c).exit_session)
         .as_ref()
@@ -4082,7 +4079,7 @@ unsafe fn server_client_check_exit(
         let mut next_file = client_files_minmax(&(*c).files);
         while let Some(file) = next_file {
             let cf = &*file.get();
-            if (*((*cf).buffer)).len() != 0 as size_t {
+            if evbuffer_get_length(&*((*cf).buffer)) != 0 as size_t {
                 server_client_start_exit_timer(&mut *c);
                 return;
             }
@@ -4259,7 +4256,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
             (*c).flags &= !CLIENT_STATUSFORCE as uint64_t;
             return;
         }
-        n = ((*tty).out.as_deref().expect("open TTY buffer")).len();
+        n = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
         if n != 0 as size_t || (*tty).flags & TTY_BLOCK != 0 {
             if n != 0 as size_t {
                 log_debug(format_args!(
@@ -4368,7 +4365,7 @@ unsafe fn server_client_check_redraw(client_owner: &std::rc::Rc<std::cell::Unsaf
             & !(CLIENT_ALLREDRAWFLAGS as ::core::ffi::c_ulonglong
                 | CLIENT_REDRAWSCROLLBARS
                 | CLIENT_STATUSFORCE as ::core::ffi::c_ulonglong)) as uint64_t;
-        (*c).redraw = ((*tty).out.as_deref().expect("open TTY buffer")).len();
+        (*c).redraw = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
         log_debug(format_args!(
             "{}: redraw added {} bytes",
             log_cstr(
@@ -5298,9 +5295,9 @@ pub unsafe fn server_client_print(
 ) {
     let c = client_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut data: *mut ::core::ffi::c_void =
-        evb.pullup(-1)
+        evbuffer_pullup(evb, -1)
             .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_void;
-    let mut size: size_t = (*(evb)).len();
+    let mut size: size_t = evbuffer_get_length(&*(evb));
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -5320,14 +5317,16 @@ pub unsafe fn server_client_print(
         msg = &raw mut empty;
     } else {
         msg =
-            evb.pullup(-1)
+            evbuffer_pullup(evb, -1)
                 .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr()) as *mut ::core::ffi::c_char;
         if *msg.offset(size.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int != '\0' as i32
         {
-            evb.add_raw(b"\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
+            evbuffer_add(
+                evb,
+                b"\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
-            msg = evb.pullup(-1).expect("nonempty print buffer").as_mut_ptr().cast();
+            msg = evbuffer_pullup(evb, -1).expect("nonempty print buffer").as_mut_ptr().cast();
         }
     }
     log_debug(format_args!(
@@ -5371,16 +5370,16 @@ pub unsafe fn server_client_print(
             }
             if parse != 0 {
                 loop {
-                    let Some(line) = evb.read_line(crate::src::reactor::LineEnding::Lf) else {
+                    let Some(line) = evbuffer_readln(evb) else {
                         break;
                     };
                     window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
                         write_cstr(out, line.as_ptr().cast::<::core::ffi::c_char>())
                     });
                 }
-                size = (*(evb)).len();
+                size = evbuffer_get_length(&*(evb));
                 if size != 0 as size_t {
-                    line = evb.pullup(-1)
+                    line = evbuffer_pullup(evb, -1)
                         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                         as *mut ::core::ffi::c_char;
                     window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {

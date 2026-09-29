@@ -1,5 +1,5 @@
 use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use hmux2::src::reactor::{evbuffer, EventBuffer};
+use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::shared::client::{client, CLIENT_UTF8};
 use hmux2::src::shared::grid::{grid_cell, GRID_FLAG_PADDING};
 use hmux2::src::shared::screen::screen;
@@ -38,7 +38,7 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
             let mut terminal = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
-                out: Some(evbuffer::new()),
+                out: Some(evbuffer_new()),
                 cell: grid_default_cell,
                 last_cell: grid_default_cell,
                 sx: 20,
@@ -64,7 +64,7 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
             };
             tty_cmd_cell(&raw mut terminal, &ctx, &screen, &source);
             assert_eq!(
-                (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap_or_default(),
+                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default(),
                 expected
             );
             assert_eq!(
@@ -89,7 +89,7 @@ fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
         let mut terminal = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
-            out: Some(evbuffer::new()),
+            out: Some(evbuffer_new()),
             cell: grid_default_cell,
             last_cell: grid_default_cell,
             sx: 20,
@@ -112,7 +112,7 @@ fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
         tty_default_attributes(&raw mut terminal, 3, Some(&style));
         assert_eq!((terminal.last_cell.fg, terminal.last_cell.bg), (2, 3));
         assert_eq!(
-            (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap(),
+            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
             b"F2B4AB3"
         );
         assert!(grid_cells_equal(&source, &before));
@@ -142,7 +142,7 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
             let mut terminal = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
-                out: Some(evbuffer::new()),
+                out: Some(evbuffer_new()),
                 cell: grid_default_cell,
                 last_cell: grid_default_cell,
                 ccolour: -1,
@@ -181,7 +181,7 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
             screen_set_selection(&mut screen, 3, 0, 3, 0, 0, 6, MODEKEY_VI, &selection_style);
             tty_draw_line(&raw mut terminal, &screen, start, 0, width, 0, 0, None);
             assert_eq!(
-                (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap(),
+                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
                 expected
             );
             assert_eq!(terminal.cx, width);
@@ -216,7 +216,7 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         let mut terminal = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
-            out: Some(evbuffer::new()),
+            out: Some(evbuffer_new()),
             ccolour: -1,
             ..Default::default()
         };
@@ -241,7 +241,7 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         tty_update_mode(&raw mut terminal, 0, None);
         assert_eq!(terminal.mode, 0);
         assert_eq!(
-            (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap(),
+            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
             b"NS3NS4NS6I"
         );
     }
@@ -266,7 +266,7 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
         let mut terminal = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             term: Some(Box::new(term)),
-            out: Some(evbuffer::new()),
+            out: Some(evbuffer_new()),
             cell: grid_default_cell,
             last_cell: grid_default_cell,
             sx: 20,
@@ -312,7 +312,7 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
             (5, 6, 5)
         );
         assert_eq!(
-            (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap(),
+            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
             b"F2B6U2AF5U5A"
         );
         assert!(grid_cells_equal(&source, &before));

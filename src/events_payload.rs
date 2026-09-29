@@ -7,7 +7,9 @@ use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_add;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
-use crate::src::reactor::{evbuffer, EventBuffer};
+use crate::src::reactor::{
+    evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+};
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::session::{session_alive, session_remove_ref};
 use crate::src::shared::abi::ssize_t;
@@ -24,7 +26,8 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{
-    window_has_pane, window_pane_remove_ref, window_remove_ref, winlink_find_by_index,
+    window_has_pane, window_pane_remove_ref,
+    window_remove_ref, winlink_find_by_index,
 };
 use std::ffi::{CStr, CString};
 
@@ -309,10 +312,10 @@ pub fn event_payload_get_string(ep: &event_payload) -> Option<&CStr> {
 unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut evbuffer) {
     match epi.type_0() as ::core::ffi::c_uint {
         0 => {
-            evb.add_formatted(|out| write_cstr(out, epi.value.string()));
+            evbuffer_add_formatted(evb, |out| write_cstr(out, epi.value.string()));
         }
         1 => {
-            evb.add_formatted(|out| {
+            evbuffer_add_formatted(evb, |out| {
                 write!(
                     out,
                     "{}",
@@ -321,15 +324,15 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut evbuffer) {
             });
         }
         2 => {
-            evb.add_formatted(|out| write!(out, "{}", (epi.value.number()) as i32));
+            evbuffer_add_formatted(evb, |out| write!(out, "{}", (epi.value.number()) as i32));
         }
         3 => {
-            evb.add_formatted(|out| {
+            evbuffer_add_formatted(evb, |out| {
                 write!(out, "{}", (epi.value.unsigned_number()) as u32)
             });
         }
         4 => {
-            evb.add_formatted(|out| {
+            evbuffer_add_formatted(evb, |out| {
                 write_cstr(
                     out,
                     ((*epi.value.client().get()).name)
@@ -339,22 +342,22 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut evbuffer) {
             });
         }
         5 => {
-            evb.add_formatted(|out| {
+            evbuffer_add_formatted(evb, |out| {
                 write!(out, "${}", ((*epi.value.session().get()).id) as u32)
             });
         }
         6 => {
-            evb.add_formatted(|out| {
+            evbuffer_add_formatted(evb, |out| {
                 write!(out, "@{}", ((*epi.value.window().get()).id) as u32)
             });
         }
         7 => {
-            evb.add_formatted(|out| {
+            evbuffer_add_formatted(evb, |out| {
                 write!(out, "%{}", ((*epi.value.pane().get()).id) as u32)
             });
         }
         8 => {
-            evb.add_formatted(|out| {
+            evbuffer_add_formatted(evb, |out| {
                 let address = epi.value.identity().address();
                 if address == 0 {
                     out.write_all(b"(nil)")
@@ -370,11 +373,11 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut evbuffer) {
 /// The bytes before that terminator may themselves contain NULs.
 pub(crate) unsafe fn event_payload_item_print_owned(epi: &event_payload_item) -> Vec<u8> {
     let mut size: size_t = 0;
-    let mut evb = evbuffer::new();
+    let mut evb = evbuffer_new();
     event_payload_add_item(epi, &mut *evb);
-    size = evb.len();
+    size = evbuffer_get_length(&evb);
     let mut value = Vec::with_capacity(size + 1);
-    value.extend_from_slice(evb.pullup(-1).unwrap_or_default());
+    value.extend_from_slice(evbuffer_pullup(&mut evb, -1).unwrap_or_default());
     value.push(0);
     value
 }
@@ -433,12 +436,12 @@ pub unsafe fn event_payload_log(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let prefix = format_message_with(write);
-    let mut evb = evbuffer::new();
+    let mut evb = evbuffer_new();
     for epi in event_payload_items(ep) {
-        if evb.len() != 0 as size_t {
-            evb.add_formatted(|out| out.write_all(b", "));
+        if evbuffer_get_length(&evb) != 0 as size_t {
+            evbuffer_add_formatted(&mut *evb, |out| out.write_all(b", "));
         }
-        evb.add_formatted(|out| {
+        evbuffer_add_formatted(&mut *evb, |out| {
             write_cstr(out, epi.name.as_ptr())?;
             out.write_all(b"=")
         });
@@ -449,9 +452,9 @@ pub unsafe fn event_payload_log(
         "{}{}",
         log_cstr((prefix.as_ptr()) as *const _),
         log_cstr_n(
-            (evb.pullup(-1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+            (evbuffer_pullup(&mut *evb, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                 as *mut ::core::ffi::c_char) as *const _,
-            evb.len() as ::core::ffi::c_int
+            evbuffer_get_length(&evb) as ::core::ffi::c_int
         )
     ));
 }
@@ -495,7 +498,7 @@ pub unsafe fn event_payload_get_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use crate::src::reactor::evbuffer_add;
     use std::ffi::{CStr, CString};
 
     #[test]

@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
-use crate::src::reactor::{evbuffer, EventBuffer};
 
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new, evbuffer_pullup};
 use crate::src::shared::abi::int64_t;
+use crate::src::shared::event::evbuffer;
 use crate::src::shared::json::{json_node, json_node_type, JsonValue};
-
+use hmux_buffer::BufMut;
 use std::ffi::{CStr, CString};
 
 pub const NODE_ARRAY: json_node_type = 4;
@@ -464,46 +465,48 @@ fn json_parse_boolean(
 fn json_string_append(buffer: &mut evbuffer, node: &json_node) {
     match &node.value {
         JsonValue::String(string) => {
-            buffer.add_slice(b"\"");
-            buffer.add_slice(string.to_bytes());
-            buffer.add_slice(b"\"");
+            buffer.put_slice(b"\"");
+            buffer.put_slice(string.to_bytes());
+            buffer.put_slice(b"\"");
         }
         JsonValue::Number(number) => {
-            buffer.add_formatted(|out| write!(out, "{number}"));
+            evbuffer_add_formatted(buffer, |out| write!(out, "{number}"));
         }
         JsonValue::Boolean(boolean) => {
-            buffer.add_slice(if *boolean != 0 { b"true" } else { b"false" })
+            buffer.put_slice(if *boolean != 0 { b"true" } else { b"false" })
         }
         JsonValue::Object(fields) => {
-            buffer.add_slice(b"{");
+            buffer.put_slice(b"{");
             for (index, (key, field)) in fields.entries.iter().enumerate() {
                 if index != 0 {
-                    buffer.add_slice(b",");
+                    buffer.put_slice(b",");
                 }
-                buffer.add_slice(b"\"");
-                buffer.add_slice(key);
-                buffer.add_slice(b"\":");
+                buffer.put_slice(b"\"");
+                buffer.put_slice(key);
+                buffer.put_slice(b"\":");
                 json_string_append(buffer, field);
             }
-            buffer.add_slice(b"}");
+            buffer.put_slice(b"}");
         }
         JsonValue::Array(members) => {
-            buffer.add_slice(b"[");
+            buffer.put_slice(b"[");
             for (index, member) in members.members.iter().enumerate() {
                 if index != 0 {
-                    buffer.add_slice(b",");
+                    buffer.put_slice(b",");
                 }
                 json_string_append(buffer, member);
             }
-            buffer.add_slice(b"]");
+            buffer.put_slice(b"]");
         }
     }
 }
 
 pub fn json_to_string(node: &json_node) -> CString {
-    let mut buffer = evbuffer::new();
+    let mut buffer = evbuffer_new();
     json_string_append(&mut buffer, node);
-    let bytes = buffer.pullup(-1).unwrap_or_default().to_vec();
+    let bytes = evbuffer_pullup(&mut buffer, -1)
+        .unwrap_or_default()
+        .to_vec();
     CString::new(bytes).expect("serialized JSON contains no NUL")
 }
 

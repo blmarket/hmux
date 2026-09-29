@@ -1,3 +1,5 @@
+use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::options::options_owner_ptr;
 use crate::src::ffi::libc::__useconds_t;
 use crate::src::ffi::libc::{
     __errno_location, abs, fcntl, getpid, ioctl, isatty, memcpy, memset, open, strcmp, strerror,
@@ -10,10 +12,11 @@ use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
-use crate::src::reactor::{evbuffer, EventBuffer};
-use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::reactor::{
+    evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, evbuffer_read,
+    evbuffer_write, event_add, event_del, event_initialized, event_pending, event_set,
+};
 use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
 use crate::src::server_client::{
@@ -24,6 +27,7 @@ use crate::src::server_fn::server_redraw_client;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
+use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED,
     CLIENT_TERMINAL, CLIENT_UTF8,
@@ -41,7 +45,6 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
 use crate::src::shared::grid::*;
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_STYLECHANGED;
@@ -80,7 +83,6 @@ use crate::src::tty_acs::{tty_acs_get, tty_acs_needed, tty_acs_reverse_get};
 use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_features::tty_apply_features;
 use crate::src::tty_keys::{tty_keys_build, tty_keys_free, tty_keys_next};
-use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::{
     tty_term_apply_overrides, tty_term_create, tty_term_flag, tty_term_free, tty_term_has,
     tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii,
@@ -242,9 +244,11 @@ unsafe fn tty_read_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) 
     let mut name: *const ::core::ffi::c_char = ((*c).name)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut size: size_t = ((*tty).in_0.as_deref().expect("open TTY buffer")).len();
+    let mut size: size_t = evbuffer_get_length((*tty).in_0.as_deref().expect("open TTY buffer"));
     let mut nread: ::core::ffi::c_int = 0;
-    nread = ((*tty).in_0.as_deref_mut().expect("open TTY buffer")).read_fd((*c).fd,
+    nread = evbuffer_read(
+        (*tty).in_0.as_deref_mut().expect("open TTY buffer"),
+        (*c).fd,
         -(1 as ::core::ffi::c_int),
     );
     if nread == 0 as ::core::ffi::c_int || nread == -(1 as ::core::ffi::c_int) {
@@ -306,7 +310,7 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
     let terminal_client_owner = (*tty).client.upgrade().expect("terminal belongs to a live client");
     let terminal_client = terminal_client_owner.get();
     let mut c: *mut client = terminal_client;
-    let mut size: size_t = ((*tty).out.as_deref().expect("open TTY buffer")).len();
+    let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: TTY_BLOCK_INTERVAL as __suseconds_t,
@@ -336,7 +340,7 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
         ),
         (size) as usize
     ));
-    ((*tty).out.as_deref_mut().expect("open TTY buffer")).drain(size);
+    evbuffer_drain((*tty).out.as_deref_mut().expect("open TTY buffer"), size);
     (*c).discarded = (*c).discarded.wrapping_add(size);
     (*tty).discarded = 0 as size_t;
     event_add(&raw mut (*tty).timer, &raw mut tv);
@@ -345,9 +349,9 @@ unsafe fn tty_block_maybe(mut tty: *mut tty) -> ::core::ffi::c_int {
 unsafe fn tty_write_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) {
     let c = owner.get();
     let tty = &raw mut (*c).tty;
-    let mut size: size_t = ((*tty).out.as_deref().expect("open TTY buffer")).len();
+    let mut size: size_t = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
     let mut nwrite: ::core::ffi::c_int = 0;
-    nwrite = ((*tty).out.as_deref_mut().expect("open TTY buffer")).write_fd((*c).fd);
+    nwrite = evbuffer_write((*tty).out.as_deref_mut().expect("open TTY buffer"), (*c).fd);
     if nwrite == -(1 as ::core::ffi::c_int) {
         return;
     }
@@ -381,7 +385,7 @@ unsafe fn tty_write_callback(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>)
     } else if tty_block_maybe(tty) != 0 {
         return;
     }
-    if ((*tty).out.as_deref().expect("open TTY buffer")).len() != 0 as size_t {
+    if evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer")) != 0 as size_t {
         event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
     }
 }
@@ -409,9 +413,7 @@ pub(crate) fn tty_mouse_client_callback(
     }
 }
 
-pub unsafe fn tty_open(
-    owner: &std::rc::Rc<std::cell::UnsafeCell<client>>,
-) -> Result<(), std::ffi::CString> {
+pub unsafe fn tty_open(owner: &std::rc::Rc<std::cell::UnsafeCell<client>>) -> Result<(), std::ffi::CString> {
     let c = owner.get();
     let tty = &raw mut (*c).tty;
     // The synchronous terminfo constructor borrows these string pointers.
@@ -442,14 +444,14 @@ pub unsafe fn tty_open(
         (EV_PERSIST | EV_READ) as ::core::ffi::c_short,
         tty_client_callback(owner, tty_read_callback),
     );
-    (*tty).in_0 = Some(evbuffer::new());
+    (*tty).in_0 = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).event_out,
         (*c).fd,
         EV_WRITE as ::core::ffi::c_short,
         tty_client_callback(owner, tty_write_callback),
     );
-    (*tty).out = Some(evbuffer::new());
+    (*tty).out = Some(evbuffer_new());
     event_set(
         &raw mut (*tty).clipboard_timer,
         -(1 as ::core::ffi::c_int),
@@ -949,7 +951,9 @@ unsafe fn tty_add(mut tty: *mut tty, buf: &[u8]) {
         (*tty).discarded = (*tty).discarded.wrapping_add(len);
         return;
     }
-    ((*tty).out.as_deref_mut().expect("open TTY buffer")).add_raw(buf.as_ptr().cast(),
+    evbuffer_add(
+        (*tty).out.as_deref_mut().expect("open TTY buffer"),
+        buf.as_ptr().cast(),
         len,
     );
     log_debug(format_args!(

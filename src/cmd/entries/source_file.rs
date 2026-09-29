@@ -11,7 +11,7 @@ use crate::src::file::file_read_with_cmdq_wait;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::reactor::EventBuffer;
+use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::{server_client_get_cwd, server_client_unref_owned};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__size_t, ssize_t};
@@ -177,10 +177,10 @@ unsafe fn cmd_source_file_done(
     let item = item_owner.get();
     let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
     // Progress does not coalesce the buffer; only complete files are parsed.
-    let bdata = buffer.pullup(-1)
+    let bdata = evbuffer_pullup(buffer, -1)
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         .cast();
-    let bsize = buffer.len();
+    let bsize = evbuffer_get_length(buffer);
     let mut new_item = Weak::new();
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     if error != 0 {

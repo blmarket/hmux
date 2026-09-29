@@ -20,13 +20,11 @@ use crate::src::file::{file_cancel_cmdq_wait, file_error};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
-use crate::src::format::{
-    format_add, format_add_cstr, format_create_owned, format_merge, format_owner_ptr,
-};
+use crate::src::format::{format_add, format_add_cstr, format_create_owned, format_owner_ptr, format_merge};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
-use crate::src::reactor::{evbuffer, EventBuffer};
+use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server::server_add_message;
 use crate::src::server_client::{server_client_print, server_client_unref_owned};
 use crate::src::shared::abi::*;
@@ -37,7 +35,8 @@ use crate::src::shared::client::{client, client_file};
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_state, cmdq_type,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb,
+    cmdq_state, cmdq_type,
 };
 use crate::src::shared::command::{
     CMDQ_FIRED, CMDQ_STATE_CONTROL, CMDQ_STATE_NOHOOKS, CMDQ_WAITING, CMD_AFTERHOOK,
@@ -969,8 +968,8 @@ pub unsafe fn cmdq_print(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
-    let mut evb = evbuffer::new();
-    evb.add_formatted(write);
+    let mut evb = evbuffer_new();
+    evbuffer_add_formatted(&mut *evb, write);
     cmdq_print_data(item_handle, &mut *evb);
 }
 pub unsafe fn cmdq_error(

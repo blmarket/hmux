@@ -1,4 +1,4 @@
-use hmux2::src::reactor::{evbuffer, EventBuffer};
+use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::shared::client::client;
 use hmux2::src::shared::tty::{
     tty, tty_command_data, tty_ctx, tty_term, TERM_NOAM, TTY_BLOCK, TTY_NOBLOCK,
@@ -97,7 +97,7 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
             let mut terminal = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
-                out: Some(evbuffer::new()),
+                out: Some(evbuffer_new()),
                 sx: 8,
                 sy: 3,
                 cx: x,
@@ -108,7 +108,7 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
             tty_putn(&raw mut terminal, data, width);
             assert_eq!((terminal.cx, terminal.cy), cursor);
             assert_eq!(
-                (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap_or_default(),
+                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default(),
                 expected
             );
             assert_eq!(client.written, expected.len());
@@ -127,14 +127,14 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
             let mut terminal = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
-                out: Some(evbuffer::new()),
+                out: Some(evbuffer_new()),
                 sx: 2000,
                 sy: 2,
                 ..Default::default()
             };
             tty_repeat_space(&raw mut terminal, count);
             let bytes =
-                (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap_or_default();
+                evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default();
             assert_eq!(bytes, vec![b' '; count as usize]);
             assert_eq!((terminal.cx, terminal.cy), (count, 0));
             assert_eq!(client.written, count as usize);
@@ -149,7 +149,7 @@ fn raw_commands_consume_borrowed_binary_payloads_before_returning() {
         let client = &mut *client_owner.get();
         let mut terminal = tty {
             client: std::rc::Rc::downgrade(&client_owner),
-            out: Some(evbuffer::new()),
+            out: Some(evbuffer_new()),
             cx: 3,
             cy: 1,
             ..Default::default()
@@ -169,7 +169,7 @@ fn raw_commands_consume_borrowed_binary_payloads_before_returning() {
         };
         tty_cmd_rawstring(&raw mut terminal, &ctx);
         assert_eq!(
-            (terminal.out.as_deref_mut().unwrap()).pullup(-1).unwrap(),
+            evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
             b"raw\0\xff"
         );
         assert_eq!((terminal.cx, terminal.cy), (u32::MAX, u32::MAX));
