@@ -21,10 +21,11 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 use std::cmp::Ordering;
 
 use crate::src::window::{
-    window_pane_index, window_pane_next, window_pane_zindex, winlinks_minmax, winlinks_next,
+    winlinks_minmax, winlinks_next,
 };
 
 pub(super) fn sort_ordering(result: ::core::ffi::c_int, reversed: ::core::ffi::c_int) -> Ordering {
@@ -96,50 +97,6 @@ unsafe fn sort_client_cmp(ca: &ClientRef, cb: &ClientRef, sort_crit: &sort_crite
     } else {
         order
     }
-}
-unsafe fn sort_pane_cmp(a: &window_pane, b: &window_pane, sort_crit: &sort_criteria) -> Ordering {
-    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let _ai: u_int = 0;
-    let _bi: u_int = 0;
-    match sort_crit.order as ::core::ffi::c_uint {
-        0 => {
-            result = (*a).active_point.wrapping_sub((*b).active_point) as ::core::ffi::c_int;
-        }
-        1 => {
-            result = (*a).id.wrapping_sub((*b).id) as ::core::ffi::c_int;
-        }
-        6 => {
-            result = (*a)
-                .sx
-                .wrapping_mul((*a).sy)
-                .wrapping_sub((*b).sx.wrapping_mul((*b).sy))
-                as ::core::ffi::c_int;
-        }
-        2 => {
-            let ai = window_pane_index(a);
-            let bi = window_pane_index(b);
-            result = (ai.is_none(), ai).cmp(&(bi.is_none(), bi)) as ::core::ffi::c_int;
-        }
-        4 => {
-            result = strcmp(
-                (*(*a).screen_ptr()).title.as_ptr(),
-                (*(*b).screen_ptr()).title.as_ptr(),
-            );
-        }
-        7 => {
-            let ai = window_pane_zindex(a);
-            let bi = window_pane_zindex(b);
-            result = (ai.is_none(), ai).cmp(&(bi.is_none(), bi)) as ::core::ffi::c_int;
-        }
-        3 | 5 | 8 | _ => {}
-    }
-    if result == 0 as ::core::ffi::c_int {
-        result = strcmp(
-            (*(*a).screen_ptr()).title.as_ptr(),
-            (*(*b).screen_ptr()).title.as_ptr(),
-        );
-    }
-    return sort_ordering(result, sort_crit.reversed);
 }
 unsafe fn sort_winlink_cmp(
     wla: refbox::Weak<winlink>,
@@ -357,7 +314,7 @@ pub unsafe fn sort_get_panes_window(
 ) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let mut panes = w.pane_snapshot();
     sort_by_criteria(&mut panes, sort_crit, |a, b, criteria| unsafe {
-        sort_pane_cmp(&*a.get(), &*b.get(), criteria)
+        a.compare_for_sort(b, criteria)
     });
     panes
 }

@@ -4,7 +4,9 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime};
+use std::{cell::UnsafeCell, rc::Rc};
 mod api;
 mod format;
 mod model;
@@ -985,7 +987,6 @@ pub unsafe fn server_client_overlay_range(
 }
 unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     let mut envent: Option<&environ_entry> = None;
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     envent = environ_find(
         (*c).environ.as_deref().expect("environment"),
         b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1001,24 +1002,12 @@ unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     {
         return 0 as ::core::ffi::c_int;
     }
-    let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-    wp = indexed_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        if strcmp(
-            &raw mut (*wp).tty as *mut ::core::ffi::c_char,
-            ((*c).ttyname)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ) == 0 as ::core::ffi::c_int
-        {
-            return 1 as ::core::ffi::c_int;
-        }
-        indexed_pane_owner = window_pane_tree_next(&*wp);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let ttyname = c.ttyname.as_deref().expect("client tty name");
+    if Rc::<UnsafeCell<window_pane>>::all_panes()
+        .iter()
+        .any(|pane| pane.matches_terminal_name(ttyname))
+    {
+        return 1;
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -1303,13 +1292,7 @@ unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Opt
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window_pane"),
+            fs.pane_handle().expect("event target pane"),
         );
     }
     events_fire(
@@ -1362,13 +1345,7 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window_pane"),
+            fs.pane_handle().expect("event target pane"),
         );
     }
     event_payload_set_uint(
@@ -1636,41 +1613,7 @@ pub unsafe fn server_client_exec(c_owner: &ClientRef, mut cmd: *const ::core::ff
         msg.len(),
     );
 }
-unsafe fn server_client_in_scrollbar_area(
-    wp: &window_pane,
-    mut px: ::core::ffi::c_int,
-    mut py: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut width: u_int = 0;
-    let mut pad: u_int = 0;
-    let mut total: u_int = 0;
-    let mut start: ::core::ffi::c_int = 0;
-    let mut end: ::core::ffi::c_int = 0;
-    if window_pane_scrollbar_overlay(wp) == 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    if py < wp.yoff || py >= wp.yoff + wp.sy as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    width = wp.scrollbar_style.width as u_int;
-    pad = wp.scrollbar_style.pad as u_int;
-    total = width.wrapping_add(pad);
-    if total == 0 as u_int || total > wp.sx {
-        total = wp.sx;
-    }
-    if ((wp.window_handle().as_ref()).expect("live window"))
-        .scrollbars()
-        .position
-        == PANE_SCROLLBARS_LEFT
-    {
-        start = wp.xoff;
-        end = wp.xoff + total as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-    } else {
-        end = wp.xoff + wp.sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-        start = end - total as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-    }
-    return (px >= start && px <= end) as ::core::ffi::c_int;
-}
+
 unsafe fn server_client_update_scrollbar_hover(
     client_owner: &ClientRef,
     mut type_0: ::core::ffi::c_int,
@@ -1688,21 +1631,13 @@ unsafe fn server_client_update_scrollbar_hover(
         .expect("hover window")
         .clone();
     let result = (|| {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         if type_0 != KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int {
             return;
         }
         let mut cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = cursor {
-            wp = pane_owner.get();
-            if !(window_pane_is_visible(&pane_owner) == 0) {
-                if server_client_in_scrollbar_area(&*wp, px, py) != 0 {
-                    window_pane_scrollbar_show(&pane_owner);
-                } else {
-                    window_pane_scrollbar_start_timer(&pane_owner);
-                }
-            }
-            cursor = window_pane_next(wp.as_ref());
+            pane_owner.update_scrollbar_hover(px, py);
+            cursor = window_owner.next_pane(Some(&pane_owner));
         }
     })();
     crate::src::window::window_remove_ref(
@@ -1711,214 +1646,23 @@ unsafe fn server_client_update_scrollbar_hover(
     );
     result
 }
+
 unsafe fn server_client_check_mouse_in_pane(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut px: ::core::ffi::c_int,
-    mut py: ::core::ffi::c_int,
-    sl_mpos: &mut u_int,
+    pane: &Rc<UnsafeCell<window_pane>>,
+    x: i32,
+    y: i32,
+    slider: &mut u32,
 ) -> key_code_mouse_location {
-    let wp = pane_owner.get();
-    let window_owner = (*wp).window_handle().expect("mouse pane window");
-    let mut fwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut pane_status: ::core::ffi::c_int = 0;
-    let mut sb_w: ::core::ffi::c_int = 0;
-    let mut sb_pad: ::core::ffi::c_int = 0;
-    let mut pane_status_line: ::core::ffi::c_int = 0;
-    let mut sl_top: ::core::ffi::c_int = 0;
-    let mut sl_bottom: ::core::ffi::c_int = 0;
-    let mut bdr_bottom: ::core::ffi::c_int = 0;
-    let mut bdr_top: ::core::ffi::c_int = 0;
-    let mut bdr_left: ::core::ffi::c_int = 0;
-    let mut bdr_right: ::core::ffi::c_int = 0;
-    let mut sb_start: ::core::ffi::c_int = 0;
-    let mut sb_end: ::core::ffi::c_int = 0;
-    let mut sb_overlay: ::core::ffi::c_int = 0;
-    pane_status = window_pane_get_pane_status(&*wp);
-    sb_overlay = window_pane_scrollbar_overlay(&*wp);
-    if window_pane_scrollbar_visible(&*wp) != 0 {
-        sb_w = (*wp).scrollbar_style.width;
-        sb_pad = (*wp).scrollbar_style.pad;
-        if sb_overlay != 0 && sb_w > (*wp).sx as ::core::ffi::c_int {
-            sb_w = (*wp).sx as ::core::ffi::c_int;
-        }
-    } else {
-        sb_w = 0 as ::core::ffi::c_int;
-        sb_pad = 0 as ::core::ffi::c_int;
-    }
-    if pane_status == PANE_STATUS_TOP {
-        pane_status_line = (*wp).yoff - 1 as ::core::ffi::c_int;
-    } else if pane_status == PANE_STATUS_BOTTOM {
-        pane_status_line = ((*wp).yoff as u_int).wrapping_add((*wp).sy) as ::core::ffi::c_int;
-    } else {
-        pane_status_line = -(1 as ::core::ffi::c_int);
-    }
-    bdr_left = (*wp).xoff - 1 as ::core::ffi::c_int;
-    if sb_overlay == 0
-        && (((*wp).window_handle().as_ref()).expect("live window"))
-            .scrollbars()
-            .position
-            == PANE_SCROLLBARS_LEFT
-    {
-        bdr_left -= sb_pad + sb_w;
-    }
-    if sb_overlay != 0
-        && sb_w != 0 as ::core::ffi::c_int
-        && py >= (*wp).yoff
-        && py < (*wp).yoff + (*wp).sy as ::core::ffi::c_int
-        && px >= (*wp).xoff
-        && px < (*wp).xoff + (*wp).sx as ::core::ffi::c_int
-    {
-        if (((*wp).window_handle().as_ref()).expect("live window"))
-            .scrollbars()
-            .position
-            == PANE_SCROLLBARS_LEFT
-        {
-            sb_start = (*wp).xoff;
-            sb_end = sb_start + sb_w - 1 as ::core::ffi::c_int;
-        } else {
-            sb_end = (*wp).xoff + (*wp).sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-            sb_start = sb_end - sb_w + 1 as ::core::ffi::c_int;
-        }
-        if px >= sb_start && px <= sb_end {
-            sl_top = ((*wp).yoff as u_int).wrapping_add((*wp).sb_slider_y) as ::core::ffi::c_int;
-            sl_bottom = ((*wp).yoff as u_int)
-                .wrapping_add((*wp).sb_slider_y)
-                .wrapping_add((*wp).sb_slider_h)
-                .wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-            if py < sl_top {
-                return KEYC_MOUSE_LOCATION_SCROLLBAR_UP;
-            } else if py >= sl_top && py <= sl_bottom {
-                *sl_mpos = (py as u_int)
-                    .wrapping_sub((*wp).sb_slider_y)
-                    .wrapping_sub((*wp).yoff as u_int);
-                return KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
-            } else {
-                return KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN;
-            }
-        }
-        return KEYC_MOUSE_LOCATION_PANE;
-    }
-    if (pane_status != PANE_STATUS_OFF
-        && py != pane_status_line
-        && py != (*wp).yoff + (*wp).sy as ::core::ffi::c_int
-        || (*wp).yoff == 0 as ::core::ffi::c_int && py < (*wp).sy as ::core::ffi::c_int
-        || py >= (*wp).yoff && py < (*wp).yoff + (*wp).sy as ::core::ffi::c_int)
-        && ((((*wp).window_handle().as_ref()).expect("live window"))
-            .scrollbars()
-            .position
-            == PANE_SCROLLBARS_RIGHT
-            && px < (*wp).xoff + (*wp).sx as ::core::ffi::c_int + sb_pad + sb_w
-            || (((*wp).window_handle().as_ref()).expect("live window"))
-                .scrollbars()
-                .position
-                == PANE_SCROLLBARS_LEFT
-                && px < (*wp).xoff + (*wp).sx as ::core::ffi::c_int - sb_pad - sb_w)
-    {
-        if (((*wp).window_handle().as_ref()).expect("live window"))
-            .scrollbars()
-            .position
-            == PANE_SCROLLBARS_RIGHT
-            && (px >= (*wp).xoff + (*wp).sx as ::core::ffi::c_int + sb_pad
-                && px < (*wp).xoff + (*wp).sx as ::core::ffi::c_int + sb_pad + sb_w)
-            || (((*wp).window_handle().as_ref()).expect("live window"))
-                .scrollbars()
-                .position
-                == PANE_SCROLLBARS_LEFT
-                && (px >= (*wp).xoff - sb_pad - sb_w && px < (*wp).xoff - sb_pad)
-        {
-            sl_top = ((*wp).yoff as u_int).wrapping_add((*wp).sb_slider_y) as ::core::ffi::c_int;
-            sl_bottom = ((*wp).yoff as u_int)
-                .wrapping_add((*wp).sb_slider_y)
-                .wrapping_add((*wp).sb_slider_h)
-                .wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-            if py < sl_top {
-                return KEYC_MOUSE_LOCATION_SCROLLBAR_UP;
-            } else if py >= sl_top && py <= sl_bottom {
-                *sl_mpos = (py as u_int)
-                    .wrapping_sub((*wp).sb_slider_y)
-                    .wrapping_sub((*wp).yoff as u_int);
-                return KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
-            } else {
-                return KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN;
-            }
-        } else if window_pane_is_floating(&*wp) != 0
-            && window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
-                != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            && (px == bdr_left
-                || py == (*wp).yoff - 1 as ::core::ffi::c_int
-                || py == (*wp).yoff + (*wp).sy as ::core::ffi::c_int)
-        {
-            return KEYC_MOUSE_LOCATION_BORDER;
-        } else {
-            return KEYC_MOUSE_LOCATION_PANE;
-        }
-    } else {
-        let mut cursor = window_owner.next_pane(None);
-        while let Some(border_pane) = cursor {
-            fwp = border_pane.get();
-            if !(window_pane_is_visible(&border_pane) == 0) {
-                if !(window_pane_is_floating(&*fwp) != 0
-                    && window_pane_get_pane_lines(&*fwp) as ::core::ffi::c_uint
-                        == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    if window_pane_scrollbar_reserve(&*fwp) != 0 {
-                        sb_w = (*fwp).scrollbar_style.width;
-                        sb_pad = (*fwp).scrollbar_style.pad;
-                    } else {
-                        sb_w = 0 as ::core::ffi::c_int;
-                        sb_pad = 0 as ::core::ffi::c_int;
-                    }
-                    bdr_top = (*fwp).yoff - 1 as ::core::ffi::c_int;
-                    bdr_bottom =
-                        ((*fwp).yoff as u_int).wrapping_add((*fwp).sy) as ::core::ffi::c_int;
-                    bdr_left = (*fwp).xoff - 1 as ::core::ffi::c_int;
-                    if (((*wp).window_handle().as_ref()).expect("live window"))
-                        .scrollbars()
-                        .position
-                        == PANE_SCROLLBARS_LEFT
-                    {
-                        bdr_left -= sb_pad + sb_w;
-                        bdr_right =
-                            ((*fwp).xoff as u_int).wrapping_add((*fwp).sx) as ::core::ffi::c_int;
-                    } else {
-                        bdr_right = ((*fwp).xoff as u_int)
-                            .wrapping_add((*fwp).sx)
-                            .wrapping_add(sb_pad as u_int)
-                            .wrapping_add(sb_w as u_int)
-                            as ::core::ffi::c_int;
-                    }
-                    if py >= (*fwp).yoff - 1 as ::core::ffi::c_int
-                        && py <= (*fwp).yoff + (*fwp).sy as ::core::ffi::c_int
-                    {
-                        if px == bdr_right {
-                            break;
-                        }
-                        if window_pane_is_floating(&*wp) != 0 {
-                            if px == bdr_left {
-                                break;
-                            }
-                        }
-                    }
-                    if px >= bdr_left && px <= (*fwp).xoff + (*fwp).sx as ::core::ffi::c_int {
-                        bdr_bottom =
-                            ((*fwp).yoff as u_int).wrapping_add((*fwp).sy) as ::core::ffi::c_int;
-                        if py == bdr_bottom {
-                            break;
-                        }
-                        if py == bdr_top {
-                            break;
-                        }
-                    }
-                }
-            }
-            cursor = window_pane_next(fwp.as_ref());
-        }
-        if !fwp.is_null() {
-            return KEYC_MOUSE_LOCATION_BORDER;
-        }
-    }
-    return KEYC_MOUSE_LOCATION_NOWHERE;
+    pane.mouse_location(x, y, slider)
 }
+
+unsafe fn server_client_pane_window_id(pane: &Rc<UnsafeCell<window_pane>>) -> u32 {
+    let window = pane.window_observer().upgrade().expect("pane event window");
+    let id = window.id();
+    window.release(c"pane event window");
+    id
+}
+
 unsafe fn server_client_check_mouse(
     client_owner: &ClientRef,
     mut event: *mut key_event,
@@ -1940,7 +1684,6 @@ unsafe fn server_client_check_mouse(
     let result = (|| {
         let mut current_block: u64;
         let mut fwl: refbox::Weak<winlink> = refbox::Weak::new();
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut x: u_int = 0;
         let mut y: u_int = 0;
         let mut px: u_int = 0;
@@ -1980,7 +1723,7 @@ unsafe fn server_client_check_mouse(
                             .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                             as *const _
                     ),
-                    ((*pane.get()).id) as u32
+                    (pane.id()) as u32
                 ));
             }
         }
@@ -2174,9 +1917,8 @@ unsafe fn server_client_check_mouse(
         {
             if let Some(pane) = last_pane.as_ref() {
                 loc = KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
-                (*m).wp = (*pane.get()).id as ::core::ffi::c_int;
-                (*m).w = (((*pane.get()).window_handle().as_ref()).expect("live window")).id()
-                    as ::core::ffi::c_int;
+                (*m).wp = pane.id() as ::core::ffi::c_int;
+                (*m).w = server_client_pane_window_id(pane) as ::core::ffi::c_int;
             }
         } else if loc as ::core::ffi::c_uint
             == KEYC_MOUSE_LOCATION_NOWHERE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2213,9 +1955,7 @@ unsafe fn server_client_check_mouse(
             px = px.wrapping_add((*m).ox);
             py = py.wrapping_add((*m).oy);
             let modal_owner = window_owner.modal_pane();
-            if let Some(modal) =
-                modal_owner.filter(|owner| window_pane_contains(owner, px, py) == 0)
-            {
+            if let Some(modal) = modal_owner.filter(|owner| !owner.contains(px, py)) {
                 if last_pane
                     .as_ref()
                     .is_some_and(|last| std::rc::Rc::ptr_eq(&modal, last))
@@ -2227,11 +1967,12 @@ unsafe fn server_client_check_mouse(
                 {
                     modal_drag = 1 as ::core::ffi::c_int;
                     selected_pane = last_pane.clone();
-                    wp = selected_pane.as_ref().expect("drag pane").get();
                     loc = KEYC_MOUSE_LOCATION_PANE;
-                    (*m).wp = (*wp).id as ::core::ffi::c_int;
-                    (*m).w = (((*wp).window_handle().as_ref()).expect("live window")).id()
-                        as ::core::ffi::c_int;
+                    (*m).wp =
+                        selected_pane.as_ref().expect("selected pane").id() as ::core::ffi::c_int;
+                    (*m).w = server_client_pane_window_id(
+                        selected_pane.as_ref().expect("selected pane"),
+                    ) as ::core::ffi::c_int;
                 } else {
                     server_client_update_scrollbar_hover(
                         client_owner,
@@ -2245,7 +1986,7 @@ unsafe fn server_client_check_mouse(
                     (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
                     (*c).tty.mouse_slider_mpos = -(1 as ::core::ffi::c_int);
                     (*c).tty.mouse_last_pane = -(1 as ::core::ffi::c_int);
-                    if (*modal.get()).flags & PANE_CLOSEONCLICK != 0
+                    if modal.closes_on_click()
                         && (type_0 as ::core::ffi::c_uint
                             == KEYC_TYPE_MOUSEDOWN as ::core::ffi::c_int as ::core::ffi::c_uint
                             || type_0 as ::core::ffi::c_uint
@@ -2272,16 +2013,12 @@ unsafe fn server_client_check_mouse(
                     && last_pane.is_some()
                 {
                     selected_pane = last_pane.clone();
-                    wp = selected_pane.as_ref().expect("drag pane").get();
                 } else {
                     let hit_window_owner = &window_owner;
                     selected_pane = window_get_active_at(hit_window_owner, px, py);
-                    wp = selected_pane
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get());
                 }
             }
-            if wp.is_null() {
+            if selected_pane.is_none() {
                 loc = KEYC_MOUSE_LOCATION_EMPTY;
                 (*m).w = (window_owner).id() as ::core::ffi::c_int;
                 log_debug(format_args!(
@@ -2306,7 +2043,7 @@ unsafe fn server_client_check_mouse(
                         "mouse {},{} on pane %{}",
                         (x) as u32,
                         (y) as u32,
-                        ((*wp).id) as u32
+                        (selected_pane.as_ref().expect("selected pane").id()) as u32
                     ));
                 } else if loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2321,7 +2058,10 @@ unsafe fn server_client_check_mouse(
                             .wrapping_add(n)
                             as key_code_mouse_location;
                     }
-                    log_debug(format_args!("mouse on pane %{} border", ((*wp).id) as u32));
+                    log_debug(format_args!(
+                        "mouse on pane %{} border",
+                        (selected_pane.as_ref().expect("selected pane").id()) as u32
+                    ));
                 } else if loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_SCROLLBAR_UP as ::core::ffi::c_int as ::core::ffi::c_uint
                     || loc as ::core::ffi::c_uint
@@ -2333,12 +2073,13 @@ unsafe fn server_client_check_mouse(
                 {
                     log_debug(format_args!(
                         "mouse on pane %{} scrollbar",
-                        ((*wp).id) as u32
+                        (selected_pane.as_ref().expect("selected pane").id()) as u32
                     ));
                 }
-                (*m).wp = (*wp).id as ::core::ffi::c_int;
-                (*m).w = (((*wp).window_handle().as_ref()).expect("live window")).id()
-                    as ::core::ffi::c_int;
+                (*m).wp = selected_pane.as_ref().expect("selected pane").id() as ::core::ffi::c_int;
+                (*m).w =
+                    server_client_pane_window_id(selected_pane.as_ref().expect("selected pane"))
+                        as ::core::ffi::c_int;
             }
         } else {
             server_client_update_scrollbar_hover(
@@ -2419,12 +2160,10 @@ unsafe fn server_client_check_mouse(
                 == KEYC_MOUSE_LOCATION_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             key = KEYC_MOUSEMOVE_PANE as ::core::ffi::c_ulong as key_code;
-            if !wp.is_null()
-                && wp
-                    != (window_owner)
-                        .active_pane()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get())
+            if !selected_pane.is_none()
+                && !window_owner.active_pane().as_ref().is_some_and(|active| {
+                    Rc::ptr_eq(active, selected_pane.as_ref().expect("mouse pane"))
+                })
                 && s.as_ref()
                     .expect("live session")
                     .with_options_mut(|options| {
@@ -2437,13 +2176,11 @@ unsafe fn server_client_check_mouse(
             {
                 window_redraw_active_switch(
                     &std::rc::Rc::clone(&(window_owner)),
-                    (wp).as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
+                    selected_pane.as_ref(),
                 );
                 window_set_active_pane(
                     &std::rc::Rc::clone(&(window_owner)),
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    selected_pane.as_ref().expect("mouse pane"),
                     1 as ::core::ffi::c_int,
                 );
                 server_redraw_window_borders(&(window_owner));
@@ -2465,12 +2202,10 @@ unsafe fn server_client_check_mouse(
             if last_pane.is_none() {
                 let hit_window_owner = &window_owner;
                 selected_pane = window_get_active_at(hit_window_owner, px, py);
-                wp = selected_pane
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get());
                 last_pane = selected_pane.clone();
-                if !wp.is_null() {
-                    (*c).tty.mouse_last_pane = (*wp).id as ::core::ffi::c_int;
+                if !selected_pane.is_none() {
+                    (*c).tty.mouse_last_pane =
+                        selected_pane.as_ref().expect("selected pane").id() as ::core::ffi::c_int;
                 }
             }
             if (*c).tty.mouse_scrolling_flag == 0 as ::core::ffi::c_int
@@ -2747,47 +2482,10 @@ unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int
     return repeat;
 }
 unsafe fn server_client_handle_dead_key(
-    pane_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-    mut key: key_code,
-) -> ::core::ffi::c_int {
-    let Some(pane_owner) = pane_owner else {
-        return 0;
-    };
-    let wp = pane_owner.get();
-    let mut remain_on_exit: ::core::ffi::c_int = 0;
-    if !(*wp).flags & PANE_EXITED != 0
-        || (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-            == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-            || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                    << 32 as ::core::ffi::c_int
-                && key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                    <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                        << 32 as ::core::ffi::c_int)
-        || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-            == (KEYC_TYPE_FUNCTION as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                << 32 as ::core::ffi::c_int
-            && (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-                == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-                || key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-                    == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong)
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    remain_on_exit = options_get_number(
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-        b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
-    if remain_on_exit != 3 as ::core::ffi::c_int && remain_on_exit != 4 as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    options_set_number(
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-        b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
-        0 as ::core::ffi::c_longlong,
-    );
-    server_destroy_pane(pane_owner, 0);
-    return 1 as ::core::ffi::c_int;
+    pane: Option<&Rc<UnsafeCell<window_pane>>>,
+    key: key_code,
+) -> i32 {
+    pane.is_some_and(|pane| pane.close_after_key(key)) as i32
 }
 unsafe fn server_client_key_callback(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -2802,7 +2500,7 @@ unsafe fn server_client_key_callback(
     let mut m: *mut mouse_event = &raw mut (*event).m;
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let mut target_pane = None;
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut table: std::rc::Rc<std::cell::RefCell<key_table>>;
     let mut table_owner;
@@ -2889,10 +2587,7 @@ unsafe fn server_client_key_callback(
                         0 as ::core::ffi::c_int,
                     );
                 }
-                wp = fs
-                    .pane_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get());
+                target_pane = fs.pane_handle();
                 if (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                     == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                     || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -2932,9 +2627,9 @@ unsafe fn server_client_key_callback(
                         && server_client_is_assume_paste(&mut *(c)) != 0
                     {
                         current_block = 3436715649514806935;
-                    } else if !wp.is_null()
-                        && (*wp).flags & PANE_CAPTUREALLKEYS != 0
-                        && !(*wp).flags & PANE_EXITED != 0
+                    } else if target_pane.is_some()
+                        && target_pane.as_ref().expect("key pane").captures_keys()
+                        && !target_pane.as_ref().expect("key pane").has_exited()
                         && !(key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                             == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                             || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -2945,7 +2640,7 @@ unsafe fn server_client_key_callback(
                                     <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
                                         as ::core::ffi::c_ulonglong)
                                         << 32 as ::core::ffi::c_int)
-                        && (*wp).modes.is_empty()
+                        && !target_pane.as_ref().expect("key pane").has_modes()
                     {
                         current_block = 15469183920764600035;
                     } else if key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code
@@ -2957,9 +2652,9 @@ unsafe fn server_client_key_callback(
                             &*(c),
                             &(*c).keytable.as_ref().expect("key table").borrow(),
                         ) != 0
-                            && !wp.is_null()
+                            && target_pane.is_some()
                             && {
-                                wme = (*wp).active_mode_entry();
+                                wme = target_pane.as_ref().expect("key pane").mode_entry();
                                 wme.is_alive()
                             }
                             && (*wme.get_unchecked().mode).key_table.is_some()
@@ -3020,7 +2715,7 @@ unsafe fn server_client_key_callback(
                             } else {
                                 flags = (*c).flags;
                                 loop {
-                                    if wp.is_null() {
+                                    if target_pane.is_none() {
                                         log_debug(format_args!(
                                             "key table {} (no pane)",
                                             log_cstr(
@@ -3035,7 +2730,7 @@ unsafe fn server_client_key_callback(
                                                 ((table.borrow().name).as_ptr().cast_mut())
                                                     as *const _
                                             ),
-                                            ((*wp).id) as u32
+                                            (target_pane.as_ref().expect("key pane").id()) as u32
                                         ));
                                     }
                                     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
@@ -3241,11 +2936,10 @@ unsafe fn server_client_key_callback(
                                 current_block = 1578459965781631232;
                             } else {
                                 if let Some(bytes) = (*event).bytes_ptr_len() {
-                                    window_pane_paste(
-                                        &(*wp).observer.upgrade().expect("paste target pane"),
-                                        key,
-                                        bytes,
-                                    );
+                                    target_pane
+                                        .as_ref()
+                                        .expect("paste target pane")
+                                        .paste(key, bytes);
                                 }
                                 key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
                                 current_block = 1578459965781631232;
@@ -3256,11 +2950,11 @@ unsafe fn server_client_key_callback(
                 match current_block {
                     1578459965781631232 => {}
                     _ => {
-                        let pane_owner = wp.as_ref().and_then(|pane| pane.observer.upgrade());
-                        if !(server_client_handle_dead_key(pane_owner.as_ref(), key) != 0) {
+                        let pane_owner = target_pane.as_ref();
+                        if !(server_client_handle_dead_key(pane_owner, key) != 0) {
                             if !((*c).flags & CLIENT_READONLY as uint64_t != 0) {
-                                if let Some(pane_owner) = pane_owner.as_ref() {
-                                    window_pane_key(pane_owner, Some(&c_owner), wl.clone(), key, m);
+                                if let Some(pane_owner) = pane_owner {
+                                    pane_owner.key(Some(&c_owner), wl.clone(), key, m.as_mut());
                                 }
                             }
                         }
@@ -3349,7 +3043,6 @@ unsafe fn server_client_handle_key0(
     let mut s: Option<SessionRef> = (*c).session_handle();
     let item_allocation;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return 0 as ::core::ffi::c_int;
     }
@@ -3385,36 +3078,42 @@ unsafe fn server_client_handle_key0(
             }
         }
         server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
-        wp = (((s.as_ref().expect("live session").current_winlink())
+        let active_pane_owner = (((s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
             .as_ref())
         .expect("live window"))
-        .active_pane()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-        let active_pane_owner = wp.as_ref().and_then(|pane| pane.observer.upgrade());
+        .active_pane();
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        if !wp.is_null()
-            && (*wp)
-                .window_handle()
+        if active_pane_owner.is_some()
+            && active_pane_owner
+                .as_ref()
+                .expect("active pane")
+                .window_observer()
+                .upgrade()
                 .expect("pane window")
                 .modal_pane()
                 .is_some_and(|modal| {
                     std::rc::Rc::ptr_eq(&modal, active_pane_owner.as_ref().expect("active pane"))
                 })
-            && (*wp).flags & PANE_CLOSEONCANCEL != 0
+            && active_pane_owner
+                .as_ref()
+                .expect("active pane")
+                .closes_on_cancel()
             && ((*event).key == '\u{1b}' as i32 as key_code
                 || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
         {
             server_kill_pane(active_pane_owner.as_ref().expect("live modal pane"));
             return 0 as ::core::ffi::c_int;
         }
-        if !wp.is_null()
-            && (*wp).flags & PANE_CAPTUREALLKEYS != 0
-            && (*wp).modes.is_empty()
+        if active_pane_owner.is_some()
+            && active_pane_owner
+                .as_ref()
+                .expect("active pane")
+                .captures_keys()
+            && !active_pane_owner.as_ref().expect("active pane").has_modes()
             && !((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                 == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
                 || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -3425,7 +3124,11 @@ unsafe fn server_client_handle_key0(
                             as ::core::ffi::c_ulonglong)
                             << 32 as ::core::ffi::c_int)
         {
-            if !(*wp).flags & PANE_EXITED != 0 {
+            if !active_pane_owner
+                .as_ref()
+                .expect("active pane")
+                .has_exited()
+            {
                 window_pane_key(
                     active_pane_owner.as_ref().expect("key target pane"),
                     Some(owner),
@@ -3461,22 +3164,20 @@ unsafe fn server_client_handle_key0(
         let mut prompt_pane = prompt_window.active_pane();
         if !prompt_pane
             .as_ref()
-            .is_some_and(|pane| window_pane_has_prompt(&*pane.get()) != 0)
+            .is_some_and(|pane| pane.prompt_position(true).is_some())
         {
             prompt_pane = prompt_window.next_pane(None);
             while let Some(pane_owner) = prompt_pane.as_ref() {
-                if window_pane_has_prompt(&*pane_owner.get()) != 0
-                    && window_pane_is_visible(pane_owner) != 0
-                {
+                if pane_owner.prompt_position(true).is_some() && pane_owner.is_visible() {
                     break;
                 }
-                prompt_pane = window_pane_next((pane_owner.get()).as_ref());
+                prompt_pane = prompt_window.next_pane(Some(pane_owner));
             }
         }
         prompt_window.release(c"prompt pane lookup");
-        if let Some(pane_owner) = prompt_pane.filter(|pane| {
-            window_pane_has_prompt(&*pane.get()) != 0 && window_pane_is_visible(pane) != 0
-        }) {
+        if let Some(pane_owner) =
+            prompt_pane.filter(|pane| pane.prompt_position(true).is_some() && pane.is_visible())
+        {
             match window_pane_prompt_key(
                 &pane_owner,
                 Some(owner),
@@ -3553,16 +3254,8 @@ pub unsafe fn server_client_loop() {
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
-            let wp = pane_owner.get();
-            if (*wp).flags & PANE_STYLECHANGED != 0 {
-                let wme = (*wp).active_mode_entry();
-                if wme.is_alive() && (*(wme).get_unchecked().mode).style_changed.is_some() {
-                    (*(wme).get_unchecked().mode)
-                        .style_changed
-                        .expect("non-null function pointer")(wme);
-                }
-            }
-            pane_cursor = window_pane_next(Some(&*wp));
+            pane_owner.notify_style_changed();
+            pane_cursor = pane_owner.next_in_window();
         }
         window_cursor = window_owner.next_window();
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
@@ -3588,9 +3281,8 @@ pub unsafe fn server_client_loop() {
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
-            let wp = pane_owner.get();
-            crate::src::window::WindowPane::finish_cycle(&pane_owner);
-            pane_cursor = window_pane_next(Some(&*wp));
+            pane_owner.finish_cycle();
+            pane_cursor = pane_owner.next_in_window();
         }
         check_window_name(&window_owner);
         window_cursor = window_owner.next_window();
@@ -3600,9 +3292,8 @@ pub unsafe fn server_client_loop() {
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
-            let wp = pane_owner.get();
-            window_pane_send_theme_update(&pane_owner);
-            pane_cursor = window_pane_next(Some(&*wp));
+            pane_owner.send_theme_update();
+            pane_cursor = pane_owner.next_in_window();
         }
         window_cursor = window_owner.next_window();
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
@@ -3652,25 +3343,15 @@ struct PromptCursor {
 // the cursor but hides it, retaining the incoming coordinates outside the view.
 unsafe fn server_client_prompt_cursor(
     owner: &ClientRef,
-    wp: &window_pane,
+    pane: &Rc<UnsafeCell<window_pane>>,
     mut cursor: PromptCursor,
 ) -> Option<PromptCursor> {
     let mut r = Vec::new();
-    let mut px: ::core::ffi::c_int = 0;
-    let mut py: ::core::ffi::c_int = 0;
-    if window_pane_has_prompt(wp) == 0 {
+    let Some((px, py)) = pane.prompt_position(status_at_line(owner) == 0) else {
         return None;
-    }
+    };
     cursor.mode &= !MODE_CURSOR;
     let tty_window_view { ox, oy, sx, sy, .. } = owner.terminal_view();
-    if status_at_line(owner) == 0 as ::core::ffi::c_int {
-        py = wp.yoff;
-    } else {
-        py = (wp.yoff as u_int)
-            .wrapping_add(wp.sy)
-            .wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-    }
-    px = (wp.xoff as u_int).wrapping_add(wp.prompt_cx) as ::core::ffi::c_int;
     if px < ox as ::core::ffi::c_int
         || px > ox.wrapping_add(sx) as ::core::ffi::c_int
         || py < oy as ::core::ffi::c_int
@@ -3681,7 +3362,7 @@ unsafe fn server_client_prompt_cursor(
     cursor.cx = (px as u_int).wrapping_sub(ox);
     cursor.cy = (py as u_int).wrapping_sub(oy);
     window_visible_ranges(
-        wp.observer.upgrade().as_ref(),
+        Some(pane),
         cursor.cx as ::core::ffi::c_int,
         cursor.cy as ::core::ffi::c_int,
         1 as u_int,
@@ -3790,7 +3471,7 @@ mod prompt_cursor_tests {
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                         .push_front(std::rc::Rc::downgrade(&blocker));
                 }
-                let result = server_client_prompt_cursor(&c, &*wp, incoming);
+                let result = server_client_prompt_cursor(&c, &base, incoming);
                 assert_eq!(
                     result.map(|cursor| (cursor.mode, cursor.cx, cursor.cy)),
                     expected,
@@ -3826,9 +3507,6 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         let mut r = Vec::new();
         let mut tty: *mut tty = &raw mut (*c).tty;
         let active_owner = window_owner.active_pane();
-        let wp = active_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
         let mut s: Option<ScreenMode> = None;
 
         let mut mode: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -3858,8 +3536,13 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             let md = &*menu_borrow;
             (cx, cy) = menu_get_cursor(md);
             s = Some(ScreenMode::from(menu_screen(md)));
-        } else if !wp.is_null() && (*c).prompt.is_none() {
-            s = Some(ScreenMode::from(&*(*wp).screen_ptr()));
+        } else if active_owner.is_some() && (*c).prompt.is_none() {
+            s = Some(
+                active_owner
+                    .as_ref()
+                    .expect("active pane")
+                    .screen_mode(true),
+            );
         } else {
             s = Some(ScreenMode::from(&*(*c).status.active_screen()));
         }
@@ -3887,7 +3570,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         if (*c).prompt.is_some() {
             prompt = 1 as u_int;
             (cx, cy) = status_prompt_cursor(&(*c).observer.upgrade().expect("live client"));
-        } else if !wp.is_null() && !(*c).overlay.has_draw() {
+        } else if active_owner.is_some() && !(*c).overlay.has_draw() {
             if window_owner.menu_observer().is_some() {
                 let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
                 if cx < ox || cx >= ox.wrapping_add(sx) || cy < oy || cy >= oy.wrapping_add(sy) {
@@ -3905,9 +3588,11 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 }
                 prompt = 1 as u_int;
             } else {
-                if let Some(cursor) =
-                    server_client_prompt_cursor(client_owner, &*wp, PromptCursor { mode, cx, cy })
-                {
+                if let Some(cursor) = server_client_prompt_cursor(
+                    client_owner,
+                    active_owner.as_ref().expect("active pane"),
+                    PromptCursor { mode, cx, cy },
+                ) {
                     prompt = 1;
                     mode = cursor.mode;
                     cx = cursor.cx;
@@ -3916,21 +3601,26 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             }
             if prompt == 0 {
                 let s = s.expect("active pane screen mode");
+                let pane = active_owner.as_ref().expect("active pane");
+                let (pane_width, _, pane_x, pane_y) = pane.geometry();
+                let scrollbar = pane.scrollbar();
                 cursor = 0 as ::core::ffi::c_int;
-                pane_mode = (*wp).base.mode;
+                pane_mode = active_owner
+                    .as_ref()
+                    .expect("active pane")
+                    .screen_mode(false)
+                    .mode;
                 let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
-                if (*wp).xoff + s.cx as ::core::ffi::c_int >= ox as ::core::ffi::c_int
-                    && (*wp).xoff + s.cx as ::core::ffi::c_int
+                if pane_x + s.cx as ::core::ffi::c_int >= ox as ::core::ffi::c_int
+                    && pane_x + s.cx as ::core::ffi::c_int
                         <= ox as ::core::ffi::c_int + sx as ::core::ffi::c_int
-                    && (*wp).yoff + s.cy as ::core::ffi::c_int >= oy as ::core::ffi::c_int
-                    && (*wp).yoff + s.cy as ::core::ffi::c_int
+                    && pane_y + s.cy as ::core::ffi::c_int >= oy as ::core::ffi::c_int
+                    && pane_y + s.cy as ::core::ffi::c_int
                         <= oy as ::core::ffi::c_int + sy as ::core::ffi::c_int
                 {
                     cursor = 1 as ::core::ffi::c_int;
-                    cx = ((*wp).xoff + s.cx as ::core::ffi::c_int - ox as ::core::ffi::c_int)
-                        as u_int;
-                    cy = ((*wp).yoff + s.cy as ::core::ffi::c_int - oy as ::core::ffi::c_int)
-                        as u_int;
+                    cx = (pane_x + s.cx as ::core::ffi::c_int - ox as ::core::ffi::c_int) as u_int;
+                    cy = (pane_y + s.cy as ::core::ffi::c_int - oy as ::core::ffi::c_int) as u_int;
                     window_visible_ranges(
                         active_owner.as_ref(),
                         cx as ::core::ffi::c_int,
@@ -3941,10 +3631,10 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     if !window_position_is_visible(&r, cx) {
                         cursor = 0 as ::core::ffi::c_int;
                     }
-                    if window_pane_scrollbar_overlay_visible(&*wp) != 0 {
-                        sb_w = (*wp).scrollbar_style.width as u_int;
-                        if sb_w > (*wp).sx {
-                            sb_w = (*wp).sx;
+                    if scrollbar.overlay && scrollbar.visible {
+                        sb_w = scrollbar.width as u_int;
+                        if sb_w > pane_width {
+                            sb_w = pane_width;
                         }
                         if sb_w != 0 as u_int
                             && (window_owner).scrollbars().position == PANE_SCROLLBARS_LEFT
@@ -3952,7 +3642,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                             if s.cx < sb_w {
                                 cursor = 0 as ::core::ffi::c_int;
                             }
-                        } else if sb_w != 0 as u_int && s.cx >= (*wp).sx.wrapping_sub(sb_w) {
+                        } else if sb_w != 0 as u_int && s.cx >= pane_width.wrapping_sub(sb_w) {
                             cursor = 0 as ::core::ffi::c_int;
                         }
                     }
@@ -3998,11 +3688,10 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 mode &= !ALL_MOUSE_MODES;
                 let mut cursor = window_owner.next_pane(None);
                 while let Some(pane_owner) = cursor {
-                    let pane = &*pane_owner.get();
-                    if (*pane.screen_ptr()).mode & MODE_MOUSE_ALL != 0 {
+                    if pane_owner.screen_mode(true).mode & MODE_MOUSE_ALL != 0 {
                         mode |= MODE_MOUSE_ALL;
                     }
-                    cursor = window_pane_next(Some(pane));
+                    cursor = pane_owner.next_in_window();
                 }
             }
             if session_owner.with_options_mut(|options| {
@@ -4190,14 +3879,14 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
         }
         let mut cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = cursor {
-            let wp = pane_owner.get();
-            let wme = (*wp).active_mode_entry();
-            if wme.is_alive() && (*(wme).get_unchecked().mode).update.is_some() {
-                (*(wme).get_unchecked().mode)
-                    .update
-                    .expect("non-null function pointer")(wme);
+            let wme = pane_owner.mode_entry();
+            let update = if wme.is_alive() {
+                wme.try_borrow_mut().expect("mode update not borrowed").mode.update
+            } else { None };
+            if let Some(update) = update {
+                update(wme);
             }
-            cursor = window_pane_next(Some(&*wp));
+            cursor = pane_owner.next_in_window();
         }
     })();
     crate::src::window::window_remove_ref(window_owner, c"server_client_check_modes".as_ptr());
@@ -4210,7 +3899,7 @@ unsafe fn server_client_any_pane_redraw(c: &client, window: &WindowRef) -> bool 
     window
         .pane_snapshot()
         .into_iter()
-        .any(|pane| (*pane.get()).flags & (PANE_REDRAW | PANE_REDRAWSCROLLBAR) != 0)
+        .any(|pane| pane.needs_redraw(false) || pane.needs_redraw(true))
 }
 unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
     let c = client_owner.get();
@@ -4331,17 +4020,16 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             }
             let mut cursor = window_owner.next_pane(None);
             while let Some(pane_owner) = cursor {
-                let wp = &*pane_owner.get();
-                if (*wp).flags & PANE_REDRAW != 0 {
+                if pane_owner.needs_redraw(false) {
                     (*c).flags |= CLIENT_REDRAWWINDOW as uint64_t;
                     break;
                 } else {
-                    if (*wp).flags & PANE_REDRAWSCROLLBAR != 0 {
+                    if pane_owner.needs_redraw(true) {
                         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
                             | CLIENT_REDRAWSCROLLBARS)
                             as uint64_t;
                     }
-                    cursor = window_pane_next(Some(wp));
+                    cursor = window_owner.next_pane(Some(&pane_owner));
                 }
             }
             return;
@@ -4359,21 +4047,20 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
         if !(*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
             for pane_owner in window_owner.pane_snapshot() {
-                let wp = &*pane_owner.get();
-                if (*wp).flags & PANE_REDRAW != 0 {
+                if pane_owner.needs_redraw(false) {
                     log_debug(format_args!(
                         "{}: redraw pane %{}",
                         "server_client_check_redraw",
-                        ((*wp).id) as u32
+                        (pane_owner.id()) as u32
                     ));
                     redraw_pane(client_owner, &pane_owner);
-                } else if (*wp).flags & PANE_REDRAWSCROLLBAR != 0
+                } else if pane_owner.needs_redraw(true)
                     || (*c).flags as ::core::ffi::c_ulonglong & CLIENT_REDRAWSCROLLBARS != 0
                 {
                     log_debug(format_args!(
                         "{}: redraw scrollbar %{}",
                         "server_client_check_redraw",
-                        ((*wp).id) as u32
+                        (pane_owner.id()) as u32
                     ));
                     redraw_pane_scrollbar(client_owner, &pane_owner);
                 }
@@ -4486,12 +4173,7 @@ unsafe fn server_client_set_path(owner: &ClientRef) {
     let Some(active_owner) = server_client_active_pane(&*owner.get()) else {
         return;
     };
-    let path = (*active_owner.get())
-        .base
-        .path
-        .as_deref()
-        .unwrap_or(c"")
-        .to_owned();
+    let path = active_owner.screen_path();
     if (*owner.get()).path.as_deref() != Some(path.as_c_str()) {
         server_client_replace_path(&mut *owner.get(), Some(path.clone()));
         {
@@ -4504,7 +4186,7 @@ unsafe fn server_client_set_progress_bar(owner: &ClientRef) {
     let Some(active_owner) = server_client_active_pane(&*owner.get()) else {
         return;
     };
-    let mut pane_progress = (*active_owner.get()).base.progress_bar;
+    let mut pane_progress = active_owner.screen_progress();
     {
         let state = &mut *owner.get();
         if pane_progress.state == state.progress_bar.state
@@ -5372,14 +5054,14 @@ unsafe fn server_client_get_flags(c: &client) -> *const ::core::ffi::c_char {
 pub unsafe fn server_client_remove_pane(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
-    let mut wp = wp_owner.get();
+    let pane_id = wp_owner.id();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = clients.first();
     c = registry_c_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !c.is_null() {
-        if (*c).tty.mouse_last_pane == (*wp).id as ::core::ffi::c_int {
+        if (*c).tty.mouse_last_pane == pane_id as ::core::ffi::c_int {
             (*c).tty.mouse_last_pane = -(1 as ::core::ffi::c_int);
             (*c).tty.mouse_drag_update = None;
             (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
@@ -5401,8 +5083,6 @@ pub unsafe fn server_client_print(
         .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
         as *mut ::core::ffi::c_void;
     let mut size: size_t = evbuffer_get_length(&*(evb));
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut empty: ::core::ffi::c_char = '\0' as i32 as ::core::ffi::c_char;
@@ -5464,28 +5144,18 @@ pub unsafe fn server_client_print(
                 });
             }
         } else {
-            wp = ((((*c)
+            let pane_owner = (*c)
                 .session_handle()
                 .expect("live session")
-                .current_winlink())
-            .get_unchecked()
-            .window_handle()
-            .as_ref())
-            .expect("live window"))
-            .active_pane()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-            let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-            wme = (*wp).active_mode_entry();
-            if !wme.is_alive() || !std::ptr::eq(wme.get_unchecked().mode, &window_view_mode) {
-                window_pane_set_mode(
-                    &pane_owner,
-                    None,
-                    &window_view_mode,
-                    None,
-                    ::core::ptr::null_mut::<cmd_find_state>(),
-                    ::core::ptr::null_mut::<args>(),
-                );
+                .current_winlink()
+                .get_unchecked()
+                .window_handle()
+                .as_ref()
+                .expect("live window")
+                .active_pane()
+                .expect("view-mode pane");
+            if !pane_owner.is_mode(&window_view_mode) {
+                pane_owner.set_mode(None, &window_view_mode, None, None, None);
             }
             if parse != 0 {
                 loop {

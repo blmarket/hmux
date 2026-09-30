@@ -29,7 +29,6 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{memcpy, strcmp};
 use crate::src::format::bytes::write_cstr;
-use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_free, options_get_number};
@@ -45,7 +44,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_THEMECHANGED;
 use crate::src::shared::session::{session_group, session_groups, sessions};
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::sort::sort_criteria;
@@ -57,8 +55,9 @@ use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 use crate::src::window::{
-    window_pane_next, window_update_activity, window_update_focus, winlink_add,
+    window_update_activity, window_update_focus, winlink_add,
     winlink_clear_flags, winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id,
     winlink_next, winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push,
     winlink_stack_remove, winlinks_minmax, winlinks_next,
@@ -859,9 +858,8 @@ unsafe fn session_theme_changed(session: Option<&session>) {
         let wl = link.get_unchecked();
         let mut next = wl.window_handle().and_then(|window| window.next_pane(None));
         while let Some(owner) = next {
-            let pane = &mut *owner.get();
-            pane.flags |= PANE_THEMECHANGED;
-            next = window_pane_next(Some(pane));
+            owner.mark_theme_changed();
+            next = owner.next_in_window();
         }
         link = winlinks_next(wl);
     }
@@ -876,19 +874,8 @@ unsafe fn session_update_history(session: &session) {
         let wl = link.get_unchecked();
         let mut next = wl.window_handle().and_then(|window| window.next_pane(None));
         while let Some(owner) = next {
-            let pane = &mut *owner.get();
-            let id = pane.id;
-            let grid = pane.base.grid_mut();
-            let old_size = grid.hsize;
-            grid.hlimit = limit;
-            grid_collect_history(grid, 1);
-            if grid.hsize != old_size {
-                log_debug(format_args!(
-                    "session_update_history: %{} {} -> {}",
-                    id, old_size, grid.hsize,
-                ));
-            }
-            next = window_pane_next(Some(pane));
+            owner.update_history_limit(limit);
+            next = owner.next_in_window();
         }
         link = winlinks_next(wl);
     }

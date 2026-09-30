@@ -1,4 +1,6 @@
 //! Pane implementation. Window state is accessed through the Window trait.
+mod mouse;
+mod sort;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
