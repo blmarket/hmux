@@ -1641,6 +1641,8 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
     let mut bg: ::core::ffi::c_int = terminal_client_owner.borrow_terminal().bg;
     let mut key: key_code = 0;
     let mut onlykey: key_code = 0;
+    let mut clipboard_reply = None;
+    let mut palette_reply = None;
     let mut m: mouse_event = mouse_event {
         valid: 0 as ::core::ffi::c_int,
         ignore: 0,
@@ -1661,14 +1663,17 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
         sgr_type: 0,
         sgr_b: 0,
     };
-    let input = terminal_client_owner
-        .borrow_terminal_mut()
-        .in_0
-        .as_deref_mut()
-        .expect("open TTY buffer")
-        .snapshot();
-    buf = input.as_ref().as_ptr().cast();
-    len = input.as_ref().len();
+    // The decoder never reads, drains, or replaces input until it has finished
+    // using this pointer. Reply and key callbacks run after byte access finishes.
+    (buf, len) = {
+        let mut terminal = terminal_client_owner.borrow_terminal_mut();
+        let bytes = terminal
+            .in_0
+            .as_deref_mut()
+            .expect("open TTY buffer")
+            .bytes();
+        (bytes.as_ptr().cast(), bytes.len())
+    };
     if len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
@@ -1683,7 +1688,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
         (len) as usize,
         log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
     ));
-    match tty_keys_clipboard(&terminal_client_owner, buf, len, &raw mut size) {
+    match tty_keys_clipboard(buf, len, &raw mut size, &mut clipboard_reply) {
         0 => {
             key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
             current_block = 5025795842197473417;
@@ -1851,10 +1856,10 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                                                 5025795842197473417 => {}
                                                 _ => {
                                                     match tty_keys_palette(
-                                                        &terminal_client_owner,
                                                         buf,
                                                         len,
                                                         &raw mut size,
+                                                        &mut palette_reply,
                                                     ) {
                                                         0 => {
                                                             key = KEYC_UNKNOWN
@@ -2148,6 +2153,31 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     log_cstr_n((buf) as *const _, size as ::core::ffi::c_int),
                     log_hex((key) as u64)
                 ));
+                // Finish input-byte access before a reply or focus listener can
+                // replace terminal storage. Key events keep only their payload.
+                let event = if key != KEYC_UNKNOWN as key_code {
+                    let bytes = ::core::slice::from_raw_parts(buf.cast::<u8>(), size).to_vec();
+                    Some(key_event::new(key, m, Some(bytes)))
+                } else {
+                    None
+                };
+                if let Some(reply) = clipboard_reply.take() {
+                    input_request_reply(
+                        terminal_client_owner,
+                        InputRequestReply::Clipboard(&reply),
+                    );
+                    let clipboard_query =
+                        terminal_client_owner.borrow_terminal().flags & TTY_OSC52QUERY != 0;
+                    if clipboard_query {
+                        paste_add_owned(None, reply.data.into_boxed_slice());
+                        let mut terminal = terminal_client_owner.borrow_terminal_mut();
+                        terminal.clipboard_timer.cancel();
+                        terminal.flags &= !TTY_OSC52QUERY;
+                    }
+                }
+                if let Some(reply) = palette_reply.take() {
+                    input_request_reply(terminal_client_owner, InputRequestReply::Palette(&reply));
+                }
                 {
                     let mut terminal = terminal_client_owner.borrow_terminal_mut();
                     if terminal.key_timer.is_initialized() {
@@ -2164,15 +2194,6 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         terminal.flags &= !TTY_BRACKETPASTE;
                     }
                 }
-                // Focus handlers may reenter and replace terminal input storage.
-                // Own just this decoded event before any notification, preserving
-                // notification -> key dispatch -> live buffer consumption order.
-                let event = if key != KEYC_UNKNOWN as key_code {
-                    let bytes = ::core::slice::from_raw_parts(buf.cast::<u8>(), size).to_vec();
-                    Some(key_event::new(key, m, Some(bytes)))
-                } else {
-                    None
-                };
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     terminal_client_owner.update_flags(0, CLIENT_FOCUSED as u64);
                     tty_keys_update_focus(&terminal_client_owner);
@@ -2644,10 +2665,10 @@ unsafe fn tty_keys_mouse(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn tty_keys_clipboard(
-    terminal_client_owner: &ClientRef,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
     mut size: *mut size_t,
+    reply: &mut Option<input_request_clipboard_data>,
 ) -> ::core::ffi::c_int {
     let mut end: size_t = 0;
     let mut terminator: size_t = 0 as size_t;
@@ -2751,15 +2772,7 @@ unsafe fn tty_keys_clipboard(
             outlen
         )
     ));
-    let cd = input_request_clipboard_data { data: out, clip };
-    input_request_reply(terminal_client_owner, InputRequestReply::Clipboard(&cd));
-    let clipboard_query = terminal_client_owner.borrow_terminal().flags & TTY_OSC52QUERY != 0;
-    if clipboard_query {
-        paste_add_owned(None, cd.data.into_boxed_slice());
-        let mut terminal = terminal_client_owner.borrow_terminal_mut();
-        terminal.clipboard_timer.cancel();
-        terminal.flags &= !TTY_OSC52QUERY;
-    }
+    *reply = Some(input_request_clipboard_data { data: out, clip });
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn tty_keys_device_attributes(
@@ -3441,10 +3454,10 @@ pub unsafe fn tty_keys_colours(
     return 0 as ::core::ffi::c_int;
 }
 unsafe fn tty_keys_palette(
-    terminal_client_owner: &ClientRef,
     mut buf: *const ::core::ffi::c_char,
     mut len: size_t,
     mut size: *mut size_t,
+    reply: &mut Option<input_request_palette_data>,
 ) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
@@ -3532,7 +3545,7 @@ unsafe fn tty_keys_palette(
         return 0 as ::core::ffi::c_int;
     }
     pd.idx = idx;
-    input_request_reply(terminal_client_owner, InputRequestReply::Palette(&pd));
+    *reply = Some(pd);
     return 0 as ::core::ffi::c_int;
 }
 
