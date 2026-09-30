@@ -1,8 +1,8 @@
 """Run current layout operations against one RefCell for the whole Window.
 
-The layout source and cell implementation are extracted on every run. Model
-adapters and rendering/resize callbacks are small stubs: the test checks borrow
-boundaries and copied geometry, not the application's complete lifecycle.
+The layout source, cell implementation and Pane layout operations are extracted
+on every run. Model adapters and rendering/resize callbacks are small stubs: the
+test checks borrow boundaries and copied geometry, not the complete lifecycle.
 """
 from pathlib import Path
 import re
@@ -22,11 +22,14 @@ OPERATIONS = (
     "layout_clamp_floating_cell", "layout_resize_pane_to", "layout_resize_floating_pane_to",
     "layout_resize_floating_pane", "layout_assign_pane",
 )
+PANE_OPERATIONS = (
+    "layout_identity", "place_in_layout", "detach_layout", "apply_layout", "pane_lines",
+)
 
 
 def extract_item(source, name, kind="fn"):
     masked = mask(source)
-    pattern = r"^(?:pub(?:\([^)]*\))? )?(?:unsafe )?" + kind + " " + re.escape(name) + r"\b"
+    pattern = r"^[ \t]*(?:pub(?:\([^)]*\))? )?(?:unsafe )?" + kind + " " + re.escape(name) + r"\b"
     matches = list(re.finditer(pattern, masked, re.MULTILINE))
     if len(matches) != 1:
         raise ValueError(f"layout/core.rs: expected exactly one {kind} {name}, found {len(matches)}")
@@ -48,8 +51,15 @@ def current_source_fixture():
     operations = "\n".join(extract_item(core, name) for name in OPERATIONS)
     tests = "#[cfg(test)]\n" + extract_item(core, "floating_clamp_tests", "mod")
     cell = (ROOT / "src/shared/layout.rs").read_text()
+    pane = (ROOT / "src/window_pane/api.rs").read_text()
+    implementations = list(re.finditer(r"^impl WindowPane for [^\n]+ \{", mask(pane), re.MULTILINE))
+    if len(implementations) != 1:
+        raise ValueError(f"window_pane/api.rs: expected one WindowPane implementation, found {len(implementations)}")
+    pane = pane[implementations[0].end():]
+    pane_operations = "\n".join(extract_item(pane, name) for name in PANE_OPERATIONS)
     return (FIXTURE.replace("// SOURCE_CELL", cell)
             .replace("// SOURCE_OPERATIONS", operations)
+            .replace("// SOURCE_PANE_OPERATIONS", pane_operations)
             .replace("// SOURCE_TESTS", tests))
 
 
@@ -61,6 +71,8 @@ class WindowLayoutBorrowTests(unittest.TestCase):
                 extract_item(source, "f")
         source = 'fn f() { let s = "}"; /* { */ body(); }\nfn next() {}'
         self.assertEqual(extract_item(source, "f"), source.split("\n")[0])
+        self.assertEqual(extract_item("    unsafe fn method() {}", "method"),
+                         "    unsafe fn method() {}")
 
     def test_actual_operations_with_whole_window_refcell(self):
         rustc = shutil.which("rustc")
@@ -83,6 +95,7 @@ mod shared {
         use super::super::*;
         pub struct window_pane {
             pub layout_cell: Option<LayoutCellId>,
+            pub saved_layout_cell: Option<LayoutCellId>,
             pub observer: Weak<UnsafeCell<Self>>,
             pub window: Weak<RefCell<window>>,
             pub scrollbar_style: ScrollbarStyle,
@@ -93,7 +106,8 @@ mod shared {
         impl window_pane {
             pub fn new() -> Rc<UnsafeCell<Self>> {
                 Rc::new_cyclic(|observer| UnsafeCell::new(Self {
-                    layout_cell: None, observer: observer.clone(), window: Weak::new(),
+                    layout_cell: None, saved_layout_cell: None,
+                    observer: observer.clone(), window: Weak::new(),
                     scrollbar_style: ScrollbarStyle { width: 1, pad: 0 },
                     sx: 0, sy: 0, xoff: 0, yoff: 0, flags: 0,
                     border: 0, lines: PANE_LINES_NONE, reserve: false, on_resize: None,
@@ -108,7 +122,8 @@ mod shared {
 mod src { pub mod window {
     #[derive(Clone, Copy)] pub enum LayoutView { Visible }
     #[derive(Clone, Copy)] pub enum PaneOrder { Stacking }
-}}
+    pub use crate::{Geometry as PaneLayoutGeometry, Scrollbars as WindowScrollbars};
+} pub mod window_pane { pub use crate::WindowPane; }}
 use shared::{abi::*, layout::*, pane::window_pane};
 type WindowRef = Rc<RefCell<window>>;
 type PaneRef = Rc<UnsafeCell<window_pane>>;
@@ -119,8 +134,8 @@ const PANE_STATUS_BOTTOM: i32 = 2;
 const PANE_SCROLLBARS_LEFT: i32 = 0;
 const PANE_REDRAWSCROLLBAR: i32 = 1;
 struct ScrollbarStyle { width: i32, pad: i32 }
-struct Scrollbars { position: i32 }
-struct Geometry { size: (u32,u32), offset: (i32,i32), floating: bool, top_border: bool, bottom_border: bool }
+pub struct Scrollbars { position: i32 }
+pub struct Geometry { size: (u32,u32), offset: (i32,i32), floating: bool, top_border: bool, bottom_border: bool }
 fn fatalx(f: impl FnOnce(&mut dyn std::io::Write)->std::io::Result<()>) -> ! {
     let mut out = Vec::new(); f(&mut out).unwrap(); panic!("{}", String::from_utf8_lossy(&out));
 }
@@ -184,13 +199,20 @@ impl Window for WindowRef {
     }
     fn release(self,_:&CStr) {let _loan=self.borrow_mut();}
 }
-trait Pane {
+pub trait WindowPane {
+    fn allocate() -> Self where Self: Sized;
     unsafe fn geometry(&self)->(u32,u32,i32,i32);
     unsafe fn border_status(&self)->i32;
     unsafe fn resize(&self,sx:u32,sy:u32);
     unsafe fn window_observer(&self)->Weak<RefCell<window>>;
+    unsafe fn layout_identity(&self,saved:bool)->Option<LayoutCellId>;
+    unsafe fn place_in_layout(&self,cell:LayoutCellId);
+    unsafe fn detach_layout(&self,cell:LayoutCellId);
+    unsafe fn apply_layout(&self,geometry:Geometry,scrollbars:Scrollbars)->bool;
+    unsafe fn pane_lines(&self)->pane_lines;
 }
-impl Pane for PaneRef {
+impl WindowPane for PaneRef {
+    fn allocate() -> Self { window_pane::new() }
     unsafe fn geometry(&self)->(u32,u32,i32,i32) {let state=&*self.get();(state.sx,state.sy,state.xoff,state.yoff)}
     unsafe fn border_status(&self)->i32 {let window=self.window_observer().upgrade().unwrap();let _loan=window.borrow();(*self.get()).border}
     unsafe fn resize(&self,sx:u32,sy:u32) {
@@ -201,6 +223,7 @@ impl Pane for PaneRef {
         if let Some(callback)=callback {callback(&window);}
     }
     unsafe fn window_observer(&self)->Weak<RefCell<window>> {(*self.get()).window.clone()}
+// SOURCE_PANE_OPERATIONS
 }
 unsafe fn window_pane_scrollbar_reserve(pane:&window_pane)->i32 {
     let window=pane.window.upgrade().unwrap();let _loan=window.borrow();pane.reserve as i32
@@ -222,6 +245,12 @@ unsafe fn publish(window:&WindowRef,panes:&[PaneRef]) {
     for pane in panes {(*pane.get()).window=Rc::downgrade(window);}
     window.borrow_mut().panes=panes.iter().map(Rc::downgrade).collect();
 }
+#[test]
+fn policy_queries_reject_overlapping_whole_window_loans() { unsafe {
+    let window=window::new();let pane=PaneRef::allocate();publish(&window,&[pane.clone()]);
+    let _loan=window.borrow_mut();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(||pane.pane_lines())).is_err());
+}}
 #[test]
 fn fix_panes_reads_the_new_tree_after_a_resize_callback_replaces_it() { unsafe {
     let window=window::new();let first=window_pane::new();let second=window_pane::new();

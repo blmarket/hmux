@@ -7,6 +7,7 @@ it with model_trait_boundary and component/callback behavior tests.
 """
 import argparse
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -21,9 +22,14 @@ def private_storage_probe(sources):
     assert sources[path].count(holder) == 2, 'Session holder definitions changed'
     sources[path] = sources[path].replace(holder, 'crate::src::session::SessionStorage')
     path = 'src/session/mod.rs'
-    export = 'pub use model::session;'
-    assert sources[path].count(export) == 1, 'Session model export changed'
-    sources[path] = sources[path].replace(export, 'pub use model::{session, SessionStorage};')
+    export = re.compile(
+        r'(?m)^pub\s+use\s+model::(?:session|\{\s*session\s*,\s*sessions\s*,?\s*\})\s*;')
+    exports = list(export.finditer(sources[path]))
+    assert len(exports) == 1, 'Session model export changed'
+    # Preserve the registry-head export and add only the probe wrapper export.
+    offset = exports[0].end()
+    sources[path] = (sources[path][:offset] + '\npub use model::SessionStorage;'
+                     + sources[path][offset:])
     path = 'src/session/model.rs'
     constructor = 'std::cell::UnsafeCell::new(value)'
     assert sources[path].count(constructor) == 1, 'Session factory changed'

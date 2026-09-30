@@ -7,6 +7,7 @@ it with model_trait_boundary and component/callback behavior tests.
 """
 import argparse
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -21,9 +22,12 @@ def private_storage_probe(sources):
     assert sources[path].count(holder) == 2, 'Window holder definitions changed'
     sources[path] = sources[path].replace(holder, 'crate::src::window::WindowStorage')
     path = 'src/window/mod.rs'
-    export = 'pub use model::window;'
-    assert sources[path].count(export) == 1, 'Window model export changed'
-    sources[path] = sources[path].replace(export, 'pub use model::{window, WindowStorage};')
+    export = re.compile(r'(?m)^pub\s+use\s+model::(?:window|\{\s*window\s*,?\s*\})\s*;')
+    exports = list(export.finditer(sources[path]))
+    assert len(exports) == 1, 'Window model export changed'
+    offset = exports[0].end()
+    sources[path] = (sources[path][:offset] + '\npub use model::WindowStorage;'
+                     + sources[path][offset:])
     path = 'src/window/model.rs'
     constructor = 'std::cell::UnsafeCell::new(value)'
     assert sources[path].count(constructor) == 1, 'Window factory changed'
