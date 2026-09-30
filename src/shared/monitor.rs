@@ -37,8 +37,7 @@ pub fn monitor_callback(callback: impl Fn(&monitor_change) + 'static) -> monitor
     std::rc::Rc::new(callback)
 }
 
-pub type monitor_items =
-    Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>>>;
+pub type monitor_items = std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>;
 
 #[repr(C)]
 pub struct monitor_item {
@@ -54,8 +53,6 @@ pub struct monitor_item {
     pub identity: u64,
     pub fire_count: u_int,
     pub fire_time: time_t,
-    /// Weak traversal handle into the containing index.
-    pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<monitor_item>>>,
 }
 
 impl monitor_item {
@@ -67,18 +64,16 @@ impl monitor_item {
             id: Default::default(),
             flags: Default::default(),
             last: Default::default(),
-            panes: None,
-            windows: None,
+            panes: Default::default(),
+            windows: Default::default(),
             identity: 0,
             fire_count: Default::default(),
             fire_time: Default::default(),
-            owner: refbox::Weak::new(),
         }
     }
 }
 
-pub type monitor_windows =
-    Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), Box<monitor_window>>>>;
+pub type monitor_windows = std::collections::BTreeMap<(u32, u32), Box<monitor_window>>;
 
 #[repr(C)]
 pub struct monitor_window {
@@ -86,8 +81,6 @@ pub struct monitor_window {
     pub idx: u_int,
     pub last: Option<std::ffi::CString>,
     pub generation: u_int,
-    /// Weak traversal handle into the containing index.
-    pub owner: refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_window>>>,
 }
 
 impl monitor_window {
@@ -97,13 +90,11 @@ impl monitor_window {
             idx: Default::default(),
             last: Default::default(),
             generation: Default::default(),
-            owner: refbox::Weak::new(),
         }
     }
 }
 
-pub type monitor_panes =
-    Option<refbox::RefBox<std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>>>;
+pub type monitor_panes = std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>;
 
 #[repr(C)]
 pub struct monitor_pane {
@@ -111,8 +102,6 @@ pub struct monitor_pane {
     pub idx: u_int,
     pub last: Option<std::ffi::CString>,
     pub generation: u_int,
-    /// Weak traversal handle into the containing index.
-    pub owner: refbox::Weak<std::collections::BTreeMap<(u32, u32), Box<monitor_pane>>>,
 }
 
 impl monitor_pane {
@@ -122,7 +111,6 @@ impl monitor_pane {
             idx: Default::default(),
             last: Default::default(),
             generation: Default::default(),
-            owner: refbox::Weak::new(),
         }
     }
 }
