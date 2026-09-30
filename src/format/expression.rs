@@ -1300,7 +1300,6 @@ pub(super) unsafe fn format_loop_panes(
         },
     };
     let mut buffer = Vec::new();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut i: ::core::ffi::c_int = 0;
     if format_window_owner.is_none() {
         format_log1(
@@ -1315,18 +1314,18 @@ pub(super) unsafe fn format_loop_panes(
     let n = i32::try_from(l.len()).expect("too many panes in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
-        wp = l[i as usize].get();
+        let pane = &l[i as usize];
         format_log1(
             es,
             b"format_loop_panes\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "pane loop: %{}", ((*wp).id) as u32),
+            |out| write!(out, "pane loop: %{}", pane.id()),
         );
         let use_0 = if active.is_some()
-            && wp
-                == ((format_window_owner.as_ref()).expect("live window"))
-                    .active_pane()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
+            && format_window_owner
+                .as_ref()
+                .expect("live window")
+                .active_pane()
+                .is_some_and(|active| std::rc::Rc::ptr_eq(&active, pane))
         {
             active.as_ref().unwrap().as_ptr()
         } else {
@@ -1338,7 +1337,7 @@ pub(super) unsafe fn format_loop_panes(
                 .as_ref()
                 .and_then(|item| item.observer.upgrade())
                 .as_ref(),
-            (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
+            (FORMAT_PANE | pane.id()) as ::core::ffi::c_int,
             (*ft).flags,
         );
         nft = &raw mut *nft_owner;
@@ -1363,9 +1362,7 @@ pub(super) unsafe fn format_loop_panes(
             format_client.as_ref(),
             format_session_owner.as_ref(),
             ((*ft).winlink_handle()).clone(),
-            (wp).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            Some(pane),
         );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;

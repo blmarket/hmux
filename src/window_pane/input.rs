@@ -2477,12 +2477,15 @@ pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCe
     let mut wp = wp_owner.get();
     let mut new_data: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut new_size: size_t = 0;
+    // Copy the stream observer and offsets before borrowing the input buffer.
+    let (stream, base, offset) = {
+        let pane = &*wp_owner.get();
+        (pane.event.clone(), pane.base_offset, pane.offset)
+    };
     // Parsing fires callbacks; release the input-buffer borrow before dispatch.
-    let data = (*wp)
-        .event
+    let data = stream
         .with_ptr(|event| unsafe {
-            window_pane_get_new_data(&mut *(*event).input, (*wp).base_offset, &(*wp).offset)
-                .to_vec()
+            window_pane_get_new_data(&mut *(*event).input, base, &offset).to_vec()
         })
         .unwrap_or_default();
     new_size = data.len();

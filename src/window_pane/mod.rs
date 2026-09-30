@@ -1167,23 +1167,27 @@ unsafe fn window_pane_free(wp_value: &mut window_pane) {
 
 unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = owner.get();
+    let (input, pipe, base, pipe_offset, has_pipe) = {
+        let pane = &*owner.get();
+        (
+            pane.event.clone(),
+            pane.pipe_event.clone(),
+            pane.base_offset,
+            pane.pipe_offset,
+            pane.pipe_fd != -1,
+        )
+    };
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
-    let size: size_t = (*wp)
-        .event
-        .with_ptr(|event| unsafe { evbuffer_get_length(&(*event).input) })
-        .unwrap_or(0);
-    if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-        let data = (*wp)
-            .event
+    let size = input.input_len().unwrap_or(0);
+    if has_pipe {
+        let data = input
             .with_ptr(|event| unsafe {
-                window_pane_get_new_data(&mut *(*event).input, (*wp).base_offset, &*wpo).to_vec()
+                window_pane_get_new_data(&mut *(*event).input, base, &pipe_offset).to_vec()
             })
             .unwrap_or_default();
         let new_size = data.len();
         if new_size > 0 as size_t {
-            let _ = (*wp).pipe_event.with_ptr(|event| unsafe {
-                bufferevent_write(event, data.as_ptr().cast(), new_size);
-            });
+            let _ = pipe.write(&data);
             window_pane_update_used_data(
                 &(*(wp)).observer.upgrade().expect("live window_pane"),
                 wpo,

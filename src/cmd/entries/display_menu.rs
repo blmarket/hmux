@@ -49,6 +49,7 @@ use crate::src::status::{status_at_line, status_line_size};
 use crate::src::tmux::checkshell;
 use crate::src::tty::tty_window_offset;
 use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 pub static cmd_display_menu_entry: cmd_entry = {
     cmd_entry {
         name: c"display-menu",
@@ -176,10 +177,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
         .attached_session()
         .upgrade();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let pane = (*target).pane_handle().expect("menu target pane");
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut top: ::core::ffi::c_int = 0;
@@ -443,9 +441,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
         }
     }
     let tty_window_view { ox, oy, .. } = tc.as_ref().expect("live client").terminal_view();
-    n = ((top + (*wp).yoff) as u_int)
-        .wrapping_sub(oy)
-        .wrapping_add(h) as ::core::ffi::c_long;
+    let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
+    n = ((top + pane_y) as u_int).wrapping_sub(oy).wrapping_add(h) as ::core::ffi::c_long;
     if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
         format_add(
             ft,
@@ -476,8 +473,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
             write!(
                 out,
                 "{}",
-                (((top + (*wp).yoff) as u_int)
-                    .wrapping_add((*wp).sy)
+                (((top + pane_y) as u_int)
+                    .wrapping_add(pane_height)
                     .wrapping_sub(oy)) as u32
             )
         },
@@ -485,9 +482,9 @@ unsafe fn cmd_display_menu_get_popup_pos(
     format_add(
         ft,
         b"popup_pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (((*wp).xoff as u_int).wrapping_sub(ox)) as u32),
+        |out| write!(out, "{}", ((pane_x as u_int).wrapping_sub(ox)) as u32),
     );
-    n = (*wp).xoff as ::core::ffi::c_long + (*wp).sx as ::core::ffi::c_long
+    n = pane_x as ::core::ffi::c_long + pane_width as ::core::ffi::c_long
         - ox as ::core::ffi::c_long
         - w as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
@@ -638,10 +635,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         .upgrade();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window = (*target).window_handle().expect("menu target window");
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let pane = (*target).pane_handle().expect("menu target pane");
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: u_int = 0;
@@ -862,7 +856,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
             );
         }
     }
-    n = ((*wp).yoff as u_int).wrapping_add(h) as ::core::ffi::c_long;
+    let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
+    n = (pane_y as u_int).wrapping_add(h) as ::core::ffi::c_long;
     if n >= window.size().1 as ::core::ffi::c_long {
         format_add(
             ft,
@@ -883,16 +878,16 @@ unsafe fn cmd_display_menu_get_menu_pos(
             write!(
                 out,
                 "{}",
-                (((*wp).yoff as u_int).wrapping_add((*wp).sy)) as u32
+                ((pane_y as u_int).wrapping_add(pane_height)) as u32
             )
         },
     );
     format_add(
         ft,
         b"popup_pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((*wp).xoff) as u32),
+        |out| write!(out, "{}", (pane_x) as u32),
     );
-    n = (*wp).xoff as ::core::ffi::c_long + (*wp).sx as ::core::ffi::c_long
+    n = pane_x as ::core::ffi::c_long + pane_width as ::core::ffi::c_long
         - w as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
         format_add(
