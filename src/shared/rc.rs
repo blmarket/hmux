@@ -1,4 +1,4 @@
-//! Borrowed model views and deferred cleanup for ordinary Rc owners.
+//! Borrowed model views for ordinary Rc owners.
 //!
 //! Ownership is kept in Rc values. Callback observers use Weak handles created
 //! with the allocation; borrowed raw addresses never represent strong references.
@@ -18,12 +18,6 @@ pub fn same<T>(a: Option<&Rc<T>>, b: Option<&Rc<T>>) -> bool {
         (None, None) => true,
         _ => false,
     }
-}
-
-/// Defer one ordinary Rc drop. Cancellation or a scheduling failure drops the
-/// capture normally, so cleanup still happens even without callback dispatch.
-pub fn release_later<T: 'static>(owner: Rc<T>) {
-    crate::src::reactor::defer(move || drop(owner));
 }
 
 #[cfg(test)]
@@ -52,24 +46,5 @@ mod tests {
         drop(retained);
         assert_eq!(calls.get(), 1);
         assert!(weak.upgrade().is_none());
-    }
-
-    #[test]
-    fn deferred_release_survives_until_dispatch_or_cancellation() {
-        unsafe {
-            for cancel in [false, true] {
-                let calls = Rc::new(Cell::new(0));
-                let owner = Rc::new(Value(calls.clone()));
-                release_later(owner);
-                assert_eq!(calls.get(), 0);
-                if cancel {
-                    crate::src::reactor::shutdown_runtime();
-                } else {
-                    crate::src::reactor::poll_runtime();
-                }
-                assert_eq!(calls.get(), 1);
-                crate::src::reactor::shutdown_runtime();
-            }
-        }
     }
 }

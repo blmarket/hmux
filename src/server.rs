@@ -16,9 +16,7 @@ use crate::src::job::{job_check_died, job_kill_all, job_still_running};
 use crate::src::key_bindings::key_bindings_init;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::options::{options_get_number, options_set_number};
-use crate::src::proc::{
-    proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
-};
+use crate::src::proc::{proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
 use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor::{self, Task};
 use crate::src::server_acl::{server_acl_init, server_acl_join};
@@ -41,6 +39,7 @@ use crate::src::tty::tty_create_log;
 
 use crate::src::window::{windows, Window as _};
 use crate::src::window_pane::WindowPane as _;
+use hmux_rt::AsyncFd as _;
 use hmux_rt::Handle as _;
 use std::time::{Duration, SystemTime};
 
@@ -560,7 +559,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             .start(move || {
                 let source = reactor::descriptor(fd)?;
                 Ok(async move {
-                    source.wait(true, false).await.expect("accept wait");
+                    source.ready(true, false).await.expect("accept wait");
                     unsafe { server_accept(fd) };
                 })
             })

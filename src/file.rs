@@ -15,8 +15,8 @@ use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
-    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, defer,
-    evbuffer_add, evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
+    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
+    evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
 
 use crate::src::server_client::Client as _;
@@ -132,7 +132,7 @@ unsafe fn file_set_cmdq_wait(
 }
 
 /// Stop a file-backed command wait without delivering its file callback.
-/// The scheduled terminal event still owns and frees the file itself.
+/// The file index retains an active transfer until its terminal completion.
 pub(crate) unsafe fn file_cancel_cmdq_wait(file_owner: &Rc<UnsafeCell<client_file>>) {
     let owner = &mut *file_owner.get();
     if !owner.wait_active {
@@ -253,15 +253,23 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     let mut callback = (&mut *owner.get()).cb.take();
     if !dead {
         if let Some(callback) = callback.as_mut() {
-            let file = &mut *owner.get();
-            stream::collect_for_callback(file);
+            let (path, error, mut buffer) = {
+                let file = &mut *owner.get();
+                stream::collect_for_callback(file);
+                (
+                    file.path.clone(),
+                    file.error,
+                    std::mem::take(&mut file.buffer),
+                )
+            };
             callback(client_file_event {
                 client: client_owner.as_ref(),
-                path: file.path.as_deref(),
-                error: file.error,
+                path: path.as_deref(),
+                error,
                 closed: true,
-                buffer: Some(&mut file.buffer),
+                buffer: Some(&mut buffer),
             });
+            (*owner.get()).buffer = buffer;
         }
     }
     drop(callback);
@@ -269,30 +277,20 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
     // allocation. Final Drop remains an idempotent unlink fallback.
     client_files_remove(&mut *owner.get());
 }
-/// Own completion until dispatch or cancellation. Both paths retire the index
-/// entry while a typed owner still keeps the file and its callback data alive.
-struct FileCompletion(Rc<UnsafeCell<client_file>>);
-
-impl Drop for FileCompletion {
-    fn drop(&mut self) {
-        unsafe {
-            client_files_remove(&mut *self.0.get());
-        }
-    }
-}
-
 unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
-    let cf = &mut *owner.get();
-    if cf.terminal_scheduled {
-        return;
+    let wake = {
+        let file = &mut *owner.get();
+        if file.completed {
+            return;
+        }
+        file.completed = true;
+        file.push_task.cancel();
+        stream::finish(file)
+    };
+    if let Some(wake) = wake {
+        wake.wake();
     }
-    cf.terminal_scheduled = true;
-    stream::finish(cf);
-    let mut completion = Some(FileCompletion(owner.clone()));
-    defer(move || {
-        let completion = completion.take().expect("one terminal dispatch");
-        file_fire_done_cb(&completion.0);
-    });
+    file_fire_done_cb(owner);
 }
 unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *file_owner.get();
@@ -751,6 +749,7 @@ unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
 }
 unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *file_owner.get();
+    cf.push_task.cancel();
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_write_data>();
     let mut sent: size_t = 0;
@@ -804,8 +803,16 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         ));
     }
     if left != 0 as size_t {
-        let owner = file_owner.clone();
-        defer(move || unsafe { file_push_cb(&owner) });
+        let observer = Rc::downgrade(file_owner);
+        cf.push_task
+            .start(move || {
+                Ok(async move {
+                    if let Some(owner) = observer.upgrade() {
+                        unsafe { file_push_cb(&owner) };
+                    }
+                })
+            })
+            .expect("retry file output");
     } else if cf.stream > 2 as ::core::ffi::c_int {
         close_0.stream = cf.stream;
         file_send(
@@ -1321,7 +1328,10 @@ pub unsafe fn file_read_data(client: &ClientRef, imsg: &imsg) -> ::core::ffi::c_
             cf.error = ENOMEM;
             file_fire_done(&file_owner);
         } else {
-            stream::notify(&mut cf.read);
+            let wake = stream::take_wake(&mut cf.read);
+            if let Some(wake) = wake {
+                wake.wake();
+            }
             file_fire_read(&file_owner);
         }
     }
@@ -1584,7 +1594,7 @@ mod completion_cancellation_tests {
     use crate::src::reactor::poll_runtime;
 
     #[test]
-    fn cancelled_completion_releases_index_and_client_owners() {
+    fn synchronous_completion_releases_index_and_client_owners() {
         unsafe {
             let client = ClientRef::allocate();
             let client_observer = Rc::downgrade(&client);
@@ -1593,11 +1603,6 @@ mod completion_cancellation_tests {
             file_fire_done(&file);
             drop(file);
             drop(client);
-            assert!(file_observer.upgrade().is_some());
-            assert!(client_observer.upgrade().is_some());
-
-            crate::src::reactor::shutdown_runtime();
-
             assert!(file_observer.upgrade().is_none());
             assert!(client_observer.upgrade().is_none());
         }

@@ -11,13 +11,6 @@ pub struct Task {
     task: Option<hmux_rt::mio::Task>,
 }
 
-/// Queue a callback without running it inline or creating a timer.
-/// Shutdown or a scheduling failure releases captures without dispatching it.
-pub fn defer(callback: impl FnOnce() + 'static) {
-    ensure_runtime();
-    let _ = handle().defer(callback);
-}
-
 impl Task {
     pub const fn new() -> Self {
         Self { task: None }
@@ -41,13 +34,16 @@ impl Task {
     }
 
     pub fn is_pending(&self) -> bool {
-        self.task.as_ref().is_some_and(|task| task.is_pending())
+        self.task
+            .as_ref()
+            .is_some_and(hmux_rt::mio::Handle::task_is_pending)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hmux_rt::AsyncFd as _;
     use std::cell::{Cell, RefCell};
     use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
@@ -60,46 +56,30 @@ mod tests {
     }
 
     #[test]
-    fn deferred_callbacks_queue_without_inline_dispatch_and_release_captures() {
-        let order = Rc::new(RefCell::new(Vec::new()));
-        let observed = order.clone();
-        defer(move || {
-            observed.borrow_mut().push(1);
-            let nested = observed.clone();
-            defer(move || nested.borrow_mut().push(3));
-            observed.borrow_mut().push(2);
-        });
-        assert!(order.borrow().is_empty());
-        poll();
-        assert_eq!(*order.borrow(), [1, 2, 3]);
-        assert_eq!(Rc::strong_count(&order), 1);
-        super::super::shutdown_runtime();
-    }
-
-    #[test]
-    fn callbacks_and_futures_run_without_a_host_borrow() {
-        fn schedule_through_mutable_host(calls: Rc<Cell<usize>>) {
-            super::super::HOST.with(|host| {
-                let mut host = host.borrow_mut();
-                host.as_mut()
-                    .unwrap()
-                    .handle()
-                    .defer(move || calls.set(calls.get() + 1))
-                    .unwrap();
-            });
-        }
-
-        use hmux_rt::Runtime as _;
+    fn tasks_can_spawn_work_owned_by_the_caller() {
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        defer(move || schedule_through_mutable_host(observed));
-        let observed = calls.clone();
+        let child = Rc::new(RefCell::new(Task::new()));
+        let retained = child.clone();
         let mut task = Task::new();
-        task.start(move || Ok(async move { schedule_through_mutable_host(observed) }))
-            .unwrap();
+        task.start(move || {
+            Ok(async move {
+                retained
+                    .borrow_mut()
+                    .start(move || {
+                        Ok(async move {
+                            observed.set(1);
+                        })
+                    })
+                    .unwrap();
+            })
+        })
+        .unwrap();
+        assert_eq!(calls.get(), 0);
         poll();
-        assert_eq!(calls.get(), 2);
+        assert_eq!(calls.get(), 1);
         assert!(!task.is_pending());
+        assert!(!child.borrow().is_pending());
         super::super::shutdown_runtime();
     }
 
@@ -115,7 +95,7 @@ mod tests {
             let source = super::super::descriptor(fd)?;
             let observed = observed.clone();
             Ok(async move {
-                source.wait(true, false).await.unwrap();
+                source.ready(true, false).await.unwrap();
                 observed.set(observed.get() + 1);
             })
         })
@@ -140,7 +120,7 @@ mod tests {
                 let source = super::super::descriptor(fd)?;
                 let observed = observed.clone();
                 Ok(async move {
-                    source.wait(true, false).await.unwrap();
+                    source.ready(true, false).await.unwrap();
                     observed.set(observed.get() + 1);
                 })
             })
@@ -211,7 +191,7 @@ mod tests {
             let source = super::super::descriptor(fd)?;
             let observed = observed.clone();
             Ok(async move {
-                source.wait(true, false).await.unwrap();
+                source.ready(true, false).await.unwrap();
                 let mut byte = 0_u8;
                 assert_eq!(
                     unsafe { libc::read(fd, (&mut byte as *mut u8).cast(), 1) },
@@ -294,44 +274,30 @@ mod tests {
     }
 
     #[test]
-    fn shutdown_during_dispatch_stops_work_and_allows_later_initialization() {
-        let mut old = Task::new();
-        old.start(|| Ok(std::future::pending())).unwrap();
-        let owner = refbox::RefBox::new(());
-        let observer = owner.downgrade();
-        let returned = Rc::new(Cell::new(false));
-        let mark = returned.clone();
-        defer(move || {
-            super::super::shutdown_runtime();
-            assert!(handle().spawn(async {}).is_err());
-            // A callback can finish normally, but cannot create a replacement
-            // runtime or schedule more work while shutdown is in progress.
-            defer(move || {
-                drop(owner);
-                panic!("shutdown must reject new callbacks");
-            });
-            mark.set(true);
-        });
-        let queued = refbox::RefBox::new(());
-        let queued_observer = queued.downgrade();
-        defer(move || {
-            drop(queued);
-            panic!("shutdown must release callbacks without dispatching them");
-        });
-        poll();
-        assert!(returned.get());
-        assert!(!observer.is_alive());
-        assert!(!queued_observer.is_alive());
-        assert!(!old.is_pending());
-        assert!(!super::super::runtime_initialized());
-
+    fn shutdown_during_dispatch_is_rejected_before_cleanup() {
+        let rejected = Rc::new(Cell::new(false));
+        let observed = rejected.clone();
+        let mut first = Task::new();
+        first
+            .start(move || {
+                Ok(async move {
+                    let result = std::panic::catch_unwind(super::super::shutdown_runtime);
+                    observed.set(result.is_err());
+                    assert!(super::super::runtime_initialized());
+                })
+            })
+            .unwrap();
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        defer(move || observed.set(1));
-        old.cancel();
+        let mut second = Task::new();
+        second
+            .start(move || Ok(async move { observed.set(1) }))
+            .unwrap();
         poll();
+        assert!(rejected.get());
         assert_eq!(calls.get(), 1);
         super::super::shutdown_runtime();
+        assert!(!super::super::runtime_initialized());
     }
 
     #[test]
@@ -351,26 +317,5 @@ mod tests {
         task.cancel();
         assert!(!observer.is_alive());
         super::super::shutdown_runtime();
-    }
-
-    #[test]
-    fn shutdown_releases_deferred_work_queued_by_capture_destructors() {
-        struct DeferOnDrop(Option<refbox::RefBox<()>>);
-        impl Drop for DeferOnDrop {
-            fn drop(&mut self) {
-                let owner = self.0.take().unwrap();
-                defer(move || {
-                    drop(owner);
-                    panic!("shutdown must not dispatch deferred work");
-                });
-            }
-        }
-
-        let owner = refbox::RefBox::new(());
-        let observer = owner.downgrade();
-        let guard = DeferOnDrop(Some(owner));
-        defer(move || drop(guard));
-        super::super::shutdown_runtime();
-        assert!(!observer.is_alive());
     }
 }

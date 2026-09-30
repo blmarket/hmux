@@ -9,16 +9,14 @@ mod streams;
 mod tasks;
 mod timers;
 pub use buffer::*;
-use hmux_rt::Runtime as _;
+use hmux_rt::{Handle as _, Runtime as _};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 pub use streams::*;
-pub use tasks::{defer, Task};
-#[allow(deprecated)]
-pub use timers::timer_once;
+pub use tasks::Task;
 pub use timers::{timer_once_owned, Timer};
 
 #[repr(C)]
@@ -27,19 +25,21 @@ pub struct bufferevent_ops {
 }
 thread_local! {
     static HOST: RefCell<Option<hmux_rt::mio::Runtime>> = const { RefCell::new(None) };
+    static HANDLE: RefCell<Option<hmux_rt::mio::Handle>> = const { RefCell::new(None) };
     static FDS: RefCell<HashMap<i32, Weak<hmux_rt::mio::Descriptor>>> = RefCell::new(HashMap::new());
 }
 pub(crate) fn handle() -> hmux_rt::mio::Handle {
-    HOST.with(|h| h.borrow().as_ref().expect("runtime initialized").handle())
+    HANDLE.with(|h| h.borrow().as_ref().expect("runtime initialized").clone())
 }
 pub(crate) fn runtime_initialized() -> bool {
-    HOST.with(|h| h.borrow().is_some())
+    HANDLE.with(|h| h.borrow().is_some())
 }
 fn ensure_runtime() {
     if runtime_initialized() {
         return;
     }
     let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
+    HANDLE.with(|h| *h.borrow_mut() = Some(runtime.handle()));
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
 pub(crate) fn descriptor(fd: i32) -> std::io::Result<Rc<hmux_rt::mio::Descriptor>> {
@@ -52,7 +52,7 @@ pub(crate) fn descriptor(fd: i32) -> std::io::Result<Rc<hmux_rt::mio::Descriptor
         return Err(std::io::Error::last_os_error());
     }
     let lease = Rc::new(unsafe { OwnedFd::from_raw_fd(duplicate) });
-    let source = Rc::new(hmux_rt::mio::Descriptor::new(&handle(), lease)?);
+    let source = Rc::new(handle().descriptor(lease)?);
     FDS.with(|f| {
         let mut f = f.borrow_mut();
         f.retain(|_, value| value.strong_count() != 0);
@@ -75,44 +75,26 @@ pub fn poll_runtime() {
 
 fn poll_runtime_with_timeout(max_wait: Option<Duration>) {
     ensure_runtime();
-    let core = HOST.with(|h| {
+    HOST.with(|h| {
         h.borrow_mut()
             .as_mut()
             .expect("runtime initialized")
-            .prepare_poll(max_wait)
-            .expect("hmux-rt poll")
+            .poll(max_wait)
+            .expect("hmux-rt poll");
     });
-    core.dispatch().expect("hmux-rt dispatch");
-    let shutdown = HOST.with(|h| {
-        h.borrow()
-            .as_ref()
-            .is_some_and(|runtime| runtime.is_shutdown())
-    });
-    if shutdown {
-        let runtime = HOST.with(|h| h.borrow_mut().take());
-        drop(runtime);
-    }
 }
 
+/// Drop the runtime after polling has returned. Calling this from a callback
+/// panics before cleanup because the runtime owner is still borrowed.
 pub fn shutdown_runtime() {
+    let runtime = HOST.with(|h| h.borrow_mut().take());
+    let Some(runtime) = runtime else { return };
     streams::clear();
     timers::clear();
     FDS.with(|f| f.borrow_mut().clear());
-    let runtime = HOST.with(|h| {
-        // Keep the closed runtime reachable while capture destructors run, so
-        // scheduling through them cannot initialize a replacement runtime.
-        if let Some(runtime) = h.borrow().as_ref() {
-            runtime.shutdown();
-            // Keep the closed instance visible until the active dispatch ends.
-            if runtime.is_dispatching() {
-                return None;
-            }
-        }
-        // A capture destructor can reenter shutdown under the shared borrow
-        // above. The outer shutdown removes the owner once cleanup completes.
-        h.try_borrow_mut().ok().and_then(|mut host| host.take())
-    });
+    // Keep the scheduling handle accessible while destructors run.
     drop(runtime);
+    HANDLE.with(|h| h.borrow_mut().take());
 }
 pub(crate) async fn yield_now() {
     let mut yielded = false;

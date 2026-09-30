@@ -51,9 +51,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::{
     access, close, free, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep, ttyname,
 };
-use crate::src::file::{
-    file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
-};
+use crate::src::file::{file_print, file_read_data, file_read_done, file_write_done, file_write_ready};
 use crate::src::format::bytes::xformat;
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::format::{
@@ -734,9 +732,7 @@ use crate::src::shared::pane::{
     PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL, PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM,
     PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
 };
-use crate::src::shared::posix_io::{
-    _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
-};
+use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::screen::{
     screen, ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
@@ -1438,13 +1434,12 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     server_check_unattached();
     server_update_socket();
 }
-/// Transfer a client reference to deferred cleanup, preserving the event-loop
-/// lifetime required by client teardown callbacks.
+/// Release one client owner after its caller has finished using it.
 fn server_client_unref_owned(c: ClientRef) {
     unsafe {
         log_debug(format_args!("unref client {}", log_pointer(c.get().cast())));
     }
-    crate::src::shared::rc::release_later(c);
+    drop(c);
 }
 unsafe fn server_client_free(c_value: &mut client) {
     let c: *mut client = c_value as *mut _;
@@ -5229,7 +5224,7 @@ mod key_event_owner_tests {
             let mut queued = key_event::new(2, mouse, Some(vec![2]));
             queued.client = std::rc::Rc::downgrade(&owner);
             drop(QueuedKeyEvent(queued, Some(owner.clone())));
-            assert_eq!(std::rc::Rc::strong_count(&owner), 2);
+            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
             crate::src::reactor::poll_runtime();
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
         }

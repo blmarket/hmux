@@ -36,9 +36,9 @@ impl Drop for Dropped {
 fn task_handles_observe_completion_and_runtime_shutdown() {
     let mut runtime = mio::Runtime::new().unwrap();
     let task = runtime.handle().spawn(async {}).unwrap();
-    assert!(task.is_pending());
+    assert!(mio::Handle::task_is_pending(&task));
     tick(&mut runtime);
-    assert!(!task.is_pending());
+    assert!(!mio::Handle::task_is_pending(&task));
 
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
@@ -49,136 +49,40 @@ fn task_handles_observe_completion_and_runtime_shutdown() {
             std::future::pending::<()>().await;
         })
         .unwrap();
-    assert!(pending.is_pending());
+    assert!(mio::Handle::task_is_pending(&pending));
     drop(runtime);
-    assert!(!pending.is_pending());
+    assert!(!mio::Handle::task_is_pending(&pending));
     assert_eq!(count.get(), 0, "the task still owns its future");
     drop(pending);
     assert_eq!(count.get(), 1);
 }
 
 #[test]
-fn deferred_callbacks_run_or_release_captures_on_runtime_shutdown() {
-    let mut runtime = mio::Runtime::new().unwrap();
-    let count = Rc::new(Cell::new(0));
-    let spy = Dropped(count.clone());
-    runtime.handle().defer(move || drop(spy)).unwrap();
-    assert_eq!(count.get(), 0);
-    tick(&mut runtime);
-    assert_eq!(count.get(), 1);
-
-    let spy = Dropped(count.clone());
-    runtime
-        .handle()
-        .defer(move || {
-            let _spy = spy;
-            panic!("shutdown must not dispatch callbacks");
-        })
-        .unwrap();
-    drop(runtime);
-    assert_eq!(count.get(), 2);
-}
-
-#[test]
-fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
-    struct EnqueueOnDrop {
-        handle: mio::Handle,
-        dropped: Rc<Cell<usize>>,
-    }
-    impl Drop for EnqueueOnDrop {
-        fn drop(&mut self) {
-            let spy = Dropped(self.dropped.clone());
-            let _ = self.handle.defer(move || {
-                let _spy = spy;
-                panic!("cleanup must not dispatch queued work");
-            });
-        }
-    }
-
-    let runtime = mio::Runtime::new().unwrap();
-    let handle = runtime.handle();
-    let count = Rc::new(Cell::new(0));
-    let enqueue = EnqueueOnDrop {
-        handle: handle.clone(),
-        dropped: count.clone(),
-    };
-    handle
-        .defer(move || {
-            let _enqueue = enqueue;
-            panic!("shutdown must not dispatch callbacks");
-        })
-        .unwrap();
-    drop(runtime);
-    assert_eq!(count.get(), 1);
-    let spy = Dropped(count.clone());
-    assert!(handle.defer(move || drop(spy)).is_err());
-    assert_eq!(count.get(), 2);
-}
-
-#[test]
-fn shutdown_during_poll_closes_io_and_releases_queued_callbacks() {
-    let runtime = Rc::new(RefCell::new(mio::Runtime::new().unwrap()));
-    let handle = runtime.borrow().handle();
-    let (_writer, fd) = pair();
-    let source = handle.io(fd.clone()).unwrap();
-    let observer = Rc::downgrade(&runtime);
-    handle
-        .defer(move || observer.upgrade().unwrap().borrow().shutdown())
-        .unwrap();
-    let count = Rc::new(Cell::new(0));
-    let spy = Dropped(count.clone());
-    handle
-        .defer(move || {
-            let _spy = spy;
-            panic!("shutdown must stop dispatching callbacks");
-        })
-        .unwrap();
-    let core = runtime
-        .borrow_mut()
-        .prepare_poll(Some(Duration::ZERO))
-        .unwrap();
-    core.dispatch().unwrap();
-    assert!(runtime.borrow().is_shutdown());
-    assert_eq!(count.get(), 1);
-    assert_eq!(Rc::strong_count(&fd), 1);
-    assert!(handle.spawn(async {}).is_err());
-    assert!(matches!(
-        runtime.borrow_mut().poll(Some(Duration::ZERO)),
-        Err(error) if error.kind() == io::ErrorKind::BrokenPipe
-    ));
-    let mut bytes = [0; 1];
-    let mut read = std::pin::pin!(source.read(&mut bytes));
-    assert!(matches!(
-        read.as_mut().poll(&mut Context::from_waker(Waker::noop())),
-        Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::BrokenPipe
-    ));
-}
-
-#[test]
-fn preparation_defers_wakers_and_dropping_prepared_core_preserves_readiness() {
+fn readiness_wakers_can_schedule_while_the_owner_is_borrowed() {
     use std::task::{ContextBuilder, LocalWake, LocalWaker};
 
     struct Wake {
-        runtime: std::rc::Weak<RefCell<mio::Runtime>>,
+        handle: mio::Handle,
         calls: Rc<Cell<usize>>,
+        tasks: Rc<RefCell<Vec<mio::Task>>>,
     }
     impl LocalWake for Wake {
         fn wake(self: Rc<Self>) {
-            let runtime = self.runtime.upgrade().unwrap();
-            let runtime = runtime.borrow_mut();
             let calls = self.calls.clone();
-            runtime
-                .handle()
-                .defer(move || calls.set(calls.get() + 1))
-                .unwrap();
+            self.tasks.borrow_mut().push(
+                self.handle
+                    .spawn(async move { calls.set(calls.get() + 1) })
+                    .unwrap(),
+            );
         }
     }
 
     let runtime = Rc::new(RefCell::new(mio::Runtime::new().unwrap()));
     let calls = Rc::new(Cell::new(0));
     let wake = LocalWaker::from(Rc::new(Wake {
-        runtime: Rc::downgrade(&runtime),
+        handle: runtime.borrow().handle(),
         calls: calls.clone(),
+        tasks: Rc::new(RefCell::new(Vec::new())),
     }));
     let mut context = ContextBuilder::from_waker(Waker::noop())
         .local_waker(&wake)
@@ -189,17 +93,7 @@ fn preparation_defers_wakers_and_dropping_prepared_core_preserves_readiness() {
     let mut read = std::pin::pin!(source.read(&mut bytes));
     assert!(read.as_mut().poll(&mut context).is_pending());
     writer.write_all(b"x").unwrap();
-    let core = runtime
-        .borrow_mut()
-        .prepare_poll(Some(Duration::ZERO))
-        .unwrap();
-    assert_eq!(calls.get(), 0);
-    drop(core);
-    let core = runtime
-        .borrow_mut()
-        .prepare_poll(Some(Duration::ZERO))
-        .unwrap();
-    core.dispatch().unwrap();
+    runtime.borrow_mut().poll(Some(Duration::ZERO)).unwrap();
     assert_eq!(calls.get(), 1);
     assert!(matches!(
         read.as_mut().poll(&mut context),
@@ -208,31 +102,38 @@ fn preparation_defers_wakers_and_dropping_prepared_core_preserves_readiness() {
 }
 
 #[test]
-fn ready_queue_orders_tasks_and_deferred_callbacks_without_inline_dispatch() {
-    let mut runtime = mio::Runtime::new().unwrap();
-    let handle = runtime.handle();
-    let order = Rc::new(RefCell::new(Vec::new()));
-    let observed = order.clone();
-    handle.defer(move || observed.borrow_mut().push(1)).unwrap();
-    let observed = order.clone();
-    let _task = handle
-        .spawn(async move {
-            observed.borrow_mut().push(2);
-        })
-        .unwrap();
-    let observed = order.clone();
+fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
+    let runtime = Rc::new(RefCell::new(Some(mio::Runtime::new().unwrap())));
+    let handle = runtime.borrow().as_ref().unwrap().handle();
+    let owner = runtime.clone();
     let nested = handle.clone();
-    handle
-        .defer(move || {
-            observed.borrow_mut().push(3);
-            let last = observed.clone();
-            nested.defer(move || last.borrow_mut().push(5)).unwrap();
-            observed.borrow_mut().push(4);
+    let tasks = Rc::new(RefCell::new(Vec::new()));
+    let retained = tasks.clone();
+    let calls = Rc::new(Cell::new(0));
+    let observed = calls.clone();
+    let _parent = handle
+        .spawn(async move {
+            assert!(owner.try_borrow_mut().is_err());
+            retained.borrow_mut().push(
+                nested
+                    .spawn(async move {
+                        observed.set(1);
+                    })
+                    .unwrap(),
+            );
         })
         .unwrap();
-    assert!(order.borrow().is_empty());
-    tick(&mut runtime);
-    assert_eq!(*order.borrow(), [1, 2, 3, 4, 5]);
+    assert_eq!(calls.get(), 0);
+    runtime
+        .borrow_mut()
+        .as_mut()
+        .unwrap()
+        .poll(Some(Duration::ZERO))
+        .unwrap();
+    assert_eq!(calls.get(), 1);
+    let owner = runtime.borrow_mut().take();
+    drop(owner);
+    assert!(handle.spawn(async {}).is_err());
 }
 
 #[test]
@@ -555,13 +456,4 @@ fn descriptor_eof_and_unsupported_regular_files_are_explicit() {
             matches!(runtime.handle().io(Rc::new(file.into())), Err(e) if e.kind() == io::ErrorKind::Unsupported)
         );
     }
-}
-
-#[test]
-fn empty_runtime_returns_and_same_process_reset_is_rejected() {
-    let mut runtime = mio::Runtime::new().unwrap();
-    runtime.poll(None).unwrap();
-    assert!(
-        matches!(runtime.reset_after_fork(), Err(e) if e.kind() == io::ErrorKind::InvalidInput)
-    );
 }

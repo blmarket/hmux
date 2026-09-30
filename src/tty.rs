@@ -1,4 +1,5 @@
 use crate::src::reactor::Timer;
+use hmux_rt::AsyncFd as _;
 // Copy a terminal field and release its component borrow before a nested output
 // operation. Writes evaluate their source before borrowing the destination.
 macro_rules! terminal_value {
@@ -454,7 +455,7 @@ fn tty_start_read(terminal: &mut tty) {
             let source = reactor::descriptor(fd)?;
             Ok(async move {
                 loop {
-                    source.wait(true, false).await.expect("TTY input wait");
+                    source.ready(true, false).await.expect("TTY input wait");
                     let Some(owner) = observer.upgrade() else {
                         return;
                     };
@@ -479,7 +480,7 @@ pub(crate) fn tty_start_write(terminal: &mut tty) {
         .start(move || {
             let source = reactor::descriptor(fd)?;
             Ok(async move {
-                source.wait(false, true).await.expect("TTY output wait");
+                source.ready(false, true).await.expect("TTY output wait");
                 if let Some(owner) = observer.upgrade() {
                     // Complete the one-shot wait before writing: the write path
                     // can schedule another wait if bytes remain in the buffer.

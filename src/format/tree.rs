@@ -309,7 +309,7 @@ mod tests {
                 assert!(observer.upgrade().is_some());
 
                 format_free(ft_owner);
-                assert!(observer.upgrade().is_some());
+                assert!(observer.upgrade().is_none());
                 if cancel {
                     crate::src::reactor::shutdown_runtime();
                 } else {

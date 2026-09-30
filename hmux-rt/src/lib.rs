@@ -12,7 +12,8 @@ use std::os::fd::OwnedFd;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-/// The only owner allowed to drive local tasks and perform lifecycle cleanup.
+/// Owns and drives the runtime. Polling borrows the owner through callback
+/// execution, so the owner cannot be dropped until polling returns.
 pub trait Runtime: Sized + 'static {
     /// The capability for creating work on this runtime instance.
     type Handle: Handle;
@@ -23,21 +24,24 @@ pub trait Runtime: Sized + 'static {
     /// Obtain a capability bound to this instance and process generation.
     fn handle(&self) -> Self::Handle;
 
-    /// Poll tasks, waiting at most max_wait for readiness. Callbacks may access
-    /// scheduling handles; recursively polling it is an error.
+    /// Poll tasks, waiting at most max_wait for readiness. Callbacks schedule
+    /// through handles, without borrowing the runtime again. The owner remains
+    /// exclusively borrowed until all callbacks in this turn have returned.
     fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()>;
-
-    /// Replace an inherited executor/poller in a single-threaded fork child.
-    fn reset_after_fork(&mut self) -> io::Result<()>;
 }
 
-/// A cloneable capability to create local work
+/// A cloneable, thread-local capability to schedule work.
+/// A handle does not keep its runtime owner alive.
 pub trait Handle: Clone + 'static {
     /// Owns a spawned future; dropping it cancels the work.
     type Task: 'static;
 
     /// Leased descriptor supporting async reads and writes.
-    type Io: AsyncRead + AsyncWrite + 'static;
+    type Io: AsyncFd + AsyncRead + AsyncWrite + 'static;
+
+    /// Readiness bridge for nonblocking consumers, including descriptors that
+    /// the OS poller cannot register (such as regular files).
+    type Descriptor: AsyncFd + 'static;
 
     /// Signal subscription.
     type Signals: Signals + 'static;
@@ -45,7 +49,11 @@ pub trait Handle: Clone + 'static {
     /// Monotonic deadline wait.
     type Sleep: Future<Output = io::Result<()>> + 'static;
 
-    /// Schedule a non-Send future, without polling it inline. The returned task
+    /// Whether a task is unfinished and its runtime is still usable.
+    fn task_is_pending(task: &Self::Task) -> bool;
+
+    /// Schedule a local-waker future, without polling it inline. Ordinary Waker
+    /// notifications are inert. The returned task
     /// owns the future and must be retained until completion or cancellation.
     fn spawn<F>(&self, future: F) -> io::Result<Self::Task>
     where
@@ -54,11 +62,71 @@ pub trait Handle: Clone + 'static {
     /// Lease a nonblocking byte-stream descriptor.
     fn io(&self, fd: Rc<OwnedFd>) -> io::Result<Self::Io>;
 
+    /// Lease a descriptor for non-consuming readiness waits. Regular files
+    /// bypass the poller; their actual disk I/O can still block the thread.
+    fn descriptor(&self, fd: Rc<OwnedFd>) -> io::Result<Self::Descriptor>;
+
     /// Subscribe to a nonempty set of valid, catchable signal numbers.
     fn signals(&self, set: &[c_int]) -> io::Result<Self::Signals>;
 
     /// Wait for one absolute monotonic deadline; drop cancels the wait.
     fn sleep_until(&self, deadline: Instant) -> Self::Sleep;
+}
+
+/// A registered nonblocking descriptor with local-waker readiness waits.
+///
+/// Created through [`Handle::io`]. The descriptor is bound to its runtime, so
+/// waiting needs no runtime handle. Dropping the registration deregisters it;
+/// dropping the runtime invalidates subsequent waits.
+///
+/// Readiness consumes no data. The caller must perform nonblocking I/O and
+/// handle `WouldBlock` by waiting again. Only one pending waiter per direction
+/// is supported, shared with byte reads/writes on the same registration.
+///
+/// ```
+/// use hmux_rt::{AsyncFd, Handle, Runtime, mio};
+/// use std::io::{self, Read, Write};
+/// use std::os::fd::OwnedFd;
+/// use std::os::unix::net::UnixStream;
+/// use std::rc::Rc;
+/// use std::time::Duration;
+///
+/// let mut runtime = mio::Runtime::new()?;
+/// let (mut reader, mut writer) = UnixStream::pair()?;
+/// reader.set_nonblocking(true)?;
+/// let lease = Rc::new(OwnedFd::from(reader.try_clone()?));
+/// let fd = runtime.handle().io(lease)?;
+/// let task = runtime.handle().spawn(async move {
+///     let mut byte = [0];
+///     loop {
+///         fd.readable().await.unwrap();
+///         match reader.read(&mut byte) {
+///             Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+///             result => { assert_eq!(result.unwrap(), 1); break; }
+///         }
+///     }
+/// })?;
+/// writer.write_all(b"x")?;
+/// runtime.poll(Some(Duration::ZERO))?;
+/// drop(task);
+/// # Ok::<(), io::Error>(())
+/// ```
+pub trait AsyncFd {
+    /// Wait for either requested direction, returning (readable, writable).
+    /// Requesting neither direction returns `InvalidInput`. Dropping a pending
+    /// wait unregisters its waiter without consuming input or output capacity.
+    fn ready(&self, read: bool, write: bool)
+    -> impl Future<Output = io::Result<(bool, bool)>> + '_;
+
+    /// Wait until a nonblocking read-side operation may make progress.
+    fn readable(&self) -> impl Future<Output = io::Result<()>> + '_ {
+        async move { self.ready(true, false).await.map(|_| ()) }
+    }
+
+    /// Wait until a nonblocking write-side operation may make progress.
+    fn writable(&self) -> impl Future<Output = io::Result<()>> + '_ {
+        async move { self.ready(false, true).await.map(|_| ()) }
+    }
 }
 
 /// A local async byte reader.

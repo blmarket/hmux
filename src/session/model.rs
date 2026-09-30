@@ -142,50 +142,25 @@ mod retained_session_tests {
 
     #[test]
     fn removing_typed_reference_preserves_other_owners() {
-        use std::cell::UnsafeCell;
         use std::rc::Rc;
-
         unsafe {
-            for cancel in [false, true] {
-                let owner = session::new();
-                let observer = Rc::downgrade(&owner);
-                let from = c"typed-owner-test".to_owned();
-                crate::src::session::session_remove_ref(owner.clone(), &from);
-                drop(from);
-                assert_eq!(Rc::strong_count(&owner), 2);
-                if cancel {
-                    reactor::shutdown_runtime();
-                } else {
-                    reactor::poll_runtime();
-                }
-                assert_eq!(Rc::strong_count(&owner), 1);
-                drop(owner);
-                assert!(observer.upgrade().is_none());
-                reactor::shutdown_runtime();
-            }
+            let owner = session::new();
+            let observer = Rc::downgrade(&owner);
+            crate::src::session::session_remove_ref(owner.clone(), c"typed-owner-test");
+            assert_eq!(Rc::strong_count(&owner), 1);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
         }
     }
 
     #[test]
-    fn final_reference_release_defers_cleanup_until_dispatch_or_cancellation() {
+    fn final_reference_release_cleans_up_synchronously() {
+        use std::rc::Rc;
         unsafe {
-            for cancel in [false, true] {
-                let initial = session::new();
-                let ptr = initial.get();
-                let observer = (*ptr).observer.clone();
-                let owner = observer.upgrade().unwrap();
-                drop(initial);
-                assert_eq!(owner.get(), ptr);
-                crate::src::session::session_remove_ref(owner, c"owner-test");
-                assert_eq!(observer.strong_count(), 1);
-                if cancel {
-                    reactor::shutdown_runtime();
-                } else {
-                    reactor::poll_runtime();
-                }
-                assert_eq!(observer.strong_count(), 0);
-                reactor::shutdown_runtime();
-            }
+            let owner = session::new();
+            let observer = Rc::downgrade(&owner);
+            crate::src::session::session_remove_ref(owner, c"owner-test");
+            assert!(observer.upgrade().is_none());
         }
     }
 }

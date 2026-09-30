@@ -1306,11 +1306,11 @@ mod ownership_tests {
                 dispatch.try_borrow_mut(),
                 Err(refbox::BorrowError::Dropped)
             ));
-            // Only the Session registry and its original deferred monitor release
-            // remain; temporary dispatch views did not enqueue extra releases.
-            assert_eq!(session_observer.strong_count(), 2);
-            (&mut sessions).remove(&session_observer.upgrade().unwrap());
+            // Monitor teardown releases its owner before returning; only the
+            // session registry remains after the dispatch view is released.
             assert_eq!(session_observer.strong_count(), 1);
+            (&mut sessions).remove(&session_observer.upgrade().unwrap());
+            assert_eq!(session_observer.strong_count(), 0);
             drop(dispatch);
             assert!(matches!(
                 observer.try_borrow_mut(),
@@ -1509,7 +1509,7 @@ mod ownership_tests {
 
             (&mut sessions).remove(&observer.upgrade().expect("indexed session"));
             monitor_destroy(set_owner);
-            assert_eq!(observer.strong_count(), 1);
+            assert_eq!(observer.strong_count(), 0);
             shutdown_runtime();
             assert!(observer.upgrade().is_none());
             sessions = saved;

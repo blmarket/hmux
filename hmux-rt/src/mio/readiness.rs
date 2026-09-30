@@ -38,6 +38,10 @@ pub(crate) struct IoState {
 }
 
 impl IoState {
+    pub(super) fn check(&self) -> io::Result<()> {
+        self.core.upgrade().ok_or_else(invalid)?.check()
+    }
+
     fn direction(&self, direction: Direction) -> &DirectionState {
         match direction {
             Direction::Read => &self.read,

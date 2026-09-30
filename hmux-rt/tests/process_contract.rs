@@ -98,7 +98,7 @@ fn delayed_signal() {
     assert!(received.get());
 }
 
-fn fork_parent_survives(reset: bool) {
+fn fork_parent_survives() {
     let mut runtime = mio::Runtime::new().unwrap();
     let old_handle = runtime.handle();
     let (mut sender, receiver) = UnixStream::pair().unwrap();
@@ -120,40 +120,6 @@ fn fork_parent_survives(reset: bool) {
         assert!(
             matches!(runtime.poll(Some(Duration::ZERO)), Err(e) if e.kind() == io::ErrorKind::BrokenPipe)
         );
-        if reset {
-            let mut saved = libc::rlimit {
-                rlim_cur: 0,
-                rlim_max: 0,
-            };
-            assert_eq!(
-                unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut saved) },
-                0
-            );
-            let limited = libc::rlimit {
-                rlim_cur: 0,
-                rlim_max: saved.rlim_max,
-            };
-            assert_eq!(unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limited) }, 0);
-            assert!(runtime.reset_after_fork().is_err());
-            assert_eq!(unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &saved) }, 0);
-            runtime.reset_after_fork().unwrap();
-            assert!(old_handle.spawn(async {}).is_err());
-            let (mut child_sender, child_receiver) = UnixStream::pair().unwrap();
-            child_receiver.set_nonblocking(true).unwrap();
-            let child_io = runtime.handle().io(Rc::new(child_receiver.into())).unwrap();
-            let done = Rc::new(Cell::new(false));
-            let mark = done.clone();
-            let _child_task = runtime
-                .handle()
-                .spawn(async move {
-                    child_io.read(&mut [0; 1]).await.unwrap();
-                    mark.set(true);
-                })
-                .unwrap();
-            child_sender.write_all(b"child").unwrap();
-            tick(&mut runtime);
-            assert!(done.get());
-        }
         drop(runtime);
         unsafe {
             libc::_exit(0);
@@ -237,8 +203,7 @@ fn main() {
     match std::env::var("HMUX_RT_CONTRACT_CASE").ok().as_deref() {
         Some("signals") => signals(),
         Some("delayed-signal") => delayed_signal(),
-        Some("fork-reset") => fork_parent_survives(true),
-        Some("fork-drop") => fork_parent_survives(false),
+        Some("fork-drop") => fork_parent_survives(),
         Some("resource-churn") => resource_churn(),
         Some("interrupted-wait") => interrupted_wait_keeps_original_deadline(),
         Some(other) => panic!("unknown scenario {other}"),
@@ -246,7 +211,6 @@ fn main() {
             for scenario in [
                 "signals",
                 "delayed-signal",
-                "fork-reset",
                 "fork-drop",
                 "resource-churn",
                 "interrupted-wait",

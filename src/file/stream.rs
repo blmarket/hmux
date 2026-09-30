@@ -1,5 +1,5 @@
-//! Consumer-side adaptation of the existing push protocol. Producers and their
-//! explicit completion/cleanup paths are unchanged. Not polling pauses only
+//! Consumer-side adaptation of the push protocol. Producers deliver callbacks
+//! and wake notifications after releasing model borrows. Not polling pauses only
 //! consumption: the peer can continue sending and input can continue growing.
 use super::*;
 use crate::src::server_client::Client as _;
@@ -57,24 +57,22 @@ impl Stream for client_file {
     }
 }
 
-pub(super) fn notify(read: &mut ReadState) {
-    if let Some(wake) = read.wake.take() {
-        // Wake after the caller releases its model borrow. No listener runs
-        // inline from a data append or completion transition.
-        defer(move || wake.wake_by_ref());
-    }
+/// Return the notification so the caller can wake after releasing its model borrow.
+pub(super) fn take_wake(read: &mut ReadState) -> Option<LocalWaker> {
+    read.wake.take()
 }
 
-pub(super) fn finish(file: &mut client_file) {
+pub(super) fn finish(file: &mut client_file) -> Option<LocalWaker> {
     if file.read.active && !file.read.terminal {
         file.read.terminal = true;
         file.read.error = (file.error != 0).then_some(file.error);
-        notify(&mut file.read);
+        return take_wake(&mut file.read);
     }
+    None
 }
 
-/// Preserve legacy callback accumulation (source-file/load-buffer) and dispatch
-/// timing. Direct stream consumers retain their input until they poll it.
+/// Preserve callback accumulation for source-file/load-buffer. Direct stream
+/// consumers retain their input until they poll it.
 pub(super) fn collect_for_callback(file: &mut client_file) {
     if !file.read.active {
         return;
@@ -125,11 +123,13 @@ mod tests {
         assert!(Pin::new(&mut file).poll_next(&mut old_cx).is_pending());
         assert!(Pin::new(&mut file).poll_next(&mut cx).is_pending());
         file.read.input.put_slice(b"data");
-        notify(&mut file.read);
-        assert_eq!(current.0.get(), 0, "no inline reentry");
-        unsafe {
-            crate::src::reactor::poll_runtime();
-        }
+        let wake = take_wake(&mut file.read).unwrap();
+        assert_eq!(
+            current.0.get(),
+            0,
+            "notification leaves the model borrow first"
+        );
+        wake.wake();
         assert_eq!(old.0.get(), 0);
         assert_eq!(current.0.get(), 1);
         let Poll::Ready(Some(Ok(bytes))) = Pin::new(&mut file).poll_next(&mut cx) else {
@@ -137,10 +137,8 @@ mod tests {
         };
         assert_eq!(bytes, b"data");
         assert!(Pin::new(&mut file).poll_next(&mut cx).is_pending());
-        finish(&mut file);
-        unsafe {
-            crate::src::reactor::poll_runtime();
-        }
+        let wake = finish(&mut file).unwrap();
+        wake.wake();
         assert_eq!(current.0.get(), 2, "EOF also wakes the reader");
         assert!(matches!(
             Pin::new(&mut file).poll_next(&mut cx),
@@ -157,7 +155,7 @@ mod tests {
         file.read.input.put_slice(&expected[..10000]);
         file.read.input.put_slice(&expected[10000..]);
         file.error = EIO;
-        finish(&mut file);
+        assert!(finish(&mut file).is_none());
         let mut received = Vec::new();
         let mut cx = Context::from_waker(Waker::noop());
         loop {
@@ -212,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_progress_and_completion_keep_accumulation_and_dispatch_timing() {
+    fn progress_accumulates_and_terminal_completion_runs_synchronously() {
         unsafe {
             let client = ClientRef::allocate();
             let progress = Rc::new(Cell::new(0));
@@ -248,9 +246,11 @@ mod tests {
             file_fire_read(&file);
             assert_eq!(progress.get(), 2);
             file_fire_done(&file);
-            assert!(!finished.get(), "completion remains deferred");
-            crate::src::reactor::poll_runtime();
-            assert!(finished.get());
+            assert!(
+                finished.get(),
+                "caller delivers completion before returning"
+            );
+            file_fire_done(&file); // Completion remains one-shot under reentry.
             assert!(client.find_file(7).is_none());
             drop(file);
             crate::src::reactor::shutdown_runtime();

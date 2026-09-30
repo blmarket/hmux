@@ -236,7 +236,7 @@ pub(crate) unsafe fn cmdq_abort_file_wait(owner: &ClientRef) {
     let Some(first) = queue.with_queue(|queue| queue.first()) else {
         return;
     };
-    if (*first.get()).flags & CMDQ_WAITING == 0 {
+    if (*first.get()).flags & (CMDQ_FIRED | CMDQ_WAITING) != (CMDQ_FIRED | CMDQ_WAITING) {
         return;
     }
     let Some(file) = (*first.get()).wait_file.upgrade() else {
@@ -1037,6 +1037,9 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
             (*item).time = time(std::ptr::null_mut());
             number = number.wrapping_add(1);
             (*item).number = number;
+            // Arm before dispatch: a synchronously completed operation can
+            // call cmdq_continue before its command returns CMD_RETURN_WAIT.
+            (*item).flags |= CMDQ_WAITING;
             let retval = match (*item).type_0 {
                 CMDQ_COMMAND => cmdq_fire_command(&item_owner),
                 CMDQ_CALLBACK => cmdq_fire_callback(&item_owner),
@@ -1051,10 +1054,10 @@ pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
                 cmdq_remove_group(&item_owner);
             }
             (*item).flags |= CMDQ_FIRED;
-            if retval == CMD_RETURN_WAIT {
-                (*item).flags |= CMDQ_WAITING;
+            if retval == CMD_RETURN_WAIT && (*item).flags & CMDQ_WAITING != 0 {
                 return items;
             }
+            (*item).flags &= !CMDQ_WAITING;
             items += 1;
         }
         drop(item_owner);
@@ -1072,7 +1075,9 @@ pub unsafe fn cmdq_running() -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> 
     let Some(owner) = queue.with_queue(|queue| queue.item.upgrade()) else {
         return std::rc::Weak::new();
     };
-    if (*owner.get()).removed || (*owner.get()).flags & CMDQ_WAITING != 0 {
+    if (*owner.get()).removed
+        || (*owner.get()).flags & (CMDQ_FIRED | CMDQ_WAITING) == (CMDQ_FIRED | CMDQ_WAITING)
+    {
         return std::rc::Weak::new();
     }
     std::rc::Rc::downgrade(&owner)
@@ -1280,6 +1285,34 @@ mod client_observer_tests {
             assert!(cmdq_get_client(Some(&item)).is_none());
             assert!(cmdq_get_target_client(Some(&item)).is_none());
             cmdq_remove(item_owner);
+        }
+    }
+
+    #[test]
+    fn synchronous_completion_does_not_leave_a_command_waiting() {
+        unsafe {
+            let owner = crate::src::shared::client::ClientRef::fixture_with_queue();
+            let resumed = cmdq_get_callback_owned(
+                c"complete inline",
+                Some(Box::new(|item| {
+                    cmdq_continue(item);
+                    CMD_RETURN_WAIT
+                })),
+            );
+            let calls = Rc::new(std::cell::Cell::new(0));
+            let observed = calls.clone();
+            let following = cmdq_get_callback_owned(
+                c"following",
+                Some(Box::new(move |_| {
+                    observed.set(1);
+                    CMD_RETURN_NORMAL
+                })),
+            );
+            (*resumed.get()).next = Some(following);
+            cmdq_append(Some(&owner), resumed);
+            assert_eq!(cmdq_next(Some(&owner)), 2);
+            assert_eq!(calls.get(), 1);
+            assert!(owner.borrow_queue_mut().list.is_empty());
         }
     }
 

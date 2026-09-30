@@ -31,7 +31,7 @@ pub enum PanDirection {
 
 /// The caller serializes access on the server thread and releases model and
 /// component borrows before callbacks. Logical client loss remains explicit;
-/// existing deferred-owner release sites must keep their deferred release duty.
+/// explicit owner-release sites must still release their retained reference.
 pub trait Client {
     /// Allocate an unregistered client on the server thread. Fully initialized
     /// clients still require explicit client-loss cleanup before final release.
@@ -63,7 +63,7 @@ pub trait Client {
     unsafe fn forget_pane(pane: &Rc<UnsafeCell<window_pane>>)
     where
         Self: Sized;
-    /// Transfer this owner to the existing deferred cleanup queue. Call at the
+    /// Release this owner synchronously. Call at the
     /// same logical release points required by client teardown callbacks.
     fn release(self)
     where

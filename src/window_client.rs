@@ -291,8 +291,6 @@ mod tests {
         assert!(!observer.is_alive());
         drop(items);
         drop(client_owner);
-        assert!(client_observer.upgrade().is_some());
-        crate::src::reactor::shutdown_runtime();
         assert!(client_observer.upgrade().is_none());
     }
 

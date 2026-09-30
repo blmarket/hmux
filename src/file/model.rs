@@ -33,7 +33,8 @@ pub struct client_file {
     pub(super) wait_active: bool,
     pub(super) wait_client: ClientWeak,
     pub(super) cancel_data: Option<Box<dyn FnOnce()>>,
-    pub(super) terminal_scheduled: bool,
+    pub(super) completed: bool,
+    pub(super) push_task: crate::src::reactor::Task,
     pub(super) read: super::stream::ReadState,
 }
 
@@ -68,7 +69,8 @@ impl client_file {
             wait_active: false,
             wait_client: Default::default(),
             cancel_data: Default::default(),
-            terminal_scheduled: Default::default(),
+            completed: Default::default(),
+            push_task: Default::default(),
             read: Default::default(),
         }
     }

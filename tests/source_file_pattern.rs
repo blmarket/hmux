@@ -134,3 +134,27 @@ fn sources_absolute_relative_and_glob_paths_and_reports_no_match() {
     let quiet = server.run(&["source-file", "-q", "missing-*.conf"]);
     assert!(quiet.status.success(), "quiet no-match: {quiet:?}");
 }
+
+#[test]
+fn startup_sources_many_local_files_without_recursion_or_a_stuck_wait() {
+    let server = Server::new();
+    fs::write(server.directory.join("empty.conf"), "").unwrap();
+    let startup = server.directory.join("startup.conf");
+    let mut configuration = String::from("source-file");
+    for _ in 0..4096 {
+        configuration.push_str(" empty.conf");
+    }
+    configuration.push_str("\nset-option -g @startup-completed yes\n");
+    fs::write(&startup, configuration).unwrap();
+    let created = server.run(&[
+        "-f",
+        startup.to_str().unwrap(),
+        "new-session",
+        "-d",
+        "-s",
+        "local-source",
+        "sleep 30",
+    ]);
+    assert!(created.status.success(), "startup source-file: {created:?}");
+    assert_eq!(server.option("@startup-completed"), b"yes\n");
+}

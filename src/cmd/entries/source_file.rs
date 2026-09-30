@@ -31,7 +31,7 @@ use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
 use crate::src::shared::event::*;
 use crate::src::shared::session::session;
 use hmux_buffer::SegmentedBuf;
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 
@@ -99,7 +99,10 @@ impl cmd_source_file_data {
         }
     }
 
-    fn into_read_callback(self: Box<Self>) -> client_file_cb {
+    fn into_read_callback(
+        self: Box<Self>,
+        next: Weak<RefCell<Option<Box<Self>>>>,
+    ) -> client_file_cb {
         let mut owner = Some(self);
         Some(Box::new(move |event| {
             // Progress leaves the record in this callback. Only the terminal
@@ -109,12 +112,20 @@ impl cmd_source_file_data {
             }
             let owner = owner.take().expect("one terminal source-file callback");
             unsafe {
-                cmd_source_file_done(
+                if let Some(owner) = cmd_source_file_done(
                     owner,
                     event.path,
                     event.error,
                     event.buffer.expect("read callback buffer"),
-                );
+                ) {
+                    if let Some(next) = next.upgrade() {
+                        // Synchronous completion: let the initiating loop read
+                        // the next file after this callback has returned.
+                        *next.borrow_mut() = Some(owner);
+                    } else {
+                        cmd_source_file_read(owner);
+                    }
+                }
             }
         }))
     }
@@ -123,7 +134,7 @@ impl cmd_source_file_data {
 impl Drop for cmd_source_file_data {
     fn drop(&mut self) {
         self.decrement_depth();
-        // Preserve cleanup order: depth, path copies, then deferred client release.
+        // Preserve cleanup order: depth, path copies, then client release.
         drop(std::mem::take(&mut self.files));
         if let Some(client) = self.client.take() {
             (client).release();
@@ -174,23 +185,26 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
     );
 }
 
-unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
-    let Some(item_owner) = cdata.item.upgrade() else {
-        return;
-    };
-    let client_owner = cdata.client.clone();
-    let item = item_owner.get();
-    let path = cdata.files[cdata.current as usize].as_ptr();
-    file_read_with_cmdq_wait(
-        client_owner.as_ref(),
-        path,
-        cdata.into_read_callback(),
-        &(*(item))
-            .observer
-            .upgrade()
-            .expect("live command queue item"),
-        None,
-    );
+unsafe fn cmd_source_file_read(mut cdata: Box<cmd_source_file_data>) {
+    let next = Rc::new(RefCell::new(None));
+    loop {
+        let Some(item_owner) = cdata.item.upgrade() else {
+            return;
+        };
+        let client_owner = cdata.client.clone();
+        let path = cdata.files[cdata.current as usize].as_ptr();
+        file_read_with_cmdq_wait(
+            client_owner.as_ref(),
+            path,
+            cdata.into_read_callback(Rc::downgrade(&next)),
+            &item_owner,
+            None,
+        );
+        let Some(owner) = next.borrow_mut().take() else {
+            return;
+        };
+        cdata = owner;
+    }
 }
 
 unsafe fn cmd_source_file_done(
@@ -198,9 +212,9 @@ unsafe fn cmd_source_file_done(
     path: Option<&CStr>,
     error: ::core::ffi::c_int,
     buffer: &mut SegmentedBuf,
-) {
+) -> Option<Box<cmd_source_file_data>> {
     let Some(item_owner) = cdata.item.upgrade() else {
-        return;
+        return None;
     };
     let item = item_owner.get();
     let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
@@ -249,7 +263,7 @@ unsafe fn cmd_source_file_done(
     }
     cdata.current = cdata.current.wrapping_add(1);
     if (cdata.current as usize) < cdata.files.len() {
-        cmd_source_file_read(cdata);
+        Some(cdata)
     } else {
         cmd_source_file_complete(cdata);
         cmdq_continue(
@@ -258,6 +272,7 @@ unsafe fn cmd_source_file_done(
                 .upgrade()
                 .expect("live command queue item"),
         );
+        None
     }
 }
 unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {

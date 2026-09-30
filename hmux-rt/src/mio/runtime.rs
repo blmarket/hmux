@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use super::readiness::IoState;
 use super::signals::SignalState;
-use super::{Io, Signals, Sleep};
+use super::{Descriptor, Io, Signals, Sleep};
 
 // Bound each turn so a self-waking task cannot monopolize the host thread.
 const MAX_POLLS_PER_TURN: usize = 128;
@@ -19,7 +19,6 @@ type TaskFuture = Pin<Box<dyn Future<Output = ()>>>;
 
 enum Ready {
     Task(Weak<TaskState>),
-    Callback(Box<dyn FnOnce()>),
     Wake(LocalWaker),
 }
 
@@ -27,7 +26,7 @@ impl Ready {
     fn is_runnable(&self) -> bool {
         match self {
             Self::Task(task) => task.upgrade().is_some_and(|task| !task.cancelled.get()),
-            Self::Callback(_) | Self::Wake(_) => true,
+            Self::Wake(_) => true,
         }
     }
 }
@@ -40,16 +39,15 @@ pub(crate) fn invalid() -> io::Error {
 }
 
 /// Scheduling state accessible independently of the runtime owner.
-pub struct Core {
+pub(crate) struct Core {
     pub(crate) pid: u32,
     pub(crate) alive: Cell<bool>,
     poisoned: Cell<bool>,
-    driving: Cell<bool>,
     next_id: Cell<usize>,
     pub(crate) registry: RefCell<Option<mio::Registry>>,
     // Only a count for idle detection and queue compaction, never task ownership.
     pending_tasks: Cell<usize>,
-    // Task entries observe their owners; callbacks transfer ownership to the queue.
+    // Task entries observe their owners; the queue never owns task futures.
     ready: RefCell<VecDeque<Ready>>,
     pub(crate) timers: RefCell<BTreeMap<(Instant, usize), LocalWaker>>,
     pub(crate) io: RefCell<HashMap<usize, Weak<IoState>>>,
@@ -136,8 +134,7 @@ impl Core {
         self.registry.borrow_mut().take();
         self.fds.borrow_mut().clear();
         self.timers.borrow_mut().clear();
-        // Callback captures may queue more work when dropped. Reject it through
-        // the closed core, without holding a queue borrow during destruction.
+        // Release queued wakers without holding the queue borrow during Drop.
         let ready = std::mem::take(&mut *self.ready.borrow_mut());
         drop(ready);
     }
@@ -200,7 +197,7 @@ pub struct Task {
 
 impl Task {
     /// Whether the unfinished task can still run on its runtime.
-    pub fn is_pending(&self) -> bool {
+    fn is_pending(&self) -> bool {
         !self.state.cancelled.get()
             && self
                 .state
@@ -222,24 +219,20 @@ pub struct Handle {
     pub(crate) core: Rc<Core>,
 }
 
-impl Handle {
-    /// Transfer a one-shot callback to the ready queue, without running it inline.
-    /// Runtime shutdown or a scheduling failure releases its captures.
-    pub fn defer(&self, callback: impl FnOnce() + 'static) -> io::Result<()> {
-        self.core.check()?;
-        self.core
-            .ready
-            .borrow_mut()
-            .push_back(Ready::Callback(Box::new(callback)));
-        Ok(())
-    }
-}
-
 impl crate::Handle for Handle {
     type Task = Task;
     type Io = Io;
+    type Descriptor = Descriptor;
     type Signals = Signals;
     type Sleep = Sleep;
+
+    fn task_is_pending(task: &Task) -> bool {
+        task.is_pending()
+    }
+
+    fn descriptor(&self, fd: Rc<OwnedFd>) -> io::Result<Descriptor> {
+        Descriptor::new(self, fd)
+    }
 
     fn spawn<F>(&self, future: F) -> io::Result<Task>
     where
@@ -293,7 +286,6 @@ impl crate::Runtime for Runtime {
                 pid: std::process::id(),
                 alive: Cell::new(true),
                 poisoned: Cell::new(false),
-                driving: Cell::new(false),
                 next_id: Cell::new(1),
                 registry: RefCell::new(Some(registry)),
                 pending_tasks: Cell::new(0),
@@ -316,33 +308,15 @@ impl crate::Runtime for Runtime {
     }
 
     fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
-        self.prepare_poll(max_wait)?.dispatch()
-    }
-
-    fn reset_after_fork(&mut self) -> io::Result<()> {
-        if self.core.pid == std::process::id() || self.core.driving.get() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "reset requires an idle inherited runtime",
-            ));
-        }
-        let replacement = Self::new()?;
-        *self = replacement;
-        Ok(())
+        self.prepare_poll(max_wait)?;
+        self.core.dispatch()
     }
 }
 
 impl Runtime {
     /// Collect readiness without invoking wakers, callbacks, or futures.
-    /// Release the runtime borrow before calling Core::dispatch.
-    pub fn prepare_poll(&mut self, max_wait: Option<Duration>) -> io::Result<Rc<Core>> {
+    fn prepare_poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
         self.core.check()?;
-        if self.core.driving.get() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "reentrant driving",
-            ));
-        }
         if let Some(error) = self.core.error.borrow_mut().take() {
             return Err(error);
         }
@@ -388,21 +362,7 @@ impl Runtime {
             }
         }
         self.queue_ready_timers();
-        Ok(self.core.clone())
-    }
-
-    /// Close registrations and queued callbacks immediately, including during
-    /// dispatch. Task owners retain their futures but can no longer run them.
-    pub fn shutdown(&self) {
-        self.core.close();
-    }
-
-    pub fn is_shutdown(&self) -> bool {
-        !self.core.alive.get()
-    }
-
-    pub fn is_dispatching(&self) -> bool {
-        self.core.driving.get()
+        Ok(())
     }
 
     fn queue_ready_timers(&self) {
@@ -428,22 +388,9 @@ impl Runtime {
 }
 
 impl Core {
-    /// Run queued notifications and work without borrowing the runtime owner.
-    pub fn dispatch(&self) -> io::Result<()> {
+    /// Run queued notifications and work, releasing queue borrows before user code.
+    fn dispatch(&self) -> io::Result<()> {
         self.check()?;
-        if self.driving.replace(true) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "reentrant driving",
-            ));
-        }
-        struct Driving<'a>(&'a Cell<bool>);
-        impl Drop for Driving<'_> {
-            fn drop(&mut self) {
-                self.0.set(false);
-            }
-        }
-        let _driving = Driving(&self.driving);
         let mut polled = 0;
         while polled < MAX_POLLS_PER_TURN && self.alive.get() {
             let ready = self.ready.borrow_mut().pop_front();
@@ -455,16 +402,6 @@ impl Core {
                 Ready::Wake(wake) => {
                     polled += 1;
                     wake.wake();
-                    continue;
-                }
-                Ready::Callback(callback) => {
-                    polled += 1;
-                    if let Err(panic) =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(callback))
-                    {
-                        self.poisoned.set(true);
-                        std::panic::resume_unwind(panic);
-                    }
                     continue;
                 }
             };
@@ -511,7 +448,7 @@ impl Core {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        self.shutdown();
+        self.core.close();
     }
 }
 

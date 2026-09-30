@@ -114,12 +114,6 @@ fn register(id: NonZeroU64, delay: Duration, callback: Box<dyn FnMut()>) -> io::
     Ok(())
 }
 
-/// Queue a callback without running it inline.
-#[deprecated(note = "use reactor::defer for deferred execution without a timer")]
-pub fn timer_once(callback: impl FnOnce() + 'static) {
-    super::defer(callback);
-}
-
 /// Transfer a record and its timer to the reactor until dispatch or shutdown.
 pub fn timer_once_owned<T: 'static>(
     mut owner: Box<T>,

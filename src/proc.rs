@@ -27,6 +27,7 @@ pub use crate::src::shared::signal::{
 };
 use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::tmux::{getversion, socket_path};
+use hmux_rt::AsyncFd as _;
 use hmux_rt::{Handle as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::FromRawFd;
@@ -139,7 +140,7 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
             Ok(async move {
                 loop {
                     let (readable, writable) =
-                        source.wait(true, writable).await.expect("peer I/O wait");
+                        source.ready(true, writable).await.expect("peer I/O wait");
                     unsafe { proc_io_ready(peer, readable, writable) };
                     // Dispatch can remove the peer or replace this task. Yield
                     // before another wait so cancellation drops the old future.
@@ -339,7 +340,8 @@ pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ff
     sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     (*tp).signal_task.cancel();
     if defaults != 0 {
-        crate::src::reactor::shutdown_runtime();
+        // Pre-exec cleanup may run inside a runtime callback. The runtime
+        // remains borrowed until exec replaces the process. Reset signals here.
         sigaction(SIGINT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGHUP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
@@ -544,7 +546,13 @@ mod ownership_tests {
                     poll_runtime();
                 }
                 assert_eq!(&*calls.borrow(), &[SIGUSR1, SIGUSR2]);
-                proc_clear_signals(tp, 1);
+                // Pre-exec signal cleanup must also work inside a callback,
+                // while the runtime owner is mutably borrowed by poll.
+                let mut cleanup = reactor::Task::new();
+                cleanup
+                    .start(move || Ok(async move { proc_clear_signals(tp, 1) }))
+                    .unwrap();
+                poll_runtime();
                 proc_free(owner);
                 libc::_exit(0);
             }

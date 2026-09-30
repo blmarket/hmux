@@ -87,7 +87,7 @@ pub trait Session {
     unsafe fn next_id() -> u32
     where
         Self: Sized;
-    /// Keep the original deferred allocation-release duty and diagnostics.
+    /// Release this owner now, preserving the release diagnostics.
     unsafe fn release(self, from: &CStr)
     where
         Self: Sized;

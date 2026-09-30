@@ -1912,7 +1912,7 @@ mod tests {
             window.schedule_offset_update();
             window.release(c"offset timer test");
             assert!(observer.upgrade().is_none());
-            crate::src::reactor::defer(|| {});
+            crate::src::reactor::init_runtime();
             crate::src::reactor::poll_runtime();
             crate::src::reactor::shutdown_runtime();
         }

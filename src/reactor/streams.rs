@@ -4,6 +4,7 @@ use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 pub use api::*;
 use hmux_buffer::{Buf, BufMut, SegmentedBuf};
+use hmux_rt::AsyncFd as _;
 use hmux_rt::Handle as _;
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short, c_void};
@@ -132,7 +133,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
             let readiness = {
                 let wait = async {
                     if read || write {
-                        source.wait(read, write).await
+                        source.ready(read, write).await
                     } else {
                         std::future::pending().await
                     }

@@ -288,14 +288,14 @@ unsafe fn session_add_ref(s: &session, from: *const ::core::ffi::c_char) -> Sess
     ));
     owner
 }
-/// Consume one session owner and defer its release until the event loop runs.
+/// Consume one session owner; the final owner performs cleanup immediately.
 unsafe fn session_remove_ref(s: SessionRef, from: &CStr) {
     log_debug(format_args!(
         "release session {} ({})",
         log_bytes((*s.get()).name.as_bytes()),
         log_bytes(from.to_bytes())
     ));
-    crate::src::shared::rc::release_later(s);
+    drop(s);
 }
 unsafe fn session_free(s: &mut session) {
     log_debug(format_args!(

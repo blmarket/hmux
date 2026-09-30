@@ -303,25 +303,16 @@ mod retained_client_tests {
     }
 
     #[test]
-    fn owner_release_defers_cleanup_until_dispatch_or_cancellation() {
+    fn owner_release_cleans_up_synchronously() {
         unsafe {
-            for cancel in [false, true] {
-                let initial = client::new();
-                let ptr = initial.get();
-                let observer = (*ptr).observer.clone();
-                let owner = client_retain((ptr).as_ref()).unwrap();
-                drop(initial);
-                assert_eq!(owner.get(), ptr);
-                owner.release();
-                assert_eq!(observer.strong_count(), 1);
-                if cancel {
-                    reactor::shutdown_runtime();
-                } else {
-                    reactor::poll_runtime();
-                }
-                assert_eq!(observer.strong_count(), 0);
-                reactor::shutdown_runtime();
-            }
+            let initial = client::new();
+            let ptr = initial.get();
+            let observer = (*ptr).observer.clone();
+            let owner = client_retain(ptr.as_ref()).unwrap();
+            drop(initial);
+            assert_eq!(owner.get(), ptr);
+            owner.release();
+            assert!(observer.upgrade().is_none());
             assert!(client_retain(None).is_none());
         }
     }
