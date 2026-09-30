@@ -58,7 +58,9 @@ use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
 use crate::src::window::Window as _;
-use crate::src::window::{window_pane_reset_mode, window_zoom, winlink_find_by_index};
+use crate::src::window::{
+    window_pane_mode_weak, window_pane_reset_mode, window_zoom, winlink_find_by_index,
+};
 use std::ffi::{CStr, CString};
 
 #[repr(C)]
@@ -515,8 +517,9 @@ unsafe fn window_switch_init(
     pd.input = Some(c"");
     pd.type_0 = PROMPT_TYPE_SEARCH;
     pd.flags = PROMPT_INCREMENTAL | PROMPT_NOFORMAT | PROMPT_ISMODE | PROMPT_EDITARROWS;
+    let prompt_mode = window_pane_mode_weak(wme.clone());
     pd.inputcb = Some(Box::new(move |s, key| unsafe {
-        window_switch_prompt_callback(data, s, key)
+        window_switch_prompt_callback(prompt_mode.clone(), s, key)
     }));
     let prompt = prompt_create(pd);
     let prompt_observer = prompt.downgrade();
@@ -688,10 +691,13 @@ unsafe fn window_switch_run_command(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_switch_prompt_callback(
-    mut data: *mut window_switch_modedata,
+    mode: refbox::Weak<window_mode_entry>,
     s: Option<&CStr>,
     mut key: prompt_key_result,
 ) -> prompt_result {
+    if !mode.is_alive() {
+        return PROMPT_CLOSE;
+    }
     if key as ::core::ffi::c_uint != PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return PROMPT_CONTINUE;
@@ -702,6 +708,7 @@ unsafe fn window_switch_prompt_callback(
     } else {
         value
     };
+    let data = window_switch_data(mode);
     (*data).filter = CString::new(value).expect("prompt input contains no NUL");
     window_switch_build(data);
     (*data).current = 0 as u_int;
@@ -1118,6 +1125,25 @@ mod match_tests {
             score: 0,
             order,
         })
+    }
+
+    #[test]
+    fn cached_prompt_input_rejects_a_released_mode() {
+        let mode = refbox::RefBox::new(window_mode_entry {
+            wp: std::rc::Weak::new(),
+            swp: std::rc::Weak::new(),
+            mode: &window_switch_mode,
+            boxed_data: None,
+            data_owner: None,
+            prefix: 0,
+            kill: 0,
+        });
+        let observer = mode.downgrade();
+        drop(mode);
+        assert_eq!(
+            unsafe { window_switch_prompt_callback(observer, Some(c"query"), PROMPT_KEY_HANDLED) },
+            PROMPT_CLOSE,
+        );
     }
 
     #[test]

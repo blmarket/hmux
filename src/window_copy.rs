@@ -692,17 +692,23 @@ unsafe fn window_copy_common_init(
     let mode_observer = crate::src::window::window_pane_mode_weak(wme.clone());
     let scroll_observer = mode_observer.clone();
     (*data).dragtimer.set(move || unsafe {
-        match scroll_observer.try_borrow_mut() {
-            Ok(_mode) => window_copy_scroll_timer(scroll_observer.clone()),
-            Err(refbox::BorrowError::Dropped) => {}
+        let live = match scroll_observer.try_borrow_mut() {
+            Ok(_) => true,
+            Err(refbox::BorrowError::Dropped) => false,
             Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
+        };
+        if live {
+            window_copy_scroll_timer(scroll_observer.clone());
         }
     });
     (*data).refresh_timer.set(move || unsafe {
-        match mode_observer.try_borrow_mut() {
-            Ok(_mode) => window_copy_refresh_timer(mode_observer.clone()),
-            Err(refbox::BorrowError::Dropped) => {}
+        let live = match mode_observer.try_borrow_mut() {
+            Ok(_) => true,
+            Err(refbox::BorrowError::Dropped) => false,
             Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
+        };
+        if live {
+            window_copy_refresh_timer(mode_observer.clone());
         }
     });
     return data;

@@ -1835,10 +1835,13 @@ unsafe fn window_panes_init(
     }
     let mode_observer = window_pane_mode_weak(wme.clone());
     (*data).timer.set(move || unsafe {
-        match mode_observer.try_borrow_mut() {
-            Ok(_mode) => window_panes_timer_callback(mode_observer.clone()),
-            Err(refbox::BorrowError::Dropped) => {}
+        let live = match mode_observer.try_borrow_mut() {
+            Ok(_) => true,
+            Err(refbox::BorrowError::Dropped) => false,
             Err(refbox::BorrowError::Borrowed) => panic!("display-panes mode already borrowed"),
+        };
+        if live {
+            window_panes_timer_callback(mode_observer.clone());
         }
     });
     if (*data).delay != 0 as u_int {

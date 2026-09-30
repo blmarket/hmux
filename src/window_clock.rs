@@ -680,10 +680,13 @@ unsafe fn window_clock_init(
     (*data).tim = time(::core::ptr::null_mut::<time_t>());
     let mode_observer = window_pane_mode_weak(wme.clone());
     (*data).timer.set(move || unsafe {
-        match mode_observer.try_borrow_mut() {
-            Ok(_mode) => window_clock_timer_callback(mode_observer.clone()),
-            Err(refbox::BorrowError::Dropped) => {}
+        let live = match mode_observer.try_borrow_mut() {
+            Ok(_) => true,
+            Err(refbox::BorrowError::Dropped) => false,
             Err(refbox::BorrowError::Borrowed) => panic!("clock mode already borrowed"),
+        };
+        if live {
+            window_clock_timer_callback(mode_observer.clone());
         }
     });
     window_clock_start_timer(wme.clone());
