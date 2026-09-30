@@ -23,43 +23,55 @@ pub struct grid_cell {
     pub link: u_int,
 }
 
-/// Owns elements directly. Buffer addresses stay stable until growth or release;
-/// the Rust grid headers themselves do not cross a C interface.
+/// Pointer-sized owner preserves the line-header size exposed by history byte
+/// formats. The Vec owns its elements; unused arrays need no allocation.
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct GridArray<T>(Vec<T>);
+pub struct GridArray<T>(Option<Box<Vec<T>>>);
 
 impl<T> Default for GridArray<T> {
     fn default() -> Self {
-        Self(Vec::new())
+        Self(None)
     }
 }
 impl<T> std::ops::Deref for GridArray<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
-        self.0.as_slice()
+        self.0.as_deref().map_or(&[], |items| items.as_slice())
     }
 }
 impl<T> std::ops::DerefMut for GridArray<T> {
     fn deref_mut(&mut self) -> &mut [T] {
-        self.0.as_mut_slice()
+        self.0
+            .get_or_insert_with(|| Box::new(Vec::new()))
+            .as_mut_slice()
     }
 }
 impl<T> GridArray<T> {
     // Vec pointer access does not materialize a slice reference. Callers may
     // retain disjoint element pointers until an operation changes the array.
     pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
-        self.0.as_mut_ptr()
+        self.0
+            .as_mut()
+            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
+                items.as_mut_ptr()
+            })
     }
     pub(crate) fn as_ptr(&self) -> *const T {
-        self.0.as_ptr()
+        self.0
+            .as_ref()
+            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
+                items.as_ptr()
+            })
     }
     pub(crate) fn resize_with(&mut self, len: usize, init: impl FnMut() -> T) {
-        self.0.resize_with(len, init);
+        self.0
+            .get_or_insert_with(|| Box::new(Vec::new()))
+            .resize_with(len, init);
     }
     pub(crate) fn clear(&mut self) {
         // Keep the translated explicit release behavior, including capacity.
-        self.0 = Vec::new();
+        self.0 = None;
     }
 }
 
@@ -211,6 +223,13 @@ pub struct grid_reader<'a> {
 mod tests {
     use super::*;
     use ::core::mem::{align_of, offset_of, size_of};
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn grid_line_size_preserves_history_byte_formats() {
+        assert_eq!(size_of::<GridArray<grid_cell_entry>>(), 8);
+        assert_eq!(size_of::<grid_line>(), 40);
+    }
 
     #[test]
     fn grid_cell_storage_layout_matches_translated_c_baseline() {
