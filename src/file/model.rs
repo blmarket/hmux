@@ -2,11 +2,18 @@ use super::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use hmux_buffer::SegmentedBuf;
 
-type ClientFileIndex =
+/// The stream index owns active file records until completion unlinks them.
+/// Its holder is either the server's ClientRef or the process client singleton.
+pub type client_files =
     std::collections::BTreeMap<i32, std::rc::Rc<std::cell::UnsafeCell<client_file>>>;
 
-/// The stream index owns active file records until completion unlinks them.
-pub type client_files = Option<refbox::RefBox<ClientFileIndex>>;
+#[derive(Clone, Copy, Default)]
+pub(super) enum FileRegistration {
+    #[default]
+    Unlinked,
+    Client,
+    Peer,
+}
 
 pub struct client_file {
     pub(super) c: Option<ClientRef>,
@@ -19,8 +26,8 @@ pub struct client_file {
     pub(super) error: ::core::ffi::c_int,
     pub(super) closed: ::core::ffi::c_int,
     pub(super) cb: client_file_cb,
-    /// Weak traversal handle into the containing index.
-    pub(super) owner: refbox::Weak<ClientFileIndex>,
+    /// Which existing holder owns the stream; c retains Client registrations.
+    pub(super) registration: FileRegistration,
     pub(super) wait_item:
         std::rc::Weak<std::cell::UnsafeCell<crate::src::shared::command::cmdq_item>>,
     pub(super) wait_active: bool,
@@ -56,7 +63,7 @@ impl client_file {
             error: Default::default(),
             closed: Default::default(),
             cb: Default::default(),
-            owner: refbox::Weak::new(),
+            registration: FileRegistration::Unlinked,
             wait_item: Default::default(),
             wait_active: false,
             wait_client: Default::default(),

@@ -138,6 +138,9 @@ pub trait Client {
         size: usize,
     ) -> i32;
     unsafe fn register_file(&self, file: &Rc<UnsafeCell<crate::src::file::client_file>>);
+    unsafe fn unregister_file(&self, stream: i32, identity: *const crate::src::file::client_file);
+    /// Stream-ordered observations; each yield resolves the current holder.
+    unsafe fn file_handles(&self) -> crate::src::file::ClientFilesIter;
     unsafe fn find_file(
         &self,
         stream: i32,
@@ -725,6 +728,17 @@ impl Client for ClientRef {
     }
     unsafe fn register_file(&self, file: &Rc<UnsafeCell<crate::src::file::client_file>>) {
         crate::src::file::client_files_insert(&mut (*self.get()).files, file.clone());
+    }
+    unsafe fn unregister_file(&self, stream: i32, identity: *const crate::src::file::client_file) {
+        let removed = crate::src::file::client_files_remove_identity(
+            &mut (*self.get()).files,
+            stream,
+            identity,
+        );
+        drop(removed);
+    }
+    unsafe fn file_handles(&self) -> crate::src::file::ClientFilesIter {
+        crate::src::file::client_files_iter(&(*self.get()).files)
     }
     unsafe fn find_file(
         &self,

@@ -1123,7 +1123,6 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
     (*c).queue = Some(cmdq_new());
-    (*c).files = None;
     (*c).tty.sx = 80 as u_int;
     (*c).tty.sy = 24 as u_int;
     i = 0 as u_int;
@@ -1473,7 +1472,7 @@ pub unsafe fn server_client_lost(client_owner: &ClientRef) {
     status_prompt_clear(&(*(c)).observer.upgrade().expect("live client"));
     status_message_clear(&(*c).observer.upgrade().expect("live client"));
     cmdq_abort_file_wait(client_owner);
-    let files = crate::src::file::client_files_iter(&(*c).files);
+    let files = client_owner.file_handles();
     crate::src::file::client_files_interrupt(files, EINTR);
     let registry_owner = clients
         .remove(&(*c).observer)

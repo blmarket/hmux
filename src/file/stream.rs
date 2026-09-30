@@ -188,13 +188,13 @@ mod tests {
     #[test]
     fn completion_retires_index_without_consuming_a_direct_readers_bytes() {
         unsafe {
-            let mut files = client_files::default();
-            let file = file_create_with_peer(std::ptr::null_mut(), &mut files, 7, None);
+            let client = client::new();
+            let file = file_create_with_client(Some(&client), 7, None);
             (*file.get()).read.active = true;
             (*file.get()).read.input.put_slice(b"retained");
             file_fire_done(&file);
             crate::src::reactor::poll_runtime();
-            assert!(client_files_is_empty(&files));
+            assert!(client.find_file(7).is_none());
             let mut cx = Context::from_waker(Waker::noop());
             let Poll::Ready(Some(Ok(bytes))) = Pin::new(&mut *file.get()).poll_next(&mut cx) else {
                 panic!("retained data");
@@ -212,14 +212,13 @@ mod tests {
     #[test]
     fn legacy_progress_and_completion_keep_accumulation_and_dispatch_timing() {
         unsafe {
-            let mut files = client_files::default();
+            let client = client::new();
             let progress = Rc::new(Cell::new(0));
             let finished = Rc::new(Cell::new(false));
             let progress_cb = progress.clone();
             let finished_cb = finished.clone();
-            let file = file_create_with_peer(
-                std::ptr::null_mut(),
-                &mut files,
+            let file = file_create_with_client(
+                Some(&client),
                 7,
                 Some(Box::new(move |event| {
                     let bytes = evbuffer_pullup(event.buffer.unwrap(), -1).unwrap();
@@ -250,7 +249,7 @@ mod tests {
             assert!(!finished.get(), "completion remains deferred");
             crate::src::reactor::poll_runtime();
             assert!(finished.get());
-            assert!(client_files_is_empty(&files));
+            assert!(client.find_file(7).is_none());
             drop(file);
             crate::src::reactor::shutdown_runtime();
         }

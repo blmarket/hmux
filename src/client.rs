@@ -82,7 +82,28 @@ static mut client_exitsession: Option<CString> = None;
 static mut client_exitmessage: Option<Vec<u8>> = None;
 static mut client_exec_payload: Option<(CString, CString)> = None;
 static mut client_attached: ::core::ffi::c_int = 0;
-static mut client_files: client_files = None;
+static mut client_files: client_files = client_files::new();
+
+pub(crate) unsafe fn client_find_file(
+    stream: i32,
+) -> Option<std::rc::Rc<std::cell::UnsafeCell<crate::src::file::client_file>>> {
+    crate::src::file::client_files_find_stream(&client_files, stream)
+}
+
+pub(crate) unsafe fn client_register_file(
+    file: &std::rc::Rc<std::cell::UnsafeCell<crate::src::file::client_file>>,
+) {
+    crate::src::file::client_files_insert(&mut client_files, file.clone());
+}
+
+pub(crate) unsafe fn client_remove_file(
+    stream: i32,
+    identity: *const crate::src::file::client_file,
+) {
+    let removed =
+        crate::src::file::client_files_remove_identity(&mut client_files, stream, identity);
+    drop(removed);
+}
 unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut lockfd: ::core::ffi::c_int = 0;
     log_debug(format_args!(
@@ -942,7 +963,6 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
         }
         MSG_READ_OPEN => {
             file_read_open(
-                &mut client_files,
                 client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
@@ -950,11 +970,10 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             );
         }
         MSG_READ_CANCEL => {
-            file_read_cancel(&client_files, imsg);
+            file_read_cancel(imsg);
         }
         MSG_WRITE_OPEN => {
             file_write_open(
-                &mut client_files,
                 client_peer,
                 imsg,
                 (client_flags & CLIENT_CONTROL as uint64_t == 0) as ::core::ffi::c_int,
@@ -962,10 +981,10 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             );
         }
         MSG_WRITE => {
-            file_write_data(&client_files, imsg);
+            file_write_data(imsg);
         }
         MSG_WRITE_CLOSE => {
-            file_write_close(&client_files, imsg);
+            file_write_close(imsg);
         }
         MSG_STDERR | MSG_STDIN | MSG_STDOUT => {
             fprintf(
