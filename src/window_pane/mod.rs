@@ -7,6 +7,7 @@ use crate::src::window::Window as _;
 use crate::src::window::*;
 use std::time::Duration;
 mod api;
+mod input;
 mod process;
 mod format;
 mod model;
@@ -33,7 +34,7 @@ use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
-use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
+use self::input::{input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
 use crate::src::layout::{
     layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_init,
@@ -3105,3 +3106,22 @@ impl window_pane {
         window_pane_mode_insert_front(&mut *owner.get(), entry)
     }
 }
+
+pub(crate) use input::{input_complete_request, input_free_request, input_request_matches};
+pub use input::{
+    input_csi_type, input_esc_type, input_free, input_init, input_parse_screen, input_pending,
+    input_reply_clipboard, input_request_reply, input_reset, input_set_buffer_size,
+    input_table_entry, InputRequestReply, INPUT_BUF_START, INPUT_CSI_CBT, INPUT_CSI_CNL,
+    INPUT_CSI_CPL, INPUT_CSI_CUB, INPUT_CSI_CUD, INPUT_CSI_CUF, INPUT_CSI_CUP, INPUT_CSI_CUU,
+    INPUT_CSI_DA, INPUT_CSI_DA_TWO, INPUT_CSI_DCH, INPUT_CSI_DECSCUSR, INPUT_CSI_DECSTBM,
+    INPUT_CSI_DL, INPUT_CSI_DSR, INPUT_CSI_DSR_PRIVATE, INPUT_CSI_ECH, INPUT_CSI_ED, INPUT_CSI_EL,
+    INPUT_CSI_HPA, INPUT_CSI_ICH, INPUT_CSI_IL, INPUT_CSI_MODOFF, INPUT_CSI_MODSET,
+    INPUT_CSI_QUERY, INPUT_CSI_QUERY_PRIVATE, INPUT_CSI_RCP, INPUT_CSI_REP, INPUT_CSI_RM,
+    INPUT_CSI_RM_PRIVATE, INPUT_CSI_SCP, INPUT_CSI_SD, INPUT_CSI_SGR, INPUT_CSI_SM,
+    INPUT_CSI_SM_GRAPHICS, INPUT_CSI_SM_PRIVATE, INPUT_CSI_SU, INPUT_CSI_TBC, INPUT_CSI_VPA,
+    INPUT_CSI_WINOPS, INPUT_CSI_XDA, INPUT_DISCARD, INPUT_END_BEL, INPUT_END_ST, INPUT_ESC_DECALN,
+    INPUT_ESC_DECKPAM, INPUT_ESC_DECKPNM, INPUT_ESC_DECRC, INPUT_ESC_DECSC, INPUT_ESC_HTS,
+    INPUT_ESC_IND, INPUT_ESC_NEL, INPUT_ESC_RI, INPUT_ESC_RIS, INPUT_ESC_SCSG0_OFF,
+    INPUT_ESC_SCSG0_ON, INPUT_ESC_SCSG1_OFF, INPUT_ESC_SCSG1_ON, INPUT_ESC_ST, INPUT_LAST,
+    INPUT_REQUEST_TIMEOUT,
+};

@@ -125,6 +125,10 @@ pub trait WindowPane {
         command: refbox::Weak<cmd>,
         item: &Rc<UnsafeCell<cmdq_item>>,
     ) -> cmd_retval;
+    /// Parse available process output and advance the pane's output cursor.
+    unsafe fn parse_input(&self);
+    /// Parse caller-owned bytes without exposing pane screens or parser storage.
+    unsafe fn parse_output(&self, bytes: &[u8]);
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -590,6 +594,12 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         item: &Rc<UnsafeCell<cmdq_item>>,
     ) -> cmd_retval {
         process::pipe_pane(self, command, item)
+    }
+    unsafe fn parse_input(&self) {
+        super::input::input_parse_pane(self)
+    }
+    unsafe fn parse_output(&self, bytes: &[u8]) {
+        super::input::input_parse_buffer(self, bytes.as_ptr(), bytes.len())
     }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0
