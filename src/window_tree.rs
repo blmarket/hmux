@@ -1873,7 +1873,6 @@ unsafe fn window_tree_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = Rc::as_ptr(&mode_pane_owner) as *mut window_pane;
     let mut data: *mut window_tree_modedata = ::core::ptr::null_mut::<window_tree_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
@@ -2445,7 +2444,6 @@ unsafe fn window_tree_key(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = Rc::as_ptr(&mode_pane_owner) as *mut window_pane;
     let mode_owner = wme
         .get_unchecked()
         .retained_data::<UnsafeCell<window_tree_modedata>>()
@@ -2526,7 +2524,7 @@ unsafe fn window_tree_key(
                 (*data).data.clone().as_ref().expect("mode tree owner"),
                 (*fsp).winlink_handle().as_ptr() as uint64_t,
             );
-            if mode_tree_set_current(&mut *(*data).tree_owner().get(), mode_pane as uint64_t) == 0 {
+            if mode_tree_set_current(&mut *(*data).tree_owner().get(), Rc::as_ptr(&mode_pane_owner) as uint64_t) == 0 {
                 mode_tree_set_current(
                     &mut *(*data).tree_owner().get(),
                     (*fsp).winlink_handle().as_ptr() as uint64_t,
