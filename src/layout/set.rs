@@ -278,7 +278,7 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
         );
         (root.g.sx, root.g.sy)
     };
-    (&std::rc::Rc::clone(&(w_owner))).resize(layout_sx, layout_sy, -(1 as ::core::ffi::c_int), -(1 as ::core::ffi::c_int));
+    w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         std::rc::Rc::clone(&(w_owner)),
@@ -497,7 +497,7 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
         );
         (root.g.sx, root.g.sy)
     };
-    (&std::rc::Rc::clone(&(w_owner))).resize(layout_sx, layout_sy, -(1 as ::core::ffi::c_int), -(1 as ::core::ffi::c_int));
+    w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         std::rc::Rc::clone(&(w_owner)),
@@ -689,7 +689,7 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
         );
         (root.g.sx, root.g.sy)
     };
-    (&std::rc::Rc::clone(&(w_owner))).resize(layout_sx, layout_sy, -(1 as ::core::ffi::c_int), -(1 as ::core::ffi::c_int));
+    w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         std::rc::Rc::clone(&(w_owner)),
@@ -881,7 +881,7 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
         );
         (root.g.sx, root.g.sy)
     };
-    (&std::rc::Rc::clone(&(w_owner))).resize(layout_sx, layout_sy, -(1 as ::core::ffi::c_int), -(1 as ::core::ffi::c_int));
+    w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         std::rc::Rc::clone(&(w_owner)),
@@ -1073,7 +1073,7 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
         );
         (root.g.sx, root.g.sy)
     };
-    (&std::rc::Rc::clone(&(w_owner))).resize(layout_sx, layout_sy, -(1 as ::core::ffi::c_int), -(1 as ::core::ffi::c_int));
+    w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         std::rc::Rc::clone(&(w_owner)),
@@ -1289,7 +1289,7 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
         );
         (root.g.sx, root.g.sy)
     };
-    (&std::rc::Rc::clone(&(w_owner))).resize(layout_sx, layout_sy, -(1 as ::core::ffi::c_int), -(1 as ::core::ffi::c_int));
+    w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         std::rc::Rc::clone(&(w_owner)),

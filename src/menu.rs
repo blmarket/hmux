@@ -984,7 +984,7 @@ mod tests {
             for destroy_window in [false, true] {
                 let window = crate::src::shared::window::WindowRef::empty();
                 let observer = Rc::downgrade(&window);
-                window.resize(80, 24, -1, -1);
+                window.set_layout_size(80, 24);
                 let slot = Rc::new(RefCell::new(Some(window)));
                 let callback_slot = Rc::clone(&slot);
                 let first = refbox::RefBox::new(state(&[Some(c"first")]));
