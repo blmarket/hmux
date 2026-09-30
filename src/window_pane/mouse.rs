@@ -8,20 +8,20 @@ pub(super) unsafe fn in_scrollbar_area(
     mut py: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let (sx, sy, xoff, yoff) = pane.geometry();
-    let scrollbar = pane.scrollbar();
+    let scrollbar = &pane;
     let mut width: u_int = 0;
     let mut pad: u_int = 0;
     let mut total: u_int = 0;
     let mut start: ::core::ffi::c_int = 0;
     let mut end: ::core::ffi::c_int = 0;
-    if !scrollbar.overlay {
+    if !scrollbar.scrollbar_overlay() {
         return 0 as ::core::ffi::c_int;
     }
     if py < yoff || py >= yoff + sy as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    width = scrollbar.width as u_int;
-    pad = scrollbar.pad as u_int;
+    width = scrollbar.scrollbar_width() as u_int;
+    pad = scrollbar.scrollbar_pad() as u_int;
     total = width.wrapping_add(pad);
     if total == 0 as u_int || total > sx {
         total = sx;
@@ -30,7 +30,7 @@ pub(super) unsafe fn in_scrollbar_area(
         .window_observer()
         .upgrade()
         .expect("scrollbar pane window");
-    let position = window.scrollbars().position;
+    let position = window.scrollbar_position();
     window.release(c"scrollbar pane window");
     if position == PANE_SCROLLBARS_LEFT {
         start = xoff;
@@ -62,8 +62,8 @@ unsafe fn mouse_location_in(
     sl_mpos: &mut u_int,
 ) -> key_code_mouse_location {
     let (sx, sy, xoff, yoff) = pane_owner.geometry();
-    let scrollbar = pane_owner.scrollbar();
-    let position = window_owner.scrollbars().position;
+    let scrollbar = &pane_owner;
+    let position = window_owner.scrollbar_position();
     let mut examined = None;
     let mut pane_status: ::core::ffi::c_int = 0;
     let mut sb_w: ::core::ffi::c_int = 0;
@@ -79,10 +79,10 @@ unsafe fn mouse_location_in(
     let mut sb_end: ::core::ffi::c_int = 0;
     let mut sb_overlay: ::core::ffi::c_int = 0;
     pane_status = pane_owner.border_status();
-    sb_overlay = scrollbar.overlay as i32;
-    if scrollbar.visible {
-        sb_w = scrollbar.width;
-        sb_pad = scrollbar.pad;
+    sb_overlay = scrollbar.scrollbar_overlay() as i32;
+    if scrollbar.scrollbar_visible() {
+        sb_w = scrollbar.scrollbar_width();
+        sb_pad = scrollbar.scrollbar_pad();
         if sb_overlay != 0 && sb_w > sx as ::core::ffi::c_int {
             sb_w = sx as ::core::ffi::c_int;
         }
@@ -116,16 +116,17 @@ unsafe fn mouse_location_in(
             sb_start = sb_end - sb_w + 1 as ::core::ffi::c_int;
         }
         if px >= sb_start && px <= sb_end {
-            sl_top = (yoff as u_int).wrapping_add(scrollbar.slider_y) as ::core::ffi::c_int;
+            sl_top =
+                (yoff as u_int).wrapping_add(scrollbar.scrollbar_slider_y()) as ::core::ffi::c_int;
             sl_bottom = (yoff as u_int)
-                .wrapping_add(scrollbar.slider_y)
-                .wrapping_add(scrollbar.slider_height)
+                .wrapping_add(scrollbar.scrollbar_slider_y())
+                .wrapping_add(scrollbar.scrollbar_slider_height())
                 .wrapping_sub(1 as u_int) as ::core::ffi::c_int;
             if py < sl_top {
                 return KEYC_MOUSE_LOCATION_SCROLLBAR_UP;
             } else if py >= sl_top && py <= sl_bottom {
                 *sl_mpos = (py as u_int)
-                    .wrapping_sub(scrollbar.slider_y)
+                    .wrapping_sub(scrollbar.scrollbar_slider_y())
                     .wrapping_sub(yoff as u_int);
                 return KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
             } else {
@@ -150,16 +151,17 @@ unsafe fn mouse_location_in(
             || position == PANE_SCROLLBARS_LEFT
                 && (px >= xoff - sb_pad - sb_w && px < xoff - sb_pad)
         {
-            sl_top = (yoff as u_int).wrapping_add(scrollbar.slider_y) as ::core::ffi::c_int;
+            sl_top =
+                (yoff as u_int).wrapping_add(scrollbar.scrollbar_slider_y()) as ::core::ffi::c_int;
             sl_bottom = (yoff as u_int)
-                .wrapping_add(scrollbar.slider_y)
-                .wrapping_add(scrollbar.slider_height)
+                .wrapping_add(scrollbar.scrollbar_slider_y())
+                .wrapping_add(scrollbar.scrollbar_slider_height())
                 .wrapping_sub(1 as u_int) as ::core::ffi::c_int;
             if py < sl_top {
                 return KEYC_MOUSE_LOCATION_SCROLLBAR_UP;
             } else if py >= sl_top && py <= sl_bottom {
                 *sl_mpos = (py as u_int)
-                    .wrapping_sub(scrollbar.slider_y)
+                    .wrapping_sub(scrollbar.scrollbar_slider_y())
                     .wrapping_sub(yoff as u_int);
                 return KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER;
             } else {
@@ -180,16 +182,16 @@ unsafe fn mouse_location_in(
         let mut cursor = window_owner.next_pane(None);
         while let Some(border_pane) = cursor {
             let (border_sx, border_sy, border_xoff, border_yoff) = border_pane.geometry();
-            let border_scrollbar = border_pane.scrollbar();
+            let border_scrollbar = &border_pane;
             examined = Some(border_pane.clone());
             if !(!border_pane.is_visible()) {
                 if !(border_pane.is_floating()
                     && border_pane.pane_lines() as ::core::ffi::c_uint
                         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
                 {
-                    if border_scrollbar.reserved {
-                        sb_w = border_scrollbar.width;
-                        sb_pad = border_scrollbar.pad;
+                    if border_scrollbar.scrollbar_reserved() {
+                        sb_w = border_scrollbar.scrollbar_width();
+                        sb_pad = border_scrollbar.scrollbar_pad();
                     } else {
                         sb_w = 0 as ::core::ffi::c_int;
                         sb_pad = 0 as ::core::ffi::c_int;

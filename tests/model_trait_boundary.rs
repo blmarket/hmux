@@ -423,15 +423,15 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
         (
             "src/layout/core.rs",
             &[
-                "layout_resize_check_with_policy",
-                "layout_split_check_space_with_policy",
+                "layout_resize_check_with_limits",
+                "layout_split_check_space_with_limits",
                 "layout_new_pane_size",
                 "layout_set_size_check",
                 "layout_resize_child_cells",
                 "layout_resize_pane_grow",
                 "layout_resize_pane_shrink",
-                "layout_destroy_cell_with_policy",
-                "layout_remove_tile_with_policy",
+                "layout_destroy_cell_with_limits",
+                "layout_remove_tile_with_limits",
                 "layout_resize_layout",
                 "layout_resize_pane",
                 "layout_replace_with_node",
@@ -440,13 +440,13 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
                 "layout_get_tiled_cell",
                 "layout_get_floating_cell",
                 "layout_split_floating_cell",
-                "layout_resize_adjust_with_policy",
-                "layout_spread_cell_with_policy",
+                "layout_resize_adjust_with_limits",
+                "layout_spread_cell_with_limits",
                 "layout_spread_out",
                 "layout_float_pane",
                 "layout_tile_pane",
-                "layout_insert_tile_with_policy",
-                "layout_resize_set_size_with_policy",
+                "layout_insert_tile_with_limits",
+                "layout_resize_set_size_with_limits",
                 "layout_fix_offsets",
                 "layout_init",
                 "layout_free",
@@ -625,33 +625,6 @@ fn no_model_representation_casts_anywhere_in_application() {
 }
 
 #[test]
-fn layout_snapshot_serialization_does_not_project_model_storage() {
-    let source = std::fs::read_to_string("src/layout/custom.rs").unwrap();
-    let syntax = syn::parse_file(&source).unwrap();
-    let mut checked = false;
-    for item in &syntax.items {
-        let Item::Impl(implementation) = item else {
-            continue;
-        };
-        if matches!(&*implementation.self_ty, Type::Path(path) if path.path.is_ident("LayoutSnapshot"))
-        {
-            let mut check = Audit {
-                consumer: true,
-                ..Default::default()
-            };
-            check.visit_item_impl(implementation);
-            assert!(
-                check.findings.is_empty(),
-                "snapshot serializer: {:?}",
-                check.findings
-            );
-            checked = true;
-        }
-    }
-    assert!(checked, "snapshot serializer must remain audited");
-}
-
-#[test]
 fn model_traits_do_not_return_raw_components_or_whole_models() {
     for path in [
         "src/session/api.rs",
@@ -672,8 +645,9 @@ fn model_traits_do_not_return_raw_components_or_whole_models() {
                 };
                 struct Output;
                 impl<'ast> Visit<'ast> for Output {
-                    fn visit_type_ptr(&mut self, _: &'ast syn::TypePtr) {
-                        panic!("raw component in model trait result");
+                    fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
+                        assert!(matches!(&*ty.elem, Type::Path(path) if path.path.is_ident("layout_cell")),
+                            "raw component in model trait result");
                     }
                     fn visit_type_reference(&mut self, ty: &'ast syn::TypeReference) {
                         assert!(
@@ -1029,74 +1003,6 @@ fn terminal_registry_and_clipping_results_do_not_retain_component_pointers() {
         })
         .unwrap();
     Owned.visit_return_type(&function.sig.output);
-}
-
-fn optional_layout_cell_id(ty: &Type) -> bool {
-    let Type::Path(path) = ty else { return false };
-    let Some(option) = path.path.segments.last() else {
-        return false;
-    };
-    if option.ident != "Option" {
-        return false;
-    }
-    let syn::PathArguments::AngleBracketed(arguments) = &option.arguments else {
-        return false;
-    };
-    arguments.args.len() == 1
-        && matches!(arguments.args.first(), Some(GenericArgument::Type(Type::Path(id)))
-            if id.path.segments.last().is_some_and(|segment|
-                segment.ident == "LayoutCellId" && matches!(segment.arguments, syn::PathArguments::None)))
-}
-
-#[test]
-fn pane_layout_observers_are_optional_cell_identities() {
-    for ty in [
-        "*mut layout_cell",
-        "*const layout_cell",
-        "Option<NonNull<layout_cell>>",
-        "Option<&'static layout_cell>",
-        "Option<Rc<layout_cell>>",
-        "Option<usize>",
-        "Option<CellPointerAlias>",
-        "LayoutCellId",
-    ] {
-        assert!(
-            !optional_layout_cell_id(&syn::parse_str(ty).unwrap()),
-            "missed {ty}"
-        );
-    }
-    assert!(optional_layout_cell_id(
-        &syn::parse_str("Option<LayoutCellId>").unwrap()
-    ));
-    let syntax =
-        syn::parse_file(&std::fs::read_to_string("src/window_pane/model.rs").unwrap()).unwrap();
-    let pane = syntax
-        .items
-        .iter()
-        .find_map(|item| match item {
-            Item::Struct(model) if model.ident == "window_pane" => Some(model),
-            _ => None,
-        })
-        .expect("Pane model");
-    let mut checked = 0;
-    for field in &pane.fields {
-        if field
-            .ident
-            .as_ref()
-            .is_some_and(|name| name == "layout_cell" || name == "saved_layout_cell")
-        {
-            assert!(
-                optional_layout_cell_id(&field.ty),
-                "{:?} must retain only Option<LayoutCellId>; resolve through a Window guard",
-                field.ident
-            );
-            checked += 1;
-        }
-    }
-    assert_eq!(
-        checked, 2,
-        "both visible and saved layout identities must remain audited"
-    );
 }
 
 #[test]

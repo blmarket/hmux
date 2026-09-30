@@ -7,7 +7,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::layout::LayoutCellId;
+use crate::src::shared::layout::layout_cell;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{winlink, WindowRef};
 use crate::src::window::Window as _;
@@ -46,7 +46,7 @@ pub static cmd_rotate_window_entry: cmd_entry = {
 unsafe fn cmd_rotate_window_assign_cell(
     window: &WindowRef,
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    cell: Option<LayoutCellId>,
+    cell: Option<*mut layout_cell>,
 ) {
     if let Some(id) = cell {
         let Some(mut cell) = window.borrow_layout_cell_mut(id) else {

@@ -284,7 +284,7 @@ unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
             return;
         }
         file.completed = true;
-        file.push_task.cancel();
+        drop(file.push_task.take());
         stream::finish(file)
     };
     if let Some(wake) = wake {
@@ -749,7 +749,7 @@ unsafe fn file_push_cb(owner: &Rc<UnsafeCell<client_file>>) {
 }
 unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *file_owner.get();
-    cf.push_task.cancel();
+    drop(cf.push_task.take());
     let mut msg = Vec::<u8>::new();
     let header_len = ::core::mem::size_of::<msg_write_data>();
     let mut sent: size_t = 0;
@@ -804,15 +804,14 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     }
     if left != 0 as size_t {
         let observer = Rc::downgrade(file_owner);
-        cf.push_task
-            .start(move || {
-                Ok(async move {
-                    if let Some(owner) = observer.upgrade() {
-                        unsafe { file_push_cb(&owner) };
-                    }
-                })
+        crate::src::reactor::task_start(&mut cf.push_task, move || {
+            Ok(async move {
+                if let Some(owner) = observer.upgrade() {
+                    unsafe { file_push_cb(&owner) };
+                }
             })
-            .expect("retry file output");
+        })
+        .expect("retry file output");
     } else if cf.stream > 2 as ::core::ffi::c_int {
         close_0.stream = cf.stream;
         file_send(
@@ -1441,45 +1440,26 @@ pub(crate) unsafe fn client_files_interrupt(
 /// Snapshot stream order without borrowing an index across callbacks. Weak file
 /// identities do not retain transfers; each yield checks the holder's current
 /// index, so removing or replacing a stream also removes it from traversal.
-pub fn client_files_iter(files: &client_files) -> ClientFilesIter {
+pub fn client_files_iter(
+    files: &client_files,
+) -> impl std::iter::FusedIterator<Item = Rc<UnsafeCell<client_file>>> {
     let entries: Vec<_> = files.values().map(Rc::downgrade).collect();
-    ClientFilesIter {
-        entries: entries.into_iter(),
-    }
-}
-
-pub struct ClientFilesIter {
-    entries: std::vec::IntoIter<Weak<UnsafeCell<client_file>>>,
-}
-
-impl Iterator for ClientFilesIter {
-    type Item = Rc<UnsafeCell<client_file>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for entry in self.entries.by_ref() {
-            let Some(owner) = entry.upgrade() else {
-                continue;
-            };
-            let file = unsafe { &*owner.get() };
-            let indexed = unsafe {
-                match file.registration {
-                    FileRegistration::Unlinked => None,
-                    FileRegistration::Client => file
-                        .c
-                        .as_ref()
-                        .and_then(|client| client.find_file(file.stream)),
-                    FileRegistration::Peer => crate::src::client::client_find_file(file.stream),
-                }
-            };
-            if let Some(indexed) = indexed.filter(|indexed| Rc::ptr_eq(indexed, &owner)) {
-                return Some(indexed);
+    entries.into_iter().filter_map(|entry| {
+        let owner = entry.upgrade()?;
+        let file = unsafe { &*owner.get() };
+        let indexed = unsafe {
+            match file.registration {
+                FileRegistration::Unlinked => None,
+                FileRegistration::Client => file
+                    .c
+                    .as_ref()
+                    .and_then(|client| client.find_file(file.stream)),
+                FileRegistration::Peer => crate::src::client::client_find_file(file.stream),
             }
-        }
-        None
-    }
+        };
+        indexed.filter(|indexed| Rc::ptr_eq(indexed, &owner))
+    })
 }
-
-impl std::iter::FusedIterator for ClientFilesIter {}
 
 impl Drop for client_file {
     fn drop(&mut self) {

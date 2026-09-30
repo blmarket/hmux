@@ -425,7 +425,6 @@ unsafe fn options_add(
         options_remove(o);
     }
     let mut owned = Box::new(options_entry {
-        identity: OptionsIdentity::new(),
         owner: oo,
         name,
         tableentry: None,
@@ -509,7 +508,6 @@ unsafe fn options_array_new(
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
     let mut owner = Box::new(options_array_item {
-        identity: OptionsIdentity::new(),
         key: CStr::from_ptr(key).to_owned(),
         value: options_value::Empty,
         owner: o,

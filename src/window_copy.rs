@@ -943,7 +943,7 @@ unsafe fn window_copy_scroll1(
     let mut n: u_int = 0;
     let mut new_offset: u_int = 0;
     let (_, sb_height, _, yoff) = pane_owner.geometry();
-    let slider_height = pane_owner.scrollbar().slider_height;
+    let slider_height = pane_owner.scrollbar_slider_height();
     let sb_top = yoff as u_int;
     let mut sy: u_int = (*data).backing().grid().sy;
     let mut my_w: u_int = 0;
@@ -7801,8 +7801,8 @@ unsafe fn window_copy_redraw_lines(
         return;
     }
     if {
-        let scrollbar = mode_pane_owner.scrollbar();
-        scrollbar.overlay && scrollbar.visible
+        let scrollbar = &mode_pane_owner;
+        scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible()
     } {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
@@ -9680,8 +9680,8 @@ unsafe fn window_copy_scroll_up(mut wme: refbox::Weak<window_mode_entry>, mut ny
         return;
     }
     if {
-        let scrollbar = mode_pane_owner.scrollbar();
-        scrollbar.overlay && scrollbar.visible
+        let scrollbar = &mode_pane_owner;
+        scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible()
     } {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {
@@ -9805,8 +9805,8 @@ unsafe fn window_copy_scroll_down(mut wme: refbox::Weak<window_mode_entry>, mut 
         return;
     }
     if {
-        let scrollbar = mode_pane_owner.scrollbar();
-        scrollbar.overlay && scrollbar.visible
+        let scrollbar = &mode_pane_owner;
+        scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible()
     } {
         screen_write_start(&mut ctx, &raw mut (*data).screen);
     } else {

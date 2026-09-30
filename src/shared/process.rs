@@ -2,7 +2,6 @@
 
 use super::abi::{gid_t, uid_t};
 use crate::src::compat::imsg::{imsg, imsgbuf};
-use crate::src::reactor::Task;
 
 pub enum PeerMessage<'a> {
     Disconnected,
@@ -13,7 +12,7 @@ pub enum PeerMessage<'a> {
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
     pub(crate) ibuf: imsgbuf,
-    pub io_task: Task,
+    pub io_task: Option<hmux_rt::mio::Task>,
     pub io_writable: bool,
     pub uid: uid_t,
     pub gid: gid_t,
@@ -26,7 +25,7 @@ impl Default for tmuxpeer {
         Self {
             parent: std::ptr::null_mut(),
             ibuf: imsgbuf::default(),
-            io_task: Task::new(),
+            io_task: None,
             io_writable: false,
             uid: 0,
             gid: 0,
@@ -41,7 +40,7 @@ pub struct tmuxproc {
     pub name: std::ffi::CString,
     pub exit: ::core::ffi::c_int,
     pub signalcb: Option<Box<dyn FnMut(super::signal::ProcessSignal)>>,
-    pub signal_task: Task,
+    pub signal_task: Option<hmux_rt::mio::Task>,
     /// Owns stable peer allocations until `proc_remove_peer` removes them.
     pub peers: Vec<Box<tmuxpeer>>,
 }

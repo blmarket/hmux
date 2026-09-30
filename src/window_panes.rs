@@ -206,26 +206,27 @@ unsafe fn window_panes_add_area(
         sy,
     });
 }
-unsafe fn window_panes_pane_geometry(
-    pane: &Rc<UnsafeCell<window_pane>>,
-) -> Option<crate::src::window::PaneLayoutGeometry> {
-    pane.window_observer().upgrade()?.pane_layout_geometry(
+unsafe fn window_panes_pane_geometry(pane: &Rc<UnsafeCell<window_pane>>) -> Option<&layout_cell> {
+    let window = pane.window_observer().upgrade()?;
+    let cell = window.pane_layout_cell(
         &Rc::downgrade(pane),
         crate::src::window::LayoutView::Unzoomed,
-    )
+    )? as *const layout_cell;
+    // The pane's window owns this cell throughout the immediate geometry query.
+    Some(&*cell)
 }
 unsafe fn window_panes_pane_floating(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
-    window_panes_pane_geometry(pane).is_some_and(|geometry| geometry.floating) as _
+    window_panes_pane_geometry(pane).is_some_and(|geometry| geometry.is_floating()) as _
 }
 unsafe fn window_panes_pane_visible(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
-    if window_panes_pane_geometry(pane).is_some_and(|geometry| geometry.saved) {
+    if window_panes_pane_geometry(pane).is_some_and(|geometry| geometry.is_saved()) {
         1
     } else {
         pane.is_visible() as i32
     }
 }
 fn window_panes_scaled_geometry(
-    geometry: crate::src::window::PaneLayoutGeometry,
+    geometry: &layout_geometry,
     osx: u_int,
     osy: u_int,
     dsx: u_int,
@@ -241,23 +242,19 @@ fn window_panes_scaled_geometry(
         return None;
     }
     if osx <= dsx && osy <= dsy {
-        x = geometry.offset.0 as u_int;
-        y = geometry.offset.1 as u_int;
-        x2 = x.wrapping_add(geometry.size.0);
-        y2 = y.wrapping_add(geometry.size.1);
+        x = geometry.xoff as u_int;
+        y = geometry.yoff as u_int;
+        x2 = x.wrapping_add(geometry.sx);
+        y2 = y.wrapping_add(geometry.sy);
     } else {
-        x = (geometry.offset.0 as u_int)
+        x = (geometry.xoff as u_int).wrapping_mul(dsx).wrapping_div(osx);
+        y = (geometry.yoff as u_int).wrapping_mul(dsy).wrapping_div(osy);
+        x2 = (geometry.xoff as u_int)
+            .wrapping_add(geometry.sx)
             .wrapping_mul(dsx)
             .wrapping_div(osx);
-        y = (geometry.offset.1 as u_int)
-            .wrapping_mul(dsy)
-            .wrapping_div(osy);
-        x2 = (geometry.offset.0 as u_int)
-            .wrapping_add(geometry.size.0)
-            .wrapping_mul(dsx)
-            .wrapping_div(osx);
-        y2 = (geometry.offset.1 as u_int)
-            .wrapping_add(geometry.size.1)
+        y2 = (geometry.yoff as u_int)
+            .wrapping_add(geometry.sy)
             .wrapping_mul(dsy)
             .wrapping_div(osy);
     }
@@ -297,7 +294,8 @@ unsafe fn window_panes_get_geometry(
     let Some(geometry) = window_panes_pane_geometry(wp_owner) else {
         return 0;
     };
-    let Some((x, mut y, sx, mut sy)) = window_panes_scaled_geometry(geometry, osx, osy, dsx, dsy)
+    let Some((x, mut y, sx, mut sy)) =
+        window_panes_scaled_geometry(&geometry.g, osx, osy, dsx, dsy)
     else {
         return 0;
     };
@@ -307,8 +305,8 @@ unsafe fn window_panes_get_geometry(
         .expect("live pane window")
         .pane_border_status();
     let border = match status {
-        PANE_STATUS_TOP => geometry.top_border,
-        PANE_STATUS_BOTTOM => geometry.bottom_border,
+        PANE_STATUS_TOP => geometry.has_border(PANE_STATUS_TOP),
+        PANE_STATUS_BOTTOM => geometry.has_border(PANE_STATUS_BOTTOM),
         _ => false,
     };
     if border && sy > 1 {
@@ -554,24 +552,24 @@ unsafe fn window_panes_mark_pane_status_borders(
             continue;
         };
         let border = if status == PANE_STATUS_TOP {
-            geometry.top_border
+            geometry.has_border(PANE_STATUS_TOP)
         } else {
-            geometry.bottom_border
+            geometry.has_border(PANE_STATUS_BOTTOM)
         };
         if !border {
             continue;
         }
-        let x = window_panes_map_x(geometry.offset.0 as u_int, osx, dsx);
+        let x = window_panes_map_x(geometry.g.xoff as u_int, osx, dsx);
         let x2 = window_panes_map_x(
-            (geometry.offset.0 as u_int).wrapping_add(geometry.size.0),
+            (geometry.g.xoff as u_int).wrapping_add(geometry.g.sx),
             osx,
             dsx,
         );
         let y = if status == PANE_STATUS_TOP {
-            window_panes_map_y(geometry.offset.1 as u_int, osy, dsy)
+            window_panes_map_y(geometry.g.yoff as u_int, osy, dsy)
         } else {
             window_panes_map_y(
-                (geometry.offset.1 as u_int).wrapping_add(geometry.size.1),
+                (geometry.g.yoff as u_int).wrapping_add(geometry.g.sy),
                 osy,
                 dsy,
             ) - 1
@@ -590,35 +588,36 @@ unsafe fn window_panes_get_floating_borders(
     mut x2p: *mut ::core::ffi::c_int,
     mut y2p: *mut ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let Some(geometry) = window_panes_pane_geometry(wp_owner).filter(|geometry| geometry.floating)
+    let Some(geometry) =
+        window_panes_pane_geometry(wp_owner).filter(|geometry| geometry.is_floating())
     else {
         return 0;
     };
-    if geometry.offset.0 == 0 as ::core::ffi::c_int {
+    if geometry.g.xoff == 0 as ::core::ffi::c_int {
         *xp = -(1 as ::core::ffi::c_int);
     } else {
         *xp = window_panes_map_x(
-            (geometry.offset.0 - 1 as ::core::ffi::c_int) as u_int,
+            (geometry.g.xoff - 1 as ::core::ffi::c_int) as u_int,
             osx,
             dsx,
         );
     }
-    if geometry.offset.1 == 0 as ::core::ffi::c_int {
+    if geometry.g.yoff == 0 as ::core::ffi::c_int {
         *yp = -(1 as ::core::ffi::c_int);
     } else {
         *yp = window_panes_map_y(
-            (geometry.offset.1 - 1 as ::core::ffi::c_int) as u_int,
+            (geometry.g.yoff - 1 as ::core::ffi::c_int) as u_int,
             osy,
             dsy,
         );
     }
     *x2p = window_panes_map_x(
-        (geometry.offset.0 as u_int).wrapping_add(geometry.size.0),
+        (geometry.g.xoff as u_int).wrapping_add(geometry.g.sx),
         osx,
         dsx,
     );
     *y2p = window_panes_map_y(
-        (geometry.offset.1 as u_int).wrapping_add(geometry.size.1),
+        (geometry.g.yoff as u_int).wrapping_add(geometry.g.sy),
         osy,
         dsy,
     );
@@ -2110,14 +2109,12 @@ mod session_observer_tests {
 mod preview_geometry_tests {
     use super::*;
 
-    fn geometry(offset: (i32, i32), size: (u32, u32)) -> crate::src::window::PaneLayoutGeometry {
-        crate::src::window::PaneLayoutGeometry {
-            offset,
-            size,
-            floating: false,
-            saved: false,
-            top_border: false,
-            bottom_border: false,
+    fn geometry(offset: (i32, i32), size: (u32, u32)) -> layout_geometry {
+        layout_geometry {
+            xoff: offset.0,
+            yoff: offset.1,
+            sx: size.0,
+            sy: size.1,
         }
     }
 
@@ -2125,24 +2122,24 @@ mod preview_geometry_tests {
     fn scaling_keeps_legacy_mixed_axis_and_minimum_cell_rules() {
         let g = geometry((4, 2), (10, 4));
         assert_eq!(
-            window_panes_scaled_geometry(g, 80, 24, 160, 48),
+            window_panes_scaled_geometry(&g, 80, 24, 160, 48),
             Some((4, 2, 10, 4))
         );
         assert_eq!(
-            window_panes_scaled_geometry(g, 80, 24, 40, 12),
+            window_panes_scaled_geometry(&g, 80, 24, 40, 12),
             Some((2, 1, 5, 2))
         );
         // When either axis requires scaling, the original algorithm scales both.
         assert_eq!(
-            window_panes_scaled_geometry(g, 80, 24, 40, 48),
+            window_panes_scaled_geometry(&g, 80, 24, 40, 48),
             Some((2, 4, 5, 8))
         );
         assert_eq!(
-            window_panes_scaled_geometry(geometry((1, 1), (1, 1)), 80, 24, 4, 2),
+            window_panes_scaled_geometry(&geometry((1, 1), (1, 1)), 80, 24, 4, 2),
             Some((0, 0, 1, 1))
         );
         assert_eq!(
-            window_panes_scaled_geometry(geometry((79, 23), (20, 10)), 80, 24, 40, 12),
+            window_panes_scaled_geometry(&geometry((79, 23), (20, 10)), 80, 24, 40, 12),
             Some((39, 11, 1, 1))
         );
     }
@@ -2158,7 +2155,7 @@ mod preview_geometry_tests {
         ] {
             assert_eq!(
                 window_panes_scaled_geometry(
-                    g,
+                    &g,
                     dimensions.0,
                     dimensions.1,
                     dimensions.2,
@@ -2168,11 +2165,11 @@ mod preview_geometry_tests {
             );
         }
         assert_eq!(
-            window_panes_scaled_geometry(geometry((80, 0), (1, 1)), 80, 24, 40, 12),
+            window_panes_scaled_geometry(&geometry((80, 0), (1, 1)), 80, 24, 40, 12),
             None
         );
         assert_eq!(
-            window_panes_scaled_geometry(geometry((0, 24), (1, 1)), 80, 24, 40, 12),
+            window_panes_scaled_geometry(&geometry((0, 24), (1, 1)), 80, 24, 40, 12),
             None
         );
     }

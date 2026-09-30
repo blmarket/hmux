@@ -18,30 +18,6 @@ use crate::src::tty_draw::tty_draw_line;
 use crate::src::window::Window as _;
 use crate::src::window_copy::window_copy_get_current_offset;
 
-#[derive(Clone, Copy)]
-pub struct PaneScrollbar {
-    pub visible: bool,
-    pub overlay: bool,
-    pub reserved: bool,
-    pub width: i32,
-    pub pad: i32,
-    pub slider_y: u32,
-    pub slider_height: u32,
-}
-
-pub(super) unsafe fn scrollbar(pane: &Rc<UnsafeCell<window_pane>>) -> PaneScrollbar {
-    let state = &*pane.get();
-    PaneScrollbar {
-        visible: window_pane_scrollbar_visible(state) != 0,
-        overlay: window_pane_scrollbar_overlay(state) != 0,
-        reserved: window_pane_scrollbar_reserve(state) != 0,
-        width: state.scrollbar_style.width,
-        pad: state.scrollbar_style.pad,
-        slider_y: state.sb_slider_y,
-        slider_height: state.sb_slider_h,
-    }
-}
-
 pub(super) unsafe fn refresh_scrollbar_style(pane: &Rc<UnsafeCell<window_pane>>) {
     let mut updated = (*pane.get()).scrollbar_style;
     pane.with_options_mut(|options| style_set_scrollbar_style_from_option(&mut updated, options));
@@ -536,7 +512,7 @@ pub(super) unsafe fn visible_ranges(
         .upgrade()
         .expect("live pane parent");
     let window_size = window.size();
-    let scrollbars = window.scrollbars();
+    let scrollbars = &window;
     if py as u_int >= window_size.1 || px as u_int >= window_size.0 {
         window.release(c"visible pane range outside");
         return;
@@ -578,10 +554,10 @@ pub(super) unsafe fn visible_ranges(
                 && py <= bb
                 && (floating || (py != tb && py != bb))
             {
-                let (sb_w, sb_pos) = if wp.scrollbar().reserved {
+                let (sb_w, sb_pos) = if wp.scrollbar_reserved() {
                     (
-                        wp.scrollbar().width + wp.scrollbar().pad,
-                        scrollbars.position,
+                        wp.scrollbar_width() + wp.scrollbar_pad(),
+                        scrollbars.scrollbar_position(),
                     )
                 } else {
                     (0, 0)

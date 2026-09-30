@@ -1,3 +1,5 @@
+## About this project
+
 This project was originally implemented in C, and there can be some assumptions
 which does not align with Rust safety semantics. Specificaly,
 
@@ -8,4 +10,9 @@ which does not align with Rust safety semantics. Specificaly,
    we migrate everything to drop function. Also while such manual Drop exists,
    we should not rely on Drop for resource management.
 
-Prefer single ownership, Drop cleanup, reconstructible state, and minimal abstractions.
+Do not touch ./src/compat/ unless explicitly asked.
+
+## General software design
+
+Prefer single ownership, Drop cleanup, reconstructible state, and minimal
+abstractions.

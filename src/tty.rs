@@ -286,7 +286,7 @@ unsafe fn tty_read_callback(owner: &ClientRef) {
                 log_cstr(strerror(*__errno_location()))
             ));
         }
-        owner.borrow_terminal_mut().read_task.cancel();
+        drop(owner.borrow_terminal_mut().read_task.take());
         (owner).lost();
         return;
     }
@@ -449,49 +449,45 @@ unsafe fn tty_write_callback(owner: &ClientRef) {
 fn tty_start_read(terminal: &mut tty) {
     let fd = terminal.io_fd.expect("open TTY descriptor");
     let observer = terminal.client.clone();
-    terminal
-        .read_task
-        .start(move || {
-            let source = reactor::descriptor(fd)?;
-            Ok(async move {
-                loop {
-                    source.ready(true, false).await.expect("TTY input wait");
-                    let Some(owner) = observer.upgrade() else {
-                        return;
-                    };
-                    unsafe { tty_read_callback(&owner) };
-                    drop(owner);
-                    // Input handling can close the terminal and cancel this task.
-                    reactor::yield_now().await;
-                }
-            })
+    crate::src::reactor::task_start(&mut terminal.read_task, move || {
+        let source = reactor::descriptor(fd)?;
+        Ok(async move {
+            loop {
+                source.ready(true, false).await.expect("TTY input wait");
+                let Some(owner) = observer.upgrade() else {
+                    return;
+                };
+                unsafe { tty_read_callback(&owner) };
+                drop(owner);
+                // Input handling can close the terminal and cancel this task.
+                reactor::yield_now().await;
+            }
         })
-        .expect("start TTY input");
+    })
+    .expect("start TTY input");
 }
 
 pub(crate) fn tty_start_write(terminal: &mut tty) {
-    if terminal.write_task.is_pending() {
+    if crate::src::reactor::task_is_pending(&terminal.write_task) {
         return;
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");
     let observer = terminal.client.clone();
-    terminal
-        .write_task
-        .start(move || {
-            let source = reactor::descriptor(fd)?;
-            Ok(async move {
-                source.ready(false, true).await.expect("TTY output wait");
-                if let Some(owner) = observer.upgrade() {
-                    // Complete the one-shot wait before writing: the write path
-                    // can schedule another wait if bytes remain in the buffer.
-                    unsafe {
-                        owner.borrow_terminal_mut().write_task.cancel();
-                        tty_write_callback(&owner);
-                    }
+    crate::src::reactor::task_start(&mut terminal.write_task, move || {
+        let source = reactor::descriptor(fd)?;
+        Ok(async move {
+            source.ready(false, true).await.expect("TTY output wait");
+            if let Some(owner) = observer.upgrade() {
+                // Complete the one-shot wait before writing: the write path
+                // can schedule another wait if bytes remain in the buffer.
+                unsafe {
+                    drop(owner.borrow_terminal_mut().write_task.take());
+                    tty_write_callback(&owner);
                 }
-            })
+            }
         })
-        .expect("start TTY output");
+    })
+    .expect("start TTY output");
 }
 
 pub(crate) fn tty_client_timer_callback(
@@ -784,8 +780,8 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         drop(tty.borrow_terminal_mut().clipboard_timer.take());
         drop(tty.borrow_terminal_mut().timer.take());
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
-        tty.borrow_terminal_mut().read_task.cancel();
-        tty.borrow_terminal_mut().write_task.cancel();
+        drop(tty.borrow_terminal_mut().read_task.take());
+        drop(tty.borrow_terminal_mut().write_task.take());
         reactor::forget_descriptor(fd);
         if ioctl(fd, TIOCGWINSZ as ::core::ffi::c_ulong, &raw mut ws) == -(1 as ::core::ffi::c_int)
         {
@@ -930,8 +926,8 @@ pub unsafe fn tty_close(owner: &ClientRef) {
         if terminal.flags & TTY_OPENED == 0 {
             return;
         }
-        terminal.read_task.cancel();
-        terminal.write_task.cancel();
+        drop(terminal.read_task.take());
+        drop(terminal.write_task.take());
         if let Some(fd) = terminal.io_fd.take() {
             reactor::forget_descriptor(fd);
         }
@@ -2414,10 +2410,10 @@ mod initialization_owner_tests {
             assert!(observer.upgrade().is_none());
             writer.write_all(b"input").unwrap();
             reactor::poll_runtime();
-            assert!(!read_task.is_pending());
-            assert!(!write_task.is_pending());
-            read_task.cancel();
-            write_task.cancel();
+            assert!(!crate::src::reactor::task_is_pending(&read_task));
+            assert!(!crate::src::reactor::task_is_pending(&write_task));
+            drop(read_task.take());
+            drop(write_task.take());
             reactor::forget_descriptor(reader.as_raw_fd());
             reactor::shutdown_runtime();
         }

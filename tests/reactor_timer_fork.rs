@@ -1,7 +1,7 @@
 //! Each process initializes its own reactor after the fork.
 #![cfg(unix)]
 
-use hmux2::src::reactor::{poll_runtime, shutdown_runtime, Task, Timer};
+use hmux2::src::reactor::{poll_runtime, shutdown_runtime, task_start, Timer};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -15,9 +15,8 @@ fn run_callbacks() {
     .unwrap();
     let deferred = Rc::new(Cell::new(false));
     let observed = deferred.clone();
-    let mut task = Task::new();
-    task.start(move || Ok(async move { observed.set(true) }))
-        .unwrap();
+    let mut task = None;
+    task_start(&mut task, move || Ok(async move { observed.set(true) })).unwrap();
     while timer.is_pending() || !deferred.get() {
         poll_runtime();
     }

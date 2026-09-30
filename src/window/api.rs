@@ -6,7 +6,7 @@
 //! let references or pointers escape.
 
 use super::*;
-use crate::src::layout::custom::{layout_parse, LayoutSnapshot};
+use crate::src::layout::custom::{layout_dump, layout_parse};
 use crate::src::layout::layout_resize;
 use crate::src::layout::set::{
     layout_set_lookup, layout_set_next, layout_set_previous, layout_set_select,
@@ -36,34 +36,6 @@ pub enum LayoutView {
 pub enum PaneOrder {
     Index,
     Stacking,
-}
-
-#[derive(Clone, Copy)]
-pub struct WindowScrollbars {
-    pub mode: i32,
-    pub position: i32,
-}
-
-/// Owned snapshot of a deferred terminal-size request. Reading it does not
-/// dequeue it: the existing resize notifications run before the flag is cleared.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WindowResize {
-    pub sx: u32,
-    pub sy: u32,
-    pub xpixel: u32,
-    pub ypixel: u32,
-}
-
-/// Copied layout geometry and border placement for one pane. No cell identity or
-/// component reference escapes the Window borrow.
-#[derive(Clone, Copy)]
-pub struct PaneLayoutGeometry {
-    pub size: (u32, u32),
-    pub offset: (i32, i32),
-    pub floating: bool,
-    pub saved: bool,
-    pub top_border: bool,
-    pub bottom_border: bool,
 }
 
 fn find_layout_pane<'a>(
@@ -208,15 +180,18 @@ pub trait Window {
     type LayoutCellMut<'a>: std::ops::DerefMut<Target = layout_cell>
     where
         Self: 'a;
-    unsafe fn borrow_layout_cell(&self, id: LayoutCellId) -> Option<Self::LayoutCell<'_>>;
-    unsafe fn borrow_layout_cell_mut(&self, id: LayoutCellId) -> Option<Self::LayoutCellMut<'_>>;
+    unsafe fn borrow_layout_cell(&self, id: *mut layout_cell) -> Option<Self::LayoutCell<'_>>;
+    unsafe fn borrow_layout_cell_mut(
+        &self,
+        id: *mut layout_cell,
+    ) -> Option<Self::LayoutCellMut<'_>>;
     unsafe fn last_layout_preset(&self) -> i32;
     unsafe fn layout_string(&self, view: LayoutView, legacy: bool) -> Option<CString>;
-    unsafe fn pane_layout_geometry(
+    unsafe fn pane_layout_cell(
         &self,
         pane: &Weak<UnsafeCell<window_pane>>,
         view: LayoutView,
-    ) -> Option<PaneLayoutGeometry>;
+    ) -> Option<&layout_cell>;
     /// Preset selection records its result after arrangement notifications.
     unsafe fn remember_layout_preset(&self, preset: i32);
 
@@ -287,7 +262,8 @@ pub trait Window {
         after: Option<&Weak<UnsafeCell<window_pane>>>,
         reverse: bool,
     ) -> Option<Rc<UnsafeCell<window_pane>>>;
-    unsafe fn scrollbars(&self) -> WindowScrollbars;
+    unsafe fn scrollbar_mode(&self) -> i32;
+    unsafe fn scrollbar_position(&self) -> i32;
     /// Refresh cached scrollbar policy after options change. Pane resizing is
     /// performed by the caller after this borrow ends.
     unsafe fn refresh_scrollbars(&self);
@@ -330,8 +306,9 @@ pub trait Window {
     unsafe fn manual_size(&self) -> (u32, u32);
     /// Select manual sizing and record both requested dimensions together.
     unsafe fn set_manual_size(&self, sx: u32, sy: u32);
-    unsafe fn pending_resize(&self) -> Option<WindowResize>;
-    unsafe fn defer_resize(&self, request: WindowResize);
+    unsafe fn pending_resize(&self) -> Option<(u32, u32)>;
+    unsafe fn apply_pending_resize(&self);
+    unsafe fn defer_resize(&self, sx: u32, sy: u32, xpixel: u32, ypixel: u32);
     /// Pixel dimensions of a terminal cell, for the pane's PTY resize protocol.
     unsafe fn cell_size(&self) -> (u32, u32);
     unsafe fn is_zoomed(&self) -> bool;
@@ -465,7 +442,7 @@ impl Window for WindowRef {
     type LayoutCell<'a> = &'a layout_cell;
     type LayoutCellMut<'a> = &'a mut layout_cell;
 
-    unsafe fn borrow_layout_cell(&self, id: LayoutCellId) -> Option<Self::LayoutCell<'_>> {
+    unsafe fn borrow_layout_cell(&self, id: *mut layout_cell) -> Option<Self::LayoutCell<'_>> {
         let state = &*self.get();
         state
             .layout_root
@@ -479,7 +456,10 @@ impl Window for WindowRef {
             })
     }
 
-    unsafe fn borrow_layout_cell_mut(&self, id: LayoutCellId) -> Option<Self::LayoutCellMut<'_>> {
+    unsafe fn borrow_layout_cell_mut(
+        &self,
+        id: *mut layout_cell,
+    ) -> Option<Self::LayoutCellMut<'_>> {
         let state = &mut *self.get();
         state
             .layout_root
@@ -541,58 +521,29 @@ impl Window for WindowRef {
         }
     }
     unsafe fn layout_string(&self, view: LayoutView, legacy: bool) -> Option<CString> {
-        let snapshot = {
-            let state = &*self.get();
-            let root = match view {
-                LayoutView::Visible => state.layout_root.as_deref(),
-                LayoutView::Unzoomed => state
-                    .saved_layout_root
-                    .as_deref()
-                    .or(state.layout_root.as_deref()),
-            };
-            root.map(LayoutSnapshot::capture)
-        }?;
-        snapshot.dump(legacy)
+        let root = self.borrow_layout_root(view)?;
+        layout_dump(root, legacy)
     }
-    unsafe fn pane_layout_geometry(
+    unsafe fn pane_layout_cell(
         &self,
         pane: &Weak<UnsafeCell<window_pane>>,
         view: LayoutView,
-    ) -> Option<PaneLayoutGeometry> {
+    ) -> Option<&layout_cell> {
         let state = &*self.get();
-        let saved_root = match view {
+        let saved = match view {
             LayoutView::Unzoomed => state.saved_layout_root.as_deref(),
             LayoutView::Visible => None,
         };
-        let current = state.layout_root.as_deref();
-        let (cell, saved) = saved_root
+        saved
             .and_then(|root| find_layout_pane(root, pane))
-            .map(|cell| (cell, true))
             .or_else(|| {
-                current
+                state
+                    .layout_root
+                    .as_deref()
                     .and_then(|root| find_layout_pane(root, pane))
-                    .map(|cell| (cell, false))
-            })?;
-        let root = saved_root.or(current)?;
-        let root_ptr = root as *const layout_cell as *mut layout_cell;
-        let cell_ptr = cell as *const layout_cell as *mut layout_cell;
-        Some(PaneLayoutGeometry {
-            size: (cell.g.sx, cell.g.sy),
-            offset: (cell.g.xoff, cell.g.yoff),
-            floating: cell.flags & LAYOUT_CELL_FLOATING != 0,
-            saved,
-            top_border: crate::src::layout::layout_add_horizontal_border(
-                root_ptr,
-                cell_ptr,
-                PANE_STATUS_TOP,
-            ) != 0,
-            bottom_border: crate::src::layout::layout_add_horizontal_border(
-                root_ptr,
-                cell_ptr,
-                PANE_STATUS_BOTTOM,
-            ) != 0,
-        })
+            })
     }
+
     unsafe fn last_layout_preset(&self) -> i32 {
         (*self.get()).lastlayout
     }
@@ -882,12 +833,11 @@ impl Window for WindowRef {
             (Some(pane), true) => panes.previous(pane),
         }
     }
-    unsafe fn scrollbars(&self) -> WindowScrollbars {
-        let state = &*self.get();
-        WindowScrollbars {
-            mode: state.sb,
-            position: state.sb_pos,
-        }
+    unsafe fn scrollbar_mode(&self) -> i32 {
+        (*self.get()).sb
+    }
+    unsafe fn scrollbar_position(&self) -> i32 {
+        (*self.get()).sb_pos
     }
     unsafe fn refresh_scrollbars(&self) {
         let state = &mut *self.get();
@@ -1094,21 +1044,27 @@ impl Window for WindowRef {
         state.manual_sx = sx;
         state.manual_sy = sy;
     }
-    unsafe fn pending_resize(&self) -> Option<WindowResize> {
+    unsafe fn pending_resize(&self) -> Option<(u32, u32)> {
         let state = &*self.get();
-        (state.flags & WINDOW_RESIZE != 0).then_some(WindowResize {
-            sx: state.new_sx,
-            sy: state.new_sy,
-            xpixel: state.new_xpixel,
-            ypixel: state.new_ypixel,
-        })
+        (state.flags & WINDOW_RESIZE != 0).then_some((state.new_sx, state.new_sy))
     }
-    unsafe fn defer_resize(&self, request: WindowResize) {
+    unsafe fn apply_pending_resize(&self) {
+        if (*self.get()).flags & WINDOW_RESIZE != 0 {
+            resize_window(
+                self,
+                (*self.get()).new_sx,
+                (*self.get()).new_sy,
+                (*self.get()).new_xpixel as i32,
+                (*self.get()).new_ypixel as i32,
+            );
+        }
+    }
+    unsafe fn defer_resize(&self, sx: u32, sy: u32, xpixel: u32, ypixel: u32) {
         let state = &mut *self.get();
-        state.new_sx = request.sx;
-        state.new_sy = request.sy;
-        state.new_xpixel = request.xpixel;
-        state.new_ypixel = request.ypixel;
+        state.new_sx = sx;
+        state.new_sy = sy;
+        state.new_xpixel = xpixel;
+        state.new_ypixel = ypixel;
         state.flags |= WINDOW_RESIZE;
     }
     unsafe fn cell_size(&self) -> (u32, u32) {
@@ -1690,19 +1646,16 @@ mod tests {
             let window = super::super::zoom_teardown_tests::zoomed_window();
             let pane = window.active_pane().unwrap();
             let observer = Rc::downgrade(&pane);
-            assert_eq!(
-                window
-                    .pane_layout_geometry(&observer, LayoutView::Visible)
-                    .unwrap()
-                    .size,
-                (80, 24)
-            );
-            let saved = window
-                .pane_layout_geometry(&observer, LayoutView::Unzoomed)
+            let visible = window
+                .pane_layout_cell(&observer, LayoutView::Visible)
                 .unwrap();
-            assert!(saved.saved);
-            assert_eq!(saved.size, (40, 24));
-            assert_eq!(saved.offset, (0, 0));
+            assert_eq!((visible.g.sx, visible.g.sy), (80, 24));
+            let saved = window
+                .pane_layout_cell(&observer, LayoutView::Unzoomed)
+                .unwrap();
+            assert!(saved.is_saved());
+            assert_eq!((saved.g.sx, saved.g.sy), (40, 24));
+            assert_eq!((saved.g.xoff, saved.g.yoff), (0, 0));
             {
                 let root = window.borrow_layout_root(LayoutView::Visible).unwrap();
                 assert_eq!((root.g.sx, root.g.sy), (80, 24));
@@ -1833,13 +1786,7 @@ mod tests {
                 crate::src::options::options_default(options, entry);
             });
             window.unzoom(false);
-            let request = WindowResize {
-                sx: 90,
-                sy: 30,
-                xpixel: 9,
-                ypixel: 18,
-            };
-            window.defer_resize(request);
+            window.defer_resize(90, 30, 9, 18);
             let calls = Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut sinks = Vec::new();
             for event in [c"window-layout-changed", c"window-resized"] {
@@ -1849,18 +1796,13 @@ mod tests {
                     event,
                     events_callback(move |_, _| {
                         let window = observer.upgrade().expect("resizing window");
-                        assert_eq!(window.pending_resize(), Some(request));
+                        assert_eq!(window.pending_resize(), Some((90, 30)));
                         assert_eq!(window.size(), (90, 30));
                         calls.borrow_mut().push(event);
                     }),
                 ));
             }
-            window.resize(
-                request.sx,
-                request.sy,
-                request.xpixel as _,
-                request.ypixel as _,
-            );
+            window.apply_pending_resize();
             assert_eq!(
                 &*calls.borrow(),
                 &[c"window-layout-changed", c"window-resized"]

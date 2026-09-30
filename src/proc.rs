@@ -128,27 +128,25 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
 }
 unsafe fn proc_update_io(peer: *mut tmuxpeer) {
     let writable = imsgbuf_queuelen(&(*peer).ibuf) > 0;
-    if (*peer).io_task.is_pending() && (*peer).io_writable == writable {
+    if crate::src::reactor::task_is_pending(&(*peer).io_task) && (*peer).io_writable == writable {
         return;
     }
     (*peer).io_writable = writable;
     let fd = (*peer).ibuf.fd;
-    (*peer)
-        .io_task
-        .start(move || {
-            let source = reactor::descriptor(fd)?;
-            Ok(async move {
-                loop {
-                    let (readable, writable) =
-                        source.ready(true, writable).await.expect("peer I/O wait");
-                    unsafe { proc_io_ready(peer, readable, writable) };
-                    // Dispatch can remove the peer or replace this task. Yield
-                    // before another wait so cancellation drops the old future.
-                    reactor::yield_now().await;
-                }
-            })
+    crate::src::reactor::task_start(&mut (*peer).io_task, move || {
+        let source = reactor::descriptor(fd)?;
+        Ok(async move {
+            loop {
+                let (readable, writable) =
+                    source.ready(true, writable).await.expect("peer I/O wait");
+                unsafe { proc_io_ready(peer, readable, writable) };
+                // Dispatch can remove the peer or replace this task. Yield
+                // before another wait so cancellation drops the old future.
+                reactor::yield_now().await;
+            }
         })
-        .expect("start peer I/O");
+    })
+    .expect("start peer I/O");
 }
 pub unsafe fn proc_send(
     mut peer: *mut tmuxpeer,
@@ -305,21 +303,19 @@ pub unsafe fn proc_set_signals(
     sigaction(SIGTTIN, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    (*tp)
-        .signal_task
-        .start(move || {
-            let mut signals = reactor::handle().signals(&[
-                SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
-            ])?;
-            Ok(async move {
-                loop {
-                    let signo = signals.recv().await.expect("process signal wait");
-                    unsafe { proc_signal_cb(signo, tp) };
-                    reactor::yield_now().await;
-                }
-            })
+    crate::src::reactor::task_start(&mut (*tp).signal_task, move || {
+        let mut signals = reactor::handle().signals(&[
+            SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
+        ])?;
+        Ok(async move {
+            loop {
+                let signo = signals.recv().await.expect("process signal wait");
+                unsafe { proc_signal_cb(signo, tp) };
+                reactor::yield_now().await;
+            }
         })
-        .expect("start process signals");
+    })
+    .expect("start process signals");
 }
 pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
     let mut sa: sigaction = sigaction {
@@ -338,7 +334,7 @@ pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ff
     sa.__sigaction_handler.sa_handler = SIG_DFL;
     sigaction(SIGPIPE, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    (*tp).signal_task.cancel();
+    drop((*tp).signal_task.take());
     if defaults != 0 {
         // Pre-exec cleanup may run inside a runtime callback. The runtime
         // remains borrowed until exec replaces the process. Reset signals here.
@@ -395,7 +391,7 @@ unsafe fn proc_free_peer(mut owned_peer: Box<tmuxpeer>) {
         "remove peer {}",
         log_pointer((peer) as *const ::core::ffi::c_void)
     ));
-    (*peer).io_task.cancel();
+    drop((*peer).io_task.take());
     reactor::forget_descriptor((*peer).ibuf.fd);
     imsgbuf_clear(&mut (*peer).ibuf);
     close((*peer).ibuf.fd);
@@ -548,10 +544,11 @@ mod ownership_tests {
                 assert_eq!(&*calls.borrow(), &[SIGUSR1, SIGUSR2]);
                 // Pre-exec signal cleanup must also work inside a callback,
                 // while the runtime owner is mutably borrowed by poll.
-                let mut cleanup = reactor::Task::new();
-                cleanup
-                    .start(move || Ok(async move { proc_clear_signals(tp, 1) }))
-                    .unwrap();
+                let mut cleanup = None::<hmux_rt::mio::Task>;
+                crate::src::reactor::task_start(&mut cleanup, move || {
+                    Ok(async move { proc_clear_signals(tp, 1) })
+                })
+                .unwrap();
                 poll_runtime();
                 proc_free(owner);
                 libc::_exit(0);
@@ -570,15 +567,13 @@ mod ownership_tests {
             let tp = &raw mut *owner;
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             let observed = calls.clone();
-            (*tp)
-                .signal_task
-                .start(move || {
-                    let observed = observed.clone();
-                    Ok(async move {
-                        observed.set(observed.get() + 1);
-                    })
+            crate::src::reactor::task_start(&mut (*tp).signal_task, move || {
+                let observed = observed.clone();
+                Ok(async move {
+                    observed.set(observed.get() + 1);
                 })
-                .unwrap();
+            })
+            .unwrap();
 
             let mut pair = [0; 2];
             assert_eq!(

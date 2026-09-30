@@ -1,6 +1,5 @@
 //! Alert dispatch owns queued references; Window owns flags and its timer.
 use crate::src::log::{log_debug, log_hex};
-use crate::src::reactor::Task;
 use crate::src::session::Session;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
@@ -13,7 +12,7 @@ use crate::src::window::{windows, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
 use std::{cell::UnsafeCell, rc::Rc};
 
-static mut alerts_task: Task = Task::new();
+static mut alerts_task: Option<hmux_rt::mio::Task> = None::<hmux_rt::mio::Task>;
 static mut alerts_list: VecDeque<WindowRef> = VecDeque::new();
 
 fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
@@ -71,21 +70,20 @@ pub unsafe fn alerts_reset_all() {
 }
 
 unsafe fn schedule(id: u32) {
-    if !alerts_task.is_pending() {
+    if !crate::src::reactor::task_is_pending(&alerts_task) {
         log_debug(format_args!("alerts check queued (by @{})", id));
-        alerts_task
-            .start(|| {
-                Ok(async {
-                    loop {
-                        alerts_callback();
-                        if alerts_list.is_empty() {
-                            break;
-                        }
-                        crate::src::reactor::yield_now().await;
+        crate::src::reactor::task_start(&mut alerts_task, || {
+            Ok(async {
+                loop {
+                    alerts_callback();
+                    if alerts_list.is_empty() {
+                        break;
                     }
-                })
+                    crate::src::reactor::yield_now().await;
+                }
             })
-            .expect("start alert dispatch");
+        })
+        .expect("start alert dispatch");
     }
 }
 

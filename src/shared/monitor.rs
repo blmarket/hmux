@@ -49,8 +49,6 @@ pub struct monitor_item {
     pub last: Option<std::ffi::CString>,
     pub panes: monitor_panes,
     pub windows: monitor_windows,
-    /// Never reused within a monitor; distinguishes same-name replacements.
-    pub identity: u64,
     pub fire_count: u_int,
     pub fire_time: time_t,
 }
@@ -66,7 +64,6 @@ impl monitor_item {
             last: Default::default(),
             panes: Default::default(),
             windows: Default::default(),
-            identity: 0,
             fire_count: Default::default(),
             fire_time: Default::default(),
         }

@@ -1,5 +1,5 @@
 use super::core::{
-    layout_resize_adjust_with_policy, layout_spread_cell_with_policy, LayoutResizePolicy,
+    layout_resize_adjust_with_limits, layout_resize_limits, layout_spread_cell_with_limits,
 };
 use crate::src::arguments::args_string_percentage_result;
 use crate::src::events::events_fire_window;
@@ -156,7 +156,7 @@ pub unsafe fn layout_set_previous(w_owner: &WindowRef) -> u_int {
 }
 // Detached leaves remain owned throughout preset reconstruction. Resolve their
 // IDs here rather than reaching through Pane into the Window's old tree.
-fn layout_set_leaf(leaves: &mut [Box<layout_cell>], id: LayoutCellId) -> &mut layout_cell {
+fn layout_set_leaf(leaves: &mut [Box<layout_cell>], id: *mut layout_cell) -> &mut layout_cell {
     leaves
         .iter_mut()
         .find(|cell| cell.id() == id)
@@ -235,7 +235,7 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
             }
             sx = window_size.0;
         }
-        let policy = LayoutResizePolicy::for_window(w_owner);
+        let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
         let mut tree = w_owner.borrow_layout_root_mut();
         let mut leaves = layout_take_leaves(tree.take());
         *tree = Some(layout_create_cell());
@@ -263,7 +263,7 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
             }
             wp = pane_iter.next();
         }
-        layout_spread_cell_with_policy(lcroot, policy, lcroot);
+        layout_spread_cell_with_limits(lcroot, pane_status, horizontal_minimum, lcroot);
         assert!(leaves.is_empty(), "all detached pane cells were reinserted");
     } // All tree pointers and the component guard end before pane callbacks.
     layout_fix_offsets(w_owner);
@@ -387,7 +387,7 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
         if sx < window_size.0 {
             sx = window_size.0;
         }
-        let policy = LayoutResizePolicy::for_window(w_owner);
+        let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
         let mut tree = w_owner.borrow_layout_root_mut();
         let mut leaves = layout_take_leaves(tree.take());
         *tree = Some(layout_create_cell());
@@ -481,7 +481,7 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
                 }
                 wp = pane_iter.next();
             }
-            layout_spread_cell_with_policy(lcroot, policy, lcother);
+            layout_spread_cell_with_limits(lcroot, pane_status, horizontal_minimum, lcother);
         }
         assert!(leaves.is_empty(), "all detached pane cells were reinserted");
     } // All tree pointers and the component guard end before pane callbacks.
@@ -579,7 +579,7 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
         if sx < window_size.0 {
             sx = window_size.0;
         }
-        let policy = LayoutResizePolicy::for_window(w_owner);
+        let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
         let mut tree = w_owner.borrow_layout_root_mut();
         let mut leaves = layout_take_leaves(tree.take());
         *tree = Some(layout_create_cell());
@@ -673,7 +673,7 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
                 }
                 wp = pane_iter.next();
             }
-            layout_spread_cell_with_policy(lcroot, policy, lcother);
+            layout_spread_cell_with_limits(lcroot, pane_status, horizontal_minimum, lcother);
         }
         assert!(leaves.is_empty(), "all detached pane cells were reinserted");
     } // All tree pointers and the component guard end before pane callbacks.
@@ -771,7 +771,7 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
         if sy < window_size.1 {
             sy = window_size.1;
         }
-        let policy = LayoutResizePolicy::for_window(w_owner);
+        let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
         let mut tree = w_owner.borrow_layout_root_mut();
         let mut leaves = layout_take_leaves(tree.take());
         *tree = Some(layout_create_cell());
@@ -865,7 +865,7 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
                 }
                 wp = pane_iter.next();
             }
-            layout_spread_cell_with_policy(lcroot, policy, lcother);
+            layout_spread_cell_with_limits(lcroot, pane_status, horizontal_minimum, lcother);
         }
         assert!(leaves.is_empty(), "all detached pane cells were reinserted");
     } // All tree pointers and the component guard end before pane callbacks.
@@ -963,7 +963,7 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
         if sy < window_size.1 {
             sy = window_size.1;
         }
-        let policy = LayoutResizePolicy::for_window(w_owner);
+        let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
         let mut tree = w_owner.borrow_layout_root_mut();
         let mut leaves = layout_take_leaves(tree.take());
         *tree = Some(layout_create_cell());
@@ -1057,7 +1057,7 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
                 }
                 wp = pane_iter.next();
             }
-            layout_spread_cell_with_policy(lcroot, policy, lcother);
+            layout_spread_cell_with_limits(lcroot, pane_status, horizontal_minimum, lcother);
         }
         assert!(leaves.is_empty(), "all detached pane cells were reinserted");
     } // All tree pointers and the component guard end before pane callbacks.
@@ -1154,7 +1154,7 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
         if sy < window_size.1 {
             sy = window_size.1;
         }
-        let policy = LayoutResizePolicy::for_window(w_owner);
+        let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
         let mut tree = w_owner.borrow_layout_root_mut();
         let mut leaves = layout_take_leaves(tree.take());
         *tree = Some(layout_create_cell());
@@ -1249,9 +1249,10 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
                     .wrapping_sub(1 as u_int);
                 if !(window_size.0 <= used) {
                     lcchild = layout_cells_last(&*lcrow);
-                    layout_resize_adjust_with_policy(
+                    layout_resize_adjust_with_limits(
                         lcroot,
-                        policy,
+                        pane_status,
+                        horizontal_minimum,
                         lcchild,
                         LAYOUT_LEFTRIGHT,
                         window_size.0.wrapping_sub(used) as ::core::ffi::c_int,
@@ -1266,9 +1267,10 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
             .wrapping_sub(1 as u_int);
         if window_size.1 > used {
             lcrow = layout_cells_last(&*lcroot);
-            layout_resize_adjust_with_policy(
+            layout_resize_adjust_with_limits(
                 lcroot,
-                policy,
+                pane_status,
+                horizontal_minimum,
                 lcrow,
                 LAYOUT_TOPBOTTOM,
                 window_size.1.wrapping_sub(used) as ::core::ffi::c_int,

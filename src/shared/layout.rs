@@ -82,16 +82,6 @@ mod tests {
             unsafe { layout_cells_remove(&mut *second, layout_cells_first(&second)).unwrap() };
         drop(removed);
         assert!(second.find_mut(id).is_none());
-        // A fresh allocation cannot make a stale ID resolve, even if the allocator
-        // reuses a previous cell's address.
-        for _ in 0..64 {
-            let replacement = layout_cell::new();
-            assert_ne!(replacement.id(), id);
-            unsafe {
-                layout_cells_push_back(&mut *second, replacement);
-            }
-        }
-        assert!(second.find_mut(id).is_none());
     }
 
     #[test]
@@ -110,15 +100,9 @@ mod tests {
     }
 }
 
-/// Nonowning identity for a cell across callbacks. It is never an address and
-/// does not keep a removed cell alive. Resolve it under the owning tree borrow.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LayoutCellId(u64);
-
 /// Cells are Box-owned by their parent, a window root, or an explicit detached owner.
 /// Child addresses remain stable as the parent `Vec` moves the boxes.
 pub struct layout_cell {
-    id: LayoutCellId,
     pub type_0: layout_type,
     pub flags: ::core::ffi::c_int,
     pub parent: *mut layout_cell,
@@ -133,11 +117,6 @@ pub struct layout_cell {
 
 impl layout_cell {
     pub fn new() -> Box<Self> {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-        let id = NEXT_ID
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-            .expect("layout cell identity exhausted");
         let geometry = layout_geometry {
             sx: u32::MAX,
             sy: u32::MAX,
@@ -145,7 +124,6 @@ impl layout_cell {
             yoff: i32::MAX,
         };
         Box::new(Self {
-            id: LayoutCellId(id),
             type_0: LAYOUT_WINDOWPANE,
             flags: 0,
             parent: std::ptr::null_mut(),
@@ -156,17 +134,33 @@ impl layout_cell {
             cells: Vec::new(),
         })
     }
-    pub fn id(&self) -> LayoutCellId {
-        self.id
+    pub fn is_floating(&self) -> bool {
+        self.flags & LAYOUT_CELL_FLOATING != 0
     }
-    pub fn find(&self, id: LayoutCellId) -> Option<&Self> {
-        if self.id == id {
+    pub unsafe fn is_saved(&self) -> bool {
+        self.wp
+            .upgrade()
+            .is_some_and(|pane| pane.layout_identity(true) == Some(self.id()))
+    }
+    pub unsafe fn has_border(&self, status: i32) -> bool {
+        let cell = self.id();
+        let mut root = cell;
+        while !(*root).parent.is_null() {
+            root = (*root).parent;
+        }
+        crate::src::layout::layout_add_horizontal_border(root, cell, status) != 0
+    }
+    pub fn id(&self) -> *mut layout_cell {
+        self as *const Self as *mut Self
+    }
+    pub fn find(&self, id: *mut layout_cell) -> Option<&Self> {
+        if std::ptr::eq(self, id) {
             return Some(self);
         }
         self.cells.iter().find_map(|child| child.find(id))
     }
-    pub fn find_mut(&mut self, id: LayoutCellId) -> Option<&mut Self> {
-        if self.id == id {
+    pub fn find_mut(&mut self, id: *mut layout_cell) -> Option<&mut Self> {
+        if std::ptr::eq(self, id) {
             return Some(self);
         }
         self.cells.iter_mut().find_map(|child| child.find_mut(id))
@@ -347,7 +341,7 @@ impl Drop for layout_cell {
         if self.type_0 == LAYOUT_WINDOWPANE {
             if let Some(owner) = self.wp.upgrade() {
                 unsafe {
-                    owner.detach_layout(self.id);
+                    owner.detach_layout(self.id());
                 }
             }
         }

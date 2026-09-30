@@ -10,7 +10,6 @@ use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::terminal::termios;
-use crate::src::reactor::Task;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 #[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
@@ -360,9 +359,9 @@ pub struct tty {
     pub rupper: u_int,
     pub rleft: u_int,
     pub rright: u_int,
-    pub read_task: Task,
+    pub read_task: Option<hmux_rt::mio::Task>,
     pub in_0: Option<Box<crate::src::tty::TerminalInput>>,
-    pub write_task: Task,
+    pub write_task: Option<hmux_rt::mio::Task>,
     pub io_fd: Option<i32>,
     pub out: Option<Box<SegmentedBuf>>,
     pub timer: Option<Timer>,

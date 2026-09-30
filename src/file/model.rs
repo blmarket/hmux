@@ -34,7 +34,7 @@ pub struct client_file {
     pub(super) wait_client: ClientWeak,
     pub(super) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(super) completed: bool,
-    pub(super) push_task: crate::src::reactor::Task,
+    pub(super) push_task: Option<hmux_rt::mio::Task>,
     pub(super) read: super::stream::ReadState,
 }
 

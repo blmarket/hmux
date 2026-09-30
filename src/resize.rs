@@ -18,7 +18,7 @@ use crate::src::tmux::global_w_options;
 use crate::src::tty::tty_update_window_offset;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
-use crate::src::window::{windows, Window as _, WindowResize};
+use crate::src::window::{windows, Window as _};
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::src::window::Window;
@@ -418,7 +418,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         &raw mut ypixel,
     );
     if let Some(pending) = w_owner.pending_resize() {
-        if now == 0 && changed != 0 && pending.sx == sx && pending.sy == sy {
+        if now == 0 && changed != 0 && pending == (sx, sy) {
             changed = 0 as ::core::ffi::c_int;
         }
     } else if now == 0 && changed != 0 && (w_owner).size().0 == sx && (w_owner).size().1 == sy {
@@ -449,12 +449,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
             ypixel as ::core::ffi::c_int,
         );
     } else {
-        w_owner.defer_resize(WindowResize {
-            sx,
-            sy,
-            xpixel,
-            ypixel,
-        });
+        w_owner.defer_resize(sx, sy, xpixel, ypixel);
         tty_update_window_offset(w_owner);
     };
 }

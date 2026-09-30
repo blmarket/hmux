@@ -147,10 +147,10 @@ pub trait WindowPane {
     unsafe fn update_scrollbar_hover(&self, x: i32, y: i32);
 
     /// Stable, nonowning identity resolved only under the Window layout guard.
-    unsafe fn layout_identity(&self, saved: bool) -> Option<LayoutCellId>;
-    unsafe fn place_in_layout(&self, cell: LayoutCellId);
+    unsafe fn layout_identity(&self, saved: bool) -> Option<*mut layout_cell>;
+    unsafe fn place_in_layout(&self, cell: *mut layout_cell);
     /// Clear placement only if this is still the cell that owns the pane.
-    unsafe fn detach_layout(&self, cell: LayoutCellId);
+    unsafe fn detach_layout(&self, cell: *mut layout_cell);
     unsafe fn save_layout_for_zoom(&self);
     unsafe fn restore_layout_after_zoom(&self);
     unsafe fn mark_zoomed(&self);
@@ -162,8 +162,8 @@ pub trait WindowPane {
     /// the pane's placement fields have been released.
     unsafe fn apply_layout(
         &self,
-        geometry: crate::src::window::PaneLayoutGeometry,
-        scrollbars: crate::src::window::WindowScrollbars,
+        geometry: *const layout_cell,
+        scrollbars: &crate::src::shared::window::WindowRef,
     ) -> bool;
     /// Mark redraw when the cached active and inactive appearance differs.
     unsafe fn redraw_selection_change(&self);
@@ -212,7 +212,13 @@ pub trait WindowPane {
     ) -> i32;
     unsafe fn request_redraw(&self, scrollbar: bool);
     /// Copied appearance and slider geometry; no pane storage is lent.
-    unsafe fn scrollbar(&self) -> super::render::PaneScrollbar;
+    unsafe fn scrollbar_visible(&self) -> bool;
+    unsafe fn scrollbar_overlay(&self) -> bool;
+    unsafe fn scrollbar_reserved(&self) -> bool;
+    unsafe fn scrollbar_width(&self) -> i32;
+    unsafe fn scrollbar_pad(&self) -> i32;
+    unsafe fn scrollbar_slider_y(&self) -> u32;
+    unsafe fn scrollbar_slider_height(&self) -> u32;
     unsafe fn redraw_scrollbar(&self);
     unsafe fn hide_scrollbar(&self);
     unsafe fn refresh_scrollbar_style(&self);
@@ -572,8 +578,26 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         panes.values().cloned().collect()
     }
 
-    unsafe fn scrollbar(&self) -> super::render::PaneScrollbar {
-        super::render::scrollbar(self)
+    unsafe fn scrollbar_visible(&self) -> bool {
+        window_pane_scrollbar_visible(&*self.get()) != 0
+    }
+    unsafe fn scrollbar_overlay(&self) -> bool {
+        window_pane_scrollbar_overlay(&*self.get()) != 0
+    }
+    unsafe fn scrollbar_reserved(&self) -> bool {
+        window_pane_scrollbar_reserve(&*self.get()) != 0
+    }
+    unsafe fn scrollbar_width(&self) -> i32 {
+        (*self.get()).scrollbar_style.width
+    }
+    unsafe fn scrollbar_pad(&self) -> i32 {
+        (*self.get()).scrollbar_style.pad
+    }
+    unsafe fn scrollbar_slider_y(&self) -> u32 {
+        (*self.get()).sb_slider_y
+    }
+    unsafe fn scrollbar_slider_height(&self) -> u32 {
+        (*self.get()).sb_slider_h
     }
     unsafe fn redraw_scrollbar(&self) {
         window_pane_scrollbar_redraw(self);
@@ -875,17 +899,17 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString> {
         window_pane_start_input(self, item)
     }
-    unsafe fn layout_identity(&self, saved: bool) -> Option<LayoutCellId> {
+    unsafe fn layout_identity(&self, saved: bool) -> Option<*mut layout_cell> {
         if saved {
             (*self.get()).saved_layout_cell
         } else {
             (*self.get()).layout_cell
         }
     }
-    unsafe fn place_in_layout(&self, cell: LayoutCellId) {
+    unsafe fn place_in_layout(&self, cell: *mut layout_cell) {
         (*self.get()).layout_cell = Some(cell);
     }
-    unsafe fn detach_layout(&self, cell: LayoutCellId) {
+    unsafe fn detach_layout(&self, cell: *mut layout_cell) {
         if (*self.get()).layout_cell == Some(cell) {
             (*self.get()).layout_cell = None;
         }
@@ -918,19 +942,20 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn apply_layout(
         &self,
-        geometry: crate::src::window::PaneLayoutGeometry,
-        scrollbars: crate::src::window::WindowScrollbars,
+        geometry: *const layout_cell,
+        scrollbars: &crate::src::shared::window::WindowRef,
     ) -> bool {
+        let geometry = &*geometry;
         let old_geometry = self.geometry();
-        let (mut sx, mut sy) = geometry.size;
-        let (mut xoff, mut yoff) = geometry.offset;
+        let (mut sx, mut sy) = (geometry.g.sx, geometry.g.sy);
+        let (mut xoff, mut yoff) = (geometry.g.xoff, geometry.g.yoff);
         let status = self.border_status();
         let has_border = match status {
-            PANE_STATUS_TOP => geometry.top_border,
-            PANE_STATUS_BOTTOM => geometry.bottom_border,
+            PANE_STATUS_TOP => geometry.has_border(PANE_STATUS_TOP),
+            PANE_STATUS_BOTTOM => geometry.has_border(PANE_STATUS_BOTTOM),
             _ => false,
         };
-        if !geometry.floating && has_border {
+        if !geometry.is_floating() && has_border {
             if status == PANE_STATUS_TOP {
                 yoff += 1;
             }
@@ -947,7 +972,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
                     pane.scrollbar_style.pad.max(0),
                 )
             };
-            if scrollbars.position == PANE_SCROLLBARS_LEFT {
+            if scrollbars.scrollbar_position() == PANE_SCROLLBARS_LEFT {
                 if sx as i32 - width - pad < PANE_MINIMUM {
                     xoff += sx as i32 - PANE_MINIMUM;
                     sx = PANE_MINIMUM as u32;
@@ -1012,7 +1037,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn unzoomed_width(&self) -> Option<u32> {
         let window = self.window_observer().upgrade().expect("pane window");
-        let geometry = window.pane_layout_geometry(
+        let geometry = window.pane_layout_cell(
             &Rc::downgrade(self),
             crate::src::window::LayoutView::Unzoomed,
         );
@@ -1020,13 +1045,13 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             window.release(c"unzoomed pane width");
             return None;
         };
-        let reserve = if geometry.saved {
+        let reserve = if geometry.is_saved() {
             let main_screen = (*self.get()).base.saved_grid.is_none();
-            main_screen && window.scrollbars().mode == PANE_SCROLLBARS_ALWAYS
+            main_screen && window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS
         } else {
             window_pane_scrollbar_reserve(&*self.get()) != 0
         };
-        let mut width = geometry.size.0;
+        let mut width = geometry.g.sx;
         if reserve {
             let (bar, pad) = {
                 let state = &*self.get();
@@ -1046,7 +1071,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn unzoomed_height(&self) -> Option<u32> {
         let window = self.window_observer().upgrade().expect("pane window");
-        let geometry = window.pane_layout_geometry(
+        let geometry = window.pane_layout_cell(
             &Rc::downgrade(self),
             crate::src::window::LayoutView::Unzoomed,
         );
@@ -1054,18 +1079,18 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             window.release(c"unzoomed pane height");
             return None;
         };
-        let status = if geometry.saved && !geometry.floating {
+        let status = if geometry.is_saved() && !geometry.is_floating() {
             window.pane_border_status()
         } else {
             self.border_status()
         };
         let border = match status {
-            PANE_STATUS_TOP => geometry.top_border,
-            PANE_STATUS_BOTTOM => geometry.bottom_border,
+            PANE_STATUS_TOP => geometry.has_border(PANE_STATUS_TOP),
+            PANE_STATUS_BOTTOM => geometry.has_border(PANE_STATUS_BOTTOM),
             _ => false,
         };
-        let height = geometry.size.1;
-        let height = if !geometry.floating && border && height > 1 {
+        let height = geometry.g.sy;
+        let height = if !geometry.is_floating() && border && height > 1 {
             height - 1
         } else {
             height

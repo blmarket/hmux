@@ -13,8 +13,8 @@ pub struct window_pane {
     pub(super) window: WindowWeak,
     pub(super) options: Option<Box<options>>,
     /// Nonowning cell identities; resolve only under the owning Window tree guard.
-    pub(super) layout_cell: Option<LayoutCellId>,
-    pub(super) saved_layout_cell: Option<LayoutCellId>,
+    pub(super) layout_cell: Option<*mut layout_cell>,
+    pub(super) saved_layout_cell: Option<*mut layout_cell>,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) xoff: ::core::ffi::c_int,

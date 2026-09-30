@@ -16,9 +16,11 @@ use crate::src::job::{job_check_died, job_kill_all, job_still_running};
 use crate::src::key_bindings::key_bindings_init;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::options::{options_get_number, options_set_number};
-use crate::src::proc::{proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
+use crate::src::proc::{
+    proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
+};
 use crate::src::prompt_history::prompt_save_history;
-use crate::src::reactor::{self, Task};
+use crate::src::reactor;
 use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
@@ -108,7 +110,7 @@ pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *
 static mut server_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
-static mut server_accept_task: Task = Task::new();
+static mut server_accept_task: Option<hmux_rt::mio::Task> = None::<hmux_rt::mio::Task>;
 static mut server_ev_tidy: Option<Timer> = None;
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
@@ -549,33 +551,31 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int) {
 }
 pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     let tv = Duration::from_secs(timeout as u64);
-    server_accept_task.cancel();
+    drop(server_accept_task.take());
     if server_fd == -(1 as ::core::ffi::c_int) {
         return;
     }
     let fd = server_fd;
     if timeout == 0 as ::core::ffi::c_int {
-        server_accept_task
-            .start(move || {
-                let source = reactor::descriptor(fd)?;
-                Ok(async move {
-                    source.ready(true, false).await.expect("accept wait");
-                    unsafe { server_accept(fd) };
-                })
+        crate::src::reactor::task_start(&mut server_accept_task, move || {
+            let source = reactor::descriptor(fd)?;
+            Ok(async move {
+                source.ready(true, false).await.expect("accept wait");
+                unsafe { server_accept(fd) };
             })
-            .expect("start accept wait");
+        })
+        .expect("start accept wait");
     } else {
         let now = std::time::Instant::now();
         let deadline = now.checked_add(tv).unwrap_or(now);
-        server_accept_task
-            .start(move || {
-                let wait = reactor::handle().sleep_until(deadline);
-                Ok(async move {
-                    wait.await.expect("accept backoff wait");
-                    unsafe { server_add_accept(0) };
-                })
+        crate::src::reactor::task_start(&mut server_accept_task, move || {
+            let wait = reactor::handle().sleep_until(deadline);
+            Ok(async move {
+                wait.await.expect("accept backoff wait");
+                unsafe { server_add_accept(0) };
             })
-            .expect("start accept backoff");
+        })
+        .expect("start accept backoff");
     };
 }
 unsafe fn server_signal(sig: ProcessSignal) {
@@ -594,7 +594,7 @@ unsafe fn server_signal(sig: ProcessSignal) {
             server_child_signal();
         }
         ProcessSignal::User1 => {
-            server_accept_task.cancel();
+            drop(server_accept_task.take());
             if let Ok(fd) = server_create_socket(server_client_flags) {
                 reactor::forget_descriptor(server_fd);
                 close(server_fd);

@@ -93,37 +93,3 @@ impl Overlay {
         drop(data);
     }
 }
-
-/// The revision outlives each installed overlay so stale callbacks never
-/// restore themselves or act on a replacement installed by nested dispatch.
-#[derive(Default)]
-pub(super) struct OverlayState {
-    pub(super) generation: u64,
-    pub(super) current: Option<Overlay>,
-}
-
-impl OverlayState {
-    pub(super) fn has_draw(&self) -> bool {
-        self.current
-            .as_ref()
-            .is_some_and(|overlay| overlay.draw.is_some())
-    }
-
-    pub(super) fn has_mode(&self) -> bool {
-        self.current
-            .as_ref()
-            .is_some_and(|overlay| overlay.mode.is_some())
-    }
-
-    pub(super) fn has_resize(&self) -> bool {
-        self.current
-            .as_ref()
-            .is_some_and(|overlay| overlay.resize.is_some())
-    }
-
-    pub(super) fn clips_output(&self) -> bool {
-        self.current
-            .as_ref()
-            .is_some_and(|overlay| overlay.check.is_some())
-    }
-}

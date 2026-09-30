@@ -2198,8 +2198,8 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
     }
     if wp.is_some()
         && wp.is_some_and(|pane| {
-            let bar = pane.scrollbar();
-            bar.visible && bar.overlay
+            let bar = &pane;
+            bar.scrollbar_visible() && bar.scrollbar_overlay()
         })
     {
         wp.expect("write pane").request_redraw(false);

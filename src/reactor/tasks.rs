@@ -4,40 +4,23 @@ use hmux_rt::Handle as _;
 use std::future::Future;
 use std::io;
 
-/// Owns one future. Explicit cleanup and dropping the owner both cancel it.
-#[must_use = "dropping the task cancels its future"]
-#[derive(Default)]
-pub struct Task {
-    task: Option<hmux_rt::mio::Task>,
+/// Replace the owner's pending task. Dropping the runtime task cancels it.
+pub fn task_start<F>(
+    task: &mut Option<hmux_rt::mio::Task>,
+    initialize: impl FnOnce() -> io::Result<F>,
+) -> io::Result<()>
+where
+    F: Future<Output = ()> + 'static,
+{
+    drop(task.take());
+    ensure_runtime();
+    *task = Some(handle().spawn(initialize()?)?);
+    Ok(())
 }
 
-impl Task {
-    pub const fn new() -> Self {
-        Self { task: None }
-    }
-
-    /// Replace pending work. Initialize resources once, without dispatching
-    /// work inline; the returned future owns those resources.
-    pub fn start<F>(&mut self, initialize: impl FnOnce() -> io::Result<F>) -> io::Result<()>
-    where
-        F: Future<Output = ()> + 'static,
-    {
-        self.cancel();
-        ensure_runtime();
-        let future = initialize()?;
-        self.task = Some(handle().spawn(future)?);
-        Ok(())
-    }
-
-    pub fn cancel(&mut self) {
-        drop(self.task.take());
-    }
-
-    pub fn is_pending(&self) -> bool {
-        self.task
-            .as_ref()
-            .is_some_and(hmux_rt::mio::Handle::task_is_pending)
-    }
+pub fn task_is_pending(task: &Option<hmux_rt::mio::Task>) -> bool {
+    task.as_ref()
+        .is_some_and(hmux_rt::mio::Handle::task_is_pending)
 }
 
 #[cfg(test)]
@@ -59,27 +42,25 @@ mod tests {
     fn tasks_can_spawn_work_owned_by_the_caller() {
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        let child = Rc::new(RefCell::new(Task::new()));
+        let child = Rc::new(RefCell::new(None::<hmux_rt::mio::Task>));
         let retained = child.clone();
-        let mut task = Task::new();
-        task.start(move || {
+        let mut task = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut task, move || {
             Ok(async move {
-                retained
-                    .borrow_mut()
-                    .start(move || {
-                        Ok(async move {
-                            observed.set(1);
-                        })
+                crate::src::reactor::task_start(&mut retained.borrow_mut(), move || {
+                    Ok(async move {
+                        observed.set(1);
                     })
-                    .unwrap();
+                })
+                .unwrap();
             })
         })
         .unwrap();
         assert_eq!(calls.get(), 0);
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!task.is_pending());
-        assert!(!child.borrow().is_pending());
+        assert!(!crate::src::reactor::task_is_pending(&task));
+        assert!(!crate::src::reactor::task_is_pending(&child.borrow()));
         super::super::shutdown_runtime();
     }
 
@@ -90,8 +71,8 @@ mod tests {
         let fd = reader.as_raw_fd();
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        let mut task = Task::new();
-        task.start(move || {
+        let mut task = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut task, move || {
             let source = super::super::descriptor(fd)?;
             let observed = observed.clone();
             Ok(async move {
@@ -102,9 +83,9 @@ mod tests {
         .unwrap();
         poll();
         let mut moved = task;
-        assert!(moved.is_pending());
-        moved.cancel();
-        moved.cancel();
+        assert!(crate::src::reactor::task_is_pending(&moved));
+        drop(moved.take());
+        drop(moved.take());
         writer.write_all(b"unread").unwrap();
         poll();
         assert_eq!(calls.get(), 0);
@@ -115,19 +96,18 @@ mod tests {
         );
 
         let observed = calls.clone();
-        moved
-            .start(move || {
-                let source = super::super::descriptor(fd)?;
-                let observed = observed.clone();
-                Ok(async move {
-                    source.ready(true, false).await.unwrap();
-                    observed.set(observed.get() + 1);
-                })
+        crate::src::reactor::task_start(&mut moved, move || {
+            let source = super::super::descriptor(fd)?;
+            let observed = observed.clone();
+            Ok(async move {
+                source.ready(true, false).await.unwrap();
+                observed.set(observed.get() + 1);
             })
-            .unwrap();
+        })
+        .unwrap();
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!moved.is_pending());
+        assert!(!crate::src::reactor::task_is_pending(&moved));
         let mut bytes = [0; 6];
         reader.read_exact(&mut bytes).unwrap();
         assert_eq!(&bytes, b"unread");
@@ -137,34 +117,32 @@ mod tests {
 
     #[test]
     fn dispatch_can_replace_and_cancel_its_running_task() {
-        let slot = Rc::new(RefCell::new(Task::new()));
+        let slot = Rc::new(RefCell::new(None::<hmux_rt::mio::Task>));
         let observer = Rc::downgrade(&slot);
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        slot.borrow_mut()
-            .start(move || {
-                let observer = observer.clone();
-                let observed = observed.clone();
-                Ok(async move {
-                    let slot = observer.upgrade().unwrap();
-                    observed.set(1);
-                    let replacement = observed.clone();
-                    slot.borrow_mut()
-                        .start(move || {
-                            let replacement = replacement.clone();
-                            Ok(async move {
-                                replacement.set(2);
-                            })
-                        })
-                        .unwrap();
-                    super::super::yield_now().await;
-                    panic!("cancelled dispatch must not resume");
+        crate::src::reactor::task_start(&mut slot.borrow_mut(), move || {
+            let observer = observer.clone();
+            let observed = observed.clone();
+            Ok(async move {
+                let slot = observer.upgrade().unwrap();
+                observed.set(1);
+                let replacement = observed.clone();
+                crate::src::reactor::task_start(&mut slot.borrow_mut(), move || {
+                    let replacement = replacement.clone();
+                    Ok(async move {
+                        replacement.set(2);
+                    })
                 })
+                .unwrap();
+                super::super::yield_now().await;
+                panic!("cancelled dispatch must not resume");
             })
-            .unwrap();
+        })
+        .unwrap();
         poll();
         assert_eq!(calls.get(), 2);
-        assert!(!slot.borrow().is_pending());
+        assert!(!crate::src::reactor::task_is_pending(&slot.borrow()));
         assert_eq!(Rc::strong_count(&slot), 1);
         super::super::shutdown_runtime();
     }
@@ -186,8 +164,8 @@ mod tests {
         let endpoint = unsafe { OwnedFd::from_raw_fd(fd) };
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        let mut task = Task::new();
-        task.start(move || {
+        let mut task = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut task, move || {
             let source = super::super::descriptor(fd)?;
             let observed = observed.clone();
             Ok(async move {
@@ -209,7 +187,7 @@ mod tests {
         new_writer.write_all(b"n").unwrap();
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!task.is_pending());
+        assert!(!crate::src::reactor::task_is_pending(&task));
         drop(old_source);
         drop(endpoint);
         super::super::shutdown_runtime();
@@ -220,8 +198,8 @@ mod tests {
         let retained = Rc::new(());
         for before_poll in [true, false] {
             let observed = retained.clone();
-            let mut task = Task::new();
-            task.start(move || {
+            let mut task = None::<hmux_rt::mio::Task>;
+            crate::src::reactor::task_start(&mut task, move || {
                 Ok(async move {
                     let _retained = observed;
                     std::future::pending::<()>().await;
@@ -238,38 +216,39 @@ mod tests {
             super::super::shutdown_runtime();
         }
 
-        let mut task = Task::new();
-        let result = task.start(|| -> io::Result<std::future::Ready<()>> {
-            Err(io::ErrorKind::InvalidInput.into())
-        });
+        let mut task = None::<hmux_rt::mio::Task>;
+        let result =
+            crate::src::reactor::task_start(&mut task, || -> io::Result<std::future::Ready<()>> {
+                Err(io::ErrorKind::InvalidInput.into())
+            });
         assert!(result.is_err());
-        assert!(!task.is_pending());
+        assert!(!crate::src::reactor::task_is_pending(&task));
         super::super::shutdown_runtime();
     }
 
     #[test]
     fn shutdown_invalidates_old_handles_without_cancelling_new_tasks() {
-        let mut old = Task::new();
-        old.start(|| Ok(std::future::pending())).unwrap();
-        assert!(old.is_pending());
+        let mut old = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut old, || Ok(std::future::pending())).unwrap();
+        assert!(crate::src::reactor::task_is_pending(&old));
         super::super::shutdown_runtime();
-        assert!(!old.is_pending());
+        assert!(!crate::src::reactor::task_is_pending(&old));
 
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        let mut task = Task::new();
-        task.start(move || {
+        let mut task = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut task, move || {
             Ok(async move {
                 observed.set(observed.get() + 1);
             })
         })
         .unwrap();
-        old.cancel();
+        drop(old.take());
         drop(old);
-        assert!(task.is_pending());
+        assert!(crate::src::reactor::task_is_pending(&task));
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!task.is_pending());
+        assert!(!crate::src::reactor::task_is_pending(&task));
         super::super::shutdown_runtime();
     }
 
@@ -277,21 +256,19 @@ mod tests {
     fn shutdown_during_dispatch_is_rejected_before_cleanup() {
         let rejected = Rc::new(Cell::new(false));
         let observed = rejected.clone();
-        let mut first = Task::new();
-        first
-            .start(move || {
-                Ok(async move {
-                    let result = std::panic::catch_unwind(super::super::shutdown_runtime);
-                    observed.set(result.is_err());
-                    assert!(super::super::runtime_initialized());
-                })
+        let mut first = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut first, move || {
+            Ok(async move {
+                let result = std::panic::catch_unwind(super::super::shutdown_runtime);
+                observed.set(result.is_err());
+                assert!(super::super::runtime_initialized());
             })
-            .unwrap();
+        })
+        .unwrap();
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        let mut second = Task::new();
-        second
-            .start(move || Ok(async move { observed.set(1) }))
+        let mut second = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut second, move || Ok(async move { observed.set(1) }))
             .unwrap();
         poll();
         assert!(rejected.get());
@@ -304,8 +281,8 @@ mod tests {
     fn initializer_transfers_its_only_owner_into_the_future() {
         let owner = refbox::RefBox::new(());
         let observer = owner.downgrade();
-        let mut task = Task::new();
-        task.start(move || {
+        let mut task = None::<hmux_rt::mio::Task>;
+        crate::src::reactor::task_start(&mut task, move || {
             Ok(async move {
                 let _owner = owner;
                 std::future::pending::<()>().await;
@@ -314,7 +291,7 @@ mod tests {
         .unwrap();
         poll();
         assert!(observer.is_alive());
-        task.cancel();
+        drop(task.take());
         assert!(!observer.is_alive());
         super::super::shutdown_runtime();
     }

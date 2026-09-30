@@ -71,9 +71,9 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
             let output = terminal.out.as_deref_mut().unwrap();
             assert_eq!(evbuffer_pullup(output, -1).unwrap(), expected);
             evbuffer_drain(output, expected.len());
-            terminal.write_task.cancel();
+            drop(terminal.write_task.take());
         }
-        client_owner.borrow_terminal_mut().write_task.cancel();
+        drop(client_owner.borrow_terminal_mut().write_task.take());
         shutdown_runtime();
     }
 }

@@ -8,9 +8,7 @@ use crate::src::window_pane::WindowPane as _;
 use std::time::SystemTime;
 mod alerts;
 mod api;
-pub use api::{
-    LayoutView, PaneLayoutGeometry, PaneOrder, Window, WindowIndex, WindowResize, WindowScrollbars,
-};
+pub use api::{LayoutView, PaneOrder, Window, WindowIndex};
 
 #[cfg(test)]
 mod fixtures;

@@ -21,7 +21,6 @@ mod border;
 mod capture;
 mod mode_visuals;
 mod render;
-pub use render::PaneScrollbar;
 mod format;
 mod input;
 mod keys;
@@ -1062,13 +1061,9 @@ unsafe fn window_pane_scrollbar_timer(owner: &Rc<std::cell::UnsafeCell<window_pa
 }
 
 unsafe fn window_pane_scrollbar_auto_hide(wp: &window_pane) -> ::core::ffi::c_int {
-    return (((wp.window_handle().as_ref()).expect("live window"))
-        .scrollbars()
-        .mode
+    return (((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
         == PANE_SCROLLBARS_MODAL
-        || ((wp.window_handle().as_ref()).expect("live window"))
-            .scrollbars()
-            .mode
+        || ((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
             == PANE_SCROLLBARS_AUTOHIDE) as ::core::ffi::c_int;
 }
 
@@ -2046,8 +2041,7 @@ unsafe fn window_pane_full_size_offset(
     let xoff = if (*wp)
         .window_handle()
         .expect("pane parent")
-        .scrollbars()
-        .position
+        .scrollbar_position()
         == PANE_SCROLLBARS_LEFT
     {
         ((*wp).xoff as u_int).wrapping_sub(sb_w) as ::core::ffi::c_int
@@ -2420,7 +2414,7 @@ unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int {
     {
         return 0;
     }
-    let mode = window.scrollbars().mode;
+    let mode = window.scrollbar_mode();
     (mode == PANE_SCROLLBARS_ALWAYS
         || mode == PANE_SCROLLBARS_AUTOHIDE
         || mode == PANE_SCROLLBARS_MODAL && window_pane_mode(wp) != WINDOW_PANE_NO_MODE) as _
@@ -2430,9 +2424,7 @@ unsafe fn window_pane_scrollbar_reserve(wp: &window_pane) -> ::core::ffi::c_int 
     if window_pane_show_scrollbar(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return (((wp.window_handle().as_ref()).expect("live window"))
-        .scrollbars()
-        .mode
+    return (((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
         == PANE_SCROLLBARS_ALWAYS) as ::core::ffi::c_int;
 }
 

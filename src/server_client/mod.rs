@@ -788,12 +788,11 @@ unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
     let c = c_owner.get();
     // Cleanup can install another overlay. Retire it through the same path
     // before publishing this caller's replacement, never by overwriting it.
-    while (*c).overlay.current.is_some() {
+    while (*c).overlay.is_some() {
         server_client_clear_overlay(c_owner);
     }
-    (*c).overlay.generation = (*c)
-        .overlay
-        .generation
+    (*c).overlay_generation = (*c)
+        .overlay_generation
         .checked_add(1)
         .expect("overlay generation exhausted");
     if overlay.check.is_none() {
@@ -802,23 +801,22 @@ unsafe fn server_client_set_overlay(c_owner: &ClientRef, overlay: Overlay) {
     if overlay.mode.is_none() {
         (*c).tty.flags |= TTY_NOCURSOR;
     }
-    (*c).overlay.current = Some(overlay);
+    (*c).overlay = Some(overlay);
     server_client_update_overlay_focus(c_owner);
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
 }
 unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
     let c = c_owner.get();
-    let Some(overlay) = (*c).overlay.current.take() else {
+    let Some(overlay) = (*c).overlay.take() else {
         return;
     };
-    (*c).overlay.generation = (*c)
-        .overlay
-        .generation
+    (*c).overlay_generation = (*c)
+        .overlay_generation
         .checked_add(1)
         .expect("overlay generation exhausted");
-    let generation = (*c).overlay.generation;
+    let generation = (*c).overlay_generation;
     overlay.free(c_owner);
-    if (*c).overlay.generation == generation {
+    if (*c).overlay_generation == generation {
         (*c).tty.flags &= !(TTY_FREEZE | TTY_NOCURSOR);
     }
     server_client_update_overlay_focus(c_owner);
@@ -828,18 +826,17 @@ unsafe fn server_client_clear_overlay(c_owner: &ClientRef) {
 // that was borrowed, and discard results from a retired owner.
 unsafe fn server_client_overlay_draw(c_owner: &ClientRef) {
     let c = c_owner.get();
-    let generation = (*c).overlay.generation;
+    let generation = (*c).overlay_generation;
     let Some(mut callback) = (*c)
         .overlay
-        .current
         .as_mut()
         .and_then(|overlay| overlay.draw.take())
     else {
         return;
     };
     callback(c_owner);
-    if (*c).overlay.generation == generation {
-        if let Some(overlay) = (*c).overlay.current.as_mut() {
+    if (*c).overlay_generation == generation {
+        if let Some(overlay) = (*c).overlay.as_mut() {
             if overlay.draw.is_none() {
                 overlay.draw = Some(callback);
             }
@@ -849,15 +846,15 @@ unsafe fn server_client_overlay_draw(c_owner: &ClientRef) {
 
 unsafe fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) -> Option<i32> {
     let c = c_owner.get();
-    let generation = (*c).overlay.generation;
-    let mut callback = (*c).overlay.current.as_mut()?.key.take()?;
+    let generation = (*c).overlay_generation;
+    let mut callback = (*c).overlay.as_mut()?.key.take()?;
     let result = callback(c_owner, event);
-    if (*c).overlay.generation != generation {
+    if (*c).overlay_generation != generation {
         // This event was handled by the retired overlay. In particular, an
         // old close request must not close a newly installed overlay.
         return Some(0);
     }
-    if let Some(overlay) = (*c).overlay.current.as_mut() {
+    if let Some(overlay) = (*c).overlay.as_mut() {
         if overlay.key.is_none() {
             overlay.key = Some(callback);
         }
@@ -867,13 +864,13 @@ unsafe fn server_client_overlay_key(c_owner: &ClientRef, event: &mut key_event) 
 
 unsafe fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode, u_int, u_int)> {
     let c = c_owner.get();
-    let generation = (*c).overlay.generation;
-    let mut callback = (*c).overlay.current.as_mut()?.mode.take()?;
+    let generation = (*c).overlay_generation;
+    let mut callback = (*c).overlay.as_mut()?.mode.take()?;
     let result = callback(c_owner);
-    if (*c).overlay.generation != generation {
+    if (*c).overlay_generation != generation {
         return None;
     }
-    if let Some(overlay) = (*c).overlay.current.as_mut() {
+    if let Some(overlay) = (*c).overlay.as_mut() {
         if overlay.mode.is_none() {
             overlay.mode = Some(callback);
         }
@@ -883,18 +880,17 @@ unsafe fn server_client_overlay_mode(c_owner: &ClientRef) -> Option<(ScreenMode,
 
 unsafe fn server_client_overlay_resize(c_owner: &ClientRef) {
     let c = c_owner.get();
-    let generation = (*c).overlay.generation;
+    let generation = (*c).overlay_generation;
     let Some(mut callback) = (*c)
         .overlay
-        .current
         .as_mut()
         .and_then(|overlay| overlay.resize.take())
     else {
         return;
     };
     callback(c_owner);
-    if (*c).overlay.generation == generation {
-        if let Some(overlay) = (*c).overlay.current.as_mut() {
+    if (*c).overlay_generation == generation {
+        if let Some(overlay) = (*c).overlay.as_mut() {
             if overlay.resize.is_none() {
                 overlay.resize = Some(callback);
             }
@@ -909,13 +905,13 @@ unsafe fn server_client_overlay_check(
     nx: u_int,
 ) -> Option<visible_ranges> {
     let c = c_owner.get();
-    let generation = (*c).overlay.generation;
-    let mut callback = (*c).overlay.current.as_mut()?.check.take()?;
+    let generation = (*c).overlay_generation;
+    let mut callback = (*c).overlay.as_mut()?.check.take()?;
     let result = callback(c_owner, px, py, nx);
-    if (*c).overlay.generation != generation {
+    if (*c).overlay_generation != generation {
         return None;
     }
-    if let Some(overlay) = (*c).overlay.current.as_mut() {
+    if let Some(overlay) = (*c).overlay.as_mut() {
         if overlay.check.is_none() {
             overlay.check = Some(callback);
         }
@@ -3213,9 +3209,9 @@ unsafe fn server_client_loop() {
 }
 unsafe fn server_client_check_window_resize(owner: &WindowRef) {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let Some(request) = owner.pending_resize() else {
+    if owner.pending_resize().is_none() {
         return;
-    };
+    }
     wl = owner.next_winlink(None);
     while wl.is_alive() {
         if wl
@@ -3236,13 +3232,7 @@ unsafe fn server_client_check_window_resize(owner: &WindowRef) {
         "server_client_check_window_resize",
         ((owner).id()) as u32
     ));
-    resize_window(
-        owner,
-        request.sx,
-        request.sy,
-        request.xpixel as ::core::ffi::c_int,
-        request.ypixel as ::core::ffi::c_int,
-    );
+    owner.apply_pending_resize();
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PromptCursor {
@@ -3423,7 +3413,11 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         flags = (*tty).flags & TTY_BLOCK;
         (*tty).flags &= !TTY_BLOCK;
         let menu_owner = window_owner.menu_observer();
-        if (*c).overlay.has_draw() {
+        if (*c)
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.draw.is_some())
+        {
             if let Some((overlay_screen, overlay_cx, overlay_cy)) =
                 server_client_overlay_mode(&(*(c)).observer.upgrade().expect("live client"))
             {
@@ -3470,7 +3464,12 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         if (*c).prompt.is_some() {
             prompt = 1 as u_int;
             (cx, cy) = status_prompt_cursor(&(*c).observer.upgrade().expect("live client"));
-        } else if active_owner.is_some() && !(*c).overlay.has_draw() {
+        } else if active_owner.is_some()
+            && !(*c)
+                .overlay
+                .as_ref()
+                .is_some_and(|overlay| overlay.draw.is_some())
+        {
             if window_owner.menu_observer().is_some() {
                 let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
                 if cx < ox || cx >= ox.wrapping_add(sx) || cy < oy || cy >= oy.wrapping_add(sy) {
@@ -3503,7 +3502,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 let s = s.expect("active pane screen mode");
                 let pane = active_owner.as_ref().expect("active pane");
                 let (pane_width, _, pane_x, pane_y) = pane.geometry();
-                let scrollbar = pane.scrollbar();
+                let scrollbar = &pane;
                 cursor = 0 as ::core::ffi::c_int;
                 pane_mode = active_owner
                     .as_ref()
@@ -3531,13 +3530,13 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     if !window_position_is_visible(&r, cx) {
                         cursor = 0 as ::core::ffi::c_int;
                     }
-                    if scrollbar.overlay && scrollbar.visible {
-                        sb_w = scrollbar.width as u_int;
+                    if scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible() {
+                        sb_w = scrollbar.scrollbar_width() as u_int;
                         if sb_w > pane_width {
                             sb_w = pane_width;
                         }
                         if sb_w != 0 as u_int
-                            && (window_owner).scrollbars().position == PANE_SCROLLBARS_LEFT
+                            && (window_owner).scrollbar_position() == PANE_SCROLLBARS_LEFT
                         {
                             if s.cx < sb_w {
                                 cursor = 0 as ::core::ffi::c_int;
@@ -3558,7 +3557,12 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     mode &= !MODE_CURSOR;
                 }
             }
-        } else if !(*c).overlay.has_mode() || s.is_none() {
+        } else if !(*c)
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.mode.is_some())
+            || s.is_none()
+        {
             mode &= !MODE_CURSOR;
         }
         if !pane_mode & MODE_SYNC != 0 {
@@ -3584,7 +3588,12 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             )
         }) != 0
         {
-            if !(*c).overlay.has_draw() && window_owner.menu_observer().is_none() {
+            if !(*c)
+                .overlay
+                .as_ref()
+                .is_some_and(|overlay| overlay.draw.is_some())
+                && window_owner.menu_observer().is_none()
+            {
                 mode &= !ALL_MOUSE_MODES;
                 let mut cursor = window_owner.next_pane(None);
                 while let Some(pane_owner) = cursor {
@@ -3600,15 +3609,20 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
                 )
             }) != 0
-                || (window_owner).scrollbars().mode == PANE_SCROLLBARS_MODAL
-                || (window_owner).scrollbars().mode == PANE_SCROLLBARS_AUTOHIDE
+                || (window_owner).scrollbar_mode() == PANE_SCROLLBARS_MODAL
+                || (window_owner).scrollbar_mode() == PANE_SCROLLBARS_AUTOHIDE
             {
                 mode |= MODE_MOUSE_ALL;
             } else if !mode & MODE_MOUSE_ALL != 0 {
                 mode |= MODE_MOUSE_BUTTON;
             }
         }
-        if !(*c).overlay.has_draw() && prompt != 0 {
+        if !(*c)
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.draw.is_some())
+            && prompt != 0
+        {
             mode &= !MODE_BRACKETPASTE;
         }
         {
@@ -4169,7 +4183,11 @@ unsafe fn server_client_dispatch(
                     tty_repeat_requests(terminal, 0 as ::core::ffi::c_int)
                 };
                 recalculate_sizes();
-                if !(*c).overlay.has_resize() {
+                if !(*c)
+                    .overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.resize.is_some())
+                {
                     server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
                 } else {
                     server_client_overlay_resize(&(*(c)).observer.upgrade().expect("live client"));
@@ -5275,28 +5293,33 @@ mod overlay_dispatch_tests {
                 install(&(*(c)).observer.upgrade().expect("live client"));
                 let freed = Rc::new(Cell::new(0));
                 let observed = freed.clone();
-                (*c).overlay.current.as_mut().unwrap().free =
+                (*c).overlay.as_mut().unwrap().free =
                     Some(Box::new(move |_| observed.set(observed.get() + 1)));
-                (*c).overlay.current.as_mut().unwrap().draw = Some(Box::new(|c| {
+                (*c).overlay.as_mut().unwrap().draw = Some(Box::new(|c| {
                     // Draw has been taken out of the client during dispatch.
-                    assert!((*c.get()).overlay.current.as_mut().unwrap().draw.is_none());
+                    assert!((*c.get()).overlay.as_mut().unwrap().draw.is_none());
                     c.clear_overlay();
-                    assert!((*c.get()).overlay.current.is_none());
+                    assert!((*c.get()).overlay.is_none());
                 }));
                 server_client_overlay_draw(&(*(c)).observer.upgrade().expect("live client"));
-                assert!(!(*c).overlay.has_draw());
+                assert!(!(*c)
+                    .overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.draw.is_some()));
                 assert_eq!(freed.get(), 1);
 
                 install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay.current.as_mut().unwrap().resize =
-                    Some(Box::new(|c| c.clear_overlay()));
+                (*c).overlay.as_mut().unwrap().resize = Some(Box::new(|c| c.clear_overlay()));
                 server_client_overlay_resize(&(*(c)).observer.upgrade().expect("live client"));
-                assert!(!(*c).overlay.has_resize());
+                assert!(!(*c)
+                    .overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.resize.is_some()));
 
                 install(&(*(c)).observer.upgrade().expect("live client"));
                 let owned_screen = Box::new(screen::empty());
                 let screen = ScreenMode::from(&*owned_screen);
-                (*c).overlay.current.as_mut().unwrap().mode = Some(Box::new(move |c| {
+                (*c).overlay.as_mut().unwrap().mode = Some(Box::new(move |c| {
                     let _keep_screen_alive = &owned_screen;
                     c.clear_overlay();
                     Some((screen, 1, 2))
@@ -5305,10 +5328,13 @@ mod overlay_dispatch_tests {
                     &(*(c)).observer.upgrade().expect("live client")
                 )
                 .is_none());
-                assert!(!(*c).overlay.has_mode());
+                assert!(!(*c)
+                    .overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.mode.is_some()));
 
                 install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay.current.as_mut().unwrap().check = Some(Box::new(|c, _, _, _| {
+                (*c).overlay.as_mut().unwrap().check = Some(Box::new(|c, _, _, _| {
                     c.clear_overlay();
                     visible_ranges::default()
                 }));
@@ -5321,7 +5347,10 @@ mod overlay_dispatch_tests {
                 assert_eq!(ranges.used, 1);
                 assert_eq!(ranges.storage[0].px, 3);
                 assert_eq!(ranges.storage[0].nx, 5);
-                assert!(!(*c).overlay.clips_output());
+                assert!(!(*c)
+                    .overlay
+                    .as_ref()
+                    .is_some_and(|overlay| overlay.check.is_some()));
             });
         }
     }
@@ -5332,10 +5361,10 @@ mod overlay_dispatch_tests {
             with_client(|owner| {
                 let c = owner.get();
                 install(&(*(c)).observer.upgrade().expect("live client"));
-                let generation = (*c).overlay.generation;
-                (*c).overlay.current.as_mut().unwrap().key = Some(Box::new(|c, _| {
+                let generation = (*c).overlay_generation;
+                (*c).overlay.as_mut().unwrap().key = Some(Box::new(|c, _| {
                     install(c);
-                    (*c.get()).overlay.current.as_mut().unwrap().key = Some(Box::new(|_, _| 42));
+                    (*c.get()).overlay.as_mut().unwrap().key = Some(Box::new(|_, _| 42));
                     1
                 }));
                 let mut event = key_event::new(0, mouse_event::default(), None);
@@ -5346,8 +5375,8 @@ mod overlay_dispatch_tests {
                     ),
                     Some(0)
                 );
-                assert!((*c).overlay.generation > generation);
-                assert!((*c).overlay.current.is_some());
+                assert!((*c).overlay_generation > generation);
+                assert!((*c).overlay.is_some());
                 assert_eq!(
                     server_client_overlay_key(
                         &(*(c)).observer.upgrade().expect("live client"),
@@ -5365,9 +5394,9 @@ mod overlay_dispatch_tests {
             with_client(|owner| {
                 let c = owner.get();
                 install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay.current.as_mut().unwrap().free = Some(Box::new(|c| install(c)));
+                (*c).overlay.as_mut().unwrap().free = Some(Box::new(|c| install(c)));
                 server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
-                assert!((*c).overlay.current.is_some());
+                assert!((*c).overlay.is_some());
                 assert_eq!(
                     (*c).tty.flags & (TTY_FREEZE | TTY_NOCURSOR),
                     TTY_FREEZE | TTY_NOCURSOR
@@ -5375,14 +5404,14 @@ mod overlay_dispatch_tests {
 
                 let nested_frees = Rc::new(Cell::new(0));
                 let observed = nested_frees.clone();
-                (*c).overlay.current.as_mut().unwrap().free = Some(Box::new(move |c| {
+                (*c).overlay.as_mut().unwrap().free = Some(Box::new(move |c| {
                     install(c);
-                    (*c.get()).overlay.current.as_mut().unwrap().free =
+                    (*c.get()).overlay.as_mut().unwrap().free =
                         Some(Box::new(move |_| observed.set(observed.get() + 1)));
                 }));
                 install(&(*(c)).observer.upgrade().expect("live client"));
                 assert_eq!(nested_frees.get(), 1);
-                assert!((*c).overlay.current.is_some());
+                assert!((*c).overlay.is_some());
             });
         }
     }

@@ -768,22 +768,21 @@ unsafe fn redraw_mark_pane(
     if !wp_owner.is_visible() {
         return;
     }
-    if wp.scrollbar().visible {
-        overlay = wp.scrollbar().overlay as i32;
+    if wp.scrollbar_visible() {
+        overlay = wp.scrollbar_overlay() as i32;
         if overlay != 0 {
-            sb_w = wp.scrollbar().width + wp.scrollbar().pad;
+            sb_w = wp.scrollbar_width() + wp.scrollbar_pad();
             if sb_w > wp.geometry().0 as ::core::ffi::c_int {
-                sb_w = wp.scrollbar().width;
+                sb_w = wp.scrollbar_width();
                 if sb_w > wp.geometry().0 as ::core::ffi::c_int {
                     sb_w = wp.geometry().0 as ::core::ffi::c_int;
                 }
             }
         } else {
-            sb_w = wp.scrollbar().width + wp.scrollbar().pad;
+            sb_w = wp.scrollbar_width() + wp.scrollbar_pad();
         }
     }
-    if sb_w != 0 as ::core::ffi::c_int && ((*bctx).w).scrollbars().position == PANE_SCROLLBARS_LEFT
-    {
+    if sb_w != 0 as ::core::ffi::c_int && ((*bctx).w).scrollbar_position() == PANE_SCROLLBARS_LEFT {
         sb_left = 1 as ::core::ffi::c_int;
     }
     redraw_mark_pane_inside(bctx, wp_owner);

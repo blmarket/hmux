@@ -178,7 +178,9 @@ pub trait Client {
     unsafe fn register_file(&self, file: &Rc<UnsafeCell<crate::src::file::client_file>>);
     unsafe fn unregister_file(&self, stream: i32, identity: *const crate::src::file::client_file);
     /// Stream-ordered observations; each yield resolves the current holder.
-    unsafe fn file_handles(&self) -> crate::src::file::ClientFilesIter;
+    unsafe fn file_handles(
+        &self,
+    ) -> impl std::iter::FusedIterator<Item = Rc<UnsafeCell<crate::src::file::client_file>>> + 'static;
     unsafe fn find_file(
         &self,
         stream: i32,
@@ -828,7 +830,10 @@ impl Client for ClientRef {
         );
         drop(removed);
     }
-    unsafe fn file_handles(&self) -> crate::src::file::ClientFilesIter {
+    unsafe fn file_handles(
+        &self,
+    ) -> impl std::iter::FusedIterator<Item = Rc<UnsafeCell<crate::src::file::client_file>>> + 'static
+    {
         crate::src::file::client_files_iter(&(*self.get()).files)
     }
     unsafe fn find_file(
@@ -929,7 +934,12 @@ impl Client for ClientRef {
 
     unsafe fn focuses_window(&self, window: &WindowRef) -> bool {
         let flags = (*self.get()).flags;
-        if flags & CLIENT_FOCUSED as u64 == 0 || (*self.get()).overlay.has_draw() {
+        if flags & CLIENT_FOCUSED as u64 == 0
+            || (*self.get())
+                .overlay
+                .as_ref()
+                .is_some_and(|overlay| overlay.draw.is_some())
+        {
             return false;
         }
         let Some(session) = self.attached_session().upgrade() else {
@@ -1272,10 +1282,16 @@ impl Client for ClientRef {
         server_client_clear_overlay(self);
     }
     unsafe fn has_overlay(&self) -> bool {
-        (*self.get()).overlay.has_draw()
+        (*self.get())
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.draw.is_some())
     }
     unsafe fn clips_terminal_output(&self) -> bool {
-        (*self.get()).overlay.clips_output()
+        (*self.get())
+            .overlay
+            .as_ref()
+            .is_some_and(|overlay| overlay.check.is_some())
     }
 
     unsafe fn draw_overlay(&self) {
@@ -1295,7 +1311,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn popup_overlay(&self) -> Option<crate::src::popup::PopupHandle> {
-        (*self.get()).overlay.current.as_ref()?.popup_handle()
+        (*self.get()).overlay.as_ref()?.popup_handle()
     }
 
     unsafe fn with_overlay_check_disabled<R>(
@@ -1303,22 +1319,18 @@ impl Client for ClientRef {
         restore: overlay_check_cb,
         draw: impl FnOnce() -> R,
     ) -> R {
-        let generation = (*self.get()).overlay.generation;
+        let generation = (*self.get()).overlay_generation;
         // Retire the previous callback before running output, as the popup
         // implementation did. Its captured values may themselves reenter.
         let displaced = (*self.get())
             .overlay
-            .current
             .as_mut()
             .and_then(|overlay| overlay.check.take());
         drop(displaced);
         let result = draw();
-        if (*self.get()).overlay.generation == generation && (*self.get()).overlay.current.is_some()
-        {
-            let displaced = std::mem::replace(
-                &mut (*self.get()).overlay.current.as_mut().unwrap().check,
-                restore,
-            );
+        if (*self.get()).overlay_generation == generation && (*self.get()).overlay.is_some() {
+            let displaced =
+                std::mem::replace(&mut (*self.get()).overlay.as_mut().unwrap().check, restore);
             drop(displaced);
         }
         result
@@ -1618,7 +1630,7 @@ mod tests {
                 7
             });
             assert_eq!(result, 7);
-            assert!((*client.get()).overlay.current.is_some());
+            assert!((*client.get()).overlay.is_some());
             assert!(server_client_overlay_check(&client, 0, 0, 1).is_some());
             assert_eq!(stale_calls.get(), 0);
             assert_eq!(replacement_calls.get(), 1);
@@ -1708,7 +1720,7 @@ mod tests {
             server_client_overlay_draw(&client);
             assert_eq!(called.get(), 1);
             assert_eq!(freed.get(), 1);
-            assert!((*client.get()).overlay.current.is_none());
+            assert!((*client.get()).overlay.is_none());
             assert_eq!((*client.get()).tty.flags & (TTY_FREEZE | TTY_NOCURSOR), 0);
             server_client_overlay_draw(&client);
             assert_eq!(called.get(), 1);

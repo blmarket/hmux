@@ -3,12 +3,6 @@ use crate::src::shared::errno::{EINVAL, ERANGE};
 use crate::src::shared::limits::__LONG_LONG_MAX__;
 use std::ffi::CStr;
 
-#[derive(Copy, Clone)]
-struct ErrorValue {
-    message: Option<&'static CStr>,
-    errno: ::core::ffi::c_int,
-}
-
 pub const LLONG_MAX: ::core::ffi::c_longlong = __LONG_LONG_MAX__;
 pub const LLONG_MIN: ::core::ffi::c_longlong = -__LONG_LONG_MAX__ - 1 as ::core::ffi::c_longlong;
 pub const INVALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -23,25 +17,7 @@ pub unsafe fn strtonum(
     let mut ll: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
     let mut ep: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut ev: [ErrorValue; 4] = [
-        ErrorValue {
-            message: None,
-            errno: 0 as ::core::ffi::c_int,
-        },
-        ErrorValue {
-            message: Some(c"invalid"),
-            errno: EINVAL,
-        },
-        ErrorValue {
-            message: Some(c"too small"),
-            errno: ERANGE,
-        },
-        ErrorValue {
-            message: Some(c"too large"),
-            errno: ERANGE,
-        },
-    ];
-    ev[0 as ::core::ffi::c_int as usize].errno = *__errno_location();
+    let saved_errno = *__errno_location();
     *__errno_location() = 0 as ::core::ffi::c_int;
     if minval > maxval {
         error = INVALID;
@@ -55,12 +31,20 @@ pub unsafe fn strtonum(
             error = TOOLARGE;
         }
     }
+    let message = match error {
+        INVALID => Some(c"invalid"),
+        TOOSMALL => Some(c"too small"),
+        TOOLARGE => Some(c"too large"),
+        _ => None,
+    };
     if !errstrp.is_null() {
-        *errstrp = ev[error as usize]
-            .message
-            .map_or(std::ptr::null(), CStr::as_ptr);
+        *errstrp = message.map_or(std::ptr::null(), CStr::as_ptr);
     }
-    *__errno_location() = ev[error as usize].errno;
+    *__errno_location() = match error {
+        INVALID => EINVAL,
+        TOOSMALL | TOOLARGE => ERANGE,
+        _ => saved_errno,
+    };
     if error != 0 {
         ll = 0 as ::core::ffi::c_longlong;
     }
