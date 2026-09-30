@@ -7,6 +7,7 @@ use crate::src::window::Window as _;
 use crate::src::window::*;
 use std::time::Duration;
 mod api;
+mod process;
 mod format;
 mod model;
 pub(crate) use format::format_without_pane;

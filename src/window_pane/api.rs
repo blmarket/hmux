@@ -4,6 +4,7 @@ use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
 use crate::src::reactor::Interests;
 use crate::src::server_client::Client;
+use crate::src::shared::command::{cmd, cmd_retval};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
 use crate::src::shared::pane::{PANE_ACTIVITY, PANE_MINIMUM};
@@ -118,6 +119,12 @@ pub trait WindowPane {
         key: &CStr,
         context: &mut crate::src::shared::format::format_tree,
     ) -> Option<crate::src::format::FormatValue>;
+    /// Execute pipe-pane while process descriptors and callbacks stay owned here.
+    unsafe fn pipe(
+        &self,
+        command: refbox::Weak<cmd>,
+        item: &Rc<UnsafeCell<cmdq_item>>,
+    ) -> cmd_retval;
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -577,6 +584,13 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         super::format::format_value(self, key, context)
     }
 
+    unsafe fn pipe(
+        &self,
+        command: refbox::Weak<cmd>,
+        item: &Rc<UnsafeCell<cmdq_item>>,
+    ) -> cmd_retval {
+        process::pipe_pane(self, command, item)
+    }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0
     }
