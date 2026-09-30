@@ -2317,6 +2317,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                             )
                             .expect("arm timer"),
                         );
+                        terminal.flags |= TTY_TIMER;
                     }
                     return 0 as ::core::ffi::c_int;
                 }
