@@ -1,8 +1,8 @@
-use hmux2::src::window::Window as _;
 use hmux2::src::session::Session as _;
 use hmux2::src::session::SessionIndex as _;
 use hmux2::src::shared::session::session;
 use hmux2::src::shared::window::{window, WindowRef};
+use hmux2::src::window::Window as _;
 use hmux2::src::window::{
     winlink_add, winlink_remove, winlink_set_window, winlinks_reindex, Window,
 };
@@ -44,12 +44,7 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
             .get(&12)
             .unwrap()
             .downgrade();
-        let weak_second = links
-            .try_borrow_mut()
-            .unwrap()
-            .get(&3)
-            .unwrap()
-            .downgrade();
+        let weak_second = links.try_borrow_mut().unwrap().get(&3).unwrap().downgrade();
         let stable_first = first.clone();
         let mut added = vec![first.clone(), second.clone(), third.clone()];
         for idx in 100..228 {
@@ -111,9 +106,12 @@ fn close_notification_can_retain_the_last_window_reference() {
             c"window-closed",
             Rc::new(move |_, _| {
                 observed.set(true);
-                *retained_callback.borrow_mut() = Some((&callback_window
+                *retained_callback.borrow_mut() = Some(
+                    (&callback_window
                         .upgrade()
-                        .expect("window lives through notification")).retain(c"close callback"));
+                        .expect("window lives through notification"))
+                        .retain(c"close callback"),
+                );
             }),
         );
         w_owner.release(c"original owner");
@@ -155,9 +153,12 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
                         .ptr_eq(&callback_window)
                 );
                 calls.set(calls.get() + 1);
-                *retained_callback.borrow_mut() = Some((&callback_window
+                *retained_callback.borrow_mut() = Some(
+                    (&callback_window
                         .upgrade()
-                        .expect("window lives through notification")).retain(c"close observer"));
+                        .expect("window lives through notification"))
+                        .retain(c"close observer"),
+                );
             }),
         );
         winlink_remove(&mut links, link.clone());
@@ -197,7 +198,6 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
 
 #[test]
 fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
-
     use std::rc::Rc;
 
     unsafe {
@@ -210,7 +210,10 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
         // Just the published winlink owns the window. A getter that returns a
         // cloned Rc here would incorrectly permit unlinking its only link.
         assert_eq!(
-            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(None, first.get_unchecked().window_handle().unwrap()) as i32),
+            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(
+                None,
+                first.get_unchecked().window_handle().unwrap()
+            ) as i32),
             0
         );
         assert_eq!(observer.strong_count(), 1);
@@ -221,7 +224,10 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
             first.get_unchecked().window_handle().unwrap(),
         );
         assert_eq!(
-            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(None, first.get_unchecked().window_handle().unwrap()) as i32),
+            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(
+                None,
+                first.get_unchecked().window_handle().unwrap()
+            ) as i32),
             1
         );
         assert!(!first
@@ -231,7 +237,10 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
             .is_linked_outside_group(2));
         winlink_remove(&mut links, second);
         assert_eq!(
-            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(None, first.get_unchecked().window_handle().unwrap()) as i32),
+            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(
+                None,
+                first.get_unchecked().window_handle().unwrap()
+            ) as i32),
             0
         );
         winlink_remove(&mut links, first);

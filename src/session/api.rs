@@ -1,9 +1,9 @@
 //! Operations on retained session holders. Cleanup remains explicit.
-use crate::src::window::Window as _;
 use super::*;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
+use crate::src::window::Window as _;
 use std::time::SystemTime;
 
 /// Operations on the independent Session registry, including detached test heads.
@@ -20,35 +20,86 @@ pub trait SessionIndex {
 }
 
 impl SessionIndex for crate::src::shared::session::sessions {
-    unsafe fn reset(&mut self) { self.storage = None; }
-    fn has_entries(&self) -> bool { self.storage.is_some() }
-    unsafe fn insert(&mut self, session: SessionRef) -> Option<SessionRef> { sessions_insert(self, session) }
-    unsafe fn remove(&mut self, session: &SessionRef) -> Option<SessionRef> { sessions_remove(self, session) }
-    fn first(&self) -> Option<SessionRef> { sessions_minmax(self) }
-    fn after(&self, name: &[u8]) -> Option<SessionRef> { sessions_after(self, name) }
-    fn resolve(&self, observer: &SessionWeak) -> Option<SessionRef> { sessions_resolve(self, observer) }
+    unsafe fn reset(&mut self) {
+        self.storage = None;
+    }
+    fn has_entries(&self) -> bool {
+        self.storage.is_some()
+    }
+    unsafe fn insert(&mut self, session: SessionRef) -> Option<SessionRef> {
+        sessions_insert(self, session)
+    }
+    unsafe fn remove(&mut self, session: &SessionRef) -> Option<SessionRef> {
+        sessions_remove(self, session)
+    }
+    fn first(&self) -> Option<SessionRef> {
+        sessions_minmax(self)
+    }
+    fn after(&self, name: &[u8]) -> Option<SessionRef> {
+        sessions_after(self, name)
+    }
+    fn resolve(&self, observer: &SessionWeak) -> Option<SessionRef> {
+        sessions_resolve(self, observer)
+    }
 }
 
 /// The caller must preserve the legacy single-threaded borrow and logical
 /// lifetime rules. No model/component reference may survive a callback.
 pub trait Session {
+    /// Publish attachment counts and status caches before the size pass.
+    unsafe fn recalculate_attachment_status()
+    where
+        Self: Sized;
+    /// Deliver one window's alerts across its linked sessions.
+    unsafe fn deliver_window_alerts(window: &WindowRef) -> i32
+    where
+        Self: Sized;
     /// Allocate unregistered storage. Normal server sessions use `create`.
-    fn allocate() -> Self where Self: Sized;
+    fn allocate() -> Self
+    where
+        Self: Sized;
     #[cfg(test)]
-    fn allocate_with_options(options: Box<options>) -> Self where Self: Sized;
-    unsafe fn create(prefix: Option<&CStr>, name: Option<&CStr>, cwd: &CStr, environment: Box<environ>, options: Option<Box<options>>, termios: Option<&termios>) -> Self where Self: Sized;
-    unsafe fn find(name: &CStr) -> Option<Self> where Self: Sized;
-    unsafe fn find_by_id(id: u32) -> Option<Self> where Self: Sized;
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> where Self: Sized;
-    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> where Self: Sized;
-    unsafe fn next_id() -> u32 where Self: Sized;
+    fn allocate_with_options(options: Box<options>) -> Self
+    where
+        Self: Sized;
+    unsafe fn create(
+        prefix: Option<&CStr>,
+        name: Option<&CStr>,
+        cwd: &CStr,
+        environment: Box<environ>,
+        options: Option<Box<options>>,
+        termios: Option<&termios>,
+    ) -> Self
+    where
+        Self: Sized;
+    unsafe fn find(name: &CStr) -> Option<Self>
+    where
+        Self: Sized;
+    unsafe fn find_by_id(id: u32) -> Option<Self>
+    where
+        Self: Sized;
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self>
+    where
+        Self: Sized;
+    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self>
+    where
+        Self: Sized;
+    unsafe fn next_id() -> u32
+    where
+        Self: Sized;
     /// Keep the original deferred allocation-release duty and diagnostics.
-    unsafe fn release(self, from: &CStr) where Self: Sized;
-    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self> where Self: Sized;
+    unsafe fn release(self, from: &CStr)
+    where
+        Self: Sized;
+    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self>
+    where
+        Self: Sized;
     unsafe fn select_index(&self, index: i32) -> i32;
     unsafe fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32;
     unsafe fn select_last_window(&self) -> i32;
-    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool where Self: Sized;
+    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool
+    where
+        Self: Sized;
     type Environment<'a>: std::ops::Deref<Target = environ>
     where
         Self: 'a;
@@ -138,25 +189,66 @@ pub trait Session {
 }
 
 impl Session for SessionRef {
-    fn allocate() -> Self { session::new() }
+    unsafe fn recalculate_attachment_status() {
+        recalculate_size_state();
+    }
+    unsafe fn deliver_window_alerts(window: &WindowRef) -> i32 {
+        alerts_check_all(window)
+    }
+    fn allocate() -> Self {
+        session::new()
+    }
     #[cfg(test)]
-    fn allocate_with_options(options: Box<options>) -> Self { session::with_options_for_test(options) }
-    unsafe fn create(prefix: Option<&CStr>, name: Option<&CStr>, cwd: &CStr, environment: Box<environ>, options: Option<Box<options>>, termios: Option<&termios>) -> Self {
+    fn allocate_with_options(options: Box<options>) -> Self {
+        session::with_options_for_test(options)
+    }
+    unsafe fn create(
+        prefix: Option<&CStr>,
+        name: Option<&CStr>,
+        cwd: &CStr,
+        environment: Box<environ>,
+        options: Option<Box<options>>,
+        termios: Option<&termios>,
+    ) -> Self {
         session_create(prefix, name, cwd, environment, options, termios)
     }
-    unsafe fn find(name: &CStr) -> Option<Self> { session_find(name) }
-    unsafe fn find_by_id(id: u32) -> Option<Self> { session_find_by_id(id) }
-    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> { session_find_by_id_str(id) }
-    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> { sort_get_sessions(criteria) }
-    unsafe fn next_id() -> u32 { next_session_id }
-    unsafe fn release(self, from: &CStr) { session_remove_ref(self, from); }
-    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self> { session_adjacent(Some(self), criteria, previous) }
-    unsafe fn select_index(&self, index: i32) -> i32 { session_select(self, index) }
-    unsafe fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32 {
-        if previous { session_previous(self, alert as i32) } else { session_next(self, alert as i32) }
+    unsafe fn find(name: &CStr) -> Option<Self> {
+        session_find(name)
     }
-    unsafe fn select_last_window(&self) -> i32 { session_last(self) }
-    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool { session_is_linked(session, window) != 0 }
+    unsafe fn find_by_id(id: u32) -> Option<Self> {
+        session_find_by_id(id)
+    }
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> {
+        session_find_by_id_str(id)
+    }
+    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> {
+        sort_get_sessions(criteria)
+    }
+    unsafe fn next_id() -> u32 {
+        next_session_id
+    }
+    unsafe fn release(self, from: &CStr) {
+        session_remove_ref(self, from);
+    }
+    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self> {
+        session_adjacent(Some(self), criteria, previous)
+    }
+    unsafe fn select_index(&self, index: i32) -> i32 {
+        session_select(self, index)
+    }
+    unsafe fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32 {
+        if previous {
+            session_previous(self, alert as i32)
+        } else {
+            session_next(self, alert as i32)
+        }
+    }
+    unsafe fn select_last_window(&self) -> i32 {
+        session_last(self)
+    }
+    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool {
+        session_is_linked(session, window) != 0
+    }
     type Environment<'a> = &'a environ;
     type EnvironmentMut<'a> = &'a mut environ;
     unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>> {
@@ -488,15 +580,6 @@ mod tests {
     }
 }
 
-/// Fixture-only replacement also exercises removal while a UI target survives.
-#[cfg(test)]
-pub(crate) unsafe fn replace_test_environment(
-    owner: &SessionRef,
-    environment: Option<Box<environ>>,
-) {
-    (*owner.get()).environ = environment;
-}
-
 #[cfg(test)]
 mod index_boundary_tests {
     use super::*;
@@ -505,8 +588,8 @@ mod index_boundary_tests {
     fn shifting_indices_preserves_link_identity_and_history() {
         unsafe {
             let owner = session::new();
-            let first = super::super::test_support::add_link(&owner, 4);
-            let second = super::super::test_support::add_link(&owner, 5);
+            let first = (&owner).fixture_add_link(4);
+            let second = (&owner).fixture_add_link(5);
             (*owner.get()).curw = first.clone();
             winlink_stack_push(&mut (*owner.get()).lastw, second.clone());
             assert_eq!(owner.shuffle_window(first.clone(), true), 4);
@@ -515,8 +598,8 @@ mod index_boundary_tests {
             assert_eq!(owner.current_winlink(), first);
             assert_eq!(owner.last_winlink(), second);
             assert_eq!(owner.shuffle_window(refbox::Weak::new(), false), -1);
-            super::super::test_support::remove_link(&owner, first);
-            super::super::test_support::remove_link(&owner, second);
+            (&owner).fixture_remove_link(first);
+            (&owner).fixture_remove_link(second);
             assert!(!owner.last_winlink().is_alive());
         }
     }
@@ -524,12 +607,12 @@ mod index_boundary_tests {
     #[test]
     fn replacement_notifies_before_clearing_history_and_releasing_window() {
         use crate::src::events::{events_add_sink, events_remove_sink};
-        use crate::src::window::{winlink_set_window};
+        use crate::src::window::winlink_set_window;
         use std::cell::RefCell;
         unsafe {
             let owner = session::new();
             let window = crate::src::shared::window::WindowRef::empty();
-            let mut link = super::super::test_support::add_link(&owner, 1);
+            let mut link = (&owner).fixture_add_link(1);
             (*owner.get()).curw = link.clone();
             link.get_mut_unchecked().flags |= WINLINK_ALERTFLAGS;
             winlink_stack_push(&mut (*owner.get()).lastw, link.clone());

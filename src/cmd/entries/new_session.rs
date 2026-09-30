@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_to_vector};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
@@ -23,7 +22,9 @@ use crate::src::proc::proc_send;
 use crate::src::server_client::Client as _;
 
 use crate::src::session::Session;
-use crate::src::session::{session_group_add, session_group_find, session_group_new, session_group_synchronize_to};
+use crate::src::session::{
+    session_group_add, session_group_find, session_group_new, session_group_synchronize_to,
+};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
@@ -254,7 +255,9 @@ unsafe fn cmd_new_session_exec(
         10043043949733653460 => {
             if args_has(args, 'A' as i32 as u_char) != 0 {
                 if !sname.is_null() {
-                    as_0 = crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname));
+                    as_0 = crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(
+                        sname,
+                    ));
                 } else {
                     as_0 = (*target).session_handle();
                 }
@@ -276,7 +279,10 @@ unsafe fn cmd_new_session_exec(
                     return retval;
                 }
             }
-            if !sname.is_null() && crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname)).is_some() {
+            if !sname.is_null()
+                && crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname))
+                    .is_some()
+            {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"duplicate session: ")?;
                     write_cstr(out, sname)
@@ -388,7 +394,9 @@ unsafe fn cmd_new_session_exec(
                             5193972633326621385 => {}
                             _ => {
                                 if detached == 0 && already_attached == 0 {
-                                    if let Err(open_error) = (c_owner.as_ref().expect("terminal client")).open_terminal() {
+                                    if let Err(open_error) =
+                                        (c_owner.as_ref().expect("terminal client")).open_terminal()
+                                    {
                                         cmdq_error(item_handle, |out| {
                                             out.write_all(b"open terminal failed: ")?;
                                             out.write_all(open_error.as_bytes())
@@ -690,16 +698,21 @@ unsafe fn cmd_new_session_exec(
                                                                     &s.clone()
                                                                         .expect("live session"),
                                                                 );
-                                                                (&s.clone()
-                                                                        .expect("live session")).select_index((s.as_ref()
-                                                                        .expect("live session")
-                                                                        .with_winlinks(|links| {
-                                                                            winlinks_minmax(
-                                                                                links, RB_NEGINF,
-                                                                            )
-                                                                        }))
-                                                                    .get_unchecked()
-                                                                    .idx);
+                                                                (&s.clone().expect("live session"))
+                                                                    .select_index(
+                                                                        (s.as_ref()
+                                                                            .expect("live session")
+                                                                            .with_winlinks(
+                                                                                |links| {
+                                                                                    winlinks_minmax(
+                                                                                        links,
+                                                                                        RB_NEGINF,
+                                                                                    )
+                                                                                },
+                                                                            ))
+                                                                        .get_unchecked()
+                                                                        .idx,
+                                                                    );
                                                             }
                                                             events_fire_session(
                                                                 b"session-created\0" as *const u8
@@ -745,14 +758,15 @@ unsafe fn cmd_new_session_exec(
                                                                         .expect("live client")
                                                                         .remember_session();
                                                                 }
-                                                                (&c.clone()
-                                                                        .expect("live client")).set_session(s.as_ref());
+                                                                (&c.clone().expect("live client"))
+                                                                    .set_session(s.as_ref());
                                                                 if !cmdq_get_flags(&*(item))
                                                                     & CMDQ_STATE_REPEAT
                                                                     != 0
                                                                 {
                                                                     (&c.clone()
-                                                                            .expect("live client")).set_key_table(None);
+                                                                        .expect("live client"))
+                                                                        .set_key_table(None);
                                                                 }
                                                             }
                                                             if args_has(args, 'P' as i32 as u_char)

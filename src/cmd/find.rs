@@ -1,8 +1,3 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_state_owned};
 use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
@@ -14,8 +9,15 @@ use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::session::sessions;
 use crate::src::session::Session;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::rc::same;
@@ -23,8 +25,8 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window;
 use crate::src::window::{
-    winlink_find_by_index, winlink_next_by_number,
-    winlink_previous_by_number, winlinks_minmax, winlinks_next,
+    winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
+    winlinks_next,
 };
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
@@ -301,7 +303,8 @@ unsafe fn cmd_find_get_window(
         log_cstr((window) as *const _)
     ));
     if *window as ::core::ffi::c_int == '@' as i32 {
-        let window_owner = crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
+        let window_owner =
+            crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
         let result = (|| {
             (*fs).set_w(window_owner.as_ref());
             if (*fs).window_handle().is_none() {
@@ -358,7 +361,8 @@ unsafe fn cmd_find_get_window_with_session(
     );
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
     if *window as ::core::ffi::c_int == '@' as i32 {
-        let window_owner = crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
+        let window_owner =
+            crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
         let result = (|| {
             (*fs).set_w(window_owner.as_ref());
             if (*fs).window_handle().is_none()
@@ -1925,9 +1929,9 @@ mod target_observer_tests {
             let session = crate::src::shared::session::SessionRef::allocate();
             let window = crate::src::shared::window::WindowRef::empty();
             let other = crate::src::shared::window::WindowRef::empty();
-            let first = crate::src::session::test_support::add_link(&session, 2);
-            let current = crate::src::session::test_support::add_link(&session, 9);
-            let unrelated = crate::src::session::test_support::add_link(&session, 1);
+            let first = (&session).fixture_add_link(2);
+            let current = (&session).fixture_add_link(9);
+            let unrelated = (&session).fixture_add_link(1);
             winlink_set_window(first.clone(), &window);
             winlink_set_window(current.clone(), &window);
             winlink_set_window(unrelated.clone(), &other);
@@ -1936,19 +1940,19 @@ mod target_observer_tests {
             state.set_w(Some(&window));
             let owners = Rc::strong_count(&window);
 
-            crate::src::session::test_support::current(&session, current.clone());
+            (&session).fixture_current(current.clone());
             assert_eq!(cmd_find_best_winlink_with_window(&mut state), 0);
             assert!(state.wl == current);
             assert_eq!(state.idx, 9);
 
-            crate::src::session::test_support::current(&session, unrelated.clone());
+            (&session).fixture_current(unrelated.clone());
             assert_eq!(cmd_find_best_winlink_with_window(&mut state), 0);
             assert!(state.wl == first);
             assert_eq!(state.idx, 2);
             assert_eq!(Rc::strong_count(&window), owners);
 
             for link in [first, current, unrelated] {
-                crate::src::session::test_support::remove_link(&session, link);
+                (&session).fixture_remove_link(link);
             }
             assert_eq!(cmd_find_best_winlink_with_window(&mut state), -1);
             window.release(c"test target window");
@@ -1965,18 +1969,20 @@ mod target_observer_tests {
             );
             let session_owner = crate::src::shared::session::SessionRef::allocate();
             let other_session = crate::src::shared::session::SessionRef::allocate();
-            let first = crate::src::shared::client::ClientRef::fixture_with_session(Some(&session_owner));
-            let second = crate::src::shared::client::ClientRef::fixture_with_session(Some(&other_session));
+            let first =
+                crate::src::shared::client::ClientRef::fixture_with_session(Some(&session_owner));
+            let second =
+                crate::src::shared::client::ClientRef::fixture_with_session(Some(&other_session));
             first.fixture_activity(10, 0);
             second.fixture_activity(20, 0);
             clients.push_back(first.clone());
             clients.push_back(second.clone());
-            crate::src::session::test_support::metadata(&session_owner, None, None, Some(1));
+            (&session_owner).fixture_metadata(None, None, Some(1));
             assert!(Rc::ptr_eq(
                 &cmd_find_best_client(&session_owner).unwrap(),
                 &first
             ));
-            crate::src::session::test_support::metadata(&session_owner, None, None, Some(0));
+            (&session_owner).fixture_metadata(None, None, Some(0));
             assert!(Rc::ptr_eq(
                 &cmd_find_best_client(&session_owner).unwrap(),
                 &second
@@ -2004,17 +2010,11 @@ mod target_observer_tests {
         unsafe {
             let first = crate::src::shared::session::SessionRef::allocate();
             let second = crate::src::shared::session::SessionRef::allocate();
-            crate::src::session::test_support::activity(
-                &first,
-                UNIX_EPOCH + Duration::from_secs(10),
-            );
-            crate::src::session::test_support::activity(
-                &second,
-                UNIX_EPOCH + Duration::from_secs(9),
-            );
+            (&first).fixture_activity(UNIX_EPOCH + Duration::from_secs(10));
+            (&second).fixture_activity(UNIX_EPOCH + Duration::from_secs(9));
             assert!(cmd_find_session_better(&first, None, 0));
             assert!(cmd_find_session_better(&first, Some(&second), 0));
-            crate::src::session::test_support::metadata(&first, None, None, Some(1));
+            (&first).fixture_metadata(None, None, Some(1));
             assert!(!cmd_find_session_better(
                 &first,
                 Some(&second),
@@ -2025,15 +2025,10 @@ mod target_observer_tests {
                 Some(&first),
                 CMD_FIND_PREFER_UNATTACHED
             ));
-            crate::src::session::test_support::activity(
-                &second,
-                UNIX_EPOCH + Duration::from_secs(10),
-            );
+            (&second).fixture_activity(UNIX_EPOCH + Duration::from_secs(10));
             assert!(!cmd_find_session_better(&first, Some(&second), 0));
-            crate::src::session::test_support::activity(
-                &first,
-                UNIX_EPOCH + Duration::from_secs(10) + Duration::from_micros(1),
-            );
+            (&first)
+                .fixture_activity(UNIX_EPOCH + Duration::from_secs(10) + Duration::from_micros(1));
             assert!(cmd_find_session_better(&first, Some(&second), 0));
         }
     }
@@ -2121,12 +2116,12 @@ mod target_observer_tests {
             assert!(!session_owner.is_registered());
             (&mut sessions).insert(session_owner.clone());
             assert!(session_owner.is_registered());
-            let mut wl = crate::src::session::test_support::add_link(&session_owner, 1);
+            let mut wl = (&session_owner).fixture_add_link(1);
             wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);
             winlink_set_window(wl.clone(), &window_owner);
             pane_owner.fixture_parent(Some(&window_owner));
             window_owner.initialize_pane(&pane_owner, None);
-            crate::src::session::test_support::current(&session_owner, wl.clone());
+            (&session_owner).fixture_current(wl.clone());
             assert!(cmd_find_best_session(Some(&[]), 0).is_none());
             let candidates = vec![session_owner.clone()];
             let selected = cmd_find_best_session(Some(&candidates), 0).unwrap();
@@ -2134,11 +2129,11 @@ mod target_observer_tests {
             drop(candidates);
             assert!(Rc::ptr_eq(&selected, &session_owner));
             drop(selected);
-            crate::src::session::test_support::current(&session_owner, refbox::Weak::new());
+            (&session_owner).fixture_current(refbox::Weak::new());
             let mut state = cmd_find_state::default();
             cmd_find_from_winlink_pane(&mut state, wl.clone(), &pane_owner, 0);
             assert_eq!(cmd_find_valid_state(&state), 1);
-            crate::src::session::test_support::reindex(&session_owner, wl.clone(), 3);
+            (&session_owner).fixture_reindex(wl.clone(), 3);
             assert_eq!(cmd_find_valid_state(&state), 1);
 
             let panes = std::mem::take(
@@ -2157,14 +2152,14 @@ mod target_observer_tests {
             (&mut sessions).insert(session_owner.clone());
             assert_eq!(cmd_find_valid_state(&state), 1);
 
-            crate::src::session::test_support::remove_link(&session_owner, wl.clone());
-            let mut replacement = crate::src::session::test_support::add_link(&session_owner, 3);
+            (&session_owner).fixture_remove_link(wl.clone());
+            let mut replacement = (&session_owner).fixture_add_link(3);
             replacement.get_mut_unchecked().session = Rc::downgrade(&session_owner);
             winlink_set_window(replacement.clone(), &window_owner);
             assert_eq!(cmd_find_valid_state(&state), 0);
             state.set_wl((replacement).clone());
             assert_eq!(cmd_find_valid_state(&state), 1);
-            crate::src::session::test_support::remove_link(&session_owner, (replacement).clone());
+            (&session_owner).fixture_remove_link((replacement).clone());
             window_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
                 .storage

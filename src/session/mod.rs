@@ -1,11 +1,11 @@
+use crate::src::window::Window as _;
 #[cfg(test)]
 use crate::src::window::WindowFixture as _;
-use crate::src::window::Window as _;
 mod alerts;
 mod api;
-pub(crate) use alerts::alerts_check_all;
+use alerts::alerts_check_all;
 #[cfg(test)]
-pub(crate) use api::replace_test_environment;
+pub(crate) use test_support::SessionFixture;
 mod model;
 mod size;
 mod sort;
@@ -57,14 +57,13 @@ use crate::src::shared::window::{window, winlink, winlink_stack, winlinks};
 use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
-use crate::src::window_pane::WindowPane as _;
 use crate::src::window::{
-    winlink_add,
-    winlink_clear_flags, winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id,
-    winlink_next, winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push,
-    winlink_stack_remove, winlinks_minmax, winlinks_next,
+    winlink_add, winlink_clear_flags, winlink_find_by_index, winlink_find_by_window,
+    winlink_find_by_window_id, winlink_next, winlink_previous, winlink_remove, winlink_set_window,
+    winlink_stack_push, winlink_stack_remove, winlinks_minmax, winlinks_next,
 };
-pub(crate) use size::recalculate_size_state;
+use crate::src::window_pane::WindowPane as _;
+use size::recalculate_size_state;
 use size::status_update_cache;
 use sort::sort_get_sessions;
 use std::cell::UnsafeCell;
@@ -505,10 +504,7 @@ unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winl
     }
     return wl;
 }
-unsafe fn session_next(
-    s_owner: &SessionRef,
-    mut alert: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+unsafe fn session_next(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let s = s_owner.get();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -564,10 +560,7 @@ unsafe fn session_previous(
     }
     return session_set_current(s_owner, wl.clone());
 }
-unsafe fn session_select(
-    s_owner: &SessionRef,
-    mut idx: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+unsafe fn session_select(s_owner: &SessionRef, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let s = s_owner.get();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -668,14 +661,17 @@ unsafe fn session_set_current(
     ) != 0
     {
         if old.is_alive() {
-            crate::src::shared::window::WindowRef::update_focus_for(old.get_unchecked().window_handle().cloned().as_ref());
+            crate::src::shared::window::WindowRef::update_focus_for(
+                old.get_unchecked().window_handle().cloned().as_ref(),
+            );
         }
-        crate::src::shared::window::WindowRef::update_focus_for(wl.get_unchecked().window_handle().cloned().as_ref());
+        crate::src::shared::window::WindowRef::update_focus_for(
+            wl.get_unchecked().window_handle().cloned().as_ref(),
+        );
     }
     winlink_clear_flags(wl.clone());
-    (&std::rc::Rc::clone(
-        &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-    )).update_activity();
+    (&std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))))
+        .update_activity();
     tty_update_window_offset(&std::rc::Rc::clone(
         &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     ));
@@ -952,7 +948,7 @@ mod winlink_storage_tests;
 mod session_lastw_queue_tests;
 
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;
 
 #[cfg(test)]
 mod storage_tests;
@@ -966,7 +962,7 @@ mod group_synchronization_tests {
     use std::cell::RefCell;
 
     unsafe fn link(session: &SessionRef, index: i32, window: &WindowRef) -> refbox::Weak<winlink> {
-        let link = test_support::add_link(session, index);
+        let link = (session).fixture_add_link(index);
         winlink_set_window(link.clone(), window);
         link
     }
@@ -1000,7 +996,9 @@ mod group_synchronization_tests {
             let source = session::with_options_for_test(crate::src::options::options_create(None));
             let destination =
                 session::with_options_for_test(crate::src::options::options_create(None));
-            let windows = (1..=4).map(crate::src::shared::window::WindowRef::fixture_with_id).collect::<Vec<_>>();
+            let windows = (1..=4)
+                .map(crate::src::shared::window::WindowRef::fixture_with_id)
+                .collect::<Vec<_>>();
             let mut first = link(&source, 2, &windows[0]);
             let mut second = link(&source, 7, &windows[1]);
             first.get_mut_unchecked().flags |= WINLINK_BELL;

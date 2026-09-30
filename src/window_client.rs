@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::compat::imsg::*;
 use crate::src::ffi::libc::memcpy;
@@ -20,30 +18,32 @@ use crate::src::screen_write::{
     screen_write_vline,
 };
 use crate::src::server_client::Client as _;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
+use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::format::format_tree;
+use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::mode_tree::{
-    ModeTreeItemData, mode_tree_data, mode_tree_help_info, mode_tree_item,
+    mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemData,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -301,7 +301,10 @@ mod tests {
         use crate::src::{reactor, shared::rc};
         for cancel in [false, true] {
             unsafe {
-                let client_owner = crate::src::shared::client::ClientRef::fixture_with_names(None, Some(c"/dev/pts/7"));
+                let client_owner = crate::src::shared::client::ClientRef::fixture_with_names(
+                    None,
+                    Some(c"/dev/pts/7"),
+                );
                 let client_observer = Rc::downgrade(&client_owner);
                 let mut data = window_client_modedata {
                     wp: Weak::new(),

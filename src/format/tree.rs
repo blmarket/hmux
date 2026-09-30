@@ -1,5 +1,5 @@
-use crate::src::server_client::Client as _;
 use crate::src::log::log_cstr;
+use crate::src::server_client::Client as _;
 
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::format::FormatEntryState;

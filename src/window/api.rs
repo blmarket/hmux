@@ -5,10 +5,6 @@
 //! option callbacks must not reenter the window, free/reparent the component, or
 //! let references or pointers escape.
 
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window_pane::WindowPane as _;
-use crate::src::server_client::Client as _;
 use super::*;
 use crate::src::layout::custom::{layout_parse, LayoutSnapshot};
 use crate::src::layout::layout_resize;
@@ -17,12 +13,16 @@ use crate::src::layout::set::{
 };
 use crate::src::layout::{layout_get_floating_cell, layout_get_tiled_cell, layout_spread_out};
 use crate::src::resize::recalculate_sizes;
+use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::menu::menu_data;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
 use crate::src::spawn::spawn_pane;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
+use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Clone, Copy)]
@@ -1724,7 +1724,9 @@ mod tests {
             pane.fixture_scrollbar(3, 2);
             assert_eq!(pane.unzoomed_width(), Some(35));
             assert_eq!(pane.unzoomed_height(), Some(23));
-            pane.fixture_base(|screen| screen.saved_grid = Some(crate::src::grid::grid_create(80, 24, 0)));
+            pane.fixture_base(|screen| {
+                screen.saved_grid = Some(crate::src::grid::grid_create(80, 24, 0))
+            });
             assert_eq!(
                 pane.unzoomed_width(),
                 Some(40),

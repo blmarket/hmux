@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
@@ -19,6 +18,7 @@ use crate::src::options::{
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
 use crate::src::session::Session;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};

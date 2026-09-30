@@ -1,6 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
-use crate::src::session::Session as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_target};
@@ -14,6 +11,9 @@ use crate::src::key_bindings::key_bindings_get_table;
 use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::server_client::Client as _;
+use crate::src::session::Session as _;
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
 
 use crate::src::server_fn::server_redraw_window;
 
@@ -168,22 +168,26 @@ unsafe fn cmd_switch_client_exec(
     }
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'n' as i32 as u_char) != 0 {
-        selected_session = (tc.as_ref()
-                .expect("live client")
-                .attached_session()
-                .upgrade()
-                .as_ref()).and_then(|session| session.adjacent_session(&sort_crit, false));
+        selected_session = (tc
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .as_ref())
+        .and_then(|session| session.adjacent_session(&sort_crit, false));
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find next session"));
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        selected_session = (tc.as_ref()
-                .expect("live client")
-                .attached_session()
-                .upgrade()
-                .as_ref()).and_then(|session| session.adjacent_session(&sort_crit, true));
+        selected_session = (tc
+            .as_ref()
+            .expect("live client")
+            .attached_session()
+            .upgrade()
+            .as_ref())
+        .and_then(|session| session.adjacent_session(&sort_crit, true));
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| {
@@ -192,7 +196,8 @@ unsafe fn cmd_switch_client_exec(
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
-        selected_session = (&crate::src::session::sessions).resolve(&tc.as_ref().expect("live client").previous_session());
+        selected_session = (&crate::src::session::sessions)
+            .resolve(&tc.as_ref().expect("live client").previous_session());
         s = selected_session.clone();
         if s.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"can't find last session"));
@@ -225,8 +230,7 @@ unsafe fn cmd_switch_client_exec(
             } else {
                 visible = wp.as_ref().expect("target pane").is_visible() as i32;
             }
-            if visible == 0 && window_owner.push_zoom(false, (Zflag) != 0) != 0
-            {
+            if visible == 0 && window_owner.push_zoom(false, (Zflag) != 0) != 0 {
                 server_redraw_window(&window_owner);
             }
             window_owner.redraw_active_switch(wp.as_ref());

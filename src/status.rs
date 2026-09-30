@@ -1,6 +1,3 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{memcpy, memset};
 use crate::src::format::bytes::format_message_with;
@@ -29,7 +26,10 @@ use crate::src::screen_write::{
 use crate::src::server::clients;
 use crate::src::server::server_add_message;
 use crate::src::server_client::Client as _;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::session::Session as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::session::SessionRef;
@@ -949,13 +949,15 @@ mod status_screen_tests {
                     .unwrap();
                 options_default(&mut *oo_owner, definition);
             }
-            let session_owner = crate::src::shared::session::SessionRef::allocate_with_options(oo_owner);
+            let session_owner =
+                crate::src::shared::session::SessionRef::allocate_with_options(oo_owner);
             let previous_sessions = std::mem::replace(
                 &mut crate::src::session::sessions,
                 crate::src::shared::session::sessions::default(),
             );
             (&mut crate::src::session::sessions).insert(session_owner.clone());
-            let mut c = crate::src::shared::client::ClientRef::fixture_with_session(Some(&session_owner));
+            let mut c =
+                crate::src::shared::client::ClientRef::fixture_with_session(Some(&session_owner));
             c.borrow_terminal_mut().sx = 80;
             for (style, expected) in [
                 ("default", (0, 80)),
@@ -995,7 +997,7 @@ mod status_screen_tests {
                     options_set_number(options, c"status-position".as_ptr(), position as i64);
                     options_set_number(options, c"message-line".as_ptr(), message_line);
                 });
-                crate::src::session::recalculate_size_state();
+                crate::src::shared::session::SessionRef::recalculate_attachment_status();
                 c.borrow_terminal_mut().sy = height;
                 c.update_flags(flags as u64, !(flags as u64));
                 assert_eq!(status_at_line(&c), expected.0);

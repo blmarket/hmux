@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
@@ -21,33 +20,34 @@ use crate::src::screen_write::{
 };
 use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
 use crate::src::session::Session;
+use crate::src::session::SessionIndex as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::display::*;
-use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::format::format_tree;
+use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
-use crate::src::shared::mouse::{MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, mouse_event};
+use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{
-    PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_NOFORMAT,
-    prompt_result,
-};
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-use crate::src::shared::screen::{MODE_CURSOR, screen};
+use crate::src::shared::prompt::{
+    prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE,
+    PROMPT_NOFORMAT,
+};
+use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -56,10 +56,8 @@ use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink
 use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
+use crate::src::window::winlink_find_by_index;
 use crate::src::window::Window as _;
-use crate::src::window::{
-    winlink_find_by_index,
-};
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
@@ -1145,10 +1143,9 @@ mod match_tests {
         rows.push(row(c"same", 0));
         assert_eq!(window_switch_matches(&mut rows, c"same", 80), [3, 2, 0]);
         assert_eq!(window_switch_matches(&mut rows, c"", 80), [3, 1, 2, 0]);
-        assert!(
-            rows.iter()
-                .all(|row| row.match_mask.is_none() && row.score == 0)
-        );
+        assert!(rows
+            .iter()
+            .all(|row| row.match_mask.is_none() && row.score == 0));
         rows = vec![row(c"new", 0)];
         assert!(window_switch_matches(&mut rows, c"same", 80).is_empty());
         assert_eq!(window_switch_matches(&mut rows, c"new", 80), [0]);

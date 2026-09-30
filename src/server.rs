@@ -1,6 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::src::cmd::queue::cmdq_next;
@@ -27,6 +24,9 @@ use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor::{self, Task};
 use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::Client as _;
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::sessions;
@@ -437,7 +437,12 @@ unsafe fn server_send_exit() {
     s = s_owner.clone();
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name().into_bytes();
-        (s_owner.as_ref().expect("registered session")).destroy((1 as ::core::ffi::c_int) != 0, std::ffi::CStr::from_ptr(b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char));
+        (s_owner.as_ref().expect("registered session")).destroy(
+            (1 as ::core::ffi::c_int) != 0,
+            std::ffi::CStr::from_ptr(
+                b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
+            ),
+        );
         s_owner = (&sessions).after(&name);
         s = s_owner.clone();
     }

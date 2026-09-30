@@ -1,5 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::args_escape_cstring;
 use crate::src::cfg::cfg_files;
 use crate::src::cmd::queue::{
@@ -44,10 +42,14 @@ use crate::src::reactor::{
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;
-use crate::src::session::{session_group_attached_count, session_group_count, session_groups_minmax, session_groups_next};
+use crate::src::session::{
+    session_group_attached_count, session_group_count, session_groups_minmax, session_groups_next,
+};
 use crate::src::session::{session_groups, sessions, Session};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;
@@ -68,9 +70,7 @@ use crate::src::tmux::{
 use crate::src::tty::{tty_default_colours, tty_window_offset};
 use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
-use crate::src::window::{
-    winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next,
-};
+use crate::src::window::{winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next};
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
 use crate::src::window_copy::{

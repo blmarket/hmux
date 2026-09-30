@@ -167,7 +167,9 @@ unsafe fn cmd_split_window_exec(
         let mut count: u_int = args_count(args);
         if (&std::rc::Rc::clone(
             &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-        )).active_pane_over_zoom() != 0
+        ))
+            .active_pane_over_zoom()
+            != 0
         {
             restore_zoom = 1 as ::core::ffi::c_int;
         }
@@ -179,8 +181,9 @@ unsafe fn cmd_split_window_exec(
             }
             if restore_zoom == 0 {
                 (&std::rc::Rc::clone(
-                        &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-                    )).unzoom(true);
+                    &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+                ))
+                    .unzoom(true);
             }
             is_floating = original_pane.is_floating() as i32;
             flags |= SPAWN_SPLIT;

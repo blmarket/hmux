@@ -1,12 +1,12 @@
 //! Storage assertions stay beside the pane implementation.
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
 use super::*;
 use crate::src::shared::pane::{
     pane_history_first, pane_history_next, pane_history_push, pane_history_remove, window_pane,
     window_pane_history, window_panes,
 };
 use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use crate::src::window::*;
 use crate::src::window::{PaneOrder, Window};
 use crate::src::window_pane::WindowPane as _;
@@ -319,13 +319,17 @@ mod collection_index_tests {
                 &second_owner
             ));
             assert_eq!(
-                window_pane_tree_remove(&mut moved, &mut *first).unwrap().get(),
+                window_pane_tree_remove(&mut moved, &mut *first)
+                    .unwrap()
+                    .get(),
                 first
             );
             assert!((*first).owner.is_empty());
             assert!(window_pane_tree_next(&*first).is_none());
             assert_eq!(
-                window_pane_tree_remove(&mut moved, &mut *second).unwrap().get(),
+                window_pane_tree_remove(&mut moved, &mut *second)
+                    .unwrap()
+                    .get(),
                 second
             );
 

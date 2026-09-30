@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
@@ -9,6 +8,7 @@ use crate::src::resize::recalculate_sizes;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_session;
 use crate::src::session::Session;
+use crate::src::session::SessionIndex as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -162,7 +162,8 @@ unsafe fn cmd_select_window_exec(
     if next != 0 || previous != 0 || last != 0 {
         activity = args_has(args, 'a' as i32 as u_char);
         if next != 0 {
-            if (s.as_ref().expect("live session")).select_adjacent_window(false, (activity) != 0) != 0 as ::core::ffi::c_int
+            if (s.as_ref().expect("live session")).select_adjacent_window(false, (activity) != 0)
+                != 0 as ::core::ffi::c_int
             {
                 cmdq_error(item_handle, |out| out.write_all(b"no next window"));
                 return CMD_RETURN_ERROR;
@@ -174,7 +175,9 @@ unsafe fn cmd_select_window_exec(
                 cmdq_error(item_handle, |out| out.write_all(b"no previous window"));
                 return CMD_RETURN_ERROR;
             }
-        } else if (s.as_ref().expect("live session")).select_last_window() != 0 as ::core::ffi::c_int {
+        } else if (s.as_ref().expect("live session")).select_last_window()
+            != 0 as ::core::ffi::c_int
+        {
             cmdq_error(item_handle, |out| out.write_all(b"no last window"));
             return CMD_RETURN_ERROR;
         }

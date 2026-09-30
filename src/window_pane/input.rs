@@ -1,6 +1,8 @@
 //! Pane-owned input parsing and independent screen-parser components.
-use crate::src::window::Window as _;
-use super::{window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client, window_pane_get_theme, window_pane_update_used_data};
+use super::{
+    window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client,
+    window_pane_get_theme, window_pane_update_used_data,
+};
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::compat::strtonum::strtonum;
@@ -56,6 +58,7 @@ use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
+use crate::src::shared::pane::pane_output_data as window_pane_get_new_data;
 use crate::src::style::colour::{
     colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
     colour_palette_set, colour_parse_x11_logged, colour_split_rgb,
@@ -63,7 +66,7 @@ use crate::src::style::colour::{
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
 use crate::src::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selection};
-use crate::src::shared::pane::pane_output_data as window_pane_get_new_data;
+use crate::src::window::Window as _;
 use crate::src::window::{Window as _, WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::collections::VecDeque;
@@ -2509,9 +2512,8 @@ pub(super) unsafe fn input_parse_buffer(
         return;
     }
     (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
-    (&std::rc::Rc::clone(
-        &(((*wp).window_handle().as_ref()).expect("live window")),
-    )).update_activity();
+    (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))))
+        .update_activity();
     if !(*wp).flags & PANE_ACTIVITY != 0 {
         (*wp).flags |= PANE_ACTIVITY;
         events_fire_pane(

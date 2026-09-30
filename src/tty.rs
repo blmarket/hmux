@@ -2212,7 +2212,9 @@ pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty
     })(owner);
 }
 
-pub unsafe fn tty_default_colours(pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) -> (grid_cell,u_int) {
+pub unsafe fn tty_default_colours(
+    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+) -> (grid_cell, u_int) {
     pane.default_colours()
 }
 

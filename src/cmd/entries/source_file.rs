@@ -345,7 +345,8 @@ unsafe fn cmd_source_file_exec(
             cdata.flags |= CMD_PARSE_VERBOSE;
         }
     }
-    let cwd_owner = ClientRef::working_directory(c.as_ref(), None).expect("source working directory");
+    let cwd_owner =
+        ClientRef::working_directory(c.as_ref(), None).expect("source working directory");
     let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
     i = 0 as u_int;
     while i < args_count(args) {

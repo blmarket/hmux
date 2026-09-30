@@ -1,8 +1,8 @@
-use hmux2::src::shared::client::ClientRef;
 use hmux2::src::environ::environ_create;
 use hmux2::src::menu::{menu_add_item, menu_add_items, menu_create};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::server_client::Client as _;
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::key::KEYC_NONE;
 use hmux2::src::shared::menu::menu_item;
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};

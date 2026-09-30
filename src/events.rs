@@ -10,7 +10,6 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_get_level;
 use crate::src::session::Session as _;
-use crate::src::window_pane::WindowPane as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
@@ -21,6 +20,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
+use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;
 
 static mut events_sinks: Vec<Box<events_sink>> = Vec::new();
@@ -229,13 +229,12 @@ pub unsafe fn events_fire_pane(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(
-        &raw mut fs,
-        &owner,
-        0 as ::core::ffi::c_int,
-    );
+    cmd_find_from_pane(&raw mut fs, &owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
-    let window = owner.window_observer().upgrade().expect("event pane parent");
+    let window = owner
+        .window_observer()
+        .upgrade()
+        .expect("event pane parent");
     event_payload_set_pane(
         &mut *ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,

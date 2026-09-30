@@ -1,6 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::server_client::Client as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
@@ -8,6 +5,9 @@ use crate::src::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::layout::layout_close_pane;
+use crate::src::server_client::Client as _;
+use crate::src::shared::client::ClientRef;
+use crate::src::window::Window as _;
 
 use crate::src::server_fn::{server_kill_pane, server_redraw_window, server_unzoom_window};
 use crate::src::session::Session;
@@ -23,7 +23,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
-use crate::src::window::{Window};
+use crate::src::window::Window;
 pub static cmd_kill_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-pane",
@@ -112,8 +112,9 @@ unsafe fn cmd_kill_pane_all(
             ClientRef::forget_pane(&pane_owner);
             layout_close_pane(&pane_owner);
             (&std::rc::Rc::clone(
-                    &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-                )).remove_pane(&pane_owner);
+                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+            ))
+                .remove_pane(&pane_owner);
         }
     }
     server_redraw_window(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")));

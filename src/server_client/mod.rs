@@ -1,22 +1,24 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
+use crate::src::window::WindowIndex as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime};
 use std::{cell::UnsafeCell, rc::Rc};
 mod api;
-mod format;
-mod model;
 #[cfg(test)]
 mod fixtures;
+mod format;
+mod model;
 #[cfg(test)]
 pub(crate) use fixtures::ClientFixture;
 mod overlay;
@@ -104,9 +106,7 @@ use crate::src::tty_features::tty_get_features;
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
-use crate::src::window::{
-    winlink_find_by_index,
-};
+use crate::src::window::winlink_find_by_index;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
 use hmux_buffer::SegmentedBuf;
@@ -953,10 +953,7 @@ unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn server_client_set_key_table(
-    c_owner: &ClientRef,
-    mut name: *const ::core::ffi::c_char,
-) {
+unsafe fn server_client_set_key_table(c_owner: &ClientRef, mut name: *const ::core::ffi::c_char) {
     let mut c = c_owner.get();
     let default_name;
     if name.is_null() {
@@ -1652,7 +1649,8 @@ unsafe fn server_client_check_mouse(
             ((*c).tty.mouse_drag_flag) as i32
         ));
         if (*c).tty.mouse_last_pane != -(1 as ::core::ffi::c_int) {
-            last_pane = Rc::<UnsafeCell<window_pane>>::find_by_id((*c).tty.mouse_last_pane as u_int);
+            last_pane =
+                Rc::<UnsafeCell<window_pane>>::find_by_id((*c).tty.mouse_last_pane as u_int);
             if let Some(pane) = last_pane.as_ref() {
                 log_debug(format_args!(
                     "{} mouse last pane %{}",
@@ -1826,7 +1824,9 @@ unsafe fn server_client_check_mouse(
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     5 => {
-                        if crate::src::shared::session::SessionRef::find_by_id(sr.argument).is_none() {
+                        if crate::src::shared::session::SessionRef::find_by_id(sr.argument)
+                            .is_none()
+                        {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
                         (*m).s = sr.argument as ::core::ffi::c_int;
@@ -1987,10 +1987,11 @@ unsafe fn server_client_check_mouse(
                 } else if loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    if let Some(range) = selected_pane.as_ref().expect("mouse border pane").status_range(
-                        px,
-                        py,
-                    ) {
+                    if let Some(range) = selected_pane
+                        .as_ref()
+                        .expect("mouse border pane")
+                        .status_range(px, py)
+                    {
                         n = range.argument;
                         loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
                             .wrapping_add(n)
@@ -2113,7 +2114,8 @@ unsafe fn server_client_check_mouse(
                     != 0
             {
                 (&std::rc::Rc::clone(&(window_owner))).redraw_active_switch(selected_pane.as_ref());
-                (&std::rc::Rc::clone(&(window_owner))).select_pane(selected_pane.as_ref().expect("mouse pane"), true);
+                (&std::rc::Rc::clone(&(window_owner)))
+                    .select_pane(selected_pane.as_ref().expect("mouse pane"), true);
                 server_redraw_window_borders(&(window_owner));
                 server_status_window(&(window_owner));
             }
@@ -3108,11 +3110,8 @@ unsafe fn server_client_handle_key0(
         if let Some(pane_owner) =
             prompt_pane.filter(|pane| pane.prompt_position(true).is_some() && pane.is_visible())
         {
-            match pane_owner.prompt_key(
-                Some(owner),
-                (*event).key,
-                Some(&mut (*event).m),
-            ) as ::core::ffi::c_uint
+            match pane_owner.prompt_key(Some(owner), (*event).key, Some(&mut (*event).m))
+                as ::core::ffi::c_uint
             {
                 1..=3 => return 0 as ::core::ffi::c_int,
                 0 => {
@@ -3158,10 +3157,7 @@ unsafe fn server_client_handle_key0(
     cmdq_append(Some(owner), item_allocation);
     return 1 as ::core::ffi::c_int;
 }
-unsafe fn server_client_handle_key(
-    owner: &ClientRef,
-    event: Box<key_event>,
-) -> ::core::ffi::c_int {
+unsafe fn server_client_handle_key(owner: &ClientRef, event: Box<key_event>) -> ::core::ffi::c_int {
     return server_client_handle_key0(owner, event, None, None);
 }
 unsafe fn server_client_handle_key_after(
@@ -3325,7 +3321,8 @@ mod prompt_cursor_tests {
                     .unwrap();
                 crate::src::options::options_default(&mut *options, definition);
             }
-            let session_owner = crate::src::shared::session::SessionRef::allocate_with_options(options);
+            let session_owner =
+                crate::src::shared::session::SessionRef::allocate_with_options(options);
             let c = client::with_session_for_test(Some(&session_owner));
             c.borrow_terminal_mut().sy = 24;
             let previous_sessions = std::mem::replace(
@@ -3367,10 +3364,11 @@ mod prompt_cursor_tests {
                         if at == 0 { 0 } else { 1 },
                     );
                 });
-                crate::src::session::recalculate_size_state();
+                crate::src::shared::session::SessionRef::recalculate_attachment_status();
                 let flags = if at == -1 { CLIENT_STATUSOFF as u64 } else { 0 };
                 c.update_flags(flags, !flags);
-                let window_owner = crate::src::shared::window::WindowRef::fixture_with_size(100, 40);
+                let window_owner =
+                    crate::src::shared::window::WindowRef::fixture_with_size(100, 40);
                 let prompt = refbox::RefBox::new(prompt::default());
                 let base = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
                 base.fixture_parent(Some(&window_owner));
@@ -3796,8 +3794,13 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
         while let Some(pane_owner) = cursor {
             let wme = pane_owner.mode_entry();
             let update = if wme.is_alive() {
-                wme.try_borrow_mut().expect("mode update not borrowed").mode.update
-            } else { None };
+                wme.try_borrow_mut()
+                    .expect("mode update not borrowed")
+                    .mode
+                    .update
+            } else {
+                None
+            };
             if let Some(update) = update {
                 update(wme);
             }
@@ -4722,10 +4725,7 @@ unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 /// Copy the selected directory while any observed startup client is retained.
-unsafe fn server_client_get_cwd(
-    c: Option<&ClientRef>,
-    s: Option<&SessionRef>,
-) -> Option<CString> {
+unsafe fn server_client_get_cwd(c: Option<&ClientRef>, s: Option<&SessionRef>) -> Option<CString> {
     use crate::src::session::Session;
     if let Some(client) = c {
         return client.cwd(s);
@@ -4966,9 +4966,7 @@ unsafe fn server_client_get_flags(c: &client) -> *const ::core::ffi::c_char {
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-unsafe fn server_client_remove_pane(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) {
+unsafe fn server_client_remove_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let pane_id = wp_owner.id();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut registry_c_owner = clients.first();
@@ -5261,8 +5259,8 @@ mod overlay_dispatch_tests {
     unsafe fn with_client(test: impl FnOnce(&ClientRef)) {
         let session_owner = crate::src::shared::session::SessionRef::allocate();
         let session = Some(session_owner.clone());
-        let link = crate::src::session::test_support::add_link(&session_owner, 0);
-        crate::src::session::test_support::current(&session_owner, link.clone());
+        let link = (&session_owner).fixture_add_link(0);
+        (&session_owner).fixture_current(link.clone());
         let client_owner = client::new();
         let client = client_owner.get();
         (*client).session = Rc::downgrade(&session_owner);
@@ -5270,8 +5268,8 @@ mod overlay_dispatch_tests {
         test(&client_owner);
         client_owner.clear_overlay();
         (*client).session = std::rc::Weak::new();
-        crate::src::session::test_support::current(&session_owner, refbox::Weak::new());
-        crate::src::session::test_support::remove_link(&session_owner, link);
+        (&session_owner).fixture_current(refbox::Weak::new());
+        (&session_owner).fixture_remove_link(link);
     }
 
     unsafe fn install(owner: &ClientRef) {
@@ -5480,8 +5478,8 @@ mod client_timer_observer_tests {
 mod cwd_observer_ownership_tests {
     use crate::src::cfg::{cfg_client, cfg_finished};
     use crate::src::server_client::Client as _;
-    use crate::src::shared::client::ClientRef;
     use crate::src::session::Session;
+    use crate::src::shared::client::ClientRef;
     use crate::src::shared::{client::client, session::session};
     use std::rc::{Rc, Weak};
 

@@ -1,12 +1,11 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::marked_pane;
 use crate::src::server_fn::server_redraw_session_group;
+use crate::src::session::session_group_synchronize_from;
 use crate::src::session::Session;
-use crate::src::session::{session_group_synchronize_from};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;

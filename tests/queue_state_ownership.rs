@@ -1,14 +1,14 @@
-use hmux2::src::server_client::Client as _;
-use hmux2::src::shared::client::ClientRef;
 use hmux2::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_new, cmdq_next};
 use hmux2::src::cmd::queue::{cmdq_get_event, cmdq_get_state_owned, cmdq_new_state};
+use hmux2::src::server_client::Client as _;
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::key::key_event;
 use hmux2::src::window::Window;
 use std::rc::Rc;
 
 #[test]
 fn event_snapshots_observe_clients_and_never_redirect_expired_targets() {
-        use hmux2::src::shared::window::window;
+    use hmux2::src::shared::window::window;
     unsafe {
         let explicit = ClientRef::allocate();
         let fallback = ClientRef::allocate();

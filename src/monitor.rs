@@ -1,6 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::ffi::libc::sscanf;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
@@ -9,6 +6,9 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::Timer;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::session::{sessions, Session as _};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
@@ -26,9 +26,9 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
-use crate::src::window::{
-    winlinks_minmax, winlinks_next, Window as _,
-};
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
+use crate::src::window::{winlinks_minmax, winlinks_next, Window as _};
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -1210,7 +1210,6 @@ mod last_owner_tests {
 
     #[test]
     fn timer_destruction_in_session_phase_prevents_later_phases_and_rearming() {
-
         use std::cell::{Cell, RefCell};
         unsafe {
             let saved_sessions = std::ptr::replace(
@@ -1218,12 +1217,7 @@ mod last_owner_tests {
                 crate::src::shared::session::sessions::default(),
             );
             let session = crate::src::shared::session::SessionRef::allocate();
-            crate::src::session::test_support::metadata(
-                &session,
-                Some(c"monitor-timer-destroy".to_owned()),
-                None,
-                None,
-            );
+            (&session).fixture_metadata(Some(c"monitor-timer-destroy".to_owned()), None, None);
             let session_observer = Rc::downgrade(&session);
             (&mut sessions).insert(session);
             let logical_owner = Rc::new(RefCell::new(None::<MonitorRef>));
@@ -1430,19 +1424,13 @@ mod last_owner_tests {
     fn session_scan_guards_release_immediately_and_monitor_owner_releases_on_teardown() {
         use crate::src::reactor::{poll_runtime, shutdown_runtime};
 
-
         unsafe {
             let saved = std::ptr::replace(
                 &raw mut sessions,
                 crate::src::shared::session::sessions::default(),
             );
             let owner = crate::src::shared::session::SessionRef::allocate();
-            crate::src::session::test_support::metadata(
-                &owner,
-                Some(c"monitor-release-test".to_owned()),
-                None,
-                None,
-            );
+            (&owner).fixture_metadata(Some(c"monitor-release-test".to_owned()), None, None);
             let observer = std::rc::Rc::downgrade(&owner);
             (&mut sessions).insert(owner);
             let mut set_owner =

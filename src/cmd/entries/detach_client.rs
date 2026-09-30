@@ -5,7 +5,7 @@ use crate::src::cmd::queue::{
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::imsg::*;
 use crate::src::server::clients;
-use crate::src::server_client::{Client};
+use crate::src::server_client::Client;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;

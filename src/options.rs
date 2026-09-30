@@ -1,6 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::alerts::alerts_reset_all;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
@@ -26,6 +23,9 @@ use crate::src::screen_redraw::redraw_invalidate_all_scenes;
 use crate::src::server::clients;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
@@ -1670,7 +1670,9 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
-            if let Some(client) = loop_0.as_ref() { client.update_theme_colours(); };
+            if let Some(client) = loop_0.as_ref() {
+                client.update_theme_colours();
+            };
             {
                 let terminal = &(loop_0.as_ref().expect("live client"));
                 if {

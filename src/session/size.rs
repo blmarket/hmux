@@ -1,9 +1,9 @@
 //! Session-owned cache publication used by creation and the sizing pass.
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
 use super::*;
 use crate::src::server::clients;
 use crate::src::server_client::Client;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::session::SessionRef;
 
@@ -11,7 +11,7 @@ use crate::src::shared::session::SessionRef;
 /// passes. A removed Session can still be retained by a closing client: preserve
 /// the legacy accumulation for that Session without refreshing its cached layout.
 /// Neither registry traversal nor numeric option lookup invokes callbacks.
-pub(crate) unsafe fn recalculate_size_state() {
+pub(super) unsafe fn recalculate_size_state() {
     let mut cursor = sessions_minmax(&sessions);
     while let Some(owner) = cursor {
         (*owner.get()).attached = 0;

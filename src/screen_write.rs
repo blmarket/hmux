@@ -1,9 +1,3 @@
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::server_client::Client as _;
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
@@ -25,6 +19,7 @@ use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
     screen_reset_tabs, screen_select_cell,
 };
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_window_borders;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -33,6 +28,7 @@ use crate::src::shared::borders::{
     SIMPLE_BORDERS,
 };
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_REDRAWWINDOW;
 use crate::src::shared::colour::*;
 use crate::src::shared::display::visible_range;
@@ -79,6 +75,8 @@ use crate::src::tty::{
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_visible::window_position_is_visible;
 use std::ffi::CStr;
 

@@ -1,6 +1,4 @@
 //! Pane implementation. Window state is accessed through the Window trait.
-mod mouse;
-mod sort;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
@@ -10,30 +8,33 @@ use crate::src::window::*;
 use std::time::Duration;
 mod api;
 #[cfg(test)]
-mod fixtures;
+mod colour_tests;
 #[cfg(test)]
-mod storage_tests;
+mod fixtures;
 #[cfg(test)]
 mod resize_tests;
 #[cfg(test)]
-mod colour_tests;
+mod storage_tests;
 #[cfg(test)]
 pub(crate) use fixtures::PaneFixture;
+mod border;
 mod capture;
 mod mode_visuals;
 mod render;
-mod border;
 pub use render::PaneScrollbar;
+mod format;
+mod input;
 mod keys;
 mod lifecycle;
-mod spawning;
-mod input;
-mod process;
-mod format;
 mod model;
+mod mouse;
+mod process;
+mod sort;
+mod spawning;
 pub(crate) use format::format_without_pane;
 pub use model::window_pane;
 mod pane_sync;
+use self::input::{input_parse_buffer, input_parse_pane};
 use crate::src::alerts::alerts_queue;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
@@ -54,7 +55,6 @@ use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
-use self::input::{input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
 use crate::src::layout::{
     layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_init,
@@ -81,7 +81,7 @@ pub use api::WindowPane;
 
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
-use crate::src::server_client::{Client};
+use crate::src::server_client::Client;
 use crate::src::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_status_window,
@@ -131,15 +131,15 @@ use crate::src::shared::limits::{INT_MAX, UINT_MAX};
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
-    window_pane_history, window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
+    pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED,
+    PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF,
+    PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE,
+    PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM,
+    PANE_STATUS_BOTTOM_FLOATING, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING,
+    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
 use crate::src::shared::pane::{
-    pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
-    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
-    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_BOTTOM_FLOATING,
-    PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING, PANE_STYLECHANGED,
-    PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
+    window_pane_history, window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
 };
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
@@ -289,11 +289,7 @@ unsafe fn window_fire_pane_moved(
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_pane(
-        &raw mut fs,
-        wp_owner,
-        0 as ::core::ffi::c_int,
-    );
+    cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut *ep, &fs);
     event_payload_set_pane(
         &mut *ep,
@@ -675,9 +671,7 @@ unsafe fn window_pane_printable_flags(
     std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
 }
 
-unsafe fn window_pane_find_by_id_str(
-    s: &CStr,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
+unsafe fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     if s.to_bytes().first() != Some(&b'%') {
         return None;
     }
@@ -1717,8 +1711,13 @@ unsafe fn window_pane_prompt_key(
             || (*m).b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
             || (*m).b & MOUSE_MASK_DRAG as u_int != 0
             || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-            || cmd_mouse_at(pane_owner, m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
-                != 0 as ::core::ffi::c_int
+            || cmd_mouse_at(
+                pane_owner,
+                m,
+                &raw mut x,
+                &raw mut y,
+                0 as ::core::ffi::c_int,
+            ) != 0 as ::core::ffi::c_int
         {
             result = PROMPT_KEY_NOT_HANDLED;
         } else {
@@ -2466,9 +2465,7 @@ unsafe fn window_pane_scrollbar_visible(wp: &window_pane) -> ::core::ffi::c_int 
     return wp.sb_auto_visible;
 }
 
-unsafe fn window_pane_scrollbar_start_timer(
-    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-) {
+unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
     let mut delay: u_int = 0;
     if window_pane_scrollbar_auto_hide(&*wp) == 0 || (*wp).sb_auto_visible == 0 {
@@ -3041,7 +3038,9 @@ mod pane_prompt_data_tests {
             drop(replacement);
             assert!(!replacement_weak.is_alive());
             assert_eq!(
-                window_pane_tree_remove(&mut all_window_panes, &mut *wp).unwrap().get(),
+                window_pane_tree_remove(&mut all_window_panes, &mut *wp)
+                    .unwrap()
+                    .get(),
                 wp
             );
         }

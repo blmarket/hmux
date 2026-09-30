@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
@@ -8,6 +7,7 @@ use crate::src::format::{
 use crate::src::server_fn::{server_destroy_session, server_redraw_session};
 use crate::src::session::sessions;
 use crate::src::session::Session;
+use crate::src::session::SessionIndex as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -88,11 +88,21 @@ unsafe fn cmd_kill_session_exec(
     } {
         for session_owner in crate::src::session::session_group_members(sg) {
             server_destroy_session(&session_owner);
-            (&session_owner).destroy((1 as ::core::ffi::c_int) != 0, std::ffi::CStr::from_ptr(b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char));
+            (&session_owner).destroy(
+                (1 as ::core::ffi::c_int) != 0,
+                std::ffi::CStr::from_ptr(
+                    b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
+                ),
+            );
         }
     } else {
         server_destroy_session(&source);
-        (&source).destroy((1 as ::core::ffi::c_int) != 0, std::ffi::CStr::from_ptr(b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char));
+        (&source).destroy(
+            (1 as ::core::ffi::c_int) != 0,
+            std::ffi::CStr::from_ptr(
+                b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
+            ),
+        );
     }
     return CMD_RETURN_NORMAL;
 }
@@ -116,7 +126,12 @@ unsafe fn cmd_kill_session_all(
             ) == 0)
             {
                 server_destroy_session(sloop_owner.as_ref().expect("registered session"));
-                (sloop_owner.as_ref().expect("registered session")).destroy((1 as ::core::ffi::c_int) != 0, std::ffi::CStr::from_ptr(b"cmd_kill_session_all\0" as *const u8 as *const ::core::ffi::c_char));
+                (sloop_owner.as_ref().expect("registered session")).destroy(
+                    (1 as ::core::ffi::c_int) != 0,
+                    std::ffi::CStr::from_ptr(
+                        b"cmd_kill_session_all\0" as *const u8 as *const ::core::ffi::c_char,
+                    ),
+                );
             }
         }
         sloop_owner = (&sessions).after(&name);

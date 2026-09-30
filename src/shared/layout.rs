@@ -1,9 +1,8 @@
 //! Authoritative layout direction values.
 
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
 use super::abi::u_int;
 use super::pane::window_pane;
+use crate::src::window_pane::WindowPane as _;
 use std::{cell::UnsafeCell, rc::Weak};
 pub type layout_type = ::core::ffi::c_uint;
 pub const LAYOUT_WINDOWPANE: layout_type = 2;
@@ -348,10 +347,7 @@ impl Drop for layout_cell {
         if self.type_0 == LAYOUT_WINDOWPANE {
             if let Some(owner) = self.wp.upgrade() {
                 unsafe {
-                    let pane = &mut *owner.get();
-                    if pane.layout_cell == Some(self.id) {
-                        pane.layout_cell = None;
-                    }
+                    owner.detach_layout(self.id);
                 }
             }
         }

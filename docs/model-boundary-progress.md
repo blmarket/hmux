@@ -1,8 +1,21 @@
 # Model boundary migration checkpoints
 
-The WindowPane boundary is still being migrated. A passing test suite is not evidence
-that every external projection has been removed. The compiled trait definitions
-are authoritative; `trait-models.md` describes the original adapter design.
+Session, Client, Window and WindowPane fields, constructors and core helpers are
+now private to their respective owner modules. External code uses retained-holder
+traits and bounded component operations. The current interfaces and lifetime
+contract are described in [trait-models.md](trait-models.md).
+
+The final source audit checks every Rust source and integration fixture for
+external model storage types and representation casts. Compiler inventories
+include tests and report zero external field accesses. Independent storage probes
+for all four models make their get() projection private in disposable source
+copies, catching inferred/unused projections and generic storage helpers.
+
+The sections below preserve earlier checkpoints. Their diagnostic counts and
+remaining-work statements describe those historical revisions, not the current
+migration status. The final migration report records the complete validation.
+
+## Historical checkpoints
 
 ## Completed Session storage and group follow-up
 
@@ -473,9 +486,10 @@ RefCell conversion or per-field RefCell was introduced.
 External operations use Client methods or associated component guards. Terminal,
 status, control, queue and format-job guards can become mapped Ref/RefMut guards
 from one whole-model RefCell. Terminal output needs several Client fields together,
-so `with_terminal_output` supplies a bounded component view and copied metadata
-under a single borrow. Its helpers cannot query Client or dispatch model callbacks.
-Status screen output borrows the screen and terminal together inside Client.
+so terminal output helpers now retain the Client holder and open brief loans for
+individual reads and writes. The former TerminalOutput view and both constructors
+were removed. Status drawing extracts and restores its exact screen owner before
+terminal calls.
 
 Callbacks retain Rc/Weak Client identities and reacquire components on execution:
 
@@ -487,10 +501,10 @@ Callbacks retain Rc/Weak Client identities and reacquire components on execution
 - Overlay callbacks are taken out before invocation and restored only if their
   generation remains current. Mode callbacks return copied ScreenMode values;
   clipping returns owned ranges, including during nested queries.
-- TTY events retain Weak Client identities. Input decoding uses owned snapshots
-  that share one allocation while successive keys consume a read; it never keeps
-  a buffer pointer into Client across notifications or replies. Fresh reads replace
-  the snapshot without invalidating an already executing decoder.
+- TTY events retain Weak Client identities. Input decoding uses SegmentedBuf's
+  contiguous bytes directly, with no snapshot copy, Rc cache or buffer pointer
+  retained across dispatch. Clipboard/palette reply data is owned before callbacks;
+  a regression listener replaces the input allocation during a decoded event.
 - Terminal diagnostics retain weak Client and term identities, then copy each
   installed description under a fresh guard. The registry holds no term pointers.
 - File callbacks, source-file completion and input-request operations reacquire

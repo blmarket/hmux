@@ -1,8 +1,3 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window::Window as _;
 use crate::src::arguments::{
     args_has, args_percentage_and_expand_result, args_strtonum_and_expand_result,
 };
@@ -33,7 +28,11 @@ use crate::src::shared::style::*;
 pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
-
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
@@ -1050,7 +1049,10 @@ mod layout_cell_collection_tests {
             let mut leaves = layout_take_leaves(Some(root));
             assert_eq!(leaves.len(), 2);
             assert_eq!(first_pane_owner.layout_identity(false), Some(first_id));
-            assert_eq!(floating_pane_owner.layout_identity(false), Some(floating_id));
+            assert_eq!(
+                floating_pane_owner.layout_identity(false),
+                Some(floating_id)
+            );
             assert!((*first_ptr).parent.is_null());
             assert!((*floating_ptr).parent.is_null());
             let mut replacement = layout_create_cell();
@@ -1128,9 +1130,7 @@ pub unsafe fn layout_resize_floating_pane_to(
         if !floating {
             return Err(c"pane is not floating".to_owned());
         }
-        if pane.pane_lines() != PANE_LINES_NONE
-            && size >= (PANE_MINIMUM + 2) as u32
-        {
+        if pane.pane_lines() != PANE_LINES_NONE && size >= (PANE_MINIMUM + 2) as u32 {
             size -= 2;
         }
         if size < PANE_MINIMUM as u32 || size > PANE_MAXIMUM as u32 {

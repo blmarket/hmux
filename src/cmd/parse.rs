@@ -1,4 +1,3 @@
-use crate::src::server_client::Client as _;
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::cmd::{
@@ -11,6 +10,7 @@ use crate::src::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::client::client;
@@ -185,8 +185,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
                 client_owner.as_ref(),
                 (*fsp).session_handle().as_ref(),
                 ((*fsp).winlink_handle()).clone(),
-                (*fsp)
-                    .pane_handle().as_ref(),
+                (*fsp).pane_handle().as_ref(),
             );
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(ft_owner);

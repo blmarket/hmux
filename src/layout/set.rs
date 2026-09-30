@@ -1,4 +1,3 @@
-use crate::src::window::Window as _;
 use super::core::{
     layout_resize_adjust_with_policy, layout_spread_cell_with_policy, LayoutResizePolicy,
 };
@@ -18,6 +17,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_MINIMUM;
 use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
+use crate::src::window::Window as _;
 
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;

@@ -1,6 +1,3 @@
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window::Window as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
@@ -13,6 +10,9 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::layout::LayoutCellId;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{winlink, WindowRef};
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
@@ -168,7 +168,10 @@ mod layout_identity_tests {
                 let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
                 pane.fixture_id(index);
                 pane.fixture_parent(Some(&window));
-                pane.fixture_geometry((10 + index, 20 + index), (3 * index as i32, -(index as i32)));
+                pane.fixture_geometry(
+                    (10 + index, 20 + index),
+                    (3 * index as i32, -(index as i32)),
+                );
                 pane
             })
             .collect();
@@ -211,7 +214,10 @@ mod layout_identity_tests {
         unsafe {
             for down in [false, true] {
                 let (window, panes) = fixture(3);
-                let old_ids: Vec<_> = panes.iter().map(|pane| pane.layout_identity(false)).collect();
+                let old_ids: Vec<_> = panes
+                    .iter()
+                    .map(|pane| pane.layout_identity(false))
+                    .collect();
                 let old_geometry: Vec<_> = panes.iter().map(|pane| pane.geometry()).collect();
                 let mut resized = Vec::new();
                 let selected = cmd_rotate_window_panes(&window, down, |pane, sx, sy| {
@@ -242,14 +248,20 @@ mod layout_identity_tests {
         unsafe {
             for down in [false, true] {
                 let (window, panes) = fixture(2);
-                let old_ids: Vec<_> = panes.iter().map(|pane| pane.layout_identity(false)).collect();
+                let old_ids: Vec<_> = panes
+                    .iter()
+                    .map(|pane| pane.layout_identity(false))
+                    .collect();
                 let mut new_ids = Vec::new();
                 let mut resized = Vec::new();
                 let selected = cmd_rotate_window_panes(&window, down, |pane, _, _| {
                     resized.push(pane.id());
                     if resized.len() == 1 {
                         install_tree(&window, &panes);
-                        new_ids = panes.iter().map(|pane| pane.layout_identity(false)).collect();
+                        new_ids = panes
+                            .iter()
+                            .map(|pane| pane.layout_identity(false))
+                            .collect();
                     }
                 });
                 assert_eq!(resized.len(), 2, "rotation still resizes both panes");

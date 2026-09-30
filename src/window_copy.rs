@@ -1,6 +1,3 @@
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window::Window as _;
 use crate::src::arguments::args_parse;
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
@@ -53,9 +50,9 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__int32_t, ssize_t};
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::CLIENT_READONLY;
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
+use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::colour::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::environment::environ;
@@ -64,20 +61,20 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::WHITESPACE;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::input_ctx;
-use crate::src::shared::job::JOB_NOWAIT;
 use crate::src::shared::job::job;
+use crate::src::shared::job::JOB_NOWAIT;
 use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::limits::{INT_MAX, UCHAR_MAX, UINT_MAX};
 use crate::src::shared::mouse::{
-    MOUSE_MASK_BUTTONS, MOUSE_WHEEL_DOWN, MOUSE_WHEEL_UP, mouse_event,
+    mouse_event, MOUSE_MASK_BUTTONS, MOUSE_WHEEL_DOWN, MOUSE_WHEEL_UP,
 };
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHANGES};
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::{tty, tty_ctx};
 pub use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
@@ -87,6 +84,9 @@ use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_dat
 use crate::src::tmux::{get_timer, global_options, global_w_options};
 use crate::src::tty::tty_window_offset;
 use crate::src::tty_acs::tty_acs_get;
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 
 use crate::src::window_pane::WindowPane as _;
 use libc::{REG_EXTENDED, REG_ICASE};
@@ -927,7 +927,8 @@ pub unsafe fn window_copy_scroll(
 ) {
     let mut wme: refbox::Weak<window_mode_entry> = pane_owner.mode_entry();
     if !!wme.is_alive() {
-        (&std::rc::Rc::clone(&pane_owner.window_observer().upgrade().expect("live window"))).select_pane(&pane_owner, false);
+        (&std::rc::Rc::clone(&pane_owner.window_observer().upgrade().expect("live window")))
+            .select_pane(&pane_owner, false);
         window_copy_scroll1(wme.clone(), pane_owner, sl_mpos, my, tty_oy, scroll_exit);
     }
 }
@@ -10370,7 +10371,10 @@ mod backing_owner_tests {
             pane_owner.fixture_base(|screen| screen_init(screen, 8, 3, 10));
             let payload = Box::new(std::cell::UnsafeCell::new(window_copy_mode_data::default()));
             let data = &mut *payload.get();
-            data.backing = Some(pane_owner.fixture_base(|screen| window_copy_clone_screen(screen, screen, None, false)));
+            data.backing = Some(
+                pane_owner
+                    .fixture_base(|screen| window_copy_clone_screen(screen, screen, None, false)),
+            );
             window_copy_sync_snapshot(data, pane_owner.history_scroll());
             let original = data.backing() as *const screen;
             let mode = refbox::RefBox::new(window_mode_entry {
@@ -10411,7 +10415,10 @@ mod backing_owner_tests {
             assert_eq!(window_copy_sync_backing(mode_handle.clone()), 0);
             data.clear_backing();
             assert!(data.backing.is_none());
-            data.backing = Some(pane_owner.fixture_base(|screen| window_copy_clone_screen(screen, screen, None, true)));
+            data.backing = Some(
+                pane_owner
+                    .fixture_base(|screen| window_copy_clone_screen(screen, screen, None, true)),
+            );
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
             pane_owner.fixture_base(|screen| {
                 assert_eq!(byte_at(screen, 0, 0), b'B');

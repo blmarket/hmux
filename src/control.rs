@@ -1,9 +1,3 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard, cmdq_new_state,
@@ -23,6 +17,8 @@ use crate::src::reactor::{
 };
 use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -54,6 +50,8 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{get_timer, setblocking};
 use crate::src::window::{winlink_find_by_window, Window, WindowPane};
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;

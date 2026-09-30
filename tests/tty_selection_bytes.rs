@@ -1,6 +1,6 @@
-use hmux2::src::shared::client::ClientRef;
 use hmux2::src::reactor::{evbuffer_drain, evbuffer_new, evbuffer_pullup, shutdown_runtime};
 use hmux2::src::server_client::Client;
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::tty::{
     tty, tty_code, tty_command_data, tty_ctx, tty_term, TTYC_MS, TTY_NOBLOCK, TTY_STARTED,
 };

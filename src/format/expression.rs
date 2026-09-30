@@ -1,17 +1,15 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 // Private expression parser/evaluator.  The modifier parser, loops,
 // conditionals, escaping, job expansion, and recursive expansion routines
 // remain in their original order. The
@@ -839,8 +837,7 @@ pub(super) unsafe fn format_search(
     let options = fm.argv.first().map_or(&[][..], |s| s.as_bytes());
     let ignore = options.contains(&b'i');
     let regex = options.contains(&b'r');
-    CString::new(pane.search(s, regex, ignore).to_string())
-        .expect("search count contains no NUL")
+    CString::new(pane.search(s, regex, ignore).to_string()).expect("search count contains no NUL")
 }
 
 pub(super) unsafe fn format_bool_op_1(
@@ -2708,7 +2705,11 @@ pub(super) unsafe fn format_replace(
                     |out| {
                         out.write_all(b"search '")?;
                         write_cstr(out, new.as_ptr())?;
-                        write!(out, "' pane %{}", format_pane_owner.as_ref().expect("search pane owner").id())
+                        write!(
+                            out,
+                            "' pane %{}",
+                            format_pane_owner.as_ref().expect("search pane owner").id()
+                        )
                     },
                 );
                 value = format_search(
@@ -3763,14 +3764,14 @@ mod option_loop_reentry_tests {
         pane.fixture_set_options(options_create(None));
         let state = Rc::new((Cell::new(0), array));
         pane.fixture_add_mode(refbox::RefBox::new(window_mode_entry {
-                wp: Rc::downgrade(&pane),
-                swp: Default::default(),
-                mode: &MUTATING_MODE,
-                boxed_data: None,
-                data_owner: Some(state.clone()),
-                prefix: 0,
-                kill: 0,
-            }));
+            wp: Rc::downgrade(&pane),
+            swp: Default::default(),
+            mode: &MUTATING_MODE,
+            boxed_data: None,
+            data_owner: Some(state.clone()),
+            prefix: 0,
+            kill: 0,
+        }));
         (pane, state)
     }
 
@@ -3970,17 +3971,15 @@ mod window_owner_reentry_tests {
             let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             pane.fixture_set_options(options_create(None));
             pane.fixture_parent(observer.upgrade().as_ref());
-            pane.fixture_add_mode(
-                refbox::RefBox::new(window_mode_entry {
-                    wp: Rc::downgrade(&pane),
-                    swp: Default::default(),
-                    mode: &MODE,
-                    boxed_data: None,
-                    data_owner: Some(state.clone()),
-                    prefix: 0,
-                    kill: 0,
-                }),
-            );
+            pane.fixture_add_mode(refbox::RefBox::new(window_mode_entry {
+                wp: Rc::downgrade(&pane),
+                swp: Default::default(),
+                mode: &MODE,
+                boxed_data: None,
+                data_owner: Some(state.clone()),
+                prefix: 0,
+                kill: 0,
+            }));
             let sink = observe_close(&state, &observer);
             let mut tree = format_create(None, None, 0, 0);
             tree.w = observer.clone();

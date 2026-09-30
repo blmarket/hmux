@@ -1,9 +1,3 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
-use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
 use crate::src::ffi::libc::{memcpy, memset};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
@@ -67,6 +61,10 @@ use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
+use crate::src::window::WindowIndex as _;
 
 use crate::src::window::WindowPane;
 use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};

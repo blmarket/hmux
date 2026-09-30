@@ -1,10 +1,3 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
-use crate::src::session::Session as _;
 use crate::src::cmd::find::{
     cmd_find_clear_state, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
     cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
@@ -17,8 +10,11 @@ use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 
-
+use crate::src::session::Session as _;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -78,9 +74,7 @@ impl Drop for event_payload_item {
         unsafe {
             match value {
                 EventPayloadValue::Client(client) => client.release(),
-                EventPayloadValue::Session(session) => {
-                    session.release(c"event_payload_free_value")
-                }
+                EventPayloadValue::Session(session) => session.release(c"event_payload_free_value"),
                 EventPayloadValue::Window(window) => window.release(c"event_payload_free_value"),
                 EventPayloadValue::Pane(pane) => pane.release(c"event_payload_free_value"),
                 _ => {}

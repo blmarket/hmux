@@ -9,7 +9,7 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::{CLIENT_CONTROL, ClientRef};
+use crate::src::shared::client::{ClientRef, CLIENT_CONTROL};
 use crate::src::shared::command::*;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;

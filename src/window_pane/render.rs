@@ -1,13 +1,12 @@
 //! Pane rendering operations. Model access ends before terminal or format callbacks.
-use crate::src::window::Window as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::server_client::Client as _;
 use super::*;
 use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::prompt::prompt_draw;
 use crate::src::screen_redraw::{redraw_draw_ctx, REDRAW_SCROLLBAR_LEFT, REDRAW_STATUS_TOP};
 use crate::src::screen_write::{screen_write_init, screen_write_start, screen_write_stop};
+use crate::src::server_client::Client as _;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
 use crate::src::shared::prompt::prompt_draw_data;
 use crate::src::shared::redraw::redraw_span;
@@ -16,6 +15,7 @@ use crate::src::shared::style::style;
 use crate::src::shared::tty::tty_style_ctx;
 use crate::src::tty::{tty_cell, tty_cursor};
 use crate::src::tty_draw::tty_draw_line;
+use crate::src::window::Window as _;
 use crate::src::window_copy::window_copy_get_current_offset;
 
 #[derive(Clone, Copy)]

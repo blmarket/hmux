@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
@@ -30,13 +29,14 @@ use crate::src::server_fn::{
     server_destroy_session, server_kill_pane, server_kill_window, server_redraw_session_group,
     server_renumber_all,
 };
+use crate::src::session::session_group_synchronize_from;
 use crate::src::session::Session;
-use crate::src::session::{session_group_synchronize_from};
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
@@ -46,21 +46,21 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::{
-    ModeTreeItemData, ModeTreeItemRef, mode_tree_data, mode_tree_help_info,
+    mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::pane::window_pane;
+use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE, prompt_result,
+    prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::SessionRef;
 use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -280,7 +280,8 @@ struct WindowTreeTarget {
 }
 
 unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget {
-    let Some(session) = crate::src::shared::session::SessionRef::find_by_id(item.session as u_int) else {
+    let Some(session) = crate::src::shared::session::SessionRef::find_by_id(item.session as u_int)
+    else {
         return WindowTreeTarget::default();
     };
     let s = Some(session.clone());
@@ -2199,7 +2200,10 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
         WINDOW_TREE_SESSION => {
             if let Some(session_owner) = target.session.as_ref() {
                 server_destroy_session(session_owner);
-                (&session_owner).destroy((1) != 0, std::ffi::CStr::from_ptr(c"window_tree_kill_each".as_ptr()));
+                (&session_owner).destroy(
+                    (1) != 0,
+                    std::ffi::CStr::from_ptr(c"window_tree_kill_each".as_ptr()),
+                );
             }
         }
         WINDOW_TREE_WINDOW => {
@@ -2509,7 +2513,11 @@ unsafe fn window_tree_key(
                 (*data).data.clone().as_ref().expect("mode tree owner"),
                 (*fsp).winlink_handle().as_ptr() as uint64_t,
             );
-            if mode_tree_set_current(&mut *(*data).tree_owner().get(), Rc::as_ptr(&mode_pane_owner) as uint64_t) == 0 {
+            if mode_tree_set_current(
+                &mut *(*data).tree_owner().get(),
+                Rc::as_ptr(&mode_pane_owner) as uint64_t,
+            ) == 0
+            {
                 mode_tree_set_current(
                     &mut *(*data).tree_owner().get(),
                     (*fsp).winlink_handle().as_ptr() as uint64_t,

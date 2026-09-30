@@ -1,7 +1,9 @@
 //! Pane comparison reads owned display state before querying parent order.
 use super::*;
+use crate::src::shared::sort::{
+    sort_criteria, SORT_ACTIVITY, SORT_CREATION, SORT_INDEX, SORT_NAME, SORT_SIZE, SORT_Z,
+};
 use crate::src::shared::window::WindowWeak;
-use crate::src::shared::sort::{sort_criteria, SORT_ACTIVITY, SORT_CREATION, SORT_INDEX, SORT_NAME, SORT_SIZE, SORT_Z};
 use std::cmp::Ordering;
 
 pub(super) unsafe fn compare(
@@ -12,16 +14,32 @@ pub(super) unsafe fn compare(
     let (activity_a, id_a, size_a, parent_a, activity_b, id_b, size_b, parent_b, title_order) = {
         let a = &*a.get();
         let b = &*b.get();
-        (a.active_point, a.id, a.sx.wrapping_mul(a.sy), a.window.clone(),
-         b.active_point, b.id, b.sx.wrapping_mul(b.sy), b.window.clone(),
-         crate::src::ffi::libc::strcmp((*a.screen_ptr()).title.as_ptr(), (*b.screen_ptr()).title.as_ptr()))
+        (
+            a.active_point,
+            a.id,
+            a.sx.wrapping_mul(a.sy),
+            a.window.clone(),
+            b.active_point,
+            b.id,
+            b.sx.wrapping_mul(b.sy),
+            b.window.clone(),
+            crate::src::ffi::libc::strcmp(
+                (*a.screen_ptr()).title.as_ptr(),
+                (*b.screen_ptr()).title.as_ptr(),
+            ),
+        )
     };
-    let order_index = |parent: &WindowWeak, observer: &std::rc::Weak<UnsafeCell<window_pane>>, stacking: bool| {
-        let window = parent.upgrade()?;
-        let index = if stacking { window.pane_stacking_index(observer) } else { window.pane_index(observer) };
-        window.release(c"pane sort");
-        index
-    };
+    let order_index =
+        |parent: &WindowWeak, observer: &std::rc::Weak<UnsafeCell<window_pane>>, stacking: bool| {
+            let window = parent.upgrade()?;
+            let index = if stacking {
+                window.pane_stacking_index(observer)
+            } else {
+                window.pane_index(observer)
+            };
+            window.release(c"pane sort");
+            index
+        };
     let result = match criteria.order {
         SORT_ACTIVITY => activity_a.wrapping_sub(activity_b) as i32,
         SORT_CREATION => id_a.wrapping_sub(id_b) as i32,
@@ -51,14 +69,29 @@ mod tests {
             (*b.get()).id = 1;
             (*a.get()).base.title = CString::new("alpha").unwrap();
             (*b.get()).base.title = CString::new("beta").unwrap();
-            for order in [SORT_ACTIVITY, SORT_CREATION, SORT_SIZE, SORT_INDEX, SORT_Z, SORT_NAME] {
-                let mut criteria = sort_criteria { order, reversed: 0, order_seq: &[] };
+            for order in [
+                SORT_ACTIVITY,
+                SORT_CREATION,
+                SORT_SIZE,
+                SORT_INDEX,
+                SORT_Z,
+                SORT_NAME,
+            ] {
+                let mut criteria = sort_criteria {
+                    order,
+                    reversed: 0,
+                    order_seq: &[],
+                };
                 assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Less);
                 criteria.reversed = 1;
                 assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Greater);
             }
             (*a.get()).active_point = 1;
-            let criteria = sort_criteria { order: SORT_ACTIVITY, reversed: 0, order_seq: &[] };
+            let criteria = sort_criteria {
+                order: SORT_ACTIVITY,
+                reversed: 0,
+                order_seq: &[],
+            };
             assert_eq!(a.compare_for_sort(&b, &criteria), Ordering::Greater);
         }
     }

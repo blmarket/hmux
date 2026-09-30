@@ -1,11 +1,13 @@
 //! Operations on retained clients. Legacy dispatch remains explicitly unsafe:
 //! an Rc keeps storage alive, but does not make reentrant model borrows exclusive.
 
-use crate::src::session::SessionIndex as _;
 use super::*;
 use crate::src::control::{control_get_window_size, control_write_output};
 use crate::src::reactor::BufferEvent;
 use crate::src::session::Session;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::control::control_state;
 use crate::src::shared::environment::environ;
@@ -1675,8 +1677,8 @@ mod tests {
     fn holder_overlay_callback_can_close_itself_during_dispatch() {
         unsafe {
             let session = crate::src::shared::session::SessionRef::allocate();
-            let link = crate::src::session::test_support::add_link(&session, 0);
-            crate::src::session::test_support::current(&session, link.clone());
+            let link = (&session).fixture_add_link(0);
+            (&session).fixture_current(link.clone());
             let client = client::new();
             (*client.get()).session = Rc::downgrade(&session);
             (*client.get()).tty.client = Rc::downgrade(&client);
@@ -1707,8 +1709,8 @@ mod tests {
             server_client_overlay_draw(&client);
             assert_eq!(called.get(), 1);
             (*client.get()).session = Weak::new();
-            crate::src::session::test_support::current(&session, refbox::Weak::new());
-            crate::src::session::test_support::remove_link(&session, link);
+            (&session).fixture_current(refbox::Weak::new());
+            (&session).fixture_remove_link(link);
         }
     }
 

@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
@@ -20,7 +19,7 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
     timer_once_owned,
 };
-
+use crate::src::session::SessionIndex as _;
 
 use crate::src::server_client::Client as _;
 

@@ -17,14 +17,14 @@ use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_SIZECHANGED, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED,
 };
 use crate::src::shared::command::*;
-use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
+use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::tty::tty;
@@ -314,12 +314,16 @@ unsafe fn cmd_refresh_client_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(args_get(&*(args), 'F' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr())));
+        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(
+            args_get(&*(args), 'F' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+        ));
     }
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(args_get(&*(args), 'f' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr())));
+        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(
+            args_get(&*(args), 'f' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+        ));
     }
     if args_has(args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(

@@ -31,7 +31,7 @@ use crate::src::session::Session as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::{CLIENT_DEAD, client};
+use crate::src::shared::client::{client, CLIENT_DEAD};
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
 use crate::src::shared::command::cmd_parse_input;
@@ -43,24 +43,24 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::menu::{MenuSelection, menu_choice_cb, menu_item};
+use crate::src::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
-    ModeTreeItemData, ModeTreeItemRef, mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb,
-    mode_tree_height_cb, mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb,
-    mode_tree_line, mode_tree_list, mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb,
-    mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
+    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
+    mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
+    mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
+    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
 };
-use crate::src::shared::mouse::{MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, mouse_event};
+use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{
-    PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_ISMODE, PROMPT_NOFORMAT, PROMPT_SINGLE,
-    prompt_free_cb, prompt_result,
-};
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-use crate::src::shared::screen::{MODE_CURSOR, screen};
+use crate::src::shared::prompt::{
+    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_ISMODE,
+    PROMPT_NOFORMAT, PROMPT_SINGLE,
+};
+use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
@@ -291,7 +291,11 @@ unsafe fn mode_tree_build_lines(
             if tree.keycb.is_none() {
                 tree.keycb = Some(callback);
             }
-            if key == KEYC_UNKNOWN { KEYC_NONE } else { key }
+            if key == KEYC_UNKNOWN {
+                KEYC_NONE
+            } else {
+                key
+            }
         } else if line < 10 {
             (b'0' as u_int).wrapping_add(line) as key_code
         } else if line < 36 {

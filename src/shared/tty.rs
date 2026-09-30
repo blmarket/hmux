@@ -1,9 +1,5 @@
 //! Authoritative terminal capability-code values.
 
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
 use super::abi::{size_t, time_t, u_int};
 use super::client::client;
 use super::colour::colour_palette;
@@ -16,6 +12,9 @@ use super::pane::window_pane;
 use super::terminal::termios;
 use crate::src::reactor::Task;
 use crate::src::shared::client::{ClientRef, ClientWeak};
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
+use crate::src::window_pane::WindowPane as _;
 use hmux_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;

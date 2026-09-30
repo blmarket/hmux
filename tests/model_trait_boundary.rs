@@ -225,6 +225,13 @@ fn migrated_consumers_do_not_project_model_storage() {
         "src/tty/input.rs",
         "src/tty_draw.rs",
         "src/tty_keys.rs",
+        "src/tty.rs",
+        "src/screen_redraw.rs",
+        "src/screen_write.rs",
+        "src/shared/screen_write.rs",
+        "src/window_border.rs",
+        "src/window_visible.rs",
+        "src/options.rs",
         "src/format/jobs.rs",
         "tests/pane_order_borrows.rs",
     ] {
@@ -324,14 +331,6 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
     let syntax = syn::parse_file(&std::fs::read_to_string("src/tty.rs").unwrap()).unwrap();
     for item in &syntax.items {
         let Item::Fn(function) = item else { continue };
-        // These remaining projections belong to the Window/Pane migration.
-        // Terminal orchestration and output have no Client storage exemption.
-        if matches!(
-            function.sig.ident.to_string().as_str(),
-            "tty_update_window_offset" | "tty_style_changed" | "tty_default_colours"
-        ) {
-            continue;
-        }
         let mut check = Audit {
             consumer: true,
             ..Default::default()
@@ -890,7 +889,7 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
 }
 
 // Exported helpers must use holder identities, even when an old whole-model
-// helper is reintroduced under a new name. Pane signatures are a separate phase.
+// helper is reintroduced under a new name.
 fn exported_window_storage_types(source: &str) -> Vec<String> {
     model_storage_types(source, "window", true)
 }
@@ -1023,6 +1022,205 @@ fn rust_sources(directory: &Path) -> Vec<std::path::PathBuf> {
         }
     }
     files
+}
+
+fn owner_types(source: &str, model: &str) -> Vec<String> {
+    let syntax = syn::parse_file(source).unwrap();
+    struct Aliases(HashSet<String>);
+    impl<'ast> Visit<'ast> for Aliases {
+        fn visit_use_rename(&mut self, rename: &'ast syn::UseRename) {
+            if self.0.contains(&rename.ident.to_string()) {
+                self.0.insert(rename.rename.to_string());
+            }
+        }
+        fn visit_item_type(&mut self, alias: &'ast syn::ItemType) {
+            if matches!(&*alias.ty, Type::Path(ty) if ty.path.segments.last()
+                .is_some_and(|part| self.0.contains(&part.ident.to_string())))
+            {
+                self.0.insert(alias.ident.to_string());
+            }
+        }
+    }
+    let mut aliases = Aliases(HashSet::from([model.to_owned()]));
+    loop {
+        let previous = aliases.0.len();
+        aliases.visit_file(&syntax);
+        if aliases.0.len() == previous {
+            break;
+        }
+    }
+    struct Types<'a> {
+        model: &'a str,
+        aliases: HashSet<String>,
+        findings: Vec<String>,
+    }
+    impl Types<'_> {
+        fn is_model(&self, ty: &Type) -> bool {
+            matches!(ty, Type::Path(path) if path.path.segments.last()
+                .is_some_and(|part| part.ident == self.model
+                    || self.aliases.contains(&part.ident.to_string())))
+        }
+        fn is_holder(&self, ty: &Type) -> bool {
+            let Type::Path(path) = ty else { return false };
+            let Some(holder) = path.path.segments.last() else {
+                return false;
+            };
+            self.is_holder_segment(holder)
+        }
+        fn is_holder_segment(&self, holder: &syn::PathSegment) -> bool {
+            if !matches!(holder.ident.to_string().as_str(), "Rc" | "Weak") {
+                return false;
+            }
+            let syn::PathArguments::AngleBracketed(args) = &holder.arguments else {
+                return false;
+            };
+            let Some(GenericArgument::Type(Type::Path(cell))) = args.args.first() else {
+                return false;
+            };
+            let Some(cell) = cell.path.segments.last() else {
+                return false;
+            };
+            if cell.ident != "UnsafeCell" {
+                return false;
+            }
+            let syn::PathArguments::AngleBracketed(args) = &cell.arguments else {
+                return false;
+            };
+            matches!(args.args.first(), Some(GenericArgument::Type(ty)) if self.is_model(ty))
+        }
+    }
+    impl<'ast> Visit<'ast> for Types<'_> {
+        fn visit_type(&mut self, ty: &'ast Type) {
+            // Existing Rc/Weak cells are holder identities. A cell, record,
+            // reference or pointer outside that holder would expose storage.
+            if self.is_holder(ty) {
+                return;
+            }
+            if self.is_model(ty) {
+                self.findings.push("external model storage type".into());
+            }
+            visit::visit_type(self, ty);
+        }
+        fn visit_path_segment(&mut self, segment: &'ast syn::PathSegment) {
+            // Associated trait calls may spell the holder in an expression path.
+            if !self.is_holder_segment(segment) {
+                visit::visit_path_segment(self, segment);
+            }
+        }
+    }
+    let mut check = Types {
+        model,
+        aliases: aliases.0,
+        findings: Vec::new(),
+    };
+    check.visit_file(&syntax);
+    check.findings
+}
+
+#[test]
+fn every_external_model_type_is_a_holder_identity() {
+    let mut violations = Vec::new();
+    for model in ["session", "window", "window_pane", "client"] {
+        for source in [
+            format!("fn f(model: &{model}) {{}}"),
+            format!("fn f(model: *mut {model}) {{}}"),
+            format!("fn f(model: UnsafeCell<{model}>) {{}}"),
+            format!("use x::{model} as Record; fn f(model: &Record) {{}}"),
+        ] {
+            assert!(!owner_types(&source, model).is_empty(), "missed {source}");
+        }
+        assert!(owner_types(
+            &format!(
+                "fn f(owner: &Rc<UnsafeCell<{model}>>, observer: Weak<UnsafeCell<{model}>>) {{}}"
+            ),
+            model
+        )
+        .is_empty());
+        let owner = match model {
+            "client" => "src/server_client",
+            "window_pane" => "src/window_pane",
+            "window" => "src/window",
+            "session" => "src/session",
+            _ => unreachable!(),
+        };
+        for path in rust_sources(Path::new("src"))
+            .into_iter()
+            .chain(rust_sources(Path::new("tests")))
+        {
+            if path.starts_with(owner) || path == Path::new(file!()) {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            if !owner_types(&source, model).is_empty() {
+                violations.push(format!("{}: {model}", path.display()));
+            }
+        }
+    }
+    assert!(violations.is_empty(), "{}", violations.join("\n"));
+}
+
+#[test]
+fn four_model_fields_and_inherent_helpers_remain_owner_private() {
+    for (model, path) in [
+        ("session", "src/session/model.rs"),
+        ("window", "src/window/model.rs"),
+        ("window_pane", "src/window_pane/model.rs"),
+        ("client", "src/server_client/model.rs"),
+    ] {
+        let syntax = syn::parse_file(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let owner_private = |visibility: &syn::Visibility| {
+            matches!(visibility, syn::Visibility::Inherited)
+                || matches!(visibility,
+            syn::Visibility::Restricted(vis) if vis.path.is_ident("super"))
+        };
+        for item in &syntax.items {
+            if let Item::Struct(record) = item {
+                if record.ident == model {
+                    for field in &record.fields {
+                        assert!(
+                            matches!(&field.vis, syn::Visibility::Restricted(vis)
+                            if vis.path.is_ident("super")),
+                            "{path}: {:?}",
+                            field.ident
+                        );
+                    }
+                }
+            }
+            if let Item::Impl(implementation) = item {
+                if implementation.trait_.is_none()
+                    && matches!(&*implementation.self_ty, Type::Path(ty)
+                        if ty.path.is_ident(model))
+                {
+                    for item in &implementation.items {
+                        if let syn::ImplItem::Fn(method) = item {
+                            assert!(owner_private(&method.vis), "{path}: {}", method.sig.ident);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn legacy_core_functions_are_private_to_the_owner() {
+    for path in [
+        "src/session/mod.rs",
+        "src/window/mod.rs",
+        "src/window_pane/mod.rs",
+        "src/server_client/mod.rs",
+    ] {
+        let syntax = syn::parse_file(&std::fs::read_to_string(path).unwrap()).unwrap();
+        for item in &syntax.items {
+            if let Item::Fn(function) = item {
+                assert!(
+                    matches!(function.vis, syn::Visibility::Inherited),
+                    "{path}: {} must enter through its trait",
+                    function.sig.ident
+                );
+            }
+        }
+    }
 }
 
 #[test]

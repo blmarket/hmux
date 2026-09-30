@@ -1,4 +1,3 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
@@ -17,6 +16,7 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
+use crate::src::session::SessionIndex as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;

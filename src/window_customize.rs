@@ -1,14 +1,16 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::options::OptionsScope;
 use crate::src::session::Session;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use crate::src::window_pane::WindowPane as _;
 use refbox::RefBox;
 use std::borrow::Cow;
@@ -76,8 +78,8 @@ use crate::src::shared::layout::*;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::{
-    ModeTreeItemData, ModeTreeItemRef, mode_tree_data, mode_tree_help_info,
-    mode_tree_prompt_input_cb,
+    mode_tree_data, mode_tree_help_info, mode_tree_prompt_input_cb, ModeTreeItemData,
+    ModeTreeItemRef,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
@@ -85,17 +87,17 @@ use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::pane::window_pane;
+use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE, prompt_free_cb, prompt_result,
+    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::spawn::{EditorHandle, spawn_editor_state};
+use crate::src::shared::spawn::{spawn_editor_state, EditorHandle};
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::spawn::{spawn_editor, spawn_editor_write};
 use crate::src::status::status_message_set;
@@ -5166,7 +5168,7 @@ mod environment_lifetime_tests {
         unsafe {
             let owner = crate::src::shared::session::SessionRef::allocate();
             let lifetime = Rc::downgrade(&owner);
-            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            (&owner).fixture_environment(Some(environ_create()));
             owner.with_environment_mut(|env| env.set(b"NAME", 0, b"value").unwrap());
             let target = CustomizeEnvironment::session(&owner);
             let mut row = window_customize_new_item();
@@ -5192,7 +5194,7 @@ mod environment_lifetime_tests {
     fn environment_row_snapshots_keep_tags_and_survive_reentrant_edits() {
         unsafe {
             let owner = crate::src::shared::session::SessionRef::allocate();
-            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            (&owner).fixture_environment(Some(environ_create()));
             let target = CustomizeEnvironment::session(&owner);
             let environment = target.resolve().unwrap();
             environment.edit(|env| env.set(b"NAME", 0, b"first").unwrap());
@@ -5217,11 +5219,11 @@ mod environment_lifetime_tests {
             let recreated = environment.rows().unwrap();
             assert_ne!(recreated[0].0, before[0].0);
             let replacement = environment.get().unwrap();
-            crate::src::session::replace_test_environment(&owner, Some(Box::new(replacement)));
+            (&owner).fixture_environment(Some(Box::new(replacement)));
             let replaced = environment.rows().unwrap();
             assert_ne!(replaced[0].0, recreated[0].0);
             assert_eq!(replaced[0].1.value(), Some(c"recreated"));
-            crate::src::session::replace_test_environment(&owner, None);
+            (&owner).fixture_environment(None);
             assert!(environment.rows().is_none());
             assert_eq!(
                 before[0].1.value(),
@@ -5235,7 +5237,7 @@ mod environment_lifetime_tests {
     fn environment_tags_are_disjoint_from_every_static_option_tag() {
         unsafe {
             let owner = crate::src::shared::session::SessionRef::allocate();
-            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            (&owner).fixture_environment(Some(environ_create()));
             let environment = CustomizeEnvironment::session(&owner).resolve().unwrap();
             environment.edit(|env| {
                 env.set_cstr(c"set", 0, c"value");
@@ -5268,16 +5270,16 @@ mod environment_lifetime_tests {
         unsafe {
             let owner = crate::src::shared::session::SessionRef::allocate();
             let lifetime = Rc::downgrade(&owner);
-            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            (&owner).fixture_environment(Some(environ_create()));
             let target = CustomizeEnvironment::session(&owner);
             let guard = target.resolve().unwrap();
             guard
                 .edit(|env| env.set(b"NAME", ENVIRON_HIDDEN, b"first").unwrap())
                 .unwrap();
             let replacement = environ_create();
-            crate::src::session::replace_test_environment(&owner, Some(replacement));
+            (&owner).fixture_environment(Some(replacement));
             assert!(guard.get().unwrap().find(c"NAME").is_none());
-            crate::src::session::replace_test_environment(&owner, None);
+            (&owner).fixture_environment(None);
             assert!(guard.get().is_none());
             drop(guard);
             drop(owner);

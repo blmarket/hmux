@@ -1,4 +1,3 @@
-use crate::src::window::Window as _;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_from_window};
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_error, cmdq_new_state};
@@ -39,7 +38,8 @@ use crate::src::shared::style::*;
 use crate::src::shared::window::window;
 use crate::src::shared::window::WindowWeak;
 use crate::src::style::{style_apply_with_options, style_parse, style_set};
-use crate::src::window::{Window as _};
+use crate::src::window::Window as _;
+use crate::src::window::Window as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};

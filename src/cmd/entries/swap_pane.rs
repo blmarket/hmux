@@ -1,11 +1,11 @@
-use crate::src::window::Window as _;
-use crate::src::shared::client::ClientRef;
-use crate::src::server_client::Client as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
 use crate::src::events::events_fire_window;
 use crate::src::layout::layout_fix_panes;
+use crate::src::server_client::Client as _;
+use crate::src::shared::client::ClientRef;
+use crate::src::window::Window as _;
 
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::*;
@@ -105,7 +105,9 @@ unsafe fn cmd_swap_pane_exec(
             cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;
         }
-        if (&std::rc::Rc::clone(&(dst_window_owner))).push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0) != 0
+        if (&std::rc::Rc::clone(&(dst_window_owner)))
+            .push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0)
+            != 0
         {
             server_redraw_window(&(dst_window_owner));
         }

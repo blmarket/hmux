@@ -1,10 +1,3 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::events::events_add_sink;
 use crate::src::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
@@ -14,7 +7,12 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::server::clients;
 use crate::src::server_client::Client;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::session::Session;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::u_int;
 use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
@@ -22,6 +20,8 @@ use crate::src::shared::events::{event_payload, events_callback};
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::session::SessionRef;
 use crate::src::window::{winlink_find_by_window_id, Window, WindowPane};
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use std::{cell::UnsafeCell, ffi::CStr, rc::Rc};
 
 #[derive(Copy, Clone)]
@@ -334,7 +334,8 @@ mod tests {
     use crate::src::shared::session::session;
 
     unsafe fn recipient(name: &CStr, session: Option<&SessionRef>, flags: u64) -> ClientRef {
-        let client = crate::src::shared::client::ClientRef::fixture_with_control(Some(name), session);
+        let client =
+            crate::src::shared::client::ClientRef::fixture_with_control(Some(name), session);
         client.update_flags(flags, 0);
         client.borrow_control_mut().unwrap().guard_depth = 1;
         clients.push_back(client.clone());
@@ -356,9 +357,8 @@ mod tests {
         unsafe {
             let old_registry = std::mem::replace(&mut clients, ClientRegistry::new());
             let session = crate::src::shared::session::SessionRef::allocate();
-            crate::src::session::test_support::metadata(&session, None, Some(7), None);
-            crate::src::session::test_support::metadata(
-                &session,
+            (&session).fixture_metadata(None, Some(7), None);
+            (&session).fixture_metadata(
                 Some(std::ffi::CString::new(b"session-\xff".to_vec()).unwrap()),
                 None,
                 None,

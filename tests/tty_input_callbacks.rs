@@ -1,9 +1,9 @@
-use hmux2::src::shared::client::ClientRef;
 use hmux2::src::events::{events_add_sink, events_remove_sink};
 use hmux2::src::events_payload::event_payload_get_string;
 use hmux2::src::options::{options_create_owned, options_default, options_free};
 use hmux2::src::paste::{paste_buffer_data, paste_free, paste_get_name};
 use hmux2::src::server_client::Client;
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::events::events_callback;
 use hmux2::src::shared::tty::TTY_OSC52QUERY;
 use hmux2::src::tty::TerminalInput;

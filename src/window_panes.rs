@@ -1,5 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
 };
@@ -27,13 +25,17 @@ use crate::src::server_fn::{
     server_redraw_window, server_redraw_window_borders, server_status_window, server_unzoom_window,
 };
 use crate::src::session::Session;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::borders::CELL_BORDERS;
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::client;
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
@@ -46,20 +48,20 @@ use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
-use crate::src::shared::screen::{MODE_CURSOR, screen};
+use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::style::*;
+use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
+use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::shared::window::{
     WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK, WINDOW_ZOOMED,
 };
-use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
+use crate::src::window::winlink_find_by_window;
 use crate::src::window::WindowPane;
-use crate::src::window::{winlink_find_by_window};
 use crate::src::window_clock::window_clock_table;
 use std::cell::UnsafeCell;
 use std::ffi::CString;
@@ -1781,7 +1783,10 @@ unsafe fn window_panes_init(
         if (*data).zoomed == 0 {
             window_panes_set_preview(data);
         }
-        if (*data).zoomed == 0 && crate::src::shared::window::WindowRef::zoom_pane(&mode_pane_owner) == 0 as ::core::ffi::c_int {
+        if (*data).zoomed == 0
+            && crate::src::shared::window::WindowRef::zoom_pane(&mode_pane_owner)
+                == 0 as ::core::ffi::c_int
+        {
             server_redraw_window(
                 &mode_pane_owner
                     .window_observer()
@@ -2031,11 +2036,12 @@ unsafe fn window_panes_key(
         .is_zoomed()
     {
         (&std::rc::Rc::clone(
-                &mode_pane_owner
-                    .window_observer()
-                    .upgrade()
-                    .expect("live pane parent"),
-            )).unzoom(true);
+            &mode_pane_owner
+                .window_observer()
+                .upgrade()
+                .expect("live pane parent"),
+        ))
+            .unzoom(true);
     }
     window_panes_run_command(
         data,
@@ -2049,7 +2055,7 @@ unsafe fn window_panes_key(
 mod session_observer_tests {
     use super::*;
     use crate::src::reactor::shutdown_runtime;
-    use crate::src::session::{sessions};
+    use crate::src::session::sessions;
 
     #[test]
     fn session_observer_rejects_removed_sessions_and_releases_guard_immediately() {
@@ -2059,12 +2065,7 @@ mod session_observer_tests {
                 crate::src::shared::session::sessions::default(),
             );
             let owner = crate::src::shared::session::SessionRef::allocate();
-            crate::src::session::test_support::metadata(
-                &owner,
-                Some(c"panes-mode-session".to_owned()),
-                None,
-                None,
-            );
+            (&owner).fixture_metadata(Some(c"panes-mode-session".to_owned()), None, None);
             let observer = std::rc::Rc::downgrade(&owner);
             (&mut sessions).insert(owner);
             let mut mode = window_panes_modedata {
@@ -2084,9 +2085,9 @@ mod session_observer_tests {
             assert_eq!(observer.strong_count(), 1);
             let guard = window_panes_session(&mut mode).unwrap();
             assert!(std::rc::Rc::downgrade(&guard).ptr_eq(&observer));
-            let owner =
-                (&mut sessions).remove(&observer.upgrade().expect("indexed session"))
-                    .unwrap();
+            let owner = (&mut sessions)
+                .remove(&observer.upgrade().expect("indexed session"))
+                .unwrap();
             assert!(window_panes_session(&mut mode).is_none());
             assert_eq!(observer.strong_count(), 2);
             drop(owner);

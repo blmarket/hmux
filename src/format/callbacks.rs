@@ -1,16 +1,16 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_pane::WindowPane as _;
 // Built-in callbacks return owned bytes or copied timestamps. The sorted
 // immutable table is shared by lookup and enumeration; external user callbacks
@@ -1259,7 +1259,10 @@ unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(crate::src::shared::window::WindowRef::winlink_flags(((*ft).winlink_handle()).clone(), true));
+        return Some(crate::src::shared::window::WindowRef::winlink_flags(
+            ((*ft).winlink_handle()).clone(),
+            true,
+        ));
     }
     return None;
 }
@@ -1451,7 +1454,10 @@ unsafe fn format_cb_window_panes(ft: *mut format_tree) -> Option<CString> {
 
 unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(crate::src::shared::window::WindowRef::winlink_flags(((*ft).winlink_handle()).clone(), false));
+        return Some(crate::src::shared::window::WindowRef::winlink_flags(
+            ((*ft).winlink_handle()).clone(),
+            false,
+        ));
     }
     return None;
 }
@@ -2656,7 +2662,10 @@ mod owned_callback_tests {
     #[test]
     fn client_formats_observe_context_client_without_retaining_it() {
         unsafe {
-            let owner = crate::src::shared::client::ClientRef::fixture_with_names(Some(c"observed-client"), None);
+            let owner = crate::src::shared::client::ClientRef::fixture_with_names(
+                Some(c"observed-client"),
+                None,
+            );
             let observer = std::rc::Rc::downgrade(&owner);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &raw mut *ft_owner;

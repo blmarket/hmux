@@ -1,6 +1,4 @@
 //! Window storage is private to its implementation.
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
 use crate::src::shared::abi::{u_int, uint64_t};
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
@@ -17,6 +15,8 @@ use crate::src::shared::pane::{window_pane, window_pane_history, window_panes, P
 use crate::src::shared::screen::screen;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{WindowRef, WindowWeak};
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::src::shared::window::{window_winlinks, WindowIndex};

@@ -1,8 +1,3 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
-use crate::src::session::Session as _;
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::find::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing,
@@ -38,6 +33,10 @@ use crate::src::options::{
     OptionsScope,
 };
 use crate::src::options_table::options_table;
+use crate::src::session::Session as _;
+#[cfg(test)]
+use crate::src::session::SessionFixture as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::client_handle;
@@ -61,6 +60,9 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_s_options;
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use crate::src::window::WindowPane;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -732,7 +734,7 @@ mod CStrings_tests {
         unsafe {
             let session_owner = crate::src::shared::session::SessionRef::allocate();
             let window_owner = crate::src::shared::window::WindowRef::empty();
-            let mut wl = crate::src::session::test_support::add_link(&session_owner, 2);
+            let mut wl = (&session_owner).fixture_add_link(2);
             wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);
             winlink_set_window(wl.clone(), &window_owner);
             let change = monitor_change {
@@ -755,7 +757,7 @@ mod CStrings_tests {
                     assert!(payload.target_window.is_some());
                     assert!(payload.target_session.is_some());
                     assert!(!observer.is_borrowed());
-                    crate::src::session::test_support::remove_link(&callback_session, wl.clone());
+                    (&callback_session).fixture_remove_link(wl.clone());
                     assert!(!observer.is_alive());
                     called.set(called.get() + 1);
                 }),

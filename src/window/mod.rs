@@ -1,22 +1,24 @@
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window_pane::WindowPane as _;
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
+use crate::src::window_pane::WindowPane as _;
 use std::time::SystemTime;
 mod alerts;
 mod api;
-pub use api::{LayoutView, PaneLayoutGeometry, PaneOrder, Window, WindowIndex, WindowResize, WindowScrollbars};
+pub use api::{
+    LayoutView, PaneLayoutGeometry, PaneOrder, Window, WindowIndex, WindowResize, WindowScrollbars,
+};
 
-mod model;
 #[cfg(test)]
 mod fixtures;
-#[cfg(test)]
-pub(crate) use fixtures::WindowFixture;
+mod model;
 pub use crate::src::window_pane::*;
 pub use crate::src::winlink::*;
+#[cfg(test)]
+pub(crate) use fixtures::WindowFixture;
 pub use model::window;
 use model::WindowLifecycle;
 
@@ -66,7 +68,7 @@ use crate::src::screen::{
 
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
-use crate::src::server_client::{Client};
+use crate::src::server_client::Client;
 use crate::src::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_status_window,
@@ -116,9 +118,8 @@ use crate::src::shared::limits::{INT_MAX, UINT_MAX};
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
-    pane_history_first, pane_history_push, pane_history_remove,
-    window_pane, window_pane_history, window_pane_modes, window_pane_prompt, window_panes,
-    PaneScreenSource,
+    pane_history_first, pane_history_push, pane_history_remove, window_pane, window_pane_history,
+    window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
 };
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
@@ -1343,8 +1344,6 @@ unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
     }
     status
 }
-
-
 
 impl Drop for window {
     fn drop(&mut self) {

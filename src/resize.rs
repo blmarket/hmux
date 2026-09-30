@@ -1,5 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
 use crate::src::ffi::libc::sscanf;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
@@ -18,6 +16,8 @@ use crate::src::shared::window::{
 };
 use crate::src::tmux::global_w_options;
 use crate::src::tty::tty_update_window_offset;
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::window::{windows, Window as _, WindowResize};
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
@@ -464,7 +464,7 @@ pub unsafe fn recalculate_sizes() {
 pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: Option<SessionRef> = None;
     let mut c: Option<ClientRef> = None;
-    crate::src::session::recalculate_size_state();
+    crate::src::shared::session::SessionRef::recalculate_attachment_status();
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.clone();
     while !c.is_none() {

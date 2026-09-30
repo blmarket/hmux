@@ -1,5 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_session;
@@ -16,6 +14,8 @@ use crate::src::layout::{
 };
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
@@ -41,10 +41,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{check_name, clean_name_cstring};
-use crate::src::window::{
-    winlink_find_by_index, winlink_find_by_window,
-    winlink_shuffle_up,
-};
+use crate::src::window::{winlink_find_by_index, winlink_find_by_window, winlink_shuffle_up};
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::window_pane::WindowPane as _;
 
@@ -213,7 +210,7 @@ unsafe fn cmd_break_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             if !name.is_null() {
-                source_window.rename(std::ffi::CStr::from_ptr(name), false);
+                source_window.rename(CStr::from_ptr(name), false);
                 source_window.with_options_mut(|options| {
                     options_set_number(options, c"automatic-rename".as_ptr(), 0)
                 });

@@ -1,4 +1,3 @@
-use crate::src::window::Window as _;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -40,6 +39,7 @@ use crate::src::server::clients;
 use crate::src::server::server_proc;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
+use crate::src::window::Window as _;
 
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
@@ -49,8 +49,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
 
 use crate::src::window::{
-    winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window,
-    winlink_stack_remove,
+    winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::window_pane::WindowPane;
@@ -416,8 +415,9 @@ pub(crate) unsafe fn spawn_editor(
             .wrapping_div(2 as u_int)
             .wrapping_sub(lg.sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int;
         (&std::rc::Rc::clone(
-                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-            )).push_zoom(false, true);
+            &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        ))
+            .push_zoom(false, true);
         let layout_id = layout_floating_pane(
             &std::rc::Rc::clone(
                 &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
@@ -448,12 +448,14 @@ pub(crate) unsafe fn spawn_editor(
         let Some(pane) = spawned_pane else {
             (&std::rc::Rc::clone(
                 &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-            )).pop_zoom();
+            ))
+                .pop_zoom();
             return None;
         };
         (&std::rc::Rc::clone(
             &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-        )).pop_zoom();
+        ))
+            .pop_zoom();
         Some(pane.install_editor(owner))
     })();
     original_window.release(c"spawn editor");

@@ -1,14 +1,14 @@
 //! Alert dispatch owns queued references; Window owns flags and its timer.
-use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
 use crate::src::log::{log_debug, log_hex};
 use crate::src::reactor::defer;
-use crate::src::session::{alerts_check_all, Session};
+use crate::src::session::Session;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::window::{windows, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
 use std::{cell::UnsafeCell, rc::Rc};
@@ -37,7 +37,7 @@ unsafe fn alerts_callback() {
             break;
         };
         // Membership remains set throughout callbacks to suppress requeueing.
-        let alerts = alerts_check_all(&owner);
+        let alerts = SessionRef::deliver_window_alerts(&owner);
         log_debug(format_args!(
             "@{} alerts check, alerts {}",
             owner.id(),
@@ -55,7 +55,9 @@ unsafe fn alerts_callback() {
 pub unsafe fn alerts_check_session(session: &SessionRef) {
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
-        alerts_check_all(link.get_unchecked().window_handle().expect("linked window"));
+        SessionRef::deliver_window_alerts(
+            link.get_unchecked().window_handle().expect("linked window"),
+        );
         link = winlinks_next(link.get_unchecked());
     }
 }

@@ -1,11 +1,3 @@
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has, args_percentage_and_expand_result};
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
@@ -23,6 +15,13 @@ use crate::src::layout::{
 };
 use crate::src::options::options_set_parent;
 use crate::src::resize::recalculate_sizes;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
+use crate::src::window::Window as _;
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
@@ -1062,12 +1061,7 @@ unsafe fn cmd_join_pane_exec(
         } else {
             server_status_session(dst_s.as_ref().expect("live session"));
         }
-        src_pane_owner.notify_moved(
-            src_owner,
-            src_wl.get_unchecked().idx,
-            &dst_window,
-            dst_idx,
-        );
+        src_pane_owner.notify_moved(src_owner, src_wl.get_unchecked().idx, &dst_window, dst_idx);
         cmd_join_pane_finish(src_window.take().expect("live source window"), &dst_window);
         CMD_RETURN_NORMAL
     })();
@@ -1221,14 +1215,14 @@ mod layout_identity_tests {
             *window.borrow_layout_root_mut() = Some(first);
             let calls = Rc::new(Cell::new(0u32));
             pane.fixture_add_mode(refbox::RefBox::new(window_mode_entry {
-                    wp: Rc::downgrade(&pane),
-                    swp: Default::default(),
-                    mode: &REPLACING_MODE,
-                    boxed_data: None,
-                    data_owner: Some(calls.clone()),
-                    prefix: 0,
-                    kill: 0,
-                }));
+                wp: Rc::downgrade(&pane),
+                swp: Default::default(),
+                mode: &REPLACING_MODE,
+                boxed_data: None,
+                data_owner: Some(calls.clone()),
+                prefix: 0,
+                kill: 0,
+            }));
             let mut links = Default::default();
             let link = winlink_add(&mut links, 1);
             winlink_set_window(link.clone(), &window);
@@ -1282,7 +1276,7 @@ mod layout_identity_tests {
             winlink_remove(&mut links, link);
             let tree = window.borrow_layout_root_mut().take();
             drop(tree);
-                        pane.fixture_parent(None);
+            pane.fixture_parent(None);
             pane.release(c"layout identity test");
             window.release(c"layout identity test");
         }

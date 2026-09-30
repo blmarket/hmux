@@ -1,9 +1,9 @@
-use crate::src::session::SessionIndex as _;
 use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::paste::paste_walk;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
+use crate::src::session::SessionIndex as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -25,9 +25,7 @@ use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use std::cmp::Ordering;
 
-use crate::src::window::{
-    winlinks_minmax, winlinks_next,
-};
+use crate::src::window::{winlinks_minmax, winlinks_next};
 
 pub(super) fn sort_ordering(result: ::core::ffi::c_int, reversed: ::core::ffi::c_int) -> Ordering {
     let ordering = result.cmp(&0);

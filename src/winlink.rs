@@ -1,5 +1,4 @@
 //! Session-owned links and their Window associations.
-use crate::src::window::Window as _;
 use crate::src::alerts::alerts_queue;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
@@ -47,11 +46,12 @@ use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
+use crate::src::window::Window as _;
 use crate::src::window::*;
 
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
-use crate::src::server_client::{Client};
+use crate::src::server_client::Client;
 use crate::src::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_status_window,
@@ -343,8 +343,7 @@ pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &Window
         previous.remove_winlink(wl.clone());
         winlink_release_window(wl.clone(), c"winlink_set_window");
     }
-    wl.get_mut_unchecked().window_owner =
-        Some(w_owner.retain(c"winlink_set_window"));
+    wl.get_mut_unchecked().window_owner = Some(w_owner.retain(c"winlink_set_window"));
     w_owner.add_winlink(wl);
 }
 

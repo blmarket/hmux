@@ -9,7 +9,7 @@ use crate::src::shared::window::window;
 use crate::src::shared::window::WindowWeak;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::Window;
-use crate::src::window_pane::{WindowPane};
+use crate::src::window_pane::WindowPane;
 use std::{cell::UnsafeCell, ffi::CStr, rc::Weak};
 
 /// A table's identity, independent of how its owning model stores state.

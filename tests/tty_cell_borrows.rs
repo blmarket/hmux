@@ -1,7 +1,7 @@
-use hmux2::src::shared::client::ClientRef;
 use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::server_client::Client as _;
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::client::CLIENT_UTF8;
 use hmux2::src::shared::grid::{grid_cell, GRID_FLAG_PADDING};
 use hmux2::src::shared::screen::screen;

@@ -1,6 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
-use crate::src::session::Session as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::cmd_get_args_mut;
@@ -16,7 +13,9 @@ use crate::src::options::options_owner_ptr;
 use crate::src::proc::{proc_get_peer_uid, proc_send};
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
-
+use crate::src::session::Session as _;
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
 
 use crate::src::session::sessions;
 use crate::src::shared::abi::uid_t;

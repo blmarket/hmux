@@ -13,7 +13,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
 
-
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;

@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
 use crate::src::arguments::{
     args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
@@ -30,6 +28,8 @@ use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server::server_add_message;
 use crate::src::server_client::Client as _;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
@@ -1548,9 +1548,9 @@ mod lifecycle_tests {
 
 #[cfg(test)]
 mod queue_state_ownership_tests {
-    use crate::src::server_client::ClientFixture as _;
     use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_new, cmdq_next};
     use crate::src::cmd::queue::{cmdq_get_event, cmdq_get_state_owned, cmdq_new_state};
+    use crate::src::server_client::ClientFixture as _;
     use crate::src::shared::client::client;
     use crate::src::shared::key::key_event;
     use std::rc::Rc;

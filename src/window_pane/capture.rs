@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
 use super::WindowPane;
 use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand_result};
 use crate::src::ffi::libc::snprintf;
@@ -12,6 +10,8 @@ use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::input::input_pending;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::screen::screen_reset_hyperlinks;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::colour::COLOUR_FLAG_256;

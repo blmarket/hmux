@@ -1,12 +1,12 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
-use crate::src::session::Session as _;
 #[cfg(test)]
 use crate::src::server_client::Client as _;
+use crate::src::session::Session as _;
+use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::{WindowRef, WindowWeak};
+use crate::src::window::Window as _;
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::rc::Rc;

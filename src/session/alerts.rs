@@ -42,7 +42,7 @@ unsafe fn alerts_action_applies(
     return 0 as ::core::ffi::c_int;
 }
 
-pub(crate) unsafe fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int {
+pub(super) unsafe fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut alerts: ::core::ffi::c_int = 0;
     alerts = alerts_check_bell(w_owner);
     alerts |= alerts_check_activity(w_owner);

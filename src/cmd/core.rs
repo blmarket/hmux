@@ -1,5 +1,3 @@
-use crate::src::window::Window as _;
-use crate::src::session::SessionIndex as _;
 pub use crate::src::arguments::args_parse;
 use crate::src::arguments::ArgsParseError;
 use crate::src::arguments::{args_copy, args_escape_cstring, args_print_cstring};
@@ -83,6 +81,8 @@ use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
 use crate::src::ffi::libc::{strchr, strcmp, strlcat, strlcpy, strlen, strncmp};
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::{options_array_item_value, options_get_only};
+use crate::src::session::SessionIndex as _;
+use crate::src::window::Window as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -104,7 +104,7 @@ use crate::src::shared::session::SessionRef;
 pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_options;
-use crate::src::window::{winlink_find_by_window};
+use crate::src::window::winlink_find_by_window;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
@@ -636,14 +636,16 @@ pub unsafe fn cmd_mouse_window(
     if (*m).s == -1 {
         return refbox::Weak::new();
     }
-    let Some(session_owner) = crate::src::shared::session::SessionRef::find_by_id((*m).s as u_int) else {
+    let Some(session_owner) = crate::src::shared::session::SessionRef::find_by_id((*m).s as u_int)
+    else {
         return refbox::Weak::new();
     };
     s = Some(session_owner.clone());
     if (*m).w == -(1 as ::core::ffi::c_int) {
         wl = s.as_ref().expect("live session").current_winlink();
     } else {
-        let Some(window) = crate::src::shared::window::WindowRef::find_by_id((*m).w as u_int) else {
+        let Some(window) = crate::src::shared::window::WindowRef::find_by_id((*m).w as u_int)
+        else {
             return refbox::Weak::new();
         };
         wl = s

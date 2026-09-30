@@ -1,5 +1,5 @@
 //! Encode pane process input without lending pane storage to consumers.
-use super::{window_pane_is_visible};
+use super::window_pane_is_visible;
 use super::WindowPane;
 use crate::src::input_keys::{input_key, input_key_get_mouse};
 use crate::src::key_string::key_string_format;

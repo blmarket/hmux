@@ -19,7 +19,7 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
 
-use crate::src::server_client::{Client as _};
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;

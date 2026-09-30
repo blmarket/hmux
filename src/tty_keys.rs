@@ -1,4 +1,3 @@
-use crate::src::window::Window as _;
 use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
@@ -14,6 +13,7 @@ use crate::src::options::{options_array_get_index, options_get_number};
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
+use crate::src::window::Window as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
@@ -1817,9 +1817,11 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                                                     if terminal_client_owner.borrow_terminal().bg
                                                         != bg
                                                     {
-                                                        if let Some(client) = Some(
-                                                            &terminal_client_owner,
-                                                        ) { client.update_theme_colours(); };
+                                                        if let Some(client) =
+                                                            Some(&terminal_client_owner)
+                                                        {
+                                                            client.update_theme_colours();
+                                                        };
                                                     }
                                                     if let Some(session) = terminal_client_owner
                                                         .attached_session()
@@ -1836,9 +1838,11 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                                                     if terminal_client_owner.borrow_terminal().bg
                                                         != bg
                                                     {
-                                                        if let Some(client) = Some(
-                                                            &terminal_client_owner,
-                                                        ) { client.update_theme_colours(); };
+                                                        if let Some(client) =
+                                                            Some(&terminal_client_owner)
+                                                        {
+                                                            client.update_theme_colours();
+                                                        };
                                                     }
                                                     if let Some(session) = terminal_client_owner
                                                         .attached_session()
