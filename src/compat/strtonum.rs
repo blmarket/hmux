@@ -1,12 +1,12 @@
 use crate::src::ffi::libc::{__errno_location, strtoll};
 use crate::src::shared::errno::{EINVAL, ERANGE};
 use crate::src::shared::limits::__LONG_LONG_MAX__;
+use std::ffi::CStr;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
-pub struct errval {
-    pub errstr: *const ::core::ffi::c_char,
-    pub err: ::core::ffi::c_int,
+struct ErrorValue {
+    message: Option<&'static CStr>,
+    errno: ::core::ffi::c_int,
 }
 
 pub const LLONG_MAX: ::core::ffi::c_longlong = __LONG_LONG_MAX__;
@@ -23,25 +23,25 @@ pub unsafe fn strtonum(
     let mut ll: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
     let mut ep: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut ev: [errval; 4] = [
-        errval {
-            errstr: ::core::ptr::null::<::core::ffi::c_char>(),
-            err: 0 as ::core::ffi::c_int,
+    let mut ev: [ErrorValue; 4] = [
+        ErrorValue {
+            message: None,
+            errno: 0 as ::core::ffi::c_int,
         },
-        errval {
-            errstr: b"invalid\0" as *const u8 as *const ::core::ffi::c_char,
-            err: EINVAL,
+        ErrorValue {
+            message: Some(c"invalid"),
+            errno: EINVAL,
         },
-        errval {
-            errstr: b"too small\0" as *const u8 as *const ::core::ffi::c_char,
-            err: ERANGE,
+        ErrorValue {
+            message: Some(c"too small"),
+            errno: ERANGE,
         },
-        errval {
-            errstr: b"too large\0" as *const u8 as *const ::core::ffi::c_char,
-            err: ERANGE,
+        ErrorValue {
+            message: Some(c"too large"),
+            errno: ERANGE,
         },
     ];
-    ev[0 as ::core::ffi::c_int as usize].err = *__errno_location();
+    ev[0 as ::core::ffi::c_int as usize].errno = *__errno_location();
     *__errno_location() = 0 as ::core::ffi::c_int;
     if minval > maxval {
         error = INVALID;
@@ -56,9 +56,11 @@ pub unsafe fn strtonum(
         }
     }
     if !errstrp.is_null() {
-        *errstrp = ev[error as usize].errstr;
+        *errstrp = ev[error as usize]
+            .message
+            .map_or(std::ptr::null(), CStr::as_ptr);
     }
-    *__errno_location() = ev[error as usize].err;
+    *__errno_location() = ev[error as usize].errno;
     if error != 0 {
         ll = 0 as ::core::ffi::c_longlong;
     }
