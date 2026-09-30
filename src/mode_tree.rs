@@ -2810,7 +2810,7 @@ mod mode_prompt_data_tests {
         unsafe {
             let tree = mode_tree_alloc_data();
             let record = data(&tree);
-            let client = client::new();
+            let client = ClientRef::allocate();
             let observed = Rc::downgrade(&client);
             let expected = observed.clone();
             let calls = Rc::new(Cell::new(0));
@@ -3019,7 +3019,7 @@ mod menu_callback_owner_tests {
                 if outcome == 4 {
                     (*rc::as_ptr(&tree)).dead = 1;
                 }
-                let client = client::new();
+                let client = ClientRef::allocate();
                 let client_observer = Rc::downgrade(&client);
                 let calls = Rc::new(Cell::new(0));
                 let callback_calls = Rc::clone(&calls);
@@ -3073,7 +3073,7 @@ mod menu_callback_owner_tests {
                 (*mtd).menucb = Some(Box::new(move |_, _| {
                     callback_calls.set(callback_calls.get() + 1)
                 }));
-                let mut client = Some(client::new());
+                let mut client = Some(ClientRef::allocate());
                 let observer = Rc::downgrade(client.as_ref().unwrap());
                 let callback =
                     mode_tree_menu_callback(Rc::clone(&tree), observer.clone(), 0).unwrap();
@@ -3125,7 +3125,7 @@ mod menu_callback_owner_tests {
                         }));
                     }
                 }));
-                let client = client::new();
+                let client = ClientRef::allocate();
                 let callback =
                     mode_tree_menu_callback(observer.upgrade().unwrap(), Rc::downgrade(&client), 0)
                         .unwrap();

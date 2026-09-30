@@ -11,7 +11,7 @@ use crate::src::key_bindings::key_bindings_get_table;
 use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_set_key_table, server_client_set_session};
+
 use crate::src::server_fn::server_redraw_window;
 use crate::src::session::{session_next_session, session_previous_session, session_set_current};
 use crate::src::shared::abi::uid_t;
@@ -268,12 +268,9 @@ unsafe fn cmd_switch_client_exec(
             .expect("target session")
             .update_environment(&source);
     }
-    server_client_set_session(&tc.clone().expect("live client"), s.as_ref());
+    (&tc.clone().expect("live client")).set_session(s.as_ref());
     if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
-        server_client_set_key_table(
-            &tc.clone().expect("live client"),
-            ::core::ptr::null::<::core::ffi::c_char>(),
-        );
+        (&tc.clone().expect("live client")).set_key_table(None);
     }
     return CMD_RETURN_NORMAL;
 }

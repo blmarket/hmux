@@ -1009,7 +1009,7 @@ mod status_screen_tests {
                 .unwrap();
             options_default(&mut *global_options_owner, definition);
             global_s_options = &mut *global_options_owner;
-            c = client::new();
+            c = ClientRef::allocate();
             c.update_flags(0, u64::MAX);
             options_set_number(global_s_options, c"status".as_ptr(), 4);
             assert_eq!(status_line_size(&c), 4);
@@ -1043,7 +1043,7 @@ mod status_screen_tests {
                 options_default(options, definition);
             }
 
-            let c = client::new();
+            let c = ClientRef::allocate();
             c.borrow_terminal_mut().sx = 80;
             c.borrow_terminal_mut().sy = 24;
             status_init(&mut *c.borrow_status_mut(), 80);
@@ -1118,7 +1118,7 @@ mod status_screen_tests {
 
             // A cleanup callback may clear the old prompt recursively and
             // install a replacement. The outer clear must leave its screen.
-            let client = client::new();
+            let client = ClientRef::allocate();
             client.borrow_terminal_mut().sx = 80;
             client.borrow_terminal_mut().sy = 24;
             status_init(&mut *client.borrow_status_mut(), 80);

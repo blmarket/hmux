@@ -42,9 +42,6 @@ use crate::src::reactor::{
 use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{
-    server_client_ensure_ranges, server_client_lost, server_client_ranges_is_empty,
-};
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
@@ -288,7 +285,7 @@ unsafe fn tty_read_callback(owner: &ClientRef) {
             ));
         }
         owner.borrow_terminal_mut().read_task.cancel();
-        server_client_lost(owner);
+        (owner).lost();
         return;
     }
     log_debug(format_args!(
@@ -1643,7 +1640,7 @@ pub unsafe fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
 }
 unsafe fn tty_check_overlay(owner: &ClientRef, px: u_int, py: u_int) -> bool {
     let mut ranges = tty_check_overlay_range(owner, px, py, 1);
-    server_client_ranges_is_empty(&mut ranges) == 0
+    !ranges.is_empty()
 }
 
 /// Return owned clipping geometry. Overlay callbacks run without a terminal
@@ -2303,7 +2300,7 @@ mod initialization_owner_tests {
     fn clipping_results_survive_reentrant_queries_and_overlay_retirement() {
         use std::cell::Cell;
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let calls = Rc::new(Cell::new(0));
             let observed = calls.clone();
             owner.set_overlay(crate::src::server_client::Overlay::callbacks(
@@ -2357,7 +2354,7 @@ mod initialization_owner_tests {
             (*mouse).valid += 1;
         }
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let observer = Rc::downgrade(&owner);
             let mut callback = tty_mouse_client_callback(&owner, update);
             assert_eq!(Rc::strong_count(&owner), 1);
@@ -2374,7 +2371,7 @@ mod initialization_owner_tests {
     #[test]
     fn terminal_timer_callbacks_skip_expired_clients() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let observer = Rc::downgrade(&owner);
             let callbacks: [unsafe fn(&ClientRef); 3] = [
                 tty_timer_callback,
@@ -2404,7 +2401,7 @@ mod initialization_owner_tests {
         unsafe {
             let (reader, mut writer) = UnixStream::pair().unwrap();
             reader.set_nonblocking(true).unwrap();
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let observer = Rc::downgrade(&owner);
             let (mut read_task, mut write_task) = {
                 let mut terminal = owner.borrow_terminal_mut();
@@ -2448,7 +2445,7 @@ mod initialization_owner_tests {
             );
             let _master = OwnedFd::from_raw_fd(master);
             let slave = OwnedFd::from_raw_fd(slave);
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             assert_eq!(
                 tty_initialize_component(
                     &mut *owner.borrow_terminal_mut(),

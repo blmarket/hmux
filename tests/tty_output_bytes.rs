@@ -1,6 +1,5 @@
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::server_client::Client as _;
-use hmux2::src::shared::client::client;
 use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::tty::{
     tty, tty_command_data, tty_ctx, tty_term, TERM_NOAM, TTY_BLOCK, TTY_NOBLOCK,
@@ -92,7 +91,7 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
                 (u32::MAX, u32::MAX),
             ),
         ] {
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             let mut term = tty_term::empty();
             term.flags = if no_auto_margin { TERM_NOAM } else { 0 };
             *client_owner.borrow_terminal_mut() = tty {
@@ -139,7 +138,7 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
 fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
     unsafe {
         for count in [0, 1, 499, 500, 501, 1001] {
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             let mut term = tty_term::empty();
             *client_owner.borrow_terminal_mut() = tty {
                 client: std::rc::Rc::downgrade(&client_owner),
@@ -170,7 +169,7 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
 #[test]
 fn raw_commands_consume_borrowed_binary_payloads_before_returning() {
     unsafe {
-        let client_owner = client::new();
+        let client_owner = ClientRef::allocate();
         *client_owner.borrow_terminal_mut() = tty {
             client: std::rc::Rc::downgrade(&client_owner),
             out: Some(evbuffer_new()),

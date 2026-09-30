@@ -11,7 +11,7 @@ use crate::src::format::{
 };
 use crate::src::json::{json_parse, json_to_string};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
-use crate::src::server_client::server_client_print;
+
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -210,7 +210,7 @@ unsafe fn cmd_display_message_exec(
             out.write_all(b"%message ")?;
             write_cstr(out, msg.as_ptr())
         });
-        server_client_print(tc_owner.as_ref(), 0 as ::core::ffi::c_int, &mut *evb);
+        ClientRef::print_to(tc_owner.as_ref(), (0 as ::core::ffi::c_int) != 0, &mut *evb);
     } else if !tc.is_none() {
         status_message_set(
             tc.as_ref(),

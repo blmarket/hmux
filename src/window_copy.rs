@@ -10295,7 +10295,7 @@ mod drag_client_tests {
     #[test]
     fn detached_drag_callbacks_do_not_keep_client_alive() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let weak = std::rc::Rc::downgrade(&owner);
             window_copy_install_drag_callbacks(&owner);
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);

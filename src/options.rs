@@ -23,7 +23,7 @@ use crate::src::screen_redraw::redraw_invalidate_all_scenes;
 use crate::src::server::clients;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_set_key_table, server_client_update_theme_colours};
+
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
 use crate::src::session::sessions_minmax;
@@ -1667,7 +1667,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
-            server_client_update_theme_colours(loop_0.as_ref());
+            if let Some(client) = loop_0.as_ref() { client.update_theme_colours(); };
             {
                 let terminal = &(loop_0.as_ref().expect("live client"));
                 if {
@@ -1746,10 +1746,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
-            server_client_set_key_table(
-                &loop_0.clone().expect("live client"),
-                ::core::ptr::null::<::core::ffi::c_char>(),
-            );
+            (&loop_0.clone().expect("live client")).set_key_table(None);
             registry_loop_0_owner = clients.next(
                 registry_loop_0_owner
                     .as_ref()

@@ -11,7 +11,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
-use crate::src::server_client::server_client_set_flags;
+
 use crate::src::server_client::{Client as _, PanDirection};
 use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::session::Session;
@@ -314,18 +314,12 @@ unsafe fn cmd_refresh_client_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        server_client_set_flags(
-            &tc.clone().expect("live client"),
-            args_get(&*(args), 'F' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
-        );
+        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(args_get(&*(args), 'F' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr())));
     }
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        server_client_set_flags(
-            &tc.clone().expect("live client"),
-            args_get(&*(args), 'f' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
-        );
+        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(args_get(&*(args), 'f' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr())));
     }
     if args_has(args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(

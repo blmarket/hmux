@@ -70,7 +70,7 @@ pub use api::WindowPane;
 
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
-use crate::src::server_client::{server_client_unref_owned, Client};
+use crate::src::server_client::{Client};
 use crate::src::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_status_window,
@@ -177,7 +177,7 @@ impl window_pane_input_data {
 impl Drop for window_pane_input_data {
     fn drop(&mut self) {
         if let Some(client) = self.client.take() {
-            server_client_unref_owned(client);
+            (client).release();
         }
     }
 }
@@ -2932,7 +2932,7 @@ mod pane_prompt_data_tests {
     #[test]
     fn callback_client_is_weak_between_calls_and_retained_during_dispatch() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let weak_client = Rc::downgrade(&client);
             let pointer = Rc::as_ptr(&client);
             let client_slot = Rc::new(RefCell::new(Some(client)));

@@ -1,9 +1,9 @@
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::events::{events_add_sink, events_remove_sink};
 use hmux2::src::events_payload::event_payload_get_string;
 use hmux2::src::options::{options_create_owned, options_default, options_free};
 use hmux2::src::paste::{paste_buffer_data, paste_free, paste_get_name};
 use hmux2::src::server_client::Client;
-use hmux2::src::shared::client::client;
 use hmux2::src::shared::events::events_callback;
 use hmux2::src::shared::tty::TTY_OSC52QUERY;
 use hmux2::src::tty::TerminalInput;
@@ -21,7 +21,7 @@ fn clipboard_listener_can_replace_input_after_decoding() {
             .unwrap();
         options_default(&mut *options, definition);
         let previous = std::ptr::replace(&raw mut hmux2::src::tmux::global_options, &mut *options);
-        let owner = client::new();
+        let owner = ClientRef::allocate();
         let observer = std::rc::Rc::downgrade(&owner);
         let (reader, mut writer) = std::os::unix::net::UnixStream::pair().unwrap();
         let mut input = TerminalInput::default();

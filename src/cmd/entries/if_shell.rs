@@ -12,8 +12,8 @@ use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
-use crate::src::server_client::server_client_get_cwd;
-use crate::src::server_client::server_client_unref_owned;
+
+
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -157,7 +157,7 @@ unsafe fn cmd_if_shell_exec(
     } else {
         cdata.client = tc_owner.clone();
     }
-    let cwd = server_client_get_cwd(queue_client_ptr.as_ref(), s.as_ref());
+    let cwd = ClientRef::working_directory(queue_client_ptr.as_ref(), s.as_ref());
     let job = job_run(
         Some(shellcmd.as_c_str()),
         &Vec::new(),
@@ -264,7 +264,7 @@ impl Drop for cmd_if_shell_data {
     fn drop(&mut self) {
         unsafe {
             if let Some(client) = self.client.take() {
-                server_client_unref_owned(client);
+                (client).release();
             }
             drop(self.cmd_else.take());
             drop(self.cmd_if.take());

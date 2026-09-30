@@ -24,7 +24,7 @@ use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor::{self, Task};
 use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_create, server_client_loop, server_client_lost};
+
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::sessions;
 use crate::src::session::Session;
@@ -317,7 +317,7 @@ pub(crate) unsafe fn server_start(
         }
     }
     if !flags & CLIENT_NOFORK as uint64_t != 0 {
-        let owner = server_client_create(fd);
+        let owner = ClientRef::create(fd);
         c = Some(owner.clone());
     } else {
         options_set_number(
@@ -381,7 +381,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
             break;
         }
     }
-    server_client_loop();
+    ClientRef::run_cycle();
     if options_get_number(
         global_options,
         b"exit-empty\0" as *const u8 as *const ::core::ffi::c_char,
@@ -545,7 +545,7 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int) {
         close(newfd);
         return;
     }
-    let owner = server_client_create(newfd);
+    let owner = ClientRef::create(newfd);
     c = Some(owner.clone());
     if server_acl_join(c.as_ref().expect("live client")) == 0 {
         c.as_ref()

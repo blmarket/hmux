@@ -1828,7 +1828,7 @@ mod term_string_owner_tests {
                     options_search(name.as_ptr()).expect("terminal option definition"),
                 );
             }
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             let mut terminal = tty::empty();
             terminal.client = std::rc::Rc::downgrade(&client_owner);
             let name = c"owner-test".as_ptr().cast_mut();

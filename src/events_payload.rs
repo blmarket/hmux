@@ -10,7 +10,7 @@ use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
-use crate::src::server_client::server_client_unref_owned;
+
 use crate::src::session::session_remove_ref;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -70,7 +70,7 @@ impl Drop for event_payload_item {
         );
         unsafe {
             match value {
-                EventPayloadValue::Client(client) => server_client_unref_owned(client),
+                EventPayloadValue::Client(client) => (client).release(),
                 EventPayloadValue::Session(session) => {
                     session_remove_ref(session, c"event_payload_free_value")
                 }

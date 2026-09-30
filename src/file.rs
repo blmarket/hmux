@@ -18,8 +18,8 @@ use crate::src::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, defer,
     evbuffer_add, evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
-use crate::src::server_client::server_client_unref_owned;
-use crate::src::server_client::{server_client_get_cwd, Client as _};
+
+use crate::src::server_client::{Client as _};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -161,7 +161,7 @@ unsafe fn file_get_path(c: Option<&ClientRef>, file: &CStr) -> CString {
     let full_path = if path.first() == Some(&b'/') {
         path
     } else {
-        let cwd = server_client_get_cwd(c, None).expect("client working directory");
+        let cwd = ClientRef::working_directory(c, None).expect("client working directory");
         [cwd.as_bytes(), b"/", path.as_slice()].concat()
     };
     CString::new(full_path).expect("C string path fragments contain no NUL")
@@ -215,7 +215,7 @@ unsafe fn file_create_with_client(
 unsafe fn file_destroy(cf: &mut client_file) {
     client_files_remove(&mut *cf);
     if let Some(client) = cf.c.take() {
-        server_client_unref_owned(client);
+        (client).release();
     }
     cf.path = Default::default();
 }
@@ -1485,7 +1485,7 @@ mod file_index_ownership_tests {
     #[test]
     fn iteration_releases_borrows_and_skips_retired_files() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let last = file_create_with_client(Some(&client), 9, None);
             let first = file_create_with_client(Some(&client), 3, None);
             let middle = file_create_with_client(Some(&client), 7, None);
@@ -1509,7 +1509,7 @@ mod file_index_ownership_tests {
     #[test]
     fn pending_write_check_skips_a_freed_stream() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let owner = file_create_with_client(Some(&client), 7, None);
             let files = client_files::from([(7, owner.clone())]);
             let stream = bufferevent_new(-1, None, None, None);
@@ -1529,7 +1529,7 @@ mod file_index_ownership_tests {
     #[test]
     fn terminal_completion_unlinks_before_lookup_guards_release_the_allocation() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let file = file_create_with_client(Some(&client), 7, None);
             let observed = Rc::downgrade(&file);
             assert_eq!(
@@ -1557,7 +1557,7 @@ mod file_index_ownership_tests {
     #[test]
     fn delayed_old_completion_cannot_remove_a_reused_stream() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let old = file_create_with_client(Some(&client), 7, None);
             let mut iter = client.file_handles();
             client.unregister_file(7, old.get());
@@ -1586,7 +1586,7 @@ mod completion_cancellation_tests {
     #[test]
     fn cancelled_completion_releases_index_and_client_owners() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let client_observer = Rc::downgrade(&client);
             let file = file_create_with_client(Some(&client), 7, None);
             let file_observer = Rc::downgrade(&file);
@@ -1606,7 +1606,7 @@ mod completion_cancellation_tests {
     #[test]
     fn completion_callback_can_retain_its_client_after_file_retirement() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let observed = Rc::downgrade(&client);
             let saved = Rc::new(std::cell::RefCell::new(None));
             let callback_saved = saved.clone();

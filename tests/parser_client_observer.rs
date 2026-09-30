@@ -1,6 +1,7 @@
+use hmux2::src::server_client::Client as _;
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::cmd::{cmd_list_print, parse::cmd_parse_from_string};
 use hmux2::src::options::{options_create, options_free};
-use hmux2::src::shared::client::client;
 use hmux2::src::shared::command::{cmd_parse_input, CMD_PARSE_NOALIAS, CMD_PARSE_SUCCESS};
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::rc::Rc;
@@ -15,7 +16,7 @@ fn format_condition_handles_expired_parser_client() {
         let mut global_w_options_owner = options_create(None);
         global_w_options = &raw mut *global_w_options_owner;
         global_environ = Some(hmux2::src::environ::environ_create());
-        let client = client::new();
+        let client = ClientRef::allocate();
         let mut input = cmd_parse_input {
             c: Rc::downgrade(&client),
             flags: CMD_PARSE_NOALIAS,

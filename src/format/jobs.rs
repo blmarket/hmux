@@ -222,7 +222,7 @@ pub(super) unsafe fn format_job_get(
         return CString::default();
     };
     if start {
-        let cwd = server_client_get_cwd((*ft).client.as_ref(), None);
+        let cwd = ClientRef::working_directory((*ft).client.as_ref(), None);
         let update_entry = entry.clone();
         let complete_entry = entry.clone();
         let started = job_run(
@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn client_loss_explicitly_cancels_jobs_inserted_by_cancellation_callbacks() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let cache = JobCache::for_client(Some(&client));
             let entry = cache.entry(Some(&client), 0, c"original");
             let observer = Rc::downgrade(&client);
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn cancellation_reenters_the_installed_cache_after_entry_removal() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let cache = JobCache::for_client(Some(&owner));
             let expired = cache.entry(Some(&owner), 0, c"expired");
             let kept = cache.entry(Some(&owner), 0, c"kept");
@@ -447,8 +447,8 @@ mod tests {
     #[test]
     fn completion_skips_expired_notification_client_without_retaining_it() {
         unsafe {
-            let owner = client::new();
-            let notification_client = client::new();
+            let owner = ClientRef::allocate();
+            let notification_client = ClientRef::allocate();
             let cache = JobCache::for_client(Some(&owner));
             let entry = cache.entry(Some(&notification_client), 0, c"expired-client");
             entry.with_record(|record| record.status = 1);
@@ -477,8 +477,8 @@ mod tests {
     #[test]
     fn cache_preserves_identity_and_c_comparator_order() {
         unsafe {
-            let owner = client::new();
-            let other_owner = client::new();
+            let owner = ClientRef::allocate();
+            let other_owner = ClientRef::allocate();
             let cache = JobCache::for_client(Some(&owner));
             let other = JobCache::for_client(Some(&other_owner));
             let command = CString::new(b"cmd\xff".to_vec()).unwrap();
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn client_teardown_releases_cache_and_late_callbacks_skip_replacement_entries() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let cache = JobCache::for_client(Some(&owner));
             let retired = cache.entry(Some(&owner), 0, c"job");
             retired.with_record(|record| record.last = time(std::ptr::null_mut()) + 3600);
@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn tidy_preserves_expiration_boundary_and_survivor_identity() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let cache = JobCache::for_client(Some(&owner));
             let now = 10_000;
             let mut survivors = Vec::new();
@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn line_output_is_owned_and_empty_completion_preserves_an_updated_line() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let cache = JobCache::for_client(Some(&owner));
             let command = CString::new(b"printf '\xff'".to_vec()).unwrap();
             let entry = cache.entry(Some(&owner), 1, &command);

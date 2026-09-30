@@ -142,7 +142,7 @@ mod control_queue_tests {
     #[test]
     fn pane_output_trait_keeps_binary_escaping_and_consumes_only_the_block() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let pane = window_pane::new();
             (*pane.get()).id = 7;
             (*pane.get()).fd = -1;
@@ -172,7 +172,7 @@ mod control_queue_tests {
     fn subscription_callback_releases_temporary_client_guard_on_early_exit() {
         unsafe {
             for dead in [false, true] {
-                let client = client::new();
+                let client = ClientRef::allocate();
                 let observed = Rc::downgrade(&client);
                 if dead {
                     client.update_flags(crate::src::shared::client::CLIENT_DEAD as uint64_t, 0);
@@ -381,7 +381,7 @@ mod control_queue_tests {
     #[test]
     fn detached_stream_callbacks_do_not_retain_or_access_expired_clients() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let observer = Rc::downgrade(&owner);
             let (read, write, error) = control_stream_callbacks(&owner);
             let mut stream = bufferevent::default();

@@ -1,12 +1,12 @@
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::server_client::Client as _;
-use hmux2::src::shared::client::client;
 use hmux2::src::shared::style::{style_range, STYLE_RANGE_CONTROL};
 use hmux2::src::status::status_get_range;
 
 #[test]
 fn status_ranges_are_bounded_snapshots() {
     unsafe {
-        let owner = client::new();
+        let owner = ClientRef::allocate();
         owner.borrow_status_mut().entries[0]
             .ranges
             .push(Box::new(style_range {

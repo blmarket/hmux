@@ -1,3 +1,4 @@
+use crate::src::server_client::Client as _;
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
 use crate::src::cmd::{
@@ -705,7 +706,7 @@ mod parser_collection_tests {
     #[test]
     fn cloned_parse_inputs_observe_client_without_retaining_it() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let input = cmd_parse_input {
                 c: Rc::downgrade(&client),
                 ..Default::default()

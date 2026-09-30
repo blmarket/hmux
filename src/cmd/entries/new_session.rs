@@ -20,10 +20,7 @@ use crate::src::options::{
 };
 use crate::src::proc::proc_send;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{
-    server_client_get_cwd, server_client_open, server_client_set_flags,
-    server_client_set_key_table, server_client_set_session,
-};
+
 use crate::src::session::Session;
 use crate::src::session::{
     session_create, session_destroy, session_find, session_group_add, session_group_find,
@@ -363,7 +360,7 @@ unsafe fn cmd_new_session_exec(
                                 .as_ptr();
                         } else {
                             // session_create copies this borrowed cwd into session.
-                            formatted_cwd = server_client_get_cwd(c.as_ref(), None);
+                            formatted_cwd = ClientRef::working_directory(c.as_ref(), None);
                             cwd = formatted_cwd
                                 .as_ref()
                                 .map_or(std::ptr::null(), |value| value.as_ptr());
@@ -393,9 +390,7 @@ unsafe fn cmd_new_session_exec(
                             5193972633326621385 => {}
                             _ => {
                                 if detached == 0 && already_attached == 0 {
-                                    if let Err(open_error) = server_client_open(
-                                        c_owner.as_ref().expect("terminal client"),
-                                    ) {
+                                    if let Err(open_error) = (c_owner.as_ref().expect("terminal client")).open_terminal() {
                                         cmdq_error(item_handle, |out| {
                                             out.write_all(b"open terminal failed: ")?;
                                             out.write_all(open_error.as_bytes())
@@ -733,18 +728,15 @@ unsafe fn cmd_new_session_exec(
                                                                     'f' as i32 as u_char,
                                                                 ) != 0
                                                                 {
-                                                                    server_client_set_flags(
-                                                                        &c.clone()
-                                                                            .expect("live client"),
-                                                                        args_get(
+                                                                    (&c.clone()
+                                                                            .expect("live client")).parse_flags(std::ffi::CStr::from_ptr(args_get(
                                                                             &*(args),
                                                                             'f' as i32 as u_char,
                                                                         )
                                                                         .map_or(
                                                                             std::ptr::null(),
                                                                             |value| value.as_ptr(),
-                                                                        ),
-                                                                    );
+                                                                        )));
                                                                 }
                                                                 if already_attached == 0 {
                                                                     if !c
@@ -769,23 +761,14 @@ unsafe fn cmd_new_session_exec(
                                                                         .expect("live client")
                                                                         .remember_session();
                                                                 }
-                                                                server_client_set_session(
-                                                                    &c.clone()
-                                                                        .expect("live client"),
-                                                                    s.as_ref(),
-                                                                );
+                                                                (&c.clone()
+                                                                        .expect("live client")).set_session(s.as_ref());
                                                                 if !cmdq_get_flags(&*(item))
                                                                     & CMDQ_STATE_REPEAT
                                                                     != 0
                                                                 {
-                                                                    server_client_set_key_table(
-                                                                        &c.clone()
-                                                                            .expect("live client"),
-                                                                        ::core::ptr::null::<
-                                                                            ::core::ffi::c_char,
-                                                                        >(
-                                                                        ),
-                                                                    );
+                                                                    (&c.clone()
+                                                                            .expect("live client")).set_key_table(None);
                                                                 }
                                                             }
                                                             if args_has(args, 'P' as i32 as u_char)

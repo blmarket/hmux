@@ -1,6 +1,5 @@
 use hmux2::src::reactor::{evbuffer_drain, evbuffer_new, evbuffer_pullup};
 use hmux2::src::server_client::Client as _;
-use hmux2::src::shared::client::client;
 use hmux2::src::shared::client::ClientRef;
 use hmux2::src::shared::tty::{tty, tty_code, tty_term, TTYC_FSL, TTYC_SWD, TTYC_TSL};
 use hmux2::src::tty::{tty_puts, tty_set_path, tty_set_title};
@@ -9,7 +8,7 @@ use std::ffi::CStr;
 #[test]
 fn strings_preserve_bytes_and_title_and_path_require_both_delimiters() {
     unsafe {
-        let client_owner = client::new();
+        let client_owner = ClientRef::allocate();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_TSL.max(TTYC_SWD).max(TTYC_FSL) as usize + 1]
             .into_boxed_slice();

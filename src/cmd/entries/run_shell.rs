@@ -19,8 +19,8 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
     timer_once_owned,
 };
-use crate::src::server_client::server_client_get_cwd;
-use crate::src::server_client::server_client_unref_owned;
+
+
 use crate::src::server_client::Client as _;
 use crate::src::session::session_remove_ref;
 use crate::src::session::Session;
@@ -196,7 +196,7 @@ unsafe fn cmd_run_shell_exec(
     let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
         args_get(&*(args), 'c' as i32 as u_char).map(CStr::to_owned)
     } else {
-        server_client_get_cwd(c.as_ref(), s.as_ref())
+        ClientRef::working_directory(c.as_ref(), s.as_ref())
     };
     let mut cdata = Box::new(cmd_run_shell_data {
         client: None,
@@ -494,7 +494,7 @@ impl Drop for cmd_run_shell_data {
                 session_remove_ref(session, c"cmd_run_shell_data::drop");
             }
             if let Some(client) = self.client.take() {
-                server_client_unref_owned(client);
+                (client).release();
             }
             drop(self.state.take());
         }

@@ -25,7 +25,7 @@ use crate::src::screen_write::{
 use crate::src::server::clients;
 use crate::src::server::marked_pane;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_remove_pane, Client};
+use crate::src::server_client::{Client};
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::{
@@ -157,7 +157,7 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
             0 as ::core::ffi::c_int,
             (*wp).flags & PANE_FLOATOVERZOOM,
         );
-        server_client_remove_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
+        ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
         layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
         window_remove_pane(
             &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
@@ -324,7 +324,7 @@ pub(super) unsafe fn finish_process(
         0 as ::core::ffi::c_int,
         (*wp).flags & PANE_FLOATOVERZOOM,
     );
-    server_client_remove_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
+    ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
     layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
     window_remove_pane(
         &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),

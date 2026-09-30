@@ -1,9 +1,11 @@
+use crate::src::shared::client::ClientRef;
+use crate::src::server_client::Client as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
 use crate::src::events::events_fire_window;
 use crate::src::layout::layout_fix_panes;
-use crate::src::server_client::server_client_remove_pane;
+
 use crate::src::server_fn::server_redraw_window;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -175,8 +177,8 @@ unsafe fn cmd_swap_pane_exec(
             server_redraw_window(&src_window_owner);
         }
         if !Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
-            server_client_remove_pane(&src_pane_owner);
-            server_client_remove_pane(&dst_pane_owner);
+            ClientRef::forget_pane(&src_pane_owner);
+            ClientRef::forget_pane(&dst_pane_owner);
             for order in [
                 crate::src::window::PaneOrder::Index,
                 crate::src::window::PaneOrder::Stacking,

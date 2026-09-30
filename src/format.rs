@@ -42,7 +42,7 @@ use crate::src::reactor::{
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
-use crate::src::server_client::server_client_get_cwd;
+
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;
 use crate::src::session::{

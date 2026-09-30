@@ -2001,7 +2001,7 @@ mod menu_observer_tests {
             items: Vec::new(),
             width: 1,
         })));
-        let client = unsafe { client::new() };
+        let client = unsafe { ClientRef::allocate() };
         unsafe {
             client.restore_redraw_scene(owned_scene(&menu, 1));
         }
@@ -2042,7 +2042,7 @@ mod menu_observer_tests {
             items: Vec::new(),
             width: 1,
         })));
-        let client = unsafe { client::new() };
+        let client = unsafe { ClientRef::allocate() };
         let scene = owned_scene(&menu, 7);
         let scene_address = scene.as_ref() as *const redraw_scene as usize;
         let span_address =
@@ -2094,7 +2094,7 @@ mod menu_observer_tests {
     #[test]
     fn cached_scene_observes_window_identity_and_skips_expired_window() {
         unsafe {
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             let window_owner = window::new();
             let other_window = window::new();
             let observer = std::rc::Rc::downgrade(&window_owner);
@@ -2139,7 +2139,7 @@ mod menu_observer_tests {
     #[test]
     fn detached_scene_does_not_retain_client_and_expired_client_skips_drawing() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let observer = std::rc::Rc::downgrade(&owner);
             owner.restore_redraw_scene(Box::new(redraw_scene {
                 c: observer.clone(),

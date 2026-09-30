@@ -13,10 +13,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::proc::{proc_get_peer_uid, proc_send};
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{
-    server_client_detach, server_client_open, server_client_set_flags, server_client_set_key_table,
-    server_client_set_session,
-};
+
 use crate::src::session::session_set_current;
 use crate::src::session::sessions;
 use crate::src::shared::abi::uid_t;
@@ -166,7 +163,7 @@ pub unsafe fn cmd_attach_session(
             )));
     }
     if !fflag.is_null() {
-        server_client_set_flags(&c.clone().expect("live client"), fflag);
+        (&c.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(fflag));
     }
     if rflag != 0 {
         if c.as_ref().expect("live client").flags() & CLIENT_READONLY as uint64_t != 0 {
@@ -207,7 +204,7 @@ pub unsafe fn cmd_attach_session(
                     s.as_ref(),
                 ) || crate::src::shared::rc::same(c.as_ref(), c_loop.as_ref()))
                 {
-                    server_client_detach(&c_loop.clone().expect("live client"), msgtype);
+                    (&c_loop.clone().expect("live client")).detach(msgtype);
                 }
                 registry_c_loop_owner = clients.next(
                     registry_c_loop_owner
@@ -227,15 +224,12 @@ pub unsafe fn cmd_attach_session(
                 .expect("target session")
                 .update_environment(&source);
         }
-        server_client_set_session(&c.clone().expect("live client"), s.as_ref());
+        (&c.clone().expect("live client")).set_session(s.as_ref());
         if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
-            server_client_set_key_table(
-                &c.clone().expect("live client"),
-                ::core::ptr::null::<::core::ffi::c_char>(),
-            );
+            (&c.clone().expect("live client")).set_key_table(None);
         }
     } else {
-        if let Err(cause) = server_client_open(c_owner.as_ref().expect("terminal client")) {
+        if let Err(cause) = (c_owner.as_ref().expect("terminal client")).open_terminal() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"open terminal failed: ")?;
                 write_cstr(out, cause.as_ptr())
@@ -261,7 +255,7 @@ pub unsafe fn cmd_attach_session(
                     s.as_ref(),
                 ) || crate::src::shared::rc::same(c.as_ref(), c_loop.as_ref()))
                 {
-                    server_client_detach(&c_loop.clone().expect("live client"), msgtype);
+                    (&c_loop.clone().expect("live client")).detach(msgtype);
                 }
                 registry_c_loop_owner = clients.next(
                     registry_c_loop_owner
@@ -281,11 +275,8 @@ pub unsafe fn cmd_attach_session(
                 .expect("target session")
                 .update_environment(&source);
         }
-        server_client_set_session(&c.clone().expect("live client"), s.as_ref());
-        server_client_set_key_table(
-            &c.clone().expect("live client"),
-            ::core::ptr::null::<::core::ffi::c_char>(),
-        );
+        (&c.clone().expect("live client")).set_session(s.as_ref());
+        (&c.clone().expect("live client")).set_key_table(None);
         if !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
             c.as_ref().expect("live client").send_ready();
         }

@@ -9,7 +9,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::src::server::clients;
-use crate::src::server_client::server_client_set_key_table;
+
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -169,10 +169,7 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
         c = registry_c_owner.clone();
         while !c.is_none() {
             if c.as_ref().expect("live client").uses_key_table(&owner) {
-                server_client_set_key_table(
-                    &c.clone().expect("live client"),
-                    ::core::ptr::null::<::core::ffi::c_char>(),
-                );
+                (&c.clone().expect("live client")).set_key_table(None);
             }
             registry_c_owner =
                 clients.next(registry_c_owner.as_ref().expect("current registry client"));

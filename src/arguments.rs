@@ -1,3 +1,4 @@
+use crate::src::server_client::Client as _;
 use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
@@ -10,7 +11,7 @@ use crate::src::ffi::libc::{__ctype_b_loc, free};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
-use crate::src::server_client::server_client_unref_owned;
+
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
@@ -920,7 +921,7 @@ impl Drop for args_command_state {
     fn drop(&mut self) {
         drop(self.cmdlist.take());
         if let Some(client) = self.client.take() {
-            server_client_unref_owned(client);
+            (client).release();
         }
     }
 }

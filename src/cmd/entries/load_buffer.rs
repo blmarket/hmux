@@ -7,7 +7,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
-use crate::src::server_client::server_client_unref_owned;
+
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -35,7 +35,7 @@ pub struct cmd_load_buffer_data {
 impl cmd_load_buffer_data {
     unsafe fn release_client(&mut self) {
         if let Some(client) = self.client.take() {
-            server_client_unref_owned(client);
+            (client).release();
         }
     }
 }

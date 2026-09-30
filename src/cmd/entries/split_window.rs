@@ -19,7 +19,7 @@ use crate::src::layout::{layout_close_pane, layout_fix_panes, layout_set_size};
 use crate::src::options::{
     options_find_choice, options_search, options_set_number, options_set_string,
 };
-use crate::src::server_client::server_client_remove_pane;
+
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_window, server_redraw_window_borders,
@@ -623,7 +623,7 @@ unsafe fn cmd_split_window_exec(
             }
         }
         if let Some(new_pane) = spawned_pane.as_ref() {
-            server_client_remove_pane(new_pane);
+            ClientRef::forget_pane(new_pane);
             if is_floating == 0 {
                 layout_close_pane(new_pane);
             }

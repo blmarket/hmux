@@ -14,7 +14,7 @@ use crate::src::layout::{
 };
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
-use crate::src::server_client::server_client_remove_pane;
+
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_link_window, server_redraw_session, server_redraw_window, server_status_session_group,
@@ -246,7 +246,7 @@ unsafe fn cmd_break_pane_exec(
                 });
                 return CMD_RETURN_ERROR;
             }
-            server_client_remove_pane(&pane_owner);
+            ClientRef::forget_pane(&pane_owner);
             // Select a replacement while the departing pane still has neighbors.
             window_lost_pane(&source_window, &pane_owner);
             for order in [

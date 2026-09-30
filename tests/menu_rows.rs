@@ -1,8 +1,8 @@
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::environ::environ_create;
 use hmux2::src::menu::{menu_add_item, menu_add_items, menu_create};
 use hmux2::src::options::{options_create, options_free};
 use hmux2::src::server_client::Client as _;
-use hmux2::src::shared::client::client;
 use hmux2::src::shared::key::KEYC_NONE;
 use hmux2::src::shared::menu::menu_item;
 use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
@@ -25,7 +25,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         let mut global_w_options_owner = options_create(None);
         global_w_options = &raw mut *global_w_options_owner;
         global_environ = Some(environ_create());
-        let owner = client::new();
+        let owner = ClientRef::allocate();
         owner.borrow_terminal_mut().sx = 120;
         let mut menu = menu_create(c"Rows");
         let separator = menu_item {

@@ -59,7 +59,7 @@ use crate::src::screen::{
 
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
-use crate::src::server_client::{server_client_unref_owned, Client};
+use crate::src::server_client::{Client};
 use crate::src::server_fn::{
     server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_status_window,

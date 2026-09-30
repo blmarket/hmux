@@ -1,6 +1,6 @@
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::reactor::{evbuffer_drain, evbuffer_new, evbuffer_pullup, shutdown_runtime};
 use hmux2::src::server_client::Client;
-use hmux2::src::shared::client::client;
 use hmux2::src::shared::tty::{
     tty, tty_code, tty_command_data, tty_ctx, tty_term, TTYC_MS, TTY_NOBLOCK, TTY_STARTED,
 };
@@ -13,7 +13,7 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
     unsafe {
         let (writer, _reader) = UnixStream::pair().unwrap();
         writer.set_nonblocking(true).unwrap();
-        let client_owner = client::new();
+        let client_owner = ClientRef::allocate();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_MS as usize + 1].into_boxed_slice();
         let capability = c"\x1b]52;%p1%s;%p2%s\x07";

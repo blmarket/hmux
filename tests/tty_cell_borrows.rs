@@ -1,7 +1,8 @@
+use hmux2::src::shared::client::ClientRef;
 use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
 use hmux2::src::reactor::{evbuffer_new, evbuffer_pullup};
 use hmux2::src::server_client::Client as _;
-use hmux2::src::shared::client::{client, CLIENT_UTF8};
+use hmux2::src::shared::client::CLIENT_UTF8;
 use hmux2::src::shared::grid::{grid_cell, GRID_FLAG_PADDING};
 use hmux2::src::shared::screen::screen;
 use hmux2::src::shared::tty::{
@@ -31,7 +32,7 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
             (true, b"\x7f".as_slice(), 1, false, b"".as_slice()),
             (true, b"A".as_slice(), 1, true, b"".as_slice()),
         ] {
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             client_owner.update_flags(
                 if utf8 { CLIENT_UTF8 as u64 } else { 0 },
                 if utf8 { 0 } else { CLIENT_UTF8 as u64 },
@@ -90,7 +91,7 @@ fn borrowed_cells_preserve_utf8_conversion_control_filtering_and_sources() {
 #[test]
 fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
     unsafe {
-        let client_owner = client::new();
+        let client_owner = ClientRef::allocate();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
         term.codes[TTYC_COLORS as usize] = tty_code::Number(8);
@@ -164,7 +165,7 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
             (false, 0, 6, b"__AB__".as_slice()),
             (true, 1, 4, b" AB ".as_slice()),
         ] {
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             client_owner.update_flags(
                 if utf8 { CLIENT_UTF8 as u64 } else { 0 },
                 if utf8 { 0 } else { CLIENT_UTF8 as u64 },
@@ -246,7 +247,7 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
     use hmux2::src::tty::tty_update_mode;
 
     unsafe {
-        let client_owner = client::new();
+        let client_owner = ClientRef::allocate();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();
         term.codes[TTYC_CNORM as usize] = tty_code::String(c"N".to_owned());
@@ -310,7 +311,7 @@ fn palette_changes_apply_to_all_colour_channels_without_changing_the_source() {
     use hmux2::src::style::colour::{colour_palette_init, colour_palette_set};
 
     unsafe {
-        let client_owner = client::new();
+        let client_owner = ClientRef::allocate();
         client_owner.update_flags(CLIENT_UTF8 as u64, 0);
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();

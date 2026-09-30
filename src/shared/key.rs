@@ -1,5 +1,6 @@
 //! Authoritative key-code scalar domains.
 
+use crate::src::server_client::Client as _;
 use super::abi::{size_t, u_int};
 use super::client::client;
 use super::command::cmd_list;
@@ -1446,8 +1447,8 @@ mod tests {
 
     #[test]
     fn key_event_expired_explicit_client_does_not_use_fallback() {
-        let fallback = unsafe { client::new() };
-        let explicit = unsafe { client::new() };
+        let fallback = unsafe { ClientRef::allocate() };
+        let explicit = unsafe { ClientRef::allocate() };
         let mut event = key_event::new(1, mouse_event::default(), None);
         let resolved = event.resolve_client(|| Some(fallback.clone())).unwrap();
         assert!(std::rc::Rc::ptr_eq(&resolved, &fallback));

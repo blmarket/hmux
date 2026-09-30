@@ -1,5 +1,6 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
-use crate::src::server_client::server_client_unref_owned;
+#[cfg(test)]
+use crate::src::server_client::Client as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::{WindowRef, WindowWeak};
@@ -131,7 +132,7 @@ impl client {
         self.pan_window = Rc::downgrade(window);
     }
 
-    pub fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self {
             observer: std::rc::Weak::new(),
             registry_next: std::rc::Weak::new(),
@@ -308,7 +309,7 @@ mod retained_client_tests {
                 let owner = client_retain((ptr).as_ref()).unwrap();
                 drop(initial);
                 assert_eq!(owner.get(), ptr);
-                server_client_unref_owned(owner);
+                owner.release();
                 assert_eq!(observer.strong_count(), 1);
                 if cancel {
                     reactor::shutdown_runtime();

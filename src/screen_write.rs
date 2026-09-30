@@ -1,3 +1,5 @@
+use crate::src::shared::client::ClientRef;
+use crate::src::server_client::Client as _;
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
@@ -3357,7 +3359,7 @@ mod write_ctx_tests {
             drop(pane);
             assert!(observer.upgrade().is_none());
             redraw(&ttyctx);
-            let client = client::new();
+            let client = ClientRef::allocate();
             assert_eq!(set_client(&mut ttyctx, &client), 0);
         }
     }

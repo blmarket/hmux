@@ -1,5 +1,6 @@
+use crate::src::server_client::Client as _;
 use crate::src::log::log_cstr;
-use crate::src::server_client::server_client_unref_owned;
+
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::format::FormatEntryState;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -184,7 +185,7 @@ unsafe fn format_clear(ft: *mut format_tree) {
         drop(entry);
     }
     if let Some(client) = (*ft).client.take() {
-        server_client_unref_owned(client);
+        (client).release();
     }
 }
 
@@ -294,7 +295,7 @@ mod tests {
     fn typed_client_survives_source_drop_and_releases_after_tree_cleanup() {
         unsafe {
             for (cancel, boxed) in [(false, false), (true, false), (false, true), (true, true)] {
-                let owner = client::new();
+                let owner = ClientRef::allocate();
                 let observer = Rc::downgrade(&owner);
                 let mut ft_owner = if boxed {
                     format_create_owned(Some(&owner), None, 17, 0)

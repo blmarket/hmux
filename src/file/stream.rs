@@ -1,6 +1,8 @@
 //! Consumer-side adaptation of the existing push protocol. Producers and their
 //! explicit completion/cleanup paths are unchanged. Not polling pauses only
 //! consumption: the peer can continue sending and input can continue growing.
+use crate::src::shared::client::ClientRef;
+use crate::src::server_client::Client as _;
 use super::*;
 use futures_core::Stream;
 use hmux_buffer::{Buf, BufMut, SegmentedBuf};
@@ -188,7 +190,7 @@ mod tests {
     #[test]
     fn completion_retires_index_without_consuming_a_direct_readers_bytes() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let file = file_create_with_client(Some(&client), 7, None);
             (*file.get()).read.active = true;
             (*file.get()).read.input.put_slice(b"retained");
@@ -212,7 +214,7 @@ mod tests {
     #[test]
     fn legacy_progress_and_completion_keep_accumulation_and_dispatch_timing() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let progress = Rc::new(Cell::new(0));
             let finished = Rc::new(Cell::new(false));
             let progress_cb = progress.clone();

@@ -13,7 +13,7 @@ use crate::src::options::{options_array_get_index, options_get_number};
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_handle_key, server_client_update_theme_colours};
+
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -1816,9 +1816,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                                                     if terminal_client_owner.borrow_terminal().bg
                                                         != bg
                                                     {
-                                                        server_client_update_theme_colours(Some(
+                                                        if let Some(client) = Some(
                                                             &terminal_client_owner,
-                                                        ));
+                                                        ) { client.update_theme_colours(); };
                                                     }
                                                     if let Some(session) = terminal_client_owner
                                                         .attached_session()
@@ -1835,9 +1835,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                                                     if terminal_client_owner.borrow_terminal().bg
                                                         != bg
                                                     {
-                                                        server_client_update_theme_colours(Some(
+                                                        if let Some(client) = Some(
                                                             &terminal_client_owner,
-                                                        ));
+                                                        ) { client.update_theme_colours(); };
                                                     }
                                                     if let Some(session) = terminal_client_owner
                                                         .attached_session()
@@ -2210,7 +2210,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     tty_keys_update_focus(&terminal_client_owner);
                 }
                 if let Some(event) = event {
-                    server_client_handle_key(&terminal_client_owner, event);
+                    (&terminal_client_owner).handle_key(event);
                 }
                 terminal_client_owner
                     .borrow_terminal_mut()
@@ -3556,7 +3556,7 @@ mod key_tree_tests {
     #[test]
     fn key_timer_callback_does_not_retain_or_access_expired_client() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let observer = std::rc::Rc::downgrade(&owner);
             owner
                 .borrow_terminal_mut()

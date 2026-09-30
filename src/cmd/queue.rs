@@ -28,7 +28,7 @@ use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server::server_add_message;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_print, server_client_unref_owned};
+
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::account::passwd;
@@ -620,7 +620,7 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
     );
     cmdq_cancel_unfired_data(&item_handle);
     if let Some(client) = (*item).client_owner.take() {
-        server_client_unref_owned(client);
+        (client).release();
     }
     drop((*item).cmdlist.take());
     drop((*item).state.take());
@@ -1095,7 +1095,7 @@ pub unsafe fn cmdq_print_data(
 ) {
     let item = item_handle.get();
     let client = cmdq_get_client((item).as_ref());
-    server_client_print(client.as_ref(), 1 as ::core::ffi::c_int, evb);
+    ClientRef::print_to(client.as_ref(), (1 as ::core::ffi::c_int) != 0, evb);
 }
 pub unsafe fn cmdq_print(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -1263,7 +1263,7 @@ mod client_observer_tests {
             assert!(cmdq_get_client(Some(&item)).is_none());
             assert!(cmdq_get_target_client(Some(&item)).is_none());
 
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             item.client = Rc::downgrade(&owner);
             item.target_client = Rc::downgrade(&owner);
             assert_eq!(Rc::strong_count(&owner), 1);
@@ -1392,9 +1392,9 @@ mod client_observer_tests {
     #[test]
     fn execution_context_and_target_do_not_replace_queue_ownership() {
         unsafe {
-            let owner = client::new();
-            let context = client::new();
-            let target = client::new();
+            let owner = ClientRef::allocate();
+            let context = ClientRef::allocate();
+            let target = ClientRef::allocate();
             let observer = Rc::downgrade(&owner);
             let item_owner = cmdq_get_callback_owned(c"accessor test", None);
             let item = &mut *item_owner.get();

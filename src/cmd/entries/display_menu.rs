@@ -17,7 +17,7 @@ use crate::src::menu::{menu_add_item, menu_create, menu_display};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_find_choice, options_get_number, options_get_string};
 use crate::src::popup::{popup_display, popup_modify, popup_present};
-use crate::src::server_client::server_client_get_cwd;
+
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -1287,7 +1287,7 @@ unsafe fn cmd_display_popup_exec(
                                     .expect("formatted cwd was set")
                                     .as_ptr();
                             } else {
-                                default_cwd = server_client_get_cwd(tc.as_ref(), s.as_ref());
+                                default_cwd = ClientRef::working_directory(tc.as_ref(), s.as_ref());
                                 cwd = default_cwd
                                     .as_ref()
                                     .expect("default cwd was copied")

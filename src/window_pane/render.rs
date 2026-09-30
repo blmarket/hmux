@@ -1,4 +1,6 @@
 //! Pane rendering operations. Model access ends before terminal or format callbacks.
+use crate::src::shared::client::ClientRef;
+use crate::src::server_client::Client as _;
 use super::*;
 use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::grid_default_cell;
@@ -664,7 +666,7 @@ mod tests {
     use std::sync::LazyLock;
 
     unsafe fn terminal() -> ClientRef {
-        let client = client::new();
+        let client = ClientRef::allocate();
         client.update_flags(CLIENT_UTF8 as u64, 0);
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; tty_term_ncodes() as usize].into_boxed_slice();

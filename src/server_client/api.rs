@@ -30,6 +30,46 @@ pub enum PanDirection {
 /// component borrows before callbacks. Logical client loss remains explicit;
 /// existing deferred-owner release sites must keep their deferred release duty.
 pub trait Client {
+    /// Allocate an unregistered client on the server thread. Fully initialized
+    /// clients still require explicit client-loss cleanup before final release.
+    unsafe fn allocate() -> Self
+    where
+        Self: Sized;
+    /// Create and register a protocol client, preserving the registry's owner.
+    unsafe fn create(fd: i32) -> Self
+    where
+        Self: Sized;
+    unsafe fn attached_count() -> u32
+    where
+        Self: Sized;
+    /// Run the existing server-cycle checks over the retained client registry.
+    unsafe fn run_cycle()
+    where
+        Self: Sized;
+    /// Select the directory for an optional client using startup and session
+    /// precedence. The returned value owns its bytes across owner release.
+    unsafe fn working_directory(
+        client: Option<&Self>,
+        fallback: Option<&SessionRef>,
+    ) -> Option<CString>
+    where
+        Self: Sized;
+    unsafe fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf)
+    where
+        Self: Sized;
+    unsafe fn forget_pane(pane: &Rc<UnsafeCell<window_pane>>)
+    where
+        Self: Sized;
+    /// Transfer this owner to the existing deferred cleanup queue. Call at the
+    /// same logical release points required by client teardown callbacks.
+    fn release(self)
+    where
+        Self: Sized;
+    unsafe fn open_terminal(&self) -> Result<(), CString>;
+    unsafe fn parse_flags(&self, flags: &CStr);
+    unsafe fn update_theme_colours(&self);
+    unsafe fn handle_key(&self, event: Box<key_event>) -> i32;
+
     type FormatJobsMut<'a>: std::ops::DerefMut<Target = crate::src::shared::format::format_job_tree>
     where
         Self: 'a;
@@ -301,6 +341,57 @@ pub trait Client {
 }
 
 impl Client for ClientRef {
+    unsafe fn allocate() -> Self {
+        client::new()
+    }
+
+    unsafe fn create(fd: i32) -> Self {
+        server_client_create(fd)
+    }
+
+    unsafe fn attached_count() -> u32 {
+        server_client_how_many()
+    }
+
+    unsafe fn run_cycle() {
+        server_client_loop();
+    }
+
+    unsafe fn working_directory(
+        client: Option<&Self>,
+        fallback: Option<&SessionRef>,
+    ) -> Option<CString> {
+        server_client_get_cwd(client, fallback)
+    }
+
+    unsafe fn print_to(client: Option<&Self>, parse: bool, buffer: &mut SegmentedBuf) {
+        server_client_print(client, i32::from(parse), buffer);
+    }
+
+    unsafe fn forget_pane(pane: &Rc<UnsafeCell<window_pane>>) {
+        server_client_remove_pane(pane);
+    }
+
+    fn release(self) {
+        server_client_unref_owned(self);
+    }
+
+    unsafe fn open_terminal(&self) -> Result<(), CString> {
+        server_client_open(self)
+    }
+
+    unsafe fn parse_flags(&self, flags: &CStr) {
+        server_client_set_flags(self, flags.as_ptr());
+    }
+
+    unsafe fn update_theme_colours(&self) {
+        server_client_update_theme_colours(Some(self));
+    }
+
+    unsafe fn handle_key(&self, event: Box<key_event>) -> i32 {
+        server_client_handle_key(self, event)
+    }
+
     unsafe fn terminal_fd(&self) -> i32 {
         (*self.get()).fd
     }

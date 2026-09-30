@@ -1385,7 +1385,7 @@ mod last_owner_tests {
 
         unsafe {
             for cancel in [false, true] {
-                let client = client::new();
+                let client = ClientRef::allocate();
                 let observer = Rc::downgrade(&client);
                 let mut set_owner = monitor_create_client(Some(&client), Rc::new(|_| {}));
                 let set = &set_owner;

@@ -40,7 +40,7 @@ use crate::src::server::clients;
 use crate::src::server::server_proc;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
-use crate::src::server_client::{server_client_get_cwd, server_client_remove_pane};
+
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
@@ -309,7 +309,7 @@ pub(super) unsafe fn spawn_pane(
             if !value.as_bytes().starts_with(b"/") {
                 let base_owner = match c_owner.as_ref() {
                     Some(client) => client.cwd(target_session_owner.as_ref()),
-                    None => server_client_get_cwd(None, target_session_owner.as_ref()),
+                    None => ClientRef::working_directory(None, target_session_owner.as_ref()),
                 };
                 // Preserve the old formatter's rendering for an absent startup cwd.
                 let base = base_owner
@@ -326,7 +326,7 @@ pub(super) unsafe fn spawn_pane(
         } else if !(*sc).flags & SPAWN_RESPAWN != 0 {
             cwd = match c_owner.as_ref() {
                 Some(client) => client.cwd(target_session_owner.as_ref()),
-                None => server_client_get_cwd(None, target_session_owner.as_ref()),
+                None => ClientRef::working_directory(None, target_session_owner.as_ref()),
             };
         }
         hlimit = session_owner.with_options_mut(|options| {
@@ -671,9 +671,7 @@ pub(super) unsafe fn spawn_pane(
                 (*new_wp).fd = -(1 as ::core::ffi::c_int);
                 if !(*sc).flags & SPAWN_RESPAWN != 0 {
                     let pane_owner = (*new_wp).observer.upgrade().expect("new pane owner");
-                    server_client_remove_pane(
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                    );
+                    ClientRef::forget_pane(&(*(new_wp)).observer.upgrade().expect("live window_pane"));
                     layout_close_pane(&(*(new_wp)).observer.upgrade().expect("live window_pane"));
                     window_remove_pane(
                         &std::rc::Rc::clone(
@@ -1050,7 +1048,7 @@ mod tests {
     #[test]
     fn editor_without_a_session_releases_callbacks_without_starting() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let callback_payload = std::rc::Rc::new(());
             let observed = std::rc::Rc::downgrade(&callback_payload);
             let editor = spawn_editor(
@@ -1070,7 +1068,7 @@ mod tests {
     #[test]
     fn spawn_context_observes_models_without_retaining_them() {
         unsafe {
-            let owner = client::new();
+            let owner = ClientRef::allocate();
             let observer = std::rc::Rc::downgrade(&owner);
             let pane_owner = window_pane::new();
             let pane_observer = std::rc::Rc::downgrade(&pane_owner);

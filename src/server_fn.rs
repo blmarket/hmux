@@ -23,7 +23,7 @@ use crate::src::screen_write::{
 use crate::src::server::clients;
 use crate::src::server::marked_pane;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_remove_pane, Client};
+use crate::src::server_client::{Client};
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::{

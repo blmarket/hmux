@@ -15,7 +15,7 @@ use crate::src::layout::{
 };
 use crate::src::options::options_set_parent;
 use crate::src::resize::recalculate_sizes;
-use crate::src::server_client::server_client_remove_pane;
+
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_kill_window, server_redraw_session, server_redraw_window, server_redraw_window_borders,
@@ -998,7 +998,7 @@ unsafe fn cmd_join_pane_exec(
                 }
             };
         layout_close_pane(&src_pane_owner);
-        server_client_remove_pane(&src_pane_owner);
+        ClientRef::forget_pane(&src_pane_owner);
         window_lost_pane(src_owner, &src_pane_owner);
         assert!(
             src_owner

@@ -15,8 +15,8 @@ use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
     screen_write_start, screen_write_stop,
 };
-use crate::src::server_client::server_client_unref_owned;
-use crate::src::server_client::{server_client_overlay_range, Client, Overlay};
+
+use crate::src::server_client::{Client, Overlay};
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -231,7 +231,7 @@ impl Drop for popup_data {
                 }
             }
             if let Some(client) = self.c.take() {
-                server_client_unref_owned(client);
+                (client).release();
             }
             if !self.job.is_empty() {
                 job_free(&self.job);
@@ -437,16 +437,7 @@ unsafe fn popup_mode(popup: &PopupGuard) -> Option<(ScreenMode, u_int, u_int)> {
 unsafe fn popup_check(popup: &PopupGuard, px: u_int, py: u_int, nx: u_int) -> visible_ranges {
     let pd = popup.as_ptr();
     let mut ranges = visible_ranges::default();
-    server_client_overlay_range(
-        (*pd).px,
-        (*pd).py,
-        (*pd).sx,
-        (*pd).sy,
-        px,
-        py,
-        nx,
-        &mut ranges,
-    );
+    ranges.exclude_box(((*pd).px, (*pd).py, (*pd).sx, (*pd).sy), (px, py, nx));
     ranges
 }
 unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
@@ -1267,7 +1258,7 @@ mod tests {
                 }),
                 7
             );
-            let client = client::new();
+            let client = ClientRef::allocate();
             let mut set_client = first.set_client_cb.take().unwrap();
             assert_eq!(set_client(&mut first, &client), 0);
             (first.redraw_cb.as_ref().unwrap())(&first);
@@ -1291,7 +1282,7 @@ mod tests {
     #[test]
     fn typed_popup_identity_rejects_retired_state_when_a_replacement_is_installed() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let first = owner();
             let first_handle = PopupHandle(first.downgrade());
             client.set_overlay(Overlay::popup(first, None, None, None, None, None));
@@ -1318,7 +1309,7 @@ mod tests {
     fn overlay_mode_snapshot_survives_explicit_overlay_close() {
         unsafe {
             for bordered in [false, true] {
-                let client = client::new();
+                let client = ClientRef::allocate();
                 let owner = owner();
                 let handle = PopupHandle(owner.downgrade());
                 let observer = handle.clone();
@@ -1373,7 +1364,7 @@ mod tests {
     fn every_overlay_dispatch_holds_the_owner_across_self_close() {
         unsafe {
             for kind in 0..5 {
-                let client = client::new();
+                let client = ClientRef::allocate();
                 let owner = owner();
                 let handle = PopupHandle(owner.downgrade());
                 let observer = handle.clone();

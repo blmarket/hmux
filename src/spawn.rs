@@ -39,7 +39,7 @@ use crate::src::server::clients;
 use crate::src::server::server_proc;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
-use crate::src::server_client::{server_client_get_cwd, server_client_remove_pane};
+
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;

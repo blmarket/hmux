@@ -13,7 +13,7 @@ use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_get_cwd, server_client_unref_owned};
+
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__size_t, ssize_t};
 use crate::src::shared::arguments::{args, args_parse};
@@ -126,7 +126,7 @@ impl Drop for cmd_source_file_data {
         // Preserve cleanup order: depth, path copies, then deferred client release.
         drop(std::mem::take(&mut self.files));
         if let Some(client) = self.client.take() {
-            server_client_unref_owned(client);
+            (client).release();
         }
     }
 }
@@ -345,7 +345,7 @@ unsafe fn cmd_source_file_exec(
             cdata.flags |= CMD_PARSE_VERBOSE;
         }
     }
-    let cwd_owner = server_client_get_cwd(c.as_ref(), None).expect("source working directory");
+    let cwd_owner = ClientRef::working_directory(c.as_ref(), None).expect("source working directory");
     let cwd = cmd_source_file_quote_for_glob(&cwd_owner);
     i = 0 as u_int;
     while i < args_count(args) {

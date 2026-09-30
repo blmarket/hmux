@@ -127,7 +127,7 @@ impl client {
     /// # Safety
     /// The caller must serialize access to the global server model and perform
     /// client-loss cleanup before releasing a fully initialized client.
-    pub unsafe fn new() -> ClientRef {
+    unsafe fn new() -> ClientRef {
         std::rc::Rc::new_cyclic(|observer| {
             let mut value = client::empty();
             value.observer = observer.clone();
@@ -754,7 +754,7 @@ use crate::src::shared::window::{WINDOW_RESIZE, WINDOW_SIZE_LATEST, WINLINK_ALER
 
 pub const _PATH_TTY: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"/dev/tty\0") };
-pub unsafe fn server_client_how_many() -> u_int {
+unsafe fn server_client_how_many() -> u_int {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut n: u_int = 0;
     n = 0 as u_int;
@@ -927,64 +927,6 @@ unsafe fn server_client_overlay_check(
     Some(result)
 }
 
-pub unsafe fn server_client_ranges_is_empty(mut r: *mut visible_ranges) -> ::core::ffi::c_int {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while i < (*r).used {
-        if (&(*r).storage)[i as usize].nx != 0 as u_int {
-            return 0 as ::core::ffi::c_int;
-        }
-        i = i.wrapping_add(1);
-    }
-    return 1 as ::core::ffi::c_int;
-}
-pub unsafe fn server_client_ensure_ranges(mut r: *mut visible_ranges, mut n: u_int) {
-    (*r).ensure(n);
-}
-pub unsafe fn server_client_overlay_range(
-    mut x: u_int,
-    mut y: u_int,
-    mut sx: u_int,
-    mut sy: u_int,
-    mut px: u_int,
-    mut py: u_int,
-    mut nx: u_int,
-    mut r: *mut visible_ranges,
-) {
-    let mut ox: u_int = 0;
-    let mut onx: u_int = 0;
-    if py < y || py > y.wrapping_add(sy).wrapping_sub(1 as u_int) {
-        server_client_ensure_ranges(r, 1 as u_int);
-        (&mut (*r).storage)[0].px = px;
-        (&mut (*r).storage)[0].nx = nx;
-        (*r).used = 1 as u_int;
-        return;
-    }
-    server_client_ensure_ranges(r, 2 as u_int);
-    if px < x {
-        (&mut (*r).storage)[0].px = px;
-        (&mut (*r).storage)[0].nx = x.wrapping_sub(px);
-        if (&mut (*r).storage)[0].nx > nx {
-            (&mut (*r).storage)[0].nx = nx;
-        }
-    } else {
-        (&mut (*r).storage)[0].px = 0 as u_int;
-        (&mut (*r).storage)[0].nx = 0 as u_int;
-    }
-    ox = x.wrapping_add(sx);
-    if px > ox {
-        ox = px;
-    }
-    onx = px.wrapping_add(nx);
-    if onx > ox {
-        (&mut (*r).storage)[1].px = ox;
-        (&mut (*r).storage)[1].nx = onx.wrapping_sub(ox);
-    } else {
-        (&mut (*r).storage)[1].px = 0 as u_int;
-        (&mut (*r).storage)[1].nx = 0 as u_int;
-    }
-    (*r).used = 2 as u_int;
-}
 unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     let mut envent: Option<&environ_entry> = None;
     envent = environ_find(
@@ -1011,7 +953,7 @@ unsafe fn server_client_check_nested(c: &client) -> ::core::ffi::c_int {
     }
     return 0 as ::core::ffi::c_int;
 }
-pub unsafe fn server_client_set_key_table(
+unsafe fn server_client_set_key_table(
     c_owner: &ClientRef,
     mut name: *const ::core::ffi::c_char,
 ) {
@@ -1081,7 +1023,7 @@ unsafe fn server_client_init_timers(owner: &ClientRef) {
         }
     });
 }
-pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
+unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
@@ -1123,7 +1065,7 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
     ));
     owner
 }
-pub unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
+unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
     let c = owner.get();
     let mut ttynam: *const ::core::ffi::c_char = _PATH_TTY.as_ptr();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
@@ -1373,7 +1315,7 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
         ep,
     );
 }
-pub unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&SessionRef>) {
+unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&SessionRef>) {
     use crate::src::session::Session;
     use crate::src::window::Window;
 
@@ -1430,7 +1372,7 @@ pub unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Se
     server_update_socket();
 }
 
-pub unsafe fn server_client_lost(client_owner: &ClientRef) {
+unsafe fn server_client_lost(client_owner: &ClientRef) {
     let c = client_owner.get();
     if (&cfg_client).ptr_eq(&(*c).observer) {
         cfg_client = std::rc::Weak::new();
@@ -1514,7 +1456,7 @@ pub unsafe fn server_client_lost(client_owner: &ClientRef) {
 }
 /// Transfer a client reference to deferred cleanup, preserving the event-loop
 /// lifetime required by client teardown callbacks.
-pub fn server_client_unref_owned(c: ClientRef) {
+fn server_client_unref_owned(c: ClientRef) {
     unsafe {
         log_debug(format_args!("unref client {}", log_pointer(c.get().cast())));
     }
@@ -1533,7 +1475,7 @@ unsafe fn server_client_free(c_value: &mut client) {
         "client file index still contains live records at client teardown"
     );
 }
-pub unsafe fn server_client_suspend(c_owner: &ClientRef) {
+unsafe fn server_client_suspend(c_owner: &ClientRef) {
     let mut c = c_owner.get();
     let mut s: Option<SessionRef> = (*c).session_handle();
     if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
@@ -1549,7 +1491,7 @@ pub unsafe fn server_client_suspend(c_owner: &ClientRef) {
         0 as size_t,
     );
 }
-pub unsafe fn server_client_detach(c_owner: &ClientRef, mut msgtype: msgtype) {
+unsafe fn server_client_detach(c_owner: &ClientRef, mut msgtype: msgtype) {
     let mut c = c_owner.get();
     let mut s: Option<SessionRef> = (*c).session_handle();
     if s.is_none() || (*c).flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
@@ -1563,7 +1505,7 @@ pub unsafe fn server_client_detach(c_owner: &ClientRef, mut msgtype: msgtype) {
         Some(s.as_ref().expect("live session").name().clone()),
     );
 }
-pub unsafe fn server_client_exec(c_owner: &ClientRef, mut cmd: *const ::core::ffi::c_char) {
+unsafe fn server_client_exec(c_owner: &ClientRef, mut cmd: *const ::core::ffi::c_char) {
     let mut shell_session_value: Option<std::ffi::CString> = None;
 
     let mut c = c_owner.get();
@@ -2270,7 +2212,7 @@ unsafe fn server_client_check_mouse(
     crate::src::window::window_remove_ref(window_owner, c"server_client_check_mouse".as_ptr());
     result
 }
-pub unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
+unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     let mut c = c_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -3229,13 +3171,13 @@ unsafe fn server_client_handle_key0(
     cmdq_append(Some(owner), item_allocation);
     return 1 as ::core::ffi::c_int;
 }
-pub unsafe fn server_client_handle_key(
+unsafe fn server_client_handle_key(
     owner: &ClientRef,
     event: Box<key_event>,
 ) -> ::core::ffi::c_int {
     return server_client_handle_key0(owner, event, None, None);
 }
-pub unsafe fn server_client_handle_key_after(
+unsafe fn server_client_handle_key_after(
     owner: &ClientRef,
     event: Box<key_event>,
     after_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
@@ -3243,7 +3185,7 @@ pub unsafe fn server_client_handle_key_after(
 ) -> ::core::ffi::c_int {
     return server_client_handle_key0(owner, event, after_handle, next);
 }
-pub unsafe fn server_client_loop() {
+unsafe fn server_client_loop() {
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         server_client_check_window_resize(&window_owner);
@@ -4807,7 +4749,7 @@ unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 /// Copy the selected directory while any observed startup client is retained.
-pub unsafe fn server_client_get_cwd(
+unsafe fn server_client_get_cwd(
     c: Option<&ClientRef>,
     s: Option<&SessionRef>,
 ) -> Option<CString> {
@@ -4872,7 +4814,7 @@ unsafe fn server_client_control_flags(
     }
     return 0 as uint64_t;
 }
-pub unsafe fn server_client_set_flags(c_owner: &ClientRef, mut flags: *const ::core::ffi::c_char) {
+unsafe fn server_client_set_flags(c_owner: &ClientRef, mut flags: *const ::core::ffi::c_char) {
     let mut c = c_owner.get();
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -5051,7 +4993,7 @@ unsafe fn server_client_get_flags(c: &client) -> *const ::core::ffi::c_char {
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub unsafe fn server_client_remove_pane(
+unsafe fn server_client_remove_pane(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     let pane_id = wp_owner.id();
@@ -5073,7 +5015,7 @@ pub unsafe fn server_client_remove_pane(
             .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
 }
-pub unsafe fn server_client_print(
+unsafe fn server_client_print(
     client_owner: Option<&ClientRef>,
     mut parse: ::core::ffi::c_int,
     mut evb: &mut SegmentedBuf,
@@ -5564,7 +5506,8 @@ mod client_timer_observer_tests {
 #[cfg(test)]
 mod cwd_observer_ownership_tests {
     use crate::src::cfg::{cfg_client, cfg_finished};
-    use crate::src::server_client::server_client_get_cwd;
+    use crate::src::server_client::Client as _;
+    use crate::src::shared::client::ClientRef;
     use crate::src::session::Session;
     use crate::src::shared::{client::client, session::session};
     use std::rc::{Rc, Weak};
@@ -5580,21 +5523,21 @@ mod cwd_observer_ownership_tests {
             (*other.get()).cwd = Some(c"/other".to_owned());
             let session = session::new();
             session.set_cwd(Some(c"/session".to_owned()));
-            let saved = server_client_get_cwd(Some(&other), Some(&session)).unwrap();
+            let saved = ClientRef::working_directory(Some(&other), Some(&session)).unwrap();
             assert_eq!(saved.as_c_str(), c"/startup");
             (*startup.get()).cwd = None;
-            assert!(server_client_get_cwd(Some(&other), None).is_none());
+            assert!(ClientRef::working_directory(Some(&other), None).is_none());
             drop(startup);
             assert!((&cfg_client).upgrade().is_none());
             assert_eq!(saved.as_c_str(), c"/startup");
             assert_eq!(
-                server_client_get_cwd(Some(&other), Some(&session))
+                ClientRef::working_directory(Some(&other), Some(&session))
                     .unwrap()
                     .as_c_str(),
                 c"/other",
             );
             assert_eq!(
-                server_client_get_cwd(None, Some(&session))
+                ClientRef::working_directory(None, Some(&session))
                     .unwrap()
                     .as_c_str(),
                 c"/session",

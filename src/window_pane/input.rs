@@ -368,7 +368,7 @@ mod input_request_ownership_tests {
     fn input_request_cleanup_handles_live_and_expired_client_observers() {
         unsafe {
             for expired in [false, true] {
-                let client = client::new();
+                let client = ClientRef::allocate();
                 let observer = std::rc::Rc::downgrade(&client);
                 let mut context = Box::new(input_ctx::new());
                 context.c = observer.clone();
@@ -394,7 +394,7 @@ mod input_request_ownership_tests {
     #[test]
     fn cancelling_detaches_client_index_without_upgrading_request_observers() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let mut context = Box::new(input_ctx::new());
             let mut request = input_request::new();
             request.ictx = &mut *context;
@@ -412,7 +412,7 @@ mod input_request_ownership_tests {
             let mut ictx_owner = Box::new(input_ctx::new());
             let ictx = &raw mut *ictx_owner;
 
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             let mut c: Option<ClientRef> = Some(client_owner.clone());
 
             // Seed one pending nonqueue request without starting a timer.
@@ -454,7 +454,7 @@ mod input_request_ownership_tests {
             let mut ictx_owner = Box::new(input_ctx::new());
             let ictx = &raw mut *ictx_owner;
 
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             let mut c: Option<ClientRef> = Some(client_owner.clone());
 
             let mut pending_owner = input_request::new();
@@ -482,7 +482,7 @@ mod input_request_ownership_tests {
     #[test]
     fn matching_reply_retires_only_the_earlier_client_requests() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let mut earlier = Box::new(input_ctx::new());
             let mut matching = Box::new(input_ctx::new());
             let mut later = Box::new(input_ctx::new());
@@ -536,7 +536,7 @@ mod input_request_ownership_tests {
             let mut ictx_owner = Box::new(input_ctx::new());
             let ictx = &raw mut *ictx_owner;
 
-            let client_owner = client::new();
+            let client_owner = ClientRef::allocate();
             let mut c: Option<ClientRef> = Some(client_owner.clone());
 
             for type_0 in [INPUT_REQUEST_PALETTE, INPUT_REQUEST_CLIPBOARD] {

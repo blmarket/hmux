@@ -18,9 +18,7 @@ use crate::src::screen_write::{
     screen_write_vline,
 };
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{
-    server_client_detach, server_client_how_many, server_client_suspend, server_client_unref_owned,
-};
+
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -116,7 +114,7 @@ impl Drop for window_client_itemdata {
     fn drop(&mut self) {
         if let Some(client) = self.c.take() {
             if self.retained_client_reference {
-                server_client_unref_owned(client);
+                (client).release();
             } else {
                 drop(client);
             }
@@ -256,7 +254,7 @@ mod tests {
 
     #[test]
     fn client_items_keep_snapshots_alive_after_list_replacement() {
-        let client_owner = unsafe { client::new() };
+        let client_owner = unsafe { ClientRef::allocate() };
         let client_observer = Rc::downgrade(&client_owner);
         let ttyname = CString::new(b"/dev/pts/7".as_slice()).unwrap();
         let mut items = vec![refbox::RefBox::new(window_client_itemdata::new(
@@ -698,7 +696,7 @@ mod status_preview_tests {
     #[test]
     fn preview_survives_status_replacement_before_rendering() {
         unsafe {
-            let client = client::new();
+            let client = ClientRef::allocate();
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'A';
             cell.data.size = 1;
@@ -953,11 +951,11 @@ unsafe fn window_client_do_detach(
         mode_tree_down(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int);
     }
     if key == 'd' as i32 as key_code || key == 'D' as i32 as key_code {
-        server_client_detach(item.client(), MSG_DETACH);
+        (item.client()).detach(MSG_DETACH);
     } else if key == 'x' as i32 as key_code || key == 'X' as i32 as key_code {
-        server_client_detach(item.client(), MSG_DETACHKILL);
+        (item.client()).detach(MSG_DETACHKILL);
     } else if key == 'z' as i32 as key_code || key == 'Z' as i32 as key_code {
-        server_client_suspend(item.client());
+        (item.client()).suspend();
     }
 }
 unsafe fn window_client_key(
@@ -1027,7 +1025,7 @@ unsafe fn window_client_key(
         }
         _ => {}
     }
-    if finished != 0 || server_client_how_many() == 0 as u_int {
+    if finished != 0 || ClientRef::attached_count() == 0 as u_int {
         window_pane_reset_mode(&mode_pane_owner);
     } else {
         mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));

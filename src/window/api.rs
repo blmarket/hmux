@@ -5,6 +5,7 @@
 //! option callbacks must not reenter the window, free/reparent the component, or
 //! let references or pointers escape.
 
+use crate::src::server_client::Client as _;
 use super::*;
 use crate::src::layout::custom::{layout_parse, LayoutSnapshot};
 use crate::src::layout::layout_resize;
@@ -1807,7 +1808,7 @@ mod tests {
         unsafe {
             let window = window::new();
             let pane = window_pane::new();
-            let client = crate::src::shared::client::client::new();
+            let client = crate::src::shared::client::ClientRef::allocate();
             (*window.get()).options = Some(options_create(None));
             window.with_options_mut(|options| {
                 let entry = crate::src::options_table::options_table
