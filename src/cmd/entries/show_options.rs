@@ -27,7 +27,6 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
-use crate::src::shared::options::options_entry;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE};
 use std::ffi::{CStr, CString};
@@ -153,12 +152,8 @@ unsafe fn cmd_show_options_exec(
             for name in names {
                 // Preserve the existing snapshot-and-live-lookup traversal: a
                 // removed entry ends the scan, even if later names still exist.
-                let Some(record) = selected.with_entry(&name, |entry| show_monitor_record(entry))
-                else {
+                if !cmd_show_hooks_print_monitor(self_0.clone(), item_handle, &selected, &name) {
                     break;
-                };
-                if let Some(record) = record {
-                    cmd_show_hooks_print_monitor(self_0.clone(), item_handle, record);
                 }
             }
             return CMD_RETURN_NORMAL;
@@ -216,12 +211,7 @@ unsafe fn cmd_show_options_exec(
         return CMD_RETURN_NORMAL;
     };
     if monitor {
-        if let Some(record) = resolved
-            .with_entry(&parsed.name, |entry| show_monitor_record(entry))
-            .flatten()
-        {
-            cmd_show_hooks_print_monitor(self_0, item_handle, record);
-        }
+        cmd_show_hooks_print_monitor(self_0, item_handle, &resolved, &parsed.name);
     } else {
         cmd_show_options_print(
             self_0,
@@ -266,76 +256,8 @@ unsafe fn show_options_resolve(
         .map(|parent| (parent, 1))
 }
 
-/// Everything needed by formatting is owned before the option borrow ends.
-struct ShowOptionRecord {
-    name: CString,
-    value: CString,
-    array_key: Option<CString>,
-    parent: i32,
-    is_array: i32,
-    is_string: i32,
-    is_hook: i32,
-    is_user: i32,
-    has_value: i32,
-    fire_count: u32,
-    fire_time: time_t,
-}
-
-enum ShowOptionRows {
-    Record(ShowOptionRecord),
-    Array { identity: u64, keys: Vec<CString> },
-}
-
-unsafe fn show_option_record(
-    entry: &mut options_entry,
-    array_key: Option<&CStr>,
-    parent: i32,
-) -> ShowOptionRecord {
-    let table = options_table_entry(entry);
-    ShowOptionRecord {
-        name: entry.name.clone(),
-        value: options_to_cstring(entry, array_key.map_or(std::ptr::null(), CStr::as_ptr), 0),
-        array_key: array_key.map(CStr::to_owned),
-        parent,
-        is_array: options_is_array(entry),
-        is_string: options_is_string(entry),
-        is_hook: table.is_some_and(|table| table.flags & OPTIONS_TABLE_IS_HOOK != 0) as i32,
-        is_user: table.is_none() as i32,
-        has_value: 1,
-        fire_count: options_get_fire_count(entry),
-        fire_time: options_get_fire_time(entry),
-    }
-}
-
-unsafe fn show_option_rows(
-    entry: &mut options_entry,
-    array_key: Option<&CStr>,
-    parent: i32,
-    suppress_empty_parent: bool,
-) -> ShowOptionRows {
-    if array_key.is_none() && options_is_array(entry) != 0 {
-        let keys = options_array_iter(entry)
-            .map(|item| item.key.clone())
-            .collect::<Vec<_>>();
-        if !keys.is_empty() {
-            return ShowOptionRows::Array {
-                identity: entry.id(),
-                keys,
-            };
-        }
-        let mut record = show_option_record(entry, None, parent);
-        record.value = CString::default();
-        record.has_value = 0;
-        if suppress_empty_parent {
-            record.parent = 0;
-        }
-        return ShowOptionRows::Record(record);
-    }
-    ShowOptionRows::Record(show_option_record(entry, array_key, parent))
-}
-
 unsafe fn cmd_show_options_print(
-    self_0: refbox::Weak<cmd>,
+    mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     scope: &OptionsScope,
     name: &CStr,
@@ -343,73 +265,106 @@ unsafe fn cmd_show_options_print(
     parent: i32,
     suppress_empty_parent: bool,
 ) {
-    show_option_each(
-        scope,
-        name,
-        array_key,
-        parent,
-        suppress_empty_parent,
-        |record| {
-            cmd_show_options_print_record(self_0.clone(), item_handle, record);
-        },
-    );
-}
-
-/// Delivery may reenter or replace options. Only owned rows reach the callback.
-unsafe fn show_option_each(
-    scope: &OptionsScope,
-    name: &CStr,
-    array_key: Option<&CStr>,
-    parent: i32,
-    suppress_empty_parent: bool,
-    mut print: impl FnMut(ShowOptionRecord),
-) {
-    let Some(rows) = scope.with_entry(name, |entry| {
-        show_option_rows(entry, array_key, parent, suppress_empty_parent)
-    }) else {
-        return;
-    };
-    match rows {
-        ShowOptionRows::Record(record) => print(record),
-        ShowOptionRows::Array { identity, keys } => {
-            for key in keys {
-                // A callback may remove or replace the option or one of its
-                // items. Resolve each snapshotted key under a fresh borrow.
-                let record = scope
-                    .with_entry(name, |entry| {
-                        if entry.id() != identity
-                            || options_is_array(entry) == 0
-                            || options_array_item(entry, key.as_ptr()).is_null()
-                        {
-                            return None;
-                        }
-                        Some(show_option_record(entry, Some(&key), parent))
-                    })
-                    .flatten();
-                let Some(record) = record else { break };
-                print(record);
+    if array_key.is_none() {
+        let Some(array) = scope.with_entry(name, |entry| {
+            (options_is_array(entry) != 0).then(|| {
+                (
+                    entry.id(),
+                    options_array_iter(entry)
+                        .map(|item| item.key.clone())
+                        .collect::<Vec<_>>(),
+                )
+            })
+        }) else {
+            return;
+        };
+        if let Some((identity, keys)) = array {
+            if !keys.is_empty() {
+                for key in keys {
+                    let present = scope.with_entry(name, |entry| {
+                        entry.id() == identity
+                            && options_is_array(entry) != 0
+                            && !options_array_item(entry, key.as_ptr()).is_null()
+                    });
+                    if present != Some(true) {
+                        break;
+                    }
+                    cmd_show_options_print(
+                        self_0.clone(),
+                        item_handle,
+                        scope,
+                        name,
+                        Some(&key),
+                        parent,
+                        false,
+                    );
+                }
+                return;
             }
         }
     }
-}
 
-unsafe fn cmd_show_options_print_record(
-    mut self_0: refbox::Weak<cmd>,
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    record: ShowOptionRecord,
-) {
     let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show options arguments");
     let template = args_get(args, b'F').map(CStr::to_owned);
     let value_only = args_has(args, b'v');
-    if record.has_value == 0 && template.is_none() && value_only != 0 {
-        return;
-    }
     let show_hooks = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_show_hooks_entry);
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &raw mut *ft_owner;
-    show_option_add_formats(ft, &record, value_only as i32);
-    if show_hooks {
-        show_hook_add_fire_formats(ft, record.fire_count, record.fire_time);
+    let print = scope.with_entry(name, |entry| {
+        let is_array = options_is_array(entry);
+        let has_value = array_key.is_some() || is_array == 0;
+        if !has_value && template.is_none() && value_only != 0 {
+            return false;
+        }
+        let value = if has_value {
+            options_to_cstring(entry, array_key.map_or(std::ptr::null(), CStr::as_ptr), 0)
+        } else {
+            CString::default()
+        };
+        let table = options_table_entry(entry);
+        format_add(ft, c"option_name".as_ptr(), |out| {
+            write_cstr(out, entry.name.as_ptr())
+        });
+        format_add(ft, c"option_value".as_ptr(), |out| {
+            write_cstr(out, value.as_ptr())
+        });
+        for (name, value) in [
+            (c"option_value_only", value_only as i32),
+            (
+                c"option_is_parent",
+                if !has_value && suppress_empty_parent {
+                    0
+                } else {
+                    parent
+                },
+            ),
+            (c"option_is_array", is_array),
+            (c"option_is_string", options_is_string(entry)),
+            (
+                c"option_is_hook",
+                table.is_some_and(|table| table.flags & OPTIONS_TABLE_IS_HOOK != 0) as i32,
+            ),
+            (c"option_is_user", table.is_none() as i32),
+            (c"option_has_value", has_value as i32),
+            (c"option_has_array_key", array_key.is_some() as i32),
+        ] {
+            format_add(ft, name.as_ptr(), |out| write!(out, "{value}"));
+        }
+        format_add(ft, c"option_array_key".as_ptr(), |out| {
+            write_cstr(out, array_key.unwrap_or(c"").as_ptr())
+        });
+        if show_hooks {
+            show_hook_add_fire_formats(
+                ft,
+                options_get_fire_count(entry),
+                options_get_fire_time(entry),
+            );
+        }
+        true
+    });
+    if print != Some(true) {
+        format_free(ft_owner);
+        return;
     }
     let template = template
         .as_deref()
@@ -417,34 +372,6 @@ unsafe fn cmd_show_options_print_record(
     let line = format_expand_cstring(ft, template.as_ptr());
     format_free(ft_owner);
     cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
-}
-
-unsafe fn show_option_add_formats(
-    ft: *mut format_tree,
-    record: &ShowOptionRecord,
-    value_only: i32,
-) {
-    format_add(ft, c"option_name".as_ptr(), |out| {
-        write_cstr(out, record.name.as_ptr())
-    });
-    format_add(ft, c"option_value".as_ptr(), |out| {
-        write_cstr(out, record.value.as_ptr())
-    });
-    for (name, value) in [
-        (c"option_value_only", value_only),
-        (c"option_is_parent", record.parent),
-        (c"option_is_array", record.is_array),
-        (c"option_is_string", record.is_string),
-        (c"option_is_hook", record.is_hook),
-        (c"option_is_user", record.is_user),
-        (c"option_has_value", record.has_value),
-        (c"option_has_array_key", record.array_key.is_some() as i32),
-    ] {
-        format_add(ft, name.as_ptr(), |out| write!(out, "{value}"));
-    }
-    format_add(ft, c"option_array_key".as_ptr(), |out| {
-        write_cstr(out, record.array_key.as_deref().unwrap_or(c"").as_ptr())
-    });
 }
 
 unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: time_t) {
@@ -462,66 +389,74 @@ unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: tim
     }
 }
 
-struct ShowMonitorRecord {
-    option: ShowOptionRecord,
-    target: CString,
-    format: CString,
-}
-
-unsafe fn show_monitor_record(entry: &mut options_entry) -> Option<ShowMonitorRecord> {
-    let value = hooks_monitor_to_cstring(entry)?;
-    let monitor = options_get_monitor_data(entry)?;
-    let target = match monitor.type_0 {
-        MONITOR_SESSION => CString::default(),
-        MONITOR_PANE => CString::new(format!("%{}", monitor.id)).unwrap(),
-        MONITOR_ALL_PANES => c"%*".to_owned(),
-        MONITOR_WINDOW => CString::new(format!("@{}", monitor.id)).unwrap(),
-        MONITOR_ALL_WINDOWS => c"@*".to_owned(),
-        _ => return None,
-    };
-    let format = monitor.format.clone();
-    let option = ShowOptionRecord {
-        name: entry.name.clone(),
-        value,
-        array_key: None,
-        parent: 0,
-        is_array: 0,
-        is_string: 1,
-        is_hook: 1,
-        is_user: 1,
-        has_value: 1,
-        fire_count: hooks_monitor_get_fire_count(entry),
-        fire_time: hooks_monitor_get_fire_time(entry),
-    };
-    Some(ShowMonitorRecord {
-        option,
-        target,
-        format,
-    })
-}
-
+// Return false only when the entry was removed, ending an all-monitors scan.
 unsafe fn cmd_show_hooks_print_monitor(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    record: ShowMonitorRecord,
-) {
+    scope: &OptionsScope,
+    name: &CStr,
+) -> bool {
     let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show hook arguments");
     let template = args_get(args, b'F')
         .map(CStr::to_owned)
         .unwrap_or_else(|| CStr::from_ptr(SHOW_HOOKS_MONITOR_TEMPLATE.as_ptr()).to_owned());
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &raw mut *ft_owner;
-    show_option_add_formats(ft, &record.option, 0);
-    format_add(ft, c"hook_monitor_target".as_ptr(), |out| {
-        write_cstr(out, record.target.as_ptr())
+    let print = scope.with_entry(name, |entry| {
+        let Some(value) = hooks_monitor_to_cstring(entry) else {
+            return false;
+        };
+        let Some(monitor) = options_get_monitor_data(entry) else {
+            return false;
+        };
+        let target = match monitor.type_0 {
+            MONITOR_SESSION => CString::default(),
+            MONITOR_PANE => CString::new(format!("%{}", monitor.id)).unwrap(),
+            MONITOR_ALL_PANES => c"%*".to_owned(),
+            MONITOR_WINDOW => CString::new(format!("@{}", monitor.id)).unwrap(),
+            MONITOR_ALL_WINDOWS => c"@*".to_owned(),
+            _ => return false,
+        };
+        format_add(ft, c"hook_monitor_target".as_ptr(), |out| {
+            write_cstr(out, target.as_ptr())
+        });
+        format_add(ft, c"hook_monitor_format".as_ptr(), |out| {
+            write_cstr(out, monitor.format.as_ptr())
+        });
+        format_add(ft, c"option_name".as_ptr(), |out| {
+            write_cstr(out, entry.name.as_ptr())
+        });
+        format_add(ft, c"option_value".as_ptr(), |out| {
+            write_cstr(out, value.as_ptr())
+        });
+        for (name, value) in [
+            (c"option_value_only", 0),
+            (c"option_is_parent", 0),
+            (c"option_is_array", 0),
+            (c"option_is_string", 1),
+            (c"option_is_hook", 1),
+            (c"option_is_user", 1),
+            (c"option_has_value", 1),
+            (c"option_has_array_key", 0),
+        ] {
+            format_add(ft, name.as_ptr(), |out| write!(out, "{value}"));
+        }
+        format_add(ft, c"option_array_key".as_ptr(), |_| Ok(()));
+        show_hook_add_fire_formats(
+            ft,
+            hooks_monitor_get_fire_count(entry),
+            hooks_monitor_get_fire_time(entry),
+        );
+        true
     });
-    format_add(ft, c"hook_monitor_format".as_ptr(), |out| {
-        write_cstr(out, record.format.as_ptr())
-    });
-    show_hook_add_fire_formats(ft, record.option.fire_count, record.option.fire_time);
-    let line = format_expand_cstring(ft, template.as_ptr());
-    format_free(ft_owner);
-    cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+    if print == Some(true) {
+        let line = format_expand_cstring(ft, template.as_ptr());
+        format_free(ft_owner);
+        cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+    } else {
+        format_free(ft_owner);
+    }
+    print.is_some()
 }
 
 unsafe fn cmd_show_options_all(
