@@ -49,7 +49,7 @@ struct MonitorState {
     session: Option<SessionRef>,
     callback: Option<monitor_cb>,
     items: monitor_items,
-    timer: Timer,
+    timer: Option<Timer>,
     generation: u_int,
     next_item_identity: u64,
 }
@@ -648,7 +648,17 @@ unsafe fn monitor_timer(owner: &MonitorRef) {
     log_debug(format_args!("monitor_timer: timer fired"));
     owner.with_state(|state| {
         let mut timeout = Duration::from_secs(1);
-        state.timer.arm(timeout).expect("arm timer");
+        let observer = owner.downgrade();
+        state.timer = Some(
+            Timer::new(timeout, move || {
+                if let Some(owner) = observer.upgrade() {
+                    unsafe {
+                        monitor_timer(&owner);
+                    }
+                }
+            })
+            .expect("arm timer"),
+        );
     });
     let Some(_session) = monitor_get_session(owner, client.as_ref()) else {
         return;
@@ -689,7 +699,7 @@ fn monitor_create(callback: monitor_cb) -> MonitorRef {
         session: None,
         callback: Some(callback),
         items: Default::default(),
-        timer: Timer::default(),
+        timer: None,
         generation: 0,
         next_item_identity: 1,
     })))
@@ -731,9 +741,7 @@ pub unsafe fn monitor_destroy(owner: MonitorRef) {
             return None;
         }
         state.alive = false;
-        if state.timer.is_initialized() {
-            state.timer.cancel();
-        }
+        drop(state.timer.take());
         let mut item = monitor_items_minmax(&mut state.items);
         while !item.is_null() {
             let next = monitor_items_next(&mut state.items, item);
@@ -869,18 +877,18 @@ pub unsafe fn monitor_add(
             ..monitor_item::empty()
         });
         assert!(monitor_items_insert(&mut state.items, item).is_ok());
-        if !state.timer.is_initialized() {
-            state.timer.set(move || {
-                if let Some(owner) = observer.upgrade() {
-                    unsafe {
-                        monitor_timer(&owner);
-                    }
-                }
-            });
-        }
-        if !state.timer.is_pending() {
+        if !state.timer.as_ref().is_some_and(Timer::is_pending) {
             let timeout = Duration::from_secs(1);
-            state.timer.arm(timeout).expect("arm timer");
+            state.timer = Some(
+                Timer::new(timeout, move || {
+                    if let Some(owner) = observer.upgrade() {
+                        unsafe {
+                            monitor_timer(&owner);
+                        }
+                    }
+                })
+                .expect("arm timer"),
+            );
         }
     });
 }
@@ -900,8 +908,8 @@ pub unsafe fn monitor_remove(owner: &MonitorRef, name: *const ::core::ffi::c_cha
         if !item.is_null() {
             monitor_free_item(state, item);
         }
-        if state.items.is_empty() && state.timer.is_initialized() {
-            state.timer.cancel();
+        if state.items.is_empty() {
+            drop(state.timer.take());
         }
     });
 }
@@ -1197,7 +1205,7 @@ mod last_owner_tests {
             active_dispatch.with_state(|state| {
                 assert!(state.items.is_empty());
                 assert!(state.callback.is_none());
-                assert!(!state.timer.is_initialized());
+                assert!(state.timer.is_none());
             });
             // A captured weak timer cannot prolong ownership or revive a dead set.
             drop(active_dispatch);
@@ -1260,7 +1268,7 @@ mod last_owner_tests {
             assert!(observer.upgrade().is_none());
             dispatch.with_state(|state| {
                 assert_eq!(state.generation, 0);
-                assert!(!state.timer.is_initialized());
+                assert!(state.timer.is_none());
                 assert!(state.items.is_empty());
                 assert!(state.session.is_none());
             });

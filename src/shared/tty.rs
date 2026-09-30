@@ -337,8 +337,8 @@ pub struct tty_window_view {
 pub struct tty {
     /// The client owns its terminal; this backreference must not retain it.
     pub client: ClientWeak,
-    pub start_timer: Timer,
-    pub clipboard_timer: Timer,
+    pub start_timer: Option<Timer>,
+    pub clipboard_timer: Option<Timer>,
     pub last_requests: time_t,
     pub sx: u_int,
     pub sy: u_int,
@@ -365,7 +365,7 @@ pub struct tty {
     pub write_task: Task,
     pub io_fd: Option<i32>,
     pub out: Option<Box<SegmentedBuf>>,
-    pub timer: Timer,
+    pub timer: Option<Timer>,
     pub discarded: size_t,
     pub tio: termios,
     pub r: visible_ranges,
@@ -385,7 +385,7 @@ pub struct tty {
     pub mouse_last_pane: ::core::ffi::c_int,
     pub mouse_drag_update: mouse_drag_update_cb,
     pub mouse_drag_release: mouse_drag_release_cb,
-    pub key_timer: Timer,
+    pub key_timer: Option<Timer>,
     /// Exclusively owned terminal key tree; cleared on rebuild or tty_close.
     pub key_tree: Option<Box<tty_key>>,
 }

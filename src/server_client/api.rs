@@ -560,22 +560,26 @@ impl Client for ClientRef {
         }
     }
     unsafe fn schedule_format_cycle(&self, interval_ms: i32) {
+        if (*self.get())
+            .cycle_timer
+            .as_ref()
+            .is_some_and(Timer::is_pending)
+        {
+            return;
+        }
         let timeout = Duration::from_millis(interval_ms.max(0) as u64);
-        if !(*self.get()).cycle_timer.is_initialized() {
-            let observer = Rc::downgrade(self);
-            (*self.get()).cycle_timer.set(move || {
+        let observer = Rc::downgrade(self);
+        (*self.get()).cycle_timer = Some(
+            Timer::new(timeout, move || {
                 if let Some(owner) = observer.upgrade() {
-                    // No formatting or callback occurs under this state access.
                     let state = &mut *owner.get();
                     if state.message_string.is_none() && state.prompt.is_none() {
                         state.flags |= CLIENT_REDRAWSTATUS as u64;
                     }
                 }
-            });
-        }
-        if !(*self.get()).cycle_timer.is_pending() {
-            (*self.get()).cycle_timer.arm(timeout).expect("arm timer");
-        }
+            })
+            .expect("arm timer"),
+        );
     }
     type QueueMut<'a> = &'a mut crate::src::cmd::queue::cmdq_list;
     unsafe fn borrow_queue_mut(&self) -> Self::QueueMut<'_> {
@@ -1215,15 +1219,15 @@ impl Client for ClientRef {
         let state = &mut *self.get();
         if delay > 0 {
             let timeout = Duration::from_millis(delay as u64);
-            if state.message_timer.is_initialized() {
-                state.message_timer.cancel();
-            }
-            state.message_timer.set(move || unsafe {
-                if let Some(owner) = observer.upgrade() {
-                    owner.clear_status_message();
-                }
-            });
-            state.message_timer.arm(timeout).expect("arm timer");
+            drop(state.message_timer.take());
+            state.message_timer = Some(
+                Timer::new(timeout, move || unsafe {
+                    if let Some(owner) = observer.upgrade() {
+                        owner.clear_status_message();
+                    }
+                })
+                .expect("arm timer"),
+            );
         }
         if delay != 0 {
             state.message_ignore_keys = ignore_keys;
@@ -1819,23 +1823,18 @@ mod cycle_owner_tests {
         unsafe {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
-            owner.schedule_format_cycle(1000);
-            let callback = (*owner.get())
-                .cycle_timer
-                .callback
-                .as_ref()
-                .unwrap()
-                .clone();
+            owner.schedule_format_cycle(0);
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            callback.borrow_mut()();
+            crate::src::reactor::poll_runtime();
             assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
 
-            // Cancel registration explicitly before releasing the client, but
-            // retain a callback to exercise a dispatch after its owner expires.
-            (*owner.get()).cycle_timer.cancel();
+            owner.schedule_format_cycle(0);
+            let timer = (*owner.get()).cycle_timer.take();
             drop(owner);
             assert!(observer.upgrade().is_none());
-            callback.borrow_mut()();
+            crate::src::reactor::poll_runtime();
+            drop(timer);
+            crate::src::reactor::shutdown_runtime();
         }
     }
 }

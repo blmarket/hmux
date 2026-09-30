@@ -18,6 +18,7 @@ use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key,
     prompt_mouse, prompt_set_options, prompt_update,
 };
+use crate::src::reactor::Timer;
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_putc, screen_write_start,
@@ -75,7 +76,7 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     let session = client.attached_session().upgrade();
     {
         let mut status = client.borrow_status_mut();
-        status.timer.cancel();
+        drop(status.timer.take());
     }
     let Some(session) = session else { return };
     client.redraw_status_if_unobscured();
@@ -86,7 +87,15 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     );
     if timeout.as_secs() != 0 {
         let mut status = client.borrow_status_mut();
-        status.timer.arm(timeout).expect("arm timer");
+        let observer = std::rc::Rc::downgrade(client);
+        status.timer = Some(
+            Timer::new(timeout, move || unsafe {
+                if let Some(owner) = observer.upgrade() {
+                    status_timer_callback(&owner);
+                }
+            })
+            .expect("arm timer"),
+        );
     }
     log_debug(format_args!(
         "client {}, status interval {}",
@@ -98,16 +107,7 @@ pub unsafe fn status_timer_start(client: &ClientRef) {
     let session = client.attached_session().upgrade();
     {
         let mut status = client.borrow_status_mut();
-        if status.timer.is_initialized() {
-            status.timer.cancel();
-        } else {
-            let observer = std::rc::Rc::downgrade(client);
-            status.timer.set(move || unsafe {
-                if let Some(owner) = observer.upgrade() {
-                    status_timer_callback(&owner);
-                }
-            });
-        }
+        drop(status.timer.take());
     }
     if session.is_some_and(|session| {
         session.with_options_mut(|options| options_get_number(options, c"status".as_ptr())) != 0
@@ -240,9 +240,7 @@ pub unsafe fn status_free(status: &mut status_line) {
         (*sl).entries[i as usize].expanded = None;
         i = i.wrapping_add(1);
     }
-    if (*sl).timer.is_initialized() {
-        (*sl).timer.cancel();
-    }
+    drop((*sl).timer.take());
     if let Some(mut active) = (*sl).active.take() {
         screen_free(&mut *active);
     }

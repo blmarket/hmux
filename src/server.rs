@@ -111,7 +111,7 @@ static mut server_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
 static mut server_accept_task: Task = Task::new();
-static mut server_ev_tidy: Timer = Timer::new();
+static mut server_ev_tidy: Option<Timer> = None;
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
     s: std::rc::Weak::new(),
@@ -247,7 +247,7 @@ unsafe fn server_tidy_event() {
         "server_tidy_event",
         get_timer().wrapping_sub(t) as ::core::ffi::c_ulonglong
     ));
-    server_ev_tidy.arm(tv).expect("arm timer");
+    server_ev_tidy = Some(Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"));
 }
 pub(crate) unsafe fn server_start(
     mut client: *mut tmuxproc,
@@ -348,8 +348,7 @@ pub(crate) unsafe fn server_start(
             exit(1 as ::core::ffi::c_int);
         }
     }
-    server_ev_tidy.set(move || unsafe { server_tidy_event() });
-    server_ev_tidy.arm(tv).expect("arm timer");
+    server_ev_tidy = Some(Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"));
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || unsafe { server_loop() == 0 };

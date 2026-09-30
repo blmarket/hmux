@@ -10,9 +10,10 @@ use std::time::Duration;
 fn pending_timers_keep_their_deadline_after_fork() {
     let calls = Rc::new(Cell::new(0));
     let observed = calls.clone();
-    let mut timer = Timer::new();
-    timer.set(move || observed.set(observed.get() + 1));
-    timer.arm(Duration::from_millis(500)).unwrap();
+    let timer = Timer::new(Duration::from_millis(500), move || {
+        observed.set(observed.get() + 1)
+    })
+    .unwrap();
     let deadline = timer.deadline();
     poll_runtime();
     assert_eq!(calls.get(), 0, "the first poll registers the deadline wait");
@@ -46,6 +47,6 @@ fn pending_timers_keep_their_deadline_after_fork() {
     assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
     assert!(libc::WIFEXITED(status), "child status {status}");
     assert_eq!(libc::WEXITSTATUS(status), 0);
-    timer.cancel();
+    drop(timer);
     shutdown_runtime();
 }

@@ -26,7 +26,7 @@ pub struct session {
     pub(super) last_attached_time: SystemTime,
     pub(super) activity_time: SystemTime,
     pub(super) last_activity_time: SystemTime,
-    pub(super) lock_timer: Timer,
+    pub(super) lock_timer: Option<Timer>,
     pub(super) curw: refbox::Weak<winlink>,
     pub(super) lastw: winlink_stack,
     pub(super) windows: winlinks,

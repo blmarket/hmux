@@ -87,9 +87,9 @@ pub struct input_ctx {
     pub state: &'static input_state,
     pub flags: ::core::ffi::c_int,
     pub(crate) requests: VecDeque<Box<input_request>>,
-    pub request_timer: Timer,
+    pub request_timer: Option<Timer>,
     pub since_ground: Box<SegmentedBuf>,
-    pub ground_timer: Timer,
+    pub ground_timer: Option<Timer>,
 }
 
 #[repr(C)]

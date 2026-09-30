@@ -118,9 +118,7 @@ pub(super) unsafe fn is_obscured(pane: &Rc<UnsafeCell<window_pane>>) -> bool {
 pub(super) unsafe fn alternate_screen_changed(pane: &Rc<UnsafeCell<window_pane>>, entered: bool) {
     if entered {
         window_pane_clear_resizes(&mut *pane.get(), std::ptr::null_mut());
-        if (*pane.get()).resize_timer.is_initialized() {
-            (*pane.get()).resize_timer.cancel();
-        }
+        drop((*pane.get()).resize_timer.take());
     }
     let window = pane.window_observer().upgrade().expect("live pane parent");
     layout_fix_panes(&window, None);

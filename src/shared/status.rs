@@ -15,7 +15,7 @@ use std::time::SystemTime;
 #[derive(Default)]
 #[repr(C)]
 pub struct status_line {
-    pub timer: Timer,
+    pub timer: Option<Timer>,
     pub screen: screen,
     /// Owns the temporary message/prompt screen; None selects the base screen.
     pub active: Option<Box<screen>>,

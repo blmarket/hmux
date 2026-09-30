@@ -990,12 +990,6 @@ unsafe fn window_pane_create(
     window_pane_default_cursor(&(*(wp)).observer.upgrade().expect("live window_pane"));
     screen_init(&mut (*wp).status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
     style_ranges_init(&raw mut (*wp).border_status_line.ranges);
-    let scrollbar_observer = (*wp).observer.clone();
-    (*wp).sb_auto_timer.set(move || unsafe {
-        if let Some(owner) = scrollbar_observer.upgrade() {
-            window_pane_scrollbar_timer(&owner);
-        }
-    });
     if gethostname(
         &raw mut host as *mut ::core::ffi::c_char,
         ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
@@ -1135,15 +1129,9 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
         close((*wp).pipe_fd);
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     }
-    if (*wp).resize_timer.is_initialized() {
-        (*wp).resize_timer.cancel();
-    }
-    if (*wp).sync_timer.is_initialized() {
-        (*wp).sync_timer.cancel();
-    }
-    if (*wp).sb_auto_timer.is_initialized() {
-        (*wp).sb_auto_timer.cancel();
-    }
+    drop((*wp).resize_timer.take());
+    drop((*wp).sync_timer.take());
+    drop((*wp).sb_auto_timer.take());
     window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
     window_pane_remove_ref(
         owner,
@@ -2478,8 +2466,16 @@ unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::UnsafeCel
         )
     }) as u_int;
     let timeout = Duration::from_millis(delay as u64);
-    (*wp).sb_auto_timer.cancel();
-    (*wp).sb_auto_timer.arm(timeout).expect("arm timer");
+    drop((*wp).sb_auto_timer.take());
+    let observer = (*wp).observer.clone();
+    (*wp).sb_auto_timer = Some(
+        Timer::new(timeout, move || unsafe {
+            if let Some(owner) = observer.upgrade() {
+                window_pane_scrollbar_timer(&owner);
+            }
+        })
+        .expect("arm timer"),
+    );
 }
 
 unsafe fn window_pane_scrollbar_show(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -2495,7 +2491,7 @@ unsafe fn window_pane_scrollbar_show(pane_owner: &Rc<std::cell::UnsafeCell<windo
         (*wp).sb_auto_visible = 1 as ::core::ffi::c_int;
         changed = 1 as ::core::ffi::c_int;
     }
-    (*wp).sb_auto_timer.cancel();
+    drop((*wp).sb_auto_timer.take());
 
     window_pane_scrollbar_start_timer(pane_owner);
 
@@ -2506,9 +2502,7 @@ unsafe fn window_pane_scrollbar_show(pane_owner: &Rc<std::cell::UnsafeCell<windo
 
 unsafe fn window_pane_scrollbar_hide(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    if (*wp).sb_auto_timer.is_initialized() {
-        (*wp).sb_auto_timer.cancel();
-    }
+    drop((*wp).sb_auto_timer.take());
     if (*wp).sb_auto_visible == 0 {
         return;
     }

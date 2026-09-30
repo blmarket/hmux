@@ -76,7 +76,7 @@ pub struct window_panes_modedata {
     pub source_window: u_int,
     pub screen: screen,
     preview: Option<Box<screen>>,
-    pub timer: Timer,
+    pub timer: Option<Timer>,
     pub state: Option<Box<args_command_state>>,
     pub delay: u_int,
     pub ignore_keys: ::core::ffi::c_int,
@@ -1795,20 +1795,24 @@ unsafe fn window_panes_init(
             );
         }
     }
-    let mode_observer = wme.clone();
-    (*data).timer.set(move || unsafe {
-        let live = match mode_observer.try_borrow_mut() {
-            Ok(_) => true,
-            Err(refbox::BorrowError::Dropped) => false,
-            Err(refbox::BorrowError::Borrowed) => panic!("display-panes mode already borrowed"),
-        };
-        if live {
-            window_panes_timer_callback(mode_observer.clone());
-        }
-    });
     if (*data).delay != 0 as u_int {
-        let timeout = Duration::from_millis(((*data).delay) as u64);
-        (*data).timer.arm(timeout).expect("arm timer");
+        let timeout = Duration::from_millis((*data).delay as u64);
+        let mode_observer = wme.clone();
+        (*data).timer = Some(
+            Timer::new(timeout, move || unsafe {
+                let live = match mode_observer.try_borrow_mut() {
+                    Ok(_) => true,
+                    Err(refbox::BorrowError::Dropped) => false,
+                    Err(refbox::BorrowError::Borrowed) => {
+                        panic!("display-panes mode already borrowed")
+                    }
+                };
+                if live {
+                    window_panes_timer_callback(mode_observer.clone());
+                }
+            })
+            .expect("arm timer"),
+        );
     }
     window_panes_draw_screen(wme.clone());
     return &raw mut (*data).screen;
@@ -1827,7 +1831,7 @@ unsafe fn window_panes_free(mut wme: refbox::Weak<window_mode_entry>) {
         .upgrade()
         .expect("mode belongs to a live pane");
     let mut data: *mut window_panes_modedata = window_panes_data(wme.clone());
-    (*data).timer.cancel();
+    drop((*data).timer.take());
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window(&std::rc::Rc::clone(
             &mode_pane_owner

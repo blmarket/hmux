@@ -11,6 +11,7 @@ use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
 use crate::src::options::{options_array_get_index, options_get_number};
 use crate::src::paste::paste_add_owned;
+use crate::src::reactor::Timer;
 use crate::src::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
 use crate::src::window::Window as _;
@@ -2176,7 +2177,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     if clipboard_query {
                         paste_add_owned(None, reply.data.into_boxed_slice());
                         let mut terminal = terminal_client_owner.borrow_terminal_mut();
-                        terminal.clipboard_timer.cancel();
+                        drop(terminal.clipboard_timer.take());
                         terminal.flags &= !TTY_OSC52QUERY;
                     }
                 }
@@ -2185,9 +2186,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 }
                 {
                     let mut terminal = terminal_client_owner.borrow_terminal_mut();
-                    if terminal.key_timer.is_initialized() {
-                        terminal.key_timer.cancel();
-                    }
+                    drop(terminal.key_timer.take());
                     terminal.flags &= !TTY_TIMER;
                     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                         == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
@@ -2241,8 +2240,8 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     (
                         terminal.flags & TTY_TIMER != 0,
                         terminal.flags & TTY_TIMER != 0
-                            && terminal.key_timer.is_initialized()
-                            && !terminal.key_timer.is_pending(),
+                            && terminal.key_timer.is_some()
+                            && !terminal.key_timer.as_ref().is_some_and(Timer::is_pending),
                     )
                 };
                 if timer_active {
@@ -2307,17 +2306,17 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     let timeout = Duration::from_millis(delay as u64);
                     {
                         let mut terminal = terminal_client_owner.borrow_terminal_mut();
-                        if terminal.key_timer.is_initialized() {
-                            terminal.key_timer.cancel();
-                        }
-                        terminal
-                            .key_timer
-                            .set(crate::src::tty::tty_client_timer_callback(
-                                &terminal_client_owner,
-                                tty_keys_callback,
-                            ));
-                        terminal.key_timer.arm(timeout).expect("arm timer");
-                        terminal.flags |= TTY_TIMER;
+                        drop(terminal.key_timer.take());
+                        terminal.key_timer = Some(
+                            Timer::new(
+                                timeout,
+                                crate::src::tty::tty_client_timer_callback(
+                                    terminal_client_owner,
+                                    tty_keys_callback,
+                                ),
+                            )
+                            .expect("arm timer"),
+                        );
                     }
                     return 0 as ::core::ffi::c_int;
                 }
@@ -3563,20 +3562,13 @@ mod key_tree_tests {
         unsafe {
             let owner = ClientRef::allocate();
             let observer = std::rc::Rc::downgrade(&owner);
-            owner
-                .borrow_terminal_mut()
-                .key_timer
-                .set(crate::src::tty::tty_client_timer_callback(
-                    &owner,
-                    tty_keys_callback,
-                ));
-            let callback = owner.borrow_terminal().key_timer.callback.clone().unwrap();
+            let mut callback =
+                crate::src::tty::tty_client_timer_callback(&owner, tty_keys_callback);
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            // A cancelled ambiguity timer does not parse input.
-            callback.borrow_mut()();
+            callback();
             drop(owner);
             assert!(observer.upgrade().is_none());
-            callback.borrow_mut()();
+            callback();
         }
     }
 

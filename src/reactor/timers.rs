@@ -1,72 +1,45 @@
-//! Explicitly cancelled callback timers over hmux-rt's monotonic waits.
+//! Callback timers owned by the reactor and cancelled by dropping their handles.
 use super::{ensure_runtime, handle};
 use hmux_rt::Handle as _;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io;
+use std::marker::PhantomData;
 use std::num::NonZeroU64;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-type Callback = Rc<RefCell<Box<dyn FnMut()>>>;
-
-/// A movable timer handle. Owners must cancel it in their explicit cleanup path.
-/// Dropping the handle does not cancel a registration.
-#[derive(Default)]
+/// A movable handle to one scheduled callback. Dropping it stops pending work
+/// and releases the callback. Schedule a new timer to repeat or resume work.
 pub struct Timer {
-    id: Option<NonZeroU64>,
-    pub(crate) callback: Option<Callback>,
+    id: NonZeroU64,
+    // Registrations belong to the current thread's reactor.
+    _local: PhantomData<*mut ()>,
 }
 
 struct Registration {
     deadline: Instant,
-    callback: Callback,
-    task: RefCell<Option<hmux_rt::mio::Task>>,
+    callback: Box<dyn FnMut()>,
+    task: Option<hmux_rt::mio::Task>,
 }
 
 thread_local! {
     static NEXT_ID: Cell<u64> = const { Cell::new(0) };
-    static TIMERS: RefCell<HashMap<NonZeroU64, Rc<Registration>>> = RefCell::new(HashMap::new());
+    static TIMERS: RefCell<HashMap<NonZeroU64, Registration>> = RefCell::new(HashMap::new());
 }
 
 impl Timer {
-    pub const fn new() -> Self {
-        Self {
-            id: None,
-            callback: None,
-        }
-    }
-
-    pub fn set(&mut self, callback: impl FnMut() + 'static) {
-        self.cancel();
-        self.callback = Some(Rc::new(RefCell::new(Box::new(callback))));
-    }
-
-    pub fn is_initialized(&self) -> bool {
-        self.callback.is_some() || self.id.is_some()
-    }
-
-    /// Replace any pending wait. Zero duration defers to a runtime turn.
-    pub fn arm(&mut self, delay: Duration) -> io::Result<()> {
-        self.cancel();
-        let callback = self
-            .callback
-            .clone()
-            .expect("timer initialized before arming");
-        self.id = Some(schedule(delay, callback)?);
-        Ok(())
-    }
-
-    /// Cancel pending work, retaining the callback for a later arm.
-    pub fn cancel(&mut self) {
-        if let Some(id) = self.id.take() {
-            remove(id);
-        }
+    /// Schedule one callback. Zero duration defers it to a runtime turn.
+    pub fn new(delay: Duration, callback: impl FnMut() + 'static) -> io::Result<Self> {
+        let id = next_id();
+        register(id, delay, Box::new(callback))?;
+        Ok(Self {
+            id,
+            _local: PhantomData,
+        })
     }
 
     pub fn deadline(&self) -> Option<Instant> {
-        self.id
-            .and_then(|id| TIMERS.with(|timers| timers.borrow().get(&id).map(|t| t.deadline)))
+        TIMERS.with(|timers| timers.borrow().get(&self.id).map(|timer| timer.deadline))
     }
 
     pub fn is_pending(&self) -> bool {
@@ -74,31 +47,44 @@ impl Timer {
     }
 }
 
-fn remove(id: NonZeroU64) {
-    let registration = TIMERS.with(|timers| timers.borrow_mut().remove(&id));
-    if let Some(registration) = registration {
-        let task = registration.task.borrow_mut().take();
-        drop(task);
+impl Drop for Timer {
+    fn drop(&mut self) {
+        remove(self.id);
     }
 }
 
-fn start(id: NonZeroU64, registration: &Rc<Registration>) -> io::Result<()> {
-    let h = handle();
-    let timer = registration.clone();
-    let task = h.clone().spawn(async move {
-        h.sleep_until(timer.deadline)
-            .await
-            .expect("timer wait failed");
-        // Remove before dispatch so a callback can rearm or free its owner.
-        remove(id);
-        (timer.callback.borrow_mut())();
-    })?;
-    *registration.task.borrow_mut() = Some(task);
-    Ok(())
+fn remove(id: NonZeroU64) -> Option<Registration> {
+    // Captured owners may drop their handles during thread-local teardown.
+    let mut registration = TIMERS
+        .try_with(|timers| timers.borrow_mut().remove(&id))
+        .ok()
+        .flatten();
+    if let Some(timer) = registration.as_mut() {
+        drop(timer.task.take());
+    }
+    registration
 }
 
-fn schedule(delay: Duration, callback: Callback) -> io::Result<NonZeroU64> {
-    register(next_id(), delay, callback)
+fn start(id: NonZeroU64, deadline: Instant) -> io::Result<()> {
+    let h = handle();
+    let task = h.clone().spawn(async move {
+        h.sleep_until(deadline).await.expect("timer wait failed");
+        // Remove before dispatch, with no registry borrow held. The callback
+        // may drop its handle or replace it with a newly scheduled timer.
+        if let Some(mut timer) = remove(id) {
+            (timer.callback)();
+        }
+    })?;
+    let previous = TIMERS.with(|timers| {
+        timers
+            .borrow_mut()
+            .get_mut(&id)
+            .expect("registered timer")
+            .task
+            .replace(task)
+    });
+    drop(previous);
+    Ok(())
 }
 
 fn next_id() -> NonZeroU64 {
@@ -109,21 +95,23 @@ fn next_id() -> NonZeroU64 {
     })
 }
 
-fn register(id: NonZeroU64, delay: Duration, callback: Callback) -> io::Result<NonZeroU64> {
+fn register(id: NonZeroU64, delay: Duration, callback: Box<dyn FnMut()>) -> io::Result<()> {
     ensure_runtime();
     let now = Instant::now();
     // Preserve the existing behavior: an overflowing deadline is expired.
-    let registration = Rc::new(Registration {
-        deadline: now.checked_add(delay).unwrap_or(now),
+    let deadline = now.checked_add(delay).unwrap_or(now);
+    let registration = Registration {
+        deadline,
         callback,
-        task: RefCell::new(None),
-    });
-    TIMERS.with(|timers| timers.borrow_mut().insert(id, registration.clone()));
-    if let Err(error) = start(id, &registration) {
-        remove(id);
+        task: None,
+    };
+    let previous = TIMERS.with(|timers| timers.borrow_mut().insert(id, registration));
+    assert!(previous.is_none(), "timer IDs are never reused");
+    if let Err(error) = start(id, deadline) {
+        drop(remove(id));
         return Err(error);
     }
-    Ok(id)
+    Ok(())
 }
 
 /// Queue a callback without running it inline.
@@ -132,32 +120,36 @@ pub fn timer_once(callback: impl FnOnce() + 'static) {
     super::defer(callback);
 }
 
-/// Keep the record in its Box; only the registration owns the callback.
-/// This avoids a cycle through the timer embedded in the record.
+/// Transfer a record and its timer to the reactor until dispatch or shutdown.
 pub fn timer_once_owned<T: 'static>(
     mut owner: Box<T>,
-    timer_handle: fn(&mut T) -> &mut Timer,
+    timer_handle: fn(&mut T) -> &mut Option<Timer>,
     delay: Option<Duration>,
-    callback: impl FnOnce(Box<T>) + 'static,
+    mut callback: impl FnMut(Box<T>) + 'static,
 ) {
-    timer_handle(&mut owner).cancel();
-    timer_handle(&mut owner).callback = None;
     let id = next_id();
-    timer_handle(&mut owner).id = Some(id);
-    let mut pending = Some((owner, callback));
-    let callback: Callback = Rc::new(RefCell::new(Box::new(move || {
-        let (owner, callback) = pending.take().expect("one owned timer dispatch");
-        callback(owner);
-    })));
-    register(id, delay.unwrap_or(Duration::ZERO), callback).expect("arm owned timer");
+    *timer_handle(&mut owner) = Some(Timer {
+        id,
+        _local: PhantomData,
+    });
+    let mut owner = Some(owner);
+    register(
+        id,
+        delay.unwrap_or(Duration::ZERO),
+        Box::new(move || callback(owner.take().expect("one owned timer dispatch"))),
+    )
+    .expect("arm owned timer");
 }
 
 pub(super) fn stop_tasks() {
-    let timers = TIMERS.with(|timers| timers.borrow().values().cloned().collect::<Vec<_>>());
-    for timer in timers {
-        let task = timer.task.borrow_mut().take();
-        drop(task);
-    }
+    let tasks = TIMERS.with(|timers| {
+        timers
+            .borrow_mut()
+            .values_mut()
+            .filter_map(|timer| timer.task.take())
+            .collect::<Vec<_>>()
+    });
+    drop(tasks);
 }
 
 pub(super) fn restart() -> io::Result<()> {
@@ -165,11 +157,11 @@ pub(super) fn restart() -> io::Result<()> {
         timers
             .borrow()
             .iter()
-            .map(|(&id, t)| (id, t.clone()))
+            .map(|(&id, timer)| (id, timer.deadline))
             .collect::<Vec<_>>()
     });
-    for (id, timer) in timers {
-        start(id, &timer)?;
+    for (id, deadline) in timers {
+        start(id, deadline)?;
     }
     Ok(())
 }
@@ -186,18 +178,17 @@ pub(super) fn clear() {
         if timers.is_empty() {
             break;
         }
-        for timer in timers {
-            let task = timer.task.borrow_mut().take();
-            drop(task);
+        for mut timer in timers {
+            drop(timer.task.take());
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::defer;
     use super::*;
     use hmux_rt::Runtime as _;
+    use std::rc::Rc;
 
     fn poll() {
         super::super::HOST.with(|host| {
@@ -210,183 +201,120 @@ mod tests {
     }
 
     #[test]
-    fn moving_rearming_and_cancelling_preserves_the_registration() {
+    fn moving_then_dropping_a_timer_cancels_pending_work_and_releases_captures() {
         let calls = Rc::new(Cell::new(0));
-        let observed = calls.clone();
-        let mut timer = Timer::new();
-        timer.set(move || observed.set(observed.get() + 1));
-        let before = Instant::now();
-        timer.arm(Duration::from_secs(60)).unwrap();
-        let after = Instant::now();
-        let deadline = timer.deadline().unwrap();
-        assert!(deadline >= before + Duration::from_secs(60));
-        assert!(deadline <= after + Duration::from_secs(60));
-        let mut moved = timer;
-        assert_eq!(moved.deadline(), Some(deadline));
-        moved.arm(Duration::ZERO).unwrap();
-        poll();
-        assert_eq!(calls.get(), 1);
-        assert!(!moved.is_pending());
-        moved.arm(Duration::ZERO).unwrap();
-        moved.cancel();
-        moved.cancel();
-        poll();
-        assert_eq!(calls.get(), 1);
-        assert!(moved.is_initialized());
+        for before_poll in [true, false] {
+            let observed = calls.clone();
+            let before = Instant::now();
+            let timer = Timer::new(Duration::from_secs(60), move || {
+                observed.set(observed.get() + 1)
+            })
+            .unwrap();
+            let deadline = timer.deadline().unwrap();
+            assert!(deadline >= before + Duration::from_secs(60));
+            if !before_poll {
+                poll();
+            }
+            let moved = timer;
+            assert_eq!(moved.deadline(), Some(deadline));
+            assert_eq!(Rc::strong_count(&calls), 2);
+            drop(moved);
+            assert_eq!(Rc::strong_count(&calls), 1);
+            poll();
+            assert_eq!(calls.get(), 0);
+        }
         super::super::shutdown_runtime();
     }
 
     #[test]
-    fn callbacks_can_rearm_and_free_their_owner() {
-        let slot = Rc::new(RefCell::new(Some(Box::new(Timer::new()))));
+    fn pausing_drops_the_old_callback_and_resuming_schedules_a_new_one() {
+        let calls = Rc::new(Cell::new(0));
+        let observed = calls.clone();
+        let mut timer = Some(Timer::new(Duration::ZERO, move || observed.set(100)).unwrap());
+        drop(timer.take());
+        assert_eq!(Rc::strong_count(&calls), 1);
+        let observed = calls.clone();
+        timer = Some(Timer::new(Duration::ZERO, move || observed.set(observed.get() + 1)).unwrap());
+        poll();
+        assert_eq!(calls.get(), 1);
+        assert!(!timer.as_ref().unwrap().is_pending());
+        assert_eq!(
+            Rc::strong_count(&calls),
+            1,
+            "firing releases the callback even while its handle lives"
+        );
+        super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn callbacks_can_replace_and_drop_their_own_timer() {
+        let slot = Rc::new(RefCell::new(None::<Timer>));
         let observer = Rc::downgrade(&slot);
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        slot.borrow_mut().as_mut().unwrap().set(move || {
-            let slot = observer.upgrade().unwrap();
-            observed.set(observed.get() + 1);
-            let mut slot = slot.borrow_mut();
-            let timer = slot.as_mut().unwrap();
-            assert!(!timer.is_pending(), "remove before dispatch");
-            if observed.get() == 1 {
-                timer.arm(Duration::MAX).unwrap();
-            } else {
-                timer.cancel();
-                drop(slot.take());
-            }
-        });
-        slot.borrow_mut()
-            .as_mut()
-            .unwrap()
-            .arm(Duration::ZERO)
-            .unwrap();
+        *slot.borrow_mut() = Some(
+            Timer::new(Duration::ZERO, move || {
+                let slot = observer.upgrade().unwrap();
+                assert!(!slot.borrow().as_ref().unwrap().is_pending());
+                observed.set(observed.get() + 1);
+                let observer = Rc::downgrade(&slot);
+                let observed = observed.clone();
+                *slot.borrow_mut() = Some(
+                    Timer::new(Duration::MAX, move || {
+                        observed.set(observed.get() + 1);
+                        drop(observer.upgrade().unwrap().borrow_mut().take());
+                    })
+                    .unwrap(),
+                );
+            })
+            .unwrap(),
+        );
         poll();
         assert_eq!(calls.get(), 2);
         assert!(slot.borrow().is_none());
+        assert_eq!(Rc::strong_count(&calls), 1);
         super::super::shutdown_runtime();
     }
 
-    struct Owner {
-        timer: Timer,
-        freed: Rc<Cell<usize>>,
-    }
-    impl Drop for Owner {
-        fn drop(&mut self) {
-            self.timer.cancel();
-            self.freed.set(self.freed.get() + 1);
-        }
-    }
-
     #[test]
-    fn owned_callbacks_dispatch_once_and_shutdown_releases_pending_owners() {
-        let freed = Rc::new(Cell::new(0));
+    fn owned_timers_dispatch_once_and_shutdown_releases_pending_owners() {
         let calls = Rc::new(Cell::new(0));
-        for delay in [None, Some(Duration::ZERO), Some(Duration::from_secs(60))] {
-            let owner = Box::new(Owner {
-                timer: Timer::new(),
-                freed: freed.clone(),
-            });
+        let retained = Rc::new(());
+        for delay in [Duration::ZERO, Duration::from_secs(60)] {
             let observed = calls.clone();
             timer_once_owned(
-                owner,
-                |owner| &mut owner.timer,
-                delay,
+                Box::new((None, retained.clone())),
+                |owner| &mut owner.0,
+                Some(delay),
                 move |owner| {
-                    assert!(!owner.timer.is_pending());
+                    assert!(!owner.0.as_ref().unwrap().is_pending());
                     observed.set(observed.get() + 1);
-                    drop(owner);
                 },
             );
         }
-        assert_eq!(calls.get(), 0, "spawn must not dispatch inline");
-        assert_eq!(freed.get(), 0);
+        assert_eq!(Rc::strong_count(&retained), 3);
         poll();
-        assert_eq!(calls.get(), 2);
-        assert_eq!(freed.get(), 2);
+        poll();
+        assert_eq!(calls.get(), 1);
+        assert_eq!(Rc::strong_count(&retained), 2);
         super::super::shutdown_runtime();
-        assert_eq!(calls.get(), 2);
-        assert_eq!(freed.get(), 3);
+        assert_eq!(Rc::strong_count(&retained), 1);
+        assert_eq!(Rc::strong_count(&calls), 1);
     }
 
     #[test]
-    fn shutdown_cancels_deferred_cleanup_and_old_handles_cannot_cancel_new_timers() {
-        struct DeferredDrop(Rc<Cell<usize>>);
-        impl Drop for DeferredDrop {
-            fn drop(&mut self) {
-                let freed = self.0.clone();
-                defer(move || freed.set(freed.get() + 1));
-            }
-        }
-        let freed = Rc::new(Cell::new(0));
-        let owner = DeferredDrop(freed.clone());
-        defer(move || drop(owner));
-        let stream_owner = DeferredDrop(freed.clone());
-        unsafe {
-            super::super::bufferevent_new(
-                -1,
-                crate::src::shared::event::bufferevent_data_callback(move |_| {
-                    let _keep_owner = &stream_owner;
-                    panic!("shutdown must not dispatch I/O");
-                }),
-                None,
-                None,
-            );
-        }
-        let mut old = Timer::new();
-        old.set(|| {});
-        old.arm(Duration::from_secs(60)).unwrap();
+    fn shutdown_invalidates_old_handles_without_cancelling_new_timers() {
+        let calls = Rc::new(Cell::new(0));
+        let old = Timer::new(Duration::ZERO, || panic!("old timer must not dispatch")).unwrap();
         super::super::shutdown_runtime();
         assert!(!old.is_pending());
-        let mut new = Timer::new();
-        new.set(|| {});
-        new.arm(Duration::from_secs(60)).unwrap();
-        old.cancel();
-        assert!(new.is_pending());
+        let observed = calls.clone();
+        let timer = Timer::new(Duration::ZERO, move || observed.set(observed.get() + 1)).unwrap();
+        drop(old);
         poll();
-        assert_eq!(
-            freed.get(),
-            0,
-            "shutdown must cancel nested deferred cleanup"
-        );
-        new.cancel();
+        assert_eq!(calls.get(), 1);
         super::super::shutdown_runtime();
-    }
-
-    #[test]
-    fn forked_shutdown_cancels_cleanup_enqueued_by_timer_captures() {
-        struct DeferredDrop(Rc<Cell<usize>>);
-        impl Drop for DeferredDrop {
-            fn drop(&mut self) {
-                let capture = self.0.clone();
-                defer(move || capture.set(capture.get() + 1));
-            }
-        }
-        let calls = Rc::new(Cell::new(0));
-        let owner = DeferredDrop(calls.clone());
-        let mut timer = Timer::new();
-        timer.set(move || {
-            let _keep_owner = &owner;
-            panic!("shutdown must not dispatch timers");
-        });
-        timer.arm(Duration::ZERO).unwrap();
-        drop(timer);
-        unsafe {
-            let pid = libc::fork();
-            assert!(pid >= 0);
-            if pid == 0 {
-                libc::alarm(5);
-                super::super::shutdown_runtime();
-                assert_eq!(calls.get(), 0, "shutdown must not dispatch callbacks");
-                assert_eq!(Rc::strong_count(&calls), 1, "all captures must be released");
-                libc::_exit(0);
-            }
-            let mut status = 0;
-            assert_eq!(libc::waitpid(pid, &mut status, 0), pid);
-            assert!(libc::WIFEXITED(status), "child status {status}");
-            assert_eq!(libc::WEXITSTATUS(status), 0);
-        }
-        super::super::shutdown_runtime();
-        assert_eq!(calls.get(), 0);
+        assert!(!timer.is_pending());
         assert_eq!(Rc::strong_count(&calls), 1);
     }
 
@@ -394,9 +322,7 @@ mod tests {
     fn restarting_tasks_preserves_deadlines_and_dispatches_only_once() {
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
-        let mut timer = Timer::new();
-        timer.set(move || observed.set(observed.get() + 1));
-        timer.arm(Duration::ZERO).unwrap();
+        let timer = Timer::new(Duration::ZERO, move || observed.set(observed.get() + 1)).unwrap();
         let deadline = timer.deadline();
         stop_tasks();
         assert_eq!(timer.deadline(), deadline);
@@ -407,5 +333,19 @@ mod tests {
         poll();
         assert_eq!(calls.get(), 1);
         super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn thread_exit_releases_owned_timers_without_reentering_the_destroyed_registry() {
+        std::thread::spawn(|| {
+            timer_once_owned(
+                Box::new(None),
+                |timer| timer,
+                Some(Duration::from_secs(60)),
+                |_| panic!("thread exit must not dispatch"),
+            );
+        })
+        .join()
+        .unwrap();
     }
 }

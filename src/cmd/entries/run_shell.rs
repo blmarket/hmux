@@ -63,7 +63,7 @@ pub struct cmd_run_shell_data {
     pub wait: bool,
     pub s: Option<SessionRef>,
     pub wp_id: ::core::ffi::c_int,
-    pub timer: Timer,
+    pub timer: Option<Timer>,
     pub flags: ::core::ffi::c_int,
 }
 pub static cmd_run_shell_entry: cmd_entry = {
@@ -489,7 +489,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
 impl Drop for cmd_run_shell_data {
     fn drop(&mut self) {
         unsafe {
-            self.timer.cancel();
+            drop(self.timer.take());
             if let Some(session) = self.s.take() {
                 (session).release(c"cmd_run_shell_data::drop");
             }

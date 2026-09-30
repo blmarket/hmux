@@ -499,9 +499,8 @@ mod ownership_tests {
 
             let expired = Rc::new(Cell::new(false));
             let observed = expired.clone();
-            let mut timeout = reactor::Timer::new();
-            timeout.set(move || observed.set(true));
-            timeout.arm(Duration::from_secs(2)).unwrap();
+            let timeout =
+                reactor::Timer::new(Duration::from_secs(2), move || observed.set(true)).unwrap();
             while !owner.peers.is_empty() && !expired.get() {
                 poll_runtime();
             }
@@ -509,7 +508,7 @@ mod ownership_tests {
             assert!(owner.peers.is_empty());
             assert_eq!(libc::fcntl(sender_fd, libc::F_GETFD), -1);
             assert_eq!(libc::fcntl(receiver_fd, libc::F_GETFD), -1);
-            timeout.cancel();
+            drop(timeout);
             proc_free(owner);
             reactor::shutdown_runtime();
         }

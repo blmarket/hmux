@@ -1,3 +1,4 @@
+use crate::src::reactor::Timer;
 // Copy a terminal field and release its component borrow before a nested output
 // operation. Writes evaluate their source before borrowing the destination.
 macro_rules! terminal_value {
@@ -318,11 +319,13 @@ unsafe fn tty_timer_callback(owner: &ClientRef) {
         }
         terminal_set!(terminal, discarded, =, 0);
         let timeout = Duration::from_micros(TTY_BLOCK_INTERVAL as u64);
-        terminal
-            .borrow_terminal_mut()
-            .timer
-            .arm(timeout)
-            .expect("arm timer");
+        terminal.borrow_terminal_mut().timer = Some(
+            Timer::new(
+                timeout,
+                tty_client_timer_callback(terminal, tty_timer_callback),
+            )
+            .expect("arm timer"),
+        );
     })(owner);
 }
 
@@ -373,11 +376,13 @@ unsafe fn tty_block_maybe(terminal: &ClientRef) -> bool {
     terminal.record_terminal_discard(size);
     terminal_set!(terminal, discarded, =, 0);
     let timeout = Duration::from_micros(TTY_BLOCK_INTERVAL as u64);
-    terminal
-        .borrow_terminal_mut()
-        .timer
-        .arm(timeout)
-        .expect("arm timer");
+    terminal.borrow_terminal_mut().timer = Some(
+        Timer::new(
+            timeout,
+            tty_client_timer_callback(terminal, tty_timer_callback),
+        )
+        .expect("arm timer"),
+    );
     true
 }
 
@@ -541,21 +546,6 @@ pub unsafe fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
         terminal_set!(terminal, io_fd, =, Some(fd));
         terminal_set!(terminal, in_0, =, Some(Box::new(TerminalInput::default())));
         terminal_set!(terminal, out, =, Some(evbuffer_new()));
-        terminal
-            .borrow_terminal_mut()
-            .clipboard_timer
-            .set(tty_client_timer_callback(
-                owner,
-                tty_clipboard_query_callback,
-            ));
-        terminal
-            .borrow_terminal_mut()
-            .start_timer
-            .set(tty_client_timer_callback(owner, tty_start_timer_callback));
-        terminal
-            .borrow_terminal_mut()
-            .timer
-            .set(tty_client_timer_callback(owner, tty_timer_callback));
     })(owner);
     tty_start_tty(owner);
     tty_keys_build(&mut *owner.borrow_terminal_mut());
@@ -587,11 +577,11 @@ unsafe fn tty_start_start_timer(tty: &ClientRef) {
                 as *const _
         )
     ));
-    tty.borrow_terminal_mut().start_timer.cancel();
-    tty.borrow_terminal_mut()
-        .start_timer
-        .arm(tv)
-        .expect("arm timer");
+    drop(tty.borrow_terminal_mut().start_timer.take());
+    tty.borrow_terminal_mut().start_timer = Some(
+        Timer::new(tv, tty_client_timer_callback(tty, tty_start_timer_callback))
+            .expect("arm timer"),
+    );
 }
 pub unsafe fn tty_start_tty(owner: &ClientRef) {
     (|tty: &ClientRef| {
@@ -791,9 +781,9 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             ws_ypixel: 0,
         };
         terminal_set!(tty, flags, &=, !TTY_STARTED);
-        tty.borrow_terminal_mut().start_timer.cancel();
-        tty.borrow_terminal_mut().clipboard_timer.cancel();
-        tty.borrow_terminal_mut().timer.cancel();
+        drop(tty.borrow_terminal_mut().start_timer.take());
+        drop(tty.borrow_terminal_mut().clipboard_timer.take());
+        drop(tty.borrow_terminal_mut().timer.take());
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
         tty.borrow_terminal_mut().read_task.cancel();
         tty.borrow_terminal_mut().write_task.cancel();
@@ -933,9 +923,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
 pub unsafe fn tty_close(owner: &ClientRef) {
     {
         let mut terminal = owner.borrow_terminal_mut();
-        if terminal.key_timer.is_initialized() {
-            terminal.key_timer.cancel();
-        }
+        drop(terminal.key_timer.take());
     }
     tty_stop_tty(owner);
     let term = {
@@ -2240,7 +2228,13 @@ pub unsafe fn tty_clipboard_query(owner: &ClientRef) {
     let timeout = Duration::from_secs(TTY_QUERY_TIMEOUT as u64);
     let mut tty = owner.borrow_terminal_mut();
     tty.flags |= TTY_OSC52QUERY;
-    tty.clipboard_timer.arm(timeout).expect("arm timer");
+    tty.clipboard_timer = Some(
+        Timer::new(
+            timeout,
+            tty_client_timer_callback(owner, tty_clipboard_query_callback),
+        )
+        .expect("arm timer"),
+    );
 }
 
 #[cfg(test)]

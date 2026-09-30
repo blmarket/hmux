@@ -11,24 +11,23 @@ use std::time::Duration;
 pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
     let wp = pane.get();
     (*wp).base.mode |= MODE_SYNC;
-    if !(*wp).sync_timer.is_initialized() {
-        let observer = Rc::downgrade(pane);
-        (*wp).sync_timer.set(move || {
+    let observer = Rc::downgrade(pane);
+    (*wp).sync_timer = Some(
+        Timer::new(Duration::from_secs(1), move || {
             if let Some(pane) = observer.upgrade() {
                 log_debug(format_args!(
                     "screen_write_sync_callback: %{} sync timer expired",
                     pane.id()
                 ));
-                (*pane.get()).sync_timer.cancel();
+                drop((*pane.get()).sync_timer.take());
                 if pane.is_synchronized() {
                     (*pane.get()).base.mode &= !MODE_SYNC;
                     flush_dirty(&pane);
                 }
             }
-        });
-    }
-    let timeout = Duration::from_secs(1);
-    (*wp).sync_timer.arm(timeout).expect("arm timer");
+        })
+        .expect("arm timer"),
+    );
     log_debug(format_args!(
         "screen_write_start_sync: %{} started sync mode",
         pane.id()
@@ -41,9 +40,7 @@ pub(super) unsafe fn stop(pane: &Rc<UnsafeCell<window_pane>>) {
     }
     {
         let state = &mut *pane.get();
-        if state.sync_timer.is_initialized() {
-            state.sync_timer.cancel();
-        }
+        drop(state.sync_timer.take());
         state.base.mode &= !MODE_SYNC;
     }
     flush_dirty(pane);
@@ -59,9 +56,7 @@ pub(super) unsafe fn stop_unowned(state: &mut window_pane) {
     if state.base.mode & MODE_SYNC == 0 {
         return;
     }
-    if state.sync_timer.is_initialized() {
-        state.sync_timer.cancel();
-    }
+    drop(state.sync_timer.take());
     state.base.mode &= !MODE_SYNC;
     assert!(
         state.sync_dirty.is_none(),
@@ -179,7 +174,12 @@ mod tests {
             (*pane.get()).fd = -1;
             (*pane.get()).pipe_fd = -1;
             let observer = Rc::downgrade(&pane);
-            let pending = || (*pane.get()).sync_timer.is_pending();
+            let pending = || {
+                (*pane.get())
+                    .sync_timer
+                    .as_ref()
+                    .is_some_and(Timer::is_pending)
+            };
             pane.start_sync();
             pane.start_sync();
             assert!(pane.is_synchronized());

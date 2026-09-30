@@ -334,9 +334,7 @@ unsafe fn session_destroy(
     }
     (*s).tio = None;
     (*s).tio = None;
-    if (*s).lock_timer.is_initialized() {
-        (*s).lock_timer.cancel();
-    }
+    drop((*s).lock_timer.take());
     session_group_remove(s_owner);
     while crate::src::window::winlink_stack_first(&(*s).lastw).is_alive() {
         let first = crate::src::window::winlink_stack_first(&(*s).lastw);
@@ -384,16 +382,7 @@ unsafe fn session_update_activity(session: &mut session, from: Option<SystemTime
             .unwrap_or_default()
             .subsec_micros() as ::core::ffi::c_int
     ));
-    if session.lock_timer.is_initialized() {
-        session.lock_timer.cancel();
-    } else {
-        let observer = session.observer.clone();
-        session.lock_timer.set(move || unsafe {
-            if let Some(owner) = observer.upgrade() {
-                session_lock_timer(&owner);
-            }
-        });
-    }
+    drop(session.lock_timer.take());
     if session.attached != 0 {
         let timeout = Duration::from_secs(
             (crate::src::options::options_get_number_ref(
@@ -402,7 +391,15 @@ unsafe fn session_update_activity(session: &mut session, from: Option<SystemTime
             )) as u64,
         );
         if timeout.as_secs() != 0 {
-            session.lock_timer.arm(timeout).expect("arm timer");
+            let observer = session.observer.clone();
+            session.lock_timer = Some(
+                Timer::new(timeout, move || unsafe {
+                    if let Some(owner) = observer.upgrade() {
+                        session_lock_timer(&owner);
+                    }
+                })
+                .expect("arm timer"),
+            );
         }
     }
 }

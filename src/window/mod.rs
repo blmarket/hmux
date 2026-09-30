@@ -458,15 +458,9 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     drop(window_replace_old_layout(w_owner, None));
     menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
-    if (*w).name_event.is_initialized() {
-        (*w).name_event.cancel();
-    }
-    if (*w).alerts_timer.is_initialized() {
-        (*w).alerts_timer.cancel();
-    }
-    if (*w).offset_timer.is_initialized() {
-        (*w).offset_timer.cancel();
-    }
+    drop((*w).name_event.take());
+    drop((*w).alerts_timer.take());
+    drop((*w).offset_timer.take());
     drop((*w).options.take());
     (*w).lifecycle = WindowLifecycle::Destroyed;
 }

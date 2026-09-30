@@ -7,3 +7,5 @@ which does not align with Rust safety semantics. Specificaly,
    dedicated free function, we should keep the guarantee it being called until
    we migrate everything to drop function. Also while such manual Drop exists,
    we should not rely on Drop for resource management.
+
+Prefer single ownership, Drop cleanup, reconstructible state, and minimal abstractions.

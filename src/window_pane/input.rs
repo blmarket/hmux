@@ -218,9 +218,10 @@ mod input_buffer_ownership_tests {
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             for timer in [&mut owner.ground_timer, &mut owner.request_timer] {
                 let calls = calls.clone();
-                timer.set(move || calls.set(calls.get() + 1));
-                let timeout = Duration::ZERO;
-                timer.arm(timeout).expect("arm timer");
+                *timer = Some(
+                    Timer::new(Duration::ZERO, move || calls.set(calls.get() + 1))
+                        .expect("arm timer"),
+                );
             }
             // Moving the owning Box into a model field keeps both timers armed.
             // The owner cleanup must cancel both registrations.
@@ -263,11 +264,12 @@ mod input_buffer_ownership_tests {
             let observed = std::rc::Rc::downgrade(&pane);
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             let callback_calls = calls.clone();
-            (*pointer)
-                .sync_timer
-                .set(move || callback_calls.set(callback_calls.get() + 1));
-            let timeout = Duration::ZERO;
-            (*pointer).sync_timer.arm(timeout).expect("arm timer");
+            (*pointer).sync_timer = Some(
+                Timer::new(Duration::ZERO, move || {
+                    callback_calls.set(callback_calls.get() + 1)
+                })
+                .expect("arm timer"),
+            );
             drop(pane);
             assert!(observed.upgrade().is_none());
             crate::src::reactor::poll_runtime();
@@ -2296,8 +2298,10 @@ unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
 }
 unsafe fn input_start_ground_timer(mut ictx: *mut input_ctx) {
     let tv = Duration::from_secs(5);
-    (*ictx).ground_timer.cancel();
-    (*ictx).ground_timer.arm(tv).expect("arm timer");
+    drop((*ictx).ground_timer.take());
+    (*ictx).ground_timer = Some(
+        Timer::new(tv, move || unsafe { input_ground_timer_callback(ictx) }).expect("arm timer"),
+    );
 }
 unsafe fn input_reset_cell(mut ictx: *mut input_ctx) {
     memcpy(
@@ -2359,12 +2363,6 @@ pub unsafe fn input_init(
     (*ictx).event = crate::src::reactor::StreamHandle::from_ptr(bev);
     (*ictx).palette = palette;
     (*ictx).c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    (*ictx)
-        .ground_timer
-        .set(move || unsafe { input_ground_timer_callback(ictx) });
-    (*ictx)
-        .request_timer
-        .set(move || unsafe { input_request_timer_callback(ictx) });
     input_reset(ictx, 0 as ::core::ffi::c_int);
     owner
 }
@@ -2387,8 +2385,8 @@ impl Drop for input_ctx {
                 };
                 input_free_request(ir);
             }
-            (*ictx).request_timer.cancel();
-            (*ictx).ground_timer.cancel();
+            drop((*ictx).request_timer.take());
+            drop((*ictx).ground_timer.take());
             if let Some(pane) = self.wp.upgrade() {
                 pane.stop_sync();
             }
@@ -2680,7 +2678,7 @@ unsafe fn input_reply(
     };
 }
 unsafe fn input_clear(mut ictx: *mut input_ctx) {
-    (*ictx).ground_timer.cancel();
+    drop((*ictx).ground_timer.take());
     *(&raw mut (*ictx).interm_buf as *mut u_char) = '\0' as i32 as u_char;
     (*ictx).interm_len = 0 as size_t;
     *(&raw mut (*ictx).param_buf as *mut u_char) = '\0' as i32 as u_char;
@@ -2691,7 +2689,7 @@ unsafe fn input_clear(mut ictx: *mut input_ctx) {
     (*ictx).flags &= !INPUT_DISCARD;
 }
 unsafe fn input_ground(mut ictx: *mut input_ctx) {
-    (*ictx).ground_timer.cancel();
+    drop((*ictx).ground_timer.take());
     evbuffer_drain(
         &mut *(*ictx).since_ground,
         evbuffer_get_length(&*(*ictx).since_ground),
@@ -6054,8 +6052,10 @@ unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
 }
 unsafe fn input_start_request_timer(mut ictx: *mut input_ctx) {
     let tv = Duration::from_micros(100000);
-    (*ictx).request_timer.cancel();
-    (*ictx).request_timer.arm(tv).expect("arm timer");
+    drop((*ictx).request_timer.take());
+    (*ictx).request_timer = Some(
+        Timer::new(tv, move || unsafe { input_request_timer_callback(ictx) }).expect("arm timer"),
+    );
 }
 unsafe fn input_make_request(
     mut ictx: *mut input_ctx,

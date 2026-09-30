@@ -6,17 +6,8 @@ use std::time::Duration;
 
 pub(super) unsafe fn reset_timer(owner: &WindowRef) {
     let w = owner.get();
-    if !(*w).alerts_timer.is_initialized() {
-        let observer = Rc::downgrade(owner);
-        (*w).alerts_timer.set(move || {
-            if let Some(owner) = observer.upgrade() {
-                log_debug(format_args!("@{} alerts timer expired", owner.id()));
-                crate::src::alerts::alerts_queue(&owner, WINDOW_SILENCE);
-            }
-        });
-    }
     (*w).flags &= !WINDOW_SILENCE;
-    (*w).alerts_timer.cancel();
+    drop((*w).alerts_timer.take());
     let timeout = Duration::from_secs(
         (owner.with_options_mut(|options| options_get_number(options, c"monitor-silence".as_ptr())))
             as u64,
@@ -27,7 +18,16 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
         timeout.as_secs() as u32
     ));
     if timeout.as_secs() != 0 {
-        (*w).alerts_timer.arm(timeout).expect("arm timer");
+        let observer = Rc::downgrade(owner);
+        (*w).alerts_timer = Some(
+            Timer::new(timeout, move || {
+                if let Some(owner) = observer.upgrade() {
+                    log_debug(format_args!("@{} alerts timer expired", owner.id()));
+                    crate::src::alerts::alerts_queue(&owner, WINDOW_SILENCE);
+                }
+            })
+            .expect("arm timer"),
+        );
     }
 }
 

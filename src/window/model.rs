@@ -39,10 +39,10 @@ pub struct window {
     /// Nonowning identity of the client last active in this window.
     pub(super) latest: ClientWeak,
     pub(super) name: std::ffi::CString,
-    pub(super) name_event: Timer,
+    pub(super) name_event: Option<Timer>,
     pub(super) name_time: Option<Instant>,
-    pub(super) alerts_timer: Timer,
-    pub(super) offset_timer: Timer,
+    pub(super) alerts_timer: Option<Timer>,
+    pub(super) offset_timer: Option<Timer>,
     pub(super) activity_time: SystemTime,
     pub(super) creation_time: SystemTime,
     /// Current pane identity; the pane index owns the allocation.

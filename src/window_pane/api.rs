@@ -1651,19 +1651,7 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
     if (*pane).resize_queue.is_empty() {
         return;
     }
-    if !(*pane).resize_timer.is_initialized() {
-        let observer = Rc::downgrade(owner);
-        (*pane).resize_timer.set(move || {
-            if let Some(owner) = observer.upgrade() {
-                log_debug(format_args!(
-                    "server_client_resize_timer: %{} resize timer expired",
-                    owner.id()
-                ));
-                (*owner.get()).resize_timer.cancel();
-            }
-        });
-    }
-    if (*pane).resize_timer.is_pending() {
+    if (*pane).resize_timer.as_ref().is_some_and(Timer::is_pending) {
         return;
     }
     log_debug(format_args!(
@@ -1694,7 +1682,19 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
     window_pane_send_resize(&*pane, sx, sy);
     (*pane).clear_resizes_except(keep);
     let delay = Duration::from_micros((if keep.is_null() { 250000 } else { 10000 }) as u64);
-    (*pane).resize_timer.arm(delay).expect("arm timer");
+    let observer = Rc::downgrade(owner);
+    (*pane).resize_timer = Some(
+        Timer::new(delay, move || {
+            if let Some(owner) = observer.upgrade() {
+                log_debug(format_args!(
+                    "server_client_resize_timer: %{} resize timer expired",
+                    owner.id()
+                ));
+                drop((*owner.get()).resize_timer.take());
+            }
+        })
+        .expect("arm timer"),
+    );
 }
 
 unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
