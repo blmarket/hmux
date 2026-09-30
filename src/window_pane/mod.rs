@@ -7,6 +7,8 @@ use crate::src::window::Window as _;
 use crate::src::window::*;
 use std::time::Duration;
 mod api;
+mod model;
+pub use model::window_pane;
 mod pane_sync;
 use crate::src::alerts::alerts_queue;
 use crate::src::arguments::args_has;
@@ -105,8 +107,7 @@ use crate::src::shared::limits::{INT_MAX, UINT_MAX};
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
-    window_pane, window_pane_history, window_pane_modes, window_pane_prompt, window_panes,
-    PaneScreenSource,
+    window_pane_history, window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
 };
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,

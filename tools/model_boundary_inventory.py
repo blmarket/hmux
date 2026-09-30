@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODELS = {
     'session': 'src/session/model.rs',
     'window': 'src/window/model.rs',
-    'window_pane': 'src/shared/pane.rs',
+    'window_pane': 'src/window_pane/model.rs',
     'client': 'src/server_client/model.rs',
 }
 

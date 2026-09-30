@@ -1165,7 +1165,8 @@ fn pane_layout_observers_are_optional_cell_identities() {
     assert!(optional_layout_cell_id(
         &syn::parse_str("Option<LayoutCellId>").unwrap()
     ));
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/shared/pane.rs").unwrap()).unwrap();
+    let syntax =
+        syn::parse_file(&std::fs::read_to_string("src/window_pane/model.rs").unwrap()).unwrap();
     let pane = syntax
         .items
         .iter()

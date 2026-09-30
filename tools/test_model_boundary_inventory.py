@@ -64,9 +64,8 @@ fn next() { other(); }
         self.assertEqual(changed.count('\n'), source.count('\n'))
 
     def test_field_visibility_matches_only_a_real_owner_submodule(self):
-        for model in ('session', 'window', 'client'):
+        for model in ('session', 'window', 'window_pane', 'client'):
             self.assertEqual(field_visibility(model), 'pub(super)')
-        self.assertEqual(field_visibility('window_pane'), '')
         for path in ('src/window/mod.rs', 'src/window.rs', 'src/shared/window.rs'):
             with self.subTest(path=path), patch.dict(MODELS, window=path):
                 self.assertEqual(field_visibility('window'), '')
