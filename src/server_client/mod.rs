@@ -135,19 +135,17 @@ impl client {
 /// Own clients until client-loss cleanup transfers their Rc to deferred release.
 /// Weak observers and successor entries survive active removal until final cleanup.
 pub struct ClientRegistry {
-    owners: std::collections::BTreeMap<usize, ClientRef>,
+    owners: Vec<ClientRef>,
     ordered: Vec<ClientWeak>,
-    indices: std::collections::BTreeMap<usize, usize>,
-    successors: std::collections::BTreeMap<usize, ClientWeak>,
+    successors: Vec<(ClientWeak, ClientWeak)>,
 }
 
 impl ClientRegistry {
     pub(crate) const fn new() -> Self {
         Self {
-            owners: std::collections::BTreeMap::new(),
+            owners: Vec::new(),
             ordered: Vec::new(),
-            indices: std::collections::BTreeMap::new(),
-            successors: std::collections::BTreeMap::new(),
+            successors: Vec::new(),
         }
     }
 
@@ -156,57 +154,79 @@ impl ClientRegistry {
     }
 
     pub(crate) fn next(&self, current: &ClientRef) -> Option<ClientRef> {
+        let observer = std::rc::Rc::downgrade(current);
         self.successors
-            .get(&(std::rc::Rc::as_ptr(current) as usize))
-            .and_then(std::rc::Weak::upgrade)
+            .iter()
+            .find(|(client, _)| std::rc::Weak::ptr_eq(client, &observer))
+            .and_then(|(_, next)| next.upgrade())
+    }
+
+    fn set_successor(&mut self, client: ClientWeak, next: ClientWeak) {
+        if let Some((_, successor)) = self
+            .successors
+            .iter_mut()
+            .find(|(current, _)| std::rc::Weak::ptr_eq(current, &client))
+        {
+            *successor = next;
+        } else {
+            self.successors.push((client, next));
+        }
     }
 
     pub(crate) fn push_back(&mut self, owner: ClientRef) {
-        let key = std::rc::Rc::as_ptr(&owner) as usize;
-        assert!(!self.indices.contains_key(&key), "client registered twice");
-
+        assert!(
+            !self
+                .owners
+                .iter()
+                .any(|current| std::rc::Rc::ptr_eq(current, &owner)),
+            "client registered twice"
+        );
         let observer = std::rc::Rc::downgrade(&owner);
-        if let Some(previous) = self.ordered.last() {
-            self.successors
-                .insert(previous.as_ptr() as usize, observer.clone());
+        if let Some(previous) = self.ordered.last().cloned() {
+            self.set_successor(previous, observer.clone());
         }
-        self.indices.insert(key, self.ordered.len());
-        self.successors.insert(key, std::rc::Weak::new());
+        self.set_successor(observer.clone(), std::rc::Weak::new());
         self.ordered.push(observer);
-        self.owners.insert(key, owner);
+        self.owners.push(owner);
     }
 
-    /// Remove a client from active iteration but keep its cached successor.
+    /// Remove active membership, preserving the removed client's successor
+    /// until final cleanup so an in-progress traversal can continue.
     pub(crate) fn remove(&mut self, observer: &ClientWeak) -> bool {
-        let key = observer.as_ptr() as usize;
-        let Some(index) = self.indices.remove(&key) else {
+        let Some(index) = self
+            .ordered
+            .iter()
+            .position(|client| std::rc::Weak::ptr_eq(client, observer))
+        else {
             return false;
         };
         let next = self.ordered.get(index + 1).cloned().unwrap_or_default();
         if index > 0 {
-            let previous = &self.ordered[index - 1];
-            self.successors.insert(previous.as_ptr() as usize, next);
+            self.set_successor(self.ordered[index - 1].clone(), next);
         }
         self.ordered.remove(index);
-        for (index, active) in self.ordered.iter().enumerate().skip(index) {
-            self.indices.insert(active.as_ptr() as usize, index);
-        }
         true
     }
 
-    /// Forget the non-owning entry during final Rc cleanup.
-    pub(crate) fn release(&mut self, observer: &ClientWeak) {
-        self.remove(observer);
-        self.successors.remove(&(observer.as_ptr() as usize));
+    /// Transfer the registry's existing strong reference to explicit cleanup.
+    pub(crate) fn take_owner(&mut self, observer: &ClientWeak) -> Option<ClientRef> {
+        let index = self
+            .owners
+            .iter()
+            .position(|owner| std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(owner), observer))?;
+        Some(self.owners.remove(index))
     }
 
-    /// Reset active membership while retaining records owned by outstanding
-    /// references.
+    pub(crate) fn release(&mut self, observer: &ClientWeak) {
+        self.remove(observer);
+        self.successors
+            .retain(|(client, _)| !std::rc::Weak::ptr_eq(client, observer));
+    }
+
     pub(crate) fn clear(&mut self) {
         self.ordered.clear();
-        self.indices.clear();
         self.successors.clear();
-        for owner in std::mem::take(&mut self.owners).into_values() {
+        for owner in std::mem::take(&mut self.owners) {
             server_client_unref_owned(owner);
         }
     }
@@ -1555,8 +1575,7 @@ pub unsafe fn server_client_lost(client_owner: &ClientRef) {
     }
     server_client_unref_owned(
         clients
-            .owners
-            .remove(&((*c).observer.as_ptr() as usize))
+            .take_owner(&(*c).observer)
             .expect("registered client owner"),
     );
     server_add_accept(0 as ::core::ffi::c_int);
@@ -5585,6 +5604,10 @@ mod client_registry_tests {
             assert!(Rc::ptr_eq(&held_successor, &last));
             let middle_observer = Rc::downgrade(&middle);
             assert!(registry.remove(&middle_observer));
+            let middle_owner = registry.take_owner(&middle_observer).unwrap();
+            assert!(Rc::ptr_eq(&middle_owner, &middle));
+            assert!(registry.take_owner(&middle_observer).is_none());
+            super::server_client_unref_owned(middle_owner);
             assert!(Rc::ptr_eq(&registry.next(&first).unwrap(), &last));
             assert!(Rc::ptr_eq(&registry.next(&middle).unwrap(), &last));
             registry.release(&middle_observer);
