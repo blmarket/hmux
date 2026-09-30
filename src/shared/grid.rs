@@ -23,54 +23,43 @@ pub struct grid_cell {
     pub link: u_int,
 }
 
-/// Nullable thin owner preserves translated record layout and default construction.
-/// All element allocation, growth, cloning, and destruction belong to the Vec.
+/// Owns elements directly. Buffer addresses stay stable until growth or release;
+/// the Rust grid headers themselves do not cross a C interface.
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct GridArray<T>(Option<Box<Vec<T>>>);
+pub struct GridArray<T>(Vec<T>);
 
 impl<T> Default for GridArray<T> {
     fn default() -> Self {
-        Self(None)
+        Self(Vec::new())
     }
 }
 impl<T> std::ops::Deref for GridArray<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
-        self.0.as_deref().map_or(&[], |items| items.as_slice())
+        self.0.as_slice()
     }
 }
 impl<T> std::ops::DerefMut for GridArray<T> {
     fn deref_mut(&mut self) -> &mut [T] {
-        self.0
-            .get_or_insert_with(|| Box::new(Vec::new()))
-            .as_mut_slice()
+        self.0.as_mut_slice()
     }
 }
 impl<T> GridArray<T> {
     // Vec pointer access does not materialize a slice reference. Callers may
     // retain disjoint element pointers until an operation changes the array.
     pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
-        self.0
-            .as_mut()
-            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
-                items.as_mut_ptr()
-            })
+        self.0.as_mut_ptr()
     }
     pub(crate) fn as_ptr(&self) -> *const T {
-        self.0
-            .as_ref()
-            .map_or(std::ptr::NonNull::dangling().as_ptr(), |items| {
-                items.as_ptr()
-            })
+        self.0.as_ptr()
     }
     pub(crate) fn resize_with(&mut self, len: usize, init: impl FnMut() -> T) {
-        self.0
-            .get_or_insert_with(|| Box::new(Vec::new()))
-            .resize_with(len, init);
+        self.0.resize_with(len, init);
     }
     pub(crate) fn clear(&mut self) {
-        self.0 = None;
+        // Keep the translated explicit release behavior, including capacity.
+        self.0 = Vec::new();
     }
 }
 
@@ -224,7 +213,7 @@ mod tests {
     use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]
-    fn grid_storage_layout_matches_translated_c_baseline() {
+    fn grid_cell_storage_layout_matches_translated_c_baseline() {
         assert_eq!(size_of::<utf8_data>(), 35);
         assert_eq!(align_of::<utf8_data>(), 1);
 
@@ -234,10 +223,6 @@ mod tests {
         assert_eq!(offset_of!(grid_cell, attr), 36);
         assert_eq!(offset_of!(grid_cell, fg), 40);
         assert_eq!(offset_of!(grid_cell, link), 52);
-
-        assert_eq!(size_of::<grid>(), 48);
-        assert_eq!(align_of::<grid>(), 8);
-        assert_eq!(offset_of!(grid, linedata), 40);
 
         assert_eq!(size_of::<osc133_data>(), 10);
         assert_eq!(align_of::<osc133_data>(), 2);
