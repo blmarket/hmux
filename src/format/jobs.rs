@@ -39,7 +39,7 @@ fn format_job_message(fj: &format_job, suffix: &[u8]) -> CString {
 
 // Cache storage is owned by Client or by the process. Callbacks carry a weak
 // Client and entry identity, never a reference or pointer into either cache.
-static mut format_jobs: Option<Box<format_job_tree>> = None;
+static mut format_jobs: format_job_tree = format_job_tree::new();
 
 #[derive(Clone)]
 enum JobCache {
@@ -56,10 +56,7 @@ impl JobCache {
 
     /// Only immediate cache edits. The closure must not expand formats, launch
     /// or free processes, notify clients, or return borrowed components.
-    unsafe fn with_cache<R>(
-        &self,
-        edit: impl FnOnce(&mut Option<Box<format_job_tree>>) -> R,
-    ) -> Option<R> {
+    unsafe fn with_cache<R>(&self, edit: impl FnOnce(&mut format_job_tree) -> R) -> Option<R> {
         match self {
             Self::Global => Some(edit(&mut *(&raw mut format_jobs))),
             Self::Client(observer) => {
@@ -74,12 +71,7 @@ impl JobCache {
         let key = (tag, command.to_bytes().to_vec());
         let identity = self
             .with_cache(|cache| {
-                let record = format_job_find_or_insert(
-                    cache.get_or_insert_with(Default::default),
-                    client,
-                    tag,
-                    command,
-                );
+                let record = format_job_find_or_insert(cache, client, tag, command);
                 std::rc::Rc::downgrade(&record.identity)
             })
             .expect("format context retains the cache client");
@@ -102,7 +94,7 @@ impl JobEntry {
     unsafe fn with_record<R>(&self, edit: impl FnOnce(&mut format_job) -> R) -> Option<R> {
         self.cache
             .with_cache(|cache| {
-                let record = cache.as_deref_mut()?.get_mut(&self.key)?;
+                let record = cache.get_mut(&self.key)?;
                 if !std::rc::Rc::downgrade(&record.identity).ptr_eq(&self.identity) {
                     return None;
                 }
@@ -313,23 +305,22 @@ fn format_job_find_or_insert<'a>(
 unsafe fn format_job_tidy_at(cache: &JobCache, force: i32, now: time_t) {
     let expired = cache
         .with_cache(|cache| {
-            cache.as_deref().map_or_else(Vec::new, |jobs| {
-                jobs.iter()
-                    .filter_map(|(key, record)| {
-                        if force == 0 && (record.last > now || now - record.last < 3600) {
-                            None
-                        } else {
-                            Some((key.clone(), std::rc::Rc::downgrade(&record.identity)))
-                        }
-                    })
-                    .collect()
-            })
+            cache
+                .iter()
+                .filter_map(|(key, record)| {
+                    if force == 0 && (record.last > now || now - record.last < 3600) {
+                        None
+                    } else {
+                        Some((key.clone(), std::rc::Rc::downgrade(&record.identity)))
+                    }
+                })
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     for (key, identity) in expired {
         let removed = cache
             .with_cache(|cache| {
-                let jobs = cache.as_deref_mut()?;
+                let jobs = cache;
                 let record = jobs.get(&key)?;
                 if !std::rc::Rc::downgrade(&record.identity).ptr_eq(&identity) {
                     return None;
@@ -366,14 +357,56 @@ pub unsafe fn format_lost_client(client: &ClientRef) {
     let cache = JobCache::for_client(Some(client));
     // Keep the cache installed throughout explicit process cancellation.
     format_job_tidy_at(&cache, 1, time(std::ptr::null_mut()));
-    let removed = client.borrow_format_jobs_mut().take();
-    drop(removed);
+    // Cancellation callbacks may have inserted replacements. Detach each batch
+    // before explicit cleanup, so process callbacks never overlap a cache loan.
+    loop {
+        let removed = std::mem::take(&mut *client.borrow_format_jobs_mut());
+        if removed.is_empty() {
+            break;
+        }
+        for record in removed.into_values() {
+            if !record.job.is_empty() {
+                job_free(&record.job);
+            }
+            drop(record);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::rc::Rc;
+
+    #[test]
+    fn client_loss_explicitly_cancels_jobs_inserted_by_cancellation_callbacks() {
+        unsafe {
+            let client = client::new();
+            let cache = JobCache::for_client(Some(&client));
+            let entry = cache.entry(Some(&client), 0, c"original");
+            let observer = Rc::downgrade(&client);
+            let replacement_cache = cache.clone();
+            let released = Rc::new(std::cell::Cell::new(false));
+            let freed = released.clone();
+            let original =
+                crate::src::job::job_with_free_callback_for_test(Some(Box::new(move || {
+                    let client = observer.upgrade().unwrap();
+                    let replacement = replacement_cache.entry(Some(&client), 0, c"replacement");
+                    let freed = freed.clone();
+                    let replacement_job = crate::src::job::job_with_free_callback_for_test(Some(
+                        Box::new(move || freed.set(true)),
+                    ));
+                    replacement.with_record(|record| record.job = replacement_job);
+                })));
+            entry.with_record(|record| record.job = original.clone());
+
+            format_lost_client(&client);
+
+            assert!(!original.is_alive());
+            assert!(released.get());
+            assert!(client.borrow_format_jobs_mut().is_empty());
+        }
+    }
 
     #[test]
     fn cancellation_reenters_the_installed_cache_after_entry_removal() {
@@ -392,9 +425,6 @@ mod tests {
                     let owner = observer.upgrade().unwrap();
                     {
                         let jobs = owner.borrow_format_jobs_mut();
-                        let jobs = jobs
-                            .as_ref()
-                            .expect("cache remains installed during cancellation");
                         assert!(!jobs.contains_key(&(0, b"expired".to_vec())));
                         assert!(jobs.contains_key(&(0, b"kept".to_vec())));
                     }
@@ -408,12 +438,9 @@ mod tests {
             assert!(!process.is_alive());
             assert!(expired.identity.upgrade().is_none());
             assert!(kept.identity.upgrade().is_some());
-            assert_eq!(
-                cache.with_cache(|cache| cache.as_ref().unwrap().len()),
-                Some(2)
-            );
+            assert_eq!(cache.with_cache(|cache| cache.len()), Some(2));
             format_lost_client(&owner);
-            assert!(owner.borrow_format_jobs_mut().is_none());
+            assert!(owner.borrow_format_jobs_mut().is_empty());
         }
     }
 
@@ -479,8 +506,6 @@ mod tests {
             let keys = cache
                 .with_cache(|cache| {
                     cache
-                        .as_ref()
-                        .unwrap()
                         .values()
                         .map(|record| (record.tag, record.cmd.clone()))
                         .collect::<Vec<_>>()
@@ -492,8 +517,8 @@ mod tests {
             }
             format_lost_client(&owner);
             format_lost_client(&other_owner);
-            assert!(owner.borrow_format_jobs_mut().is_none());
-            assert!(other_owner.borrow_format_jobs_mut().is_none());
+            assert!(owner.borrow_format_jobs_mut().is_empty());
+            assert!(other_owner.borrow_format_jobs_mut().is_empty());
         }
     }
 
@@ -506,7 +531,7 @@ mod tests {
             retired.with_record(|record| record.last = time(std::ptr::null_mut()) + 3600);
             assert_eq!(Rc::strong_count(&owner), 1);
             format_lost_client(&owner);
-            assert!(owner.borrow_format_jobs_mut().is_none());
+            assert!(owner.borrow_format_jobs_mut().is_empty());
             assert!(retired.identity.upgrade().is_none());
             let replacement = cache.entry(Some(&owner), 0, c"job");
             replacement.with_record(|record| record.out = Some(c"replacement".to_owned()));
@@ -560,10 +585,7 @@ mod tests {
                 }
             }
             format_job_tidy_at(&cache, 0, now);
-            assert_eq!(
-                cache.with_cache(|cache| cache.as_ref().unwrap().len()),
-                Some(3)
-            );
+            assert_eq!(cache.with_cache(|cache| cache.len()), Some(3));
             for (command, entry) in survivors {
                 assert!(entry
                     .identity
@@ -574,9 +596,7 @@ mod tests {
                 );
             }
             format_job_tidy_at(&cache, 1, now);
-            assert!(cache
-                .with_cache(|cache| cache.as_ref().unwrap().is_empty())
-                .unwrap());
+            assert!(cache.with_cache(|cache| cache.is_empty()).unwrap());
             format_job_tidy_at(&cache, 0, now);
             format_lost_client(&owner);
         }

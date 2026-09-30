@@ -47,8 +47,8 @@ pub struct client {
     pub(super) activity_time: SystemTime,
     pub(super) last_activity_time: SystemTime,
     pub(super) environ: Option<Box<environ>>,
-    /// Sole owner of this client's lazily allocated format-job cache.
-    pub(super) jobs: Option<Box<format_job_tree>>,
+    /// Sole owner of this client's format-job cache, empty until first use.
+    pub(super) jobs: format_job_tree,
     pub(super) title: Option<std::ffi::CString>,
     pub(super) path: Option<std::ffi::CString>,
     pub(super) cwd: Option<std::ffi::CString>,

@@ -31,7 +31,7 @@ pub enum PanDirection {
 /// existing deferred-owner release sites must keep their deferred release duty.
 pub trait Client {
     type FormatJobsMut<'a>: std::ops::DerefMut<
-        Target = Option<Box<crate::src::shared::format::format_job_tree>>,
+        Target = crate::src::shared::format::format_job_tree,
     >
     where
         Self: 'a;
@@ -325,7 +325,7 @@ impl Client for ClientRef {
         output(&mut terminal)
     }
 
-    type FormatJobsMut<'a> = &'a mut Option<Box<crate::src::shared::format::format_job_tree>>;
+    type FormatJobsMut<'a> = &'a mut crate::src::shared::format::format_job_tree;
     unsafe fn borrow_format_jobs_mut(&self) -> Self::FormatJobsMut<'_> {
         &mut (*self.get()).jobs
     }
