@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{strchr, strlen};
+use crate::src::ffi::libc::strlen;
 use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug};
@@ -587,11 +587,8 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
         width: 0,
     };
     let mut onlykey: key_code = 0;
-    let mut p: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    static mut standard_map: [*const ::core::ffi::c_char; 2] = [
-        b"1!9(0)=+;:'\",<.>/-8? 2\0" as *const u8 as *const ::core::ffi::c_char,
-        b"119900=+;;'',,..\x1F\x1F\x7F\x7F\0\0\0" as *const u8 as *const ::core::ffi::c_char,
-    ];
+    const STANDARD_KEYS: &[u8] = b"1!9(0)=+;:'\",<.>/-8? 2\0";
+    const STANDARD_VALUES: &[u8] = b"119900=+;;'',,..\x1F\x1F\x7F\x7F\0\0\0";
     log_debug(format_args!("{}: key in {:x}", "input_key_vt10x", key));
     if key as ::core::ffi::c_ulonglong & KEYC_META != 0 {
         input_key_write(
@@ -623,15 +620,8 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
         key &= !KEYC_CTRL;
     }
     if key as ::core::ffi::c_ulonglong & KEYC_CTRL != 0 {
-        p = strchr(
-            standard_map[0 as ::core::ffi::c_int as usize],
-            onlykey as ::core::ffi::c_int,
-        );
-        if !p.is_null() {
-            key = *standard_map[1 as ::core::ffi::c_int as usize].offset(
-                p.offset_from(standard_map[0 as ::core::ffi::c_int as usize]) as ::core::ffi::c_long
-                    as isize,
-            ) as key_code;
+        if let Some(index) = STANDARD_KEYS.iter().position(|byte| *byte == onlykey as u8) {
+            key = STANDARD_VALUES[index] as key_code;
         } else if onlykey >= '3' as i32 as key_code && onlykey <= '7' as i32 as key_code {
             key = onlykey.wrapping_sub('\u{18}' as i32 as key_code);
         } else if onlykey >= '@' as i32 as key_code && onlykey <= '~' as i32 as key_code {
