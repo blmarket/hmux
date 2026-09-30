@@ -23,6 +23,7 @@ use crate::src::proc::{
     proc_add_peer, proc_clear_signals, proc_exit, proc_flush_peer, proc_loop, proc_send,
     proc_set_signals, proc_start,
 };
+use crate::src::reactor::init_runtime;
 use crate::src::server::server_start;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{socklen_t, ssize_t, uint32_t};
@@ -225,7 +226,7 @@ unsafe fn client_connect(
                 close(lockfd);
                 return -(1 as ::core::ffi::c_int);
             }
-            fd = server_start(client_proc, flags, lockfd, &mut lockfile);
+            fd = server_start(flags, lockfd, &mut lockfile);
             current_block = 7172762164747879670;
             break;
         }
@@ -353,17 +354,13 @@ pub unsafe fn client_main(
     client_proc = &raw mut *process_owner;
     // All ordinary returns, including startup failures, share explicit cleanup.
     let result = (|| {
-        proc_set_signals(
-            client_proc,
-            Some(Box::new(|sig| unsafe { client_signal(sig) })),
-        );
         client_flags = (flags as ::core::ffi::c_ulonglong | CLIENT_WRITE_ACK) as uint64_t;
         log_debug(format_args!(
             "flags are {}",
             log_hex(client_flags as ::core::ffi::c_ulonglong)
         ));
         if systemd_activated() != 0 {
-            fd = server_start(client_proc, flags, -1, &mut None);
+            fd = server_start(flags, -1, &mut None);
         } else {
             fd = client_connect(socket_path, client_flags);
         }
@@ -384,6 +381,15 @@ pub unsafe fn client_main(
             }
             return 1 as ::core::ffi::c_int;
         }
+        // Connecting may daemonize a new server. Initialize each process's
+        // runtime only after that fork.
+        init_runtime();
+        proc_set_signals(
+            client_proc,
+            Some(Box::new(|sig| unsafe { client_signal(sig) })),
+        );
+        // The daemonization child may have exited before SIGCHLD was installed.
+        client_signal(ProcessSignal::Child);
         client_peer = proc_add_peer(
             client_proc,
             fd,

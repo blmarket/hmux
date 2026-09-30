@@ -33,8 +33,11 @@ thread_local! {
 pub(crate) fn handle() -> hmux_rt::mio::Handle {
     HANDLE.with(|h| h.borrow().as_ref().expect("runtime initialized").clone())
 }
+pub(crate) fn runtime_initialized() -> bool {
+    HANDLE.with(|h| h.borrow().is_some())
+}
 fn ensure_runtime() {
-    if HANDLE.with(|h| h.borrow().is_some()) {
+    if runtime_initialized() {
         return;
     }
     let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");

@@ -409,6 +409,10 @@ pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
     log_toggle((*tp).name.as_ptr());
 }
 pub unsafe fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -> pid_t {
+    assert!(
+        !reactor::runtime_initialized(),
+        "daemonize before initializing the runtime"
+    );
     let mut pid: pid_t = 0;
     let mut pair: [::core::ffi::c_int; 2] = [0; 2];
     if socketpair(

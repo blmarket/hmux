@@ -17,8 +17,7 @@ use crate::src::key_bindings::key_bindings_init;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::options::{options_get_number, options_set_number};
 use crate::src::proc::{
-    proc_clear_signals, proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start,
-    proc_toggle_log,
+    proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
 };
 use crate::src::prompt_history::prompt_save_history;
 use crate::src::reactor::{self, Task};
@@ -250,7 +249,6 @@ unsafe fn server_tidy_event() {
     server_ev_tidy = Some(Timer::new(tv, || unsafe { server_tidy_event() }).expect("arm timer"));
 }
 pub(crate) unsafe fn server_start(
-    mut client: *mut tmuxproc,
     mut flags: uint64_t,
     mut lockfd: ::core::ffi::c_int,
     lockfile: &mut Option<CString>,
@@ -273,11 +271,8 @@ pub(crate) unsafe fn server_start(
             return fd;
         }
     }
-    proc_clear_signals(client, 0 as ::core::ffi::c_int);
     server_client_flags = flags;
-    if let Err(error) = reactor::reset_after_fork() {
-        fatalx(|out| write!(out, "runtime reset after fork failed: {error}"));
-    }
+    reactor::init_runtime();
     let mut process_owner = proc_start(c"server".as_ptr());
     server_proc = &raw mut *process_owner;
     proc_set_signals(
