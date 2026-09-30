@@ -1159,9 +1159,10 @@ unsafe fn redraw_draw_pane_span(
     style_ctx.hyperlinks = (*s).hyperlinks.clone();
     px = (*span).data.pane().px.wrapping_add(x.wrapping_sub(span.x));
     py = span.data.pane().py;
-    client_owner.with_terminal_output(|terminal| {
+    {
+        let terminal = &(client_owner);
         tty_draw_line(terminal, &*s, px, py, n, x, y, Some(&style_ctx));
-    });
+    };
 }
 unsafe fn redraw_get_default_border_style(
     dctx: &mut redraw_draw_ctx<'_>,
@@ -1355,9 +1356,15 @@ unsafe fn redraw_draw_border_span(
     if cell_type == CELL_UD as u_int && dctx.flags & REDRAW_ISOLATES != 0 {
         isolates = 1 as ::core::ffi::c_int;
     }
-    client_owner.with_terminal_output(|terminal| tty_cursor(terminal, x, y));
+    {
+        let terminal = &(client_owner);
+        tty_cursor(terminal, x, y)
+    };
     if isolates != 0 {
-        client_owner.with_terminal_output(|terminal| tty_puts(terminal, REDRAW_END_ISOLATE));
+        {
+            let terminal = &(client_owner);
+            tty_puts(terminal, REDRAW_END_ISOLATE)
+        };
     }
     i = 0 as u_int;
     while i < n {
@@ -1365,7 +1372,10 @@ unsafe fn redraw_draw_border_span(
         i = i.wrapping_add(1);
     }
     if isolates != 0 {
-        client_owner.with_terminal_output(|terminal| tty_puts(terminal, REDRAW_START_ISOLATE));
+        {
+            let terminal = &(client_owner);
+            tty_puts(terminal, REDRAW_START_ISOLATE)
+        };
     }
 }
 unsafe fn redraw_draw_status_span(
@@ -1396,9 +1406,10 @@ unsafe fn redraw_draw_status_span(
         if n > sx.wrapping_sub(px) {
             n = sx.wrapping_sub(px);
         }
-        client_owner.with_terminal_output(|terminal| {
+        {
+            let terminal = &(client_owner);
             tty_draw_line(terminal, &*s, px, 0, n, x, y, None);
-        });
+        };
     }
 }
 unsafe fn redraw_draw_scrollbar_span(
@@ -1516,7 +1527,10 @@ unsafe fn redraw_draw_scrollbar_span(
     sb_w = (*sb_style).width as u_int;
     sb_pad = (*sb_style).pad as u_int;
     off = x.wrapping_sub(span.x);
-    client_owner.with_terminal_output(|terminal| tty_cursor(terminal, x, y));
+    {
+        let terminal = &(client_owner);
+        tty_cursor(terminal, x, y)
+    };
     let mut current_block_40: u64;
     i = 0 as u_int;
     while i < n {
@@ -1568,9 +1582,10 @@ unsafe fn redraw_draw_menu_span(
         return;
     };
     let px = data.px.wrapping_add(x.wrapping_sub(span.x));
-    client_owner.with_terminal_output(|terminal| {
+    {
+        let terminal = &(client_owner);
         tty_draw_line(terminal, menu_screen(&md), px, data.py, n, x, y, None);
-    });
+    };
 }
 unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, mut y: u_int) {
     let scene = dctx.scene;
@@ -1880,7 +1895,8 @@ unsafe fn redraw_draw_pane_prompt(
         pdd,
     );
     screen_write_stop(&mut ctx);
-    client_owner.with_terminal_output(|terminal| {
+    {
+        let terminal = &(client_owner);
         tty_draw_line(
             terminal,
             &screen,
@@ -1891,7 +1907,7 @@ unsafe fn redraw_draw_pane_prompt(
             cy as u_int,
             None,
         );
-    });
+    };
     screen_free(&mut screen);
 }
 unsafe fn redraw_draw(
@@ -2042,10 +2058,18 @@ unsafe fn redraw_draw_scene(
             }
         }
     }
-    client_owner.with_terminal_output(|terminal| {
+    {
+        let terminal = &(client_owner);
         tty_sync_start(terminal);
-        tty_update_mode(terminal, terminal.mode & !CURSOR_MODES, None);
-    });
+        tty_update_mode(
+            terminal,
+            {
+                let tty_state = terminal.borrow_terminal();
+                tty_state.mode
+            } & !CURSOR_MODES,
+            None,
+        );
+    };
     if !wp.is_null() {
         redraw_draw_pane_lines(
             &mut dctx,
@@ -2114,7 +2138,10 @@ unsafe fn redraw_draw_scene(
     if flags & REDRAW_OVERLAY != 0 {
         client_owner.draw_overlay();
     }
-    client_owner.with_terminal_output(|terminal| tty_reset(terminal));
+    {
+        let terminal = &(client_owner);
+        tty_reset(terminal)
+    };
     log_debug(format_args!(
         "{}: finished @{} redraw",
         log_cstr(

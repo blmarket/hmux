@@ -1672,14 +1672,17 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
             server_client_update_theme_colours(loop_0.as_ref());
-            loop_0
-                .as_ref()
-                .expect("live client")
-                .with_terminal_output(|terminal| {
-                    if terminal.flags & TTY_OPENED != 0 {
-                        tty_invalidate(terminal);
-                    }
-                });
+            {
+                let terminal = &(loop_0.as_ref().expect("live client"));
+                if {
+                    let tty_state = terminal.borrow_terminal();
+                    tty_state.flags
+                } & TTY_OPENED
+                    != 0
+                {
+                    tty_invalidate(terminal);
+                }
+            };
             server_redraw_client(loop_0.as_ref().expect("live client"));
             registry_loop_0_owner = clients.next(
                 registry_loop_0_owner

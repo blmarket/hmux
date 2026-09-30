@@ -1611,7 +1611,7 @@ unsafe fn tty_keys_winsz(
                 0
             };
         }
-        terminal_client_owner.with_terminal_output(|terminal| tty_invalidate(terminal));
+        tty_invalidate(&terminal_client_owner);
         terminal_client_owner.borrow_terminal_mut().flags &= !TTY_WINSIZEQUERY;
         *size = end.wrapping_add(1 as size_t);
         return 0 as ::core::ffi::c_int;

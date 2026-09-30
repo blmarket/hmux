@@ -21,38 +21,43 @@ fn strings_preserve_bytes_and_title_and_path_require_both_delimiters() {
             cy: 2,
             ..Default::default()
         };
-        let expected_written = client_owner.with_terminal_output(|terminal| {
-            let text = CStr::from_bytes_until_nul(b"raw\xff\0trailing").unwrap();
-            tty_puts(terminal, text);
-            tty_puts(terminal, c"");
+        let text = CStr::from_bytes_until_nul(b"raw\xff\0trailing").unwrap();
+        tty_puts(&client_owner, text);
+        tty_puts(&client_owner, c"");
+        {
+            let mut terminal = client_owner.borrow_terminal_mut();
             assert_eq!(
                 evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
                 b"raw\xff"
             );
             evbuffer_drain(terminal.out.as_deref_mut().unwrap(), 4);
             assert_eq!((terminal.cx, terminal.cy), (4, 2));
-
             terminal.term.as_deref_mut().unwrap().codes[TTYC_TSL as usize] =
                 tty_code::String(c"\x1b]2;".to_owned());
             terminal.term.as_deref_mut().unwrap().codes[TTYC_SWD as usize] =
                 tty_code::String(c"\x1b]7;".to_owned());
-            tty_set_title(terminal, text);
-            tty_set_path(terminal, c"file:///tmp");
+        }
+        tty_set_title(&client_owner, text);
+        tty_set_path(&client_owner, c"file:///tmp");
+        {
+            let mut terminal = client_owner.borrow_terminal_mut();
             assert!(evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).is_none());
-
             terminal.term.as_deref_mut().unwrap().codes[TTYC_FSL as usize] =
                 tty_code::String(c"\x07".to_owned());
-            tty_set_title(terminal, text);
-            tty_set_path(terminal, c"file:///tmp");
-            tty_set_title(terminal, c"");
-            let expected = b"\x1b]2;raw\xff\x07\x1b]7;file:///tmp\x07\x1b]2;\x07";
+        }
+        tty_set_title(&client_owner, text);
+        tty_set_path(&client_owner, c"file:///tmp");
+        tty_set_title(&client_owner, c"");
+        let expected = b"\x1b]2;raw\xff\x07\x1b]7;file:///tmp\x07\x1b]2;\x07";
+        {
+            let mut terminal = client_owner.borrow_terminal_mut();
             assert_eq!(
                 evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap(),
                 expected
             );
             assert_eq!((terminal.cx, terminal.cy), (4, 2));
-            4 + expected.len()
-        });
+        }
+        let expected_written = 4 + expected.len();
         assert_eq!(written(&client_owner), expected_written);
     }
 }

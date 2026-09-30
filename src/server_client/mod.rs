@@ -3879,10 +3879,11 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 screen_mode_display(mode)
             ));
         }
-        client_owner.with_terminal_output(|terminal| {
+        {
+            let terminal = &(client_owner);
             tty_region_off(terminal);
             tty_margin_off(terminal);
-        });
+        };
         if (*c).prompt.is_some() {
             prompt = 1 as u_int;
             (cx, cy) = status_prompt_cursor(&(*c).observer.upgrade().expect("live client"));
@@ -3977,7 +3978,10 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 (cx) as u32,
                 (cy) as u32
             ));
-            client_owner.with_terminal_output(|terminal| tty_cursor(terminal, cx, cy));
+            {
+                let terminal = &(client_owner);
+                tty_cursor(terminal, cx, cy)
+            };
         } else {
             mode &= !CURSOR_MODES;
             mode |= (*tty).mode & CURSOR_MODES;
@@ -4018,11 +4022,12 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         if !(*c).overlay.has_draw() && prompt != 0 {
             mode &= !MODE_BRACKETPASTE;
         }
-        client_owner.with_terminal_output(|terminal| {
+        {
+            let terminal = &(client_owner);
             tty_update_mode(terminal, mode, s);
             tty_reset(terminal);
             tty_sync_end(terminal);
-        });
+        };
         (*tty).flags |= flags;
     })();
     crate::src::window::window_remove_ref(window_owner, c"server_client_reset_state".as_ptr());
@@ -4392,7 +4397,10 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             redraw_screen(client_owner);
         }
         (*tty).flags = (*tty).flags & !TTY_NOCURSOR | tflags & TTY_NOCURSOR;
-        client_owner.with_terminal_output(|terminal| tty_update_mode(terminal, mode, None));
+        {
+            let terminal = &(client_owner);
+            tty_update_mode(terminal, mode, None)
+        };
         (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR) | tflags;
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_ALLREDRAWFLAGS as ::core::ffi::c_ulonglong
@@ -4456,7 +4464,10 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
     let title = format_expand_time_cstring(ft, template);
     if (*c).title.as_ref().is_none_or(|old| old != &title) {
         server_client_replace_title(&mut *c, Some(title.clone()));
-        client_owner.with_terminal_output(|terminal| tty_set_title(terminal, &title));
+        {
+            let terminal = &(client_owner);
+            tty_set_title(terminal, &title)
+        };
     }
     format_free(ft_owner);
 }
@@ -4483,7 +4494,10 @@ unsafe fn server_client_set_path(owner: &ClientRef) {
         .to_owned();
     if (*owner.get()).path.as_deref() != Some(path.as_c_str()) {
         server_client_replace_path(&mut *owner.get(), Some(path.clone()));
-        owner.with_terminal_output(|terminal| tty_set_path(terminal, &path));
+        {
+            let terminal = &(owner);
+            tty_set_path(terminal, &path)
+        };
     }
 }
 unsafe fn server_client_set_progress_bar(owner: &ClientRef) {
@@ -4500,7 +4514,10 @@ unsafe fn server_client_set_progress_bar(owner: &ClientRef) {
         }
         state.progress_bar = pane_progress;
     }
-    owner.with_terminal_output(|terminal| tty_set_progress_bar(terminal, &mut pane_progress));
+    {
+        let terminal = &(owner);
+        tty_set_progress_bar(terminal, &mut pane_progress)
+    };
 }
 
 unsafe fn server_client_dispatch(
@@ -4560,12 +4577,10 @@ unsafe fn server_client_dispatch(
                 old_sx = (*c).tty.sx;
                 old_sy = (*c).tty.sy;
                 tty_resize(&(*c).observer.upgrade().expect("live client"));
-                (*c).observer
-                    .upgrade()
-                    .expect("live client")
-                    .with_terminal_output(|terminal| {
-                        tty_repeat_requests(terminal, 0 as ::core::ffi::c_int)
-                    });
+                {
+                    let terminal = &(owner);
+                    tty_repeat_requests(terminal, 0 as ::core::ffi::c_int)
+                };
                 recalculate_sizes();
                 if !(*c).overlay.has_resize() {
                     server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
@@ -4719,10 +4734,10 @@ unsafe fn server_client_command_done(
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_ready(&(*(c)).observer.upgrade().expect("live client"));
         }
-        (*c).observer
-            .upgrade()
-            .expect("live client")
-            .with_terminal_output(|terminal| tty_send_requests(terminal));
+        {
+            let terminal = c_owner.as_ref().expect("live client");
+            tty_send_requests(terminal)
+        };
     }
     return CMD_RETURN_NORMAL;
 }
@@ -5516,17 +5531,23 @@ unsafe fn server_client_report_theme(c_owner: &ClientRef, mut theme: client_them
     }
     if (*c).theme as ::core::ffi::c_uint != old as ::core::ffi::c_uint {
         server_client_update_theme_colours(Some(c_owner));
-        c_owner.with_terminal_output(|terminal| {
-            if terminal.flags & TTY_OPENED != 0 {
+        {
+            let terminal = &(c_owner);
+            if {
+                let tty_state = terminal.borrow_terminal();
+                tty_state.flags
+            } & TTY_OPENED
+                != 0
+            {
                 tty_invalidate(terminal);
             }
-        });
+        };
         (*c).flags |= CLIENT_ALLREDRAWFLAGS as u64;
     }
-    (*c).observer
-        .upgrade()
-        .expect("live client")
-        .with_terminal_output(|terminal| tty_repeat_requests(terminal, 1 as ::core::ffi::c_int));
+    {
+        let terminal = &(c_owner);
+        tty_repeat_requests(terminal, 1 as ::core::ffi::c_int)
+    };
 }
 
 #[cfg(test)]

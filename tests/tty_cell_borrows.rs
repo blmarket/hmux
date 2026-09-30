@@ -125,8 +125,7 @@ fn style_defaults_apply_to_copies_and_default_background_can_override_them() {
             ),
             (2, 4)
         );
-        client_owner
-            .with_terminal_output(|terminal| tty_default_attributes(terminal, 3, Some(&style)));
+        tty_default_attributes(&client_owner, 3, Some(&style));
         assert_eq!(
             (
                 client_owner.borrow_terminal().last_cell.fg,
@@ -212,9 +211,7 @@ fn line_rendering_preserves_source_cells_through_selection_conversion_and_clippi
                 ..grid_default_cell
             };
             screen_set_selection(&mut screen, 3, 0, 3, 0, 0, 6, MODEKEY_VI, &selection_style);
-            client_owner.with_terminal_output(|terminal| {
-                tty_draw_line(terminal, &screen, start, 0, width, 0, 0, None)
-            });
+            tty_draw_line(&client_owner, &screen, start, 0, width, 0, 0, None);
             assert_eq!(
                 evbuffer_pullup(
                     client_owner
@@ -267,9 +264,7 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         screen.default_ccolour = -1;
         screen.default_cstyle = SCREEN_CURSOR_UNDERLINE;
         screen.default_mode = MODE_CURSOR_BLINKING;
-        client_owner.with_terminal_output(|terminal| {
-            tty_update_mode(terminal, MODE_CURSOR, Some((&screen).into()))
-        });
+        tty_update_mode(&client_owner, MODE_CURSOR, Some((&screen).into()));
         assert_eq!(
             client_owner.borrow_terminal().cstyle,
             SCREEN_CURSOR_UNDERLINE
@@ -280,7 +275,7 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         );
 
         // Without a screen, retain the previous style but use the requested blink mode.
-        client_owner.with_terminal_output(|terminal| tty_update_mode(terminal, MODE_CURSOR, None));
+        tty_update_mode(&client_owner, MODE_CURSOR, None);
         assert_eq!(
             client_owner.borrow_terminal().cstyle,
             SCREEN_CURSOR_UNDERLINE
@@ -288,12 +283,10 @@ fn optional_screen_cursor_style_preserves_defaults_and_explicit_overrides() {
         assert_eq!(client_owner.borrow_terminal().mode, MODE_CURSOR);
 
         screen.cstyle = SCREEN_CURSOR_BAR;
-        client_owner.with_terminal_output(|terminal| {
-            tty_update_mode(terminal, MODE_CURSOR, Some((&screen).into()))
-        });
+        tty_update_mode(&client_owner, MODE_CURSOR, Some((&screen).into()));
         assert_eq!(client_owner.borrow_terminal().cstyle, SCREEN_CURSOR_BAR);
         assert_eq!(client_owner.borrow_terminal().mode, MODE_CURSOR);
-        client_owner.with_terminal_output(|terminal| tty_update_mode(terminal, 0, None));
+        tty_update_mode(&client_owner, 0, None);
         assert_eq!(client_owner.borrow_terminal().mode, 0);
         assert_eq!(
             evbuffer_pullup(

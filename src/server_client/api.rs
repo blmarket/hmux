@@ -30,9 +30,7 @@ pub enum PanDirection {
 /// component borrows before callbacks. Logical client loss remains explicit;
 /// existing deferred-owner release sites must keep their deferred release duty.
 pub trait Client {
-    type FormatJobsMut<'a>: std::ops::DerefMut<
-        Target = crate::src::shared::format::format_job_tree,
-    >
+    type FormatJobsMut<'a>: std::ops::DerefMut<Target = crate::src::shared::format::format_job_tree>
     where
         Self: 'a;
     /// Immediate cache edits only. Release before expansion, process startup,
@@ -59,13 +57,11 @@ pub trait Client {
     unsafe fn borrow_terminal_mut(&self) -> Self::TerminalMut<'_>;
     /// Enqueue terminal bytes and account for output within one model borrow.
     unsafe fn write_terminal(&self, bytes: &[u8]);
-    /// Batch component-only output under one Client borrow. No Client queries,
-    /// formatting or callbacks may run in the supplied operation. References to
-    /// the output view must not escape. This can borrow one whole-model RefCell.
-    unsafe fn with_terminal_output<R>(
-        &self,
-        output: impl FnOnce(&mut crate::src::tty::TerminalOutput<'_>) -> R,
-    ) -> R;
+    unsafe fn terminal_fd(&self) -> i32;
+    unsafe fn record_terminal_discard(&self, bytes: usize);
+    /// Some(0) completes the redraw write; backpressure starts on a later write.
+    unsafe fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize>;
+    unsafe fn terminal_theme_colour(&self, index: usize) -> i32;
     unsafe fn initialize_terminal(&self) -> i32;
     /// Read bytes through the owned descriptor without exposing it or the buffer.
     unsafe fn read_terminal_input(&self) -> (usize, i32);
@@ -305,24 +301,27 @@ pub trait Client {
 }
 
 impl Client for ClientRef {
-    unsafe fn with_terminal_output<R>(
-        &self,
-        output: impl FnOnce(&mut crate::src::tty::TerminalOutput<'_>) -> R,
-    ) -> R {
-        let state = &mut *self.get();
-        let mut terminal = crate::src::tty::TerminalOutput::new(
-            &mut state.tty,
-            &mut state.written,
-            &mut state.discarded,
-            &mut state.redraw,
-            state.fd,
-            state.name.as_deref(),
-            state.flags & CLIENT_UTF8 as u64 != 0,
-            state.theme,
-            &state.theme_colours,
-            state.overlay.clips_output(),
-        );
-        output(&mut terminal)
+    unsafe fn terminal_fd(&self) -> i32 {
+        (*self.get()).fd
+    }
+    unsafe fn record_terminal_discard(&self, bytes: usize) {
+        let discarded = &mut (*self.get()).discarded;
+        *discarded = discarded.wrapping_add(bytes);
+    }
+    unsafe fn acknowledge_terminal_redraw(&self, bytes: usize) -> Option<usize> {
+        let redraw = &mut (*self.get()).redraw;
+        if *redraw == 0 {
+            return None;
+        }
+        *redraw = redraw.saturating_sub(bytes);
+        Some(*redraw)
+    }
+    unsafe fn terminal_theme_colour(&self, index: usize) -> i32 {
+        (*self.get())
+            .theme_colours
+            .get(index)
+            .copied()
+            .unwrap_or(-1)
     }
 
     type FormatJobsMut<'a> = &'a mut crate::src::shared::format::format_job_tree;
@@ -779,9 +778,7 @@ impl Client for ClientRef {
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32) {
         use crate::src::shared::alerts::{VISUAL_BOTH, VISUAL_OFF};
         if visual == VISUAL_OFF || visual == VISUAL_BOTH {
-            self.with_terminal_output(|terminal| {
-                crate::src::tty::tty_putcode(terminal, crate::src::shared::tty::TTYC_BEL);
-            });
+            crate::src::tty::tty_putcode(self, crate::src::shared::tty::TTYC_BEL);
         }
         if visual != VISUAL_OFF {
             // No client field reference survives status callbacks.
@@ -1261,38 +1258,38 @@ impl Client for ClientRef {
         sy: u32,
         style: &tty_style_ctx,
     ) {
-        self.with_terminal_output(|terminal| {
-            for row in 0..sy {
-                crate::src::tty_draw::tty_draw_line(
-                    terminal,
-                    source,
-                    0,
-                    row,
-                    sx,
-                    x,
-                    y.wrapping_add(row),
-                    Some(style),
-                );
-            }
-        });
+        for row in 0..sy {
+            crate::src::tty_draw::tty_draw_line(
+                self,
+                source,
+                0,
+                row,
+                sx,
+                x,
+                y.wrapping_add(row),
+                Some(style),
+            );
+        }
     }
 
     unsafe fn draw_status_line(&self, row: u32, x: u32, width: u32, y: u32) {
-        let state = &mut *self.get();
-        let source = state.status.active_screen();
-        let mut terminal = crate::src::tty::TerminalOutput::new(
-            &mut state.tty,
-            &mut state.written,
-            &mut state.discarded,
-            &mut state.redraw,
-            state.fd,
-            state.name.as_deref(),
-            state.flags & CLIENT_UTF8 as u64 != 0,
-            state.theme,
-            &state.theme_colours,
-            state.overlay.clips_output(),
-        );
-        crate::src::tty_draw::tty_draw_line(&mut terminal, source, x, row, width, x, y, None);
+        // Output only updates terminal state. Temporarily move the selected
+        // screen out of its holder so no status/model borrow spans drawing.
+        let (source, active) = {
+            let mut status = self.borrow_status_mut();
+            if let Some(screen) = status.active.as_deref_mut() {
+                (std::mem::take(screen), true)
+            } else {
+                (std::mem::take(&mut status.screen), false)
+            }
+        };
+        crate::src::tty_draw::tty_draw_line(self, &source, x, row, width, x, y, None);
+        let mut status = self.borrow_status_mut();
+        if active {
+            *status.active.as_deref_mut().expect("active status screen") = source;
+        } else {
+            status.screen = source;
+        }
     }
 
     unsafe fn prepare_overlay_render(&self, context: &mut tty_ctx, x: u32, y: u32) -> bool {
@@ -1620,6 +1617,101 @@ mod tests {
             (*client.get()).session = Weak::new();
             crate::src::session::test_support::current(&session, refbox::Weak::new());
             crate::src::session::test_support::remove_link(&session, link);
+        }
+    }
+
+    #[test]
+    fn output_uses_its_holder_without_a_terminal_backreference_and_keeps_accounting() {
+        use crate::src::shared::tty::{tty_code, TTYC_BEL, TTY_BLOCK};
+        unsafe {
+            let owner = client::new();
+            (*owner.get()).flags |= CLIENT_UTF8 as u64;
+            (*owner.get()).redraw = 3;
+            {
+                let mut terminal = owner.borrow_terminal_mut();
+                terminal.sx = 80;
+                terminal.sy = 24;
+                terminal.cell = crate::src::grid::grid_default_cell;
+                terminal.last_cell = crate::src::grid::grid_default_cell;
+                terminal.out = Some(crate::src::reactor::evbuffer_new());
+                let mut term = tty_term::empty();
+                term.codes = vec![tty_code::None; crate::src::tty_term::tty_term_ncodes() as usize]
+                    .into_boxed_slice();
+                term.codes[TTYC_BEL as usize] = tty_code::String(c"bell".to_owned());
+                terminal.term = Some(Box::new(term));
+                assert!(terminal.client.upgrade().is_none());
+            }
+            crate::src::tty::tty_putn(&owner, b"a\0b", 3);
+            crate::src::tty::tty_putcode(&owner, TTYC_BEL);
+            owner.borrow_terminal_mut().flags |= TTY_BLOCK;
+            crate::src::tty::tty_putn(&owner, b"lost", 4);
+            assert_eq!(owner.borrow_terminal().discarded, 4);
+            owner.record_terminal_discard(4);
+            assert_eq!(owner.acknowledge_terminal_redraw(3), Some(0));
+            assert_eq!(owner.acknowledge_terminal_redraw(1), None);
+            assert_eq!(
+                (
+                    (*owner.get()).written,
+                    (*owner.get()).discarded,
+                    (*owner.get()).redraw
+                ),
+                (7, 4, 0)
+            );
+            assert_eq!(
+                crate::src::reactor::evbuffer_pullup(
+                    owner.borrow_terminal_mut().out.as_deref_mut().unwrap(),
+                    -1,
+                )
+                .unwrap(),
+                b"a\0bbell"
+            );
+        }
+    }
+
+    #[test]
+    fn drawing_status_restores_the_selected_screen_and_its_grid_owner() {
+        use crate::src::shared::tty::tty_code;
+        unsafe {
+            let owner = client::new();
+            {
+                let mut terminal = owner.borrow_terminal_mut();
+                terminal.sx = 4;
+                terminal.sy = 1;
+                terminal.cell = crate::src::grid::grid_default_cell;
+                terminal.last_cell = crate::src::grid::grid_default_cell;
+                terminal.out = Some(crate::src::reactor::evbuffer_new());
+                let mut term = tty_term::empty();
+                term.codes = vec![tty_code::None; crate::src::tty_term::tty_term_ncodes() as usize]
+                    .into_boxed_slice();
+                terminal.term = Some(Box::new(term));
+            }
+            let base_grid = {
+                let mut status = owner.borrow_status_mut();
+                status.screen.grid = Some(crate::src::grid::grid_create(4, 1, 0));
+                status.screen.title = c"base".to_owned();
+                status.screen.grid() as *const crate::src::shared::grid::grid
+            };
+            owner.draw_status_line(0, 0, 4, 0);
+            {
+                let mut status = owner.borrow_status_mut();
+                assert!(status.active.is_none());
+                assert_eq!(status.screen.title, c"base");
+                assert_eq!(status.screen.grid() as *const _, base_grid);
+                let mut active = Box::new(screen::empty());
+                active.grid = Some(crate::src::grid::grid_create(4, 1, 0));
+                active.title = c"active".to_owned();
+                status.active = Some(active);
+            }
+            let active_screen = owner.borrow_status().active.as_deref().unwrap() as *const screen;
+            let active_grid = owner.borrow_status().active.as_deref().unwrap().grid() as *const _;
+            owner.draw_status_line(0, 0, 4, 0);
+            let status = owner.borrow_status();
+            let active = status.active.as_deref().unwrap();
+            assert_eq!(active as *const _, active_screen);
+            assert_eq!(active.grid() as *const _, active_grid);
+            assert_eq!(active.title, c"active");
+            assert_eq!(status.screen.grid() as *const _, base_grid);
+            assert_eq!(status.screen.title, c"base");
         }
     }
 }

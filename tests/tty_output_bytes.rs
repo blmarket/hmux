@@ -106,7 +106,7 @@ fn byte_lengths_and_display_widths_have_distinct_clipping_and_cursor_rules() {
                 flags: if blocked { TTY_BLOCK } else { 0 },
                 ..Default::default()
             };
-            client_owner.with_terminal_output(|terminal| tty_putn(terminal, data, width));
+            tty_putn(&client_owner, data, width);
             assert_eq!(
                 (
                     client_owner.borrow_terminal().cx,
@@ -149,7 +149,7 @@ fn repeating_spaces_preserves_chunk_boundaries_and_total_width() {
                 sy: 2,
                 ..Default::default()
             };
-            client_owner.with_terminal_output(|terminal| tty_repeat_space(terminal, count));
+            tty_repeat_space(&client_owner, count);
             let mut terminal = client_owner.borrow_terminal_mut();
             let bytes =
                 evbuffer_pullup(terminal.out.as_deref_mut().unwrap(), -1).unwrap_or_default();

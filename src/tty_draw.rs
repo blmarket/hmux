@@ -2,16 +2,18 @@ use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
 use crate::src::log::{fatalx, log_debug, log_get_level};
 use crate::src::screen::screen_select_cell;
+use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
+use crate::src::shared::client::{ClientRef, CLIENT_UTF8};
 use crate::src::shared::grid::*;
 use crate::src::shared::screen::screen;
 use crate::src::shared::tty::TTY_NOCURSOR;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{tty, tty_style_ctx};
 use crate::src::tty::{
-    tty_attributes, tty_check_codeset, tty_cursor, tty_default_attributes, tty_fake_bce,
-    tty_margin_off, tty_putc, tty_putcode, tty_putcode_i, tty_putn, tty_region_off,
-    tty_repeat_space, tty_update_mode, TerminalOutput,
+    terminal_set, terminal_term, terminal_value, tty_attributes, tty_check_codeset, tty_cursor,
+    tty_default_attributes, tty_fake_bce, tty_margin_off, tty_putc, tty_putcode, tty_putcode_i,
+    tty_putn, tty_region_off, tty_repeat_space, tty_update_mode,
 };
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
@@ -27,7 +29,7 @@ pub const TTY_DRAW_LINE_FIRST: tty_draw_line_state = 0;
 const TTY_DRAW_LINE_STATES: [&str; 7] = ["FIRST", "FLUSH", "NEW1", "NEW2", "EMPTY", "SAME", "DONE"];
 
 unsafe fn tty_draw_line_clear(
-    tty: &mut TerminalOutput<'_>,
+    client: &ClientRef,
     mut px: u_int,
     mut py: u_int,
     mut nx: u_int,
@@ -38,50 +40,38 @@ unsafe fn tty_draw_line_clear(
     if nx == 0 as u_int {
         return;
     }
-    if !tty.clips_output()
+    if !client.clips_terminal_output()
         && wrapped == 0
         && nx >= 10 as u_int
-        && tty_fake_bce(&*tty, defaults, bg) == 0
+        && tty_fake_bce(&*client.borrow_terminal(), defaults, bg) == 0
     {
-        if px.wrapping_add(nx) >= (*tty).sx
-            && tty_term_has(
-                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
-                TTYC_EL,
-            ) != 0
+        if px.wrapping_add(nx) >= terminal_value!(client, sx)
+            && tty_term_has(terminal_term(client), TTYC_EL) != 0
         {
-            tty_cursor(tty, px, py);
-            tty_putcode(tty, TTYC_EL);
+            tty_cursor(client, px, py);
+            tty_putcode(client, TTYC_EL);
             return;
         }
-        if px == 0 as u_int
-            && tty_term_has(
-                tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
-                TTYC_EL1,
-            ) != 0
-        {
-            tty_cursor(tty, px.wrapping_add(nx).wrapping_sub(1 as u_int), py);
-            tty_putcode(tty, TTYC_EL1);
+        if px == 0 as u_int && tty_term_has(terminal_term(client), TTYC_EL1) != 0 {
+            tty_cursor(client, px.wrapping_add(nx).wrapping_sub(1 as u_int), py);
+            tty_putcode(client, TTYC_EL1);
             return;
         }
-        if tty_term_has(
-            tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term),
-            TTYC_ECH,
-        ) != 0
-        {
-            tty_cursor(tty, px, py);
-            tty_putcode_i(tty, TTYC_ECH, nx as ::core::ffi::c_int);
+        if tty_term_has(terminal_term(client), TTYC_ECH) != 0 {
+            tty_cursor(client, px, py);
+            tty_putcode_i(client, TTYC_ECH, nx as ::core::ffi::c_int);
             return;
         }
     }
     if px != 0 as u_int || wrapped == 0 {
-        tty_cursor(tty, px, py);
+        tty_cursor(client, px, py);
     }
     if nx == 1 as u_int {
-        tty_putc(tty, ' ' as i32 as u_char);
+        tty_putc(client, ' ' as i32 as u_char);
     } else if nx == 2 as u_int {
-        tty_putn(tty, b"  ", 2 as u_int);
+        tty_putn(client, b"  ", 2 as u_int);
     } else {
-        tty_repeat_space(tty, nx);
+        tty_repeat_space(client, nx);
     };
 }
 fn tty_draw_line_get_empty(gc: &grid_cell, last: &grid_cell, mut nx: u_int) -> u_int {
@@ -111,7 +101,7 @@ fn tty_draw_line_get_empty(gc: &grid_cell, last: &grid_cell, mut nx: u_int) -> u
     return empty;
 }
 pub unsafe fn tty_draw_line(
-    tty: &mut TerminalOutput<'_>,
+    client: &ClientRef,
     s: &screen,
     mut px: u_int,
     mut py: u_int,
@@ -196,11 +186,11 @@ pub unsafe fn tty_draw_line(
         (atx) as u32,
         (aty) as u32
     ));
-    if atx >= (*tty).sx {
+    if atx >= terminal_value!(client, sx) {
         return;
     }
-    if atx.wrapping_add(nx) >= (*tty).sx {
-        nx = (*tty).sx.wrapping_sub(atx);
+    if atx.wrapping_add(nx) >= terminal_value!(client, sx) {
+        nx = terminal_value!(client, sx).wrapping_sub(atx);
     }
     if nx == 0 as u_int {
         return;
@@ -223,14 +213,14 @@ pub unsafe fn tty_draw_line(
         (defaults.fg) as i32,
         (defaults.bg) as i32
     ));
-    flags = (*tty).flags & TTY_NOCURSOR;
-    (*tty).flags |= TTY_NOCURSOR;
-    tty_update_mode(tty, (*tty).mode, Some(s.into()));
-    tty_region_off(tty);
-    tty_margin_off(tty);
+    flags = terminal_value!(client, flags) & TTY_NOCURSOR;
+    terminal_set!(client, flags, |=, TTY_NOCURSOR);
+    tty_update_mode(client, terminal_value!(client, mode), Some(s.into()));
+    tty_region_off(client);
+    tty_margin_off(client);
     last = grid_default_cell;
     last.bg = defaults.bg;
-    tty_default_attributes(tty, 8 as u_int, Some(style_ctx));
+    tty_default_attributes(client, 8 as u_int, Some(style_ctx));
     cx = 0 as u_int;
     i = px;
     while i < px.wrapping_add(nx) {
@@ -262,13 +252,13 @@ pub unsafe fn tty_draw_line(
                 }
             }
         }
-        tty_attributes(tty, &last, Some(style_ctx));
+        tty_attributes(client, &last, Some(style_ctx));
         log_debug(format_args!(
             "{}: clearing {} padding cells",
             "tty_draw_line",
             (cx) as u32
         ));
-        tty_draw_line_clear(tty, atx, aty, cx, defaults, bg, 0 as ::core::ffi::c_int);
+        tty_draw_line_clear(client, atx, aty, cx, defaults, bg, 0 as ::core::ffi::c_int);
         if cx == ex {
             current_block = 15064833524635049977;
         } else {
@@ -282,7 +272,11 @@ pub unsafe fn tty_draw_line(
     }
     match current_block {
         16799951812150840583 => {
-            if py != 0 as u_int && atx == 0 as u_int && (*tty).cx >= (*tty).sx && nx == (*tty).sx {
+            if py != 0 as u_int
+                && atx == 0 as u_int
+                && terminal_value!(client, cx) >= terminal_value!(client, sx)
+                && nx == terminal_value!(client, sx)
+            {
                 let gl = grid_get_line(gd, gd.hsize.wrapping_add(py).wrapping_sub(1 as u_int));
                 if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
                     wrapped = 1 as ::core::ffi::c_int;
@@ -315,7 +309,8 @@ pub unsafe fn tty_draw_line(
                         if empty != 0 as ::core::ffi::c_int {
                             gcp = &gc;
                         } else {
-                            converted = tty_check_codeset(tty.utf8(), &gc);
+                            converted =
+                                tty_check_codeset(client.flags() & CLIENT_UTF8 as u64 != 0, &gc);
                             gcp = &converted;
                             if gcp.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
                                 ngc = *gcp;
@@ -364,9 +359,9 @@ pub unsafe fn tty_draw_line(
                     if current_state as ::core::ffi::c_uint
                         == TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        tty_attributes(tty, &last, Some(style_ctx));
+                        tty_attributes(client, &last, Some(style_ctx));
                         tty_draw_line_clear(
-                            tty,
+                            client,
                             atx.wrapping_add(last_i),
                             aty,
                             i.wrapping_sub(last_i),
@@ -379,16 +374,16 @@ pub unsafe fn tty_draw_line(
                         != TTY_DRAW_LINE_SAME as ::core::ffi::c_int as ::core::ffi::c_uint
                         && len != 0 as size_t
                     {
-                        tty_attributes(tty, &last, Some(style_ctx));
+                        tty_attributes(client, &last, Some(style_ctx));
                         if atx.wrapping_add(i).wrapping_sub(width) != 0 as u_int || wrapped == 0 {
-                            tty_cursor(tty, atx.wrapping_add(i).wrapping_sub(width), aty);
+                            tty_cursor(client, atx.wrapping_add(i).wrapping_sub(width), aty);
                         }
                         if !(last.attr as ::core::ffi::c_int) & GRID_ATTR_CHARSET != 0 {
-                            tty_putn(tty, &buf[..len], width);
+                            tty_putn(client, &buf[..len], width);
                         } else {
                             j = 0 as u_int;
                             while (j as size_t) < len {
-                                tty_putc(tty, buf[j as usize] as u_char);
+                                tty_putc(client, buf[j as usize] as u_char);
                                 j = j.wrapping_add(1);
                             }
                         }
@@ -423,6 +418,6 @@ pub unsafe fn tty_draw_line(
         }
         _ => {}
     }
-    (*tty).flags = (*tty).flags & !TTY_NOCURSOR | flags;
-    tty_update_mode(tty, (*tty).mode, Some(s.into()));
+    terminal_set!(client, flags, =, terminal_value!(client, flags) & !TTY_NOCURSOR | flags);
+    tty_update_mode(client, terminal_value!(client, mode), Some(s.into()));
 }
