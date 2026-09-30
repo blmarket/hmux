@@ -98,10 +98,7 @@ unsafe fn cmd_send_keys_inject_key(
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut _s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let pane = (*target).pane_handle().expect("key target pane");
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mut new_after = after.clone();
     if args_has(args, 'K' as i32 as u_char) != 0 {
@@ -132,7 +129,7 @@ unsafe fn cmd_send_keys_inject_key(
         }
         return std::rc::Rc::downgrade(item_handle);
     }
-    wme = (*wp).active_mode_entry();
+    wme = pane.mode_entry();
     if !wme.is_alive() || (*wme.get_unchecked().mode).key_table.is_none() {
         if (*target).pane_handle().expect("key target pane").key(
             tc_owner.as_ref(),
@@ -250,14 +247,11 @@ unsafe fn cmd_send_keys_exec(
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let pane = (*target).pane_handle().expect("key target pane");
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
     let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut wme: refbox::Weak<window_mode_entry> = (*wp).active_mode_entry();
+    let mut wme: refbox::Weak<window_mode_entry> = pane.mode_entry();
     let mut after = std::rc::Rc::downgrade(item_handle);
     let mut key: key_code = 0;
     let mut i: u_int = 0;
@@ -323,10 +317,7 @@ unsafe fn cmd_send_keys_exec(
             ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
         );
         s = mouse_session_owner.clone();
-        wp = mouse_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if wp.is_null() {
+        if mouse_pane_owner.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"no mouse target"));
             return CMD_RETURN_ERROR;
         }
@@ -367,12 +358,7 @@ unsafe fn cmd_send_keys_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {
-        colour_palette_clear(Some(&mut (*wp).palette));
-        input_reset(
-            (*wp).ictx.as_deref_mut().expect("pane input context"),
-            1 as ::core::ffi::c_int,
-        );
-        (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
+        pane.reset_input();
     }
     if count == 0 as u_int {
         if args_has(args, 'N' as i32 as u_char) != 0 || args_has(args, 'R' as i32 as u_char) != 0 {

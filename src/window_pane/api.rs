@@ -192,6 +192,13 @@ pub trait WindowPane {
     unsafe fn editor_process_id(&self, identity: crate::src::shared::spawn::EditorId) -> pid_t;
     /// Encode a key or mouse report for this pane's process stream.
     unsafe fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32;
+    unsafe fn mode_entry(&self) -> refbox::Weak<window_mode_entry>;
+
+    unsafe fn is_mode(&self, mode: &'static window_mode) -> bool;
+
+    unsafe fn add_mode_formats(&self, context: &mut crate::src::shared::format::format_tree);
+
+    unsafe fn reset_input(&self);
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -890,6 +897,29 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32 {
         super::keys::write_key(self, key, mouse)
+    }
+    unsafe fn mode_entry(&self) -> refbox::Weak<window_mode_entry> {
+        (*self.get()).active_mode_entry()
+    }
+    unsafe fn is_mode(&self, mode: &'static window_mode) -> bool {
+        let entry = self.mode_entry();
+        entry.is_alive() && std::ptr::eq(entry.get_unchecked().mode, mode)
+    }
+    unsafe fn add_mode_formats(&self, context: &mut crate::src::shared::format::format_tree) {
+        let entry = self.mode_entry();
+        let callback = entry.is_alive().then(|| entry.get_unchecked().mode.formats).flatten();
+        if let Some(callback) = callback {
+            callback(entry, context);
+        }
+    }
+    unsafe fn reset_input(&self) {
+        let context = {
+            let pane = &mut *self.get();
+            crate::src::style::colour::colour_palette_clear(Some(&mut pane.palette));
+            pane.ictx.as_deref_mut().expect("pane input context") as *mut crate::src::shared::input::input_ctx
+        };
+        super::input::input_reset(context, 1);
+        (*self.get()).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
     }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0

@@ -88,7 +88,6 @@ unsafe fn cmd_copy_mode_exec(
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = None;
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
-    let mut wp = pane_owner.get();
     let mut line_numbers: ::core::ffi::c_int = 0;
     if args_has(args, 'q' as i32 as u_char) != 0 {
         pane_owner.reset_all_modes();
@@ -102,13 +101,10 @@ unsafe fn cmd_copy_mode_exec(
             ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
         );
         s = mouse_session_owner.clone();
-        wp = mouse_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if wp.is_null() {
+        let Some(mouse_pane) = mouse_pane_owner else {
             return CMD_RETURN_NORMAL;
-        }
-        pane_owner = mouse_pane_owner.expect("mouse pane was resolved");
+        };
+        pane_owner = mouse_pane;
         if c.is_none()
             || !crate::src::shared::rc::same(
                 c.as_ref()
