@@ -9,7 +9,6 @@ use crate::src::format::{format_create, format_defaults, format_expand_cstring, 
 use crate::src::format_draw::format_draw;
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_default_cell, grid_get_cell};
-use crate::src::options::options_owner_ptr;
 use crate::src::prompt::{
     prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_update,
@@ -20,35 +19,34 @@ use crate::src::screen_write::{
     screen_write_cursormove, screen_write_start, screen_write_stop,
 };
 use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
-use crate::src::session::session_find_by_id;
 use crate::src::session::Session;
+use crate::src::session::session_find_by_id;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::client::client;
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
 use crate::src::shared::display::*;
-use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
+use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
-use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::src::shared::mouse::{MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, mouse_event};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_result, PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE,
-    PROMPT_NOFORMAT,
+    PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_NOFORMAT,
+    prompt_result,
 };
-use crate::src::shared::screen::{screen, MODE_CURSOR};
+use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::src::shared::screen::{MODE_CURSOR, screen};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
+use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -56,11 +54,12 @@ use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
-use crate::src::style::style_apply;
+use crate::src::style::style_apply_with_options;
 use crate::src::window::Window as _;
 use crate::src::window::{
-    window_pane_mode_weak, window_pane_reset_mode, window_zoom, winlink_find_by_index,
+    window_pane_mode_weak, winlink_find_by_index,
 };
+use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 #[repr(C)]
@@ -294,11 +293,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
-    let mut oo: *mut options =
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         target: Default::default(),
@@ -365,18 +360,12 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         screen_write_stop(&mut ctx);
         return;
     }
-    style_apply(
-        &raw mut mgc,
-        oo,
-        b"switch-mode-match-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
-    style_apply(
-        &raw mut sgc,
-        oo,
-        b"mode-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut mgc, c"switch-mode-match-style", None, |visit| {
+        mode_pane_owner.with_options_mut(visit)
+    });
+    style_apply_with_options(&mut sgc, c"mode-style", None, |visit| {
+        mode_pane_owner.with_options_mut(visit)
+    });
     visible = window_switch_visible(data);
     i = 0 as u_int;
     while i < visible {
@@ -475,8 +464,6 @@ unsafe fn window_switch_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_switch_modedata = ::core::ptr::null_mut::<window_switch_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let mut pd = prompt_create_data::default();
@@ -531,23 +518,20 @@ unsafe fn window_switch_init(
         Some(&(*data).filter),
     );
     s = &raw mut (*data).screen;
-    screen_init(
-        &mut *s,
-        (*wp).base.grid().sx,
-        (*wp).base.grid().sy,
-        0 as u_int,
-    );
+    let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
+    screen_init(&mut *s, pane_sx, pane_sy, 0 as u_int);
     if args_has(args, 'Z' as i32 as u_char) == 0 {
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {
-        (*data).zoomed = if (*wp).window_handle().expect("live window").is_zoomed() {
-            WINDOW_ZOOMED
-        } else {
-            0
-        };
-        if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+        let window = mode_pane_owner
+            .window_observer()
+            .upgrade()
+            .expect("live window");
+        (*data).zoomed = if window.is_zoomed() { WINDOW_ZOOMED } else { 0 };
+        if (*data).zoomed == 0 && window.zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
+            server_redraw_window(&window);
         }
+        window.release(c"switch mode zoom");
     }
     window_switch_build(data);
     prompt_incremental_start(&prompt);
@@ -567,12 +551,14 @@ unsafe fn window_switch_free(mut wme: refbox::Weak<window_mode_entry>) {
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
     if (*data).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window(&std::rc::Rc::clone(
-            &(((*mode_pane).window_handle().as_ref()).expect("live window")),
-        ));
+        let window = mode_pane_owner
+            .window_observer()
+            .upgrade()
+            .expect("live window");
+        server_unzoom_window(&window);
+        window.release(c"switch mode unzoom");
     }
     (*data).matches.clear();
     (*data).item_list.clear();
@@ -727,9 +713,7 @@ unsafe fn window_switch_key(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
     let mut current_block: u64;
-    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
     let mut visible: u_int = 0;
     let mut current: u_int = (*data).current;
@@ -782,7 +766,7 @@ unsafe fn window_switch_key(
                     == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 window_switch_draw_screen(wme.clone());
-                (*wp).flags |= PANE_REDRAW;
+                mode_pane_owner.request_redraw(false);
             }
             return;
         }
@@ -804,7 +788,7 @@ unsafe fn window_switch_key(
                 window_switch_set_current(data, (*data).offset.wrapping_add(y));
                 if key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code {
                     if window_switch_run_command(data, Some(client_owner)) != 0 {
-                        window_pane_reset_mode(&mode_pane_owner);
+                        mode_pane_owner.reset_mode();
                     }
                     return;
                 }
@@ -824,12 +808,12 @@ unsafe fn window_switch_key(
         match key {
             13 => {
                 if window_switch_run_command(data, Some(client_owner)) != 0 {
-                    window_pane_reset_mode(&mode_pane_owner);
+                    mode_pane_owner.reset_mode();
                 }
                 return;
             }
             27 | 35184372088923 | 35184372088931 | 35184372088935 => {
-                window_pane_reset_mode(&mode_pane_owner);
+                mode_pane_owner.reset_mode();
                 return;
             }
             _ => {}
@@ -838,7 +822,7 @@ unsafe fn window_switch_key(
             result = prompt_key(&prompt, key, &mut redraw);
             if redraw != 0 {
                 window_switch_draw_screen(wme.clone());
-                (*wp).flags |= PANE_REDRAW;
+                mode_pane_owner.request_redraw(false);
             }
             if result as ::core::ffi::c_uint
                 == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1113,7 +1097,7 @@ unsafe fn window_switch_key(
         }
     }
     window_switch_draw_screen(wme.clone());
-    (*wp).flags |= PANE_REDRAW;
+    mode_pane_owner.request_redraw(false);
 }
 
 #[cfg(test)]
@@ -1160,9 +1144,10 @@ mod match_tests {
         rows.push(row(c"same", 0));
         assert_eq!(window_switch_matches(&mut rows, c"same", 80), [3, 2, 0]);
         assert_eq!(window_switch_matches(&mut rows, c"", 80), [3, 1, 2, 0]);
-        assert!(rows
-            .iter()
-            .all(|row| row.match_mask.is_none() && row.score == 0));
+        assert!(
+            rows.iter()
+                .all(|row| row.match_mask.is_none() && row.score == 0)
+        );
         rows = vec![row(c"new", 0)];
         assert!(window_switch_matches(&mut rows, c"same", 80).is_empty());
         assert_eq!(window_switch_matches(&mut rows, c"new", 80), [0]);

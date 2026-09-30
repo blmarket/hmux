@@ -288,6 +288,7 @@ pub trait WindowPane {
     unsafe fn show_scrollbar(&self);
     unsafe fn take_pending_redraw(&self) -> bool;
     unsafe fn process_name(&self) -> Option<CString>;
+    unsafe fn draw_editor_waiting(&self, pid: pid_t);
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -1238,6 +1239,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let descriptor = (*self.get()).fd;
         crate::src::osdep_linux::osdep_get_name_cstring(descriptor)
     }
+    unsafe fn draw_editor_waiting(&self, pid: pid_t) { super::mode_visuals::draw_editor_waiting(self, pid); }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0
     }

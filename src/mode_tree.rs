@@ -31,7 +31,7 @@ use crate::src::session::Session as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::{client, CLIENT_DEAD};
+use crate::src::shared::client::{CLIENT_DEAD, client};
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
 use crate::src::shared::command::cmd_parse_input;
@@ -43,25 +43,24 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
+use crate::src::shared::menu::{MenuSelection, menu_choice_cb, menu_item};
 use crate::src::shared::mode_tree::{
-    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
-    mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
-    mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
-    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
+    ModeTreeItemData, ModeTreeItemRef, mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb,
+    mode_tree_height_cb, mode_tree_help_cb, mode_tree_help_info, mode_tree_item, mode_tree_key_cb,
+    mode_tree_line, mode_tree_list, mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb,
+    mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb,
 };
-use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::src::shared::mouse::{MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, mouse_event};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_ISMODE,
-    PROMPT_NOFORMAT, PROMPT_SINGLE,
+    PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_ISMODE, PROMPT_NOFORMAT, PROMPT_SINGLE,
+    prompt_free_cb, prompt_result,
 };
-use crate::src::shared::screen::{screen, MODE_CURSOR};
+use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::src::shared::screen::{MODE_CURSOR, screen};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
@@ -73,7 +72,6 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::tmux::global_s_options;
 use crate::src::window::Window as _;
-use crate::src::window::{window_pane_upgrade, window_zoom};
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -293,11 +291,7 @@ unsafe fn mode_tree_build_lines(
             if tree.keycb.is_none() {
                 tree.keycb = Some(callback);
             }
-            if key == KEYC_UNKNOWN {
-                KEYC_NONE
-            } else {
-                key
-            }
+            if key == KEYC_UNKNOWN { KEYC_NONE } else { key }
         } else if line < 10 {
             (b'0' as u_int).wrapping_add(line) as key_code
         } else if line < 36 {
@@ -550,7 +544,7 @@ pub unsafe fn mode_tree_start(
     menu: &'static [menu_item<'static>],
     s: *mut *mut screen,
 ) -> std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>> {
-    let pane = &*pane_owner.get();
+    let (pane_sx, pane_sy) = pane_owner.screen_size(false);
     let owner = mode_tree_alloc_data();
     let mtd = &mut *owner.get();
     mtd.wp = std::rc::Rc::downgrade(pane_owner);
@@ -587,12 +581,7 @@ pub unsafe fn mode_tree_start(
     mtd.sortcb = sortcb;
     mtd.helpcb = helpcb;
     *s = &raw mut mtd.screen;
-    screen_init(
-        &mut **s,
-        pane.base.grid().sx,
-        pane.base.grid().sy,
-        0 as u_int,
-    );
+    screen_init(&mut **s, pane_sx, pane_sy, 0 as u_int);
     (**s).mode &= !MODE_CURSOR;
     return owner;
 }
@@ -601,25 +590,19 @@ pub unsafe fn mode_tree_zoom(
     mut args: *mut args,
 ) {
     let mtd = tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*mtd).wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut wp: *mut window_pane = mode_pane;
     if args_has(args, 'Z' as i32 as u_char) != 0 {
-        (*mtd).zoomed = if mode_pane_owner
+        let window = mode_pane_owner
             .window_observer()
             .upgrade()
-            .expect("mode window")
-            .is_zoomed()
-        {
-            WINDOW_ZOOMED
-        } else {
-            0
-        };
-        if (*mtd).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+            .expect("mode window");
+        (*mtd).zoomed = if window.is_zoomed() { WINDOW_ZOOMED } else { 0 };
+        if (*mtd).zoomed == 0 && window.zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
+            server_redraw_window(&window);
         }
+        window.release(c"mode tree zoom");
     } else {
         (*mtd).zoomed = -(1 as ::core::ffi::c_int);
     };
@@ -764,10 +747,9 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_
     // Unlike normal access, cleanup must allow a logically destroyed pane.
     if mtd.zoomed == 0 {
         if let Some(pane) = mtd.wp.upgrade() {
-            let wp = &*pane.get();
-            server_unzoom_window(&std::rc::Rc::clone(
-                &((wp.window_handle().as_ref()).expect("live window")),
-            ));
+            let window = pane.window_observer().upgrade().expect("live window");
+            server_unzoom_window(&window);
+            window.release(c"mode tree unzoom");
         }
     }
     mode_tree_clear_prompt(&owner);
@@ -785,13 +767,15 @@ pub unsafe fn mode_tree_resize(
     mut sy: u_int,
 ) {
     let mtd = &mut *tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
+    else {
         return;
     };
     screen_resize(&mut mtd.screen, sx, sy, 0 as ::core::ffi::c_int);
     mode_tree_build(tree_owner);
     mode_tree_draw(tree_owner);
-    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
+    mode_pane_owner.request_redraw(false);
 }
 pub fn mode_tree_add(
     mtd: &mut mode_tree_data,
@@ -878,11 +862,11 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     if (*mtd).dead != 0 {
         return;
     }
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*mtd).wp)
+    else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut wp: *mut window_pane = mode_pane;
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let options_window = mode_pane_owner.window_observer();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -999,9 +983,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         None,
         None,
         (refbox::Weak::new()).clone(),
-        (wp).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        Some(&mode_pane_owner),
     );
     ft = &raw mut *ft_owner;
     keylen = 0 as ::core::ffi::c_int;
@@ -1542,13 +1524,14 @@ pub unsafe fn mode_tree_set_prompt(
     mut freecb: prompt_free_cb,
 ) {
     let mtd = crate::src::shared::rc::as_ptr(&tree);
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*mtd).wp)
+    else {
         if let Some(freecb) = freecb {
             freecb();
         }
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let session_owner = client_owner.and_then(|client| client.attached_session().upgrade());
     let s = session_owner.clone();
     let mut pd = prompt_create_data::default();
@@ -1583,7 +1566,7 @@ pub unsafe fn mode_tree_set_prompt(
     (*mtd).prompt = Some(prompt);
     (*mtd).prompt_data = identity;
     mode_tree_draw(&tree);
-    (*mode_pane).flags |= PANE_REDRAW;
+    mode_pane_owner.request_redraw(false);
     if flags & PROMPT_SINGLE != 0 && flags & PROMPT_ACCEPT != 0 && client_owner.is_some() {
         let tree = tree.clone();
         let item_allocation =
@@ -1692,7 +1675,9 @@ unsafe fn mode_tree_search(
 }
 unsafe fn mode_tree_search_set(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mtd = &mut *tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
+    else {
         return;
     };
     let found = if mtd.search_dir == MODE_TREE_SEARCH_FORWARD {
@@ -1718,7 +1703,7 @@ unsafe fn mode_tree_search_set(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     }
     mode_tree_set_current(mtd, tag);
     mode_tree_draw(tree_owner);
-    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
+    mode_pane_owner.request_redraw(false);
 }
 fn mode_tree_observed_prompt_callback(
     tree: &Rc<UnsafeCell<mode_tree_data>>,
@@ -1771,7 +1756,9 @@ unsafe fn mode_tree_filter_callback(
     mut key: prompt_key_result,
 ) -> prompt_result {
     let mtd = &mut *tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
+    else {
         return PROMPT_CLOSE;
     };
     if mtd.dead != 0 {
@@ -1783,7 +1770,7 @@ unsafe fn mode_tree_filter_callback(
     mtd.filter = replacement;
     mode_tree_build(tree_owner);
     mode_tree_draw(tree_owner);
-    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
+    mode_pane_owner.request_redraw(false);
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return PROMPT_CONTINUE;
@@ -1792,13 +1779,15 @@ unsafe fn mode_tree_filter_callback(
 }
 unsafe fn mode_tree_clear_filter(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mtd = &mut *tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
+    else {
         return;
     };
     mtd.filter = None;
     mode_tree_build(tree_owner);
     mode_tree_draw(tree_owner);
-    (&mut *mode_pane_owner.get()).flags |= PANE_REDRAW;
+    mode_pane_owner.request_redraw(false);
 }
 fn mode_tree_menu_callback(
     tree: Rc<UnsafeCell<mode_tree_data>>,
@@ -1843,7 +1832,9 @@ unsafe fn mode_tree_display_menu(
         return;
     };
     let mtd = &*tree.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&mtd.wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
+    else {
         return;
     };
     let items: &[menu_item<'_>];
@@ -1881,9 +1872,9 @@ unsafe fn mode_tree_display_menu(
     } else {
         x = 0 as u_int;
     }
-    let pane = &*mode_pane_owner.get();
-    x = x.wrapping_add(pane.xoff as u_int);
-    y = y.wrapping_add(pane.yoff as u_int);
+    let (_, _, xoff, yoff) = mode_pane_owner.geometry();
+    x = x.wrapping_add(xoff as u_int);
+    y = y.wrapping_add(yoff as u_int);
     menu_display(
         menu,
         0 as ::core::ffi::c_int,
@@ -1940,10 +1931,11 @@ unsafe fn mode_tree_draw_help(
     mut ctx: *mut screen_write_ctx,
 ) {
     let mtd = tree_owner.get();
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*mtd).wp)
+    else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*mtd).screen;
     let options_window = mode_pane_owner.window_observer();
     let mut box_gc: grid_cell = grid_cell {
@@ -2016,10 +2008,7 @@ unsafe fn mode_tree_draw_help(
         None,
         None,
         (refbox::Weak::new()).clone(),
-        (mode_pane)
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        Some(&mode_pane_owner),
     );
     ft = &raw mut *ft_owner;
     screen_write_cursormove(
@@ -2066,11 +2055,12 @@ pub unsafe fn mode_tree_key(
     mut yp: *mut u_int,
 ) -> ::core::ffi::c_int {
     let mtd = crate::src::shared::rc::as_ptr(&tree);
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*mtd).wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*mtd).wp)
+    else {
         *key = KEYC_NONE;
         return 0;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut i: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -2165,7 +2155,7 @@ pub unsafe fn mode_tree_key(
                 .is_some_and(|current| prompt.is(current))
         {
             mode_tree_draw(&tree);
-            (*mode_pane).flags |= PANE_REDRAW;
+            mode_pane_owner.request_redraw(false);
         }
         if result as ::core::ffi::c_uint
             != PROMPT_KEY_NOT_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint

@@ -22,27 +22,26 @@ use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
+use crate::src::shared::client::ClientRef;
+use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
+use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemData,
+    ModeTreeItemData, mode_tree_data, mode_tree_help_info, mode_tree_item,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
+use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -52,9 +51,8 @@ use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::style::style_apply_with_options;
 use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::window::window_pane_reset_mode;
-use crate::src::window::window_pane_upgrade;
 use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -540,14 +538,14 @@ unsafe fn window_client_draw(
     mut sx: u_int,
     mut sy: u_int,
 ) {
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*data).wp)
+    else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let c = item.client();
     let mut session: Option<SessionRef> = c.attached_session().upgrade();
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -591,9 +589,6 @@ unsafe fn window_client_draw(
         preview_pane = window_owner.last_active_pane();
     }
     window_owner.release(c"client preview lookup");
-    wp = preview_pane
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |pane| pane.get());
     lines = status_line_size(c);
     if lines >= sy {
         lines = 0 as u_int;
@@ -609,16 +604,20 @@ unsafe fn window_client_draw(
         cy.wrapping_add(at) as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    if !wp.is_null() {
+    if let Some(pane) = preview_pane.as_ref() {
+        let (width, height) = pane.screen_size(false);
+        let mut snapshot = screen::empty();
+        pane.copy_screen(&mut snapshot, 0, 0, width, height, false);
         screen_write_preview(
             &mut *ctx,
-            &(*wp).base,
+            &snapshot,
             sx,
             sy.wrapping_sub(2 as u_int).wrapping_sub(lines),
         );
+        crate::src::screen::screen_free(&mut snapshot);
     }
     if let Some(pane) = preview_pane {
-        crate::src::window_pane::window_pane_remove_ref(pane, c"client pane preview".as_ptr());
+        pane.release(c"client pane preview");
     }
     if at != 0 as u_int {
         screen_write_cursormove(
@@ -721,13 +720,13 @@ mod status_preview_tests {
 }
 
 unsafe fn window_client_menu(data: *mut window_client_modedata, c: &ClientRef, mut key: key_code) {
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*data).wp)
+    else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut wp: *mut window_pane = mode_pane;
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    wme = (*wp).active_mode_entry();
+    wme = mode_pane_owner.mode_entry();
     if !wme.is_alive()
         || wme
             .get_unchecked()
@@ -815,8 +814,6 @@ unsafe fn window_client_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
-    let _wp: *mut window_pane = mode_pane;
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
@@ -934,13 +931,14 @@ unsafe fn window_client_resize(
 }
 unsafe fn window_client_update(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_client_modedata = window_client_data(wme.clone());
-    let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
+    let Some(mode_pane_owner) =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&(*data).wp)
+    else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-    (*mode_pane).flags |= PANE_REDRAW;
+    mode_pane_owner.request_redraw(false);
 }
 unsafe fn window_client_do_detach(
     mut data: *mut window_client_modedata,
@@ -970,8 +968,6 @@ unsafe fn window_client_key(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_client_modedata = window_client_data(wme.clone());
     let tree_owner = (*data).tree_owner();
     let mut finished: ::core::ffi::c_int = 0;
@@ -1026,9 +1022,9 @@ unsafe fn window_client_key(
         _ => {}
     }
     if finished != 0 || ClientRef::attached_count() == 0 as u_int {
-        window_pane_reset_mode(&mode_pane_owner);
+        mode_pane_owner.reset_mode();
     } else {
         mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-        (*wp).flags |= PANE_REDRAW;
+        mode_pane_owner.request_redraw(false);
     };
 }

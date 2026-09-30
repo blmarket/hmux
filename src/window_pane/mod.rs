@@ -10,6 +10,7 @@ use crate::src::window::*;
 use std::time::Duration;
 mod api;
 mod capture;
+mod mode_visuals;
 mod render;
 mod border;
 pub use render::PaneScrollbar;

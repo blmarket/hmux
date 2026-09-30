@@ -10,8 +10,8 @@ use crate::src::screen_write::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
@@ -19,15 +19,14 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
-use crate::src::shared::screen::{screen, MODE_CURSOR};
+use crate::src::shared::screen::{MODE_CURSOR, screen};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::time::tm;
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply_with_options;
 use crate::src::window::Window as _;
-use crate::src::window::{window_pane_mode_weak, window_pane_reset_mode};
+use crate::src::window::window_pane_mode_weak;
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -614,8 +613,6 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     let mut now: tm = tm {
         tm_sec: 0,
@@ -651,7 +648,7 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
     if now.tm_sec != then.tm_sec {
         (*data).tim = t;
         window_clock_draw_screen(wme.clone());
-        (*wp).flags |= PANE_REDRAW;
+        mode_pane_owner.request_redraw(false);
     }
     window_clock_start_timer(wme.clone());
 }
@@ -666,8 +663,6 @@ unsafe fn window_clock_init(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_clock_mode_data = ::core::ptr::null_mut::<window_clock_mode_data>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
     let owner = Box::new(std::cell::UnsafeCell::new(window_clock_mode_data {
@@ -691,12 +686,8 @@ unsafe fn window_clock_init(
     });
     window_clock_start_timer(wme.clone());
     s = &raw mut (*data).screen;
-    screen_init(
-        &mut *s,
-        (*wp).base.grid().sx,
-        (*wp).base.grid().sy,
-        0 as u_int,
-    );
+    let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
+    screen_init(&mut *s, pane_sx, pane_sy, 0 as u_int);
     (*s).mode &= !MODE_CURSOR;
     window_clock_draw_screen(wme.clone());
     return s;
@@ -736,8 +727,7 @@ unsafe fn window_clock_key(
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let _mode_pane = mode_pane_owner.get();
-    window_pane_reset_mode(&mode_pane_owner);
+    mode_pane_owner.reset_mode();
 }
 unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
@@ -745,8 +735,6 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .wp
         .upgrade()
         .expect("mode belongs to a live pane");
-    let mode_pane = mode_pane_owner.get();
-    let mut wp: *mut window_pane = mode_pane;
     let options_window = mode_pane_owner.window_observer();
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -790,9 +778,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         None,
         None,
         (refbox::Weak::new()).clone(),
-        (wp).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        Some(&mode_pane_owner),
     );
     ft = &raw mut *ft_owner;
     style_apply_with_options(&mut gc, c"clock-mode-colour", Some(&mut *ft), |visit| {
