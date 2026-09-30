@@ -25,8 +25,7 @@ use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::server_client::{
-    server_client_ensure_ranges, server_client_lost, server_client_overlay_check,
-    server_client_ranges_is_empty,
+    server_client_ensure_ranges, server_client_lost, server_client_ranges_is_empty,
 };
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::Session;
@@ -1707,7 +1706,7 @@ pub unsafe fn tty_check_overlay_range(
     py: u_int,
     nx: u_int,
 ) -> visible_ranges {
-    if let Some(ranges) = server_client_overlay_check(owner, px, py, nx) {
+    if let Some(ranges) = owner.overlay_ranges(px, py, nx) {
         ranges
     } else {
         let mut ranges = visible_ranges::default();
@@ -2496,7 +2495,7 @@ mod initialization_owner_tests {
             let owner = client::new();
             let calls = Rc::new(Cell::new(0));
             let observed = calls.clone();
-            owner.set_overlay(
+            owner.set_overlay(crate::src::server_client::Overlay::callbacks(
                 Some(Box::new(move |owner, px, py, nx| {
                     observed.set(observed.get() + 1);
                     owner.update_flags(CLIENT_REDRAWSTATUS as u64, 0);
@@ -2521,8 +2520,7 @@ mod initialization_owner_tests {
                 None,
                 None,
                 None,
-                Box::new(()),
-            );
+            ));
             let first = tty_check_overlay_range(&owner, 3, 0, 5);
             let second = tty_check_overlay_range(&owner, 10, 0, 4);
             assert_eq!(calls.get(), 2);

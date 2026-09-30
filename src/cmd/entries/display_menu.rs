@@ -17,8 +17,8 @@ use crate::src::menu::{menu_add_item, menu_create, menu_display};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_find_choice, options_get_number, options_get_string};
 use crate::src::popup::{popup_display, popup_modify, popup_present};
+use crate::src::server_client::server_client_get_cwd;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::{server_client_clear_overlay, server_client_get_cwd};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -1188,7 +1188,7 @@ unsafe fn cmd_display_popup_exec(
     let mut count: u_int = args_count(args);
     let mut env: Option<Box<environ>> = None;
     if args_has(args, 'C' as i32 as u_char) != 0 {
-        server_client_clear_overlay(&tc.clone().expect("live client"));
+        tc.as_ref().expect("live client").clear_overlay();
         return CMD_RETURN_NORMAL;
     }
     if tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {

@@ -10,7 +10,6 @@ use crate::src::prompt::prompt_draw;
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::server::{marked_pane, server_is_marked};
-use crate::src::server_client::server_client_overlay_draw;
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -2113,7 +2112,7 @@ unsafe fn redraw_draw_scene(
         }
     }
     if flags & REDRAW_OVERLAY != 0 {
-        server_client_overlay_draw(&c.clone().expect("live client"));
+        client_owner.draw_overlay();
     }
     client_owner.with_terminal_output(|terminal| tty_reset(terminal));
     log_debug(format_args!(

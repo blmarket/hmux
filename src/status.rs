@@ -25,7 +25,6 @@ use crate::src::screen_write::{
 };
 use crate::src::server::clients;
 use crate::src::server::server_add_message;
-use crate::src::server_client::server_client_clear_overlay;
 use crate::src::server_client::Client as _;
 use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
@@ -694,7 +693,7 @@ pub unsafe fn status_prompt_set(
 ) {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let mut pd = prompt_create_data::default();
-    server_client_clear_overlay(c_owner);
+    c_owner.clear_overlay();
     status_message_clear(c_owner);
     status_prompt_clear(c_owner);
     status_push_screen(c.as_ref().expect("live client"));
