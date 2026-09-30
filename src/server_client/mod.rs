@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 use crate::src::session::SessionIndex as _;
@@ -3375,27 +3377,19 @@ mod prompt_cursor_tests {
                 c.update_flags(flags, !flags);
                 let window_owner = window::with_size_for_test(100, 40);
                 let prompt = refbox::RefBox::new(prompt::default());
-                let base = window_pane::new();
-                let wp = rc::as_ptr(&base);
-                (*wp).window = std::rc::Rc::downgrade(&window_owner);
-                (*wp).xoff = x;
-                (*wp).yoff = y;
-                (*wp).sy = 4;
-                (*wp).prompt_cx = 2;
+                let base = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+                base.fixture_parent(Some(&window_owner));
+                base.fixture_geometry((0, 4), (x, y));
                 if has_prompt {
-                    (*wp).prompt = Some(prompt);
+                    base.fixture_prompt(prompt, 2);
                 }
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                     .push_front(std::rc::Rc::downgrade(&base));
-                let blocker = window_pane::new();
+                let blocker = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
                 if covered {
-                    let cover = rc::as_ptr(&blocker);
-                    (*cover).window = std::rc::Rc::downgrade(&window_owner);
-                    (*cover).xoff = 6;
-                    (*cover).yoff = if at == 0 { 3 } else { 6 };
-                    (*cover).sx = 3;
-                    (*cover).sy = 1;
+                    blocker.fixture_parent(Some(&window_owner));
+                    blocker.fixture_geometry((3, 1), (6, if at == 0 { 3 } else { 6 }));
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                         .push_front(std::rc::Rc::downgrade(&blocker));

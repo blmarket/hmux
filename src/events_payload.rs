@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
 use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
@@ -511,7 +513,7 @@ mod tests {
     #[test]
     fn payload_handle_and_target_retain_pane_after_source_release() {
         unsafe {
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let observed = std::rc::Rc::downgrade(&pane);
             let value = EventPayloadValue::Pane(pane.clone());
             let retained = value.pane().clone();

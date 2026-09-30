@@ -1,3 +1,7 @@
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::server_client::Client as _;
 use crate::src::ffi::libc::memcpy;
@@ -3310,52 +3314,66 @@ mod write_ctx_tests {
     #[test]
     fn synchronized_dirty_rows_reallocate_on_resize_and_clear_on_release() {
         unsafe {
-            let pane_owner = window_pane::new();
-            let pane = &mut *pane_owner.get();
-            pane.base.grid = Some(crate::src::grid::grid_create(8, 10, 0));
-            pane.base.mode |= MODE_SYNC;
-            let mut ctx = screen_write_ctx {
-                wp: Rc::downgrade(&pane_owner),
-                ..Default::default()
-            };
-            pane_owner.prepare_write(&mut ctx, &raw mut pane.base);
+            let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane_owner.fixture_base(|screen| {
+                screen.grid = Some(crate::src::grid::grid_create(8, 10, 0));
+                screen.mode |= MODE_SYNC;
+            });
+            let mut ctx = screen_write_ctx::default();
+            pane_owner.prepare_write(&mut ctx, std::ptr::null_mut());
 
             assert_eq!(screen_write_should_draw_lines(&mut ctx, 10, 1), 0);
-            assert!(pane.sync_dirty.is_none());
+            pane_owner.fixture_sync_dirty(|rows, _| assert!(rows.is_none()));
             assert_eq!(screen_write_should_draw_lines(&mut ctx, 7, 100), 0);
-            assert_eq!(pane.sync_dirty.as_deref(), Some([0x80, 0x03].as_slice()));
-            let address = pane.sync_dirty.as_ref().unwrap().as_ptr() as usize;
+            let address = pane_owner.fixture_sync_dirty(|rows, _| {
+                assert_eq!(rows, Some([0x80, 0x03].as_slice()));
+                rows.unwrap().as_ptr() as usize
+            });
             screen_write_should_draw_lines(&mut ctx, 1, 2);
-            assert_eq!(pane.sync_dirty.as_ref().unwrap().as_ptr() as usize, address);
-            assert_eq!(pane.sync_dirty.as_deref(), Some([0x86, 0x03].as_slice()));
+            pane_owner.fixture_sync_dirty(|rows, _| {
+                assert_eq!(rows.unwrap().as_ptr() as usize, address);
+                assert_eq!(rows, Some([0x86, 0x03].as_slice()));
+            });
 
-            // Changing dimensions marks every row, including previously clean rows.
-            pane.base.grid = Some(crate::src::grid::grid_create(8, 17, 0));
+            // A write must stop before replacing its borrowed screen component.
+            screen_write_stop(&mut ctx);
+            pane_owner.fixture_base(|screen| {
+                crate::src::screen::screen_free(screen);
+                screen.grid = Some(crate::src::grid::grid_create(8, 17, 0));
+                screen.mode |= MODE_SYNC;
+            });
+            pane_owner.prepare_write(&mut ctx, std::ptr::null_mut());
             screen_write_should_draw_lines(&mut ctx, 16, 1);
-            assert_eq!(pane.sync_dirty_size, 17);
-            assert_eq!(pane.sync_dirty.as_deref(), Some([0xff, 0xff, 1].as_slice()));
+            pane_owner.fixture_sync_dirty(|rows, height| {
+                assert_eq!(height, 17);
+                assert_eq!(rows, Some([0xff, 0xff, 1].as_slice()));
+            });
             pane_owner.clear_sync_dirty();
-            assert!(pane.sync_dirty.is_none());
-            assert_eq!(pane.sync_dirty_size, 0);
+            pane_owner.fixture_sync_dirty(|rows, height| {
+                assert!(rows.is_none());
+                assert_eq!(height, 0);
+            });
             pane_owner.clear_sync_dirty();
 
             screen_write_should_draw_lines(&mut ctx, 0, 1);
-            assert_eq!(pane.sync_dirty.as_deref(), Some([1, 0, 0].as_slice()));
-            // The pane owner also releases a populated bitmap without explicit cleanup.
-            drop(pane);
+            pane_owner.fixture_sync_dirty(|rows, _| assert_eq!(rows, Some([1, 0, 0].as_slice())));
+            screen_write_stop(&mut ctx);
+            pane_owner.clear_sync_dirty();
+            pane_owner.fixture_base(|screen| crate::src::screen::screen_free(screen));
+            pane_owner.release(c"synchronized dirty fixture");
         }
     }
 
     #[test]
     fn pane_callbacks_observe_without_retaining_and_skip_expired_targets() {
         unsafe {
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let observer = Rc::downgrade(&pane);
             let redraw = screen_write_redraw_cb(&observer).unwrap();
             let mut set_client = screen_write_set_client_cb(&observer).unwrap();
             let mut ttyctx = tty_ctx::default();
             redraw(&ttyctx);
-            assert_ne!((*pane.get()).flags & PANE_REDRAW, 0);
+            assert_ne!(pane.fixture_flags() & PANE_REDRAW, 0);
             drop(pane);
             assert!(observer.upgrade().is_none());
             redraw(&ttyctx);
@@ -3367,7 +3385,7 @@ mod write_ctx_tests {
     #[test]
     fn independent_screen_can_outlive_the_observed_pane() {
         unsafe {
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let observer = Rc::downgrade(&pane);
             let mut screen = screen::empty();
             screen.grid = Some(crate::src::grid::grid_create(8, 2, 0));

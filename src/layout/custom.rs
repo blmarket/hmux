@@ -1151,8 +1151,8 @@ mod restoration_borrow_tests {
     #[test]
     fn restoration_keeps_weak_pane_identity_after_tree_replacement() {
         unsafe {
-            let first = window_pane::new();
-            let second = window_pane::new();
+            let first = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let second = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let mut root = layout_create_cell();
             crate::src::layout::layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
             let mut cells = Vec::new();
@@ -1192,8 +1192,8 @@ mod restoration_borrow_tests {
     #[test]
     fn legacy_assignment_preserves_detached_floating_cell_and_pane_links() {
         unsafe {
-            let tiled = window_pane::new();
-            let floating = window_pane::new();
+            let tiled = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let floating = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let mut old_root = layout_create_cell();
             crate::src::layout::layout_make_node(&mut *old_root, LAYOUT_TOPBOTTOM);
             let mut old_tiled = layout_create_cell();

@@ -1,16 +1,19 @@
-use hmux2::src::window::Window as _;
-use hmux2::src::shared::pane::{
+//! Storage assertions stay beside the pane implementation.
+use super::*;
+use crate::src::shared::pane::{
     pane_history_first, pane_history_next, pane_history_push, pane_history_remove, window_pane,
     window_pane_history, window_panes,
 };
-use hmux2::src::window::*;
-use hmux2::src::window::{PaneOrder, Window};
+use crate::src::window::Window as _;
+use crate::src::window::*;
+use crate::src::window::{PaneOrder, Window};
+use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
 fn pane_owner() -> Rc<UnsafeCell<window_pane>> {
     // Collection fixtures have no display resources requiring model cleanup.
-    window_pane::new()
+    std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate()
 }
 
 #[test]
@@ -118,7 +121,7 @@ fn global_lookup_preserves_pane_identity_and_retains_removed_pane() {
     unsafe {
         let head = &raw mut all_window_panes;
         assert!((*head).storage.is_none());
-        let owner = window_pane::new();
+        let owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
         (*owner.get()).id = 123;
         let observer = Rc::downgrade(&owner);
         assert!(window_pane_tree_insert(&mut *head, owner.clone()).is_none());
@@ -162,7 +165,7 @@ fn ordering_lookup_retains_a_detached_pane() {
 #[test]
 fn index_traversal_results_retain_panes_after_index_removal() {
     unsafe {
-        let mut head = hmux2::src::shared::pane::window_pane_tree { storage: None };
+        let mut head = crate::src::shared::pane::window_pane_tree { storage: None };
         let first = pane_owner();
         let second = pane_owner();
         (*first.get()).id = 1;
@@ -194,7 +197,7 @@ fn index_traversal_results_retain_panes_after_index_removal() {
 #[test]
 fn relative_pane_selection_wraps_and_retains_its_result() {
     unsafe {
-        let window = hmux2::src::shared::window::WindowRef::empty();
+        let window = crate::src::shared::window::WindowRef::empty();
         let first = pane_owner();
         let last = pane_owner();
         window
@@ -224,14 +227,14 @@ fn relative_pane_selection_wraps_and_retains_its_result() {
         assert!(window.pane_by_number(None, 1, false).is_none());
         drop(selected);
         assert!(observer.upgrade().is_none());
-        window.release(c"test owner");
+        (window).release(std::ffi::CStr::from_ptr(c"test owner".as_ptr()));
     }
 }
 
 #[test]
 fn window_membership_uses_live_allocation_identity() {
     unsafe {
-        let window = hmux2::src::shared::window::WindowRef::empty();
+        let window = crate::src::shared::window::WindowRef::empty();
         let member = pane_owner();
         let unrelated = pane_owner();
         // Equal pane IDs do not make these the same allocation.
@@ -249,6 +252,136 @@ fn window_membership_uses_live_allocation_identity() {
             .borrow_pane_order_mut(PaneOrder::Index)
             .storage
             .clear();
-        window.release(c"test owner");
+        (window).release(std::ffi::CStr::from_ptr(c"test owner".as_ptr()));
+    }
+}
+
+#[cfg(test)]
+mod collection_index_tests {
+    use super::*;
+
+    #[test]
+    fn pane_rc_keeps_weak_observers_alive_until_the_last_release() {
+        unsafe {
+            // No display resources in this fixture; exercise the actual pane
+            // retain/release functions with ordinary field drop.
+            let wp_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let wp = crate::src::shared::rc::as_ptr(&wp_owner);
+            let weak = window_pane_weak(&*(wp));
+            let callback = window_pane_add_ref(
+                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                c"callback".as_ptr(),
+            );
+            window_pane_remove_ref(wp_owner, c"pane shutdown".as_ptr());
+            let retained = weak.upgrade().expect("callback keeps the pane alive");
+            assert_eq!(crate::src::shared::rc::as_ptr(&retained), wp);
+            window_pane_remove_ref(callback, c"callback complete".as_ptr());
+            assert!(
+                weak.upgrade().is_some(),
+                "upgraded Rc independently owns the pane"
+            );
+            drop(retained);
+            assert!(weak.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn pane_index_observers_clear_on_removal_and_expire_with_the_owner() {
+        unsafe {
+            let mut head = window_pane_tree { storage: None };
+            let mut other = window_pane_tree { storage: None };
+            let first_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let first = crate::src::shared::rc::as_ptr(&first_owner);
+            (*first).id = 1;
+            let second_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let second = crate::src::shared::rc::as_ptr(&second_owner);
+            (*second).id = 2;
+            let duplicate_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let duplicate = crate::src::shared::rc::as_ptr(&duplicate_owner);
+            (*duplicate).id = 1;
+
+            assert!(window_pane_tree_insert(&mut head, first_owner.clone()).is_none());
+            assert!(window_pane_tree_insert(&mut head, second_owner.clone()).is_none());
+            let index_observer = (*first).owner.clone();
+            assert!(Rc::ptr_eq(
+                &window_pane_tree_insert(&mut head, duplicate_owner.clone()).unwrap(),
+                &first_owner
+            ));
+            assert!((*duplicate).owner.is_empty());
+            assert!(window_pane_tree_remove(&mut other, &mut *first).is_none());
+            assert!(!(*first).owner.is_empty());
+
+            let mut moved = head;
+            assert!(Rc::ptr_eq(
+                &window_pane_tree_next(&*first).unwrap(),
+                &second_owner
+            ));
+            assert_eq!(
+                crate::src::shared::rc::as_ptr(
+                    &window_pane_tree_remove(&mut moved, &mut *first).unwrap()
+                ),
+                first
+            );
+            assert!((*first).owner.is_empty());
+            assert!(window_pane_tree_next(&*first).is_none());
+            assert_eq!(
+                crate::src::shared::rc::as_ptr(
+                    &window_pane_tree_remove(&mut moved, &mut *second).unwrap()
+                ),
+                second
+            );
+
+            drop(first_owner);
+            drop(second_owner);
+            drop(duplicate_owner);
+            drop(moved);
+            assert!(matches!(
+                index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+        }
+    }
+}
+
+#[test]
+fn border_status_ranges_return_independent_values() {
+    unsafe {
+        let window = crate::src::window::window::with_options_for_test();
+        window.with_options_mut(|options| {
+            let definition = crate::src::options_table::options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"pane-border-status"))
+                .unwrap();
+            crate::src::options::options_default(options, definition);
+            crate::src::options::options_set_number(options, c"pane-border-status".as_ptr(), 1);
+        });
+        let pane = Rc::<UnsafeCell<window_pane>>::allocate();
+        (*pane.get()).window = Rc::downgrade(&window);
+        (*pane.get()).yoff = 3;
+        (*pane.get()).border_status_line.ranges.push(Box::new(
+            crate::src::shared::style::style_range {
+                type_0: crate::src::shared::style::STYLE_RANGE_CONTROL,
+                argument: 4,
+                string: [0; 16],
+                start: 1,
+                end: 3,
+            },
+        ));
+        let range = window_pane_status_get_range(&pane, 3, 2).unwrap();
+        assert!(window_pane_status_get_range(&pane, 2, 2).is_none());
+        assert!(window_pane_status_get_range(&pane, 5, 2).is_none());
+        assert!(window_pane_status_get_range(&pane, 3, 3).is_none());
+        (*pane.get()).border_status_line.ranges.clear();
+        assert_eq!(range.argument, 4);
+        assert!(window_pane_status_get_range(&pane, 3, 2).is_none());
+        pane.release(c"border status fixture");
+        window.release(c"border status fixture");
+    }
+}
+
+#[test]
+fn directional_selection_without_a_source_returns_none() {
+    unsafe {
+        assert!(window_pane_find_right(None).is_none());
     }
 }

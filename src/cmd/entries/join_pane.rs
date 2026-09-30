@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has, args_percentage_and_expand_result};
@@ -1191,8 +1193,8 @@ mod layout_identity_tests {
     fn position_format_replacement_does_not_retarget_the_captured_cell() {
         unsafe {
             let window = window::with_options_for_test();
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut options = options_create(None);
             let definition = crate::src::options_table::options_table
                 .iter()
@@ -1204,7 +1206,7 @@ mod layout_identity_tests {
                 c"pane-border-lines".as_ptr(),
                 PANE_LINES_NONE as _,
             );
-            (*pane.get()).options = Some(options);
+            pane.fixture_set_options(options);
             let mut first = layout_cell::new();
             first.flags = LAYOUT_CELL_FLOATING;
             first.g = layout_geometry {
@@ -1217,9 +1219,7 @@ mod layout_identity_tests {
             let original_id = first.id();
             *window.borrow_layout_root_mut() = Some(first);
             let calls = Rc::new(Cell::new(0u32));
-            (*pane.get())
-                .modes
-                .push(refbox::RefBox::new(window_mode_entry {
+            pane.fixture_add_mode(refbox::RefBox::new(window_mode_entry {
                     wp: Rc::downgrade(&pane),
                     swp: Default::default(),
                     mode: &REPLACING_MODE,
@@ -1254,7 +1254,7 @@ mod layout_identity_tests {
             );
             assert_eq!(calls.get(), 1);
             assert!(window.borrow_layout_cell(original_id).is_none());
-            let replacement_id = (*pane.get()).layout_cell.unwrap();
+            let replacement_id = pane.layout_identity(false).unwrap();
             let position = {
                 let replacement = window.borrow_layout_cell(replacement_id).unwrap();
                 (replacement.g.xoff, replacement.g.yoff)
@@ -1277,13 +1277,12 @@ mod layout_identity_tests {
             cmdq_append(Some(&client), item);
             assert_eq!(cmdq_next(Some(&client)), 0);
             drop(client);
-            (*pane.get()).modes.clear();
+            pane.fixture_clear_modes();
             winlink_remove(&mut links, link);
             let tree = window.borrow_layout_root_mut().take();
             drop(tree);
-            (*pane.get()).layout_cell = None;
-            (*pane.get()).window = std::rc::Weak::new();
-            crate::src::window_pane::window_pane_remove_ref(pane, c"layout identity test".as_ptr());
+                        pane.fixture_parent(None);
+            pane.release(c"layout identity test");
             window.release(c"layout identity test");
         }
     }

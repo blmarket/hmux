@@ -1,4 +1,6 @@
 //! Window storage is private to its implementation.
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
 use crate::src::shared::abi::{u_int, uint64_t};
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
@@ -212,7 +214,7 @@ mod saved_zoom_tests {
     fn saved_zoom_weak_target_expires_and_pop_clears_the_pending_state() {
         unsafe {
             let window = window::new();
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let observer = Rc::downgrade(&pane);
             (*window.get()).was_zoomed = observer.clone();
             (*window.get()).flags |= WINDOW_WASZOOMED;

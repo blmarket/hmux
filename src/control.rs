@@ -1,3 +1,7 @@
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard, cmdq_new_state,
@@ -143,12 +147,10 @@ mod control_queue_tests {
     fn pane_output_trait_keeps_binary_escaping_and_consumes_only_the_block() {
         unsafe {
             let client = ClientRef::allocate();
-            let pane = window_pane::new();
-            (*pane.get()).id = 7;
-            (*pane.get()).fd = -1;
-            (*pane.get()).pipe_fd = -1;
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_id(7);
             let stream = bufferevent_new(-1, None, None, None);
-            (*pane.get()).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            pane.fixture_stream(crate::src::reactor::StreamHandle::from_ptr(stream));
             let input = b"a\0\\tail";
             evbuffer_add(&mut (*stream).input, input.as_ptr().cast(), input.len());
             let mut panes = Default::default();
@@ -161,7 +163,7 @@ mod control_queue_tests {
             let mut rest = [0; 4];
             assert_eq!(pane.copy_output(&consumer.offset, &mut rest), 4);
             assert_eq!(&rest, b"tail");
-            std::mem::take(&mut (*pane.get()).event).free();
+            pane.fixture_take_stream().free();
             drop(pane);
             drop(client);
             crate::src::reactor::shutdown_runtime();
@@ -296,20 +298,19 @@ mod control_queue_tests {
     #[test]
     fn pane_index_owns_pane_boxes_and_keeps_addresses_stable() {
         let mut index = Default::default();
-        let mut wp = window_pane::empty();
-        wp.id = 4;
-        wp.offset.used = 123;
-        let first = control_add_pane(&mut index, wp.id, wp.offset);
+        let mut id = 4;
+        let mut offset = window_pane_offset::default();
+        offset.used = 123;
+        let first = control_add_pane(&mut index, id, offset);
         assert_eq!((first.offset.used, first.queued.used), (123, 123));
         first.flags = CONTROL_PANE_OFF;
         let address = first as *mut control_pane as usize;
         for id in 5..100 {
-            wp.id = id;
-            control_add_pane(&mut index, wp.id, wp.offset);
+            control_add_pane(&mut index, id, offset);
         }
-        wp.id = 4;
-        wp.offset.used = 456;
-        let first = control_add_pane(&mut index, wp.id, wp.offset);
+        id = 4;
+        offset.used = 456;
+        let first = control_add_pane(&mut index, id, offset);
         assert_eq!(first as *mut control_pane as usize, address);
         assert_eq!(
             (first.offset.used, first.queued.used, first.flags),
@@ -483,11 +484,12 @@ mod control_queue_tests {
                         control_block::new(Some(CString::new("reply").unwrap()), 0),
                     );
                     let output = control_add_block(&mut cs, control_block::new(None, 10));
-                    let wp = window_pane::empty();
-                    let pane = control_add_pane(&mut cs.panes, wp.id, wp.offset);
+                    let id = 0;
+                    let offset = window_pane_offset::default();
+                    let pane = control_add_pane(&mut cs.panes, id, offset);
                     pane.blocks.push_back(output);
                     pane.pending_flag = 1;
-                    cs.pending_panes.push_back(wp.id);
+                    cs.pending_panes.push_back(id);
                     (cs.read_event.clone(), cs.write_event.clone())
                 };
 

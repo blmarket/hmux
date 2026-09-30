@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::options::options_owner_ptr;
@@ -2572,10 +2574,10 @@ mod owned_callback_tests {
                 assert!(format_table_get(key).unwrap().get(&mut context).is_none());
             }
 
-            let first = window_pane::new();
-            let other = window_pane::new();
-            (*first.get()).id = 42;
-            (*first.get()).base.cx = 7;
+            let first = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let other = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            first.fixture_id(42);
+            first.fixture_base(|base| base.cx = 7);
             context.wp = Rc::downgrade(&first);
             context.type_0 = FORMAT_TYPE_PANE;
             for (key, expected) in [
@@ -2602,9 +2604,9 @@ mod owned_callback_tests {
     #[test]
     fn pane_formats_observe_context_and_getter_retains_selected_pane() {
         unsafe {
-            let owner = window_pane::new();
-            (*owner.get()).id = 42;
-            (*owner.get()).sx = 80;
+            let owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            owner.fixture_id(42);
+            owner.fixture_geometry((80, 0), (0, 0));
             let observer = std::rc::Rc::downgrade(&owner);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &raw mut *ft_owner;

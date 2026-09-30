@@ -1,3 +1,7 @@
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::events::events_add_sink;
 use crate::src::events_payload::{
@@ -371,8 +375,8 @@ mod tests {
             control_client_session_changed_cb(c"client-session-changed", &mut payload);
             event_payload_set_session(&mut payload, c"session".as_ptr(), session.clone());
             control_session_renamed_cb(c"session-renamed", &mut payload);
-            let pane = window_pane::new();
-            (*pane.get()).id = 23;
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_id(23);
             event_payload_set_pane(&mut payload, c"pane".as_ptr(), pane.clone());
             control_pane_mode_changed_cb(c"pane-mode-changed", &mut payload);
             assert_eq!(

@@ -1,18 +1,22 @@
-use hmux2::src::window::Window as _;
+#[path = "support/window_fixture.rs"]
+mod window_fixture;
 use hmux2::src::shared::sort::{sort_criteria, SORT_CREATION};
 use hmux2::src::shared::{pane::window_pane, window::window};
 use hmux2::src::sort::sort_get_panes_window;
+use hmux2::src::window::Window as _;
 use hmux2::src::window::{PaneOrder, Window};
+use hmux2::src::window_pane::WindowPane as _;
 use std::rc::Rc;
+use window_fixture::WindowOptions;
 
 #[test]
 fn sorted_panes_survive_removal_of_ordering_and_source_handles() {
     unsafe {
-        let window = hmux2::src::shared::window::WindowRef::empty();
-        let first = window_pane::new();
-        let last = window_pane::new();
-        (*first.get()).id = 1;
-        (*last.get()).id = 2;
+        let options = WindowOptions::new();
+        let window = options.create(20, 10);
+        let first = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::create(&window, 9, 9, 0);
+        let last = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::create(&window, 9, 9, 0);
+        assert!(first.id() < last.id());
         let first_weak = Rc::downgrade(&first);
         let last_weak = Rc::downgrade(&last);
         {
@@ -34,13 +38,16 @@ fn sorted_panes_survive_removal_of_ordering_and_source_handles() {
             .borrow_pane_order_mut(PaneOrder::Index)
             .storage
             .clear();
-        drop(first);
-        drop(last);
+        first.destroy();
+        last.destroy();
+        first.release(c"sort source");
+        last.release(c"sort source");
         window.release(c"test owner");
         assert!(first_weak.upgrade().is_some());
         assert!(last_weak.upgrade().is_some());
         drop(sorted);
         assert!(first_weak.upgrade().is_none());
         assert!(last_weak.upgrade().is_none());
+        options.free();
     }
 }

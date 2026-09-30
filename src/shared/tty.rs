@@ -1,5 +1,9 @@
 //! Authoritative terminal capability-code values.
 
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use super::abi::{size_t, time_t, u_int};
 use super::client::client;
 use super::colour::colour_palette;
@@ -495,8 +499,8 @@ mod palette_source_tests {
 
     #[test]
     fn weak_sources_expire_and_snapshots_keep_their_colours() {
-        let pane = window_pane::new();
-        unsafe { (*pane.get()).palette.fg = 3 };
+        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+        unsafe { pane.fixture_palette(|palette| palette.fg = 3) };
         let pane_source = PaletteSource::Pane(std::rc::Rc::downgrade(&pane));
         assert_eq!(
             unsafe { pane_source.with_palette(|palette| palette.unwrap().fg) },

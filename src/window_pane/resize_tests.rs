@@ -1,4 +1,6 @@
-use hmux2::src::shared::pane::{window_pane, window_pane_resize};
+//! Storage assertions stay beside the pane implementation.
+use super::*;
+use crate::src::shared::pane::{window_pane, window_pane_resize};
 use std::ptr::null_mut;
 
 fn resize(sx: u32, sy: u32, osx: u32, osy: u32) -> window_pane_resize {

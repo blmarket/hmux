@@ -5,6 +5,8 @@
 //! option callbacks must not reenter the window, free/reparent the component, or
 //! let references or pointers escape.
 
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_pane::WindowPane as _;
 use crate::src::server_client::Client as _;
 use super::*;
@@ -1434,10 +1436,10 @@ mod tests {
         unsafe {
             for nested in [false, true] {
                 let window = window_with_layout_policy();
-                let pane = window_pane::new();
-                let neighbor = window_pane::new();
-                (*pane.get()).window = Rc::downgrade(&window);
-                (*neighbor.get()).window = Rc::downgrade(&window);
+                let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+                let neighbor = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+                pane.fixture_parent(Some(&window));
+                neighbor.fixture_parent(Some(&window));
                 let mut root = layout_cell::new();
                 layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
                 layout_set_size(&mut *root, 17, 2, 0, 0);
@@ -1476,8 +1478,8 @@ mod tests {
                 assert_eq!(Rc::strong_count(&pane), 1);
                 assert_eq!(Rc::strong_count(&neighbor), 1);
                 window.release(c"live neighbor tile conversion test");
-                assert!((*pane.get()).layout_cell.is_none());
-                assert!((*neighbor.get()).layout_cell.is_none());
+                assert!(pane.layout_identity(false).is_none());
+                assert!(neighbor.layout_identity(false).is_none());
             }
         }
     }
@@ -1491,12 +1493,11 @@ mod tests {
         unsafe {
             let window = window_with_layout_policy();
             (*window.get()).sb = PANE_SCROLLBARS_ALWAYS;
-            let pane = window_pane::new();
-            let neighbor = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
-            (*neighbor.get()).window = Rc::downgrade(&window);
-            (*neighbor.get()).scrollbar_style.width = 6;
-            (*neighbor.get()).scrollbar_style.pad = 1;
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let neighbor = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
+            neighbor.fixture_parent(Some(&window));
+            neighbor.fixture_scrollbar(6, 1);
             let mut root = layout_cell::new();
             layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
             layout_set_size(&mut *root, 8, 5, 0, 0);
@@ -1531,8 +1532,8 @@ mod tests {
             assert_eq!(Rc::strong_count(&window), 1);
             assert_eq!(Rc::strong_count(&neighbor), 1);
             window.release(c"no space tile conversion test");
-            assert!((*pane.get()).layout_cell.is_none());
-            assert!((*neighbor.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
+            assert!(neighbor.layout_identity(false).is_none());
         }
     }
 
@@ -1544,8 +1545,8 @@ mod tests {
         use crate::src::shared::layout::*;
         unsafe {
             let window = window_with_layout_policy();
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut root = layout_cell::new();
             layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
             layout_set_size(&mut *root, 17, 5, 0, 0);
@@ -1586,7 +1587,7 @@ mod tests {
             }
             assert_eq!(Rc::strong_count(&pane), 1);
             window.release(c"float conversion test");
-            assert!((*pane.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
         }
     }
 
@@ -1598,8 +1599,8 @@ mod tests {
         use crate::src::shared::layout::*;
         unsafe {
             let window = window_with_layout_policy();
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut root = layout_cell::new();
             layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
             layout_set_size(&mut *root, 21, 5, 0, 0);
@@ -1620,7 +1621,7 @@ mod tests {
                 assert_eq!((tree.cells[0].g.sy, tree.cells[1].g.sy), (5, 5));
             }
             window.release(c"spread layout test");
-            assert!((*pane.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
         }
     }
 
@@ -1637,10 +1638,10 @@ mod tests {
                 crate::src::options::options_default(options, entry);
                 crate::src::options::options_set_number(options, c"pane-base-index".as_ptr(), 7);
             });
-            let tiled = window_pane::new();
-            let floating = window_pane::new();
-            (*tiled.get()).window = Rc::downgrade(&window);
-            (*floating.get()).window = Rc::downgrade(&window);
+            let tiled = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let floating = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            tiled.fixture_parent(Some(&window));
+            floating.fixture_parent(Some(&window));
             (*window.get()).panes.push_back(Rc::downgrade(&tiled));
             (*window.get()).panes.push_back(Rc::downgrade(&floating));
             (*window.get()).z_index.push_back(Rc::downgrade(&floating));
@@ -1680,14 +1681,8 @@ mod tests {
                 current.to_bytes().contains(&b'z'),
                 "owned output survives Window cleanup"
             );
-            crate::src::window_pane::window_pane_remove_ref(
-                tiled,
-                c"serialization fixture".as_ptr(),
-            );
-            crate::src::window_pane::window_pane_remove_ref(
-                floating,
-                c"serialization fixture".as_ptr(),
-            );
+            tiled.release(c"serialization fixture");
+            floating.release(c"serialization fixture");
         }
     }
 
@@ -1726,21 +1721,17 @@ mod tests {
                 );
             });
             (*window.get()).sb = PANE_SCROLLBARS_ALWAYS;
-            (*pane.get()).scrollbar_style.width = 3;
-            (*pane.get()).scrollbar_style.pad = 2;
+            pane.fixture_scrollbar(3, 2);
             assert_eq!(pane.unzoomed_width(), Some(35));
             assert_eq!(pane.unzoomed_height(), Some(23));
-            (*pane.get()).base.saved_grid = Some(crate::src::grid::grid_create(80, 24, 0));
+            pane.fixture_base(|screen| screen.saved_grid = Some(crate::src::grid::grid_create(80, 24, 0)));
             assert_eq!(
                 pane.unzoomed_width(),
                 Some(40),
                 "alternate screen does not reserve the saved scrollbar"
             );
             window.release(c"unzoomed geometry test");
-            crate::src::window_pane::window_pane_remove_ref(
-                pane,
-                c"unzoomed geometry test".as_ptr(),
-            );
+            pane.release(c"unzoomed geometry test");
         }
     }
 
@@ -1952,7 +1943,7 @@ mod tests {
     fn initialization_publishes_identity_without_selection_or_rename_notifications() {
         unsafe {
             let window = window::new();
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let client = crate::src::shared::client::ClientRef::allocate();
             (*window.get()).options = Some(options_create(None));
             window.with_options_mut(|options| {
@@ -2009,7 +2000,7 @@ mod tests {
             );
             // Publishing a modal must not select it or send the selection event
             // before spawn's redraw/notification orchestration runs.
-            let modal = window_pane::new();
+            let modal = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             window.begin_modal_pane(&modal);
             assert!(Rc::ptr_eq(&window.modal_pane().unwrap(), &modal));
             assert!(window.active_pane_observer().ptr_eq(&Rc::downgrade(&pane)));
@@ -2044,8 +2035,8 @@ mod tests {
                 crate::src::options::options_default(options, entry);
                 crate::src::options::options_set_number(options, c"pane-base-index".as_ptr(), 7);
             });
-            let first = window_pane::new();
-            let last = window_pane::new();
+            let first = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let last = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             (*window.get()).panes.push_back(Rc::downgrade(&first));
             (*window.get()).panes.push_back(Rc::downgrade(&last));
             (*window.get()).z_index.push_back(Rc::downgrade(&last));

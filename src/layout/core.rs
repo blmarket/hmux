@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::arguments::{
     args_has, args_percentage_and_expand_result, args_strtonum_and_expand_result,
@@ -932,7 +934,7 @@ mod layout_cell_collection_tests {
     #[test]
     fn leaf_observes_pane_without_retaining_it_and_node_clears_link() {
         unsafe {
-            let owner = window_pane::new();
+            let owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let observer = std::rc::Rc::downgrade(&owner);
             let mut cell = layout_create_cell();
             layout_make_leaf(&mut *cell, &owner);
@@ -952,7 +954,7 @@ mod layout_cell_collection_tests {
     #[test]
     fn converting_an_old_leaf_does_not_clear_its_replacement_association() {
         unsafe {
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let mut old = layout_create_cell();
             layout_make_leaf(&mut *old, &pane);
             let mut replacement = layout_create_cell();
@@ -1025,10 +1027,10 @@ mod layout_cell_collection_tests {
     #[test]
     fn detached_leaf_owners_preserve_panes_during_rebuild() {
         unsafe {
-            let first_pane_owner = window_pane::new();
-            let first_pane = &mut *first_pane_owner.get();
-            let floating_pane_owner = window_pane::new();
-            let floating_pane = &mut *floating_pane_owner.get();
+            let first_pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+
+            let floating_pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+
             let mut root = layout_create_cell();
             layout_make_node(&mut *root, LAYOUT_TOPBOTTOM);
             let mut nested = layout_create_cell();
@@ -1048,8 +1050,8 @@ mod layout_cell_collection_tests {
 
             let mut leaves = layout_take_leaves(Some(root));
             assert_eq!(leaves.len(), 2);
-            assert_eq!(first_pane.layout_cell, Some(first_id));
-            assert_eq!(floating_pane.layout_cell, Some(floating_id));
+            assert_eq!(first_pane_owner.layout_identity(false), Some(first_id));
+            assert_eq!(floating_pane_owner.layout_identity(false), Some(floating_id));
             assert!((*first_ptr).parent.is_null());
             assert!((*floating_ptr).parent.is_null());
             let mut replacement = layout_create_cell();
@@ -1063,16 +1065,16 @@ mod layout_cell_collection_tests {
             assert_eq!(layout_cells_first(&replacement), floating_ptr);
             assert_eq!(layout_cell_next(floating_ptr), first_ptr);
             drop(replacement);
-            assert!(first_pane.layout_cell.is_none());
-            assert!(floating_pane.layout_cell.is_none());
+            assert!(first_pane_owner.layout_identity(false).is_none());
+            assert!(floating_pane_owner.layout_identity(false).is_none());
         }
     }
 
     #[test]
     fn replacement_and_root_collapse_transfer_boxes_without_moving_cells() {
         unsafe {
-            let pane_owner = window_pane::new();
-            let pane = &mut *pane_owner.get();
+            let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+
             let mut root = layout_create_cell();
             layout_make_node(&mut *root, LAYOUT_TOPBOTTOM);
             let mut discarded = layout_create_cell();
@@ -1088,7 +1090,7 @@ mod layout_cell_collection_tests {
             layout_destroy_cell(None, discarded_ptr, &mut root);
             assert!(std::ptr::eq(root.as_deref().unwrap(), retained_ptr));
             assert!((*retained_ptr).parent.is_null());
-            assert_eq!(pane.layout_cell, Some(retained_id));
+            assert_eq!(pane_owner.layout_identity(false), Some(retained_id));
 
             let mut parent = layout_create_cell();
             layout_make_node(&mut *parent, LAYOUT_LEFTRIGHT);
@@ -1096,11 +1098,11 @@ mod layout_cell_collection_tests {
             let replacement = layout_create_cell();
             let detached = layout_cells_replace(&mut *parent, retained_ptr, replacement);
             assert!(std::ptr::eq(&*detached, retained_ptr));
-            assert_eq!(pane.layout_cell, Some(retained_id));
+            assert_eq!(pane_owner.layout_identity(false), Some(retained_id));
             drop(parent);
-            assert_eq!(pane.layout_cell, Some(retained_id));
+            assert_eq!(pane_owner.layout_identity(false), Some(retained_id));
             drop(detached);
-            assert!(pane.layout_cell.is_none());
+            assert!(pane_owner.layout_identity(false).is_none());
         }
     }
 }
@@ -3157,8 +3159,8 @@ mod reservation_tests {
     fn floating_resize_validates_before_edit_and_invalidates_after_the_tree_borrow() {
         unsafe {
             let window = crate::src::shared::window::WindowRef::empty();
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut cell = layout_create_cell();
             layout_make_leaf(&mut *cell, &pane);
             layout_set_size(&mut *cell, 10, 8, 7, 4);
@@ -3204,8 +3206,8 @@ mod reservation_tests {
     fn tiling_a_floating_root_saves_geometry_without_querying_options() {
         unsafe {
             let window = window::with_size_for_test(80, 24);
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut root = layout_create_cell();
             layout_make_leaf(&mut *root, &pane);
             layout_set_size(&mut *root, 30, 10, -2, 4);
@@ -3240,8 +3242,8 @@ mod reservation_tests {
     fn tiling_without_a_live_neighbor_preserves_saved_floating_geometry_on_failure() {
         unsafe {
             let window = window::with_size_for_test(17, 5);
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut root = layout_create_cell();
             layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
             layout_set_size(&mut *root, 17, 5, 0, 0);
@@ -3285,8 +3287,8 @@ mod reservation_tests {
             // Deliberately leave Window options uninitialized: a single pane
             // has no siblings to redistribute and must not query resize policy.
             let window = crate::src::shared::window::WindowRef::empty();
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut root = layout_create_cell();
             layout_make_leaf(&mut *root, &pane);
             layout_set_size(&mut *root, 80, 24, 0, 0);
@@ -3312,8 +3314,8 @@ mod reservation_tests {
         use crate::src::shared::events::events_callback;
         unsafe {
             let window = crate::src::shared::window::WindowRef::empty();
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             let mut root = layout_create_cell();
             layout_make_leaf(&mut *root, &pane);
             *window.borrow_layout_root_mut() = Some(root);
@@ -3362,8 +3364,8 @@ mod reservation_tests {
                 yoff: 3,
             };
             let id = layout_floating_pane(&window, None, &mut geometry);
-            let pane = window_pane::new();
-            (*pane.get()).window = Rc::downgrade(&window);
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_parent(Some(&window));
             // No panes are published in the order yet: assignment exercises cell
             // association without resizing uninitialized test screens.
             layout_assign_pane(&window, id, &pane, 0);

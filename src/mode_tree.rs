@@ -2876,7 +2876,7 @@ mod pane_observer_tests {
     #[test]
     fn expired_parent_rejects_input_and_prompt_but_allows_tree_cleanup() {
         unsafe {
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
             let tree_observer = Rc::downgrade(&tree_owner);
@@ -2927,7 +2927,7 @@ mod pane_observer_tests {
     #[test]
     fn drawing_a_closed_tree_does_not_access_its_released_screen() {
         unsafe {
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let tree = mode_tree_alloc_data();
             (*tree.get()).wp = Rc::downgrade(&pane);
             (*tree.get()).zoomed = 1;

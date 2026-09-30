@@ -1,3 +1,7 @@
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
@@ -3759,12 +3763,10 @@ mod option_loop_reentry_tests {
     }
 
     unsafe fn fixture(array: bool) -> (Rc<UnsafeCell<window_pane>>, Rc<(Cell<u32>, bool)>) {
-        let pane = window_pane::new();
-        (*pane.get()).options = Some(options_create(None));
+        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+        pane.fixture_set_options(options_create(None));
         let state = Rc::new((Cell::new(0), array));
-        (*pane.get())
-            .modes
-            .push(refbox::RefBox::new(window_mode_entry {
+        pane.fixture_add_mode(refbox::RefBox::new(window_mode_entry {
                 wp: Rc::downgrade(&pane),
                 swp: Default::default(),
                 mode: &MUTATING_MODE,
@@ -3778,8 +3780,8 @@ mod option_loop_reentry_tests {
 
     unsafe fn free_fixture(pane: Rc<UnsafeCell<window_pane>>) {
         // The test mode has no free callback and owns no terminal resources.
-        (*pane.get()).modes.clear();
-        options_free((*pane.get()).options.take().unwrap());
+        pane.fixture_clear_modes();
+        options_free(pane.fixture_take_options().unwrap());
         drop(pane);
     }
 
@@ -3969,11 +3971,10 @@ mod window_owner_reentry_tests {
                 .with_options_mut(|options| {
                     options_set_string(options, c"@one".as_ptr(), 0, |out| out.write_all(b"value"));
                 });
-            let pane = window_pane::new();
-            (*pane.get()).options = Some(options_create(None));
-            (*pane.get()).window = observer.clone();
-            window_pane::install_mode_for_test(
-                &pane,
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane.fixture_set_options(options_create(None));
+            pane.fixture_parent(observer.upgrade().as_ref());
+            pane.fixture_add_mode(
                 refbox::RefBox::new(window_mode_entry {
                     wp: Rc::downgrade(&pane),
                     swp: Default::default(),
@@ -4000,8 +4001,8 @@ mod window_owner_reentry_tests {
                 "the loop releases its final owner"
             );
             format_free(tree);
-            (*pane.get()).modes.clear();
-            options_free((*pane.get()).options.take().unwrap());
+            pane.fixture_clear_modes();
+            options_free(pane.fixture_take_options().unwrap());
             drop(pane);
             drop(link);
         }

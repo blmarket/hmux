@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
@@ -163,14 +165,10 @@ mod layout_identity_tests {
         let window = crate::src::shared::window::WindowRef::empty();
         let panes: Vec<_> = (0..count)
             .map(|index| {
-                let pane = window_pane::new();
-                let state = &mut *pane.get();
-                state.id = index;
-                state.window = Rc::downgrade(&window);
-                state.sx = 10 + index;
-                state.sy = 20 + index;
-                state.xoff = 3 * index as i32;
-                state.yoff = -(index as i32);
+                let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+                pane.fixture_id(index);
+                pane.fixture_parent(Some(&window));
+                pane.fixture_geometry((10 + index, 20 + index), (3 * index as i32, -(index as i32)));
                 pane
             })
             .collect();
@@ -204,10 +202,7 @@ mod layout_identity_tests {
         }
         window.release(c"rotation layout identity fixture");
         for pane in panes {
-            crate::src::window_pane::window_pane_remove_ref(
-                pane,
-                c"rotation layout identity fixture".as_ptr(),
-            );
+            pane.release(c"rotation layout identity fixture");
         }
     }
 
@@ -216,19 +211,19 @@ mod layout_identity_tests {
         unsafe {
             for down in [false, true] {
                 let (window, panes) = fixture(3);
-                let old_ids: Vec<_> = panes.iter().map(|pane| (*pane.get()).layout_cell).collect();
+                let old_ids: Vec<_> = panes.iter().map(|pane| pane.layout_identity(false)).collect();
                 let old_geometry: Vec<_> = panes.iter().map(|pane| pane.geometry()).collect();
                 let mut resized = Vec::new();
                 let selected = cmd_rotate_window_panes(&window, down, |pane, sx, sy| {
                     // Reenter the Window during the real algorithm's resize phase.
                     assert_eq!(window.pane_snapshot().len(), 3);
                     resized.push(pane.id());
-                    (*pane.get()).sx = sx;
-                    (*pane.get()).sy = sy;
+                    let (_, _, x, y) = pane.geometry();
+                    pane.fixture_geometry((sx, sy), (x, y));
                 });
                 let sources = if down { [1, 2, 0] } else { [2, 0, 1] };
                 for (pane, source) in panes.iter().zip(sources) {
-                    assert_eq!((*pane.get()).layout_cell, old_ids[source]);
+                    assert_eq!(pane.layout_identity(false), old_ids[source]);
                     assert_eq!(pane.geometry(), old_geometry[source]);
                     let root = window.borrow_layout_root(LayoutView::Visible).unwrap();
                     let cell = root.find(old_ids[source].unwrap()).unwrap();
@@ -247,19 +242,19 @@ mod layout_identity_tests {
         unsafe {
             for down in [false, true] {
                 let (window, panes) = fixture(2);
-                let old_ids: Vec<_> = panes.iter().map(|pane| (*pane.get()).layout_cell).collect();
+                let old_ids: Vec<_> = panes.iter().map(|pane| pane.layout_identity(false)).collect();
                 let mut new_ids = Vec::new();
                 let mut resized = Vec::new();
                 let selected = cmd_rotate_window_panes(&window, down, |pane, _, _| {
                     resized.push(pane.id());
                     if resized.len() == 1 {
                         install_tree(&window, &panes);
-                        new_ids = panes.iter().map(|pane| (*pane.get()).layout_cell).collect();
+                        new_ids = panes.iter().map(|pane| pane.layout_identity(false)).collect();
                     }
                 });
                 assert_eq!(resized.len(), 2, "rotation still resizes both panes");
                 for (index, pane) in panes.iter().enumerate() {
-                    assert_eq!((*pane.get()).layout_cell, new_ids[index]);
+                    assert_eq!(pane.layout_identity(false), new_ids[index]);
                     assert_ne!(new_ids[index], old_ids[index]);
                     let root = window.borrow_layout_root(LayoutView::Visible).unwrap();
                     assert!(root.find(old_ids[index].unwrap()).is_none());

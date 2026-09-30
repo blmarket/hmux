@@ -9,6 +9,16 @@ use crate::src::window::Window as _;
 use crate::src::window::*;
 use std::time::Duration;
 mod api;
+#[cfg(test)]
+mod fixtures;
+#[cfg(test)]
+mod storage_tests;
+#[cfg(test)]
+mod resize_tests;
+#[cfg(test)]
+mod colour_tests;
+#[cfg(test)]
+pub(crate) use fixtures::PaneFixture;
 mod capture;
 mod mode_visuals;
 mod render;

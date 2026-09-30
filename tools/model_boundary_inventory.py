@@ -186,12 +186,19 @@ def main():
     parser.add_argument('--json', type=Path, help='write all findings for review')
     parser.add_argument('--model', action='append', choices=MODELS,
                         help='probe only this model (repeatable; default: all four)')
+    parser.add_argument('--tests', action='store_true',
+                        help='include integration tests and external unit-test fixtures')
     args = parser.parse_args()
     selected = args.model or list(MODELS)
-    sources = {str(p.relative_to(ROOT)): p.read_text() for p in (ROOT / 'src').rglob('*.rs')}
+    source_roots = ['src', 'tests'] if args.tests else ['src']
+    sources = {str(p.relative_to(ROOT)): p.read_text()
+               for source_root in source_roots for p in (ROOT / source_root).rglob('*.rs')}
     with tempfile.TemporaryDirectory(prefix='hmux-model-boundary-') as directory:
         probe = Path(directory)
-        for name in ('src', '.cargo', 'hmux-buffer', 'hmux-cmdparse', 'hmux-refbox', 'hmux-rt'):
+        directories = ['src', '.cargo', 'hmux-buffer', 'hmux-cmdparse', 'hmux-refbox', 'hmux-rt']
+        if args.tests:
+            directories.append('tests')
+        for name in directories:
             shutil.copytree(ROOT / name, probe / name, ignore=shutil.ignore_patterns('target', '.git'))
         for name in ('Cargo.toml', 'Cargo.lock', 'build.rs'):
             shutil.copy2(ROOT / name, probe / name)
@@ -201,7 +208,8 @@ def main():
                 private_fields(sources[path], model, field_visibility(model)))
         # Preserve the probed offsets: removing pub changes columns/byte offsets.
         probe_sources = {p: (probe / p).read_text() for p in sources}
-        result = subprocess.run(['cargo', 'check', '--offline', '--lib', '--message-format=json',
+        target = '--tests' if args.tests else '--lib'
+        result = subprocess.run(['cargo', 'check', '--offline', target, '--message-format=json',
                                  '--target-dir', str(ROOT / 'target/model-boundary')],
                                 cwd=probe, capture_output=True, text=True)
         messages = [item['message'] for line in result.stdout.splitlines()

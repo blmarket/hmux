@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::WindowPane as _;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 use crate::src::ffi::libc::{memcpy, memset};
@@ -2166,7 +2168,7 @@ mod menu_observer_tests {
                 default_gc: grid_cell::default(),
                 flags: 0,
             };
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let pane_observer = std::rc::Rc::downgrade(&pane);
             let mut span = redraw_span {
                 x: 0,
@@ -2198,7 +2200,7 @@ mod menu_observer_tests {
     #[test]
     fn draw_context_observes_active_and_marked_panes_without_retaining_them() {
         unsafe {
-            let owner = window_pane::new();
+            let owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let observer = std::rc::Rc::downgrade(&owner);
             let scene = redraw_scene {
                 c: std::rc::Weak::new(),
@@ -2245,10 +2247,10 @@ mod menu_observer_tests {
     #[test]
     fn border_style_selection_retains_live_candidates_and_skips_expired_ones() {
         unsafe {
-            let styled = window_pane::new();
-            let top = window_pane::new();
-            let bottom = window_pane::new();
-            let unrelated = window_pane::new();
+            let styled = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let top = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let bottom = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let unrelated = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let style_observer = std::rc::Rc::downgrade(&styled);
             let top_observer = std::rc::Rc::downgrade(&top);
             let bottom_observer = std::rc::Rc::downgrade(&bottom);
@@ -2299,8 +2301,8 @@ mod menu_observer_tests {
     #[test]
     fn pane_status_and_scrollbar_spans_observe_identity_and_skip_expired_panes() {
         unsafe {
-            let owner = window_pane::new();
-            let other = window_pane::new();
+            let owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            let other = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let observer = std::rc::Rc::downgrade(&owner);
             let pane = redraw_build_cell {
                 data: redraw_span_data::Pane(crate::src::shared::redraw::RedrawPaneSpan {

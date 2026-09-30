@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::arguments::args_parse;
 use crate::src::arguments::{args_count, args_has, args_string};
@@ -10364,14 +10366,11 @@ mod backing_owner_tests {
     fn incremental_sync_reuses_backing_and_replacement_preserves_the_source() {
         unsafe {
             let _options = ScreenOptions::new();
-            let pane_owner = window_pane::new();
-            let pane = &mut *pane_owner.get();
-            screen_init(&mut pane.base, 8, 3, 10);
+            let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+            pane_owner.fixture_base(|screen| screen_init(screen, 8, 3, 10));
             let payload = Box::new(std::cell::UnsafeCell::new(window_copy_mode_data::default()));
             let data = &mut *payload.get();
-            data.backing = Some(window_copy_clone_screen(
-                &pane.base, &pane.base, None, false,
-            ));
+            data.backing = Some(pane_owner.fixture_base(|screen| window_copy_clone_screen(screen, screen, None, false)));
             window_copy_sync_snapshot(data, pane_owner.history_scroll());
             let original = data.backing() as *const screen;
             let mode = refbox::RefBox::new(window_mode_entry {
@@ -10385,7 +10384,7 @@ mod backing_owner_tests {
             });
             let mut mode_handle = mode.downgrade();
             assert_eq!(window_copy_get_current_offset(&pane_owner), None);
-            pane.modes = vec![mode];
+            pane_owner.fixture_add_mode(mode);
             let hsize = data.backing().grid().hsize;
             assert_eq!(
                 window_copy_get_current_offset(&pane_owner),
@@ -10399,22 +10398,25 @@ mod backing_owner_tests {
             mode_handle.get_mut_unchecked().mode = &crate::src::window_clock::window_clock_mode;
             assert_eq!(window_copy_get_current_offset(&pane_owner), None);
             mode_handle.get_mut_unchecked().mode = &window_copy_mode;
-            let _mode_owner = pane.modes.pop().unwrap();
+            let _mode_owner = pane_owner.fixture_take_mode().unwrap();
             let mut cell = grid_default_cell;
             cell.data.data[0] = b'B';
-            grid_set_cell(pane.base.grid_mut(), 0, 0, &cell);
+            pane_owner.fixture_base(|screen| grid_set_cell(screen.grid_mut(), 0, 0, &cell));
             assert_eq!(byte_at(data.backing(), 0, 0), b' ');
             assert_eq!(window_copy_sync_backing(mode_handle.clone()), 1);
             assert_eq!(data.backing() as *const screen, original);
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
 
-            pane.base.grid_mut().scroll_generation += 1;
+            pane_owner.fixture_base(|screen| screen.grid_mut().scroll_generation += 1);
             assert_eq!(window_copy_sync_backing(mode_handle.clone()), 0);
             data.clear_backing();
             assert!(data.backing.is_none());
-            data.backing = Some(window_copy_clone_screen(&pane.base, &pane.base, None, true));
+            data.backing = Some(pane_owner.fixture_base(|screen| window_copy_clone_screen(screen, screen, None, true)));
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
-            assert_eq!(byte_at(&pane.base, 0, 0), b'B');
+            pane_owner.fixture_base(|screen| {
+                assert_eq!(byte_at(screen, 0, 0), b'B');
+                screen_free(screen);
+            });
             drop(pane_owner);
             assert!(mode_handle.get_unchecked().swp.upgrade().is_none());
             // An expired source leaves the independently owned snapshot intact.
@@ -10422,6 +10424,7 @@ mod backing_owner_tests {
             assert_eq!(window_copy_refresh_allowed(mode_handle.clone()), 0);
             window_copy_do_refresh(mode_handle.clone(), 0);
             assert_eq!(byte_at(data.backing(), 0, 0), b'B');
+            data.clear_backing();
             drop(_mode_owner);
             // An empty backing during initialization or repeated cleanup is valid.
             let mut empty = window_copy_mode_data::default();

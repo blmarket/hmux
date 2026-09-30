@@ -1,12 +1,14 @@
 #[path = "support/window_fixture.rs"]
 mod window_fixture;
-use hmux2::src::options::options_set_number;
+use hmux2::src::options::{options_set_number, options_set_string};
 use hmux2::src::shared::display::visible_range;
 use hmux2::src::shared::pane::{window_pane, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT};
 use hmux2::src::shared::window::WindowRef;
 use hmux2::src::window::{PaneOrder, Window};
+use hmux2::src::window_pane::WindowPane as _;
 use hmux2::src::window_visible::{window_position_is_visible, window_visible_ranges};
 use std::cell::UnsafeCell;
+use std::io::Write as _;
 use std::rc::Rc;
 use window_fixture::WindowOptions;
 
@@ -45,24 +47,27 @@ impl Scene {
     }
 
     unsafe fn free(self) {
+        self.window
+            .borrow_pane_order_mut(PaneOrder::Stacking)
+            .storage
+            .clear();
+        for pane in self.panes {
+            pane.destroy();
+            pane.release(c"test scene pane");
+        }
         self.window.release(c"test scene");
         self.options.free();
     }
 
     fn add_pane(&mut self, x: i32, y: i32, width: u32, height: u32) -> Rc<UnsafeCell<window_pane>> {
-        // These panes have no display resources requiring model cleanup.
-        let mut pane = window_pane::empty();
-        pane.window = Rc::downgrade(&self.window);
-        pane.xoff = x;
-        pane.yoff = y;
-        pane.sx = width;
-        pane.sy = height;
-        let owner = pane.into_shared();
-        unsafe {
+        let owner = unsafe {
+            let owner = Rc::<UnsafeCell<window_pane>>::create(&self.window, width, height, 0);
+            owner.set_layout_offset(x, y);
             self.window
                 .borrow_pane_order_mut(PaneOrder::Stacking)
                 .push_front(Rc::downgrade(&owner));
-        }
+            owner
+        };
         self.panes.push(owner.clone());
         owner
     }
@@ -149,9 +154,13 @@ fn reserved_scrollbar_is_included_in_occlusion() {
     unsafe {
         let mut scene = Scene::new();
         let base = scene.add_pane(0, 0, 80, 24);
-        let cover = scene.add_pane(15, 5, 5, 1).get();
-        (*cover).scrollbar_style.width = 2;
-        (*cover).scrollbar_style.pad = 1;
+        let cover = scene.add_pane(15, 5, 5, 1);
+        cover.with_options_mut(|options| {
+            options_set_string(options, c"pane-scrollbars-style".as_ptr(), 0, |out| {
+                out.write_all(b"width=2,pad=1")
+            });
+        });
+        cover.refresh_scrollbar_style();
         scene.window.with_options_mut(|options| {
             options_set_number(
                 options,

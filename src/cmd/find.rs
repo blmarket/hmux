@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_state_owned};
 use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
@@ -2040,7 +2042,7 @@ mod target_observer_tests {
         unsafe {
             let session = crate::src::shared::session::SessionRef::allocate();
             let window = crate::src::shared::window::WindowRef::empty();
-            let pane = window_pane::new();
+            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             let mut links = Default::default();
             let link = winlink_add(&mut links, 7);
             let mut state = cmd_find_state::default();
@@ -2114,15 +2116,14 @@ mod target_observer_tests {
             );
             let session_owner = crate::src::shared::session::SessionRef::allocate();
             let window_owner = crate::src::shared::window::WindowRef::empty();
-            let pane_owner = window_pane::new();
+            let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             assert!(!session_owner.is_registered());
-            let wp = rc::as_ptr(&pane_owner);
             (&mut sessions).insert(session_owner.clone());
             assert!(session_owner.is_registered());
             let mut wl = crate::src::session::test_support::add_link(&session_owner, 1);
             wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);
             winlink_set_window(wl.clone(), &window_owner);
-            (*wp).window = Rc::downgrade(&window_owner);
+            pane_owner.fixture_parent(Some(&window_owner));
             window_owner.initialize_pane(&pane_owner, None);
             crate::src::session::test_support::current(&session_owner, wl.clone());
             assert!(cmd_find_best_session(Some(&[]), 0).is_none());
@@ -2167,7 +2168,7 @@ mod target_observer_tests {
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
                 .storage
                 .clear();
-            (*wp).window = std::rc::Weak::new();
+            pane_owner.fixture_parent(None);
             drop((&mut sessions).remove(&session_owner));
             sessions = saved;
             window_owner.release(c"test owner");

@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_pane::WindowPane as _;
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
@@ -1338,92 +1340,7 @@ unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
     status
 }
 
-#[cfg(test)]
-mod collection_index_tests {
-    use super::*;
 
-    #[test]
-    fn pane_rc_keeps_weak_observers_alive_until_the_last_release() {
-        unsafe {
-            // No display resources in this fixture; exercise the actual pane
-            // retain/release functions with ordinary field drop.
-            let wp_owner = window_pane::new();
-            let wp = crate::src::shared::rc::as_ptr(&wp_owner);
-            let weak = window_pane_weak(&*(wp));
-            let callback = window_pane_add_ref(
-                &(*(wp)).observer.upgrade().expect("live window_pane"),
-                c"callback".as_ptr(),
-            );
-            window_pane_remove_ref(wp_owner, c"pane shutdown".as_ptr());
-            let retained = weak.upgrade().expect("callback keeps the pane alive");
-            assert_eq!(crate::src::shared::rc::as_ptr(&retained), wp);
-            window_pane_remove_ref(callback, c"callback complete".as_ptr());
-            assert!(
-                weak.upgrade().is_some(),
-                "upgraded Rc independently owns the pane"
-            );
-            drop(retained);
-            assert!(weak.upgrade().is_none());
-        }
-    }
-
-    #[test]
-    fn pane_index_observers_clear_on_removal_and_expire_with_the_owner() {
-        unsafe {
-            let mut head = window_pane_tree { storage: None };
-            let mut other = window_pane_tree { storage: None };
-            let first_owner = window_pane::new();
-            let first = crate::src::shared::rc::as_ptr(&first_owner);
-            (*first).id = 1;
-            let second_owner = window_pane::new();
-            let second = crate::src::shared::rc::as_ptr(&second_owner);
-            (*second).id = 2;
-            let duplicate_owner = window_pane::new();
-            let duplicate = crate::src::shared::rc::as_ptr(&duplicate_owner);
-            (*duplicate).id = 1;
-
-            assert!(window_pane_tree_insert(&mut head, first_owner.clone()).is_none());
-            assert!(window_pane_tree_insert(&mut head, second_owner.clone()).is_none());
-            let index_observer = (*first).owner.clone();
-            assert!(Rc::ptr_eq(
-                &window_pane_tree_insert(&mut head, duplicate_owner.clone()).unwrap(),
-                &first_owner
-            ));
-            assert!((*duplicate).owner.is_empty());
-            assert!(window_pane_tree_remove(&mut other, &mut *first).is_none());
-            assert!(!(*first).owner.is_empty());
-
-            let mut moved = head;
-            assert!(Rc::ptr_eq(
-                &window_pane_tree_next(&*first).unwrap(),
-                &second_owner
-            ));
-            assert_eq!(
-                crate::src::shared::rc::as_ptr(
-                    &window_pane_tree_remove(&mut moved, &mut *first).unwrap()
-                ),
-                first
-            );
-            assert!((*first).owner.is_empty());
-            assert!(window_pane_tree_next(&*first).is_none());
-            assert_eq!(
-                crate::src::shared::rc::as_ptr(
-                    &window_pane_tree_remove(&mut moved, &mut *second).unwrap()
-                ),
-                second
-            );
-
-            drop(first_owner);
-            drop(second_owner);
-            drop(duplicate_owner);
-            drop(moved);
-            assert!(matches!(
-                index_observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-        }
-    }
-}
 
 impl Drop for window {
     fn drop(&mut self) {
@@ -1456,7 +1373,6 @@ mod zoom_teardown_tests {
             .wp
             .upgrade()
             .expect("pane is retained during cleanup");
-        let pane = pane_owner.get();
         let parent_owner = pane_owner
             .window_observer()
             .upgrade()
@@ -1472,7 +1388,8 @@ mod zoom_teardown_tests {
             *slot.borrow_mut() = Some(parent_owner);
         }
         assert!((*parent).observer.ptr_eq(&pane_owner.window_observer()));
-        (*pane).sx += 1;
+        let (sx, sy, x, y) = pane_owner.geometry();
+        pane_owner.fixture_geometry((sx + 1, sy), (x, y));
     }
 
     #[test]
@@ -1483,15 +1400,11 @@ mod zoom_teardown_tests {
         });
         unsafe {
             let owner = zoomed_window();
-            let pane = (*owner.get())
-                .active_pane()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            let retained = (*pane).observer.upgrade().expect("registered pane");
-            let before = (*pane).sx;
+            let retained = owner.active_pane().expect("registered pane");
+            let before = retained.geometry().0;
             let late_owner = Rc::new(RefCell::new(None::<WindowRef>));
             let entry = refbox::RefBox::new(window_mode_entry {
-                wp: (*pane).observer.clone(),
+                wp: Rc::downgrade(&retained),
                 swp: std::rc::Weak::new(),
                 mode: &MODE,
                 boxed_data: Some(Box::new(late_owner.clone())),
@@ -1499,10 +1412,10 @@ mod zoom_teardown_tests {
                 prefix: 0,
                 kill: 0,
             });
-            window_pane::install_mode_for_test(&retained, entry);
+            retained.fixture_add_mode(entry);
             owner.release(c"test mode cleanup");
-            assert_eq!((*retained.get()).sx, before + 1);
-            assert_ne!((*retained.get()).flags & PANE_DESTROYED, 0);
+            assert_eq!(retained.geometry().0, before + 1);
+            assert_ne!(retained.fixture_flags() & PANE_DESTROYED, 0);
             let late_owner = late_owner.borrow_mut().take().unwrap();
             assert_eq!((*late_owner.get()).lifecycle, WindowLifecycle::Destroyed);
             let observer = Rc::downgrade(&late_owner);
@@ -1517,7 +1430,7 @@ mod zoom_teardown_tests {
             late_owner.release(c"retained during cleanup");
             assert!(observer.upgrade().is_none());
             assert_eq!(closed.get(), 0, "a cleaned window must not close again");
-            assert_eq!((*retained.get()).sx, before + 1, "mode cleanup runs once");
+            assert_eq!(retained.geometry().0, before + 1, "mode cleanup runs once");
             events_remove_sink(sink);
         }
     }
@@ -1556,11 +1469,11 @@ mod zoom_teardown_tests {
                 .expect("callback retained window");
             assert_eq!((*owner.get()).lifecycle, WindowLifecycle::Live);
             assert_ne!((*owner.get()).flags & WINDOW_ZOOMED, 0);
-            assert_eq!((*pane.get()).flags & PANE_DESTROYED, 0);
+            assert_eq!(pane.fixture_flags() & PANE_DESTROYED, 0);
             events_remove_sink(sink);
             owner.release(c"close callback owner");
             assert!(observer.upgrade().is_none());
-            assert_ne!((*pane.get()).flags & PANE_DESTROYED, 0);
+            assert_ne!(pane.fixture_flags() & PANE_DESTROYED, 0);
         }
     }
 
@@ -1576,29 +1489,23 @@ mod zoom_teardown_tests {
             options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
             entry,
         );
-        let pane_owner = window_pane::new();
-        let pane = crate::src::shared::rc::as_ptr(&pane_owner);
-        window_pane_tree_insert(&mut all_window_panes, pane_owner);
-        (*pane).window = (*w).observer.clone();
-        (*pane).fd = -1;
-        (*pane).pipe_fd = -1;
-        (*pane).sx = 80;
-        (*pane).sy = 24;
-        (*pane).base.grid = Some(grid_create(80, 24, 0));
-        (*pane).screen_source = PaneScreenSource::Base;
-        (*pane).flags = PANE_ZOOMED;
-        let active = (*pane).observer.upgrade().unwrap();
-        (*w).set_active(Some(&active));
-        active.release(c"test active pane initialization");
-        (*w).panes.push_back((*pane).observer.clone());
-        (*w).z_index.push_back((*pane).observer.clone());
+        let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+        pane_owner.fixture_register();
+        pane_owner.fixture_parent(Some(&w_owner));
+        pane_owner.fixture_stream(Default::default());
+        pane_owner.fixture_geometry((80, 24), (0, 0));
+        pane_owner.fixture_base(|screen| screen.grid = Some(grid_create(80, 24, 0)));
+        pane_owner.fixture_set_flags(PANE_ZOOMED);
+        (*w).set_active(Some(&pane_owner));
+        (*w).panes.push_back(Rc::downgrade(&pane_owner));
+        (*w).z_index.push_back(Rc::downgrade(&pane_owner));
         let mut saved = layout_create_cell();
         layout_set_size(&mut *saved, 40, 24, 0, 0);
-        layout_make_leaf(&mut *saved, &(*pane).observer.upgrade().unwrap());
-        (*pane).saved_layout_cell = Some(saved.id());
+        layout_make_leaf(&mut *saved, &pane_owner);
+        pane_owner.save_layout_for_zoom();
         let mut zoomed = layout_create_cell();
         layout_set_size(&mut *zoomed, 80, 24, 0, 0);
-        layout_make_leaf(&mut *zoomed, &(*pane).observer.upgrade().unwrap());
+        layout_make_leaf(&mut *zoomed, &pane_owner);
         (*w).layout_root = Some(zoomed);
         (*w).saved_layout_root = Some(saved);
         (*w).flags = WINDOW_ZOOMED;
@@ -1610,21 +1517,18 @@ mod zoom_teardown_tests {
         unsafe {
             let w_owner = zoomed_window();
             let w = w_owner.get();
-            let pane = (*w)
-                .active_pane()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            let pane = w_owner.active_pane().unwrap();
             let tree_owner = std::rc::Rc::new(std::cell::UnsafeCell::new(
                 crate::src::shared::mode_tree::mode_tree_data {
-                    wp: window_pane_weak(&*(pane)),
+                    wp: Rc::downgrade(&pane),
                     zoomed: 0,
                     ..Default::default()
                 },
             ));
             let tree = rc::as_ptr(&tree_owner);
             let observed = Rc::downgrade(&tree_owner);
-            (*pane).flags |= PANE_DESTROYED;
-            assert!(window_pane_upgrade(&(*tree).wp).is_none());
+            pane.fixture_set_flags(pane.fixture_flags() | PANE_DESTROYED);
+            assert!(Rc::<UnsafeCell<window_pane>>::from_observer(&(*tree).wp).is_none());
 
             crate::src::mode_tree::mode_tree_free(tree_owner);
 
@@ -1640,12 +1544,7 @@ mod zoom_teardown_tests {
             let w_owner = zoomed_window();
             let w = w_owner.get();
             let observer = (*w).observer.clone();
-            let pane_observer = (*(*w)
-                .active_pane()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .observer
-            .clone();
+            let pane_observer = Rc::downgrade(&w_owner.active_pane().unwrap());
             let resized = Rc::new(Cell::new(0));
             let resize_count = resized.clone();
             let resize_sink = events_add_sink(
@@ -1686,10 +1585,7 @@ mod zoom_teardown_tests {
         unsafe {
             let w_owner = zoomed_window();
             let w = w_owner.get();
-            let pane = (*w)
-                .active_pane()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            let pane = w_owner.active_pane().unwrap();
             let notifications = Rc::new(RefCell::new(Vec::new()));
             let mut sinks = Vec::new();
             for name in [c"pane-resized", c"window-unzoomed", c"window-closed"] {
@@ -1705,7 +1601,7 @@ mod zoom_teardown_tests {
                 window_unzoom(&(*(w)).observer.upgrade().expect("live window"), 1),
                 0
             );
-            assert_eq!(((*pane).sx, (*pane).sy), (40, 24));
+            assert_eq!((pane.geometry().0, pane.geometry().1), (40, 24));
             assert!((*w).saved_layout_root.is_none());
             window_remove_ref(w_owner, c"test live close".as_ptr());
             assert_eq!(

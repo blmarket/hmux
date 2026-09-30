@@ -1,6 +1,7 @@
-use hmux2::src::window::Window as _;
 use hmux2::src::shared::{pane::window_pane, window::window};
+use hmux2::src::window::Window as _;
 use hmux2::src::window::{PaneOrder, Window};
+use hmux2::src::window_pane::WindowPane as _;
 use std::rc::Rc;
 
 #[test]
@@ -8,9 +9,9 @@ fn order_swaps_preserve_weak_membership_within_and_between_windows() {
     unsafe {
         let left_owner = hmux2::src::shared::window::WindowRef::empty();
         let right_owner = hmux2::src::shared::window::WindowRef::empty();
-        let first_owner = window_pane::new();
-        let second_owner = window_pane::new();
-        let third_owner = window_pane::new();
+        let first_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+        let second_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
+        let third_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
         for order in [PaneOrder::Index, PaneOrder::Stacking] {
             {
                 let mut left = left_owner.borrow_pane_order_mut(order);
