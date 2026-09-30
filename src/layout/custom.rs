@@ -439,12 +439,7 @@ pub unsafe fn layout_parse(
                     );
                 } else {
                     if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
-                        w_owner.resize(
-                            (*lc).g.sx,
-                            (*lc).g.sy,
-                            -(1 as ::core::ffi::c_int),
-                            -(1 as ::core::ffi::c_int),
-                        );
+                        w_owner.set_layout_size((*lc).g.sx, (*lc).g.sy);
                     }
                     // Resizing may dispatch callbacks. Acquire the current pane order
                     // afterward, then keep all tree edits in one bounded borrow.

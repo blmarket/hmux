@@ -247,6 +247,9 @@ pub trait Window {
     unsafe fn cell_size(&self) -> (u32, u32);
     unsafe fn is_zoomed(&self) -> bool;
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32);
+    /// Adopt a parsed layout's dimensions without resizing the previous tree
+    /// or firing resize events. Preserve the terminal cell's pixel dimensions.
+    unsafe fn set_layout_size(&self, sx: u32, sy: u32);
     /// Preserve command precedence: cycle, spread, then named/saved layout.
     /// `cycle` is -1 (previous), 0, or 1 (next). `legacy_format` preserves the
     /// attached control client's old custom-layout serialization format.
@@ -978,6 +981,9 @@ impl Window for WindowRef {
     }
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32) {
         resize_window(self, sx, sy, xpixel, ypixel);
+    }
+    unsafe fn set_layout_size(&self, sx: u32, sy: u32) {
+        window_resize(self, sx, sy, -1, -1);
     }
     unsafe fn select_layout(
         &self,
@@ -2095,6 +2101,52 @@ mod tests {
             );
             events_remove_sink(sink);
             window.release(c"failed layout selection test");
+        }
+    }
+
+    #[test]
+    fn custom_layout_selection_preserves_notification_counts_and_cell_size() {
+        unsafe {
+            let window = super::super::zoom_teardown_tests::zoomed_window();
+            window.with_options_mut(|options| {
+                let entry = crate::src::options_table::options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"pane-base-index"))
+                    .unwrap();
+                crate::src::options::options_default(options, entry);
+            });
+            window.unzoom(false);
+            let cell_size = window.cell_size();
+            let notifications = Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut sinks = Vec::new();
+            for event in [c"window-layout-changed", c"window-resized"] {
+                let notifications = notifications.clone();
+                sinks.push(events_add_sink(
+                    event,
+                    events_callback(move |_, _| notifications.borrow_mut().push(event)),
+                ));
+            }
+            let json = c"{\"V\":2,\"L\":{\"t\":\"p\",\"w\":90,\"h\":30,\"x\":0,\"y\":0,\"i\":0}}";
+            window
+                .select_layout(Some(json), false, 0, None, false)
+                .unwrap();
+            assert_eq!(window.size(), (90, 30));
+            assert_eq!(window.cell_size(), cell_size);
+            assert_eq!(&*notifications.borrow(), &[c"window-layout-changed"]);
+
+            notifications.borrow_mut().clear();
+            let legacy = window.layout_string(LayoutView::Visible, true).unwrap();
+            window
+                .select_layout(Some(&legacy), false, 0, None, true)
+                .unwrap();
+            assert_eq!(
+                &*notifications.borrow(),
+                &[c"window-layout-changed", c"window-layout-changed"]
+            );
+            for sink in sinks {
+                events_remove_sink(sink);
+            }
+            window.release(c"custom layout notification test");
         }
     }
 
