@@ -13,7 +13,6 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::environment::environ;
-use crate::src::shared::layout::layout_cell;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::spawn::spawn_context;
@@ -59,7 +58,7 @@ unsafe fn cmd_respawn_window_exec(
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
-        lc: ::core::ptr::null_mut::<layout_cell>(),
+        layout: None,
         name: None,
         argv: Vec::new(),
         environ: None,
@@ -111,13 +110,7 @@ unsafe fn cmd_respawn_window_exec(
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     }
-    server_redraw_window(
-        &*(wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())),
-    );
+    server_redraw_window(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")));
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

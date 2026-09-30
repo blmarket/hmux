@@ -1,9 +1,10 @@
 //! Window-owned alert flags, queue membership and silence timer.
 use super::*;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_set};
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
 
-pub(super) unsafe fn reset_timer(owner: &Rc<UnsafeCell<window>>) {
+pub(super) unsafe fn reset_timer(owner: &WindowRef) {
     let w = owner.get();
     if event_initialized(&(*w).alerts_timer) == 0 {
         let observer = Rc::downgrade(owner);
@@ -32,7 +33,7 @@ pub(super) unsafe fn reset_timer(owner: &Rc<UnsafeCell<window>>) {
     }
 }
 
-pub(super) unsafe fn queue(owner: &Rc<UnsafeCell<window>>, flags: i32) -> Option<bool> {
+pub(super) unsafe fn queue(owner: &WindowRef, flags: i32) -> Option<bool> {
     assert_eq!(flags & !WINDOW_ALERTFLAGS, 0, "alert flags only");
     owner.reset_alert_timer();
     let w = owner.get();
@@ -72,7 +73,7 @@ mod tests {
     fn queue_membership_covers_delivery_and_disabled_alerts_still_record_flags() {
         unsafe {
             let window = window::new();
-            let mut options = options_create(std::ptr::null_mut());
+            let mut options = options_create(None);
             for name in [c"monitor-bell", c"monitor-activity", c"monitor-silence"] {
                 let definition = crate::src::options_table::options_table
                     .iter()

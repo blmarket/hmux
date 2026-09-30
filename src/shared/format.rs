@@ -1,5 +1,6 @@
 //! Authoritative format declarations.
 use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::window::WindowWeak;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
@@ -123,7 +124,7 @@ pub struct format_tree {
     pub c: ClientWeak,
     pub s: std::rc::Weak<UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
-    pub w: std::rc::Weak<UnsafeCell<window>>,
+    pub w: WindowWeak,
     pub wp: std::rc::Weak<UnsafeCell<window_pane>>,
     pub pb: Option<PasteBufferRef>,
     /// Queue item used for verbose output, observed without retaining it.

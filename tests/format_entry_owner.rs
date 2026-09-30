@@ -20,11 +20,11 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         let saved_options = global_options;
         let saved_w_options = global_w_options;
         let saved_s_options = global_s_options;
-        let mut options_owner = options_create(core::ptr::null_mut());
+        let mut options_owner = options_create(None);
         let options = &raw mut *options_owner;
-        let mut w_options_owner = options_create(core::ptr::null_mut());
+        let mut w_options_owner = options_create(None);
         let w_options = &raw mut *w_options_owner;
-        let mut s_options_owner = options_create(core::ptr::null_mut());
+        let mut s_options_owner = options_create(None);
         let s_options = &raw mut *s_options_owner;
         global_options = options;
         global_w_options = w_options;

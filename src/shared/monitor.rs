@@ -1,8 +1,6 @@
 //! Authoritative monitor declarations, shared by the C translation units.
 
 use super::abi::{time_t, u_int};
-use super::client::client;
-use super::event::event;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::winlink;
@@ -18,16 +16,7 @@ pub const MONITOR_SESSION: monitor_type = 0;
 pub const MONITOR_NOTIFY_TRUE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
-/// Box-owned by monitor_create; its callback and weak observers expire on destroy.
-#[repr(C)]
-pub struct monitor_set {
-    pub client: ClientWeak,
-    pub session: Option<Rc<UnsafeCell<session>>>,
-    pub cb: monitor_cb,
-    pub items: monitor_items,
-    pub timer: event,
-    pub generation: u_int,
-}
+pub use crate::src::monitor::{MonitorRef, MonitorWeak};
 
 #[derive(Clone)]
 #[repr(C)]
@@ -60,6 +49,8 @@ pub struct monitor_item {
     pub last: Option<std::ffi::CString>,
     pub panes: monitor_panes,
     pub windows: monitor_windows,
+    /// Never reused within a monitor; distinguishes same-name replacements.
+    pub identity: u64,
     pub fire_count: u_int,
     pub fire_time: time_t,
     /// Weak traversal handle into the containing index.
@@ -77,6 +68,7 @@ impl monitor_item {
             last: Default::default(),
             panes: None,
             windows: None,
+            identity: 0,
             fire_count: Default::default(),
             fire_time: Default::default(),
             owner: refbox::Weak::new(),

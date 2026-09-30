@@ -40,7 +40,6 @@ use crate::src::shared::command::{
     CMDQ_STATE_REPEAT, CMD_FIND_CANFAIL, CMD_STARTSERVER, CMD_TARGET_SESSION_USAGE,
 };
 use crate::src::shared::environment::environ;
-use crate::src::shared::layout::layout_cell;
 use crate::src::shared::limits::USHRT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
@@ -168,7 +167,7 @@ unsafe fn cmd_new_session_exec(
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
-        lc: ::core::ptr::null_mut::<layout_cell>(),
+        layout: None,
         name: None,
         argv: Vec::new(),
         environ: None,
@@ -524,11 +523,12 @@ unsafe fn cmd_new_session_exec(
                                                                 sy = sy.wrapping_sub(1);
                                                             }
                                                         } else {
-                                                            tmp = options_get_string(
+                                                            let default_size = options_get_string(
                                                                 global_s_options,
                                                                 b"default-size\0" as *const u8
                                                                     as *const ::core::ffi::c_char,
                                                             );
+                                                            tmp = default_size.as_ptr();
                                                             if sscanf(
                                                                 tmp,
                                                                 b"%ux%u\0" as *const u8
@@ -562,7 +562,7 @@ unsafe fn cmd_new_session_exec(
                                                         if sy == 0 as u_int {
                                                             sy = 1 as u_int;
                                                         }
-                                                        oo = Some(crate::src::options::options_create_owned(global_s_options));
+                                                        oo = Some(crate::src::options::options_create_owned(Some(crate::src::options::OptionsScope::GlobalSession)));
                                                         if args_has(args, 'x' as i32 as u_char) != 0
                                                             || args_has(args, 'y' as i32 as u_char)
                                                                 != 0

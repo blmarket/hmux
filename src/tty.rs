@@ -77,6 +77,7 @@ use crate::src::shared::tty::{
     TTY_WINSIZEQUERY,
 };
 use crate::src::shared::utf8::UTF8_SIZE;
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::status::status_line_size;
 use crate::src::style::colour::{
@@ -96,6 +97,7 @@ use crate::src::tty_term::{
     tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii,
     tty_term_string_s, tty_term_string_ss,
 };
+use crate::src::window::Window as _;
 use crate::src::window::{Window, WindowPane};
 
 use std::ffi::CStr;
@@ -1104,8 +1106,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     owner.reset_pan();
     view
 }
-pub unsafe fn tty_update_window_offset(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
-    let mut w = w_owner.get();
+pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
     let mut c: Option<ClientRef> = None;
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.clone();
@@ -1132,9 +1133,7 @@ pub unsafe fn tty_update_window_offset(w_owner: &std::rc::Rc<std::cell::UnsafeCe
                 .current_winlink())
             .get_unchecked()
             .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-                == w
+            .is_some_and(|owner| std::rc::Rc::ptr_eq(owner, w_owner))
         {
             tty_update_client_offset(&c.clone().expect("live client"));
         }
@@ -2318,7 +2317,7 @@ unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
     let mut oo: *mut options =
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut sy: *mut style = ::core::ptr::null_mut::<style>();
+    let mut sy: style;
     log_debug(format_args!("%{}: style changed", ((*wp).id) as u32));
     (*wp).flags &= !PANE_STYLECHANGED;
     let mut ft_owner = format_create(
@@ -2342,7 +2341,7 @@ unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
         b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
-    (*wp).cached_active_dim = (*sy).dim as u_int;
+    (*wp).cached_active_dim = sy.dim as u_int;
     (*wp).cached_gc = tty_window_default_style(&(*wp).palette);
     sy = style_add(
         &raw mut (*wp).cached_gc,
@@ -2350,7 +2349,7 @@ unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_
         b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
         ft,
     );
-    (*wp).cached_dim = (*sy).dim as u_int;
+    (*wp).cached_dim = sy.dim as u_int;
     format_free(ft_owner);
 }
 pub unsafe fn tty_default_colours(
@@ -2361,13 +2360,10 @@ pub unsafe fn tty_default_colours(
         tty_style_changed(wp_owner);
     }
     let active = wp
-        == (*(*wp)
-            .window_handle()
+        == (((*wp).window_handle().as_ref()).expect("live window"))
+            .active_pane()
             .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .active_pane()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut gc = grid_default_cell;
     gc.fg = if active && (*wp).cached_active_gc.fg != 8 {
         (*wp).cached_active_gc.fg

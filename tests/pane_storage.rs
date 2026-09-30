@@ -3,6 +3,7 @@ use hmux2::src::shared::pane::{
     window_pane_history, window_panes,
 };
 use hmux2::src::window::*;
+use hmux2::src::window::{PaneOrder, Window};
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
@@ -195,24 +196,31 @@ fn relative_pane_selection_wraps_and_retains_its_result() {
         let window = hmux2::src::shared::window::window::new();
         let first = pane_owner();
         let last = pane_owner();
-        (*window.get()).panes.push_back(Rc::downgrade(&first));
-        (*window.get()).panes.push_back(Rc::downgrade(&last));
-        let selected = window_pane_next_by_number(&*window.get(), Some(&last), 3).unwrap();
+        window
+            .borrow_pane_order_mut(PaneOrder::Index)
+            .push_back(Rc::downgrade(&first));
+        window
+            .borrow_pane_order_mut(PaneOrder::Index)
+            .push_back(Rc::downgrade(&last));
+        let selected = window.pane_by_number(Some(&last), 3, false).unwrap();
         assert!(Rc::ptr_eq(&selected, &first));
         assert!(Rc::ptr_eq(
-            &window_pane_previous_by_number(&*window.get(), Some(&first), 1).unwrap(),
+            &window.pane_by_number(Some(&first), 1, true).unwrap(),
             &last,
         ));
         assert!(Rc::ptr_eq(
-            &window_pane_next_by_number(&*window.get(), Some(&last), 0).unwrap(),
+            &window.pane_by_number(Some(&last), 0, false).unwrap(),
             &last,
         ));
         let observer = Rc::downgrade(&first);
-        (*window.get()).panes.storage.clear();
+        window
+            .borrow_pane_order_mut(PaneOrder::Index)
+            .storage
+            .clear();
         drop(first);
         drop(last);
         assert!(observer.upgrade().is_some());
-        assert!(window_pane_next_by_number(&*window.get(), None, 1).is_none());
+        assert!(window.pane_by_number(None, 1, false).is_none());
         drop(selected);
         assert!(observer.upgrade().is_none());
         hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
@@ -229,12 +237,17 @@ fn window_membership_uses_live_allocation_identity() {
         (*member.get()).id = 42;
         (*unrelated.get()).id = 42;
         let observer = Rc::downgrade(&member);
-        (*window.get()).panes.push_back(observer.clone());
-        assert!(window_has_pane(&*window.get(), &observer));
-        assert!(!window_has_pane(&*window.get(), &Rc::downgrade(&unrelated)));
+        window
+            .borrow_pane_order_mut(PaneOrder::Index)
+            .push_back(observer.clone());
+        assert!(window.contains_pane(&observer));
+        assert!(!window.contains_pane(&Rc::downgrade(&unrelated)));
         drop(member);
-        assert!(!window_has_pane(&*window.get(), &observer));
-        (*window.get()).panes.storage.clear();
+        assert!(!window.contains_pane(&observer));
+        window
+            .borrow_pane_order_mut(PaneOrder::Index)
+            .storage
+            .clear();
         hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
     }
 }

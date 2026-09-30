@@ -1,6 +1,7 @@
 //! Authoritative pane declarations, shared by the C translation units.
 
 use crate::src::shared::client::ClientWeak;
+use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::ffi::CString;
@@ -13,7 +14,7 @@ use super::command::cmdq_item;
 use super::event::{bufferevent, event};
 use super::grid::grid_cell;
 use super::input::input_ctx;
-use super::layout::layout_cell;
+use super::layout::LayoutCellId;
 use super::options::options;
 use super::prompt::{prompt_free_cb, prompt_type};
 use super::screen::screen;
@@ -99,10 +100,11 @@ pub struct window_pane {
     pub id: u_int,
     pub active_point: u_int,
     /// Nonowning parent; final window teardown provides a scoped fallback.
-    pub window: Weak<UnsafeCell<window>>,
+    pub window: WindowWeak,
     pub options: Option<Box<options>>,
-    pub layout_cell: *mut layout_cell,
-    pub saved_layout_cell: *mut layout_cell,
+    /// Nonowning cell identities; resolve only under the owning Window tree guard.
+    pub layout_cell: Option<LayoutCellId>,
+    pub saved_layout_cell: Option<LayoutCellId>,
     pub sx: u_int,
     pub sy: u_int,
     pub xoff: ::core::ffi::c_int,
@@ -178,7 +180,7 @@ pub struct window_pane {
 impl window_pane {
     /// Retain the parent for the current operation. Release potentially final
     /// owners through window_remove_ref, as with other window handles.
-    pub fn window_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
+    pub fn window_handle(&self) -> Option<WindowRef> {
         self.window.upgrade()
     }
 

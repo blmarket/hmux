@@ -1,6 +1,7 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::window::{WindowRef, WindowWeak};
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -89,7 +90,7 @@ pub struct client {
     pub(super) last_session: std::rc::Weak<UnsafeCell<session>>,
     pub(super) theme_colours: [::core::ffi::c_int; 10],
     /// Window whose manual pan offsets are active; this does not retain it.
-    pub(super) pan_window: std::rc::Weak<UnsafeCell<crate::src::shared::window::window>>,
+    pub(super) pan_window: WindowWeak,
     pub(super) pan_ox: u_int,
     pub(super) pan_oy: u_int,
     pub(super) overlay_generation: u64,
@@ -124,13 +125,15 @@ impl client {
         self.session = session.map_or_else(std::rc::Weak::new, Rc::downgrade);
     }
 
-    pub(super) fn pan_window_is(&self, window: &crate::src::shared::window::window) -> bool {
+    #[cfg(test)]
+    pub(super) fn pan_window_is(&self, window: &WindowRef) -> bool {
         self.pan_window.strong_count() != 0
-            && std::rc::Weak::ptr_eq(&self.pan_window, &window.observer)
+            && std::rc::Weak::ptr_eq(&self.pan_window, &Rc::downgrade(window))
     }
 
-    pub(super) fn set_pan_window(&mut self, window: &crate::src::shared::window::window) {
-        self.pan_window = window.observer.clone();
+    #[cfg(test)]
+    pub(super) fn set_pan_window(&mut self, window: &WindowRef) {
+        self.pan_window = Rc::downgrade(window);
     }
 
     pub fn empty() -> Self {
@@ -292,7 +295,7 @@ mod retained_client_tests {
         let first = crate::src::shared::window::window::new();
         let first_observer = Rc::downgrade(&first);
         unsafe {
-            let first_window = &*first.get();
+            let first_window = &first;
             assert!(!client.pan_window_is(first_window));
             client.set_pan_window(first_window);
             assert!(client.pan_window_is(first_window));
@@ -305,9 +308,9 @@ mod retained_client_tests {
 
         let second = crate::src::shared::window::window::new();
         unsafe {
-            assert!(!client.pan_window_is(&*second.get()));
-            client.set_pan_window(&*second.get());
-            assert!(client.pan_window_is(&*second.get()));
+            assert!(!client.pan_window_is(&second));
+            client.set_pan_window(&second);
+            assert!(client.pan_window_is(&second));
         }
         assert_eq!(Rc::strong_count(&second), 1);
         unsafe {

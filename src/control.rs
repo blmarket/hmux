@@ -1589,6 +1589,9 @@ unsafe fn control_sub_change(change: &monitor_change) {
     } else {
         None
     };
+    // Output may reenter and unlink this window; only copied location data is
+    // needed by the writer after this point.
+    drop(link);
     control_notify_write(&client_owner, |out| {
         out.write_all(b"%subscription-changed ")?;
         out.write_all(change.name.to_bytes())?;
@@ -1639,7 +1642,7 @@ pub unsafe fn control_start(owner: &ClientRef) {
 
 pub(crate) unsafe fn control_subscriptions(
     owner: &ClientRef,
-) -> Box<crate::src::shared::monitor::monitor_set> {
+) -> crate::src::shared::monitor::MonitorRef {
     monitor_create_client_owned(
         Some(owner),
         monitor_callback(|change| unsafe { control_sub_change(change) }),
@@ -1710,12 +1713,14 @@ pub unsafe fn control_add_sub(
     mut id: ::core::ffi::c_int,
     mut format: *const ::core::ffi::c_char,
 ) {
-    let mut state = c_owner.borrow_control_mut().expect("control client state");
-    let subscriptions = state.subs.as_deref_mut().expect("control subscriptions");
-    // add/remove only update the subscription index and schedule/cancel its
-    // timer. Initial notification runs later from the monitor timer callback.
+    let subscriptions = {
+        let state = c_owner.borrow_control_mut().expect("control client state");
+        state.subs.as_ref().expect("control subscriptions").clone()
+    };
+    // Retain only the independently owned monitor while publishing its timer.
+    // The Client component borrow has ended before monitor operations begin.
     monitor_add(
-        subscriptions,
+        &subscriptions,
         name,
         type_0,
         id,
@@ -1724,9 +1729,11 @@ pub unsafe fn control_add_sub(
     );
 }
 pub unsafe fn control_remove_sub(c_owner: &ClientRef, mut name: *const ::core::ffi::c_char) {
-    let mut state = c_owner.borrow_control_mut().expect("control client state");
-    let subscriptions = state.subs.as_deref_mut().expect("control subscriptions");
-    monitor_remove(subscriptions, name);
+    let subscriptions = {
+        let state = c_owner.borrow_control_mut().expect("control client state");
+        state.subs.as_ref().expect("control subscriptions").clone()
+    };
+    monitor_remove(&subscriptions, name);
 }
 
 fn control_windows_set(windows: &mut control_windows, window: u_int, sx: u_int, sy: u_int) {

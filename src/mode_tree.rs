@@ -15,7 +15,6 @@ use crate::src::key_string::key_string_format;
 use crate::src::log::{log_bytes, log_debug};
 use crate::src::menu::{menu_add_items, menu_create, menu_display};
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_key, prompt_mouse,
     prompt_set_options,
@@ -71,9 +70,11 @@ use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
 use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
 use crate::src::status::status_message_set;
-use crate::src::style::style_apply;
+use crate::src::style::style_apply_with_options;
 use crate::src::tmux::global_s_options;
+use crate::src::window::Window as _;
 use crate::src::window::{window_pane_upgrade, window_zoom};
+use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -606,19 +607,18 @@ pub unsafe fn mode_tree_zoom(
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     if args_has(args, 'Z' as i32 as u_char) != 0 {
-        (*mtd).zoomed = (*(*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .flags
-            & WINDOW_ZOOMED;
+        (*mtd).zoomed = if mode_pane_owner
+            .window_observer()
+            .upgrade()
+            .expect("mode window")
+            .is_zoomed()
+        {
+            WINDOW_ZOOMED
+        } else {
+            0
+        };
         if (*mtd).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(
-                &*((*wp)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())),
-            );
+            server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
         }
     } else {
         (*mtd).zoomed = -(1 as ::core::ffi::c_int);
@@ -765,15 +765,9 @@ pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_
     if mtd.zoomed == 0 {
         if let Some(pane) = mtd.wp.upgrade() {
             let wp = &*pane.get();
-            server_unzoom_window(
-                &(*(wp
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())))
-                .observer
-                .upgrade()
-                .expect("live window"),
-            );
+            server_unzoom_window(&std::rc::Rc::clone(
+                &((wp.window_handle().as_ref()).expect("live window")),
+            ));
         }
     }
     mode_tree_clear_prompt(&owner);
@@ -890,14 +884,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wp: *mut window_pane = mode_pane;
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = options_owner_ptr(
-        &mut (*(*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .options,
-    )
-    .map_or(std::ptr::null_mut(), |options| options);
+    let options_window = mode_pane_owner.window_observer();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         target: Default::default(),
@@ -986,23 +973,23 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut gc,
-        oo,
-        b"tree-mode-selection-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut gc, c"tree-mode-selection-style", None, |visit| {
+        options_window
+            .upgrade()
+            .expect("live tree-mode window")
+            .with_options_mut(visit)
+    });
     memcpy(
         &raw mut box_gc as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut box_gc,
-        oo,
-        b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
+        options_window
+            .upgrade()
+            .expect("live tree-mode window")
+            .with_options_mut(visit)
+    });
     dfg = gc.fg;
     dfg0 = gc0.fg;
     screen_write_start(&mut ctx, s);
@@ -1958,14 +1945,7 @@ unsafe fn mode_tree_draw_help(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = &raw mut (*mtd).screen;
-    let mut oo: *mut options = options_owner_ptr(
-        &mut (*(*mode_pane)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .options,
-    )
-    .map_or(std::ptr::null_mut(), |options| options);
+    let options_window = mode_pane_owner.window_observer();
     let mut box_gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -2020,12 +2000,12 @@ unsafe fn mode_tree_draw_help(
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut box_gc,
-        oo,
-        b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
+        options_window
+            .upgrade()
+            .expect("live tree-mode window")
+            .with_options_mut(visit)
+    });
     memcpy(
         &raw mut gc as *mut ::core::ffi::c_void,
         &raw const grid_default_cell as *const ::core::ffi::c_void,

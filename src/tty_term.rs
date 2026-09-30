@@ -1820,7 +1820,7 @@ mod term_string_owner_tests {
         unsafe {
             let saved = global_options;
             let initial_count = tty_terms.len();
-            let mut options = options_create_owned(std::ptr::null_mut());
+            let mut options = options_create_owned(None);
             global_options = &raw mut *options;
             for name in [c"terminal-features", c"terminal-overrides"] {
                 options_empty(

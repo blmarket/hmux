@@ -986,11 +986,11 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
             flags |= CLIENT_UTF8 as uint64_t;
         }
     }
-    global_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_options_owner = Some(options_create(None));
     global_options = (*(&raw mut global_options_owner)).as_deref_mut().unwrap();
-    global_s_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_s_options_owner = Some(options_create(None));
     global_s_options = (*(&raw mut global_s_options_owner)).as_deref_mut().unwrap();
-    global_w_options_owner = Some(options_create(std::ptr::null_mut()));
+    global_w_options_owner = Some(options_create(None));
     global_w_options = (*(&raw mut global_w_options_owner)).as_deref_mut().unwrap();
     oe = &raw const options_table as *const options_table_entry;
     while !(*oe).name_ptr().is_null() {

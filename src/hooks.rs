@@ -28,9 +28,9 @@ use crate::src::monitor::{
 };
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{
-    options_array_item_value, options_get, options_get_monitor_data, options_get_only,
-    options_get_string, options_hook_fired, options_name, options_search, options_set_monitor_data,
-    options_set_string,
+    options_array_item_value, options_get_monitor_data, options_get_only, options_get_string,
+    options_hook_fired, options_name, options_search, options_set_monitor_data, options_set_string,
+    OptionsScope,
 };
 use crate::src::options_table::options_table;
 use crate::src::shared::abi::*;
@@ -45,7 +45,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::monitor::monitor_type;
-use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
+use crate::src::shared::monitor::{monitor_callback, monitor_change, MonitorRef};
 use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::options::{
     options, options_array_item, options_entry, options_table_entry,
@@ -55,7 +55,7 @@ use crate::src::shared::rc;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_s_options;
-use crate::src::window::window_pane_upgrade;
+use crate::src::window::{window_pane_upgrade, WindowPane};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
@@ -86,20 +86,18 @@ pub struct hooks_data<'a> {
     pub name: &'a CStr,
     pub fs: cmd_find_state,
     pub formats: Box<format_tree>,
-    pub oo: *mut options,
+    pub oo: Option<OptionsScope>,
     pub client: ClientWeak,
     pub expand: ::core::ffi::c_int,
 }
 #[repr(C)]
 pub struct hooks_monitor {
-    // options_entry.monitor_data owns the boxed record; callbacks only borrow it.
-    pub oo: *mut options,
-    pub set: Option<Box<crate::src::shared::monitor::monitor_set>>,
+    // Callbacks identify this record by owner, option name and generation.
+    pub generation: usize,
+    pub set: Option<MonitorRef>,
     pub sink: EventSinkId,
-    pub fs: cmd_find_state,
     pub type_0: monitor_type,
     pub id: ::core::ffi::c_int,
-    /// hooks_monitor_get lends this pointer until the monitor is removed.
     pub format: CString,
 }
 
@@ -160,148 +158,105 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
 }
 unsafe fn hooks_insert(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
-    mut hd: *mut hooks_data,
+    hd: *mut hooks_data,
 ) {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mut after = item_handle.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    let mut fs: cmd_find_state = cmd_find_state {
-        flags: 0,
-        s: Default::default(),
-        wl: Default::default(),
-        w: Default::default(),
-        wp: Default::default(),
-        idx: 0,
-    };
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let state;
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut pr: cmd_parse_result = cmd_parse_result::empty();
+    let mut fs = cmd_find_state::default();
     log_debug(format_args!(
-        "{}: inserting hook {}",
-        "hooks_insert",
+        "hooks_insert: inserting hook {}",
         crate::src::log::log_bytes((*hd).name.to_bytes())
     ));
-    cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     if cmd_find_empty_state(&(*hd).fs) != 0 || cmd_find_valid_state(&(*hd).fs) == 0 {
-        cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int);
+        cmd_find_from_nothing(&mut fs, 0);
     } else {
-        cmd_find_copy_state(&raw mut fs, &raw mut (*hd).fs);
+        cmd_find_copy_state(&mut fs, &(*hd).fs);
     }
-    if !(*hd).oo.is_null() {
-        oo = (*hd).oo;
-        o = crate::src::options::options_get_only_mut(&mut *(oo), (*hd).name)
-            .map_or(std::ptr::null_mut(), |entry| entry);
+    let name = (*hd).name;
+    let source = if let Some(scope) = &(*hd).oo {
+        scope.resolve(name, true)
     } else {
-        if fs.session_handle().is_none() {
-            oo = global_s_options;
+        let scope = if fs.s.strong_count() == 0 {
+            OptionsScope::GlobalSession
         } else {
-            oo = options_owner_ptr(
-                &mut (*fs
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options);
+            OptionsScope::Session(fs.s.clone())
+        };
+        let mut source = scope.resolve(name, false);
+        if source.is_none() && fs.wp.strong_count() != 0 {
+            source = OptionsScope::Pane(fs.wp.clone()).resolve(name, false);
         }
-        o = options_get(oo, (*hd).name.as_ptr());
-        if o.is_null() && !fs.pane_handle().is_none() {
-            oo = options_owner_ptr(
-                &mut (*fs
-                    .pane_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options);
-            o = options_get(oo, (*hd).name.as_ptr());
+        if source.is_none() && fs.wl.is_alive() {
+            let link = fs.wl.get_unchecked();
+            let window = link.window_handle().expect("hook window");
+            source = OptionsScope::Window(std::rc::Rc::downgrade(window)).resolve(name, false);
         }
-        if o.is_null() && fs.winlink_handle().is_alive() {
-            oo = options_owner_ptr(
-                &mut (*(fs.winlink_handle())
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options);
-            o = options_get(oo, (*hd).name.as_ptr());
-        }
-    }
-    if o.is_null() {
+        source
+    };
+    let Some(source) = source else {
         log_debug(format_args!(
-            "{}: hook {} not found",
-            "hooks_insert",
-            crate::src::log::log_bytes((*hd).name.to_bytes())
+            "hooks_insert: hook {} not found",
+            crate::src::log::log_bytes(name.to_bytes())
         ));
         return;
-    }
-    options_hook_fired(o);
-    if item.is_null() {
-        state = cmdq_new_state(
-            &raw mut fs,
-            ::core::ptr::null_mut::<key_event>(),
-            CMDQ_STATE_NOHOOKS,
-        );
-    } else {
-        state = cmdq_new_state(
-            &raw mut fs,
-            &mut cmdq_get_event(&*(item)),
-            CMDQ_STATE_NOHOOKS,
-        );
-    }
-    cmdq_add_formats(&state, &raw mut *(*hd).formats);
-    if *(*hd).name.as_ptr() as ::core::ffi::c_int == '@' as i32 {
-        value = options_get_string(oo, (*hd).name.as_ptr());
-        pr = hooks_parse(hd, &fs, CStr::from_ptr(value));
-        match pr.status as ::core::ffi::c_uint {
-            0 => {
-                log_debug(format_args!(
-                    "{}: can't parse hook {}: {}",
-                    "hooks_insert",
-                    crate::src::log::log_bytes((*hd).name.to_bytes()),
-                    log_cstr(
-                        (pr.error
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |cause| cause.as_ptr()))
-                            as *const _
-                    )
-                ));
-            }
+    };
+    source
+        .with_entry(name, |entry| options_hook_fired(entry))
+        .expect("resolved hook");
+    let mut event = item_handle.map(|item| cmdq_get_event(&*item.get()));
+    let state = cmdq_new_state(
+        &mut fs,
+        event.as_mut().map_or(std::ptr::null_mut(), |event| event),
+        CMDQ_STATE_NOHOOKS,
+    );
+    cmdq_add_formats(&state, &mut *(*hd).formats);
+    if name.to_bytes().starts_with(b"@") {
+        let value = source
+            .with_entry(name, |entry| {
+                entry.value.string_ptr().expect("hook string").to_owned()
+            })
+            .expect("resolved hook");
+        let pr = hooks_parse(hd, &fs, &value);
+        match pr.status {
+            0 => log_debug(format_args!(
+                "hooks_insert: can't parse hook {}: {}",
+                crate::src::log::log_bytes(name.to_bytes()),
+                log_cstr(
+                    pr.error
+                        .as_ref()
+                        .map_or(std::ptr::null(), |cause| cause.as_ptr())
+                )
+            )),
             1 => {
                 hooks_insert_one(after.upgrade().as_ref(), hd, pr.cmdlist.as_ref(), &state);
             }
             _ => {}
         }
     } else {
-        let a_root = o;
-        let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-            .map(|item| item.key.clone())
-            .collect::<Vec<_>>()
-            .into_iter();
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
-        });
-        while !a.is_null() {
+        let keys = source
+            .with_entry(name, |entry| {
+                crate::src::options::options_array_iter(entry)
+                    .map(|item| item.key.clone())
+                    .collect::<Vec<_>>()
+            })
+            .expect("resolved hook");
+        for key in keys {
             if (*hd).expand != 0 {
-                value = (*(crate::src::options::options_array_item_value_mut(&mut *(a))
-                    as *mut crate::src::shared::options::options_value))
-                    .string_ptr()
-                    .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-                pr = hooks_parse(hd, &fs, CStr::from_ptr(value));
-                match pr.status as ::core::ffi::c_uint {
+                let value = source
+                    .with_entry(name, |entry| {
+                        crate::src::options::options_array_get(entry, &key).map(|value| {
+                            value.string_ptr().expect("expanded hook string").to_owned()
+                        })
+                    })
+                    .flatten();
+                let Some(value) = value else {
+                    break;
+                };
+                let pr = hooks_parse(hd, &fs, &value);
+                match pr.status {
                     0 => {
                         if let Some(error) = pr.error.as_ref() {
-                            cmdq_error(
-                                &(*(item))
-                                    .observer
-                                    .upgrade()
-                                    .expect("live command queue item"),
-                                |out| write_cstr(out, error.as_ptr()),
-                            );
+                            cmdq_error(item_handle.expect("hook command item"), |out| {
+                                write_cstr(out, error.as_ptr())
+                            });
                         }
                     }
                     1 => {
@@ -315,14 +270,17 @@ unsafe fn hooks_insert(
                     _ => {}
                 }
             } else {
-                let cmdlist = (*(crate::src::options::options_array_item_value_mut(&mut *(a))
-                    as *mut crate::src::shared::options::options_value))
-                    .commands();
-                after = hooks_insert_one(after.upgrade().as_ref(), hd, cmdlist, &state);
+                let commands = source
+                    .with_entry(name, |entry| {
+                        crate::src::options::options_array_get(entry, &key)
+                            .map(|value| value.commands().cloned())
+                    })
+                    .flatten();
+                let Some(commands) = commands else {
+                    break;
+                };
+                after = hooks_insert_one(after.upgrade().as_ref(), hd, commands.as_ref(), &state);
             }
-            a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(a_root, key.as_ptr())
-            });
         }
     }
 }
@@ -330,7 +288,7 @@ unsafe fn hooks_insert_event(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     name: *const ::core::ffi::c_char,
     ep: &event_payload,
-    oo: *mut options,
+    oo: Option<OptionsScope>,
     expand: ::core::ffi::c_int,
 ) {
     let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
@@ -370,13 +328,7 @@ unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
         let Some(item_owner) = observer.upgrade() else {
             return;
         };
-        hooks_insert_event(
-            Some(&item_owner),
-            name,
-            ep,
-            ::core::ptr::null_mut::<options>(),
-            0 as ::core::ffi::c_int,
-        );
+        hooks_insert_event(Some(&item_owner), name, ep, None, 0 as ::core::ffi::c_int);
         return;
     }
     let running = cmdq_running().upgrade();
@@ -384,13 +336,7 @@ unsafe fn CString_cb(name: &CStr, payload: &mut event_payload) {
         .as_ref()
         .is_none_or(|item| cmdq_get_flags(&*item.get()) & CMDQ_STATE_NOHOOKS == 0)
     {
-        hooks_insert_event(
-            None,
-            name,
-            ep,
-            ::core::ptr::null_mut::<options>(),
-            0 as ::core::ffi::c_int,
-        );
+        hooks_insert_event(None, name, ep, None, 0 as ::core::ffi::c_int);
     }
 }
 pub unsafe fn hooks_add_event(mut name: *const ::core::ffi::c_char) {
@@ -441,7 +387,7 @@ pub unsafe fn hooks_run(
         name: CStr::from_ptr(name),
         fs: cmd_find_state::default(),
         formats: format_create_owned(None, None, 0, FORMAT_NOJOBS),
-        oo: std::ptr::null_mut(),
+        oo: None,
         client: (*item).client.clone(),
         expand: 0,
     };
@@ -463,35 +409,42 @@ impl Drop for hooks_monitor {
         }
     }
 }
-pub unsafe fn hooks_monitor_remove(mut oo: *mut options, mut name: *const ::core::ffi::c_char) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let _hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
-    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name))
-        .map_or(std::ptr::null_mut(), |entry| entry);
-    if o.is_null() {
+pub unsafe fn hooks_monitor_remove(scope: &OptionsScope, name: *const ::core::ffi::c_char) {
+    let old = scope
+        .with_entry(CStr::from_ptr(name), |entry| entry.monitor_data.take())
+        .flatten();
+    // Monitor destruction can release a Session; no model borrow remains here.
+    drop(old);
+}
+unsafe fn hooks_monitor_hook_cb(
+    name: &CStr,
+    payload: &mut event_payload,
+    scope: &OptionsScope,
+    generation: usize,
+) {
+    if !matches!(event_payload_get_identity(payload, c"_hooks_monitor".as_ptr()),
+        Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(id)) if *id == generation)
+    {
         return;
     }
-    if options_get_monitor_data(&mut *o).is_some() {
-        options_set_monitor_data(o, None);
-    }
-}
-unsafe fn hooks_monitor_hook_cb(name: &CStr, payload: &mut event_payload, hm: *mut hooks_monitor) {
-    let name = name.as_ptr();
-    let ep = &*payload;
-    if matches!(event_payload_get_identity(ep, c"_hooks_monitor".as_ptr()),
-        Some(crate::src::shared::events::EventPayloadIdentity::HookMonitor(address))
-            if *address == hm.addr())
+    if scope.with_entry(name, |entry| {
+        entry
+            .monitor_data
+            .as_ref()
+            .is_some_and(|monitor| monitor.generation == generation)
+    }) != Some(true)
     {
-        hooks_insert_event(
-            cmdq_running().upgrade().as_ref(),
-            name,
-            ep,
-            (*hm).oo,
-            1 as ::core::ffi::c_int,
-        );
+        return;
     }
+    hooks_insert_event(
+        cmdq_running().upgrade().as_ref(),
+        name.as_ptr(),
+        payload,
+        Some(scope.clone()),
+        1,
+    );
 }
-unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
+unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, generation: usize) {
     let wl = change.wl.clone();
     let client_owner = change.c.upgrade();
     let session_owner = change.s.upgrade();
@@ -510,20 +463,20 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     event_payload_set_identity(
         &mut *ep,
         b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
-        crate::src::shared::events::EventPayloadIdentity::HookMonitor(hm.addr()),
+        crate::src::shared::events::EventPayloadIdentity::HookMonitor(generation),
     );
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     if wl.is_alive()
         && !wp.is_null()
-        && (*wp)
-            .window_handle()
+        && pane_owner
             .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            == wl
-                .get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
+            .expect("live pane")
+            .window_observer()
+            .ptr_eq(
+                &wl.get_unchecked()
+                    .window_handle()
+                    .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+            )
     {
         cmd_find_from_winlink_pane(
             &raw mut fs,
@@ -546,7 +499,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
             0 as ::core::ffi::c_int,
         );
     } else {
-        cmd_find_copy_state(&raw mut fs, &raw mut (*hm).fs);
+        cmd_find_copy_state(&raw mut fs, fallback);
     }
     event_payload_set_string(&mut *ep, c"value".as_ptr(), |out| {
         out.write_all(change.value.to_bytes())
@@ -587,14 +540,9 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(wl
-                .get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window"),
+            std::rc::Rc::clone(
+                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+            ),
         );
         event_payload_set_int(
             &mut *ep,
@@ -612,13 +560,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
             event_payload_set_window(
                 &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                (*((*wp)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())))
-                .observer
-                .upgrade()
-                .expect("live window"),
+                std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
             );
         }
     }
@@ -629,60 +571,66 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, hm: *mut hooks_monitor) {
     drop(client_owner);
 }
 pub unsafe fn hooks_monitor_add(
-    mut oo: *mut options,
-    mut name: *const ::core::ffi::c_char,
-    mut type_0: monitor_type,
-    mut id: ::core::ffi::c_int,
-    mut format: *const ::core::ffi::c_char,
-    mut flags: ::core::ffi::c_int,
-    mut fs: *mut cmd_find_state,
+    scope: &OptionsScope,
+    name: *const ::core::ffi::c_char,
+    type_0: monitor_type,
+    id: ::core::ffi::c_int,
+    format: *const ::core::ffi::c_char,
+    flags: ::core::ffi::c_int,
+    fs: *mut cmd_find_state,
     s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
 ) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut hm: *mut hooks_monitor = ::core::ptr::null_mut::<hooks_monitor>();
-    hooks_monitor_remove(oo, name);
-    o = crate::src::options::options_get_only_mut(&mut *(oo), std::ffi::CStr::from_ptr(name))
-        .map_or(std::ptr::null_mut(), |entry| entry);
-    if o.is_null() {
-        o = options_set_string(oo, name, 0 as ::core::ffi::c_int, |out| {
-            write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
-        });
-    }
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT_MONITOR: AtomicUsize = AtomicUsize::new(1);
+    hooks_monitor_remove(scope, name);
+    scope.with_local(|table| {
+        if crate::src::options::options_get_only(table, CStr::from_ptr(name)).is_none() {
+            options_set_string(table, name, 0, |out| out.write_all(b""));
+        }
+    });
+    let generation = NEXT_MONITOR
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .expect("hook monitor identity exhausted");
+    let mut fallback = cmd_find_state::default();
+    cmd_find_copy_state(&mut fallback, fs);
+    let callback_scope = scope.clone();
     let mut owner = Box::new(hooks_monitor {
-        oo,
-        set: None,
+        generation,
+        set: Some(monitor_create_session_owned(
+            s_owner,
+            monitor_callback(move |change| hooks_monitor_cb(change, &fallback, generation)),
+        )),
         sink: EventSinkId::default(),
-        fs: cmd_find_state {
-            flags: 0,
-            s: Default::default(),
-            wl: Default::default(),
-            w: Default::default(),
-            wp: Default::default(),
-            idx: 0,
-        },
         type_0,
         id,
         format: CStr::from_ptr(format).to_owned(),
     });
-    hm = &raw mut *owner;
-    cmd_find_copy_state(&raw mut (*hm).fs, fs);
-    (*hm).set = Some(monitor_create_session_owned(
-        s_owner,
-        monitor_callback(move |change| unsafe { hooks_monitor_cb(change, hm) }),
-    ));
-    (*hm).sink = events_add_sink(
+    owner.sink = events_add_sink(
         CStr::from_ptr(name),
-        events_callback(move |name, payload| unsafe { hooks_monitor_hook_cb(name, payload, hm) }),
+        events_callback(move |name, payload| {
+            hooks_monitor_hook_cb(name, payload, &callback_scope, generation)
+        }),
     );
-    options_set_monitor_data(o, Some(owner));
-    monitor_add(
-        (&raw mut **(*hm).set.as_mut().expect("hook monitor")),
-        name,
-        type_0,
-        id,
-        format,
-        flags,
-    );
+    let previous = scope
+        .with_entry(CStr::from_ptr(name), |entry| {
+            entry.monitor_data.replace(owner)
+        })
+        .expect("monitor option");
+    drop(previous);
+    let set = scope
+        .with_entry(CStr::from_ptr(name), |entry| {
+            entry
+                .monitor_data
+                .as_ref()
+                .expect("installed monitor")
+                .set
+                .as_ref()
+                .expect("monitor set")
+                .clone()
+        })
+        .expect("monitor option");
+    // Only the independent monitor identity survives the option/model borrow.
+    monitor_add(&set, name, type_0, id, format, flags);
 }
 pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {
     let mut bytes = options_name(&*o).to_bytes().to_vec();
@@ -703,39 +651,71 @@ pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<C
     bytes.extend_from_slice(hm.format.as_bytes());
     Some(CString::new(bytes).expect("C string parts contain no NUL"))
 }
-pub unsafe fn hooks_monitor_get(
-    mut o: *mut options_entry,
-    mut type_0: *mut monitor_type,
-    mut id: *mut ::core::ffi::c_int,
-    mut format: *mut *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let _name = (*o).name.as_ptr();
-    let Some(hm) = options_get_monitor_data(&mut *o) else {
-        return 0 as ::core::ffi::c_int;
-    };
-    *type_0 = hm.type_0;
-    *id = hm.id;
-    *format = hm.format.as_ptr();
-    return 1 as ::core::ffi::c_int;
-}
 pub unsafe fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
     let name = (*o).name.as_ptr();
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as u_int;
     };
-    return monitor_get_fire_count((&raw mut **hm.set.as_mut().expect("hook monitor")), name);
+    return monitor_get_fire_count(hm.set.as_ref().expect("hook monitor"), name);
 }
 pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
     let name = (*o).name.as_ptr();
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as time_t;
     };
-    return monitor_get_fire_time((&raw mut **hm.set.as_mut().expect("hook monitor")), name);
+    return monitor_get_fire_time(hm.set.as_ref().expect("hook monitor"), name);
 }
 
 #[cfg(test)]
 mod CStrings_tests {
     use super::*;
+
+    #[test]
+    fn retained_monitor_callback_rejects_removed_or_replaced_generation() {
+        use crate::src::window::Window;
+        use std::rc::Rc;
+
+        unsafe {
+            let window = window::with_options_for_test();
+            let scope = OptionsScope::Window(Rc::downgrade(&window));
+            scope
+                .set_from_string(None, c"@watched", Some(c""), false)
+                .unwrap();
+            scope.with_entry(c"@watched", |entry| {
+                entry.monitor_data = Some(Box::new(hooks_monitor {
+                    generation: 2,
+                    set: None,
+                    sink: EventSinkId::default(),
+                    type_0: crate::src::shared::monitor::MONITOR_SESSION,
+                    id: 0,
+                    format: c"".to_owned(),
+                }));
+            });
+            let mut payload = event_payload_create();
+            event_payload_set_identity(
+                &mut payload,
+                c"_hooks_monitor".as_ptr(),
+                crate::src::shared::events::EventPayloadIdentity::HookMonitor(1),
+            );
+            // A retained old sink must not run the replacement monitor's hook.
+            hooks_monitor_hook_cb(c"@watched", &mut payload, &scope, 1);
+            assert_eq!(
+                scope.with_entry(c"@watched", |entry| entry.fire_count),
+                Some(0)
+            );
+            hooks_monitor_remove(&scope, c"@watched".as_ptr());
+            hooks_monitor_hook_cb(c"@watched", &mut payload, &scope, 1);
+            assert_eq!(
+                scope.with_entry(c"@watched", |entry| entry.fire_count),
+                Some(0)
+            );
+            assert_eq!(Rc::strong_count(&window), 1);
+            window.release(c"monitor callback test");
+            // A callback for another generation rejects its payload before
+            // attempting to borrow the now-expired option owner.
+            hooks_monitor_hook_cb(c"@watched", &mut payload, &scope, 2);
+        }
+    }
 
     #[test]
     fn monitor_dispatch_releases_link_borrow_before_reentrant_unlink() {
@@ -747,11 +727,9 @@ mod CStrings_tests {
         unsafe {
             let session_owner = session::new();
             let window_owner = window::new();
-            let s = rc::as_ptr(&session_owner);
-            let w = rc::as_ptr(&window_owner);
             let mut wl = crate::src::session::test_support::add_link(&session_owner, 2);
             wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);
-            winlink_set_window(wl.clone(), &(*(w)).observer.upgrade().expect("live window"));
+            winlink_set_window(wl.clone(), &window_owner);
             let change = monitor_change {
                 name: c"test-monitor-unlink",
                 value: c"changed",
@@ -777,7 +755,7 @@ mod CStrings_tests {
                     called.set(called.get() + 1);
                 }),
             );
-            hooks_monitor_cb(&change, std::ptr::null_mut());
+            hooks_monitor_cb(&change, &cmd_find_state::default(), 0);
             assert_eq!(calls.get(), 1);
             assert!(!change.wl.is_alive());
             assert!(!change.wl.is_empty());

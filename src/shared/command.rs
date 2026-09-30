@@ -9,6 +9,7 @@ use super::pane::window_pane;
 use super::session::session;
 use super::window::{window, winlink};
 use crate::src::shared::client::ClientWeak;
+use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::ffi::{CStr, CString};
 pub type cmd_retval = ::core::ffi::c_int;
 pub const CMD_RETURN_STOP: cmd_retval = 2;
@@ -149,7 +150,7 @@ pub struct cmd_find_state {
     pub flags: ::core::ffi::c_int,
     pub s: std::rc::Weak<std::cell::UnsafeCell<session>>,
     pub wl: refbox::Weak<winlink>,
-    pub w: std::rc::Weak<std::cell::UnsafeCell<window>>,
+    pub w: WindowWeak,
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub idx: ::core::ffi::c_int,
 }
@@ -165,12 +166,12 @@ impl cmd_find_state {
     }
 
     /// Retain the target allocation; callbacks may still invalidate it logically.
-    pub fn window_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window>>> {
+    pub fn window_handle(&self) -> Option<WindowRef> {
         self.w.upgrade()
     }
 
-    pub fn set_w(&mut self, value: Option<&window>) {
-        self.w = value.map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    pub fn set_w(&mut self, value: Option<&WindowRef>) {
+        self.w = value.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 
     /// Retain the target allocation; callbacks may still invalidate it logically.

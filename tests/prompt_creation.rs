@@ -29,11 +29,11 @@ fn creation_preserves_input_expansion_incremental_state_and_owned_resources() {
         );
         let environment = environ_create();
         global_environ = Some(environment);
-        let mut server_owner = options_create(std::ptr::null_mut());
+        let mut server_owner = options_create(None);
         let server = &raw mut *server_owner;
-        let mut session_owner = options_create(std::ptr::null_mut());
+        let mut session_owner = options_create(None);
         let session = &raw mut *session_owner;
-        let mut window_owner = options_create(std::ptr::null_mut());
+        let mut window_owner = options_create(None);
         let window = &raw mut *window_owner;
         global_options = server;
         global_s_options = session;

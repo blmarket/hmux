@@ -63,7 +63,7 @@ fn indices_are_normalized_and_invalid_indices_are_rejected() {
 #[test]
 fn option_reload_replaces_defaults_without_changing_overrides() {
     unsafe {
-        let mut oo_owner = options_create(null_mut());
+        let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)

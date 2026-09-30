@@ -766,8 +766,7 @@ mod tests {
         unsafe {
             let session = session::new();
             let other = session::new();
-            (*session.get()).options =
-                Some(crate::src::options::options_create(std::ptr::null_mut()));
+            (*session.get()).options = Some(crate::src::options::options_create(None));
             (*session.get()).creation_time.tv_sec = 123;
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&session);
@@ -799,8 +798,7 @@ mod tests {
         unsafe {
             let owner = session::new();
             let other = session::new();
-            (*other.get()).options =
-                Some(crate::src::options::options_create(std::ptr::null_mut()));
+            (*other.get()).options = Some(crate::src::options::options_create(None));
             let mut link = winlink_add(&raw mut (*owner.get()).windows, 7);
             link.get_mut_unchecked().session = Rc::downgrade(&owner);
             winlink_stack_push(&raw mut (*owner.get()).lastw, link.clone());

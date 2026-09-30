@@ -9,7 +9,7 @@ use crate::src::ffi::resolv::__b64_pton;
 use crate::src::input::{input_request_reply, InputRequestReply};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
-use crate::src::options::{options_array_get_index, options_get, options_get_number};
+use crate::src::options::{options_array_get_index, options_get_number};
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::{
     evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
@@ -1350,27 +1350,24 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         }
         i = i.wrapping_add(1);
     }
-    o = options_get(
-        global_options,
-        b"user-keys\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if !o.is_null() {
-        i = 0 as u_int;
-        while i <= KEYC_NUSER as u_int {
-            ov = crate::src::options::options_array_get_index_mut(&mut *(o), i)
-                .map_or(std::ptr::null_mut(), |value| value);
-            if !ov.is_null() {
-                tty_keys_add(
-                    tty,
-                    (*ov)
-                        .string_ptr()
-                        .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(i as ::core::ffi::c_ulong)
-                        as key_code,
-                );
-            }
-            i = i.wrapping_add(1);
-        }
+    let keys = crate::src::options::options_read_entry(&*global_options, c"user-keys", |entry| {
+        (0..=KEYC_NUSER as u_int)
+            .filter_map(|index| {
+                let key = std::ffi::CString::new(index.to_string()).unwrap();
+                crate::src::options::options_array_get(entry, &key)
+                    .and_then(|value| value.string_ptr())
+                    .map(|value| (index, value.to_owned()))
+            })
+            .collect::<Vec<_>>()
+    })
+    .unwrap_or_default();
+    for (index, value) in keys {
+        tty_keys_add(
+            tty,
+            value.as_ptr(),
+            (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(index as ::core::ffi::c_ulong)
+                as key_code,
+        );
     }
 }
 pub unsafe fn tty_keys_free(tty: *mut tty) {

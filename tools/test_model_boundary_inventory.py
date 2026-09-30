@@ -44,6 +44,10 @@ fn next() { other(); }
         self.assertNotEqual(owner('src/control.rs', 'control_write_output'), 'client')
         self.assertNotEqual(owner('src/tty.rs', 'tty_stop_tty'), 'client')
         self.assertNotEqual(owner('src/session/alerts.rs', 'alerts_set_message'), 'client')
+        self.assertEqual(owner('src/window/mod.rs', 'window_add_pane'), 'window')
+        self.assertEqual(owner('src/window_pane/mod.rs', 'window_pane_key'), 'window_pane')
+        self.assertNotEqual(owner('src/window_pane/api.rs', 'outer_geometry'), 'window')
+        self.assertIsNone(owner('src/winlink.rs', 'winlink_set_window'))
 
     def test_private_probe_preserves_lines_and_other_structs(self):
         source = 'pub struct session {\n    pub id: u32,\n    pub(crate) name: CString,\n}\npub struct other { pub id: u32 }'

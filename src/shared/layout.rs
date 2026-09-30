@@ -36,6 +36,64 @@ mod tests {
     use ::core::mem::{align_of, size_of};
 
     #[test]
+    fn dropping_old_leaf_preserves_replacement_link_and_parent() {
+        unsafe {
+            let pane = window_pane::new();
+            let mut old = layout_cell::new();
+            old.wp = std::rc::Rc::downgrade(&pane);
+            (*pane.get()).layout_cell = Some(old.id());
+            let mut parent = layout_cell::new();
+            parent.type_0 = LAYOUT_TOPBOTTOM;
+            let mut replacement = layout_cell::new();
+            replacement.wp = std::rc::Rc::downgrade(&pane);
+            let replacement_id = replacement.id();
+            (*pane.get()).layout_cell = Some(replacement_id);
+            layout_cells_push_back(&mut *parent, replacement);
+            drop(old);
+            assert_eq!((*pane.get()).layout_cell, Some(replacement_id));
+            let parent_pointer = &mut *parent as *mut layout_cell;
+            assert_eq!(parent.cells[0].parent, parent_pointer);
+            drop(parent);
+            assert_eq!((*pane.get()).layout_cell, None);
+        }
+    }
+
+    #[test]
+    fn cell_identity_survives_transfer_but_not_removal_or_replacement() {
+        let mut first = layout_cell::new();
+        first.type_0 = LAYOUT_TOPBOTTOM;
+        let child = layout_cell::new();
+        let id = child.id();
+        unsafe {
+            layout_cells_push_back(&mut *first, child);
+        }
+        assert!(first.find_mut(id).is_some());
+        let mut second = layout_cell::new();
+        second.type_0 = LAYOUT_TOPBOTTOM;
+        let detached =
+            unsafe { layout_cells_remove(&mut *first, layout_cells_first(&first)).unwrap() };
+        assert!(first.find_mut(id).is_none());
+        unsafe {
+            layout_cells_push_back(&mut *second, detached);
+        }
+        assert_eq!(second.find_mut(id).unwrap().id(), id);
+        let removed =
+            unsafe { layout_cells_remove(&mut *second, layout_cells_first(&second)).unwrap() };
+        drop(removed);
+        assert!(second.find_mut(id).is_none());
+        // A fresh allocation cannot make a stale ID resolve, even if the allocator
+        // reuses a previous cell's address.
+        for _ in 0..64 {
+            let replacement = layout_cell::new();
+            assert_ne!(replacement.id(), id);
+            unsafe {
+                layout_cells_push_back(&mut *second, replacement);
+            }
+        }
+        assert!(second.find_mut(id).is_none());
+    }
+
+    #[test]
     fn layout_domain_matches_translated_c_baseline() {
         assert_eq!(size_of::<layout_type>(), 4);
         assert_eq!(align_of::<layout_type>(), 4);
@@ -51,9 +109,15 @@ mod tests {
     }
 }
 
+/// Nonowning identity for a cell across callbacks. It is never an address and
+/// does not keep a removed cell alive. Resolve it under the owning tree borrow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LayoutCellId(u64);
+
 /// Cells are Box-owned by their parent, a window root, or an explicit detached owner.
 /// Child addresses remain stable as the parent `Vec` moves the boxes.
 pub struct layout_cell {
+    id: LayoutCellId,
     pub type_0: layout_type,
     pub flags: ::core::ffi::c_int,
     pub parent: *mut layout_cell,
@@ -64,6 +128,56 @@ pub struct layout_cell {
     /// Nonowning pane association; upgrade before accessing the pane.
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub cells: layout_cells,
+}
+
+impl layout_cell {
+    pub fn new() -> Box<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+        let id = NEXT_ID
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .expect("layout cell identity exhausted");
+        let geometry = layout_geometry {
+            sx: u32::MAX,
+            sy: u32::MAX,
+            xoff: i32::MAX,
+            yoff: i32::MAX,
+        };
+        Box::new(Self {
+            id: LayoutCellId(id),
+            type_0: LAYOUT_WINDOWPANE,
+            flags: 0,
+            parent: std::ptr::null_mut(),
+            sibling_index: 0,
+            g: geometry,
+            fg: geometry,
+            wp: Weak::new(),
+            cells: Vec::new(),
+        })
+    }
+    pub fn id(&self) -> LayoutCellId {
+        self.id
+    }
+    pub fn find(&self, id: LayoutCellId) -> Option<&Self> {
+        if self.id == id {
+            return Some(self);
+        }
+        self.cells.iter().find_map(|child| child.find(id))
+    }
+    pub fn find_mut(&mut self, id: LayoutCellId) -> Option<&mut Self> {
+        if self.id == id {
+            return Some(self);
+        }
+        self.cells.iter_mut().find_map(|child| child.find_mut(id))
+    }
+    pub fn find_pane_mut(&mut self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<&mut Self> {
+        if self.wp.ptr_eq(pane) {
+            return Some(self);
+        }
+        self.cells
+            .iter_mut()
+            .find_map(|child| child.find_pane_mut(pane))
+    }
 }
 
 pub type layout_cells = Vec<Box<layout_cell>>;
@@ -233,9 +347,8 @@ impl Drop for layout_cell {
             if let Some(owner) = self.wp.upgrade() {
                 unsafe {
                     let pane = &mut *owner.get();
-                    if !pane.layout_cell.is_null() {
-                        (*pane.layout_cell).parent = std::ptr::null_mut();
-                        pane.layout_cell = std::ptr::null_mut();
+                    if pane.layout_cell == Some(self.id) {
+                        pane.layout_cell = None;
                     }
                 }
             }

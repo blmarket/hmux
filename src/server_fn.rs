@@ -34,15 +34,18 @@ use crate::src::session::{
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::session::session_group;
+use crate::src::shared::window::WindowRef;
 use crate::src::tmux::sig2name;
 use crate::src::tty::{tty_raw, tty_stop_tty};
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;
+use crate::src::window::Window as _;
 use crate::src::window::{
-    window_add_ref, window_count_panes, window_pane_first, window_pop_zoom, window_push_zoom,
-    window_remove_pane, window_remove_ref, window_unzoom, winlink_find_by_index,
-    winlink_find_by_window, winlink_remove, winlink_stack_remove,
+    window_add_ref, window_pop_zoom, window_push_zoom, window_remove_pane, window_remove_ref,
+    window_unzoom, winlink_find_by_index, winlink_find_by_window, winlink_remove,
+    winlink_stack_remove,
 };
+use crate::src::window_pane::WindowPane as _;
 
 use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
@@ -68,8 +71,8 @@ use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::*;
+use crate::src::shared::window::winlink;
 use crate::src::shared::window::WINLINK_ALERTFLAGS;
-use crate::src::shared::window::{window, winlink};
 
 unsafe fn server_fire_pane_exit(
     mut name: *const ::core::ffi::c_char,
@@ -104,13 +107,7 @@ unsafe fn server_fire_pane_exit(
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*((*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())))
-        .observer
-        .upgrade()
-        .expect("live window"),
+        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
     );
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         event_payload_set_int(
@@ -190,7 +187,7 @@ pub unsafe fn server_status_session_group(session: &std::rc::Rc<std::cell::Unsaf
     }
 }
 
-pub unsafe fn server_redraw_window(window: &window) {
+pub unsafe fn server_redraw_window(window: &WindowRef) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
@@ -205,15 +202,13 @@ pub unsafe fn server_redraw_window(window: &window) {
                     .ok()
                     .and_then(|link| link.window_owner.clone())
             })
-            .is_some_and(|current| {
-                std::rc::Weak::ptr_eq(&window.observer, &std::rc::Rc::downgrade(&current))
-            });
+            .is_some_and(|current| std::rc::Rc::ptr_eq(window, &current));
         if matches {
             server_redraw_client(client);
         }
     }
 }
-pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
+pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
@@ -234,7 +229,7 @@ pub unsafe fn server_redraw_window_menu(window_owner: &std::rc::Rc<std::cell::Un
         }
     }
 }
-pub unsafe fn server_redraw_window_borders(window: &window) {
+pub unsafe fn server_redraw_window_borders(window: &WindowRef) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
@@ -249,18 +244,16 @@ pub unsafe fn server_redraw_window_borders(window: &window) {
                     .ok()
                     .and_then(|link| link.window_owner.clone())
             })
-            .is_some_and(|current| {
-                std::rc::Weak::ptr_eq(&window.observer, &std::rc::Rc::downgrade(&current))
-            });
+            .is_some_and(|current| std::rc::Rc::ptr_eq(window, &current));
         if matches {
             client.request_redraw(CLIENT_REDRAWBORDERS as u64);
         }
     }
 }
-pub unsafe fn server_status_window(window: &window) {
+pub unsafe fn server_status_window(window: &WindowRef) {
     let mut next = sessions_minmax(&sessions);
     while let Some(session_owner) = next {
-        if session_owner.contains_window(&window.observer.upgrade().expect("live window")) {
+        if session_owner.contains_window(window) {
             server_status_session(&session_owner);
         }
         next = session_owner.next_session();
@@ -294,40 +287,39 @@ pub unsafe fn server_lock_client(client_owner: &ClientRef) {
         .attached_session()
         .upgrade()
         .expect("live session")
-        .with_options_mut(|options| {
-            std::ffi::CStr::from_ptr(options_get_string(options, c"lock-command".as_ptr()))
-                .to_owned()
-        });
+        .with_options_mut(|options| options_get_string(options, c"lock-command".as_ptr()));
     client_owner.lock(&command);
 }
 
 pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = pane_owner.get();
-    let mut w: *mut window = (*wp)
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if window_count_panes(&*w, 1 as ::core::ffi::c_int) == 1 as u_int {
-        server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
+    let window_owner = pane_owner
+        .window_observer()
+        .upgrade()
+        .expect("live pane window");
+    if window_owner.pane_snapshot().len() == 1 {
+        server_kill_window(window_owner, 1);
         recalculate_sizes();
     } else {
+        window_owner.release(c"server_kill_pane");
         window_push_zoom(
-            &(*(w)).observer.upgrade().expect("live window"),
+            &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
             0 as ::core::ffi::c_int,
             (*wp).flags & PANE_FLOATOVERZOOM,
         );
         server_client_remove_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
         layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-        window_remove_pane(&(*(w)).observer.upgrade().expect("live window"), pane_owner);
-        window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
-        server_redraw_window(&*(w));
+        window_remove_pane(
+            &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+            pane_owner,
+        );
+        window_pop_zoom(&std::rc::Rc::clone(
+            &(((*wp).window_handle().as_ref()).expect("live window")),
+        ));
+        server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
     };
 }
-pub unsafe fn server_kill_window(
-    owner: std::rc::Rc<std::cell::UnsafeCell<window>>,
-    mut renumber: ::core::ffi::c_int,
-) {
-    let w = owner.get();
+pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_int) {
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s_owner = sessions_minmax(&sessions);
@@ -336,10 +328,10 @@ pub unsafe fn server_kill_window(
         // Destroying a group may remove both s and its next session.
         let name = s.as_ref().expect("live session").name().into_bytes();
         if !(!s.as_ref().expect("live session").contains_window(&owner)) {
-            server_unzoom_window(&(*(w)).observer.upgrade().expect("live window"));
+            server_unzoom_window(&std::rc::Rc::clone(&(owner)));
             loop {
                 wl = s.as_ref().expect("live session").with_winlinks(|links| {
-                    winlink_find_by_window(links, &(*(w)).observer.upgrade().expect("live window"))
+                    winlink_find_by_window(links, &std::rc::Rc::clone(&(owner)))
                 });
                 if !wl.is_alive() {
                     break;
@@ -435,17 +427,10 @@ pub unsafe fn server_link_window(
         dstwl = dst_owner.with_winlinks(|links| winlink_find_by_index(links, dstidx));
     }
     if dstwl.is_alive() {
-        if dstwl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            == srcwl
-                .get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-        {
+        if crate::src::shared::rc::same(
+            dstwl.get_unchecked().window_handle(),
+            srcwl.get_unchecked().window_handle(),
+        ) {
             return Err(std::ffi::CString::new(format!("same index: {dstidx}"))
                 .expect("numeric diagnostic contains no NUL"));
         }
@@ -504,10 +489,11 @@ pub unsafe fn server_destroy_pane(
     mut notify: ::core::ffi::c_int,
 ) {
     let wp = pane_owner.get();
-    let mut w: *mut window = (*wp)
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    // Keep the original Window identity across exit notifications and pane teardown.
+    let window_owner = pane_owner
+        .window_observer()
+        .upgrade()
+        .expect("live pane window");
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
         target: Default::default(),
@@ -548,6 +534,7 @@ pub unsafe fn server_destroy_pane(
         (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
     }
     if !(*wp).flags & PANE_STATUSREADY != 0 {
+        window_owner.release(c"server_destroy_pane");
         return;
     }
     remain_on_exit = options_get_number(
@@ -577,6 +564,7 @@ pub unsafe fn server_destroy_pane(
         3275366147856559585 => {}
         _ => {
             if (*wp).flags & PANE_STATUSDRAWN != 0 {
+                window_owner.release(c"server_destroy_pane");
                 return;
             }
             (*wp).flags |= PANE_STATUSDRAWN;
@@ -587,11 +575,14 @@ pub unsafe fn server_destroy_pane(
                     &(*(wp)).observer.upgrade().expect("live window_pane"),
                 );
             }
-            s = options_get_string(
-                options_owner_ptr(&mut (*wp).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-                b"remain-on-exit-format\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            let format = (*wp)
+                .observer
+                .upgrade()
+                .expect("live pane")
+                .with_options_mut(|options| {
+                    options_get_string(options, c"remain-on-exit-format".as_ptr())
+                });
+            s = format.as_ptr();
             if *s as ::core::ffi::c_int != '\0' as i32 {
                 screen_write_start_pane(
                     &mut ctx,
@@ -633,6 +624,7 @@ pub unsafe fn server_destroy_pane(
             }
             (*wp).base.mode &= !MODE_CURSOR;
             (*wp).flags |= PANE_REDRAW;
+            window_owner.release(c"server_destroy_pane");
             return;
         }
     }
@@ -643,19 +635,30 @@ pub unsafe fn server_destroy_pane(
         );
     }
     window_push_zoom(
-        &(*(w)).observer.upgrade().expect("live window"),
+        &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
         0 as ::core::ffi::c_int,
         (*wp).flags & PANE_FLOATOVERZOOM,
     );
     server_client_remove_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
     layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-    window_remove_pane(&(*(w)).observer.upgrade().expect("live window"), pane_owner);
-    if window_pane_first(w.as_ref()).is_none() {
-        server_kill_window((*w).observer.upgrade().expect("live pane window"), 1);
+    window_remove_pane(
+        &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        pane_owner,
+    );
+    if window_owner.next_pane(None).is_none() {
+        server_kill_window(
+            std::rc::Rc::downgrade(&(((*wp).window_handle().as_ref()).expect("live window")))
+                .upgrade()
+                .expect("live pane window"),
+            1,
+        );
     } else {
-        window_pop_zoom(&(*(w)).observer.upgrade().expect("live window"));
-        server_redraw_window(&*(w));
+        window_pop_zoom(&std::rc::Rc::clone(
+            &(((*wp).window_handle().as_ref()).expect("live window")),
+        ));
+        server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
     };
+    window_owner.release(c"server_destroy_pane");
 }
 unsafe fn server_destroy_session_group(s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
     let s = Some(s_owner.clone());
@@ -930,10 +933,9 @@ pub unsafe fn server_check_unattached() {
         s = s_owner.clone();
     }
 }
-pub unsafe fn server_unzoom_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
-    let mut w = w_owner.get();
+pub unsafe fn server_unzoom_window(w_owner: &WindowRef) {
     if window_unzoom(w_owner, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int {
-        server_redraw_window(&*(w));
+        server_redraw_window(&(w_owner));
     }
 }
 

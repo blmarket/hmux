@@ -7,7 +7,7 @@ use std::ptr::{null, null_mut};
 #[test]
 fn ordered_names_survive_updates_and_removal() {
     unsafe {
-        let mut oo_owner = options_create(null_mut());
+        let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
         assert!(options_iter(&*oo).next().is_none());
         let mut names: Vec<Vec<u8>> = (0..128)
@@ -31,7 +31,10 @@ fn ordered_names_survive_updates_and_removal() {
                 .map_or(std::ptr::null_mut(), |entry| entry),
                 entry
             );
-            assert_eq!(options_owner(entry), oo);
+            assert_eq!(
+                options_read_entry(&*oo, &name, |found| found.id()),
+                Some((*entry).id())
+            );
             assert_eq!(
                 options_set_string(oo, name.as_ptr(), 0, |out| { out.write_all(b"updated") }),
                 entry
@@ -73,9 +76,10 @@ fn ordered_names_survive_updates_and_removal() {
 #[test]
 fn aliases_parent_fallback_and_shadowing() {
     unsafe {
-        let mut parent_owner = options_create(null_mut());
+        let mut parent_owner = options_create(None);
         let parent = &raw mut *parent_owner;
-        let mut child_owner = options_create(parent);
+        let saved_global = std::mem::replace(&mut hmux2::src::tmux::global_options, parent);
+        let mut child_owner = options_create(Some(OptionsScope::GlobalServer));
         let child = &raw mut *child_owner;
         let inherited = options_set_string(parent, c"@shared".as_ptr(), 0, |out| {
             out.write_all(b"parent")
@@ -86,13 +90,22 @@ fn aliases_parent_fallback_and_shadowing() {
         )
         .map_or(std::ptr::null_mut(), |entry| entry)
         .is_null());
-        assert_eq!(options_get(child, c"@shared".as_ptr()), inherited);
+        assert_eq!(
+            options_read_entry(&*child, c"@shared", |entry| entry.id()),
+            Some((*inherited).id())
+        );
         let local =
             options_set_string(child, c"@shared".as_ptr(), 0, |out| out.write_all(b"child"));
         assert_ne!(local, inherited);
-        assert_eq!(options_get(child, c"@shared".as_ptr()), local);
+        assert_eq!(
+            options_read_entry(&*child, c"@shared", |entry| entry.id()),
+            Some((*local).id())
+        );
         options_remove_or_default(local, null(), null_mut());
-        assert_eq!(options_get(child, c"@shared".as_ptr()), inherited);
+        assert_eq!(
+            options_read_entry(&*child, c"@shared", |entry| entry.id()),
+            Some((*inherited).id())
+        );
 
         // Use an actual option-table entry so alias lookup and value cleanup
         // follow the same path as built-in options.
@@ -111,8 +124,8 @@ fn aliases_parent_fallback_and_shadowing() {
             canonical
         );
         assert_eq!(
-            options_get(child, c"display-panes-color".as_ptr()),
-            canonical
+            options_read_entry(&*child, c"display-panes-color", |entry| entry.id()),
+            Some((*canonical).id())
         );
         let numeric_definition = (*table)
             .iter()
@@ -130,7 +143,7 @@ fn aliases_parent_fallback_and_shadowing() {
             out.write_all(b"red")
         });
         assert_eq!(
-            CStr::from_ptr(options_get_string(child, c"display-panes-colour".as_ptr())),
+            options_get_string(child, c"display-panes-colour".as_ptr()).as_c_str(),
             c"red"
         );
         options_free(child_owner);
@@ -142,6 +155,7 @@ fn aliases_parent_fallback_and_shadowing() {
             .map_or(std::ptr::null_mut(), |entry| entry),
             inherited
         );
+        hmux2::src::tmux::global_options = saved_global;
         options_free(parent_owner);
     }
 }
@@ -149,7 +163,7 @@ fn aliases_parent_fallback_and_shadowing() {
 #[test]
 fn scalar_string_replacement_append_and_default_keep_stable_entry() {
     unsafe {
-        let mut oo_owner = options_create(null_mut());
+        let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
         let entry = options_set_string(oo, c"@bytes".as_ptr(), 0, |out| {
             write_cstr(out, c"\xff".as_ptr())
@@ -255,7 +269,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
 #[test]
 fn array_keys_order_normalize_and_keep_stable_items() {
     unsafe {
-        let mut oo_owner = options_create(null_mut());
+        let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)
@@ -444,7 +458,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
 #[test]
 fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
     unsafe {
-        let mut oo_owner = options_create(null_mut());
+        let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
         let table = &raw const hmux2::src::options_table::options_table;
         let definition = (*table)

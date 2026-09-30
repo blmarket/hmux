@@ -597,12 +597,7 @@ unsafe fn cmd_capture_pane_exec(
         if args_has(args, 'H' as i32 as u_char) != 0 {
             screen_reset_hyperlinks(&mut *(*wp).screen_ptr());
         }
-        server_redraw_window(
-            &*((*wp)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())),
-        );
+        server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'R' as i32 as u_char) != 0 {

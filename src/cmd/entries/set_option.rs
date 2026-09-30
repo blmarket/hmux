@@ -11,13 +11,9 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::hooks::{hooks_add_event, hooks_monitor_add, hooks_monitor_remove, hooks_run};
 use crate::src::monitor::monitor_parse_owned;
-use crate::src::options::options_owner_ptr;
-use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_assign, options_array_clear, options_array_get, options_array_set, options_empty,
-    options_from_string, options_get, options_get_only, options_get_string, options_is_array,
-    options_match_owned, options_push_changes, options_remove_or_default, options_scope_from_name,
-    options_set_string, OptionMatchFailure,
+    options_array_get, options_match_owned, options_push_changes, options_scope_from_name,
+    OptionMatchFailure, OptionsScope,
 };
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
@@ -32,13 +28,13 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::events::event_payload;
 use crate::src::shared::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
-use crate::src::shared::options::{options, options_entry};
-use crate::src::shared::options::{OPTIONS_TABLE_NONE, OPTIONS_TABLE_WINDOW};
+use crate::src::shared::options::{
+    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_NONE, OPTIONS_TABLE_WINDOW,
+};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, winlink};
-use crate::src::tmux::{global_options, global_s_options, global_w_options};
-use crate::src::window::{window_pane_first, window_pane_next};
+use crate::src::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};
 pub static cmd_set_option_entry: cmd_entry = {
     cmd_entry {
@@ -172,13 +168,7 @@ unsafe fn cmd_set_hook_event_exec(
         event_payload_set_window(
             &mut *ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            (*((*target)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window"),
+            std::rc::Rc::clone(&(((*target).window_handle().as_ref()).expect("live window"))),
         );
     }
     if (*target).winlink_handle().is_alive() {
@@ -198,13 +188,7 @@ unsafe fn cmd_set_hook_event_exec(
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*((*target)
-                .pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window_pane"),
+            (*target).pane_handle().expect("live pane"),
         );
     }
     events_fire(argument.as_ptr(), ep);
@@ -212,441 +196,299 @@ unsafe fn cmd_set_hook_event_exec(
 }
 unsafe fn cmd_set_hook_monitor_exec(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut args: *mut args,
-    mut window: ::core::ffi::c_int,
+    args: *mut args,
+    window: i32,
 ) -> cmd_retval {
-    let item = item_handle.get();
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut fs: cmd_find_state = cmd_find_state {
-        flags: 0,
-        s: Default::default(),
-        wl: Default::default(),
-        w: Default::default(),
-        wp: Default::default(),
-        idx: 0,
-    };
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
-    let mut cause: Option<CString> = None;
-    let mut expanded: Option<CString> = None;
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut scope: ::core::ffi::c_int = 0;
-    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if args_count(args) > 1 as u_int {
+    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item_handle.get());
+    if args_count(args) > 1 {
         cmdq_error(item_handle, |out| out.write_all(b"too many arguments"));
         return CMD_RETURN_ERROR;
     }
-    value =
-        args_get(&*(args), 'B' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let unsubscribe = args_has(args, 'u' as i32 as u_char) != 0;
-    let parsed = monitor_parse_owned(CStr::from_ptr(value));
-    let (name_owned, type_0, id, format_owned) = if unsubscribe {
+    let argument = args_get(&*args, b'B').expect("monitor argument").to_owned();
+    let unsubscribe = args_has(args, b'u') != 0;
+    let parsed = monitor_parse_owned(&argument);
+    let (name, kind, id, format) = if unsubscribe {
         match parsed {
             Some(parsed) => (parsed.name, parsed.type_0, parsed.id, None),
-            None => (CStr::from_ptr(value).to_owned(), MONITOR_SESSION, 0, None),
+            None => (argument.clone(), MONITOR_SESSION, 0, None),
         }
     } else {
         let Some(parsed) = parsed else {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid subscription: ")?;
-                write_cstr(out, value)
+                write_cstr(out, argument.as_ptr())
             });
             return CMD_RETURN_ERROR;
         };
         (parsed.name, parsed.type_0, parsed.id, Some(parsed.format))
     };
-    let name = name_owned.as_ptr();
-    let format = format_owned
-        .as_ref()
-        .map_or(::core::ptr::null(), |format| format.as_ptr());
-    if *name as ::core::ffi::c_int != '@' as i32 {
+    if !name.as_bytes().starts_with(b"@") {
         cmdq_error(item_handle, |out| {
             out.write_all(b"monitor hook name must start with @")
         });
-    } else {
-        scope = options_scope_from_name(args, window, name, target, &raw mut oo, &raw mut cause);
-        if scope == OPTIONS_TABLE_NONE {
-            cmdq_error(item_handle, |out| {
-                write_cstr(out, cause.as_ref().unwrap().as_ptr())
-            });
-        } else {
-            cmd_find_copy_state(&raw mut fs, target);
-            if args_has(args, 'u' as i32 as u_char) != 0 {
-                hooks_monitor_remove(oo, name);
-            } else {
-                if args_count(args) != 0 as u_int {
-                    value = args_string(&mut *(args), 0 as u_int)
-                        .map_or(std::ptr::null(), |value| value.as_ptr());
-                    if args_has(args, 'F' as i32 as u_char) != 0 {
-                        expanded = Some(format_single_from_target_cstring(item_handle, value));
-                        value = expanded.as_ref().expect("expanded value was set").as_ptr();
-                    }
-                    o = crate::src::options::options_get_only_mut(
-                        &mut *(oo),
-                        std::ffi::CStr::from_ptr(name),
-                    )
-                    .map_or(std::ptr::null_mut(), |entry| entry);
-                    if args_has(args, 'o' as i32 as u_char) == 0 || o.is_null() {
-                        let newvalue = if args_has(args, 'a' as i32 as u_char) != 0 && !o.is_null()
-                        {
-                            let old = options_get_string(oo, name);
-                            // glibc printf renders a null %s argument as "(null)".
-                            let old_bytes = if old.is_null() {
-                                b"(null)".as_slice()
-                            } else {
-                                CStr::from_ptr(old).to_bytes()
-                            };
-                            let value_bytes = CStr::from_ptr(value).to_bytes();
-                            let mut bytes = Vec::with_capacity(old_bytes.len() + value_bytes.len());
-                            bytes.extend_from_slice(old_bytes);
-                            bytes.extend_from_slice(value_bytes);
-                            Some(CString::new(bytes).expect("C-string fragments contain no NUL"))
-                        } else {
-                            None
-                        };
-                        if let Some(newvalue) = &newvalue {
-                            value = newvalue.as_ptr();
-                        }
-                        options_set_string(oo, name, 0 as ::core::ffi::c_int, |out| {
-                            write_cstr(out, value)
-                        });
-                        options_push_changes(name);
-                    }
-                }
-                if oo != global_options && oo != global_s_options && oo != global_w_options {
-                    s = (*target).session_handle();
-                }
-                if args_has(args, 'T' as i32 as u_char) != 0 {
-                    flags |= MONITOR_NOTIFY_TRUE;
-                }
-                hooks_monitor_add(oo, name, type_0, id, format, flags, &raw mut fs, s.as_ref());
-            }
-            return CMD_RETURN_NORMAL;
+        return CMD_RETURN_ERROR;
+    }
+    let mut selected = None;
+    let mut cause = None;
+    if options_scope_from_name(
+        args,
+        window,
+        name.as_ptr(),
+        target,
+        &mut selected,
+        &mut cause,
+    ) == OPTIONS_TABLE_NONE
+    {
+        return set_option_error(item_handle, cause.as_deref().expect("scope failure"));
+    }
+    let selected = selected.expect("selected monitor scope");
+    let mut fs = cmd_find_state::default();
+    cmd_find_copy_state(&mut fs, target);
+    if unsubscribe {
+        hooks_monitor_remove(&selected, name.as_ptr());
+        return CMD_RETURN_NORMAL;
+    }
+    if args_count(args) != 0 {
+        let mut value = args_string(&mut *args, 0)
+            .expect("monitor command")
+            .to_owned();
+        if args_has(args, b'F') != 0 {
+            value = format_single_from_target_cstring(item_handle, value.as_ptr());
+        }
+        let exists = selected.with_entry(&name, |_| ()).is_some();
+        if args_has(args, b'o') == 0 || !exists {
+            // User-option append preserves the legacy `(null)` text for a
+            // published empty value and leaves any existing monitor attached.
+            selected
+                .set_from_string(None, &name, Some(&value), args_has(args, b'a') != 0)
+                .expect("monitor name is a user string option");
+            options_push_changes(name.as_ptr());
         }
     }
-    return CMD_RETURN_ERROR;
+    let session = if selected.is_global() {
+        None
+    } else {
+        (*target).session_handle()
+    };
+    let flags = if args_has(args, b'T') != 0 {
+        MONITOR_NOTIFY_TRUE
+    } else {
+        0
+    };
+    hooks_monitor_add(
+        &selected,
+        name.as_ptr(),
+        kind,
+        id,
+        format.as_deref().expect("monitor format").as_ptr(),
+        flags,
+        &mut fs,
+        session.as_ref(),
+    );
+    if let Some(session) = session {
+        crate::src::session::session_remove_ref(session, c"set-hook monitor");
+    }
+    CMD_RETURN_NORMAL
 }
+
+unsafe fn set_option_error(
+    item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
+    cause: &CStr,
+) -> cmd_retval {
+    cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
+    CMD_RETURN_ERROR
+}
+
+/// Pane traversal remains live between removals; a monitor teardown may change
+/// membership. Each successor is selected from the current pane's parent.
+unsafe fn unset_window_panes(
+    target: &cmd_find_state,
+    name: &CStr,
+    array_key: Option<&CStr>,
+) -> Result<(), CString> {
+    let Some(window) = target.window_handle() else {
+        return Ok(());
+    };
+    let mut next = window.next_pane(None);
+    window.release(c"set-option pane traversal");
+    while let Some(pane) = next.take() {
+        let scope = OptionsScope::Pane(std::rc::Rc::downgrade(&pane));
+        let result = scope.remove_or_default(name, array_key);
+        if result.is_ok() {
+            if let Some(parent) = pane.window_observer().upgrade() {
+                next = parent.next_pane(Some(&pane));
+                parent.release(c"set-option pane successor");
+            }
+        }
+        crate::src::window_pane::window_pane_remove_ref(
+            pane,
+            c"set-option pane traversal".as_ptr(),
+        );
+        result?;
+    }
+    Ok(())
+}
+
 unsafe fn cmd_set_option_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut current_block: u64;
-    let mut args: *mut args =
+    let args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut append: ::core::ffi::c_int = args_has(args, 'a' as i32 as u_char);
-    let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut parent: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut po: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut cause: Option<CString> = None;
-    let mut expanded: Option<CString> = None;
-    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null();
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut window: ::core::ffi::c_int = 0;
-    let mut already: ::core::ffi::c_int = 0;
-    let mut error: ::core::ffi::c_int = 0;
-    let mut ambiguous: ::core::ffi::c_int = 0;
-    let mut scope: ::core::ffi::c_int = 0;
-    window = (std::ptr::eq(
+    let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
+    let window = std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_set_window_option_entry,
-    )) as ::core::ffi::c_int;
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
-        && args_has(args, 'E' as i32 as u_char) != 0
-    {
-        return cmd_set_hook_event_exec(self_0.clone(), item_handle);
+    ) as i32;
+    let set_hook = std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry);
+    if set_hook && args_has(args, b'E') != 0 {
+        return cmd_set_hook_event_exec(self_0, item_handle);
     }
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
-        && args_has(args, 'B' as i32 as u_char) != 0
-    {
+    if set_hook && args_has(args, b'B') != 0 {
         return cmd_set_hook_monitor_exec(item_handle, args, window);
     }
-    if args_count(args) == 0 as u_int {
-        cmdq_error(item_handle, |out| out.write_all(b"missing argument"));
-        return CMD_RETURN_ERROR;
+    if args_count(args) == 0 {
+        return set_option_error(item_handle, c"missing argument");
     }
     let argument = format_single_from_target_cstring(
         item_handle,
-        args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
+        args_string(&mut *args, 0).map_or(std::ptr::null(), CStr::as_ptr),
     );
-    if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_set_hook_entry)
-        && args_has(args, 'R' as i32 as u_char) != 0
-    {
+    if set_hook && args_has(args, b'R') != 0 {
         hooks_run(Some(item_handle), argument.as_ptr());
         return CMD_RETURN_NORMAL;
     }
-    let matched = options_match_owned(argument.as_c_str());
-    if let Ok(parsed) = &matched {
-        name = parsed.name.as_ptr();
-        array_key = parsed
-            .array_key
-            .as_ref()
-            .map_or(::core::ptr::null(), |key| key.as_ptr());
-    }
-    // tmux leaves its ambiguity output unset on a parse failure. Match the
-    // pinned oracle's diagnostic: invalid on an empty server, ambiguous when
-    // sessions exist, without reading uninitialized memory.
-    ambiguous = match matched {
-        Err(OptionMatchFailure::Ambiguous) => true,
-        Err(OptionMatchFailure::Parse) => sessions.storage.is_some(),
-        _ => false,
-    } as ::core::ffi::c_int;
-    if name.is_null() {
-        if args_has(args, 'q' as i32 as u_char) != 0 {
-            current_block = 710513931074292511;
-        } else {
-            if ambiguous != 0 {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"ambiguous option: ")?;
-                    write_cstr(out, argument.as_ptr())
-                });
-            } else {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"invalid option: ")?;
-                    write_cstr(out, argument.as_ptr())
-                });
+    let parsed = match options_match_owned(&argument) {
+        Ok(parsed) => parsed,
+        Err(failure) => {
+            if args_has(args, b'q') != 0 {
+                return CMD_RETURN_NORMAL;
             }
-            current_block = 8517774764635037400;
-        }
-    } else {
-        if args_count(args) < 2 as u_int {
-            value = ::core::ptr::null::<::core::ffi::c_char>();
-        } else {
-            value = args_string(&mut *(args), 1 as u_int)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-        }
-        if !value.is_null() && args_has(args, 'F' as i32 as u_char) != 0 {
-            expanded = Some(format_single_from_target_cstring(item_handle, value));
-            value = expanded.as_ref().expect("expanded value was set").as_ptr();
-        }
-        scope = options_scope_from_name(args, window, name, target, &raw mut oo, &raw mut cause);
-        if scope == OPTIONS_TABLE_NONE {
-            if args_has(args, 'q' as i32 as u_char) != 0 {
-                current_block = 710513931074292511;
-            } else {
-                cmdq_error(item_handle, |out| {
-                    write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                });
-                current_block = 8517774764635037400;
-            }
-        } else {
-            o = crate::src::options::options_get_only_mut(
-                &mut *(oo),
-                std::ffi::CStr::from_ptr(name),
-            )
-            .map_or(std::ptr::null_mut(), |entry| entry);
-            parent = options_get(oo, name);
-            if !array_key.is_null()
-                && (*name as ::core::ffi::c_int == '@' as i32 || options_is_array(parent) == 0)
-            {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"not an array: ")?;
-                    write_cstr(out, argument.as_ptr())
-                });
-                current_block = 8517774764635037400;
-            } else {
-                if args_has(args, 'u' as i32 as u_char) == 0
-                    && args_has(args, 'o' as i32 as u_char) != 0
-                {
-                    if array_key.is_null() {
-                        already = (o != NULL as *mut options_entry) as ::core::ffi::c_int;
-                    } else if o.is_null() {
-                        already = 0 as ::core::ffi::c_int;
-                    } else if !crate::src::options::options_array_get_mut(
-                        &mut *(o),
-                        std::ffi::CStr::from_ptr(array_key),
-                    )
-                    .map_or(std::ptr::null_mut(), |value| value)
-                    .is_null()
-                    {
-                        already = 1 as ::core::ffi::c_int;
-                    } else {
-                        already = 0 as ::core::ffi::c_int;
-                    }
-                    if already != 0 {
-                        if args_has(args, 'q' as i32 as u_char) != 0 {
-                            current_block = 710513931074292511;
-                        } else {
-                            cmdq_error(item_handle, |out| {
-                                out.write_all(b"already set: ")?;
-                                write_cstr(out, argument.as_ptr())
-                            });
-                            current_block = 8517774764635037400;
-                        }
-                    } else {
-                        current_block = 12997042908615822766;
-                    }
+            // Preserve the pinned oracle's parse-failure ambiguity diagnostic.
+            let ambiguous = match failure {
+                OptionMatchFailure::Ambiguous => true,
+                OptionMatchFailure::Parse => sessions.storage.is_some(),
+                _ => false,
+            };
+            cmdq_error(item_handle, |out| {
+                out.write_all(if ambiguous {
+                    b"ambiguous option: "
                 } else {
-                    current_block = 12997042908615822766;
-                }
-                match current_block {
-                    710513931074292511 => {}
-                    8517774764635037400 => {}
-                    _ => {
-                        if args_has(args, 'U' as i32 as u_char) != 0
-                            && scope == OPTIONS_TABLE_WINDOW
-                        {
-                            loop_0 = window_pane_first(
-                                ((*target)
-                                    .window_handle()
-                                    .as_ref()
-                                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                                .as_ref(),
-                            )
-                            .as_ref()
-                            .map_or(std::ptr::null_mut(), |owner| owner.get());
-                            loop {
-                                if loop_0.is_null() {
-                                    current_block = 10095721787123848864;
-                                    break;
-                                }
-                                po = crate::src::options::options_get_only_mut(
-                                    &mut *(options_owner_ptr(&mut (*loop_0).options)
-                                        .map_or(std::ptr::null_mut(), |options| options)),
-                                    std::ffi::CStr::from_ptr(name),
-                                )
-                                .map_or(std::ptr::null_mut(), |entry| entry);
-                                if !po.is_null() {
-                                    if options_remove_or_default(po, array_key, &raw mut cause)
-                                        != 0 as ::core::ffi::c_int
-                                    {
-                                        cmdq_error(item_handle, |out| {
-                                            write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                                        });
-                                        current_block = 8517774764635037400;
-                                        break;
-                                    }
-                                }
-                                loop_0 = window_pane_next(loop_0.as_ref())
-                                    .as_ref()
-                                    .map_or(std::ptr::null_mut(), |owner| owner.get());
-                            }
-                        } else {
-                            current_block = 10095721787123848864;
-                        }
-                        match current_block {
-                            8517774764635037400 => {}
-                            _ => {
-                                if args_has(args, 'u' as i32 as u_char) != 0
-                                    || args_has(args, 'U' as i32 as u_char) != 0
-                                {
-                                    if o.is_null() {
-                                        current_block = 710513931074292511;
-                                    } else if options_remove_or_default(
-                                        o,
-                                        array_key,
-                                        &raw mut cause,
-                                    ) != 0 as ::core::ffi::c_int
-                                    {
-                                        cmdq_error(item_handle, |out| {
-                                            write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                                        });
-                                        current_block = 8517774764635037400;
-                                    } else {
-                                        current_block = 16231175055492490595;
-                                    }
-                                } else if *name as ::core::ffi::c_int == '@' as i32 {
-                                    if value.is_null() {
-                                        cmdq_error(item_handle, |out| {
-                                            out.write_all(b"empty value")
-                                        });
-                                        current_block = 8517774764635037400;
-                                    } else {
-                                        options_set_string(oo, name, append, |out| {
-                                            write_cstr(out, value)
-                                        });
-                                        if std::ptr::eq(
-                                            cmd_get_entry(self_0.get_unchecked()),
-                                            &cmd_set_hook_entry,
-                                        ) {
-                                            hooks_add_event(name);
-                                        }
-                                        current_block = 16231175055492490595;
-                                    }
-                                } else if array_key.is_null() && options_is_array(parent) == 0 {
-                                    error = options_from_string(
-                                        oo,
-                                        options_table_entry(&*(parent)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry),
-                                        (*options_table_entry(&*(parent)).map_or(std::ptr::null(), |entry| entry as *const crate::src::shared::options::options_table_entry)).name_ptr(),
-                                        value,
-                                        args_has(args, 'a' as i32 as u_char),
-                                        &raw mut cause,
-                                    );
-                                    if error != 0 as ::core::ffi::c_int {
-                                        cmdq_error(item_handle, |out| {
-                                            write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                                        });
-                                        current_block = 8517774764635037400;
-                                    } else {
-                                        current_block = 16231175055492490595;
-                                    }
-                                } else if value.is_null() {
-                                    cmdq_error(item_handle, |out| out.write_all(b"empty value"));
-                                    current_block = 8517774764635037400;
-                                } else {
-                                    if o.is_null() {
-                                        o = options_empty(
-                                            oo,
-                                            options_table_entry(&*parent)
-                                                .expect("parent option definition"),
-                                        );
-                                    }
-                                    if array_key.is_null() {
-                                        if append == 0 {
-                                            options_array_clear(o);
-                                        }
-                                        if options_array_assign(o, value, &raw mut cause)
-                                            != 0 as ::core::ffi::c_int
-                                        {
-                                            cmdq_error(item_handle, |out| {
-                                                write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                                            });
-                                            current_block = 8517774764635037400;
-                                        } else {
-                                            current_block = 16231175055492490595;
-                                        }
-                                    } else if options_array_set(
-                                        o,
-                                        array_key,
-                                        value,
-                                        append,
-                                        &raw mut cause,
-                                    ) != 0 as ::core::ffi::c_int
-                                    {
-                                        cmdq_error(item_handle, |out| {
-                                            write_cstr(out, cause.as_ref().unwrap().as_ptr())
-                                        });
-                                        current_block = 8517774764635037400;
-                                    } else {
-                                        current_block = 16231175055492490595;
-                                    }
-                                }
-                                match current_block {
-                                    8517774764635037400 => {}
-                                    710513931074292511 => {}
-                                    _ => {
-                                        options_push_changes(name);
-                                        current_block = 710513931074292511;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    match current_block {
-        8517774764635037400 => {
+                    b"invalid option: "
+                })?;
+                write_cstr(out, argument.as_ptr())
+            });
             return CMD_RETURN_ERROR;
         }
-        _ => {
+    };
+    let mut value = if args_count(args) < 2 {
+        None
+    } else {
+        args_string(&mut *args, 1).map(CStr::to_owned)
+    };
+    if args_has(args, b'F') != 0 {
+        if let Some(old) = value.as_ref() {
+            value = Some(format_single_from_target_cstring(item_handle, old.as_ptr()));
+        }
+    }
+    let mut selected = None;
+    let mut cause = None;
+    let scope = options_scope_from_name(
+        args,
+        window,
+        parsed.name.as_ptr(),
+        target,
+        &mut selected,
+        &mut cause,
+    );
+    if scope == OPTIONS_TABLE_NONE {
+        if args_has(args, b'q') != 0 {
             return CMD_RETURN_NORMAL;
         }
+        return set_option_error(item_handle, cause.as_deref().expect("scope failure"));
+    }
+    let selected = selected.expect("selected option scope");
+    let name = parsed.name.as_c_str();
+    let array_key = parsed.array_key.as_deref();
+    let user = name.to_bytes().starts_with(b"@");
+    let definition = selected
+        .resolve(name, false)
+        .and_then(|source| source.with_entry(name, |entry| entry.tableentry))
+        .flatten();
+    let array = definition.is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0);
+    if array_key.is_some() && (user || !array) {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"not an array: ")?;
+            write_cstr(out, argument.as_ptr())
+        });
+        return CMD_RETURN_ERROR;
+    }
+    if args_has(args, b'u') == 0 && args_has(args, b'o') != 0 {
+        let already = selected
+            .with_entry(name, |entry| {
+                array_key.is_none_or(|key| options_array_get(entry, key).is_some())
+            })
+            .unwrap_or(false);
+        if already {
+            if args_has(args, b'q') != 0 {
+                return CMD_RETURN_NORMAL;
+            }
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"already set: ")?;
+                write_cstr(out, argument.as_ptr())
+            });
+            return CMD_RETURN_ERROR;
+        }
+    }
+    if args_has(args, b'U') != 0 && scope == OPTIONS_TABLE_WINDOW {
+        if let Err(cause) = unset_window_panes(&*target, name, array_key) {
+            return set_option_error(item_handle, &cause);
+        }
+    }
+    let append = args_has(args, b'a') != 0;
+    let result = if args_has(args, b'u') != 0 || args_has(args, b'U') != 0 {
+        selected.remove_or_default(name, array_key)
+    } else if user {
+        selected
+            .set_from_string(None, name, value.as_deref(), append)
+            .map(|()| {
+                if set_hook {
+                    hooks_add_event(name.as_ptr());
+                }
+                true
+            })
+    } else if !array {
+        let definition = definition.expect("built-in option definition");
+        selected
+            .set_from_string(
+                Some(definition),
+                definition.name.expect("built-in name"),
+                value.as_deref(),
+                append,
+            )
+            .map(|()| true)
+    } else if let Some(value) = value.as_deref() {
+        selected.ensure_array(definition.expect("array option definition"));
+        if let Some(key) = array_key {
+            selected
+                .set_array_item(name, key, Some(value), append)
+                .map(|()| true)
+        } else {
+            if !append {
+                selected.clear_array(name);
+            }
+            selected.assign_array(name, value).map(|()| true)
+        }
+    } else {
+        Err(c"empty value".to_owned())
     };
+    match result {
+        Err(cause) => set_option_error(item_handle, &cause),
+        Ok(false) => CMD_RETURN_NORMAL,
+        Ok(true) => {
+            options_push_changes(name.as_ptr());
+            CMD_RETURN_NORMAL
+        }
+    }
 }

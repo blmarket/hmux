@@ -33,6 +33,7 @@ use crate::src::shared::stdio::FILE;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::window::window_pane_set_mode;
+use crate::src::window::Window as _;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
@@ -355,11 +356,11 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell
         if s.is_none() || !s.as_ref().expect("live session").is_attached() {
             return;
         }
-        wp = (*(s.as_ref().expect("live session").current_winlink())
+        wp = (((s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
+            .as_ref())
+        .expect("live window"))
         .active_pane()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());

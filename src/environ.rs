@@ -2,7 +2,7 @@ use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::{options_array_item_value, options_get, options_get_string};
+use crate::src::options::{options_array_item_value, options_get_string};
 use crate::src::session::Session;
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
 use crate::src::xmalloc::xcalloc;
@@ -175,66 +175,40 @@ pub unsafe fn environ_unset(env: &mut environ, name: *const ::core::ffi::c_char)
     env.unset_cstr(CStr::from_ptr(name));
 }
 
-pub unsafe fn environ_update(mut oo: *mut options, src: &environ, dst: &mut environ) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
-    let mut found: ::core::ffi::c_int = 0;
-    o = options_get(
-        oo,
-        b"update-environment\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if o.is_null() {
+pub unsafe fn environ_update(oo: *mut options, src: &environ, dst: &mut environ) {
+    let Some(patterns) =
+        crate::src::options::options_read_entry(&*oo, c"update-environment", |entry| {
+            crate::src::options::options_array_iter(entry)
+                .map(|item| {
+                    item.value
+                        .string_ptr()
+                        .expect("environment pattern")
+                        .to_owned()
+                })
+                .collect::<Vec<_>>()
+        })
+    else {
         return;
-    }
-    let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-        .map(|item| item.key.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, key.as_ptr())
-    });
-    while !a.is_null() {
-        ov = crate::src::options::options_array_item_value_mut(&mut *(a))
-            as *mut crate::src::shared::options::options_value;
-        found = 0 as ::core::ffi::c_int;
-        for envent in environ_iter(src) {
-            if fnmatch(
-                (*ov)
-                    .string_ptr()
-                    .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                ((*envent).name).as_ptr().cast_mut(),
-                0 as ::core::ffi::c_int,
-            ) == 0 as ::core::ffi::c_int
-            {
-                environ_set(
-                    dst,
-                    ((*envent).name).as_ptr().cast_mut(),
-                    0 as ::core::ffi::c_int,
-                    |out| {
-                        write_cstr(
-                            out,
-                            ((*envent).value)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        )
-                    },
-                );
-                found = 1 as ::core::ffi::c_int;
+    };
+    for pattern in patterns {
+        let mut found = false;
+        for entry in environ_iter(src) {
+            if fnmatch(pattern.as_ptr(), entry.name.as_ptr(), 0) == 0 {
+                environ_set(dst, entry.name.as_ptr(), 0, |out| {
+                    write_cstr(
+                        out,
+                        entry
+                            .value
+                            .as_ref()
+                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    )
+                });
+                found = true;
             }
         }
-        if found == 0 {
-            environ_clear(
-                dst,
-                (*ov)
-                    .string_ptr()
-                    .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
+        if !found {
+            environ_clear(dst, pattern.as_ptr());
         }
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
-        });
     }
 }
 pub unsafe fn environ_push(env: &environ) {
@@ -296,7 +270,7 @@ pub unsafe fn environ_for_session(
         session.with_environment_mut(|source| environ_copy(source, &mut env));
     }
     if no_TERM == 0 {
-        value = options_get_string(
+        let terminal = options_get_string(
             global_options,
             b"default-terminal\0" as *const u8 as *const ::core::ffi::c_char,
         );
@@ -304,7 +278,7 @@ pub unsafe fn environ_for_session(
             &mut env,
             b"TERM\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            |out| write_cstr(out, value),
+            |out| write_cstr(out, terminal.as_ptr()),
         );
         environ_set(
             &mut env,

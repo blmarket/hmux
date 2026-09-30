@@ -14,7 +14,8 @@ use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
 use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
 use crate::src::shared::window::{window, winlink};
-use crate::src::window::{window_winlinks_append, window_winlinks_remove};
+use crate::src::window::Window as _;
+
 pub static cmd_swap_window_entry: cmd_entry = {
     cmd_entry {
         name: c"swap-window",
@@ -55,8 +56,6 @@ unsafe fn cmd_swap_window_exec(
     let mut sg_dst: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl_src: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut wl_dst: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut w_src: *mut window = ::core::ptr::null_mut::<window>();
-    let mut w_dst: *mut window = ::core::ptr::null_mut::<window>();
     sg_src = crate::src::session::session_group_for(
         &src.as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
@@ -75,39 +74,38 @@ unsafe fn cmd_swap_window_exec(
         });
         return CMD_RETURN_ERROR;
     }
-    if wl_dst
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get())
-        == wl_src
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-    {
+    if crate::src::shared::rc::same(
+        wl_dst.get_unchecked().window_handle(),
+        wl_src.get_unchecked().window_handle(),
+    ) {
         return CMD_RETURN_NORMAL;
     }
-    w_dst = wl_dst
+    wl_dst
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    w_src = wl_src
+        .expect("linked window")
+        .remove_winlink(wl_dst.clone());
+    wl_src
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    window_winlinks_remove(&mut *(w_dst), (wl_dst).clone());
-    window_winlinks_remove(&mut *(w_src), (wl_src).clone());
+        .expect("linked window")
+        .remove_winlink(wl_src.clone());
     if wl_dst != wl_src {
         std::mem::swap(
             &mut wl_dst.get_mut_unchecked().window_owner,
             &mut wl_src.get_mut_unchecked().window_owner,
         );
     }
-    window_winlinks_append(&mut *(w_src), (wl_dst).clone());
-    window_winlinks_append(&mut *(w_dst), (wl_src).clone());
+    wl_dst
+        .get_unchecked()
+        .window_handle()
+        .expect("linked window")
+        .add_winlink(wl_dst.clone());
+    wl_src
+        .get_unchecked()
+        .window_handle()
+        .expect("linked window")
+        .add_winlink(wl_src.clone());
     if marked_pane.winlink_handle() == wl_src {
         marked_pane.set_wl((wl_dst).clone());
     }

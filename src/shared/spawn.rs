@@ -4,7 +4,7 @@ use super::abi::pid_t;
 use super::client::client;
 use super::command::cmdq_item;
 use super::environment::environ;
-use super::layout::layout_cell;
+use super::layout::LayoutCellId;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::winlink;
@@ -95,7 +95,8 @@ pub struct spawn_context {
     /// Observe the target client; each spawn operation retains an upgrade while using it.
     pub tc: ClientWeak,
     pub wp0: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub lc: *mut layout_cell,
+    /// A nonowning reservation, resolved under the Window layout borrow.
+    pub layout: Option<LayoutCellId>,
     pub name: Option<std::ffi::CString>,
     pub argv: Vec<std::ffi::CString>,
     pub environ: Option<Box<environ>>,

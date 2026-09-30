@@ -8,6 +8,7 @@ use super::layout::box_lines;
 use super::mouse::mouse_event;
 use super::screen::screen;
 use super::window::window;
+use crate::src::shared::window::WindowWeak;
 use std::cell::UnsafeCell;
 use std::ffi::CStr;
 use std::rc::Weak;
@@ -50,7 +51,7 @@ pub const MENU_TAB: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 
 #[repr(C)]
 pub struct menu_data {
-    pub w: Weak<UnsafeCell<window>>,
+    pub w: WindowWeak,
     pub closed: bool,
     pub flags: ::core::ffi::c_int,
     pub style: Option<std::ffi::CString>,

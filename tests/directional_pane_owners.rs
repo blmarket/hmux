@@ -1,13 +1,16 @@
+#[path = "support/window_fixture.rs"]
+mod window_fixture;
 use hmux2::src::shared::{pane::window_pane, window::window};
 use hmux2::src::window::{window_pane_find_left, window_pane_find_right};
+use hmux2::src::window::{PaneOrder, Window};
 use std::rc::Rc;
+use window_fixture::WindowOptions;
 
 #[test]
 fn directional_selection_preserves_order_activity_and_retained_result() {
     unsafe {
-        let window = window::new();
-        (*window.get()).sx = 20;
-        (*window.get()).sy = 10;
+        let options = WindowOptions::new();
+        let window = options.create(20, 10);
         let source = window_pane::new();
         let upper = window_pane::new();
         let lower = window_pane::new();
@@ -22,7 +25,9 @@ fn directional_selection_preserves_order_activity_and_retained_result() {
             pane.yoff = y;
             pane.sx = width;
             pane.sy = height;
-            (*window.get()).panes.push_back(Rc::downgrade(owner));
+            window
+                .borrow_pane_order_mut(PaneOrder::Index)
+                .push_back(Rc::downgrade(owner));
         }
         assert!(window_pane_find_right(None).is_none());
         assert!(Rc::ptr_eq(
@@ -37,7 +42,10 @@ fn directional_selection_preserves_order_activity_and_retained_result() {
             &lower
         ));
         let observer = Rc::downgrade(&lower);
-        (*window.get()).panes.storage.clear();
+        window
+            .borrow_pane_order_mut(PaneOrder::Index)
+            .storage
+            .clear();
         drop(lower);
         assert!(observer.upgrade().is_some());
         assert_eq!((*selected.get()).yoff, 5);
@@ -45,6 +53,7 @@ fn directional_selection_preserves_order_activity_and_retained_result() {
         assert!(observer.upgrade().is_none());
         drop(source);
         drop(upper);
-        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
+        window.release(c"test owner");
+        options.free();
     }
 }

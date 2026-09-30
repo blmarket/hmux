@@ -20,7 +20,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = {
     'session': 'src/session/model.rs',
-    'window': 'src/shared/window.rs',
+    'window': 'src/window/model.rs',
     'window_pane': 'src/shared/pane.rs',
     'client': 'src/server_client/model.rs',
 }
@@ -114,9 +114,9 @@ def owner(path, function):
         return 'session'
     if path.startswith('src/server_client/'):
         return 'client'
-    if path in ('src/window/api.rs', 'src/window/alerts.rs'):
+    if path.startswith('src/window/'):
         return 'window'
-    if path in ('src/window/pane_api.rs', 'src/window/pane_sync.rs'):
+    if path.startswith('src/window_pane/'):
         return 'window_pane'
     if path == 'src/window.rs':
         if function in ('window_pane_first', 'window_pane_last', 'window_pane_count'):

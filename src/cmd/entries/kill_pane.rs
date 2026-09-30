@@ -19,7 +19,7 @@ use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
-use crate::src::window::{window_pane_first, window_pane_next, window_remove_pane};
+use crate::src::window::{window_pane_next, window_remove_pane, Window};
 pub static cmd_kill_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-pane",
@@ -82,23 +82,13 @@ unsafe fn cmd_kill_pane_all(
         .pane_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    server_unzoom_window(
-        &(*(wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())))
-        .observer
-        .upgrade()
-        .expect("live window"),
-    );
-    let mut cursor = window_pane_first(
-        (wl.get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_ref(),
-    );
+    server_unzoom_window(&std::rc::Rc::clone(
+        &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+    ));
+    let mut cursor = wl
+        .get_unchecked()
+        .window_handle()
+        .and_then(|window| window.next_pane(None));
     while let Some(pane_owner) = cursor {
         cursor = window_pane_next((pane_owner.get()).as_ref());
         if pane_owner.get() != wp
@@ -113,25 +103,14 @@ unsafe fn cmd_kill_pane_all(
             server_client_remove_pane(&pane_owner);
             layout_close_pane(&pane_owner);
             window_remove_pane(
-                &(*(wl
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())))
-                .observer
-                .upgrade()
-                .expect("live window"),
+                &std::rc::Rc::clone(
+                    &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+                ),
                 &pane_owner,
             );
         }
     }
-    server_redraw_window(
-        &*(wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())),
-    );
+    server_redraw_window(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")));
     return CMD_RETURN_NORMAL;
 }
 unsafe fn cmd_kill_pane_filter(

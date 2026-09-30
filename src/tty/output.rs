@@ -309,10 +309,11 @@ pub(super) unsafe fn tty_set_italics(tty: &mut TerminalOutput<'_>) {
         TTYC_SITM,
     ) != 0
     {
-        s = options_get_string(
+        let terminal = options_get_string(
             global_options,
             b"default-terminal\0" as *const u8 as *const ::core::ffi::c_char,
         );
+        s = terminal.as_ptr();
         if strcmp(s, b"screen\0" as *const u8 as *const ::core::ffi::c_char)
             != 0 as ::core::ffi::c_int
             && strncmp(

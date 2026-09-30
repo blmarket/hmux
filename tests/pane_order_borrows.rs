@@ -1,8 +1,5 @@
 use hmux2::src::shared::{pane::window_pane, window::window};
-use hmux2::src::window::{
-    window_pane_list_insert_back, window_pane_swap_order, window_pane_z_insert_back,
-    window_pane_z_swap_order,
-};
+use hmux2::src::window::{PaneOrder, Window};
 use std::rc::Rc;
 
 #[test]
@@ -13,42 +10,60 @@ fn order_swaps_preserve_weak_membership_within_and_between_windows() {
         let first_owner = window_pane::new();
         let second_owner = window_pane::new();
         let third_owner = window_pane::new();
-        let left = &mut *left_owner.get();
-        let right = &mut *right_owner.get();
-        let first = &*first_owner.get();
-        let second = &*second_owner.get();
-        let third = &*third_owner.get();
-        for pane in [first, second] {
-            window_pane_list_insert_back(left, pane);
-            window_pane_z_insert_back(left, pane);
+        for order in [PaneOrder::Index, PaneOrder::Stacking] {
+            {
+                let mut left = left_owner.borrow_pane_order_mut(order);
+                left.push_back(Rc::downgrade(&first_owner));
+                left.push_back(Rc::downgrade(&second_owner));
+            }
+            right_owner
+                .borrow_pane_order_mut(order)
+                .push_back(Rc::downgrade(&third_owner));
+            // An aliased Rc must still take only one borrow of the Window.
+            let same_window = left_owner.clone();
+            left_owner.swap_pane_order(
+                order,
+                &Rc::downgrade(&first_owner),
+                &same_window,
+                &Rc::downgrade(&second_owner),
+            );
+            same_window.release(c"same-window ordering alias");
+            assert!(Rc::ptr_eq(
+                &left_owner.step_pane(order, None, false).unwrap(),
+                &second_owner
+            ));
+            assert!(Rc::ptr_eq(
+                &left_owner.step_pane(order, None, true).unwrap(),
+                &first_owner
+            ));
+            left_owner.swap_pane_order(
+                order,
+                &Rc::downgrade(&second_owner),
+                &right_owner,
+                &Rc::downgrade(&third_owner),
+            );
+            assert!(Rc::ptr_eq(
+                &left_owner.step_pane(order, None, false).unwrap(),
+                &third_owner
+            ));
+            assert!(Rc::ptr_eq(
+                &left_owner.step_pane(order, None, true).unwrap(),
+                &first_owner
+            ));
+            assert!(Rc::ptr_eq(
+                &right_owner.step_pane(order, None, false).unwrap(),
+                &second_owner
+            ));
         }
-        window_pane_list_insert_back(right, third);
-        window_pane_z_insert_back(right, third);
-
-        window_pane_swap_order(left, first, None, second);
-        window_pane_z_swap_order(left, first, None, second);
-        assert!(Rc::ptr_eq(&left.panes.first().unwrap(), &second_owner));
-        assert!(Rc::ptr_eq(&left.panes.last().unwrap(), &first_owner));
-        assert!(Rc::ptr_eq(&left.z_index.first().unwrap(), &second_owner));
-        assert!(Rc::ptr_eq(&left.z_index.last().unwrap(), &first_owner));
-
-        window_pane_swap_order(left, second, Some(right), third);
-        window_pane_z_swap_order(left, second, Some(right), third);
-        assert!(Rc::ptr_eq(&left.panes.first().unwrap(), &third_owner));
-        assert!(Rc::ptr_eq(&left.panes.last().unwrap(), &first_owner));
-        assert!(Rc::ptr_eq(&right.panes.first().unwrap(), &second_owner));
-        assert!(Rc::ptr_eq(&left.z_index.first().unwrap(), &third_owner));
-        assert!(Rc::ptr_eq(&left.z_index.last().unwrap(), &first_owner));
-        assert!(Rc::ptr_eq(&right.z_index.first().unwrap(), &second_owner));
         for owner in [&first_owner, &second_owner, &third_owner] {
             assert_eq!(Rc::strong_count(owner), 1, "ordering must not own panes");
         }
 
         // These are ordering-only fixtures, with no pane registry membership.
-        left.panes.storage.clear();
-        left.z_index.storage.clear();
-        right.panes.storage.clear();
-        right.z_index.storage.clear();
+        for order in [PaneOrder::Index, PaneOrder::Stacking] {
+            left_owner.borrow_pane_order_mut(order).storage.clear();
+            right_owner.borrow_pane_order_mut(order).storage.clear();
+        }
         hmux2::src::window::window_remove_ref(left_owner, c"test owner".as_ptr());
         hmux2::src::window::window_remove_ref(right_owner, c"test owner".as_ptr());
     }

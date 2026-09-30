@@ -178,10 +178,7 @@ unsafe fn cmd_list_panes_window(
     );
     sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     let l = sort_get_panes_window(
-        &*wl.get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()),
+        wl.get_unchecked().window_handle().expect("linked window"),
         &sort_crit,
     );
     let n = u_int::try_from(l.len()).expect("too many panes to list");

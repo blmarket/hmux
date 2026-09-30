@@ -11,8 +11,8 @@ use crate::src::grid::{grid_cells_equal, grid_compare};
 use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{
-    options_array_get_index, options_get, options_get_number, options_get_string,
-    options_string_to_style,
+    options_array_get_index, options_get_number, options_get_string, options_string_to_style,
+    OptionsScope,
 };
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key,
@@ -352,21 +352,10 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         // across option access or format callbacks. Resume under a fresh guard.
         ctx.target = Default::default();
     }
-    let format_depth = s.as_ref().expect("live session").with_options_mut(|root| {
-        let mut options = root;
-        let mut depth = 0;
-        loop {
-            if crate::src::options::options_get_only_mut(options, c"status-format").is_some() {
-                break Some(depth);
-            }
-            let Some(parent) = options.parent.as_mut() else {
-                break None;
-            };
-            options = parent;
-            depth += 1;
-        }
-    });
-    if format_depth.is_none() {
+    let format_owner =
+        OptionsScope::Session(std::rc::Rc::downgrade(s.as_ref().expect("live session")))
+            .resolve(c"status-format", false);
+    if format_owner.is_none() {
         let mut status = c_owner.borrow_status_mut();
         ctx.borrow_screen(&mut status.screen);
         n = 0 as u_int;
@@ -389,16 +378,14 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                 );
                 ctx.target = Default::default();
             }
-            let line_format = s.as_ref().expect("live session").with_options_mut(|root| {
-                let mut options = root;
-                for _ in 0..format_depth.expect("resolved format") {
-                    options = options.parent.as_mut().expect("format parent stays live");
-                }
-                let entry = crate::src::options::options_get_only_mut(options, c"status-format")
-                    .expect("status format stays live during expansion");
-                crate::src::options::options_array_get_index_mut(entry, i)
-                    .map(|value| value.string_ptr().map(|text| text.to_owned()))
-            });
+            let line_format = format_owner
+                .as_ref()
+                .expect("resolved format owner")
+                .with_entry(c"status-format", |entry| {
+                    crate::src::options::options_array_get_index_mut(entry, i)
+                        .map(|value| value.string_ptr().map(|text| text.to_owned()))
+                })
+                .expect("status format stays live during expansion");
             if line_format.is_none() {
                 let mut status = c_owner.borrow_status_mut();
                 ctx.borrow_screen(&mut status.screen);
@@ -639,11 +626,10 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         s.as_ref()
             .expect("live session")
             .with_options_mut(|options| {
-                std::ffi::CStr::from_ptr(options_get_string(
+                options_get_string(
                     options,
                     b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
-                ))
-                .to_owned()
+                )
             }),
     );
     msgfmt = msgfmt_session_value
@@ -948,8 +934,7 @@ mod status_screen_tests {
         use crate::src::options::{options_set_number, options_set_string};
 
         unsafe {
-            let mut oo_owner = options_create(std::ptr::null_mut());
-            let oo = &raw mut *oo_owner;
+            let mut oo_owner = options_create(None);
             for name in [
                 c"message-style",
                 c"message-line",
@@ -960,11 +945,9 @@ mod status_screen_tests {
                     .iter()
                     .find(|entry| entry.name == Some(name))
                     .unwrap();
-                options_default(oo, definition);
+                options_default(&mut *oo_owner, definition);
             }
-            let session_owner = session::new();
-            let session = &mut *session_owner.get();
-            session.options = Some(oo_owner);
+            let session_owner = session::with_options_for_test(oo_owner);
             let previous_sessions = std::mem::replace(
                 &mut crate::src::session::sessions,
                 crate::src::shared::session::sessions { storage: None },
@@ -986,8 +969,10 @@ mod status_screen_tests {
                 ("width=90,align=right", (0, 80)),
                 ("invalid-style", (0, 80)),
             ] {
-                options_set_string(oo, c"message-style".as_ptr(), 0, |out| {
-                    out.write_all(style.as_bytes())
+                session_owner.with_options_mut(|options| {
+                    options_set_string(options, c"message-style".as_ptr(), 0, |out| {
+                        out.write_all(style.as_bytes())
+                    });
                 });
                 assert_eq!(status_message_area(&c), expected, "{style}");
             }
@@ -1006,9 +991,11 @@ mod status_screen_tests {
                 (0, 3, 1, 24, CLIENT_STATUSOFF, (-1, 0)),
                 (1, 3, 1, 24, CLIENT_CONTROL, (-1, 24)),
             ] {
-                options_set_number(oo, c"status".as_ptr(), lines);
-                options_set_number(oo, c"status-position".as_ptr(), position as i64);
-                options_set_number(oo, c"message-line".as_ptr(), message_line);
+                session_owner.with_options_mut(|options| {
+                    options_set_number(options, c"status".as_ptr(), lines);
+                    options_set_number(options, c"status-position".as_ptr(), position as i64);
+                    options_set_number(options, c"message-line".as_ptr(), message_line);
+                });
                 crate::src::session::recalculate_size_state();
                 c.borrow_terminal_mut().sy = height;
                 c.update_flags(flags as u64, !(flags as u64));
@@ -1016,12 +1003,19 @@ mod status_screen_tests {
                 assert_eq!(status_prompt_cursor(&c), (37, expected.1));
             }
             let saved = global_s_options;
-            global_s_options = oo;
+            let mut global_options_owner = options_create(None);
+            let definition = options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"status"))
+                .unwrap();
+            options_default(&mut *global_options_owner, definition);
+            global_s_options = &mut *global_options_owner;
             c = client::new();
             c.update_flags(0, u64::MAX);
-            options_set_number(oo, c"status".as_ptr(), 4);
+            options_set_number(global_s_options, c"status".as_ptr(), 4);
             assert_eq!(status_line_size(&c), 4);
             global_s_options = saved;
+            options_free(global_options_owner);
             // The session owns and releases its option table.
             crate::src::session::sessions_remove(
                 &mut crate::src::session::sessions,
@@ -1035,9 +1029,9 @@ mod status_screen_tests {
     fn temporary_screen_is_shared_until_last_pop_and_base_survives() {
         unsafe {
             let previous = (global_options, global_s_options);
-            let mut global_options_owner = options_create(std::ptr::null_mut());
+            let mut global_options_owner = options_create(None);
             global_options = &raw mut *global_options_owner;
-            let mut global_s_options_owner = options_create(std::ptr::null_mut());
+            let mut global_s_options_owner = options_create(None);
             global_s_options = &raw mut *global_s_options_owner;
             for (options, name) in [
                 (global_options, c"extended-keys"),

@@ -1,22 +1,17 @@
+#[path = "support/window_fixture.rs"]
+mod window_fixture;
 use hmux2::src::options::{options_create_owned, options_default, options_set_number};
 use hmux2::src::shared::{pane::window_pane, window::window};
 use hmux2::src::window::{window_find_string, window_get_active_at};
+use hmux2::src::window::{window_lost_pane, PaneOrder, Window};
 use std::rc::Rc;
+use window_fixture::WindowOptions;
 
 #[test]
-fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
+fn coordinate_results_retain_panes_and_modal_observer_does_not() {
     unsafe {
-        let window = window::new();
-        (*window.get()).sx = 20;
-        (*window.get()).sy = 10;
-        let mut options = options_create_owned(std::ptr::null_mut());
-        let definition = hmux2::src::options_table::options_table
-            .iter()
-            .find(|entry| entry.name == Some(c"pane-border-status"))
-            .unwrap();
-        options_default(&mut *options, definition);
-        options_set_number(&mut *options, c"pane-border-status".as_ptr(), 0);
-        (*window.get()).options = Some(options);
+        let options = WindowOptions::new();
+        let window = options.create(20, 10);
         let first = window_pane::new();
         let second = window_pane::new();
         for (owner, x) in [(&first, 0), (&second, 10)] {
@@ -25,16 +20,18 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
             pane.xoff = x;
             pane.sx = 9;
             pane.sy = 9;
-            (*window.get()).z_index.push_back(Rc::downgrade(owner));
+            window
+                .borrow_pane_order_mut(PaneOrder::Stacking)
+                .push_back(Rc::downgrade(owner));
         }
-        (*window.get()).modal = Rc::downgrade(&first);
+        window.begin_modal_pane(&first);
         hmux2::src::window::window_redraw_active_switch(&window, None);
         assert!(Rc::ptr_eq(
             &window_get_active_at(&window, 2, 2).unwrap(),
             &first
         ));
         assert!(window_get_active_at(&window, 12, 2).is_none());
-        (*window.get()).modal = std::rc::Weak::new();
+        window_lost_pane(&window, &first);
         assert!(Rc::ptr_eq(
             &window_get_active_at(&window, 12, 2).unwrap(),
             &second
@@ -44,27 +41,20 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         let selected = window_find_string(&window, c"right").unwrap();
         assert!(Rc::ptr_eq(&selected, &second));
         let observer = Rc::downgrade(&second);
-        (*window.get()).was_zoomed = observer.clone();
-        (*window.get()).modal = observer.clone();
-        (*window.get()).z_index.storage.clear();
+        window.begin_modal_pane(&second);
+        window
+            .borrow_pane_order_mut(PaneOrder::Stacking)
+            .storage
+            .clear();
         drop(second);
         assert!(observer.upgrade().is_some());
         drop(selected);
         assert!(observer.upgrade().is_none());
-        assert!((*window.get()).was_zoomed.upgrade().is_none());
-        assert!((*window.get()).modal.upgrade().is_none());
+        assert!(window.modal_pane().is_none());
         assert!(window_get_active_at(&window, 12, 2).is_none());
-        (*window.get()).flags |= hmux2::src::window::WINDOW_WASZOOMED;
-        assert_eq!(hmux2::src::window::window_pop_zoom(&window), 0);
-        assert_eq!(
-            (*window.get()).flags & hmux2::src::window::WINDOW_WASZOOMED,
-            0
-        );
-        options_set_number(
-            (*window.get()).options.as_deref_mut().unwrap(),
-            c"pane-border-status".as_ptr(),
-            1,
-        );
+        window.with_options_mut(|options| {
+            options_set_number(options, c"pane-border-status".as_ptr(), 1);
+        });
         (*first.get()).yoff = 3;
         (*first.get()).border_status_line.ranges.push(Box::new(
             hmux2::src::shared::style::style_range {
@@ -83,6 +73,7 @@ fn coordinate_results_retain_panes_and_saved_zoom_does_not() {
         assert_eq!(range.argument, 4);
         assert!(hmux2::src::window::window_pane_status_get_range(&first, 3, 2).is_none());
         drop(first);
-        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
+        window.release(c"test owner");
+        options.free();
     }
 }

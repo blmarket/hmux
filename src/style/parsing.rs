@@ -7,7 +7,7 @@ use crate::src::format::{format_create, format_free, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_cstr, log_debug};
-use crate::src::options::{options_get, options_get_string, options_string_to_style};
+use crate::src::options::{options_get_string, options_string_to_style};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::client::client;
 pub use crate::src::shared::command::cmdq_item;
@@ -966,37 +966,32 @@ pub fn style_link(sy: &style) -> Option<Box<hyperlinks_uri>> {
     Some(Box::new(entry.clone()))
 }
 pub unsafe fn style_add(
-    mut gc: *mut grid_cell,
-    mut oo: *mut options,
-    mut name: *const ::core::ffi::c_char,
-    mut ft: *mut format_tree,
-) -> *mut style {
-    let mut sy: *mut style = ::core::ptr::null_mut::<style>();
-    let mut ft0_owner = None;
-    if ft.is_null() {
-        let mut owner = format_create(None, None, 0 as ::core::ffi::c_int, FORMAT_NOJOBS);
-        ft = &raw mut *owner;
-        ft0_owner = Some(owner);
+    gc: *mut grid_cell,
+    oo: *mut options,
+    name: *const ::core::ffi::c_char,
+    ft: *mut format_tree,
+) -> style {
+    let mut owned_context = None;
+    let context = if let Some(context) = ft.as_mut() {
+        context
+    } else {
+        owned_context.insert(format_create(None, None, 0, FORMAT_NOJOBS))
+    };
+    let parsed = options_string_to_style(oo, name, context).unwrap_or(style_default);
+    if parsed.gc.fg != 8 {
+        (*gc).fg = parsed.gc.fg;
     }
-    sy = options_string_to_style(oo, name, ft);
-    if sy.is_null() {
-        sy = &raw mut style_default;
+    if parsed.gc.bg != 8 {
+        (*gc).bg = parsed.gc.bg;
     }
-    if (*sy).gc.fg != 8 as ::core::ffi::c_int {
-        (*gc).fg = (*sy).gc.fg;
+    if parsed.gc.us != 8 {
+        (*gc).us = parsed.gc.us;
     }
-    if (*sy).gc.bg != 8 as ::core::ffi::c_int {
-        (*gc).bg = (*sy).gc.bg;
+    (*gc).attr |= parsed.gc.attr;
+    if let Some(context) = owned_context {
+        format_free(context);
     }
-    if (*sy).gc.us != 8 as ::core::ffi::c_int {
-        (*gc).us = (*sy).gc.us;
-    }
-    (*gc).attr =
-        ((*gc).attr as ::core::ffi::c_int | (*sy).gc.attr as ::core::ffi::c_int) as u_short;
-    if let Some(owner) = ft0_owner {
-        format_free(owner);
-    }
-    return sy;
+    parsed
 }
 pub unsafe fn style_apply(
     mut gc: *mut grid_cell,
@@ -1060,16 +1055,11 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     style_set(sb_style, &raw const grid_default_cell);
-    o = options_get(
-        oo,
-        b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    if o.is_null() {
-        fatalx(|out| out.write_all(b"missing pane-scrollbars-style"));
-    }
-    oe = crate::src::options::options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| {
-        entry as *const crate::src::shared::options::options_table_entry
-    });
+    oe = crate::src::options::options_read_entry(&*oo, c"pane-scrollbars-style", |entry| {
+        entry.tableentry
+    })
+    .flatten()
+    .unwrap_or_else(|| fatalx(|out| out.write_all(b"missing pane-scrollbars-style")));
     let style = format_single_cstring(
         None,
         (*oe).default_str_ptr(),
@@ -1083,13 +1073,19 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     {
         fatalx(|out| out.write_all(b"bad pane-scrollbars-style default"));
     }
-    s = options_get_string(
+    let value = crate::src::options::options_get_string_optional(
         oo,
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    if !s.is_null() {
-        let expanded =
-            format_single_cstring(None, s, None, None, (refbox::Weak::new()).clone(), None);
+    if let Some(value) = value {
+        let expanded = format_single_cstring(
+            None,
+            value.as_ptr(),
+            None,
+            None,
+            (refbox::Weak::new()).clone(),
+            None,
+        );
         if style_parse(sb_style, &raw const grid_default_cell, expanded.as_ptr())
             != 0 as ::core::ffi::c_int
         {

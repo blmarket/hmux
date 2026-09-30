@@ -31,20 +31,21 @@ use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::style::*;
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::style::{style_apply, style_ranges_clear};
 use crate::src::text::utf8::{utf8_copy, utf8_set};
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::src::window::Window as _;
 use crate::src::window::{
     window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_index,
 };
+use crate::src::window_pane::WindowPane as _;
 
-unsafe fn window_set_fill_cell(
-    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
-    mut inside: ::core::ffi::c_int,
-    mut gc: *mut grid_cell,
-) {
-    let mut w = w_owner.get();
+pub(crate) unsafe fn window_render_fill_cell(
+    w_owner: &WindowRef,
+    inside: bool,
+) -> Option<grid_cell> {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -70,18 +71,10 @@ unsafe fn window_set_fill_cell(
         us: 0,
         link: 0,
     };
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    memcpy(
-        gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    (*gc).attr = ((*gc).attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-    utf8_set(&mut (*gc).data, CELL_BORDERS[CELL_NONE as usize] as u_char);
     let mut ft_owner = format_create(
         None,
         None,
-        (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
+        (FORMAT_WINDOW | (w_owner).id()) as ::core::ffi::c_int,
         FORMAT_NOJOBS,
     );
     ft = &raw mut *ft_owner;
@@ -90,13 +83,7 @@ unsafe fn window_set_fill_cell(
         None,
         None,
         (refbox::Weak::new()).clone(),
-        ((*w)
-            .active_pane()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_ref()
-        .and_then(|model| model.observer.upgrade())
-        .as_ref(),
+        w_owner.active_pane().as_ref(),
     );
     format_add(
         ft,
@@ -106,13 +93,11 @@ unsafe fn window_set_fill_cell(
     format_add(
         ft,
         b"is_outside\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((inside == 0) as ::core::ffi::c_int) as i32),
+        |out| write!(out, "{}", ((!inside) as ::core::ffi::c_int) as i32),
     );
-    value = options_get_string(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    let expanded = format_expand_cstring(ft, value);
+    let value =
+        w_owner.with_options_mut(|options| options_get_string(options, c"fill-character".as_ptr()));
+    let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft_owner);
     screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);
     screen_write_start(&mut ctx, &raw mut s);
@@ -126,20 +111,13 @@ unsafe fn window_set_fill_cell(
     );
     screen_write_stop(&mut ctx);
     grid_view_get_cell(s.grid(), 0 as u_int, 0 as u_int, &mut new_gc);
-    if new_gc.data.width as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
-        memcpy(
-            gc as *mut ::core::ffi::c_void,
-            &raw mut new_gc as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
-    }
     screen_free(&mut s);
+    (new_gc.data.width == 1).then_some(new_gc)
 }
-pub unsafe fn window_set_fill_cells(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) {
-    let mut w = w_owner.get();
-    window_set_fill_cell(w_owner, 1 as ::core::ffi::c_int, &raw mut (*w).inside_cell);
-    window_set_fill_cell(w_owner, 0 as ::core::ffi::c_int, &raw mut (*w).outside_cell);
+pub unsafe fn window_set_fill_cells(w_owner: &WindowRef) {
+    w_owner.refresh_fill_cells();
 }
+
 unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
     (*gc).data = utf8_copy(&(*fill).data);
     (*gc).attr = ((*gc).attr as ::core::ffi::c_int | (*fill).attr as ::core::ffi::c_int) as u_short;
@@ -156,17 +134,14 @@ unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_ce
     }
 }
 pub unsafe fn window_get_fill_cell(
-    w_value: &window,
-    mut inside: ::core::ffi::c_int,
-    mut gc: *mut grid_cell,
+    owner: &WindowRef,
+    inside: ::core::ffi::c_int,
+    gc: *mut grid_cell,
 ) {
-    let w: *mut window = w_value as *const _ as *mut _;
-    if inside != 0 {
-        window_copy_fill_cell(gc, &raw mut (*w).inside_cell);
-    } else {
-        window_copy_fill_cell(gc, &raw mut (*w).outside_cell);
-    };
+    let fill = owner.fill_cell(inside != 0);
+    window_copy_fill_cell(gc, &fill);
 }
+
 pub unsafe fn window_get_border_cell(
     wp_value: Option<&window_pane>,
     mut pane_lines: pane_lines,
@@ -251,7 +226,7 @@ pub unsafe fn window_pane_get_border_style(
     let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
     let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
     if wp
-        == (*(c
+        == (((c
             .as_ref()
             .expect("live client")
             .attached_session()
@@ -260,8 +235,8 @@ pub unsafe fn window_pane_get_border_style(
             .current_winlink())
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
+        .as_ref())
+        .expect("live window"))
         .active_pane()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get())
@@ -321,7 +296,6 @@ pub unsafe fn window_make_pane_status(
         us: 0,
         link: 0,
     };
-    let mut fmt: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut sle: *mut style_line_entry = &raw mut (*wp).border_status_line;
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -366,11 +340,9 @@ pub unsafe fn window_make_pane_status(
         .clone(),
         Some(wp_owner),
     );
-    fmt = options_get_string(
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-        b"pane-border-format\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    let expanded = format_expand_time_cstring(ft, fmt);
+    let format = wp_owner
+        .with_options_mut(|options| options_get_string(options, c"pane-border-format".as_ptr()));
+    let expanded = format_expand_time_cstring(ft, format.as_ptr());
     old = std::ptr::replace(&raw mut (*wp).status_screen, screen::empty());
     screen_init(&mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
     (*wp).status_screen.mode = 0 as ::core::ffi::c_int;

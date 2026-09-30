@@ -18,6 +18,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
+use crate::src::window::Window as _;
 pub static cmd_select_window_entry: cmd_entry = {
     cmd_entry {
         name: c"select-window",
@@ -231,14 +232,13 @@ unsafe fn cmd_select_window_exec(
             .upgrade()
             .is_none()
     {
-        (*(s.as_ref().expect("live session").current_winlink())
+        s.as_ref()
+            .expect("live session")
+            .current_winlink()
             .get_unchecked()
             .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .latest = c
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+            .expect("live window")
+            .set_latest_client(c.as_ref());
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

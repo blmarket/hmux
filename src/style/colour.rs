@@ -2,7 +2,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
 use crate::src::log::log_cstr;
-use crate::src::options::{options_array_get_index, options_get};
+use crate::src::options::options_array_get_index;
 use crate::src::server_client::Client;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -3791,23 +3791,27 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
     let Some(p) = p else {
         return;
     };
-    let o = options_get(oo, c"pane-colours".as_ptr());
-    if crate::src::options::options_array_iter_mut(&mut *(o))
-        .next()
-        .map_or(std::ptr::null_mut(), |item| item)
-        .is_null()
-    {
-        p.default_palette = None;
-        return;
-    }
-    let palette = p.default_palette.get_or_insert_with(|| Box::new([-1; 256]));
-    palette.fill(-1);
-    for (i, colour) in palette.iter_mut().enumerate() {
-        let ov = crate::src::options::options_array_get_index_mut(&mut *(o), i as u_int)
-            .map_or(std::ptr::null_mut(), |value| value);
-        if !ov.is_null() {
-            *colour = (*ov).number() as ::core::ffi::c_int;
+    let values = crate::src::options::options_read_entry(&*oo, c"pane-colours", |entry| {
+        if crate::src::options::options_array_iter(entry)
+            .next()
+            .is_none()
+        {
+            return None;
         }
+        let mut palette = [-1; 256];
+        for (index, colour) in palette.iter_mut().enumerate() {
+            let key = std::ffi::CString::new(index.to_string()).unwrap();
+            if let Some(value) = crate::src::options::options_array_get(entry, &key) {
+                *colour = value.number() as i32;
+            }
+        }
+        Some(palette)
+    })
+    .expect("pane-colours option");
+    if let Some(values) = values {
+        **p.default_palette.get_or_insert_with(|| Box::new([-1; 256])) = values;
+    } else {
+        p.default_palette = None;
     }
 }
 

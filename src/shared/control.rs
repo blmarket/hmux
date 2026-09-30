@@ -2,7 +2,7 @@
 
 use super::abi::{size_t, u_int, uint64_t};
 use super::event::bufferevent;
-use super::monitor::monitor_set;
+use super::monitor::MonitorRef;
 use super::pane::window_pane_offset;
 use std::collections::VecDeque;
 
@@ -13,7 +13,7 @@ pub struct control_state {
     pub queued_reply_bytes: size_t,
     pub read_event: crate::src::reactor::StreamHandle,
     pub write_event: crate::src::reactor::StreamHandle,
-    pub subs: Option<Box<monitor_set>>,
+    pub subs: Option<MonitorRef>,
     pub guard_depth: ::core::ffi::c_int,
     pub(crate) deferred: VecDeque<std::ffi::CString>,
     pub(crate) all_blocks: VecDeque<refbox::RefBox<control_block>>,

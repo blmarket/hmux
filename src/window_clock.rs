@@ -5,7 +5,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
 use crate::src::reactor::{event_add, event_del, event_set};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
@@ -29,9 +28,11 @@ use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::time::{timespec, tm, CLOCK_REALTIME};
-use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
-use crate::src::style::style_apply;
+use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
+use crate::src::style::style_apply_with_options;
+use crate::src::window::Window as _;
 use crate::src::window::{window_pane_mode_weak, window_pane_reset_mode};
+use crate::src::window_pane::WindowPane as _;
 
 #[repr(C)]
 pub struct window_clock_mode_data {
@@ -765,10 +766,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
-    let mut w: *mut window = (*wp)
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let options_window = mode_pane_owner.window_observer();
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),
@@ -816,18 +814,19 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             .as_ref(),
     );
     ft = &raw mut *ft_owner;
-    style_apply(
-        &raw mut gc,
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"clock-mode-colour\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
+    style_apply_with_options(&mut gc, c"clock-mode-colour", Some(&mut *ft), |visit| {
+        options_window
+            .upgrade()
+            .expect("live clock window")
+            .with_options_mut(visit)
+    });
     format_free(ft_owner);
     colour = gc.fg;
-    style = options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"clock-mode-style\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    style = options_window
+        .upgrade()
+        .expect("live clock window")
+        .with_options_mut(|options| options_get_number(options, c"clock-mode-style".as_ptr()))
+        as ::core::ffi::c_int;
     screen_write_start(&mut ctx, s);
     t = time(::core::ptr::null_mut::<time_t>());
     tm = localtime(&raw mut t);

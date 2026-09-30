@@ -4,8 +4,9 @@ use crate::src::shared::layout::*;
 use crate::src::shared::pane::{window_pane, PANE_SCROLLBARS_LEFT};
 use crate::src::window::{
     window_pane_get_pane_lines, window_pane_is_floating, window_pane_is_visible,
-    window_pane_scrollbar_reserve, window_pane_z_last, window_pane_z_previous,
+    window_pane_scrollbar_reserve, window_pane_z_previous,
 };
+use crate::src::window::{PaneOrder, Window as _};
 
 pub fn window_position_is_visible(ranges: &[visible_range], px: u_int) -> bool {
     ranges
@@ -42,22 +43,35 @@ pub unsafe fn window_visible_ranges(
         return;
     };
 
-    let w = base_wp
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if py as u_int >= (*w).sy || px as u_int >= (*w).sx {
+    if py as u_int
+        >= ((base_wp.window_handle().as_ref()).expect("live window"))
+            .size()
+            .1
+        || px as u_int
+            >= ((base_wp.window_handle().as_ref()).expect("live window"))
+                .size()
+                .0
+    {
         return;
     }
-    if (px as u_int).wrapping_add(width) > (*w).sx {
-        width = (*w).sx.wrapping_sub(px as u_int);
+    if (px as u_int).wrapping_add(width)
+        > ((base_wp.window_handle().as_ref()).expect("live window"))
+            .size()
+            .0
+    {
+        width = ((base_wp.window_handle().as_ref()).expect("live window"))
+            .size()
+            .0
+            .wrapping_sub(px as u_int);
     }
     ranges.push(visible_range {
         px: px as u_int,
         nx: width,
     });
     let mut found_self = false;
-    let mut cursor = window_pane_z_last(w.as_ref());
+    let mut cursor = base_wp
+        .window_handle()
+        .and_then(|window| window.step_pane(PaneOrder::Stacking, None, true));
     while let Some(pane_owner) = cursor {
         let wp = pane_owner.get();
         if std::ptr::eq(&*wp, base_wp) {
@@ -83,7 +97,9 @@ pub unsafe fn window_visible_ranges(
                 let (sb_w, sb_pos) = if window_pane_scrollbar_reserve(&*wp) != 0 {
                     (
                         (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad,
-                        (*w).sb_pos,
+                        ((base_wp.window_handle().as_ref()).expect("live window"))
+                            .scrollbars()
+                            .position,
                     )
                 } else {
                     (0, 0)
@@ -107,10 +123,21 @@ pub unsafe fn window_visible_ranges(
                 };
                 lb = lb.max(0);
                 if rb >= 0 {
-                    if (no_border && rb >= (*w).sx as ::core::ffi::c_int)
-                        || (!no_border && rb > (*w).sx as ::core::ffi::c_int)
+                    if (no_border
+                        && rb
+                            >= ((base_wp.window_handle().as_ref()).expect("live window"))
+                                .size()
+                                .0 as ::core::ffi::c_int)
+                        || (!no_border
+                            && rb
+                                > ((base_wp.window_handle().as_ref()).expect("live window"))
+                                    .size()
+                                    .0 as ::core::ffi::c_int)
                     {
-                        rb = (*w).sx.wrapping_sub(1) as ::core::ffi::c_int;
+                        rb = ((base_wp.window_handle().as_ref()).expect("live window"))
+                            .size()
+                            .0
+                            .wrapping_sub(1) as ::core::ffi::c_int;
                     }
                     if lb <= rb {
                         let mut i = 0;

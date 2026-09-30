@@ -131,13 +131,7 @@ pub unsafe fn cmd_attach_session(
     if wl.is_alive() {
         if !wp.is_null() {
             window_set_active_pane(
-                &(*((*wp)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())))
-                .observer
-                .upgrade()
-                .expect("live window"),
+                &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
                 &(*(wp)).observer.upgrade().expect("live window_pane"),
                 1 as ::core::ffi::c_int,
             );

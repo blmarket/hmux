@@ -13,7 +13,6 @@ use crate::src::mode_tree::{
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
     mode_tree_start, mode_tree_view_name, mode_tree_zoom,
 };
-use crate::src::options::options_owner_ptr;
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_hline, screen_write_preview,
     screen_write_vline,
@@ -49,13 +48,14 @@ use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::TERM_INVALIDMS;
-use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
+use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
-use crate::src::style::style_apply;
+use crate::src::style::style_apply_with_options;
 use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::window::window_pane_reset_mode;
 use crate::src::window::window_pane_upgrade;
-use crate::src::window::{window_pane_reset_mode, window_pane_stack_first};
+use crate::src::window::Window as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -456,15 +456,15 @@ unsafe fn window_client_draw_info(
 ) {
     let c = item.client();
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut w: *mut window = (c
-        .attached_session()
-        .upgrade()
-        .expect("live session")
-        .current_winlink())
-    .get_unchecked()
-    .window_handle()
-    .as_ref()
-    .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let options_window = std::rc::Rc::downgrade(
+        c.attached_session()
+            .upgrade()
+            .expect("live session")
+            .current_winlink()
+            .get_unchecked()
+            .window_handle()
+            .expect("live window"),
+    );
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -544,12 +544,12 @@ unsafe fn window_client_draw_info(
             &raw const grid_default_cell as *const ::core::ffi::c_void,
             ::core::mem::size_of::<grid_cell>() as size_t,
         );
-        style_apply(
-            &raw mut gc,
-            options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-            b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::ptr::null_mut::<format_tree>(),
-        );
+        style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
+            options_window
+                .upgrade()
+                .expect("live client-preview window")
+                .with_options_mut(visit)
+        });
         screen_write_cursormove(
             &mut *ctx,
             cx.wrapping_add(14 as u_int) as ::core::ffi::c_int,
@@ -575,7 +575,6 @@ unsafe fn window_client_draw(
     let mut session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> =
         c.attached_session().upgrade();
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -602,24 +601,27 @@ unsafe fn window_client_draw(
         window_client_draw_info(item, ctx, sx, sy);
         return;
     }
-    w = (session.as_ref().expect("live session").current_winlink())
+    let window_owner = session
+        .as_ref()
+        .expect("live session")
+        .current_winlink()
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    wp = (*w)
-        .active_pane()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if (*data).hide_preview_this_pane != 0 && wp == mode_pane {
-        if !window_pane_stack_first(w.as_ref()).is_none() {
-            wp = window_pane_stack_first(w.as_ref())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-        } else {
-            wp = ::core::ptr::null_mut::<window_pane>();
-        }
+        .expect("live window")
+        .clone();
+    let options_window = std::rc::Rc::downgrade(&window_owner);
+    let mut preview_pane = window_owner.active_pane();
+    if (*data).hide_preview_this_pane != 0
+        && preview_pane
+            .as_ref()
+            .is_some_and(|pane| std::rc::Rc::ptr_eq(pane, &mode_pane_owner))
+    {
+        preview_pane = window_owner.last_active_pane();
     }
+    window_owner.release(c"client preview lookup");
+    wp = preview_pane
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |pane| pane.get());
     lines = status_line_size(c);
     if lines >= sy {
         lines = 0 as u_int;
@@ -643,6 +645,9 @@ unsafe fn window_client_draw(
             sy.wrapping_sub(2 as u_int).wrapping_sub(lines),
         );
     }
+    if let Some(pane) = preview_pane {
+        crate::src::window_pane::window_pane_remove_ref(pane, c"client pane preview".as_ptr());
+    }
     if at != 0 as u_int {
         screen_write_cursormove(
             &mut *ctx,
@@ -665,12 +670,12 @@ unsafe fn window_client_draw(
         &raw const grid_default_cell as *const ::core::ffi::c_void,
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
-    style_apply(
-        &raw mut gc,
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ::core::ptr::null_mut::<format_tree>(),
-    );
+    style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
+        options_window
+            .upgrade()
+            .expect("live client-preview window")
+            .with_options_mut(visit)
+    });
     screen_write_hline(
         &mut *ctx,
         sx,

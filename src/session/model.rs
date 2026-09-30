@@ -24,8 +24,7 @@ pub struct session {
     pub(super) windows: winlinks,
     pub(super) statusat: ::core::ffi::c_int,
     pub(super) statuslines: u_int,
-    // Transitional: options-scope and customization callbacks still store this pointer.
-    pub(crate) options: Option<Box<options>>,
+    pub(super) options: Option<Box<options>>,
     pub(super) flags: ::core::ffi::c_int,
     pub(super) attached: u_int,
     pub(super) tio: Option<Box<termios>>,
@@ -53,6 +52,17 @@ impl session {
             value.observer = observer.clone();
             std::cell::UnsafeCell::new(value)
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_options_for_test(
+        options: Box<options>,
+    ) -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        let owner = Self::new();
+        unsafe {
+            (*owner.get()).options = Some(options);
+        }
+        owner
     }
 
     pub fn empty() -> Self {

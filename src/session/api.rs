@@ -1,6 +1,7 @@
 //! Operations on retained session holders. Cleanup remains explicit.
 use super::*;
 use crate::src::shared::spawn::spawn_context;
+use crate::src::shared::window::WindowRef;
 
 /// The caller must preserve the legacy single-threaded borrow and logical
 /// lifetime rules. No model/component reference may survive a callback.
@@ -23,7 +24,7 @@ pub trait Session {
     unsafe fn is_registered(&self) -> bool;
     /// Advance in the live containing registry; destructive walks use sessions_after.
     unsafe fn next_session(&self) -> Option<Rc<UnsafeCell<session>>>;
-    unsafe fn contains_window(&self, window: &Rc<UnsafeCell<window>>) -> bool;
+    unsafe fn contains_window(&self, window: &WindowRef) -> bool;
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
@@ -45,7 +46,7 @@ pub trait Session {
     /// Adopt an existing window, including break-pane's already-running pane.
     unsafe fn attach_window(
         &self,
-        window: &Rc<UnsafeCell<window>>,
+        window: &WindowRef,
         index: i32,
     ) -> Result<refbox::Weak<winlink>, CString>;
     unsafe fn link_window(
@@ -108,7 +109,7 @@ impl Session for Rc<UnsafeCell<session>> {
     unsafe fn next_session(&self) -> Option<Rc<UnsafeCell<session>>> {
         sessions_next(&*self.get())
     }
-    unsafe fn contains_window(&self, window: &Rc<UnsafeCell<window>>) -> bool {
+    unsafe fn contains_window(&self, window: &WindowRef) -> bool {
         use crate::src::window::Window;
         let observer = Rc::downgrade(self);
         let mut link = window.next_winlink(None);
@@ -228,7 +229,7 @@ impl Session for Rc<UnsafeCell<session>> {
     }
     unsafe fn attach_window(
         &self,
-        window: &Rc<UnsafeCell<window>>,
+        window: &WindowRef,
         index: i32,
     ) -> Result<refbox::Weak<winlink>, CString> {
         session_attach(self, window, index)
@@ -350,7 +351,7 @@ mod tests {
     fn updating_environment_uses_patterns_and_clears_missing_variables() {
         unsafe {
             let owner = session::new();
-            let mut options = crate::src::options::options_create(std::ptr::null_mut());
+            let mut options = crate::src::options::options_create(None);
             let definition = crate::src::options_table::options_table
                 .iter()
                 .find(|definition| definition.name == Some(c"update-environment"))
@@ -387,7 +388,7 @@ mod tests {
     fn status_layout_is_cached_until_the_sizing_pass_publishes_it() {
         unsafe {
             let session = session::new();
-            let mut options = crate::src::options::options_create(std::ptr::null_mut());
+            let mut options = crate::src::options::options_create(None);
             for key in [c"status", c"status-position"] {
                 let definition = crate::src::options_table::options_table
                     .iter()

@@ -25,9 +25,10 @@ use crate::src::shared::events::{
 use crate::src::shared::format::format_tree;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{
-    window_has_pane, window_pane_remove_ref, window_remove_ref, winlink_find_by_index, Window,
+    window_pane_remove_ref, window_remove_ref, winlink_find_by_index, Window,
 };
 use crate::src::{server_client::Client, session::Session, window::WindowPane};
 use hmux_buffer::SegmentedBuf;
@@ -291,7 +292,7 @@ pub unsafe fn event_payload_set_session(
 pub unsafe fn event_payload_set_window(
     ep: &mut event_payload,
     name: *const ::core::ffi::c_char,
-    owner: std::rc::Rc<std::cell::UnsafeCell<window>>,
+    owner: WindowRef,
 ) {
     event_payload_set_item(ep, name, EventPayloadValue::Window(owner));
 }
@@ -479,9 +480,7 @@ pub fn event_payload_get_session(
         _ => None,
     }
 }
-pub fn event_payload_get_window(
-    ep: &event_payload,
-) -> Option<&std::rc::Rc<std::cell::UnsafeCell<window>>> {
+pub fn event_payload_get_window(ep: &event_payload) -> Option<&WindowRef> {
     match event_payload_find(ep, c"window").map(|item| &item.value) {
         Some(EventPayloadValue::Window(value)) => Some(value),
         _ => None,
@@ -570,26 +569,20 @@ mod tests {
     fn boxed_item_drop_releases_models_and_allows_nested_event_dispatch() {
         use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
         use crate::src::shared::events::events_callback;
-        use crate::src::shared::rc;
         use std::cell::RefCell;
         use std::rc::Rc;
         unsafe {
-            let first_owner = window::new();
-            let first = rc::as_ptr(&first_owner);
-            (*first).id = 11;
-            let second_owner = window::new();
-            let second = rc::as_ptr(&second_owner);
-            (*second).id = 22;
-            let first_observer = (*first).observer.clone();
-            let second_observer = (*second).observer.clone();
+            let first_owner = window::with_id_for_test(11);
+            let second_owner = window::with_id_for_test(22);
+            let first_observer = Rc::downgrade(&first_owner);
+            let second_observer = Rc::downgrade(&second_owner);
             let closed = Rc::new(RefCell::new(Vec::new()));
             let observed = closed.clone();
             let sink = events_add_sink(
                 c"window-closed",
                 events_callback(move |_, payload| {
-                    let window = event_payload_get_window(payload)
-                        .map_or(std::ptr::null_mut(), |owner| owner.get());
-                    observed.borrow_mut().push((*window).id);
+                    let window = event_payload_get_window(payload).expect("window payload");
+                    observed.borrow_mut().push(window.id());
                     events_fire(c"payload-nested-cleanup".as_ptr(), event_payload_create());
                 }),
             );
@@ -600,16 +593,8 @@ mod tests {
                 items: event_payload_tree::default(),
                 target: Default::default(),
             };
-            event_payload_set_window(
-                &mut payload,
-                c"alpha".as_ptr(),
-                (*(first)).observer.upgrade().expect("live window"),
-            );
-            event_payload_set_window(
-                &mut payload,
-                c"beta".as_ptr(),
-                (*(second)).observer.upgrade().expect("live window"),
-            );
+            event_payload_set_window(&mut payload, c"alpha".as_ptr(), first_owner.clone());
+            event_payload_set_window(&mut payload, c"beta".as_ptr(), second_owner.clone());
             window_remove_ref(first_owner, c"test initial owner".as_ptr());
             window_remove_ref(second_owner, c"test initial owner".as_ptr());
             event_payload_set_int(&mut payload, c"alpha".as_ptr(), 7);
@@ -665,32 +650,25 @@ mod tests {
     fn payload_drop_releases_items_in_key_order_before_the_target() {
         use crate::src::events::{events_add_sink, events_remove_sink};
         use crate::src::shared::events::events_callback;
-        use crate::src::shared::rc;
         use std::cell::RefCell;
         use std::rc::Rc;
 
         unsafe {
-            let first_owner = window::new();
-            let first = rc::as_ptr(&first_owner);
-            (*first).id = 11;
-            let second_owner = window::new();
-            let second = rc::as_ptr(&second_owner);
-            (*second).id = 22;
-            let target_owner = window::new();
-            let target = rc::as_ptr(&target_owner);
-            (*target).id = 33;
-            let first_observer = (*first).observer.clone();
-            let second_observer = (*second).observer.clone();
-            let target_observer = (*target).observer.clone();
+            let first_owner = window::with_id_for_test(11);
+            let second_owner = window::with_id_for_test(22);
+            let target_owner = window::with_id_for_test(33);
+            let first_observer = Rc::downgrade(&first_owner);
+            let second_observer = Rc::downgrade(&second_owner);
+            let target_observer = Rc::downgrade(&target_owner);
             let target_during_cleanup = target_observer.clone();
             let closed = Rc::new(RefCell::new(Vec::new()));
             let observed = closed.clone();
             let sink = events_add_sink(
                 c"window-closed",
                 events_callback(move |_, payload| {
-                    let id = (*event_payload_get_window(payload)
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                    .id;
+                    let id = event_payload_get_window(payload)
+                        .expect("window payload")
+                        .id();
                     // Reentrant item cleanup still has the payload's target.
                     if id != 33 {
                         assert!(target_during_cleanup.upgrade().is_some());
@@ -701,20 +679,12 @@ mod tests {
 
             let mut payload = event_payload_create();
             let fs = cmd_find_state {
-                w: (*target).observer.clone(),
+                w: Rc::downgrade(&target_owner),
                 ..Default::default()
             };
             event_payload_set_target(&mut payload, &fs);
-            event_payload_set_window(
-                &mut payload,
-                c"beta".as_ptr(),
-                (*(first)).observer.upgrade().expect("live window"),
-            );
-            event_payload_set_window(
-                &mut payload,
-                c"alpha".as_ptr(),
-                (*(second)).observer.upgrade().expect("live window"),
-            );
+            event_payload_set_window(&mut payload, c"beta".as_ptr(), first_owner.clone());
+            event_payload_set_window(&mut payload, c"alpha".as_ptr(), second_owner.clone());
             window_remove_ref(first_owner, c"test initial owner".as_ptr());
             window_remove_ref(second_owner, c"test initial owner".as_ptr());
             window_remove_ref(target_owner, c"test initial owner".as_ptr());
@@ -732,15 +702,12 @@ mod tests {
     fn dispatch_keeps_payload_models_alive_until_every_sink_finishes() {
         use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
         use crate::src::shared::events::events_callback;
-        use crate::src::shared::rc;
         use std::cell::RefCell;
         use std::rc::Rc;
 
         unsafe {
-            let window_owner = window::new();
-            let window = rc::as_ptr(&window_owner);
-            (*window).id = 44;
-            let observer = (*window).observer.clone();
+            let window_owner = window::with_id_for_test(44);
+            let observer = Rc::downgrade(&window_owner);
             let observed = Rc::new(RefCell::new(Vec::new()));
             let mut sinks = Vec::new();
             for _ in 0..2 {
@@ -751,19 +718,15 @@ mod tests {
                     events_callback(move |_, payload| {
                         assert!(observer.upgrade().is_some());
                         observed.borrow_mut().push(
-                            (*event_payload_get_window(payload)
-                                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                            .id,
+                            event_payload_get_window(payload)
+                                .expect("window payload")
+                                .id(),
                         );
                     }),
                 ));
             }
             let mut payload = event_payload_create();
-            event_payload_set_window(
-                &mut payload,
-                c"window".as_ptr(),
-                (*(window)).observer.upgrade().expect("live window"),
-            );
+            event_payload_set_window(&mut payload, c"window".as_ptr(), window_owner.clone());
             window_remove_ref(window_owner, c"test initial owner".as_ptr());
             events_fire(c"payload-owner-test".as_ptr(), payload);
 

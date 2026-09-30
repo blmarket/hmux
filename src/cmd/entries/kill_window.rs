@@ -79,11 +79,6 @@ unsafe fn cmd_kill_window_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut w: *mut window = wl
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
     let mut filter: *const ::core::ffi::c_char =
         args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
@@ -95,7 +90,12 @@ unsafe fn cmd_kill_window_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_unlink_window_entry,
     ) {
-        if args_has(args, 'k' as i32 as u_char) == 0 && session_is_linked(s.as_ref(), &*w) == 0 {
+        if args_has(args, 'k' as i32 as u_char) == 0
+            && session_is_linked(
+                s.as_ref(),
+                wl.get_unchecked().window_handle().expect("live window"),
+            ) == 0
+        {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"window only linked to one session")
             });
@@ -141,22 +141,15 @@ unsafe fn cmd_kill_window_all(
             .expect("live session")
             .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while loop_0.is_alive() {
-            if loop_0
-                .get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-                != wl
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
-                && cmd_kill_window_filter(
-                    item_handle,
-                    s.as_ref().expect("live session"),
-                    (loop_0).clone(),
-                    filter,
-                ) != 0
+            if !crate::src::shared::rc::same(
+                loop_0.get_unchecked().window_handle(),
+                wl.get_unchecked().window_handle(),
+            ) && cmd_kill_window_filter(
+                item_handle,
+                s.as_ref().expect("live session"),
+                (loop_0).clone(),
+                filter,
+            ) != 0
             {
                 server_kill_window(
                     loop_0
@@ -184,17 +177,10 @@ unsafe fn cmd_kill_window_all(
         .expect("live session")
         .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while loop_0.is_alive() {
-        if loop_0
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            == wl
-                .get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
-        {
+        if crate::src::shared::rc::same(
+            loop_0.get_unchecked().window_handle(),
+            wl.get_unchecked().window_handle(),
+        ) {
             found = found.wrapping_add(1);
             if cmd_kill_window_filter(
                 item_handle,

@@ -8,9 +8,7 @@ use crate::src::format_draw::{format_trim_right_bytes, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
 use crate::src::screen::{screen_free, screen_init};
-use crate::src::screen_redraw::redraw_invalidate_scene;
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearscreen, screen_write_menu, screen_write_start,
     screen_write_stop,
@@ -38,8 +36,9 @@ use crate::src::shared::screen::{screen, MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::*;
 use crate::src::shared::window::window;
-use crate::src::style::{style_apply, style_parse, style_set};
-use crate::src::window::window_update_focus;
+use crate::src::shared::window::WindowWeak;
+use crate::src::style::{style_apply_with_options, style_parse, style_set};
+use crate::src::window::{window_update_focus, Window as _};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -168,20 +167,12 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let Some(window) = md.w.upgrade() else {
         return;
     };
-    let options = options_owner_ptr(&mut (*crate::src::shared::rc::as_ptr(&window)).options)
-        .map_or(std::ptr::null_mut(), |options| options);
     let mut ft_owner = format_create_defaults(
         None,
         None,
         md.fs.session_handle().as_ref(),
         (md.fs.winlink_handle()).clone(),
-        (md.fs
-            .pane_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_ref()
-        .and_then(|model| model.observer.upgrade())
-        .as_ref(),
+        md.fs.pane_handle().as_ref(),
     );
     let ft = &raw mut *ft_owner;
     let mut parsed = style::default();
@@ -199,7 +190,9 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
         ),
     ] {
         *cell = grid_default_cell;
-        style_apply(cell, options, option.as_ptr(), ft);
+        style_apply_with_options(cell, option, Some(&mut *ft), |visit| {
+            window.with_options_mut(visit);
+        });
         if let Some(override_style) = override_style {
             style_set(&mut parsed, &raw const grid_default_cell);
             if style_parse(&mut parsed, cell, override_style.as_ptr()) == 0 {
@@ -209,6 +202,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data) {
         }
     }
     format_free(ft_owner);
+    window.release(c"menu styles");
 }
 
 pub unsafe fn menu_update(md: &mut menu_data) {
@@ -260,20 +254,14 @@ fn menu_free_data(owner: refbox::RefBox<crate::src::shared::menu::menu_data>) {
 }
 
 pub unsafe fn menu_close(
-    window: &Weak<UnsafeCell<window>>,
+    window: &WindowWeak,
     expected: Option<&refbox::Weak<crate::src::shared::menu::menu_data>>,
 ) {
     let menu = {
         let Some(owner) = window.upgrade() else {
             return;
         };
-        let w = &mut *owner.get();
-        if expected
-            .is_some_and(|expected| !w.menu.as_ref().is_some_and(|current| expected.is(current)))
-        {
-            return;
-        }
-        w.menu.take()
+        owner.take_menu(expected)
     };
     let Some(menu) = menu else {
         return;
@@ -281,14 +269,10 @@ pub unsafe fn menu_close(
     // The callback can release the window's final owner and fire its close event.
     menu_free_data(menu);
     if let Some(owner) = window.upgrade() {
-        let w = crate::src::shared::rc::as_ptr(&owner);
-        redraw_invalidate_scene(&mut *(w));
-        window_update_focus(
-            (w).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
-        server_redraw_window(&*(w));
+        owner.invalidate_scene();
+        window_update_focus(Some(&owner));
+        server_redraw_window(&owner);
+        owner.release(c"menu close refresh");
     }
 }
 pub fn menu_destroy(menu: Option<refbox::RefBox<crate::src::shared::menu::menu_data>>) {
@@ -656,26 +640,13 @@ pub unsafe fn menu_display(
         (*fs).w.upgrade().expect("live menu target window")
     };
     let window = Rc::downgrade(&setup_window);
-    let w = &mut *setup_window.get();
     let sx = menu.width.wrapping_add(4);
     let sy = menu.count().wrapping_add(2);
-    if sx >= w.sx {
-        px = 0;
-    } else if px.wrapping_add(sx) > w.sx {
-        px = w.sx.wrapping_sub(sx);
-    }
-    if sy >= w.sy {
-        py = 0;
-    } else if py.wrapping_add(sy) > w.sy {
-        py = w.sy.wrapping_sub(sy);
-    }
-    w.menu_last_px = px;
-    w.menu_last_py = py;
+    (px, py) = setup_window.place_menu((px, py), (sx, sy));
     if lines == BOX_LINES_DEFAULT {
-        lines = options_get_number(
-            options_owner_ptr(&mut w.options).map_or(std::ptr::null_mut(), |options| options),
-            c"menu-border-lines".as_ptr(),
-        ) as box_lines;
+        lines = setup_window
+            .with_options_mut(|options| options_get_number(options, c"menu-border-lines".as_ptr()))
+            as box_lines;
     }
     let owner = refbox::RefBox::new(menu_data {
         w: window.clone(),
@@ -716,21 +687,16 @@ pub unsafe fn menu_display(
             menu_free_data(owner);
             return;
         };
-        let w = &mut *retained.get();
-        w.menu.replace(owner)
+        retained.replace_menu(owner)
     };
     if let Some(replaced) = replaced {
         menu_free_data(replaced);
     }
     if let Some(retained) = window.upgrade() {
-        let w = crate::src::shared::rc::as_ptr(&retained);
-        redraw_invalidate_scene(&mut *(w));
-        window_update_focus(
-            (w).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
-        server_redraw_window(&*(w));
+        retained.invalidate_scene();
+        window_update_focus(Some(&retained));
+        server_redraw_window(&retained);
+        retained.release(c"menu display refresh");
     }
 }
 
@@ -965,7 +931,6 @@ mod tests {
         unsafe {
             let window = window::new();
             let weak_window = Rc::downgrade(&window);
-            let w = crate::src::shared::rc::as_ptr(&window);
             let first = refbox::RefBox::new(state(&[Some(c"first")]));
             first.try_borrow_mut().unwrap().w = weak_window.clone();
             let first_observer = first.downgrade();
@@ -982,15 +947,17 @@ mod tests {
             first.try_borrow_mut().unwrap().cb = Some(Box::new(move |selection| {
                 assert_eq!(selection, MenuSelection::Cancelled);
                 let retained = callback_window.upgrade().unwrap();
-                let w = crate::src::shared::rc::as_ptr(&retained);
-                assert!((*w).menu.is_none());
+                assert!(retained.menu_observer().is_none());
                 menu_close(&callback_window, None);
-                (*w).menu = Some(replacement);
+                assert!(retained.replace_menu(replacement).is_none());
             }));
-            (*w).menu = Some(first);
+            assert!(window.replace_menu(first).is_none());
             menu_close(&weak_window, None);
             assert!(!first_observer.is_alive());
-            assert!(replacement_observer.is((*w).menu.as_ref().unwrap()));
+            assert!(replacement_observer == window.menu_observer().unwrap());
+            // A late key/close callback for the old menu must leave the replacement.
+            menu_close(&weak_window, Some(&first_observer));
+            assert!(replacement_observer == window.menu_observer().unwrap());
             assert_eq!(closed.get(), 0);
             assert_eq!(Rc::strong_count(&window), 1);
             crate::src::window::window_remove_ref(window, c"test owner".as_ptr());
@@ -1003,11 +970,10 @@ mod tests {
     fn publication_handles_window_destruction_and_reentrant_replacement() {
         use crate::src::options::{options_create, options_default, options_free};
         use crate::src::options_table::options_table;
-        use crate::src::shared::rc;
         use crate::src::tmux::global_options;
         unsafe {
             let previous_options = global_options;
-            let mut global_options_owner = options_create(std::ptr::null_mut());
+            let mut global_options_owner = options_create(None);
             global_options = &raw mut *global_options_owner;
             let definition = (&options_table)
                 .iter()
@@ -1017,9 +983,7 @@ mod tests {
             for destroy_window in [false, true] {
                 let window = window::new();
                 let observer = Rc::downgrade(&window);
-                let w = rc::as_ptr(&window);
-                (*w).sx = 80;
-                (*w).sy = 24;
+                crate::src::window::window_resize(&window, 80, 24, -1, -1);
                 let slot = Rc::new(RefCell::new(Some(window)));
                 let callback_slot = Rc::clone(&slot);
                 let first = refbox::RefBox::new(state(&[Some(c"first")]));
@@ -1037,17 +1001,22 @@ mod tests {
                     let window = callback_slot.borrow_mut().take().unwrap();
                     assert_eq!(Rc::strong_count(&window), 1);
                     if !destroy_window {
-                        (*rc::as_ptr(&window)).menu = Some(intermediate);
+                        assert!(window.replace_menu(intermediate).is_none());
                         *callback_slot.borrow_mut() = Some(window);
                     } else {
                         crate::src::window::window_remove_ref(window, c"test callback".as_ptr());
                     }
                 }));
-                (*w).menu = Some(first);
+                assert!(slot
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .replace_menu(first)
+                    .is_none());
                 let cancelled = Rc::new(Cell::new(0));
                 let callback_cancelled = Rc::clone(&cancelled);
                 let mut fs = cmd_find_state {
-                    w: (*w).observer.clone(),
+                    w: observer.clone(),
                     ..Default::default()
                 };
                 menu_display(
@@ -1072,14 +1041,9 @@ mod tests {
                 if !destroy_window {
                     assert_eq!(intermediate_cancelled.get(), 1);
                     assert_eq!(cancelled.get(), 0);
+                    let installed = slot.borrow().as_ref().unwrap().menu_observer().unwrap();
                     assert_eq!(
-                        (*w).menu
-                            .as_ref()
-                            .unwrap()
-                            .try_borrow_mut()
-                            .unwrap()
-                            .menu
-                            .items[0]
+                        installed.try_borrow_mut().unwrap().menu.items[0]
                             .name
                             .as_deref(),
                         Some(c"new")

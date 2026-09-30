@@ -5,12 +5,13 @@ use crate::src::session::{alerts_check_all, Session};
 use crate::src::shared::session::session;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::window;
+use crate::src::shared::window::WindowRef;
 use crate::src::window::{windows, windows_minmax, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
 use std::{cell::UnsafeCell, rc::Rc};
 
 static mut alerts_fired: i32 = 0;
-static mut alerts_list: VecDeque<Rc<UnsafeCell<window>>> = VecDeque::new();
+static mut alerts_list: VecDeque<WindowRef> = VecDeque::new();
 
 fn alerts_pop_front<T>(queue: &mut VecDeque<T>) -> Option<(T, bool)> {
     let item = queue.pop_front()?;
@@ -73,7 +74,7 @@ unsafe fn schedule(id: u32) {
     }
 }
 
-pub unsafe fn alerts_queue(owner: &Rc<UnsafeCell<window>>, flags: i32) {
+pub unsafe fn alerts_queue(owner: &WindowRef, flags: i32) {
     if let Some(newly_queued) = owner.queue_alerts(flags) {
         if newly_queued {
             alerts_list.push_back(owner.clone());

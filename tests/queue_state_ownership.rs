@@ -2,6 +2,7 @@ use hmux2::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_new, cmd
 use hmux2::src::cmd::queue::{cmdq_get_event, cmdq_get_state_owned, cmdq_new_state};
 use hmux2::src::shared::client::client;
 use hmux2::src::shared::key::key_event;
+use hmux2::src::window::Window;
 use std::rc::Rc;
 
 #[test]
@@ -23,17 +24,26 @@ fn event_snapshots_observe_clients_and_never_redirect_expired_targets() {
             .resolve_client(|| panic!("explicit target must win"))
             .unwrap();
         assert!(Rc::ptr_eq(&resolved, &explicit));
-        let mut window = window::default();
-        window.latest = Rc::downgrade(&explicit);
-        assert!(!window.latest.ptr_eq(&Rc::downgrade(&fallback)));
+        let window = window::new();
+        assert!(window.set_latest_client(Some(&explicit)));
+        assert!(window.is_latest_client(&resolved));
+        assert!(!window.is_latest_client(&fallback));
         drop(explicit);
-        assert!(window.latest.upgrade().is_some(), "dispatch retains client");
+        assert!(
+            snapshot.client.upgrade().is_some(),
+            "dispatch retains client"
+        );
+        assert!(!window.set_latest_client(Some(&resolved)));
         drop(resolved);
-        assert!(window.latest.upgrade().is_none());
+        assert!(snapshot.client.upgrade().is_none());
         assert!(snapshot
             .resolve_client(|| panic!("expired target must not fall back"))
             .is_none());
-        assert!(window.latest.ptr_eq(&snapshot.client));
+        // Expiration does not silently switch to a fallback identity.
+        assert!(!window.is_latest_client(&fallback));
+        assert!(window.set_latest_client(None));
+        assert!(!window.set_latest_client(None));
+        window.release(c"event snapshot window");
         drop(fallback);
     }
 }

@@ -3,8 +3,8 @@
 Keep the existing `session`, `window`, `window_pane`, and `client` allocations.
 Implement `Session`, `Window`, `WindowPane`, and `Client` on their existing
 `Rc<UnsafeCell<T>>` holders. Reuse existing component types and explicit lifecycle
-functions. This migration does not need replacement metadata, geometry, request,
-or snapshot structures.
+functions. Prefer existing types; introduce an owned result or stable identity
+when a real caller must retain information across a callback.
 
 ## Boundary and method selection
 
@@ -52,14 +52,36 @@ those operations, rather than their intermediate fields.
 | Screen/render snapshots | Existing caller-owned `screen`; entity operations for rendering |
 | Mode/prompt/overlay requests | Existing descriptors, argument types, and callback aliases, adjusting callbacks that expose a core model |
 
-No auxiliary types are declared by this sketch. `FormatValue` already exists in
+No auxiliary types are declared by the original sketch below. `FormatValue` already exists in
 [format/callbacks.rs](../src/format/callbacks.rs), with `String(CString)` and
 `Time(time_t)` variants. It is now public and re-exported by `format`.
 
-Existing types do not automatically satisfy the boundary. For example,
-`spawn_context` contains a layout-cell pointer, and legacy helpers can still
-project related models. Reuse their representation while restricting or migrating
-those access paths; do not claim that existing types are all pointer-free.
+Existing types do not automatically satisfy the boundary. `spawn_context` now
+keeps a numeric layout-cell reservation instead of the original pointer. The
+caller resolves it through its original Window under a bounded component guard.
+Legacy helpers still require review for projections into related models.
+
+## Borrow and callback contract
+
+Callbacks retain an Rc or Weak identity, then borrow through the trait only when
+they execute. Copy values or retain independent owners before invoking another
+model operation, formatting, resizing, or dispatching a notification. Release
+every model/component loan before those calls, and borrow again afterward if
+needed. Preserve whether the old code captured its target before the callback or
+looked up a fresh target afterward; these are observably different operations.
+
+Component APIs use associated guard types where callers need ordinary references.
+The current implementations return references; a future implementation can map
+Ref/RefMut from one RefCell containing the entire model. A layout cell's raw
+parent/child pointers may be used only during that tree loan or while the tree
+is independently owned. They must not be stored in another model or callback.
+Options inheritance uses owning-scope identities and returns owned values across
+format/parser calls. Neither approach requires a RefCell for each field.
+
+Retaining allocation memory does not replace logical ownership. Existing explicit
+release/free operations and their notification order remain required. A temporary
+scope upgrade that cannot dispatch callbacks is distinct from a transferred
+logical owner; in particular it must not enqueue a deferred Session release.
 
 ## Trait sketches
 
@@ -70,7 +92,7 @@ and implementation bodies are omitted. Methods using legacy shared access remain
 access. Logical-lifecycle and callback preconditions remain method-specific.
 The signatures below record the original adapter checkpoint. For current APIs see
 [Session](../src/session/api.rs), [Window](../src/window/api.rs),
-[WindowPane](../src/window/pane_api.rs) and [Client](../src/server_client/api.rs).
+[WindowPane](../src/window_pane/api.rs) and [Client](../src/server_client/api.rs).
 Implementation and complete encapsulation are separate:
 several adapters still delegate to legacy helpers whose cross-entity projections
 must migrate before core fields can become private.

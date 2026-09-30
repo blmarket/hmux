@@ -46,6 +46,7 @@ use crate::src::shared::rc;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
+use crate::src::window::Window as _;
 use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use std::cell::UnsafeCell;
@@ -138,12 +139,12 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core
             .as_ref()
             .and_then(|client| client.attached_session().upgrade())
         {
-            wp = (*session
+            wp = ((session
                 .current_winlink()
                 .get_unchecked()
                 .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
+                .as_ref())
+            .expect("live window"))
             .active_pane()
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());

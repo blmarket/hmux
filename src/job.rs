@@ -141,15 +141,10 @@ pub unsafe fn job_run(
         shell = _PATH_BSHELL.as_ptr();
     } else {
         shell_value = Some(if let Some(session) = s_owner {
-            session.with_options_mut(|options| {
-                CStr::from_ptr(options_get_string(options, c"default-shell".as_ptr())).to_owned()
-            })
+            session
+                .with_options_mut(|options| options_get_string(options, c"default-shell".as_ptr()))
         } else {
-            CStr::from_ptr(options_get_string(
-                global_s_options,
-                c"default-shell".as_ptr(),
-            ))
-            .to_owned()
+            options_get_string(global_s_options, c"default-shell".as_ptr())
         });
         shell = shell_value.as_ref().expect("shell snapshot").as_ptr();
         if checkshell(shell) == 0 {

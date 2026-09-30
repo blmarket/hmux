@@ -1,0 +1,597 @@
+//! Session-owned links and their Window associations.
+use crate::src::alerts::alerts_queue;
+use crate::src::arguments::args_has;
+use crate::src::cmd::cmd_mouse_at;
+use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_window};
+use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::events::{events_fire, events_fire_pane, events_fire_window};
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
+    event_payload_set_target, event_payload_set_uint, event_payload_set_window,
+};
+use crate::src::ffi::libc::{
+    __ctype_b_loc, close, fnmatch, gethostname, getpid, gettimeofday, ioctl, kill, memcpy, memset,
+    strcasecmp,
+};
+use crate::src::ffi::regex::RegexStorage;
+use crate::src::ffi::utempter::utempter_remove_record;
+use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
+use crate::src::format::bytes::write_cstr;
+use crate::src::grid::grid_cells_look_equal;
+use crate::src::grid::view::grid_view_string_cells_bytes;
+use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
+use crate::src::input_keys::input_key_pane;
+use crate::src::layout::{
+    layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_init,
+};
+use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
+use crate::src::menu::{menu_destroy, menu_resize};
+use crate::src::options::options_owner_ptr;
+use crate::src::options::{
+    options_create, options_free, options_get_number, options_get_number_ref,
+};
+use crate::src::prompt::{
+    prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
+    prompt_set_options, prompt_type_string, prompt_update,
+};
+use crate::src::reactor::BufferEvent;
+use crate::src::reactor::{
+    bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
+    evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized, event_set,
+};
+use crate::src::screen::{
+    screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,
+};
+use crate::src::session::Session;
+use crate::src::shared::client::ClientRef;
+use crate::src::shared::window::WindowRef;
+use crate::src::window::*;
+
+use crate::src::server::clients;
+use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
+use crate::src::server_client::{server_client_unref_owned, Client};
+use crate::src::server_fn::{
+    server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
+    server_status_session, server_status_window,
+};
+use crate::src::shared::events::event_payload;
+use crate::src::shared::pane::window_pane_tree;
+use crate::src::shared::prompt::prompt_create_data;
+use crate::src::spawn::spawn_editor_finish;
+use crate::src::status::status_at_line;
+use crate::src::style::colour::{
+    colour_palette_free, colour_palette_from_option, colour_palette_get, colour_palette_init,
+    colour_totheme,
+};
+use crate::src::style::{
+    style_ranges_free, style_ranges_get_range, style_ranges_init,
+    style_set_scrollbar_style_from_option,
+};
+use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
+use crate::src::tty::{tty_default_colours, tty_update_window_offset};
+use crate::src::window_copy::{window_copy_mode, window_view_mode};
+use hmux_buffer::SegmentedBuf;
+use std::cell::{RefCell, UnsafeCell};
+use std::ffi::{CStr, CString};
+use std::ptr::NonNull;
+use std::rc::{Rc, Weak};
+
+use crate::src::shared::abi::ssize_t;
+use crate::src::shared::abi::*;
+use crate::src::shared::arguments::args;
+use crate::src::shared::client::{client, client_file, client_file_cb};
+use crate::src::shared::client::{
+    CLIENT_CONTROL, CLIENT_DEAD, CLIENT_EXIT, CLIENT_EXITED, CLIENT_FOCUSED, CLIENT_UNATTACHEDFLAGS,
+};
+use crate::src::shared::colour::*;
+use crate::src::shared::command::{cmd_find_state, cmdq_item};
+use crate::src::shared::ctype::_ISspace;
+use crate::src::shared::display::*;
+use crate::src::shared::event::*;
+use crate::src::shared::event::{EV_READ, EV_WRITE};
+use crate::src::shared::grid::*;
+use crate::src::shared::input::input_ctx;
+use crate::src::shared::key::*;
+use crate::src::shared::layout::layout_cell;
+use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::layout::*;
+use crate::src::shared::limits::{INT_MAX, UINT_MAX};
+use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::src::shared::options::options;
+use crate::src::shared::pane::{
+    window_pane, window_pane_history, window_pane_modes, window_pane_prompt, window_panes,
+    PaneScreenSource,
+};
+use crate::src::shared::pane::{
+    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
+    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
+    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
+    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_BOTTOM_FLOATING,
+    PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING, PANE_STYLECHANGED,
+    PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
+};
+use crate::src::shared::posix_io::FNM_CASEFOLD;
+use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
+use crate::src::shared::prompt::prompt;
+use crate::src::shared::prompt::*;
+use crate::src::shared::prompt::{prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_CLOSE};
+use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
+use crate::src::shared::session::session;
+use crate::src::shared::signal::SIGCHLD;
+use crate::src::shared::spawn::spawn_editor_state;
+use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FLOATING, SPAWN_FULLSIZE};
+use crate::src::shared::status::status_prompt_input_cb;
+use crate::src::shared::style::*;
+use crate::src::shared::tree::{RB_INF, RB_NEGINF};
+pub use crate::src::shared::window::{
+    window, window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack,
+    winlinks,
+};
+use crate::src::shared::window::{
+    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS,
+    WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE, WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS,
+    WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
+};
+use libc::{REG_EXTENDED, REG_ICASE};
+
+pub fn winlinks_find(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
+    let Some(owner) = head.as_ref() else {
+        return refbox::Weak::new();
+    };
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
+    let key = elm.idx;
+    map.get(&key)
+        .map_or(refbox::Weak::new(), |owner| owner.downgrade())
+}
+
+pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
+    let Some(owner) = head.as_ref() else {
+        return refbox::Weak::new();
+    };
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
+    let key = elm.idx;
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
+}
+
+pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> refbox::Weak<winlink> {
+    let Some(owner) = head.as_ref() else {
+        return refbox::Weak::new();
+    };
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
+}
+
+pub unsafe fn winlinks_next(elm: &winlink) -> refbox::Weak<winlink> {
+    let owner = &elm.owner;
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return refbox::Weak::new(),
+        Err(refbox::BorrowError::Borrowed) => panic!("winlink index already borrowed"),
+    };
+    let key = elm.idx;
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
+}
+
+pub unsafe fn winlinks_prev(elm: &winlink) -> refbox::Weak<winlink> {
+    let owner = &elm.owner;
+    let map = match owner.try_borrow_mut() {
+        Ok(map) => map,
+        Err(refbox::BorrowError::Dropped) => return refbox::Weak::new(),
+        Err(refbox::BorrowError::Borrowed) => panic!("winlink index already borrowed"),
+    };
+    let key = elm.idx;
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(refbox::Weak::new(), |(_, owner)| owner.downgrade())
+}
+
+pub unsafe fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> refbox::Weak<winlink> {
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
+    wl = winlinks_minmax(wwl, RB_NEGINF);
+    while wl.is_alive() {
+        if wl
+            .get_unchecked()
+            .window_handle()
+            .is_some_and(|window| Rc::ptr_eq(window, w_owner))
+        {
+            return wl;
+        }
+        wl = winlinks_next(wl.get_unchecked());
+    }
+    return refbox::Weak::new();
+}
+
+pub unsafe fn winlink_find_by_index(
+    wwl: &winlinks,
+    mut idx: ::core::ffi::c_int,
+) -> refbox::Weak<winlink> {
+    let mut wl: winlink = winlink {
+        idx: 0,
+        session: std::rc::Weak::new(),
+        window_owner: None,
+        flags: 0,
+        owner: refbox::Weak::new(),
+    };
+    if idx < 0 as ::core::ffi::c_int {
+        fatalx(|out| out.write_all(b"bad index"));
+    }
+    wl.idx = idx;
+    return winlinks_find(wwl, &wl);
+}
+
+pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox::Weak<winlink> {
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
+    wl = winlinks_minmax(wwl, RB_NEGINF);
+    while wl.is_alive() {
+        if wl
+            .get_unchecked()
+            .window_handle()
+            .expect("indexed window")
+            .id()
+            == id
+        {
+            return wl;
+        }
+        wl = winlinks_next(wl.get_unchecked());
+    }
+    return refbox::Weak::new();
+}
+
+unsafe fn winlink_next_index(
+    mut wwl: *mut winlinks,
+    mut idx: ::core::ffi::c_int,
+) -> ::core::ffi::c_int {
+    let mut i: ::core::ffi::c_int = 0;
+    i = idx;
+    loop {
+        if !winlink_find_by_index(&*wwl, i).is_alive() {
+            return i;
+        }
+        if i == INT_MAX {
+            i = 0 as ::core::ffi::c_int;
+        } else {
+            i += 1;
+        }
+        if !(i != idx) {
+            break;
+        }
+    }
+    return -(1 as ::core::ffi::c_int);
+}
+
+pub unsafe fn winlink_count(wwl: &winlinks) -> u_int {
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
+    let mut n: u_int = 0;
+    n = 0 as u_int;
+    wl = winlinks_minmax(wwl, RB_NEGINF);
+    while wl.is_alive() {
+        n = n.wrapping_add(1);
+        wl = winlinks_next(wl.get_unchecked());
+    }
+    return n;
+}
+
+pub unsafe fn winlink_add(
+    mut wwl: *mut winlinks,
+    mut idx: ::core::ffi::c_int,
+) -> refbox::Weak<winlink> {
+    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
+    if idx < 0 as ::core::ffi::c_int {
+        // Decode -(base_index + 1) without negating INT_MIN first.
+        idx = winlink_next_index(wwl, -(idx + 1));
+        if idx == -(1 as ::core::ffi::c_int) {
+            return refbox::Weak::new();
+        }
+    } else if winlink_find_by_index(&*wwl, idx).is_alive() {
+        return refbox::Weak::new();
+    }
+    let owner = refbox::RefBox::new(winlink {
+        idx,
+        session: std::rc::Weak::new(),
+        window_owner: None,
+        flags: 0,
+        owner: refbox::Weak::new(),
+    });
+    wl = owner.downgrade();
+    let storage = (*wwl).get_or_insert_with(refbox::RefBox::default);
+    let observer = storage.downgrade();
+    let mut map = storage
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
+    match map.entry(idx) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(owner);
+        }
+        std::collections::btree_map::Entry::Occupied(_) => {
+            unreachable!("winlink index was checked above")
+        }
+    }
+    wl.get_mut_unchecked().owner = observer;
+    return wl;
+}
+
+// Keep the field published through the close notification. Its callback can
+// inspect the winlink or retain the window. Detach only after that notification,
+// then drop the consumed Rc without notifying or cleaning up twice.
+unsafe fn winlink_release_window(mut wl: refbox::Weak<winlink>, from: &CStr) {
+    wl.get_unchecked()
+        .window_owner
+        .as_ref()
+        .expect("winlink window reference")
+        .prepare_release(from);
+    drop(
+        wl.get_mut_unchecked()
+            .window_owner
+            .take()
+            .expect("winlink window reference"),
+    );
+}
+
+pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &WindowRef) {
+    if let Some(previous) = wl.get_unchecked().window_handle() {
+        previous.remove_winlink(wl.clone());
+        winlink_release_window(wl.clone(), c"winlink_set_window");
+    }
+    wl.get_mut_unchecked().window_owner =
+        Some(window_add_ref(w_owner, c"winlink_set_window".as_ptr()));
+    w_owner.add_winlink(wl);
+}
+
+pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlink>) {
+    if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
+        session_owner.forget_winlink(wl.clone());
+    }
+    if let Some(window) = wl.get_unchecked().window_handle() {
+        window.remove_winlink(wl.clone());
+        winlink_release_window(wl.clone(), c"winlink_remove");
+    }
+    // Window teardown above may reenter; borrow the owning map only afterward.
+    let idx = wl.get_unchecked().idx;
+    let (owner, empty) = {
+        let storage = (*wwl).as_ref().expect("winlink index must be alive");
+        let mut map = storage
+            .try_borrow_mut()
+            .expect("winlink index already borrowed");
+        assert_eq!(
+            map.get(&idx).map(|owner| owner.downgrade()),
+            Some(wl.clone()),
+            "removed winlink must belong to this index"
+        );
+        let owner = map.remove(&idx).expect("winlink must have an owner");
+        wl.get_mut_unchecked().owner = refbox::Weak::new();
+        (owner, map.is_empty())
+    };
+    if empty {
+        (*wwl) = None;
+    }
+    drop(owner);
+}
+
+pub unsafe fn winlink_next(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    return winlinks_next(wl.get_unchecked());
+}
+
+pub unsafe fn winlink_previous(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    return winlinks_prev(wl.get_unchecked());
+}
+
+pub unsafe fn winlink_next_by_number(
+    mut wl: refbox::Weak<winlink>,
+    s_owner: &Rc<std::cell::UnsafeCell<session>>,
+    mut n: ::core::ffi::c_int,
+) -> refbox::Weak<winlink> {
+    let s = Some(s_owner.clone());
+    while n > 0 as ::core::ffi::c_int {
+        wl = winlinks_next(wl.get_unchecked());
+        if !wl.is_alive() {
+            wl = s
+                .as_ref()
+                .expect("live session")
+                .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
+        }
+        n -= 1;
+    }
+    return wl;
+}
+
+pub unsafe fn winlink_previous_by_number(
+    mut wl: refbox::Weak<winlink>,
+    s_owner: &Rc<std::cell::UnsafeCell<session>>,
+    mut n: ::core::ffi::c_int,
+) -> refbox::Weak<winlink> {
+    let s = Some(s_owner.clone());
+    while n > 0 as ::core::ffi::c_int {
+        wl = winlinks_prev(wl.get_unchecked());
+        if !wl.is_alive() {
+            wl = s
+                .as_ref()
+                .expect("live session")
+                .with_winlinks(|links| winlinks_minmax(links, RB_INF));
+        }
+        n -= 1;
+    }
+    return wl;
+}
+
+/// Borrow the owner through the existing window index. The raw pointer remains
+/// a compatibility view; neither it nor its address is a separate ownership key.
+unsafe fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
+    let owner = &wl.get_unchecked().owner;
+    let map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
+    let owner = map
+        .get(&wl.get_unchecked().idx)
+        .expect("visited winlink must have an owner");
+    assert_eq!(
+        owner.downgrade(),
+        wl.clone(),
+        "visited winlink must belong to its index"
+    );
+    owner.downgrade()
+}
+
+/// Move the owner between keys without invalidating the winlink or its observers.
+/// The caller must supply a live member of `head` and an unused destination index.
+pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: refbox::Weak<winlink>, idx: i32) {
+    let owner = (*head).as_ref().expect("winlink index must be alive");
+    let mut map = owner
+        .try_borrow_mut()
+        .expect("winlink index already borrowed");
+    let old_idx = wl.get_unchecked().idx;
+    assert_eq!(
+        map.get(&old_idx).map(|owner| owner.downgrade()),
+        Some(wl.clone()),
+        "reindexed winlink must belong to this index"
+    );
+    if old_idx == idx {
+        return;
+    }
+    assert!(
+        !map.contains_key(&idx),
+        "destination winlink index must be vacant"
+    );
+    let owner = map.remove(&old_idx).expect("winlink must have an owner");
+    owner
+        .try_access_mut(|link| link.idx = idx)
+        .expect("reindexed winlink is already borrowed");
+    map.insert(idx, owner);
+}
+
+pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+    if !wl.is_alive() {
+        return;
+    }
+    winlink_stack_remove(stack, wl.clone());
+    let weak = winlink_weak(wl.clone());
+    (*stack).push_front(weak);
+    wl.get_mut_unchecked().flags |= WINLINK_VISITED;
+}
+
+pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+    if !wl.is_alive() {
+        return;
+    }
+    (*stack).retain(|link| *link != wl);
+    wl.get_mut_unchecked().flags &= !WINLINK_VISITED;
+}
+
+/// Append while rebuilding a session's saved visit order.
+pub unsafe fn winlink_stack_append(stack: &mut winlink_stack, mut wl: refbox::Weak<winlink>) {
+    let weak = winlink_weak(wl.clone());
+    stack.push_back(weak);
+    wl.get_mut_unchecked().flags |= WINLINK_VISITED;
+}
+
+pub fn winlink_stack_clear(stack: &mut winlink_stack) {
+    *stack = Default::default();
+}
+
+pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {
+    let storage = &stack;
+    storage
+        .iter()
+        .filter_map(|link| match link.try_access_mut(|node| node.idx) {
+            Ok(idx) => Some(idx),
+            Err(refbox::BorrowError::Dropped) => {
+                panic!("visited winlink owner was dropped before observer teardown")
+            }
+            Err(refbox::BorrowError::Borrowed) => panic!("visited winlink is already borrowed"),
+        })
+        .collect()
+}
+
+pub fn winlink_stack_first(stack: &winlink_stack) -> refbox::Weak<winlink> {
+    stack.front().cloned().unwrap_or_default()
+}
+
+pub fn winlink_stack_next(
+    stack: &winlink_stack,
+    wl: refbox::Weak<winlink>,
+) -> refbox::Weak<winlink> {
+    let queue = &stack;
+    let Some(position) = queue.iter().position(|link| *link == wl) else {
+        return refbox::Weak::new();
+    };
+    queue.get(position + 1).cloned().unwrap_or_default()
+}
+
+pub unsafe fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
+    let window = wl.get_unchecked().window_handle().expect("linked window");
+    window.clear_alert_flags();
+    let mut cursor = window.next_winlink(None);
+    while cursor.is_alive() {
+        if cursor.get_unchecked().flags & WINLINK_ALERTFLAGS != 0 {
+            cursor.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
+            if let Some(session) = cursor.get_unchecked().session.upgrade() {
+                server_status_session(&session);
+            }
+        }
+        cursor = window.next_winlink(Some(cursor));
+    }
+}
+
+pub unsafe fn winlink_shuffle_up(
+    session: &Rc<UnsafeCell<session>>,
+    link: refbox::Weak<winlink>,
+    before: i32,
+) -> i32 {
+    session.shuffle_window(link, before != 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn winlink_index_keeps_order_and_weak_observers_across_moves() {
+        unsafe {
+            let mut head = None;
+            let first = winlink_add(&mut head, 1);
+            let second = winlink_add(&mut head, 3);
+            assert!(first.is_alive() && second.is_alive());
+            assert!(!winlink_add(&mut head, 1).is_alive());
+            winlinks_reindex(&mut head, (second).clone(), 2);
+
+            let index_observer = first.get_unchecked().owner.clone();
+            let node_observer = winlink_weak((first).clone());
+            let mut moved = head;
+            assert_eq!(winlinks_minmax(&moved, RB_NEGINF), first);
+            assert_eq!(winlinks_next(first.get_unchecked()), second);
+            assert_eq!(second.get_unchecked().idx, 2);
+
+            winlink_remove(&mut moved, (first).clone());
+            assert!(matches!(
+                node_observer.try_access_mut(|link| link.idx),
+                Err(refbox::BorrowError::Dropped)
+            ));
+            assert!(index_observer.try_borrow_mut().is_ok());
+            let second_observer = winlink_weak((second).clone());
+            winlink_remove(&mut moved, (second).clone());
+            drop(moved);
+            assert!(matches!(
+                second_observer.try_access_mut(|link| link.idx),
+                Err(refbox::BorrowError::Dropped)
+            ));
+            assert!(matches!(
+                index_observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
+        }
+    }
+}

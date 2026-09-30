@@ -1,60 +1,27 @@
-use crate::src::cmd::find::cmd_find_from_window;
-use crate::src::events::{events_fire, events_fire_window};
-use crate::src::events_payload::{
-    event_payload_create, event_payload_set_target, event_payload_set_uint,
-    event_payload_set_window,
-};
 use crate::src::ffi::libc::sscanf;
-use crate::src::layout::layout_resize;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
-use crate::src::server_client::Client;
-use crate::src::server_fn::server_redraw_window;
-use crate::src::session::sessions_minmax;
-use crate::src::session::{sessions, Session};
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::events::event_payload;
-use crate::src::status::status_line_size;
-use crate::src::tmux::global_w_options;
-use crate::src::tty::tty_update_window_offset;
-use crate::src::window::windows;
-use crate::src::window::{
-    window_has_pane, window_resize, window_unzoom, window_zoom, window_zoomed_pane, windows_minmax,
-    windows_next,
-};
-
+use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
-use crate::src::shared::client::{
-    CLIENT_CONTROL, CLIENT_IGNORESIZE, CLIENT_NOSIZEFLAGS, CLIENT_SIZECHANGED, CLIENT_STATUSOFF,
-    CLIENT_UNATTACHEDFLAGS, CLIENT_WINDOWSIZECHANGED,
-};
-use crate::src::shared::command::cmd_find_state;
+use crate::src::shared::client::{ClientRef, CLIENT_CONTROL, CLIENT_STATUSOFF};
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{
-    WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST,
+    window, WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST,
     WINDOW_SIZE_MANUAL,
 };
+use crate::src::tmux::global_w_options;
+use crate::src::tty::tty_update_window_offset;
+use crate::src::window::{windows, windows_minmax, Window as _, WindowResize};
 
-pub unsafe fn resize_window(
-    window: &std::rc::Rc<std::cell::UnsafeCell<window>>,
-    sx: u_int,
-    sy: u_int,
-    xpixel: i32,
-    ypixel: i32,
-) {
+pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::src::window::Window;
     window.resize(sx, sy, xpixel, ypixel);
 }
-unsafe fn clients_with_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>) -> u_int {
-    let mut w = w_owner.get();
+unsafe fn clients_with_window(w_owner: &WindowRef) -> u_int {
     let mut loop_0: Option<ClientRef> = None;
     let mut n: u_int = 0 as u_int;
     let mut registry_loop_0_owner = clients.first();
@@ -70,8 +37,7 @@ unsafe fn clients_with_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window
                 .attached_session()
                 .upgrade()
                 .expect("live session")
-                .contains_window(&(*w).observer.upgrade().expect("live window"))
-                as i32)
+                .contains_window(w_owner) as i32)
                 == 0)
         {
             n = n.wrapping_add(1);
@@ -91,7 +57,7 @@ unsafe fn clients_with_window(w_owner: &std::rc::Rc<std::cell::UnsafeCell<window
 unsafe fn clients_calculate_size(
     mut type_0: ::core::ffi::c_int,
     c_owner: Option<&ClientRef>,
-    w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>,
+    w_owner: Option<&WindowRef>,
     mut skip_client: impl FnMut(&ClientRef) -> bool,
     mut sx: *mut u_int,
     mut sy: *mut u_int,
@@ -99,7 +65,6 @@ unsafe fn clients_calculate_size(
     mut ypixel: *mut u_int,
 ) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = c_owner.cloned();
-    let mut w = w_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut loop_0: Option<ClientRef> = None;
     let mut cx: u_int = 0;
     let mut cy: u_int = 0;
@@ -107,9 +72,8 @@ unsafe fn clients_calculate_size(
     if type_0 == WINDOW_SIZE_LARGEST {
         *sx = 0 as u_int;
         *sy = 0 as u_int;
-    } else if !w.is_null() && type_0 == WINDOW_SIZE_MANUAL {
-        *sx = (*w).manual_sx;
-        *sy = (*w).manual_sy;
+    } else if w_owner.is_some() && type_0 == WINDOW_SIZE_MANUAL {
+        (*sx, *sy) = w_owner.expect("manual window").manual_size();
         log_debug(format_args!(
             "{}: manual size {}x{}",
             "clients_calculate_size",
@@ -122,8 +86,8 @@ unsafe fn clients_calculate_size(
     }
     *ypixel = 0 as u_int;
     *xpixel = *ypixel;
-    if type_0 == WINDOW_SIZE_LATEST && !w.is_null() {
-        n = clients_with_window(&(*(w)).observer.upgrade().expect("live window"));
+    if type_0 == WINDOW_SIZE_LATEST && w_owner.is_some() {
+        n = clients_with_window(w_owner.expect("live window"));
     }
     if !(type_0 == WINDOW_SIZE_MANUAL) {
         let mut registry_loop_0_owner = clients.first();
@@ -160,9 +124,9 @@ unsafe fn clients_calculate_size(
                 ));
             } else if type_0 == WINDOW_SIZE_LATEST
                 && n > 1 as u_int
-                && !(*w).latest.ptr_eq(&std::rc::Rc::downgrade(
-                    loop_0.as_ref().expect("live client"),
-                ))
+                && !w_owner
+                    .expect("latest window")
+                    .is_latest_client(loop_0.as_ref().expect("live client"))
             {
                 log_debug(format_args!(
                     "{}: {} is not latest",
@@ -236,7 +200,7 @@ unsafe fn clients_calculate_size(
             ));
         }
     }
-    if !w.is_null() {
+    if w_owner.is_some() {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
@@ -278,7 +242,7 @@ unsafe fn clients_calculate_size(
     }
     if type_0 == WINDOW_SIZE_MANUAL {
         log_debug(format_args!("{}: type is manual", "clients_calculate_size"));
-        return (w != NULL as *mut window) as ::core::ffi::c_int;
+        return w_owner.is_some() as ::core::ffi::c_int;
     }
     if type_0 == WINDOW_SIZE_LARGEST {
         log_debug(format_args!(
@@ -300,7 +264,7 @@ unsafe fn clients_calculate_size(
 pub unsafe fn default_window_size(
     c_owner: Option<&ClientRef>,
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
-    w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>,
+    w_owner: Option<&WindowRef>,
     mut sx: *mut u_int,
     mut sy: *mut u_int,
     mut xpixel: *mut u_int,
@@ -309,7 +273,6 @@ pub unsafe fn default_window_size(
 ) {
     let mut c: Option<ClientRef> = c_owner.cloned();
     let s = Some(s_owner.clone());
-    let mut w = w_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if type_0 == -(1 as ::core::ffi::c_int) {
         type_0 = options_get_number(
             global_w_options,
@@ -347,15 +310,15 @@ pub unsafe fn default_window_size(
             c.as_ref(),
             w_owner,
             |candidate| unsafe {
-                (!w.is_null()
+                (w_owner.is_some()
                     && (candidate
                         .attached_session()
                         .upgrade()
                         .expect("live session")
-                        .contains_window(&(*w).observer.upgrade().expect("live window"))
+                        .contains_window(w_owner.expect("live window"))
                         as i32)
                         == 0)
-                    || (w.is_null()
+                    || (w_owner.is_none()
                         && !crate::src::shared::rc::same(
                             candidate.attached_session().upgrade().as_ref(),
                             s.as_ref(),
@@ -369,7 +332,7 @@ pub unsafe fn default_window_size(
         {
             s_owner.with_options_mut(|options| {
                 let value = options_get_string(options, c"default-size".as_ptr());
-                if sscanf(value, c"%ux%u".as_ptr(), sx, sy) != 2 {
+                if sscanf(value.as_ptr(), c"%ux%u".as_ptr(), sx, sy) != 2 {
                     *sx = 80;
                     *sy = 24;
                 }
@@ -401,11 +364,7 @@ pub unsafe fn default_window_size(
         (*sy) as u32
     ));
 }
-pub unsafe fn recalculate_size(
-    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
-    mut now: ::core::ffi::c_int,
-) {
-    let mut w = w_owner.get();
+pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int) {
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut xpixel: u_int = 0 as u_int;
@@ -413,24 +372,22 @@ pub unsafe fn recalculate_size(
     let mut type_0: ::core::ffi::c_int = 0;
     let mut current: ::core::ffi::c_int = 0;
     let mut changed: ::core::ffi::c_int = 0;
-    if (*w).active_pane().is_none() {
+    if (w_owner).active_pane().is_none() {
         return;
     }
     log_debug(format_args!(
         "{}: @{} is {}x{}",
         "recalculate_size",
-        ((*w).id) as u32,
-        ((*w).sx) as u32,
-        ((*w).sy) as u32
+        ((w_owner).id()) as u32,
+        ((w_owner).size().0) as u32,
+        ((w_owner).size().1) as u32
     ));
-    type_0 = options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"window-size\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
-    current = options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"aggressive-resize\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    (type_0, current) = w_owner.with_options_mut(|options| {
+        (
+            options_get_number(options, c"window-size".as_ptr()) as i32,
+            options_get_number(options, c"aggressive-resize".as_ptr()) as i32,
+        )
+    });
     changed = clients_calculate_size(
         type_0,
         None,
@@ -443,14 +400,13 @@ pub unsafe fn recalculate_size(
                 return true;
             }
             if current != 0 {
-                (session.current_winlink())
+                session
+                    .current_winlink()
                     .get_unchecked()
                     .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
-                    != w
+                    .is_none_or(|current| !std::rc::Rc::ptr_eq(current, w_owner))
             } else {
-                !session.contains_window(&(*w).observer.upgrade().expect("live window"))
+                !session.contains_window(w_owner)
             }
         },
         &raw mut sx,
@@ -458,26 +414,26 @@ pub unsafe fn recalculate_size(
         &raw mut xpixel,
         &raw mut ypixel,
     );
-    if (*w).flags & WINDOW_RESIZE != 0 {
-        if now == 0 && changed != 0 && (*w).new_sx == sx && (*w).new_sy == sy {
+    if let Some(pending) = w_owner.pending_resize() {
+        if now == 0 && changed != 0 && pending.sx == sx && pending.sy == sy {
             changed = 0 as ::core::ffi::c_int;
         }
-    } else if now == 0 && changed != 0 && (*w).sx == sx && (*w).sy == sy {
+    } else if now == 0 && changed != 0 && (w_owner).size().0 == sx && (w_owner).size().1 == sy {
         changed = 0 as ::core::ffi::c_int;
     }
     if changed == 0 {
         log_debug(format_args!(
             "{}: @{} no size change",
             "recalculate_size",
-            ((*w).id) as u32
+            ((w_owner).id()) as u32
         ));
-        tty_update_window_offset(&(*(w)).observer.upgrade().expect("live window"));
+        tty_update_window_offset(w_owner);
         return;
     }
     log_debug(format_args!(
         "{}: @{} new size {}x{}",
         "recalculate_size",
-        ((*w).id) as u32,
+        ((w_owner).id()) as u32,
         (sx) as u32,
         (sy) as u32
     ));
@@ -490,12 +446,13 @@ pub unsafe fn recalculate_size(
             ypixel as ::core::ffi::c_int,
         );
     } else {
-        (*w).new_sx = sx;
-        (*w).new_sy = sy;
-        (*w).new_xpixel = xpixel;
-        (*w).new_ypixel = ypixel;
-        (*w).flags |= WINDOW_RESIZE;
-        tty_update_window_offset(&(*(w)).observer.upgrade().expect("live window"));
+        w_owner.defer_resize(WindowResize {
+            sx,
+            sy,
+            xpixel,
+            ypixel,
+        });
+        tty_update_window_offset(w_owner);
     };
 }
 pub unsafe fn recalculate_sizes() {
@@ -504,7 +461,6 @@ pub unsafe fn recalculate_sizes() {
 pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut c: Option<ClientRef> = None;
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     crate::src::session::recalculate_size_state();
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.clone();
@@ -545,9 +501,8 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     }
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.get();
-        recalculate_size(&(*(w)).observer.upgrade().expect("live window"), now);
-        window_cursor = windows_next(&*w);
+        recalculate_size(&window_owner, now);
+        window_cursor = window_owner.next_window();
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }

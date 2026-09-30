@@ -1,6 +1,6 @@
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
-use crate::src::options::options_owner_ptr;
+use crate::src::options::OptionsScope;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
@@ -41,14 +41,11 @@ use crate::src::mode_tree::{
     mode_tree_get_current_name, mode_tree_key, mode_tree_no_tag, mode_tree_remove,
     mode_tree_resize, mode_tree_set_prompt, mode_tree_start, mode_tree_up, mode_tree_zoom,
 };
-use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_get, options_array_get_index, options_array_item_key, options_array_set,
-    options_create, options_default, options_default_to_cstring, options_free, options_from_string,
-    options_get, options_get_fire_count, options_get_fire_time, options_get_monitor_data,
-    options_get_number, options_get_only, options_get_parent, options_match_owned, options_name,
-    options_owner, options_push_changes, options_remove_or_default, options_set_number,
-    options_set_string, options_to_cstring, options_to_string,
+    options_array_get, options_array_get_index, options_create, options_default,
+    options_default_to_cstring, options_free, options_get_fire_count, options_get_fire_time,
+    options_get_number, options_match_owned, options_push_changes, options_set_number,
+    options_to_cstring,
 };
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
@@ -78,7 +75,6 @@ use crate::src::shared::mode_tree::{
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
-use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
 use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
@@ -144,7 +140,7 @@ pub struct window_customize_itemdata {
     pub scope: window_customize_scope,
     pub table: Option<std::ffi::CString>,
     pub key: key_code,
-    pub oo: *mut options,
+    pub oo: Option<OptionsScope>,
     environ: Option<CustomizeEnvironment>,
     pub environ_flags: ::core::ffi::c_int,
     pub name: Option<std::ffi::CString>,
@@ -159,7 +155,7 @@ impl window_customize_itemdata {
             scope: 0,
             table: None,
             key: 0,
-            oo: ::core::ptr::null_mut(),
+            oo: None,
             environ: None,
             environ_flags: 0,
             name: None,
@@ -405,20 +401,65 @@ const CUSTOMIZE_WINDOW_HOOKS: u_int = 5;
 const CUSTOMIZE_GLOBAL_ENVIRONMENT: u_int = 6;
 const CUSTOMIZE_SESSION_ENVIRONMENT: u_int = 7;
 
-unsafe fn window_customize_get_tag(
-    o: *mut options_entry,
-    a: *mut options_array_item,
-    oe: *const options_table_entry,
-) -> uint64_t {
-    if !a.is_null() {
-        return a as uint64_t;
+/// A resolved table and entry name survive callbacks without a component borrow.
+struct CustomizeOption {
+    owner: OptionsScope,
+    name: CString,
+    definition: Option<&'static options_table_entry>,
+    id: u64,
+    is_monitor: bool,
+}
+
+impl CustomizeOption {
+    unsafe fn read(scope: &OptionsScope, name: &CStr) -> Option<Self> {
+        let owner = scope.resolve(name, false)?;
+        let (name, definition, id, is_monitor) = owner.with_entry(name, |entry| {
+            (
+                entry.name.clone(),
+                entry.tableentry,
+                entry.id(),
+                entry.monitor_data.is_some(),
+            )
+        })?;
+        Some(Self {
+            owner,
+            name,
+            definition,
+            id,
+            is_monitor,
+        })
     }
-    if oe.is_null() {
-        return o as uint64_t;
+
+    unsafe fn value(&self, key: Option<&CStr>) -> Option<CString> {
+        self.owner.with_entry(&self.name, |entry| {
+            options_to_cstring(entry, key.map_or(std::ptr::null(), CStr::as_ptr), 0)
+        })
     }
-    let offset =
-        oe.offset_from((&raw const crate::src::options_table::options_table).cast()) as u64;
-    (2_u64 << 62) | (offset << 32) | 1
+
+    unsafe fn monitor(&self) -> Option<CString> {
+        self.owner
+            .with_entry(&self.name, |entry| hooks_monitor_to_cstring(entry))
+            .flatten()
+    }
+
+    fn definition_ptr(&self) -> *const options_table_entry {
+        self.definition
+            .map_or(std::ptr::null(), |definition| definition)
+    }
+
+    fn tag(&self, array_item: Option<u64>) -> u64 {
+        if let Some(id) = array_item {
+            return id;
+        }
+        let Some(definition) = self.definition else {
+            return self.id;
+        };
+        let index = crate::src::options_table::options_table
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, definition))
+            .expect("static option definition");
+        (2_u64 << 62) | ((index as u64) << 32) | 1
+    }
 }
 
 fn window_customize_top_tag(group: u_int) -> uint64_t {
@@ -439,49 +480,20 @@ fn window_customize_key_tag(ptr: *const ::core::ffi::c_void, field: u_int) -> ui
     ptr as uint64_t | field as uint64_t
 }
 unsafe fn window_customize_get_tree(
-    mut scope: window_customize_scope,
+    scope: window_customize_scope,
     fs: &cmd_find_state,
-) -> *mut options {
-    match scope as ::core::ffi::c_uint {
-        0 | 1 => return ::core::ptr::null_mut::<options>(),
-        2 => return global_options,
-        3 => return global_s_options,
-        4 => {
-            return options_owner_ptr(
-                &mut (*fs
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options)
-        }
-        5 => return global_w_options,
-        6 => {
-            return options_owner_ptr(
-                &mut (*fs
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options)
-        }
-        7 => {
-            return options_owner_ptr(
-                &mut (*fs
-                    .pane_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options)
-        }
-        8 | 9 => return ::core::ptr::null_mut::<options>(),
-        _ => {}
+) -> Option<OptionsScope> {
+    match scope {
+        WINDOW_CUSTOMIZE_SERVER => Some(OptionsScope::GlobalServer),
+        WINDOW_CUSTOMIZE_GLOBAL_SESSION => Some(OptionsScope::GlobalSession),
+        WINDOW_CUSTOMIZE_SESSION => Some(OptionsScope::Session(fs.s.clone())),
+        WINDOW_CUSTOMIZE_GLOBAL_WINDOW => Some(OptionsScope::GlobalWindow),
+        WINDOW_CUSTOMIZE_WINDOW => Some(OptionsScope::Window(fs.w.clone())),
+        WINDOW_CUSTOMIZE_PANE => Some(OptionsScope::Pane(fs.wp.clone())),
+        _ => None,
     }
-    return ::core::ptr::null_mut::<options>();
 }
+
 unsafe fn window_customize_get_environment(
     scope: window_customize_scope,
     fs: &cmd_find_state,
@@ -559,17 +571,20 @@ unsafe fn window_customize_write_hook_fire(
     mut cx: u_int,
     mut sx: u_int,
     mut sy: u_int,
-    mut o: *mut options_entry,
+    option: &CustomizeOption,
 ) -> ::core::ffi::c_int {
-    let mut fire_count: u_int = 0;
-    let mut fire_time: time_t = 0;
-    if options_get_monitor_data(&mut *o).is_some() {
-        fire_count = hooks_monitor_get_fire_count(o);
-        fire_time = hooks_monitor_get_fire_time(o);
-    } else {
-        fire_count = options_get_fire_count(o);
-        fire_time = options_get_fire_time(o);
-    }
+    let Some((fire_count, fire_time)) = option.owner.with_entry(&option.name, |entry| {
+        if entry.monitor_data.is_some() {
+            (
+                hooks_monitor_get_fire_count(entry),
+                hooks_monitor_get_fire_time(entry),
+            )
+        } else {
+            (options_get_fire_count(entry), options_get_fire_time(entry))
+        }
+    }) else {
+        return 0;
+    };
     if fire_time != 0 as time_t {
         let fire_time_string = format_pretty_time_cstring(fire_time);
         if screen_write_text(
@@ -790,101 +805,74 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
 }
 unsafe fn window_customize_set_option_value(
     item: &window_customize_itemdata,
-    mut s: *const ::core::ffi::c_char,
-    mut cause: *mut Option<CString>,
+    value: *const ::core::ffi::c_char,
+    cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut oo: *mut options = item.oo;
-    let mut name: *const ::core::ffi::c_char = (item.name)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut array_key: *const ::core::ffi::c_char = (item.array_key)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut idx: u_int = 0;
-    let mut keybuf: [::core::ffi::c_char; 32] = [0; 32];
-    o = options_get(oo, name);
-    if o.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| {
-        entry as *const crate::src::shared::options::options_table_entry
-    });
-    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        if array_key.is_null() {
-            idx = 0 as u_int;
-            while idx < INT_MAX as u_int {
-                if crate::src::options::options_array_get_index_mut(&mut *(o), idx)
-                    .map_or(std::ptr::null_mut(), |value| value)
-                    .is_null()
-                {
-                    break;
-                }
-                idx = idx.wrapping_add(1);
-            }
-            xformat(&mut keybuf, format_args!("{}", idx as u32));
-            array_key = &raw mut keybuf as *mut ::core::ffi::c_char;
-        }
-        if options_array_set(o, array_key, s, 0 as ::core::ffi::c_int, cause)
-            != 0 as ::core::ffi::c_int
-        {
-            return -(1 as ::core::ffi::c_int);
-        }
-    } else if options_from_string(oo, oe, name, s, 0 as ::core::ffi::c_int, cause)
-        != 0 as ::core::ffi::c_int
+    let scope = item.oo.as_ref().expect("option row has a scope");
+    let name = item.name.as_deref().expect("option row has a name");
+    let Some(option) = CustomizeOption::read(scope, name) else {
+        return -1;
+    };
+    let value = (!value.is_null()).then(|| CStr::from_ptr(value));
+    let result = if option
+        .definition
+        .is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_ARRAY != 0)
     {
-        return -(1 as ::core::ffi::c_int);
+        let key = if let Some(key) = &item.array_key {
+            key.clone()
+        } else {
+            let index = option
+                .owner
+                .with_entry(&option.name, |entry| {
+                    let mut index = 0_u32;
+                    while index < INT_MAX as u32 && options_array_get_index(entry, index).is_some()
+                    {
+                        index += 1;
+                    }
+                    index
+                })
+                .expect("array entry remains live");
+            CString::new(index.to_string()).expect("decimal array index")
+        };
+        option
+            .owner
+            .set_array_item(&option.name, &key, value, false)
+    } else {
+        scope.set_from_string(option.definition, name, value, false)
+    };
+    if let Err(error) = result {
+        if !cause.is_null() {
+            *cause = Some(error);
+        }
+        return -1;
     }
-    if item.option_type as ::core::ffi::c_uint
-        == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
-        && *name as ::core::ffi::c_int == '@' as i32
-    {
-        hooks_add_event(name);
+    if item.option_type == WINDOW_CUSTOMIZE_HOOKS && name.to_bytes().first() == Some(&b'@') {
+        hooks_add_event(name.as_ptr());
     }
-    options_push_changes(
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
-    return 0 as ::core::ffi::c_int;
+    options_push_changes(name.as_ptr());
+    0
 }
+
 unsafe fn window_customize_option_editable(
     data: &window_customize_modedata,
     item: &window_customize_itemdata,
 ) -> ::core::ffi::c_int {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    if item.type_0 as ::core::ffi::c_uint
-        != WINDOW_CUSTOMIZE_ITEM_OPTION as ::core::ffi::c_int as ::core::ffi::c_uint
+    if item.type_0 != WINDOW_CUSTOMIZE_ITEM_OPTION
         || window_customize_check_item(data, item, None) == 0
     {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
-    o = options_get(
-        item.oo,
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
-    if o.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| {
-        entry as *const crate::src::shared::options::options_table_entry
-    });
-    if oe.is_null() {
-        return 1 as ::core::ffi::c_int;
-    }
-    if (*oe).type_0 as ::core::ffi::c_uint
-        == OPTIONS_TABLE_FLAG as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*oe).type_0 as ::core::ffi::c_uint
-            == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    return 1 as ::core::ffi::c_int;
+    let Some(option) = CustomizeOption::read(
+        item.oo.as_ref().expect("option scope"),
+        item.name.as_deref().expect("option name"),
+    ) else {
+        return 0;
+    };
+    (!option.definition.is_some_and(|definition| {
+        matches!(definition.type_0, OPTIONS_TABLE_FLAG | OPTIONS_TABLE_CHOICE)
+    })) as i32
 }
+
 unsafe fn window_customize_set_command_value(
     item: &window_customize_itemdata,
     s: *const ::core::ffi::c_char,
@@ -962,68 +950,49 @@ unsafe fn window_customize_set_environment_value(
     });
 }
 unsafe fn window_customize_option_is_changed(
-    mut o: *mut options_entry,
-    mut array_key: *const ::core::ffi::c_char,
+    option: &CustomizeOption,
+    key: Option<&CStr>,
 ) -> ::core::ffi::c_int {
-    let mut oe: *const options_table_entry = options_table_entry(&*(o))
-        .map_or(std::ptr::null(), |entry| {
-            entry as *const crate::src::shared::options::options_table_entry
-        });
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut defaults: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
-    let mut default_ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
-    let mut changed: ::core::ffi::c_int = 0;
-    if oe.is_null() || options_get_monitor_data(&mut *o).is_some() {
-        return 1 as ::core::ffi::c_int;
-    }
-    if *options_name(&*(o)).as_ptr() as ::core::ffi::c_int == '@' as i32
-        && hooks_is_event(options_name(&*(o)).as_ptr()) != 0
+    let Some(definition) = option.definition else {
+        return 1;
+    };
+    if option.is_monitor
+        || (option.name.as_bytes().first() == Some(&b'@')
+            && hooks_is_event(option.name.as_ptr()) != 0)
     {
-        return 1 as ::core::ffi::c_int;
+        return 1;
     }
-    if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        let mut oo_owner = options_create(::core::ptr::null_mut::<options>());
-        oo = &raw mut *oo_owner;
-        defaults = options_default(oo, oe);
-        if !array_key.is_null() {
-            ov = crate::src::options::options_array_get_mut(
-                &mut *(o),
-                std::ffi::CStr::from_ptr(array_key),
+    if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
+        // Default commands may evaluate formats. The scratch tree is detached
+        // and no model table remains borrowed while defaults are parsed.
+        let mut defaults_owner = options_create(None);
+        let defaults = options_default(&mut *defaults_owner, definition);
+        let current = option.owner.with_entry(&option.name, |entry| {
+            let present = key.is_none_or(|key| options_array_get(entry, key).is_some());
+            (
+                present,
+                options_to_cstring(entry, key.map_or(std::ptr::null(), CStr::as_ptr), 0),
             )
-            .map_or(std::ptr::null_mut(), |value| value);
-            default_ov = crate::src::options::options_array_get_mut(
-                &mut *(defaults),
-                std::ffi::CStr::from_ptr(array_key),
-            )
-            .map_or(std::ptr::null_mut(), |value| value);
-            if ov.is_null() || default_ov.is_null() {
-                changed = (ov != default_ov) as ::core::ffi::c_int;
-                options_free(oo_owner);
-                return changed;
+        });
+        let present_default = key.is_none_or(|key| options_array_get(&*defaults, key).is_some());
+        let result = if let Some((present, value)) = current {
+            if !present || !present_default {
+                present != present_default
+            } else {
+                value != options_to_cstring(defaults, key.map_or(std::ptr::null(), CStr::as_ptr), 0)
             }
-        }
-        let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
-        let default_value = options_to_cstring(defaults, array_key, 0 as ::core::ffi::c_int);
-        changed = (strcmp(value.as_ptr(), default_value.as_ptr()) != 0 as ::core::ffi::c_int)
-            as ::core::ffi::c_int;
-        drop(value);
-        drop(default_value);
-        options_free(oo_owner);
-        return changed;
+        } else {
+            true
+        };
+        options_free(defaults_owner);
+        return result as i32;
     }
-    let value = options_to_cstring(
-        o,
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        0 as ::core::ffi::c_int,
-    );
-    let default_value = options_default_to_cstring(&*oe);
-    changed = (strcmp(value.as_ptr(), default_value.as_ptr()) != 0 as ::core::ffi::c_int)
-        as ::core::ffi::c_int;
-    drop(value);
-    drop(default_value);
-    return changed;
+    let Some(value) = option.value(None) else {
+        return 1;
+    };
+    (value != options_default_to_cstring(definition)) as i32
 }
+
 unsafe fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> ::core::ffi::c_int {
     let Some(default_bd) = key_bindings_get_default(kt, bd.key) else {
         return 1;
@@ -1038,106 +1007,95 @@ unsafe fn window_customize_key_is_changed(kt: &key_table, bd: &key_binding) -> :
 unsafe fn window_customize_build_array(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     top: &ModeTreeItemRef,
-    mut scope: window_customize_scope,
-    mut o: *mut options_entry,
-    mut ft: *mut format_tree,
+    scope: window_customize_scope,
+    option: &CustomizeOption,
+    ft: *mut format_tree,
 ) -> u_int {
     let data = mode_owner.get();
-    let mut oe: *const options_table_entry = options_table_entry(&*(o))
-        .map_or(std::ptr::null(), |entry| {
-            entry as *const crate::src::shared::options::options_table_entry
+    let Some(keys) = option.owner.with_entry(&option.name, |entry| {
+        crate::src::options::options_array_iter(entry)
+            .map(|item| item.key.clone())
+            .collect::<Vec<_>>()
+    }) else {
+        return 0;
+    };
+    let mut count = 0_u32;
+    for key in keys {
+        let exists = option.owner.with_entry(&option.name, |entry| {
+            options_array_get(entry, &key).is_some()
         });
-    let mut oo: *mut options = options_owner(o);
-    let mut ai: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut count: u_int = 0 as u_int;
-    let ai_root = o;
-    let mut ai_keys = crate::src::options::options_array_iter(&*ai_root)
-        .map(|item| item.key.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    ai = ai_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(ai_root, key.as_ptr())
-    });
-    while !ai.is_null() {
-        array_key = options_array_item_key(&*(ai)).as_ptr();
-        if (*data).hide_default != 0 && window_customize_option_is_changed(o, array_key) == 0 {
-            ai = ai_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(ai_root, key.as_ptr())
-            });
-        } else {
-            let mut name = options_name(&*(o)).to_bytes().to_vec();
-            name.push(b'[');
-            name.extend_from_slice(CStr::from_ptr(array_key).to_bytes());
-            name.push(b']');
-            let name = CString::new(name).expect("option name and array key contain no NUL");
-            format_add(
-                ft,
-                b"option_name\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write_cstr(out, name.as_ptr()),
-            );
-            let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
-            format_add(
-                ft,
-                b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write_cstr(out, value.as_ptr()),
-            );
-            let item_owner = window_customize_add_item(
-                &mut (*data).item_list,
-                window_customize_itemdata {
-                    type_0: WINDOW_CUSTOMIZE_ITEM_OPTION,
-                    option_type: if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
-                        WINDOW_CUSTOMIZE_HOOKS
-                    } else {
-                        WINDOW_CUSTOMIZE_OPTIONS
-                    },
-                    scope,
-                    oo,
-                    name: Some(options_name(&*(o)).to_owned()),
-                    array_key: if array_key.is_null() {
-                        None
-                    } else {
-                        Some(CStr::from_ptr(array_key).to_owned())
-                    },
-                    ..window_customize_itemdata::new()
-                },
-            );
-            let text = format_expand_cstring(ft, (*data).format.as_ptr());
-            mode_tree_add(
-                &mut *(*data).tree_owner().get(),
-                Some(top),
-                ModeTreeItemData::Customize(item_owner.clone()),
-                window_customize_get_tag(o, ai, oe),
-                &name,
-                Some(&text),
-                -(1 as ::core::ffi::c_int),
-            );
-            drop(value);
-            count = count.wrapping_add(1);
-            ai = ai_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(ai_root, key.as_ptr())
-            });
+        if exists != Some(true) {
+            break;
         }
+        if (*data).hide_default != 0 && window_customize_option_is_changed(option, Some(&key)) == 0
+        {
+            continue;
+        }
+        let Some(Some((id, value))) = option.owner.with_entry(&option.name, |entry| {
+            crate::src::options::options_array_iter(entry)
+                .find(|item| item.key == key)
+                .map(|item| (item.id(), options_to_cstring(entry, key.as_ptr(), 0)))
+        }) else {
+            break;
+        };
+        let mut name = option.name.as_bytes().to_vec();
+        name.push(b'[');
+        name.extend_from_slice(key.as_bytes());
+        name.push(b']');
+        let name = CString::new(name).expect("option name and array key contain no NUL");
+        format_add(ft, c"option_name".as_ptr(), |out| {
+            write_cstr(out, name.as_ptr())
+        });
+        format_add(ft, c"option_value".as_ptr(), |out| {
+            write_cstr(out, value.as_ptr())
+        });
+        let item_owner = window_customize_add_item(
+            &mut (*data).item_list,
+            window_customize_itemdata {
+                type_0: WINDOW_CUSTOMIZE_ITEM_OPTION,
+                option_type: if option
+                    .definition
+                    .is_some_and(|definition| definition.flags & OPTIONS_TABLE_IS_HOOK != 0)
+                {
+                    WINDOW_CUSTOMIZE_HOOKS
+                } else {
+                    WINDOW_CUSTOMIZE_OPTIONS
+                },
+                scope,
+                oo: Some(option.owner.clone()),
+                name: Some(option.name.clone()),
+                array_key: Some(key),
+                ..window_customize_itemdata::new()
+            },
+        );
+        let text = format_expand_cstring(ft, (*data).format.as_ptr());
+        mode_tree_add(
+            &mut *(*data).tree_owner().get(),
+            Some(top),
+            ModeTreeItemData::Customize(item_owner),
+            option.tag(Some(id)),
+            &name,
+            Some(&text),
+            -1,
+        );
+        count = count.wrapping_add(1);
     }
-    return count;
+    count
 }
+
 unsafe fn window_customize_build_option(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     top: &ModeTreeItemRef,
     mut scope: window_customize_scope,
-    mut o: *mut options_entry,
+    option: &CustomizeOption,
     mut ft: *mut format_tree,
     mut filter: *const ::core::ffi::c_char,
     mut fs: *mut cmd_find_state,
     mut type_0: window_customize_option_type,
 ) -> u_int {
     let data = mode_owner.get();
-    let mut oe: *const options_table_entry = options_table_entry(&*(o))
-        .map_or(std::ptr::null(), |entry| {
-            entry as *const crate::src::shared::options::options_table_entry
-        });
-    let mut oo: *mut options = options_owner(o);
-    let mut name: *const ::core::ffi::c_char = options_name(&*(o)).as_ptr();
+    let oe = option.definition_ptr();
+    let name = option.name.as_ptr();
     let mut global: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut array: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut is_hook: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1147,7 +1105,7 @@ unsafe fn window_customize_build_option(
     if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0 {
         is_hook = 1 as ::core::ffi::c_int;
     }
-    if options_get_monitor_data(&mut *o).is_some() {
+    if option.is_monitor {
         is_monitor = 1 as ::core::ffi::c_int;
     }
     if *name as ::core::ffi::c_int == '@' as i32 && hooks_is_event(name) != 0 {
@@ -1182,9 +1140,7 @@ unsafe fn window_customize_build_option(
     if (*data).hide_global != 0 && global != 0 {
         return 0 as u_int;
     }
-    if (*data).hide_default != 0
-        && window_customize_option_is_changed(o, ::core::ptr::null::<::core::ffi::c_char>()) == 0
-    {
+    if (*data).hide_default != 0 && window_customize_option_is_changed(option, None) == 0 {
         return 0 as u_int;
     }
     format_add(
@@ -1233,7 +1189,7 @@ unsafe fn window_customize_build_option(
         );
     }
     if is_monitor != 0 {
-        if let Some(monitor) = hooks_monitor_to_cstring(o) {
+        if let Some(monitor) = option.monitor() {
             format_add(
                 ft,
                 b"option_monitor\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1254,11 +1210,9 @@ unsafe fn window_customize_build_option(
         );
     }
     if array == 0 {
-        let value = options_to_cstring(
-            o,
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            0 as ::core::ffi::c_int,
-        );
+        let Some(value) = option.value(None) else {
+            return 0;
+        };
         format_add(
             ft,
             b"option_value\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1277,7 +1231,7 @@ unsafe fn window_customize_build_option(
             type_0: WINDOW_CUSTOMIZE_ITEM_OPTION,
             option_type: type_0,
             scope,
-            oo,
+            oo: Some(option.owner.clone()),
             name: Some(CStr::from_ptr(name).to_owned()),
             ..window_customize_itemdata::new()
         },
@@ -1287,7 +1241,7 @@ unsafe fn window_customize_build_option(
         &mut *(*data).tree_owner().get(),
         Some(top),
         ModeTreeItemData::Customize(item_owner.clone()),
-        window_customize_get_tag(o, ::core::ptr::null_mut(), oe),
+        option.tag(None),
         CStr::from_ptr(name),
         text.as_deref(),
         0 as ::core::ffi::c_int,
@@ -1295,52 +1249,40 @@ unsafe fn window_customize_build_option(
     if array == 0 {
         return 1 as u_int;
     }
-    return (1 as u_int).wrapping_add(window_customize_build_array(mode_owner, &top, scope, o, ft));
+    return (1 as u_int).wrapping_add(window_customize_build_array(
+        mode_owner, &top, scope, option, ft,
+    ));
 }
-unsafe fn window_customize_find_user_options(oo: *mut options, list: &mut Vec<CString>) {
-    let o_root = oo;
-    let mut o_names = crate::src::options::options_iter(&*o_root)
-        .map(|entry| entry.name.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    let mut o = o_names
-        .next()
-        .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
-        .map_or(std::ptr::null_mut(), |entry| entry);
-    while !o.is_null() {
-        let name = options_name(&*(o));
-        if name.to_bytes().first() == Some(&b'@') && !list.iter().any(|entry| entry == name) {
-            // Later row builders can call format callbacks before the list is exhausted.
-            list.push(name.to_owned());
+unsafe fn window_customize_find_user_options(scope: &OptionsScope, list: &mut Vec<CString>) {
+    let names = scope.with_local(|table| {
+        crate::src::options::options_iter(table)
+            .map(|entry| entry.name.clone())
+            .collect::<Vec<_>>()
+    });
+    for name in names {
+        if name.as_bytes().first() == Some(&b'@') && !list.contains(&name) {
+            list.push(name);
         }
-        o = o_names
-            .next()
-            .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
-            .map_or(std::ptr::null_mut(), |entry| entry);
     }
 }
+
 unsafe fn window_customize_build_options(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
-    mut title: *const ::core::ffi::c_char,
+    title: *const ::core::ffi::c_char,
     group: u_int,
-    mut scope0: window_customize_scope,
-    mut oo0: *mut options,
-    mut scope1: window_customize_scope,
-    mut oo1: *mut options,
-    mut scope2: window_customize_scope,
-    mut oo2: *mut options,
-    mut ft: *mut format_tree,
-    mut filter: *const ::core::ffi::c_char,
-    mut fs: *mut cmd_find_state,
-    mut type_0: window_customize_option_type,
+    scope0: window_customize_scope,
+    oo0: Option<OptionsScope>,
+    scope1: window_customize_scope,
+    oo1: Option<OptionsScope>,
+    scope2: window_customize_scope,
+    oo2: Option<OptionsScope>,
+    ft: *mut format_tree,
+    filter: *const ::core::ffi::c_char,
+    fs: *mut cmd_find_state,
+    type_0: window_customize_option_type,
 ) {
     let data = mode_owner.get();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut loop_0: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut list = Vec::<CString>::new();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut count: u_int = 0 as u_int;
-    let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
+    let oo0 = oo0.expect("global option scope");
     let top = mode_tree_add(
         &mut *(*data).tree_owner().get(),
         None,
@@ -1348,87 +1290,82 @@ unsafe fn window_customize_build_options(
         window_customize_top_tag(group),
         CStr::from_ptr(title),
         None,
-        0 as ::core::ffi::c_int,
+        0,
     );
     mode_tree_no_tag(&top);
-    window_customize_find_user_options(oo0, &mut list);
-    if !oo1.is_null() {
-        window_customize_find_user_options(oo1, &mut list);
+    let mut count = 0_u32;
+    let mut names = Vec::new();
+    window_customize_find_user_options(&oo0, &mut names);
+    if let Some(owner) = &oo1 {
+        window_customize_find_user_options(owner, &mut names);
     }
-    if !oo2.is_null() {
-        window_customize_find_user_options(oo2, &mut list);
+    if let Some(owner) = &oo2 {
+        window_customize_find_user_options(owner, &mut names);
     }
-    for name in &list {
-        o = ::core::ptr::null_mut::<options_entry>();
-        if !oo2.is_null() {
-            o = options_get(oo2, name.as_ptr());
-        }
-        if o.is_null() && !oo1.is_null() {
-            o = options_get(oo1, name.as_ptr());
-        }
-        if o.is_null() {
-            o = options_get(oo0, name.as_ptr());
-        }
-        if options_owner(o) == oo2 {
-            scope = scope2;
-        } else if options_owner(o) == oo1 {
-            scope = scope1;
+    let scope_for = |owner: &OptionsScope| {
+        if oo2.as_ref() == Some(owner) {
+            scope2
+        } else if oo1.as_ref() == Some(owner) {
+            scope1
         } else {
-            scope = scope0;
+            scope0
         }
+    };
+    for name in names {
+        let option = oo2
+            .as_ref()
+            .and_then(|owner| CustomizeOption::read(owner, &name))
+            .or_else(|| {
+                oo1.as_ref()
+                    .and_then(|owner| CustomizeOption::read(owner, &name))
+            })
+            .or_else(|| CustomizeOption::read(&oo0, &name));
+        let Some(option) = option else {
+            continue;
+        };
         count = count.wrapping_add(window_customize_build_option(
-            mode_owner, &top, scope, o, ft, filter, fs, type_0,
+            mode_owner,
+            &top,
+            scope_for(&option.owner),
+            &option,
+            ft,
+            filter,
+            fs,
+            type_0,
         ));
     }
-    drop(list);
-    let loop_0_root = oo0;
-    let mut loop_0_names = crate::src::options::options_iter(&*loop_0_root)
-        .map(|entry| entry.name.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    loop_0 = loop_0_names
-        .next()
-        .and_then(|name| crate::src::options::options_get_only_mut(&mut *loop_0_root, &name))
-        .map_or(std::ptr::null_mut(), |entry| entry);
-    while !loop_0.is_null() {
-        name = options_name(&*(loop_0)).as_ptr();
-        if *name as ::core::ffi::c_int == '@' as i32 {
-            loop_0 = loop_0_names
-                .next()
-                .and_then(|name| {
-                    crate::src::options::options_get_only_mut(&mut *loop_0_root, &name)
-                })
-                .map_or(std::ptr::null_mut(), |entry| entry);
-        } else {
-            if !oo2.is_null() {
-                o = options_get(oo2, name);
-            } else if !oo1.is_null() {
-                o = options_get(oo1, name);
-            } else {
-                o = loop_0;
-            }
-            if options_owner(o) == oo2 {
-                scope = scope2;
-            } else if options_owner(o) == oo1 {
-                scope = scope1;
-            } else {
-                scope = scope0;
-            }
-            count = count.wrapping_add(window_customize_build_option(
-                mode_owner, &top, scope, o, ft, filter, fs, type_0,
-            ));
-            loop_0 = loop_0_names
-                .next()
-                .and_then(|name| {
-                    crate::src::options::options_get_only_mut(&mut *loop_0_root, &name)
-                })
-                .map_or(std::ptr::null_mut(), |entry| entry);
+    let names = oo0.with_local(|table| {
+        crate::src::options::options_iter(table)
+            .map(|entry| entry.name.clone())
+            .collect::<Vec<_>>()
+    });
+    for name in names {
+        if oo0.with_entry(&name, |_| ()).is_none() {
+            break;
         }
+        if name.as_bytes().first() == Some(&b'@') {
+            continue;
+        }
+        let owner = oo2.as_ref().or(oo1.as_ref()).unwrap_or(&oo0);
+        let Some(option) = CustomizeOption::read(owner, &name) else {
+            continue;
+        };
+        count = count.wrapping_add(window_customize_build_option(
+            mode_owner,
+            &top,
+            scope_for(&option.owner),
+            &option,
+            ft,
+            filter,
+            fs,
+            type_0,
+        ));
     }
-    if (*data).hide_default != 0 && count == 0 as u_int {
+    if (*data).hide_default != 0 && count == 0 {
         mode_tree_remove(&mut *(*data).tree_owner().get(), &top);
     }
 }
+
 fn window_customize_key_detail(value: &[u8]) -> CString {
     let mut text = b"#[fg=themelightgrey]#[ignore]".to_vec();
     text.extend_from_slice(value);
@@ -1794,11 +1731,11 @@ unsafe fn window_customize_build(
         b"Server Options\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SERVER_OPTIONS,
         WINDOW_CUSTOMIZE_SERVER,
-        global_options,
+        Some(OptionsScope::GlobalServer),
         WINDOW_CUSTOMIZE_NONE,
-        ::core::ptr::null_mut::<options>(),
+        None,
         WINDOW_CUSTOMIZE_NONE,
-        ::core::ptr::null_mut::<options>(),
+        None,
         ft,
         filter,
         &raw mut fs,
@@ -1809,18 +1746,11 @@ unsafe fn window_customize_build(
         b"Session Options\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_OPTIONS,
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
-        global_s_options,
+        Some(OptionsScope::GlobalSession),
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(
-            &mut (*fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
+        window_customize_get_tree(WINDOW_CUSTOMIZE_SESSION, &fs),
         WINDOW_CUSTOMIZE_NONE,
-        ::core::ptr::null_mut::<options>(),
+        None,
         ft,
         filter,
         &raw mut fs,
@@ -1831,25 +1761,11 @@ unsafe fn window_customize_build(
         b"Window & Pane Options\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_WINDOW_OPTIONS,
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
-        global_w_options,
+        Some(OptionsScope::GlobalWindow),
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(
-            &mut (*fs
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
+        window_customize_get_tree(WINDOW_CUSTOMIZE_WINDOW, &fs),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(
-            &mut (*fs
-                .pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
+        window_customize_get_tree(WINDOW_CUSTOMIZE_PANE, &fs),
         ft,
         filter,
         &raw mut fs,
@@ -1860,18 +1776,11 @@ unsafe fn window_customize_build(
         b"Session Hooks\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_SESSION_HOOKS,
         WINDOW_CUSTOMIZE_GLOBAL_SESSION,
-        global_s_options,
+        Some(OptionsScope::GlobalSession),
         WINDOW_CUSTOMIZE_SESSION,
-        options_owner_ptr(
-            &mut (*fs
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
+        window_customize_get_tree(WINDOW_CUSTOMIZE_SESSION, &fs),
         WINDOW_CUSTOMIZE_NONE,
-        ::core::ptr::null_mut::<options>(),
+        None,
         ft,
         filter,
         &raw mut fs,
@@ -1882,25 +1791,11 @@ unsafe fn window_customize_build(
         b"Window & Pane Hooks\0" as *const u8 as *const ::core::ffi::c_char,
         CUSTOMIZE_WINDOW_HOOKS,
         WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
-        global_w_options,
+        Some(OptionsScope::GlobalWindow),
         WINDOW_CUSTOMIZE_WINDOW,
-        options_owner_ptr(
-            &mut (*fs
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
+        window_customize_get_tree(WINDOW_CUSTOMIZE_WINDOW, &fs),
         WINDOW_CUSTOMIZE_PANE,
-        options_owner_ptr(
-            &mut (*fs
-                .pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
+        window_customize_get_tree(WINDOW_CUSTOMIZE_PANE, &fs),
         ft,
         filter,
         &raw mut fs,
@@ -2082,10 +1977,8 @@ unsafe fn window_customize_draw_option(
     let mut s: *mut screen = (*ctx).screen_ptr();
     let mut cx: u_int = (*s).cx;
     let mut cy: u_int = (*s).cy;
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut parent: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut go: *mut options = ::core::ptr::null_mut::<options>();
-    let mut wo: *mut options = ::core::ptr::null_mut::<options>();
+    let mut go: Option<OptionsScope> = None;
+    let mut wo: Option<OptionsScope> = None;
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -2138,15 +2031,15 @@ unsafe fn window_customize_draw_option(
     array_key = (item.array_key)
         .as_ref()
         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    o = options_get(item.oo, name);
-    if o.is_null() {
+    let Some(option) = CustomizeOption::read(
+        item.oo.as_ref().expect("option scope"),
+        CStr::from_ptr(name),
+    ) else {
         return;
-    }
-    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| {
-        entry as *const crate::src::shared::options::options_table_entry
-    });
+    };
+    oe = option.definition_ptr();
     is_hook = (!oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int;
-    is_monitor = options_get_monitor_data(&mut *o).is_some() as ::core::ffi::c_int;
+    is_monitor = option.is_monitor as ::core::ffi::c_int;
     is_user_hook = (*name as ::core::ffi::c_int == '@' as i32 && hooks_is_event(name) != 0)
         as ::core::ffi::c_int;
     is_any_hook = (is_hook != 0 || is_monitor != 0 || is_user_hook != 0) as ::core::ffi::c_int;
@@ -2272,7 +2165,7 @@ unsafe fn window_customize_draw_option(
             match current_block {
                 4086289836260337793 => {}
                 _ => {
-                    if let Some(monitor) = hooks_monitor_to_cstring(o) {
+                    if let Some(monitor) = option.monitor() {
                         if window_customize_write_value(
                             ctx,
                             cx,
@@ -2313,7 +2206,7 @@ unsafe fn window_customize_draw_option(
                                                 cx,
                                                 sx,
                                                 sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
-                                                o,
+                                                &option,
                                             ) == 0;
                                             current_block = 4086289836260337793;
                                         }
@@ -2376,7 +2269,7 @@ unsafe fn window_customize_draw_option(
                                         0 as ::core::ffi::c_int,
                                     );
                                     if !((*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int)) {
-                                        value_owner = Some(options_to_string(o, array_key));
+                                        value_owner = option.value(item.array_key.as_deref());
                                         value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                         if !oe.is_null() && array_key.is_null() {
                                             let rendered = options_default_to_cstring(&*oe);
@@ -2408,7 +2301,7 @@ unsafe fn window_customize_draw_option(
                                                 cx,
                                                 sx,
                                                 sy.wrapping_sub((*s).cy.wrapping_sub(cy)),
-                                                o,
+                                                &option,
                                             ) == 0
                                             {
                                                 current_block = 4086289836260337793;
@@ -2570,9 +2463,15 @@ unsafe fn window_customize_draw_option(
                                                                             &raw const grid_default_cell as *const ::core::ffi::c_void,
                                                                             ::core::mem::size_of::<grid_cell>() as size_t,
                                                                         );
-                                                                        gc.fg = options_get_number(
-                                                                            item.oo, name,
-                                                                        )
+                                                                        gc.fg = item
+                                                                            .oo
+                                                                            .as_ref()
+                                                                            .expect("option scope")
+                                                                            .with_local(|table| {
+                                                                                options_get_number(
+                                                                                    table, name,
+                                                                                )
+                                                                            })
                                                                             as ::core::ffi::c_int;
                                                                         if screen_write_text(
                                                                             &mut *ctx,
@@ -2621,7 +2520,7 @@ out.write_all(b"This is a colour option: ")
                                                                             {
                                                                                 current_block = 4086289836260337793;
                                                                             } else {
-                                                                                style_apply(&raw mut gc, item.oo, name, ft);
+                                                                                crate::src::style::style_apply_with_options(&mut gc, CStr::from_ptr(name), ft.as_mut(), |visit| item.oo.as_ref().expect("option scope").with_local(visit));
                                                                                 if screen_write_text(&mut *ctx,
 cx,
 sx,
@@ -2659,7 +2558,7 @@ out.write_all(b"This is a style option: ")
                                                                                     {
                                                                                         current_block = 4086289836260337793;
                                                                                     } else {
-                                                                                        style_apply(&raw mut gc, item.oo, name, ft);
+                                                                                        crate::src::style::style_apply_with_options(&mut gc, CStr::from_ptr(name), ft.as_mut(), |visit| item.oo.as_ref().expect("option scope").with_local(visit));
                                                                                         if screen_write_text(&mut *ctx,
 cx,
 sx,
@@ -2716,31 +2615,28 @@ write_cstr(out, unit)
                                                                                                     if !oe.is_null()
                                                                                                         && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0
                                                                                                     {
-                                                                                                        wo = ::core::ptr::null_mut::<options>();
-                                                                                                        go = ::core::ptr::null_mut::<options>();
+                                                                                                        wo = None;
+                                                                                                        go = None;
                                                                                                     } else {
                                                                                                         match item.scope as ::core::ffi::c_uint {
                                                                                                             7 => {
-                                                                                                                wo = options_get_parent(item.oo);
-                                                                                                                go = options_get_parent(wo);
+                                                                                                                wo = item.oo.as_ref().expect("option scope").parent();
+                                                                                                                go = wo.as_ref().and_then(|parent| parent.parent());
                                                                                                             }
                                                                                                             6 | 4 => {
-                                                                                                                wo = ::core::ptr::null_mut::<options>();
-                                                                                                                go = options_get_parent(item.oo);
+                                                                                                                wo = None;
+                                                                                                                go = item.oo.as_ref().expect("option scope").parent();
                                                                                                             }
                                                                                                             _ => {
-                                                                                                                wo = ::core::ptr::null_mut::<options>();
-                                                                                                                go = ::core::ptr::null_mut::<options>();
+                                                                                                                wo = None;
+                                                                                                                go = None;
                                                                                                             }
                                                                                                         }
                                                                                                     }
-                                                                                                    if !wo.is_null() && options_owner(o) != wo {
-                                                                                                        parent = crate::src::options::options_get_only_mut(&mut *(wo), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
-                                                                                                        if !parent.is_null() {
-                                                                                                            value_owner = Some(options_to_string(
-                                                                                                                parent,
-                                                                                                                ::core::ptr::null::<::core::ffi::c_char>(),
-                                                                                                            ));
+                                                                                                    if wo.as_ref().is_some_and(|parent| parent != &option.owner) {
+                                                                                                        let parent_value = wo.as_ref().expect("parent scope").with_entry(CStr::from_ptr(name), |entry| options_to_cstring(entry, std::ptr::null(), 0));
+                                                                                                        if let Some(parent_value) = parent_value {
+                                                                                                            value_owner = Some(parent_value);
                                                                                                             value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                             xformat(&mut label, format_args!("Window value (from window {}): " , ((fs.winlink_handle()).get_unchecked().idx) as u32));
                                                                                                             if window_customize_write_value(ctx,
@@ -2768,13 +2664,10 @@ write_cstr(out, unit)
                                                                                                     match current_block {
                                                                                                         4086289836260337793 => {}
                                                                                                         _ => {
-                                                                                                            if !go.is_null() && options_owner(o) != go {
-                                                                                                                parent = crate::src::options::options_get_only_mut(&mut *(go), std::ffi::CStr::from_ptr(name)).map_or(std::ptr::null_mut(), |entry| entry);
-                                                                                                                if !parent.is_null() {
-                                                                                                                    value_owner = Some(options_to_string(
-                                                                                                                       parent,
-                                                                                                                       ::core::ptr::null::<::core::ffi::c_char>(),
-                                                                                                                    ));
+                                                                                                            if go.as_ref().is_some_and(|parent| parent != &option.owner) {
+                                                                                                                let parent_value = go.as_ref().expect("parent scope").with_entry(CStr::from_ptr(name), |entry| options_to_cstring(entry, std::ptr::null(), 0));
+                                                                                                                if let Some(parent_value) = parent_value {
+                                                                                                                    value_owner = Some(parent_value);
                                                                                                                     value = value_owner.as_ref().unwrap().as_ptr().cast_mut();
                                                                                                                     window_customize_write_value(ctx,
 (*s).cx,
@@ -3264,103 +3157,36 @@ fn window_customize_mode_prompt_callbacks(
 unsafe fn window_customize_set_option_callback(
     c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
-    s: Option<&CStr>,
+    value: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
-    let mut current_block: u64;
     let item = &*owner.item;
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = owner.mode.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut oo: *mut options = item.oo;
-    let mut name: *const ::core::ffi::c_char = (item.name)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut array_key: *const ::core::ffi::c_char = (item.array_key)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    let mut cause: Option<CString> = None;
-    let mut idx: u_int = 0;
-    let mut keybuf: [::core::ffi::c_char; 32] = [0; 32];
-    if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
+    let Some(value) = value.filter(|value| !value.is_empty()) else {
         return PROMPT_CLOSE;
-    }
-    if window_customize_check_item(&*data, item, None) == 0 {
-        return PROMPT_CLOSE;
-    }
-    o = options_get(oo, name);
-    if o.is_null() {
-        return PROMPT_CLOSE;
-    }
-    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| {
-        entry as *const crate::src::shared::options::options_table_entry
-    });
-    if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        if array_key.is_null() {
-            idx = 0 as u_int;
-            while idx < INT_MAX as u_int {
-                if crate::src::options::options_array_get_index_mut(&mut *(o), idx)
-                    .map_or(std::ptr::null_mut(), |value| value)
-                    .is_null()
-                {
-                    break;
-                }
-                idx = idx.wrapping_add(1);
-            }
-            xformat(&mut keybuf, format_args!("{}", idx as u32));
-            array_key = &raw mut keybuf as *mut ::core::ffi::c_char;
-        }
-        if options_array_set(o, array_key, s, 0 as ::core::ffi::c_int, &raw mut cause)
-            != 0 as ::core::ffi::c_int
-        {
-            current_block = 1995505731522653903;
-        } else {
-            current_block = 4808432441040389987;
-        }
-    } else if options_from_string(oo, oe, name, s, 0 as ::core::ffi::c_int, &raw mut cause)
-        != 0 as ::core::ffi::c_int
-    {
-        current_block = 1995505731522653903;
-    } else {
-        current_block = 4808432441040389987;
-    }
-    match current_block {
-        1995505731522653903 => {
-            window_customize_uppercase_cause(&mut cause);
-            status_message_set(
-                c,
-                -(1 as ::core::ffi::c_int),
-                1 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                |out| write_cstr(out, cause.as_ref().unwrap().as_ptr()),
-            );
-            return PROMPT_CLOSE;
-        }
-        _ => {
-            if item.option_type as ::core::ffi::c_uint
-                == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
-                && *name as ::core::ffi::c_int == '@' as i32
-            {
-                hooks_add_event(name);
-            }
-            options_push_changes(
-                (item.name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            );
-            mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-            mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-            (*mode_pane).flags |= PANE_REDRAW;
-            return PROMPT_CLOSE;
-        }
     };
+    if (*data).dead != 0 || window_customize_check_item(&*data, item, None) == 0 {
+        return PROMPT_CLOSE;
+    }
+    let mut cause = None;
+    if window_customize_set_option_value(item, value.as_ptr(), &mut cause) != 0 {
+        if cause.is_some() {
+            window_customize_uppercase_cause(&mut cause);
+            status_message_set(c, -1, 1, 0, 0, |out| {
+                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+            });
+        }
+        return PROMPT_CLOSE;
+    }
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
+    (*mode_pane_owner.get()).flags |= PANE_REDRAW;
+    PROMPT_CLOSE
 }
+
 unsafe fn window_customize_set_environment_callback(
     _c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
@@ -3573,9 +3399,11 @@ unsafe fn window_customize_add_option_callback(
     }
     let name_owned = matched.expect("valid user option was checked").name;
     let name = name_owned.as_ptr();
-    options_set_string(item.oo, name, 0 as ::core::ffi::c_int, |out| {
-        write_cstr(out, value)
-    });
+    item.oo
+        .as_ref()
+        .expect("option scope")
+        .set_from_string(None, &name_owned, Some(CStr::from_ptr(value)), false)
+        .expect("valid user string option");
     if item.option_type as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_HOOKS as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -3591,7 +3419,7 @@ unsafe fn window_customize_add_option(
     client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     mut scope: window_customize_scope,
-    mut oo: *mut options,
+    oo: Option<OptionsScope>,
     mut type_0: window_customize_option_type,
 ) {
     let data = mode_owner.get();
@@ -3837,7 +3665,6 @@ unsafe fn window_customize_start_edit(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut envent: Option<&environ_entry> = None;
     let value: Cow<'_, CStr>;
     let mut edit_type: window_customize_edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
@@ -3850,22 +3677,16 @@ unsafe fn window_customize_start_edit(
         if window_customize_option_editable(&*data, item) == 0 {
             return;
         }
-        o = options_get(
-            item.oo,
-            (item.name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
-        if o.is_null() {
+        let Some(option) = CustomizeOption::read(
+            item.oo.as_ref().expect("option scope"),
+            item.name.as_deref().expect("option name"),
+        ) else {
             return;
-        }
-        value = Cow::Owned(options_to_cstring(
-            o,
-            (item.array_key)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            0 as ::core::ffi::c_int,
-        ));
+        };
+        let Some(option_value) = option.value(item.array_key.as_deref()) else {
+            return;
+        };
+        value = Cow::Owned(option_value);
         edit_type = WINDOW_CUSTOMIZE_EDIT_OPTION;
     } else if item.type_0 as ::core::ffi::c_uint
         == WINDOW_CUSTOMIZE_ITEM_KEY as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -3944,9 +3765,8 @@ unsafe fn window_customize_set_option(
     mut pane: ::core::ffi::c_int,
 ) {
     let data = mode_owner.get();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
+    let mut oo: Option<OptionsScope> = None;
     let mut flag: ::core::ffi::c_int = 0;
     let mut scope: window_customize_scope = WINDOW_CUSTOMIZE_NONE;
     let mut choice: u_int = 0;
@@ -3968,19 +3788,19 @@ unsafe fn window_customize_set_option(
     if window_customize_check_item(&*data, item, Some(&mut fs)) == 0 {
         return;
     }
-    o = options_get(item.oo, name);
-    if o.is_null() {
+    let Some(option) = CustomizeOption::read(
+        item.oo.as_ref().expect("option scope"),
+        CStr::from_ptr(name),
+    ) else {
         return;
-    }
-    oe = options_table_entry(&*(o)).map_or(std::ptr::null(), |entry| {
-        entry as *const crate::src::shared::options::options_table_entry
-    });
+    };
+    oe = option.definition_ptr();
     if !oe.is_null() && !(*oe).scope & OPTIONS_TABLE_PANE != 0 {
         pane = 0 as ::core::ffi::c_int;
     }
     if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         scope = item.scope;
-        oo = item.oo;
+        oo = item.oo.clone();
     } else {
         if global != 0 {
             match item.scope as ::core::ffi::c_uint {
@@ -4024,32 +3844,33 @@ unsafe fn window_customize_set_option(
             }
         }
         if scope as ::core::ffi::c_uint == item.scope as ::core::ffi::c_uint {
-            oo = item.oo;
+            oo = item.oo.clone();
         } else {
             oo = window_customize_get_tree(scope, &fs);
         }
     }
+    let oo = oo.expect("option target scope");
     if !oe.is_null()
         && (*oe).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_FLAG as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        flag = options_get_number(oo, name) as ::core::ffi::c_int;
-        options_set_number(
-            oo,
-            name,
-            (flag == 0) as ::core::ffi::c_int as ::core::ffi::c_longlong,
-        );
+        flag = oo.with_local(|table| options_get_number(table, name)) as ::core::ffi::c_int;
+        oo.with_local(|table| {
+            options_set_number(table, name, (flag == 0) as i64);
+        });
     } else if !oe.is_null()
         && (*oe).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_CHOICE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        choice = options_get_number(oo, name) as u_int;
+        choice = oo.with_local(|table| options_get_number(table, name)) as u_int;
         if choice as usize + 1 >= (&(*oe).choices).len() {
             choice = 0 as u_int;
         } else {
             choice = choice.wrapping_add(1);
         }
-        options_set_number(oo, name, choice as ::core::ffi::c_longlong);
+        oo.with_local(|table| {
+            options_set_number(table, name, choice as i64);
+        });
     } else {
         let scope_text = window_customize_scope_text(scope, &fs);
         if !scope_text.as_bytes().is_empty() {
@@ -4076,13 +3897,15 @@ unsafe fn window_customize_set_option(
         prompt_bytes.extend_from_slice(b") ");
         let prompt = CString::new(prompt_bytes).expect("option prompt contains no NUL");
         drop(scope_text);
-        let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
+        let Some(value) = option.value(item.array_key.as_deref()) else {
+            return;
+        };
         let mut new_item = window_customize_new_item();
 
         new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
         new_item.option_type = item.option_type;
         new_item.scope = scope;
-        new_item.oo = oo;
+        new_item.oo = Some(oo);
         window_customize_set_name(&mut *new_item, Some(CStr::from_ptr(name)));
         if !array_key.is_null() {
             window_customize_set_item_array_key(&mut *new_item, Some(CStr::from_ptr(array_key)));
@@ -4108,82 +3931,56 @@ unsafe fn window_customize_set_option(
 unsafe fn window_customize_set_array_key_callback(
     c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
-    s: Option<&CStr>,
+    value: Option<&CStr>,
     _key: prompt_key_result,
 ) -> prompt_result {
-    let mut s = s.map_or(::core::ptr::null(), CStr::as_ptr);
     let item = &*owner.item;
-    let data = crate::src::shared::rc::as_ptr(&owner.mode);
+    let data = owner.mode.get();
     let Some(mode_pane_owner) = window_pane_upgrade(&(*data).wp) else {
         return PROMPT_CLOSE;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut array_key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: Option<CString> = None;
-    if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 || (*data).dead != 0 {
-        return PROMPT_CLOSE;
-    }
-    name = (item.name)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    array_key = (item.array_key)
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut());
-    if array_key.is_null() || window_customize_check_item(&*data, item, None) == 0 {
-        return PROMPT_CLOSE;
-    }
-    o = options_get(item.oo, name);
-    if o.is_null() {
-        return PROMPT_CLOSE;
-    }
-    if !crate::src::options::options_array_get_mut(&mut *(o), std::ffi::CStr::from_ptr(s))
-        .map_or(std::ptr::null_mut(), |value| value)
-        .is_null()
-    {
-        return PROMPT_CLOSE;
-    }
-    let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
-    if options_array_set(
-        o,
-        s,
-        value.as_ptr(),
-        0 as ::core::ffi::c_int,
-        &raw mut cause,
-    ) != 0 as ::core::ffi::c_int
-    {
-        drop(value);
-        window_customize_uppercase_cause(&mut cause);
-        status_message_set(
-            c,
-            -(1 as ::core::ffi::c_int),
-            1 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, cause.as_ref().unwrap().as_ptr()),
-        );
-        return PROMPT_CLOSE;
-    } else {
-        drop(value);
-        options_array_set(
-            o,
-            array_key,
-            ::core::ptr::null::<::core::ffi::c_char>(),
-            0 as ::core::ffi::c_int,
-            ::core::ptr::null_mut::<Option<CString>>(),
-        );
-        options_push_changes(
-            (item.name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        );
-        mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
-        mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-        (*mode_pane).flags |= PANE_REDRAW;
+    let Some(new_key) = value.filter(|value| !value.is_empty()) else {
         return PROMPT_CLOSE;
     };
+    if (*data).dead != 0 || window_customize_check_item(&*data, item, None) == 0 {
+        return PROMPT_CLOSE;
+    }
+    let Some(old_key) = item.array_key.as_deref() else {
+        return PROMPT_CLOSE;
+    };
+    let name = item.name.as_deref().expect("option name");
+    let Some(option) = CustomizeOption::read(item.oo.as_ref().expect("option scope"), name) else {
+        return PROMPT_CLOSE;
+    };
+    if option
+        .owner
+        .with_entry(name, |entry| options_array_get(entry, new_key).is_some())
+        != Some(false)
+    {
+        return PROMPT_CLOSE;
+    }
+    let Some(value) = option.value(Some(old_key)) else {
+        return PROMPT_CLOSE;
+    };
+    if let Err(error) = option
+        .owner
+        .set_array_item(name, new_key, Some(&value), false)
+    {
+        let mut cause = Some(error);
+        window_customize_uppercase_cause(&mut cause);
+        status_message_set(c, -1, 1, 0, 0, |out| {
+            write_cstr(out, cause.as_ref().unwrap().as_ptr())
+        });
+        return PROMPT_CLOSE;
+    }
+    let _ = option.owner.set_array_item(name, old_key, None, false);
+    options_push_changes(name.as_ptr());
+    mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
+    mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
+    (*mode_pane_owner.get()).flags |= PANE_REDRAW;
+    PROMPT_CLOSE
 }
+
 unsafe fn window_customize_set_array_key(
     client_owner: Option<&ClientRef>,
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
@@ -4215,7 +4012,7 @@ unsafe fn window_customize_set_array_key(
     new_item.type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
     new_item.option_type = item.option_type;
     new_item.scope = item.scope;
-    new_item.oo = item.oo;
+    new_item.oo = item.oo.clone();
     window_customize_set_name(&mut *new_item, item.name.as_deref());
     window_customize_set_item_array_key(&mut *new_item, item.array_key.as_deref());
     let owner = RefBox::new(CustomizePromptItem {
@@ -4281,62 +4078,37 @@ unsafe fn window_customize_unset_option(
     item: &ModeTreeItemSnapshot<window_customize_itemdata>,
 ) {
     let data = mode_owner.get();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if window_customize_check_item(&*data, item, None) == 0 {
         return;
     }
-    o = options_get(
-        item.oo,
-        (item.name)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-    );
-    if o.is_null() {
+    let name = item.name.as_deref().expect("option name");
+    let Some(owner) = item.oo.as_ref().expect("option scope").resolve(name, false) else {
         return;
-    }
-    if !item.array_key.is_none()
+    };
+    if item.array_key.is_some()
         && mode_tree_get_current(&*(*data).tree_owner().get()).is_customize(item)
     {
-        mode_tree_up(&mut *(*data).tree_owner().get(), 0 as ::core::ffi::c_int);
+        mode_tree_up(&mut *(*data).tree_owner().get(), 0);
     }
-    options_remove_or_default(
-        o,
-        (item.array_key)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ::core::ptr::null_mut::<Option<CString>>(),
-    );
+    let _ = owner.remove_or_default(name, item.array_key.as_deref());
 }
+
 unsafe fn window_customize_reset_option(
     mode_owner: &Rc<UnsafeCell<window_customize_modedata>>,
     item: &window_customize_itemdata,
 ) {
     let data = mode_owner.get();
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    if window_customize_check_item(&*data, item, None) == 0 {
+    if window_customize_check_item(&*data, item, None) == 0 || item.array_key.is_some() {
         return;
     }
-    if !item.array_key.is_none() {
-        return;
-    }
-    oo = item.oo;
-    while !oo.is_null() {
-        o = crate::src::options::options_get_only_mut(
-            &mut *(oo),
-            (item.name).as_deref().expect("string is present"),
-        )
-        .map_or(std::ptr::null_mut(), |entry| entry);
-        if !o.is_null() {
-            options_remove_or_default(
-                o,
-                ::core::ptr::null::<::core::ffi::c_char>(),
-                ::core::ptr::null_mut::<Option<CString>>(),
-            );
-        }
-        oo = options_get_parent(oo);
+    let name = item.name.as_deref().expect("option name");
+    let mut scope = item.oo.clone();
+    while let Some(owner) = scope {
+        let _ = owner.remove_or_default(name, None);
+        scope = owner.parent();
     }
 }
+
 unsafe fn window_customize_set_command_callback(
     c: Option<&ClientRef>,
     owner: &CustomizePromptItem,
@@ -4876,7 +4648,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_SERVER,
-            global_options,
+            Some(OptionsScope::GlobalServer),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4886,14 +4658,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(
-                &mut (*fs
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options),
+            window_customize_get_tree(WINDOW_CUSTOMIZE_SESSION, &fs),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4903,14 +4668,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(
-                &mut (*fs
-                    .pane_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options),
+            window_customize_get_tree(WINDOW_CUSTOMIZE_PANE, &fs),
             WINDOW_CUSTOMIZE_OPTIONS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4920,14 +4678,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_SESSION,
-            options_owner_ptr(
-                &mut (*fs
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options),
+            window_customize_get_tree(WINDOW_CUSTOMIZE_SESSION, &fs),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -4937,14 +4688,7 @@ unsafe fn window_customize_add_current(
             client_owner,
             mode_owner,
             WINDOW_CUSTOMIZE_PANE,
-            options_owner_ptr(
-                &mut (*fs
-                    .pane_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options),
+            window_customize_get_tree(WINDOW_CUSTOMIZE_PANE, &fs),
             WINDOW_CUSTOMIZE_HOOKS,
         );
         return 1 as ::core::ffi::c_int;
@@ -5518,6 +5262,169 @@ mod environment_lifetime_tests {
             assert!(lifetime.upgrade().is_none());
             crate::src::reactor::shutdown_runtime();
             assert!(target.resolve().is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod option_scope_tests {
+    use super::*;
+    use crate::src::format::{format_add_owned_cb, format_create};
+    use crate::src::shared::format::FORMAT_NOJOBS;
+    use crate::src::window::Window;
+    use std::cell::{Cell, RefCell};
+
+    thread_local! {
+        static EDITING: RefCell<Option<OptionsScope>> = const { RefCell::new(None) };
+        static EDITED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    fn edit_later_rows(_: NonNull<format_tree>) -> Option<CString> {
+        if !EDITED.replace(true) {
+            let scope = EDITING.with(|slot| slot.borrow().clone().expect("array scope"));
+            unsafe {
+                scope
+                    .set_array_item(c"status-format", c"1", Some(c"changed"), false)
+                    .unwrap();
+                scope
+                    .set_array_item(c"status-format", c"2", None, false)
+                    .unwrap();
+            }
+        }
+        Some(c"".to_owned())
+    }
+
+    #[test]
+    fn array_format_callback_updates_next_row_and_missing_key_stops_iteration() {
+        unsafe {
+            let saved_globals = (global_options, global_s_options, global_w_options);
+            let mut globals = options_create(None);
+            global_options = &mut *globals;
+            global_s_options = &mut *globals;
+            global_w_options = &mut *globals;
+            let window = window::with_options_for_test();
+            let scope = OptionsScope::Window(Rc::downgrade(&window));
+            let definition = crate::src::options_table::options_table
+                .iter()
+                .find(|definition| definition.name == Some(c"status-format"))
+                .unwrap();
+            scope.ensure_array(definition);
+            for (key, value) in [
+                (c"0", c"first"),
+                (c"1", c"second"),
+                (c"2", c"removed"),
+                (c"3", c"unvisited"),
+            ] {
+                scope
+                    .set_array_item(c"status-format", key, Some(value), false)
+                    .unwrap();
+            }
+            let ids = scope
+                .with_entry(c"status-format", |entry| {
+                    crate::src::options::options_array_iter(entry)
+                        .map(|item| item.id())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap();
+            let tree = Rc::new(UnsafeCell::new(mode_tree_data::default()));
+            let top = mode_tree_add(
+                &mut *tree.get(),
+                None,
+                ModeTreeItemData::None,
+                1,
+                c"Options",
+                None,
+                1,
+            );
+            let mode = Rc::new(UnsafeCell::new(window_customize_modedata {
+                wp: Weak::new(),
+                dead: 0,
+                data: Some(tree.clone()),
+                editor: None,
+                format: c"#{option_value}#{zz_customize_mutation}".to_owned(),
+                hide_global: 0,
+                hide_default: 0,
+                prompt_flags: 0,
+                item_list: Vec::new(),
+                fs: cmd_find_state::default(),
+                change: WINDOW_CUSTOMIZE_UNSET,
+            }));
+            EDITING.with(|slot| *slot.borrow_mut() = Some(scope.clone()));
+            EDITED.set(false);
+            let mut context = format_create(None, None, 0, FORMAT_NOJOBS);
+            format_add_owned_cb(&mut *context, c"zz_customize_mutation", edit_later_rows);
+            let option = CustomizeOption::read(&scope, c"status-format").unwrap();
+            assert_eq!(
+                window_customize_build_array(
+                    &mode,
+                    &top,
+                    WINDOW_CUSTOMIZE_WINDOW,
+                    &option,
+                    &mut *context
+                ),
+                2
+            );
+            let rows = top.borrow().children.snapshot();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].borrow().text.as_deref(), Some(c"first"));
+            assert_eq!(rows[1].borrow().text.as_deref(), Some(c"changed"));
+            assert_eq!(rows[0].borrow().tag, ids[0]);
+            assert_eq!(
+                rows[1].borrow().tag,
+                ids[1],
+                "value replacement preserves row identity"
+            );
+            let row = rows[1].borrow().itemdata.as_customize().unwrap();
+            assert!(row.oo.as_ref() == Some(&scope));
+            assert_eq!(row.array_key.as_deref(), Some(c"1"));
+            assert!(EDITED.get());
+            format_free(context);
+            EDITING.with(|slot| slot.borrow_mut().take());
+            drop(mode);
+            drop(tree);
+            window.release(c"customize array test");
+            (global_options, global_s_options, global_w_options) = saved_globals;
+            options_free(globals);
+        }
+    }
+
+    #[test]
+    fn detached_option_row_relooks_up_recreated_entry_without_retaining_window() {
+        unsafe {
+            let window = window::with_options_for_test();
+            let observer = Rc::downgrade(&window);
+            let scope = OptionsScope::Window(observer.clone());
+            scope
+                .set_from_string(None, c"@row", Some(c"old"), false)
+                .unwrap();
+            let original = CustomizeOption::read(&scope, c"@row").unwrap();
+            let mut row = window_customize_new_item();
+            row.type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
+            row.oo = Some(scope.clone());
+            row.name = Some(c"@row".to_owned());
+            let detached = window_customize_copy_item(&row);
+            assert!(scope.remove_or_default(c"@row", None).unwrap());
+            scope
+                .set_from_string(None, c"@row", Some(c"new"), false)
+                .unwrap();
+            let recreated = CustomizeOption::read(
+                detached.oo.as_ref().unwrap(),
+                detached.name.as_deref().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(recreated.value(None).as_deref(), Some(c"new"));
+            assert_ne!(
+                original.tag(None),
+                recreated.tag(None),
+                "recreated user rows cannot inherit old tags"
+            );
+            assert_eq!(
+                Rc::strong_count(&window),
+                1,
+                "rows and resolved entries only observe the owner"
+            );
+            window.release(c"customize row test");
+            assert!(observer.upgrade().is_none());
         }
     }
 }

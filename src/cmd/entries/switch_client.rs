@@ -32,6 +32,7 @@ use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::window::{window, winlink};
 use crate::src::sort::sort_order_from_string;
+use crate::src::window::Window as _;
 use crate::src::window::{
     window_pane_is_visible, window_pop_zoom, window_push_zoom, window_redraw_active_switch,
     window_set_active_pane,
@@ -91,7 +92,6 @@ unsafe fn cmd_switch_client_exec(
     let mut selected_session;
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut sort_crit: sort_criteria = sort_criteria {
@@ -216,54 +216,42 @@ unsafe fn cmd_switch_client_exec(
         if wl.is_alive()
             && !wp.is_null()
             && wp
-                != (*wl
-                    .get_unchecked()
-                    .window_handle()
+                != ((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+                    .active_pane()
                     .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .active_pane()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
+                    .map_or(std::ptr::null_mut(), |owner| owner.get())
         {
-            w = wl
+            let window_owner = wl
                 .get_unchecked()
                 .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            if (*w).modal.upgrade().is_some()
-                && !wp
-                    .as_ref()
-                    .is_some_and(|pane| (*w).modal.ptr_eq(&pane.observer))
-            {
+                .cloned()
+                .expect("switch window");
+            if window_owner.modal_pane().is_some_and(|modal| {
+                !std::rc::Rc::ptr_eq(&modal, &target.pane_handle().expect("target pane"))
+            }) {
                 visible = 1 as ::core::ffi::c_int;
             } else {
                 visible = window_pane_is_visible(&target.pane_handle().expect("target pane"));
             }
-            if visible == 0
-                && window_push_zoom(
-                    &(*(w)).observer.upgrade().expect("live window"),
-                    0 as ::core::ffi::c_int,
-                    Zflag,
-                ) != 0
+            if visible == 0 && window_push_zoom(&window_owner, 0 as ::core::ffi::c_int, Zflag) != 0
             {
-                server_redraw_window(&*(w));
+                server_redraw_window(&window_owner);
             }
             window_redraw_active_switch(
-                &(*(w)).observer.upgrade().expect("live window"),
+                &window_owner,
                 (wp).as_ref()
                     .and_then(|model| model.observer.upgrade())
                     .as_ref(),
             );
             window_set_active_pane(
-                &(*(w)).observer.upgrade().expect("live window"),
+                &window_owner,
                 &(*(wp)).observer.upgrade().expect("live window_pane"),
                 1 as ::core::ffi::c_int,
             );
-            if visible == 0
-                && window_pop_zoom(&(*(w)).observer.upgrade().expect("live window")) != 0
-            {
-                server_redraw_window(&*(w));
+            if visible == 0 && window_pop_zoom(&window_owner) != 0 {
+                server_redraw_window(&window_owner);
             }
+            window_owner.release(c"switch client pane");
         }
         if wl.is_alive() {
             session_set_current(s.as_ref().expect("live session"), wl.clone());

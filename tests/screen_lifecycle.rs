@@ -16,7 +16,7 @@ use hmux2::src::tmux::global_options;
 fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {
     unsafe {
         let previous = global_options;
-        let mut global_options_owner = options_create(std::ptr::null_mut());
+        let mut global_options_owner = options_create(None);
         global_options = &raw mut *global_options_owner;
         let definition = options_table
             .iter()

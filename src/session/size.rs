@@ -56,7 +56,7 @@ mod tests {
     unsafe fn new_session(name: &CStr, status: i64) -> Rc<UnsafeCell<session>> {
         let owner = session::new();
         (*owner.get()).name = name.to_owned();
-        let mut options = options_create(std::ptr::null_mut());
+        let mut options = options_create(None);
         for key in [c"status", c"status-position"] {
             let definition = crate::src::options_table::options_table
                 .iter()

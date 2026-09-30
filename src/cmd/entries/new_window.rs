@@ -26,7 +26,6 @@ use crate::src::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::environment::environ;
-use crate::src::shared::layout::layout_cell;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::spawn::spawn_context;
@@ -35,6 +34,7 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
 use crate::src::spawn::spawn_window;
 use crate::src::tmux::{check_name, clean_name_cstring};
+use crate::src::window::Window as _;
 use crate::src::window::{
     winlink_find_by_index, winlink_shuffle_up, winlinks_minmax, winlinks_next,
 };
@@ -87,7 +87,7 @@ unsafe fn cmd_new_window_exec(
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
-        lc: ::core::ptr::null_mut::<layout_cell>(),
+        layout: None,
         name: None,
         argv: Vec::new(),
         environ: None,
@@ -179,12 +179,11 @@ unsafe fn cmd_new_window_exec(
                 .with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
             while wl.is_alive() {
                 if !(strcmp(
-                    (*wl.get_unchecked()
+                    wl.get_unchecked()
                         .window_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                    .name
-                    .as_ptr(),
+                        .expect("live window")
+                        .name()
+                        .as_ptr(),
                     expanded.as_ptr(),
                 ) != 0 as ::core::ffi::c_int)
                 {
@@ -219,14 +218,13 @@ unsafe fn cmd_new_window_exec(
                 .upgrade()
                 .is_none()
         {
-            (*(s.as_ref().expect("live session").current_winlink())
+            s.as_ref()
+                .expect("live session")
+                .current_winlink()
                 .get_unchecked()
                 .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .latest = c
-                .as_ref()
-                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
+                .expect("live window")
+                .set_latest_client(c.as_ref());
         }
         recalculate_sizes();
         return CMD_RETURN_NORMAL;
@@ -310,14 +308,10 @@ unsafe fn cmd_new_window_exec(
                 tc_owner.as_ref(),
                 Some(&session_owner),
                 (new_wl).clone(),
-                ((*new_wl
-                    .get_unchecked()
-                    .window_handle()
+                (((new_wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+                    .active_pane()
                     .as_ref()
                     .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .active_pane()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
                 .as_ref()
                 .and_then(|model| model.observer.upgrade())
                 .as_ref(),

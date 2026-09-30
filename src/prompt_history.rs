@@ -38,19 +38,18 @@ unsafe fn prompt_find_history_file() -> Option<CString> {
         global_options,
         b"history-file\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    let history_file = CStr::from_ptr(history_file);
-    if history_file.is_empty() {
+    if history_file.as_bytes().is_empty() {
         return None;
     }
-    if history_file.to_bytes()[0] == b'/' {
-        return Some(history_file.to_owned());
+    if history_file.as_bytes()[0] == b'/' {
+        return Some(history_file);
     }
-    if !history_file.to_bytes().starts_with(b"~/") {
+    if !history_file.as_bytes().starts_with(b"~/") {
         return None;
     }
     let home = find_home_cstr()?;
     let mut path = home.to_bytes().to_vec();
-    path.extend_from_slice(&history_file.to_bytes()[1..]);
+    path.extend_from_slice(&history_file.as_bytes()[1..]);
     Some(CString::new(path).expect("C string paths contain no interior NUL"))
 }
 unsafe fn prompt_add_typed_history(line: &CStr) {

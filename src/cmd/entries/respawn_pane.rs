@@ -11,7 +11,6 @@ use crate::src::shared::client::client;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::environment::environ;
-use crate::src::shared::layout::layout_cell;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::session::session;
@@ -58,7 +57,7 @@ unsafe fn cmd_respawn_pane_exec(
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
-        lc: ::core::ptr::null_mut::<layout_cell>(),
+        layout: None,
         name: None,
         argv: Vec::new(),
         environ: None,
@@ -111,18 +110,8 @@ unsafe fn cmd_respawn_pane_exec(
         return CMD_RETURN_ERROR;
     }
     (*wp).flags |= PANE_REDRAW;
-    server_redraw_window_borders(
-        &*((*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())),
-    );
-    server_status_window(
-        &*((*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())),
-    );
+    server_redraw_window_borders(&(((*wp).window_handle().as_ref()).expect("live window")));
+    server_status_window(&(((*wp).window_handle().as_ref()).expect("live window")));
     drop(sc.environ.take());
     return CMD_RETURN_NORMAL;
 }

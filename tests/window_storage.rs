@@ -1,37 +1,46 @@
+#[path = "support/window_fixture.rs"]
+mod window_fixture;
 use hmux2::src::window::*;
 use std::rc::Rc;
+use window_fixture::WindowOptions;
 
 #[test]
 fn global_index_observes_windows_and_lookups_retain_them() {
     unsafe {
         let head = &raw mut windows;
         assert!((*head).storage.is_none());
-        let first = window::new();
-        let second = window::new();
-        (*first.get()).id = 123;
-        (*second.get()).id = 125;
+        let options = WindowOptions::new();
+        let first = options.create(80, 24);
+        let second = options.create(80, 24);
+        let first_id = first.id();
+        let second_id = second.id();
         let first_weak = Rc::downgrade(&first);
         let second_weak = Rc::downgrade(&second);
-        assert!(windows_insert(head, &first).is_none());
-        assert!(windows_insert(head, &second).is_none());
+        let existing = windows_insert(head, &first).unwrap();
+        assert!(Rc::ptr_eq(&existing, &first));
+        existing.release(c"existing index entry");
         assert_eq!(Rc::strong_count(&first), 1, "index must not own windows");
-        let retained = window_find_by_id(123).unwrap();
-        assert_eq!(retained.get(), first.get());
-        assert!(window_find_by_id(124).is_none());
+        let retained = window_find_by_id(first_id).unwrap();
+        assert!(Rc::ptr_eq(&retained, &first));
+        assert!(window_find_by_id(second_id + 1).is_none());
         let minimum = windows_minmax(&*head).unwrap();
-        assert_eq!(minimum.get(), first.get());
+        assert!(Rc::ptr_eq(&minimum, &first));
         window_remove_ref(minimum, c"index minimum".as_ptr());
-        let next = windows_next(&*first.get()).unwrap();
-        assert_eq!(next.get(), second.get());
+        let next = first.next_window().unwrap();
+        assert!(Rc::ptr_eq(&next, &second));
         window_remove_ref(next, c"index successor".as_ptr());
-        assert!(windows_next(&*second.get()).is_none());
+        assert!(second.next_window().is_none());
 
         let duplicate = window::new();
-        (*duplicate.get()).id = 123;
+        assert_eq!(
+            duplicate.id(),
+            first_id,
+            "the first allocated ID collides with an unregistered default"
+        );
         let existing = windows_insert(head, &duplicate).unwrap();
-        assert_eq!(existing.get(), first.get());
+        assert!(Rc::ptr_eq(&existing, &first));
         window_remove_ref(existing, c"duplicate lookup".as_ptr());
-        assert!((*duplicate.get()).owner.is_empty());
+        assert!(duplicate.next_window().is_none());
         assert!(!windows_remove(&mut *head, &duplicate));
         window_remove_ref(duplicate, c"duplicate window".as_ptr());
 
@@ -43,8 +52,8 @@ fn global_index_observes_windows_and_lookups_retain_them() {
             1,
             "removal must not retain window"
         );
-        assert!(window_find_by_id(125).is_none());
-        assert!(windows_next(&*first.get()).is_none());
+        assert!(window_find_by_id(second_id).is_none());
+        assert!(first.next_window().is_none());
         assert!(
             second_weak.upgrade().is_some(),
             "removal must not destroy window"
@@ -60,6 +69,7 @@ fn global_index_observes_windows_and_lookups_retain_them() {
             (*head).storage.is_none(),
             "final explicit release must unlink the window"
         );
-        assert!(window_find_by_id(123).is_none());
+        assert!(window_find_by_id(first_id).is_none());
+        options.free();
     }
 }

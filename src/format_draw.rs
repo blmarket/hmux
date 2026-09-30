@@ -1924,7 +1924,7 @@ mod range_tests {
                 (3, vec![("left", 0, 2), ("right", 2, 3)]),
             ] {
                 let saved_options = global_options;
-                let mut options = options_create_owned(std::ptr::null_mut());
+                let mut options = options_create_owned(None);
                 options_default(
                     &mut *options,
                     options_table

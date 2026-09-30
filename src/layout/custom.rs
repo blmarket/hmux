@@ -7,15 +7,12 @@ use crate::src::json::{
 use crate::src::layout::{
     layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
     layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_make_leaf, layout_print_cell,
-    layout_replace_with_node, layout_set_size, layout_take_leaf,
+    layout_set_size, layout_take_leaf,
 };
 use crate::src::resize::recalculate_sizes;
-use crate::src::window::{
-    window_count_panes, window_pane_first, window_pane_index, window_pane_is_floating,
-    window_pane_last_index, window_pane_next, window_pane_stack_first, window_pane_stack_push,
-    window_pane_stack_remove, window_pane_z_first, window_pane_z_insert_front, window_pane_z_next,
-    window_pane_z_remove, window_pane_zindex, window_resize, window_set_active_pane,
-};
+use crate::src::shared::window::WindowRef;
+use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 macro_rules! layout_format_cause {
@@ -120,273 +117,156 @@ fn layout_checksum(layout: &[u8]) -> u_short {
             .wrapping_add(byte as ::core::ffi::c_char as u16)
     })
 }
-pub(crate) unsafe fn layout_dump_owned(
-    lcroot: *mut layout_cell,
-    flags: ::core::ffi::c_int,
-) -> Option<CString> {
-    if lcroot.is_null() {
-        return None;
-    }
-    let mut body = Vec::new();
-    if layout_append(lcroot, &mut body, flags) != 0 {
-        return None;
-    }
-    let mut output = Vec::new();
-    if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
-        output.extend_from_slice(format!("{:04x},", layout_checksum(&body)).as_bytes());
-        output.extend_from_slice(&body);
-    } else {
-        output.extend_from_slice(b"{\"V\":2,\"L\":");
-        output.extend_from_slice(&body);
-        output.push(b'}');
-    }
-    Some(CString::new(output).expect("layout serializer produced an interior NUL"))
+/// Structural copy only: capturing a tree never queries a pane or its Window.
+/// The owning Window releases its borrow before resolving these weak identities.
+pub(crate) struct LayoutSnapshot {
+    kind: layout_type,
+    flags: i32,
+    geometry: layout_geometry,
+    pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    children: Vec<LayoutSnapshot>,
 }
-unsafe fn layout_append_v2(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core::ffi::c_int {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
-    let mut c: ::core::ffi::c_char = 0;
-    let mut i: u_int = 0;
-    let mut n: u_int = 0;
-    if lc.is_null() {
-        return -(1 as ::core::ffi::c_int);
+impl LayoutSnapshot {
+    pub(crate) fn capture(cell: &layout_cell) -> Self {
+        Self {
+            kind: cell.type_0,
+            flags: cell.flags,
+            geometry: cell.g,
+            pane: cell.wp.clone(),
+            children: cell
+                .cells
+                .iter()
+                .map(|child| Self::capture(child))
+                .collect(),
+        }
     }
-    type_0 = (*lc).type_0;
-    if type_0 as ::core::ffi::c_uint
-        == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        c = 'v' as i32 as ::core::ffi::c_char;
-    } else if type_0 as ::core::ffi::c_uint
-        == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        c = 'h' as i32 as ::core::ffi::c_char;
-    } else if type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        c = 'p' as i32 as ::core::ffi::c_char;
-    } else {
-        return -(1 as ::core::ffi::c_int);
+    fn has_tiled_leaf(&self) -> bool {
+        if self.kind == LAYOUT_WINDOWPANE {
+            self.flags & LAYOUT_CELL_FLOATING == 0
+        } else {
+            self.children.iter().any(Self::has_tiled_leaf)
+        }
     }
-    ls.extend_from_slice(
-        format!(
-            "{{\"t\":\"{}\",\"w\":{},\"h\":{},\"x\":{},\"y\":{}",
-            c as u8 as char,
-            (*lc).g.sx,
-            (*lc).g.sy,
-            (*lc).g.xoff,
-            (*lc).g.yoff
-        )
-        .as_bytes(),
-    );
-    if type_0 as ::core::ffi::c_uint
-        != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        ls.extend_from_slice(b",\"c\":[");
-        n = 0 as u_int;
-        lcchild = layout_cells_first(&*lc);
-        while !lcchild.is_null() {
-            if layout_append_v2(lcchild, ls) != 0 as ::core::ffi::c_int {
-                return -(1 as ::core::ffi::c_int);
+    fn into_compat(mut self) -> Option<Self> {
+        if self.kind == LAYOUT_WINDOWPANE {
+            return (self.flags & LAYOUT_CELL_FLOATING == 0).then_some(self);
+        }
+        self.pane = std::rc::Weak::new();
+        self.children = self
+            .children
+            .into_iter()
+            .filter_map(Self::into_compat)
+            .collect();
+        match self.children.len() {
+            0 => None,
+            1 => self.children.pop(),
+            _ => Some(self),
+        }
+    }
+    pub(crate) unsafe fn dump(self, legacy: bool) -> Option<CString> {
+        let mut body = Vec::new();
+        if legacy {
+            if !self.has_tiled_leaf() {
+                return None;
             }
-            ls.extend_from_slice(b",");
-            n = n.wrapping_add(1);
-            lcchild = layout_cell_next(lcchild);
+            let mut compatible = self.into_compat()?;
+            if compatible.kind == LAYOUT_WINDOWPANE && compatible.flags & LAYOUT_CELL_FLOATING == 0
+            {
+                compatible.geometry.xoff = 0;
+                compatible.geometry.yoff = 0;
+            }
+            compatible.append_v1(&mut body);
+        } else {
+            self.append_v2(&mut body)?;
         }
-        if n == 0 as u_int {
-            return -(1 as ::core::ffi::c_int);
+        let mut output = Vec::new();
+        if legacy {
+            output.extend_from_slice(format!("{:04x},", layout_checksum(&body)).as_bytes());
+            output.extend_from_slice(&body);
+        } else {
+            output.extend_from_slice(b"{\"V\":2,\"L\":");
+            output.extend_from_slice(&body);
+            output.push(b'}');
         }
-        ls.pop().expect("layout serializer underflow");
-        ls.extend_from_slice(b"]");
-    } else {
-        let Some(pane_owner) = (*lc).wp.upgrade() else {
-            return -1;
+        Some(CString::new(output).expect("layout serializer produced an interior NUL"))
+    }
+    unsafe fn append_v2(&self, bytes: &mut Vec<u8>) -> Option<()> {
+        let kind = match self.kind {
+            LAYOUT_TOPBOTTOM => 'v',
+            LAYOUT_LEFTRIGHT => 'h',
+            LAYOUT_WINDOWPANE => 'p',
+            _ => return None,
         };
-        wp = pane_owner.get();
-        if wp
-            == (*(*wp)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .active_pane()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-        {
-            ls.extend_from_slice(b",\"a\":true");
-        } else if window_pane_last_index(&*wp)
-            .map(|value| {
-                i = value;
-            })
-            .is_some()
-        {
-            ls.extend_from_slice(format!(",\"l\":{}", i).as_bytes());
-        }
-        if !window_pane_index(&*wp)
-            .map(|value| {
-                i = value;
-            })
-            .is_some()
-        {
-            return -(1 as ::core::ffi::c_int);
-        }
-        ls.extend_from_slice(format!(",\"i\":{}", i).as_bytes());
-        if (*lc).flags & LAYOUT_CELL_FLOATING != 0
-            && window_pane_zindex(&*wp)
-                .map(|value| {
-                    i = value;
-                })
-                .is_some()
-        {
-            ls.extend_from_slice(format!(",\"z\":{}", i).as_bytes());
-        }
-        ls.extend_from_slice(format!(",\"I\":\"%{}\"", (*wp).id).as_bytes());
-    }
-    ls.extend_from_slice(b"}");
-    return 0 as ::core::ffi::c_int;
-}
-unsafe fn layout_append_v1(mut lc: *mut layout_cell, ls: &mut Vec<u8>) -> ::core::ffi::c_int {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut brackets = b"[]";
-    if lc.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if let Some(pane_owner) = (*lc).wp.upgrade() {
-        ls.extend_from_slice(
+        let g = self.geometry;
+        bytes.extend_from_slice(
             format!(
-                "{}x{},{},{},{}",
-                (*lc).g.sx,
-                (*lc).g.sy,
-                (*lc).g.xoff,
-                (*lc).g.yoff,
-                (*pane_owner.get()).id
+                "{{\"t\":\"{kind}\",\"w\":{},\"h\":{},\"x\":{},\"y\":{}",
+                g.sx, g.sy, g.xoff, g.yoff
             )
             .as_bytes(),
         );
-    } else {
-        ls.extend_from_slice(
-            format!(
-                "{}x{},{},{}",
-                (*lc).g.sx,
-                (*lc).g.sy,
-                (*lc).g.xoff,
-                (*lc).g.yoff
-            )
-            .as_bytes(),
-        );
-    }
-    let mut current_block_16: u64;
-    match (*lc).type_0 as ::core::ffi::c_uint {
-        0 => {
-            brackets = b"{}";
-            current_block_16 = 14129903220312603109;
-        }
-        1 => {
-            current_block_16 = 14129903220312603109;
-        }
-        2 | _ => {
-            current_block_16 = 1054647088692577877;
-        }
-    }
-    match current_block_16 {
-        14129903220312603109 => {
-            ls.extend_from_slice(&brackets[0..1]);
-            lcchild = layout_cells_first(&*lc);
-            while !lcchild.is_null() {
-                if layout_append_v1(lcchild, ls) != 0 as ::core::ffi::c_int {
-                    return -(1 as ::core::ffi::c_int);
+        if self.kind != LAYOUT_WINDOWPANE {
+            if self.children.is_empty() {
+                return None;
+            }
+            bytes.extend_from_slice(b",\"c\":[");
+            for (index, child) in self.children.iter().enumerate() {
+                if index != 0 {
+                    bytes.push(b',');
                 }
-                ls.extend_from_slice(b",");
-                lcchild = layout_cell_next(lcchild);
+                child.append_v2(bytes)?;
             }
-            ls.pop().expect("layout serializer underflow");
-            ls.extend_from_slice(&brackets[1..2]);
-        }
-        _ => {}
-    }
-    return 0 as ::core::ffi::c_int;
-}
-unsafe fn layout_custom_copy_layout(lc: *mut layout_cell) -> Option<Box<layout_cell>> {
-    if (*lc).type_0 == LAYOUT_WINDOWPANE && (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-        return None;
-    }
-    let mut owner = layout_create_cell();
-    let copy: *mut layout_cell = &mut *owner;
-    owner.type_0 = (*lc).type_0;
-    owner.flags = (*lc).flags;
-    owner.g = (*lc).g;
-    if owner.type_0 == LAYOUT_WINDOWPANE {
-        owner.wp = (*lc).wp.clone();
-    } else {
-        let mut child = layout_cells_first(&*lc);
-        while !child.is_null() {
-            if let Some(copy_child) = layout_custom_copy_layout(child) {
-                layout_cells_push_back(copy, copy_child);
+            bytes.push(b']');
+        } else {
+            let pane = self.pane.upgrade()?;
+            let window = pane
+                .window_observer()
+                .upgrade()
+                .expect("layout pane window");
+            let observer = std::rc::Rc::downgrade(&pane);
+            if window
+                .active_pane()
+                .as_ref()
+                .is_some_and(|active| std::rc::Rc::ptr_eq(active, &pane))
+            {
+                bytes.extend_from_slice(b",\"a\":true");
+            } else if let Some(index) = window.pane_history_index(&observer) {
+                bytes.extend_from_slice(format!(",\"l\":{index}").as_bytes());
             }
-            child = layout_cell_next(child);
+            let index = window.pane_index(&observer)?;
+            bytes.extend_from_slice(format!(",\"i\":{index}").as_bytes());
+            if self.flags & LAYOUT_CELL_FLOATING != 0 {
+                if let Some(index) = window.pane_stacking_index(&observer) {
+                    bytes.extend_from_slice(format!(",\"z\":{index}").as_bytes());
+                }
+            }
+            bytes.extend_from_slice(format!(",\"I\":\"%{}\"", pane.id()).as_bytes());
         }
-        match owner.cells.len() {
-            0 => return None,
-            1 => return layout_cells_remove(copy, layout_cells_first(&owner)),
-            _ => {}
+        bytes.push(b'}');
+        Some(())
+    }
+    unsafe fn append_v1(&self, bytes: &mut Vec<u8>) {
+        let g = self.geometry;
+        bytes.extend_from_slice(format!("{}x{},{},{}", g.sx, g.sy, g.xoff, g.yoff).as_bytes());
+        if let Some(pane) = self.pane.upgrade() {
+            bytes.extend_from_slice(format!(",{}", pane.id()).as_bytes());
         }
+        let brackets = match self.kind {
+            LAYOUT_LEFTRIGHT => b"{}",
+            LAYOUT_TOPBOTTOM => b"[]",
+            _ => return,
+        };
+        bytes.push(brackets[0]);
+        for (index, child) in self.children.iter().enumerate() {
+            if index != 0 {
+                bytes.push(b',');
+            }
+            child.append_v1(bytes);
+        }
+        bytes.push(brackets[1]);
     }
-    Some(owner)
-}
-unsafe fn layout_custom_create_compat(lcroot: *mut layout_cell) -> Option<Box<layout_cell>> {
-    let mut root = layout_custom_copy_layout(lcroot)?;
-    if layout_cell_is_tiled(&mut *root) != 0 {
-        root.g.xoff = 0;
-        root.g.yoff = 0;
-    }
-    Some(root)
 }
 
-unsafe fn layout_custom_unlink_panes(mut lc: *mut layout_cell) {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    match (*lc).type_0 as ::core::ffi::c_uint {
-        2 => {
-            (*lc).wp = std::rc::Weak::new();
-        }
-        0 | 1 => {
-            lcchild = layout_cells_first(&*lc);
-            while !lcchild.is_null() {
-                layout_custom_unlink_panes(lcchild);
-                lcchild = layout_cell_next(lcchild);
-            }
-        }
-        _ => {}
-    };
-}
-unsafe fn layout_custom_free_compat(mut root: Option<Box<layout_cell>>) {
-    if let Some(root) = root.as_deref_mut() {
-        layout_custom_unlink_panes(root);
-    }
-    drop(root);
-}
-
-unsafe fn layout_append(
-    mut lcroot: *mut layout_cell,
-    ls: &mut Vec<u8>,
-    mut flags: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut result: ::core::ffi::c_int = 0;
-    if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
-        if layout_cell_is_tiled(lcroot) == 0 && layout_cell_has_tiled_child(lcroot) == 0 {
-            return -(1 as ::core::ffi::c_int);
-        }
-        let mut lccompat = layout_custom_create_compat(lcroot);
-        result = layout_append_v1(
-            lccompat
-                .as_deref_mut()
-                .map_or(std::ptr::null_mut(), |root| root),
-            ls,
-        );
-        layout_custom_free_compat(lccompat);
-    } else {
-        result = layout_append_v2(lcroot, ls);
-    }
-    return result;
-}
 unsafe fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut n: u_int = 0 as u_int;
@@ -436,13 +316,11 @@ unsafe fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 pub unsafe fn layout_parse(
-    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    w_owner: &WindowRef,
     mut input: *const ::core::ffi::c_char,
     mut cause: *mut Option<CString>,
 ) -> ::core::ffi::c_int {
-    let mut w = w_owner.get();
     let mut current_block: u64;
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut candidate: Option<Box<layout_cell>> = None;
@@ -463,12 +341,16 @@ pub unsafe fn layout_parse(
         return -(1 as ::core::ffi::c_int);
     }
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
-    npanes = window_count_panes(&*w, with_floating);
+    npanes = w_owner
+        .pane_snapshot()
+        .iter()
+        .filter(|pane| with_floating != 0 || !pane.is_floating())
+        .count() as u_int;
     if npanes == 0 as u_int {
         layout_format_cause!(
             pctx.cause.as_deref_mut(),
             "window @{} has no panes",
-            (*w).id,
+            (w_owner).id(),
         );
     } else {
         loop {
@@ -557,52 +439,72 @@ pub unsafe fn layout_parse(
                     );
                 } else {
                     if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
-                        window_resize(
-                            &(*(w)).observer.upgrade().expect("live window"),
+                        w_owner.resize(
                             (*lc).g.sx,
                             (*lc).g.sy,
                             -(1 as ::core::ffi::c_int),
                             -(1 as ::core::ffi::c_int),
                         );
                     }
-                    let mut floating = Vec::new();
-                    if pctx.version == 1 as int64_t {
-                        wp = window_pane_first(w.as_ref())
-                            .as_ref()
-                            .map_or(std::ptr::null_mut(), |owner| owner.get());
-                        while !wp.is_null() {
-                            if !(window_pane_is_floating(&*wp) == 0) {
-                                lcchild = (*wp).layout_cell as *mut layout_cell;
-                                floating.push(
-                                    layout_cells_remove((*lcchild).parent, lcchild)
-                                        .expect("floating cell is owned"),
-                                );
-                                (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
+                    // Resizing may dispatch callbacks. Acquire the current pane order
+                    // afterward, then keep all tree edits in one bounded borrow.
+                    let panes = w_owner.pane_snapshot();
+                    let mut restored;
+                    {
+                        let mut tree = w_owner.borrow_layout_root_mut();
+                        let mut floating = Vec::new();
+                        if pctx.version == 1 {
+                            for pane in &panes {
+                                let cell = (*pane.get())
+                                    .layout_cell
+                                    .and_then(|id| {
+                                        tree.as_deref_mut().and_then(|root| root.find_mut(id))
+                                    })
+                                    .map_or(std::ptr::null_mut(), |cell| cell as *mut layout_cell);
+                                if !cell.is_null() && (*cell).flags & LAYOUT_CELL_FLOATING != 0 {
+                                    floating.push(
+                                        layout_cells_remove((*cell).parent, cell)
+                                            .expect("floating cell is owned"),
+                                    );
+                                    (*cell).parent = std::ptr::null_mut();
+                                }
                             }
-                            wp = window_pane_next(wp.as_ref())
-                                .as_ref()
-                                .map_or(std::ptr::null_mut(), |owner| owner.get());
                         }
+                        // Dropping the old cells clears Pane's old cell links; this
+                        // must precede assigning the panes into the replacement.
+                        drop(tree.take());
+                        *tree = candidate.take();
+                        layout_assign(&panes, &mut tree, &mut pctx, &mut floating);
+                        assert!(floating.is_empty());
+                        restored = layout_parse_capture_restore(&pctx);
+                        pctx.cctxs.clear();
                     }
-                    drop((*w).layout_root.take());
-                    (*w).layout_root = candidate.take();
-                    layout_assign(w_owner, &raw mut pctx, &mut floating);
-                    assert!(floating.is_empty());
+                    // No pointer in the parser context or local root survives into
+                    // resize/selection callbacks. Pane restoration carries Weak only.
+                    lc = std::ptr::null_mut();
+                    lcchild = std::ptr::null_mut();
+                    drop(panes);
                     layout_fix_offsets(w_owner);
                     layout_fix_panes(w_owner, None);
-                    if pctx.version > 1 as int64_t {
-                        layout_parse_apply_ctx(w_owner, &raw mut pctx);
+                    if pctx.version > 1 {
+                        layout_parse_apply_ctx(w_owner, &mut restored);
                     }
                     recalculate_sizes();
-                    layout_print_cell(
-                        lc,
-                        b"layout_parse\0" as *const u8 as *const ::core::ffi::c_char,
-                        0 as u_int,
-                    );
+                    {
+                        let tree =
+                            w_owner.borrow_layout_root(crate::src::window::LayoutView::Visible);
+                        if let Some(root) = tree.as_deref() {
+                            layout_print_cell(
+                                (root as *const layout_cell).cast_mut(),
+                                c"layout_parse".as_ptr(),
+                                0,
+                            );
+                        }
+                    }
                     if pctx.version == 1 as int64_t {
                         events_fire_window(
                             b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-                            (*(w)).observer.upgrade().expect("live window"),
+                            std::rc::Rc::clone(&(w_owner)),
                         );
                     }
                     layout_parse_free_ctx(&raw mut pctx);
@@ -616,17 +518,15 @@ pub unsafe fn layout_parse(
     return -(1 as ::core::ffi::c_int);
 }
 unsafe fn layout_assign_from_ctx(
-    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
+    panes: &[std::rc::Rc<std::cell::UnsafeCell<window_pane>>],
     mut pctx: *mut layout_parse_ctx,
 ) {
-    let mut w = w_owner.get();
     (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
-    let panes = (*w).panes.snapshot();
     assert!(
         panes.len() >= (*pctx).cctxs.len(),
         "layout requires enough live panes"
     );
-    for (cctx, pane_owner) in (*pctx).cctxs.iter().zip(&panes) {
+    for (cctx, pane_owner) in (*pctx).cctxs.iter().zip(panes) {
         layout_make_leaf(cctx.lc, pane_owner);
     }
 }
@@ -640,7 +540,7 @@ unsafe fn layout_assign_fallback_tiled(
     }
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
-            if let Some(owner) = panes.find(|owner| (*owner.get()).layout_cell.is_null()) {
+            if let Some(owner) = panes.find(|owner| (*owner.get()).layout_cell.is_none()) {
                 layout_make_leaf(lc, &owner);
             }
             return;
@@ -657,44 +557,64 @@ unsafe fn layout_assign_fallback_tiled(
     };
 }
 unsafe fn layout_assign_fallback(
-    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
-    mut lcroot: *mut layout_cell,
+    panes: &[std::rc::Rc<std::cell::UnsafeCell<window_pane>>],
+    tree: &mut Option<Box<layout_cell>>,
     floating: &mut Vec<Box<layout_cell>>,
 ) {
-    let mut w = w_owner.get();
-    let panes = (*w).panes.snapshot();
-    layout_assign_fallback_tiled(&mut panes.iter().cloned(), lcroot);
-    if window_count_panes(&*w, 1 as ::core::ffi::c_int) > 1 as u_int
-        && (*lcroot).type_0 as ::core::ffi::c_uint
-            == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        lcroot = layout_replace_with_node(w_owner, lcroot, LAYOUT_TOPBOTTOM);
+    let mut root = tree.as_deref_mut().expect("assigned layout root") as *mut layout_cell;
+    layout_assign_fallback_tiled(&mut panes.iter().cloned(), root);
+    if panes.len() > 1 && (*root).type_0 == LAYOUT_WINDOWPANE {
+        let mut node = layout_create_cell();
+        crate::src::layout::layout_make_node(&mut *node, LAYOUT_TOPBOTTOM);
+        node.g = (*root).g;
+        let previous = tree.replace(node).expect("replaced root is owned");
+        root = tree.as_deref_mut().unwrap();
+        layout_cells_push_front(root, previous);
     }
-    for owner in &panes {
-        let wp = owner.get();
-        if window_pane_is_floating(&*wp) != 0 {
-            let lc = (*wp).layout_cell;
-            layout_cells_push_back(lcroot, layout_take_leaf(floating, lc));
+    for pane in panes {
+        if let Some(id) = (*pane.get()).layout_cell {
+            if floating
+                .iter()
+                .any(|cell| cell.id() == id && cell.flags & LAYOUT_CELL_FLOATING != 0)
+            {
+                layout_cells_push_back(root, layout_take_leaf(floating, id));
+            }
         }
     }
 }
 unsafe fn layout_assign(
-    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
-    mut pctx: *mut layout_parse_ctx,
+    panes: &[std::rc::Rc<std::cell::UnsafeCell<window_pane>>],
+    tree: &mut Option<Box<layout_cell>>,
+    pctx: &mut layout_parse_ctx,
     floating: &mut Vec<Box<layout_cell>>,
 ) {
-    let mut w = w_owner.get();
-    if !(*pctx).cctxs.is_empty() {
-        layout_assign_from_ctx(w_owner, pctx);
+    if !pctx.cctxs.is_empty() {
+        layout_assign_from_ctx(panes, pctx);
     } else {
-        layout_assign_fallback(
-            w_owner,
-            (*w).layout_root_ptr()
-                .map_or(std::ptr::null_mut(), |root| root),
-            floating,
-        );
-    };
+        layout_assign_fallback(panes, tree, floating);
+    }
 }
+
+/// Selection metadata outlives the tree borrow, but never keeps a cell alive or
+/// reconstructs its pane through a pointer after a callback replaces that tree.
+struct LayoutPaneRestore {
+    pane: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
+    active: i32,
+    last: i32,
+    zindex: i32,
+}
+unsafe fn layout_parse_capture_restore(pctx: &layout_parse_ctx) -> Vec<LayoutPaneRestore> {
+    pctx.cctxs
+        .iter()
+        .map(|cell| LayoutPaneRestore {
+            pane: (*cell.lc).wp.clone(),
+            active: cell.active,
+            last: cell.last,
+            zindex: cell.zindex,
+        })
+        .collect()
+}
+
 unsafe fn layout_construct_cell(
     mut layout: *mut *const ::core::ffi::c_char,
 ) -> Option<Box<layout_cell>> {
@@ -1023,63 +943,46 @@ unsafe fn layout_construct(
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn layout_parse_apply_ctx(
-    w_owner: &std::rc::Rc<std::cell::UnsafeCell<window>>,
-    mut pctx: *mut layout_parse_ctx,
-) {
-    let mut w = w_owner.get();
-    let mut wp: *mut window_pane;
-    for pane_owner in (*w).z_index.snapshot() {
-        wp = pane_owner.get();
-        if window_pane_is_floating(&*wp) != 0 {
-            window_pane_z_remove(&mut *w, &*wp);
+unsafe fn layout_parse_apply_ctx(w_owner: &WindowRef, restored: &mut [LayoutPaneRestore]) {
+    for pane_owner in w_owner.stacking_snapshot() {
+        if pane_owner.is_floating() {
+            assert!(
+                w_owner
+                    .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
+                    .remove(&std::rc::Rc::downgrade(&pane_owner)),
+                "pane is not in its stacking order"
+            );
         }
     }
-    (*pctx)
-        .cctxs
-        .sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
-    for cctx in &(*pctx).cctxs {
-        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else {
+    restored.sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
+    for cctx in restored.iter() {
+        let Some(pane_owner) = cctx.pane.upgrade() else {
             continue;
         };
-        wp = pane_owner.get();
-        if window_pane_is_floating(&*wp) != 0 {
-            window_pane_z_insert_front(&mut *w, &*wp);
+        if pane_owner.is_floating() {
+            w_owner
+                .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
+                .push_front(std::rc::Rc::downgrade(&pane_owner));
         }
     }
-    for cctx in &(*pctx).cctxs {
+    for cctx in restored.iter() {
         if cctx.active == 1 as ::core::ffi::c_int {
-            if let Some(pane_owner) = (*cctx.lc).wp.upgrade() {
-                window_set_active_pane(
-                    &(*(w)).observer.upgrade().expect("live window"),
-                    &pane_owner,
-                    1 as ::core::ffi::c_int,
-                );
+            if let Some(pane_owner) = cctx.pane.upgrade() {
+                w_owner.select_pane(&pane_owner, true);
             }
             break;
         }
     }
-    while let Some(pane_owner) = window_pane_stack_first(w.as_ref()) {
-        wp = pane_owner.get();
-        window_pane_stack_remove(
-            &raw mut (*w).last_panes,
-            (wp).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
-    }
-    (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));
-    for cctx in &(*pctx).cctxs {
-        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else {
+    w_owner.borrow_pane_history_mut().clear();
+    restored.sort_unstable_by(|a, b| b.last.cmp(&a.last));
+    for cctx in restored.iter() {
+        let Some(pane_owner) = cctx.pane.upgrade() else {
             continue;
         };
-        wp = pane_owner.get();
         if !(cctx.last < 0 as ::core::ffi::c_int || cctx.active == 1 as ::core::ffi::c_int) {
-            window_pane_stack_push(
-                &raw mut (*w).last_panes,
-                (wp).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+            crate::src::shared::pane::pane_history_push(
+                &mut w_owner.borrow_pane_history_mut(),
+                std::rc::Rc::downgrade(&pane_owner),
             );
         }
     }
@@ -1196,6 +1099,146 @@ mod json_tests {
                 expected.as_bytes(),
                 "{input:?}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_snapshot_outlives_source_tree_and_collapses_floating_siblings() {
+        unsafe {
+            let mut root = layout_create_cell();
+            root.type_0 = LAYOUT_LEFTRIGHT;
+            let mut tiled = layout_create_cell();
+            tiled.g = layout_geometry {
+                sx: 40,
+                sy: 24,
+                xoff: 8,
+                yoff: 3,
+            };
+            let mut floating = layout_create_cell();
+            floating.flags = LAYOUT_CELL_FLOATING;
+            layout_cells_push_back(&mut *root, tiled);
+            layout_cells_push_back(&mut *root, floating);
+            let snapshot = LayoutSnapshot::capture(&root);
+            drop(root);
+            let result = snapshot.dump(true).unwrap();
+            let body = b"40x24,0,0";
+            assert_eq!(
+                result.to_bytes(),
+                format!("{:04x},40x24,0,0", layout_checksum(body)).as_bytes()
+            );
+            let mut floating = layout_create_cell();
+            floating.flags = LAYOUT_CELL_FLOATING;
+            assert!(LayoutSnapshot::capture(&floating).dump(true).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod restoration_borrow_tests {
+    use super::*;
+    use std::rc::Rc;
+
+    fn context(cells: Vec<layout_parse_cell_ctx>) -> layout_parse_ctx<'static> {
+        layout_parse_ctx {
+            version: 2,
+            num_active: 1,
+            root: None,
+            cause: None,
+            cctxs: cells,
+        }
+    }
+
+    #[test]
+    fn restoration_keeps_weak_pane_identity_after_tree_replacement() {
+        unsafe {
+            let first = window_pane::new();
+            let second = window_pane::new();
+            let mut root = layout_create_cell();
+            crate::src::layout::layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
+            let mut cells = Vec::new();
+            for (index, pane) in [&first, &second].into_iter().enumerate() {
+                let mut cell = layout_create_cell();
+                layout_make_leaf(&mut *cell, pane);
+                cells.push(layout_parse_cell_ctx {
+                    lc: &mut *cell,
+                    active: index as i32,
+                    last: 7 - index as i32,
+                    index: index as i32,
+                    zindex: 2 - index as i32,
+                });
+                layout_cells_push_back(&mut *root, cell);
+            }
+            let mut ctx = context(cells);
+            let restored = layout_parse_capture_restore(&ctx);
+            ctx.cctxs.clear();
+            // Model a selection callback replacing the tree before history is
+            // restored. No saved state may dereference the old cells afterward.
+            drop(root);
+            assert!((*first.get()).layout_cell.is_none());
+            assert!((*second.get()).layout_cell.is_none());
+            assert!(Rc::ptr_eq(&restored[0].pane.upgrade().unwrap(), &first));
+            assert!(Rc::ptr_eq(&restored[1].pane.upgrade().unwrap(), &second));
+            assert_eq!(
+                (restored[1].active, restored[1].last, restored[1].zindex),
+                (1, 6, 1)
+            );
+            assert_eq!(Rc::strong_count(&first), 1);
+            assert_eq!(Rc::strong_count(&second), 1);
+            drop(first);
+            assert!(restored[0].pane.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn legacy_assignment_preserves_detached_floating_cell_and_pane_links() {
+        unsafe {
+            let tiled = window_pane::new();
+            let floating = window_pane::new();
+            let mut old_root = layout_create_cell();
+            crate::src::layout::layout_make_node(&mut *old_root, LAYOUT_TOPBOTTOM);
+            let mut old_tiled = layout_create_cell();
+            layout_make_leaf(&mut *old_tiled, &tiled);
+            let mut old_floating = layout_create_cell();
+            old_floating.flags = LAYOUT_CELL_FLOATING;
+            layout_set_size(&mut *old_floating, 12, 8, 5, 3);
+            layout_make_leaf(&mut *old_floating, &floating);
+            let floating_id = old_floating.id();
+            let floating_ptr = &mut *old_floating as *mut layout_cell;
+            layout_cells_push_back(&mut *old_root, old_tiled);
+            layout_cells_push_back(&mut *old_root, old_floating);
+            let mut detached = vec![layout_cells_remove(&mut *old_root, floating_ptr).unwrap()];
+            drop(old_root);
+            assert!((*tiled.get()).layout_cell.is_none());
+            assert_eq!((*floating.get()).layout_cell, Some(floating_id));
+            let mut tree = Some(layout_create_cell());
+            layout_set_size(tree.as_deref_mut().unwrap(), 80, 24, 0, 0);
+            let panes = [tiled.clone(), floating.clone()];
+            let mut ctx = context(Vec::new());
+            ctx.version = 1;
+            layout_assign(&panes, &mut tree, &mut ctx, &mut detached);
+            assert!(detached.is_empty());
+            let root = tree.as_deref().unwrap();
+            assert_eq!(root.type_0, LAYOUT_TOPBOTTOM);
+            assert_eq!(root.cells.len(), 2);
+            assert!(root.cells[0].wp.ptr_eq(&Rc::downgrade(&tiled)));
+            assert_eq!(&*root.cells[1] as *const layout_cell, floating_ptr);
+            assert_eq!(
+                (
+                    root.cells[1].g.sx,
+                    root.cells[1].g.sy,
+                    root.cells[1].g.xoff,
+                    root.cells[1].g.yoff
+                ),
+                (12, 8, 5, 3)
+            );
+            drop(tree);
+            assert!((*tiled.get()).layout_cell.is_none());
+            assert!((*floating.get()).layout_cell.is_none());
         }
     }
 }

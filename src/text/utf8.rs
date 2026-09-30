@@ -1,7 +1,7 @@
 use crate::src::compat::utf8proc::utf8proc_wcwidth;
 use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
-use crate::src::options::{options_array_item_value, options_get};
+use crate::src::options::options_array_item_value;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
@@ -44,30 +44,15 @@ pub unsafe fn utf8_update_width_cache() {
         .lock()
         .expect("UTF-8 width cache poisoned")
         .reset_defaults();
-    let mut o: *mut options_entry;
-    let mut a: *mut options_array_item;
-    o = options_get(
-        global_options,
-        b"codepoint-widths\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    let a_root = o;
-    let mut a_keys = crate::src::options::options_array_iter(&*a_root)
-        .map(|item| item.key.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, key.as_ptr())
-    });
-    while !a.is_null() {
-        utf8_add_to_width_cache(
-            (*(crate::src::options::options_array_item_value_mut(&mut *(a))
-                as *mut crate::src::shared::options::options_value))
-                .string_ptr()
-                .expect("string option"),
-        );
-        a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
-        });
+    let values =
+        crate::src::options::options_read_entry(&*global_options, c"codepoint-widths", |entry| {
+            crate::src::options::options_array_iter(entry)
+                .map(|item| item.value.string_ptr().expect("width override").to_owned())
+                .collect::<Vec<_>>()
+        })
+        .expect("codepoint-widths option");
+    for value in values {
+        utf8_add_to_width_cache(&value);
     }
 }
 unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {

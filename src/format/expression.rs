@@ -3,6 +3,7 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
 use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::window::Window as _;
 // Private expression parser/evaluator.  The modifier parser, loops,
 // conditionals, escaping, job expansion, and recursive expansion routines
 // remain in their original order. The
@@ -198,173 +199,182 @@ pub(super) unsafe fn format_find(
     let format_pane_owner = (*ft).wp.upgrade();
     let format_window_owner = (*ft).w.upgrade();
     let format_session_owner = (*ft).s.upgrade();
-    let mut current_block: u64;
-    let mut found: Option<CString> = None;
-    let mut s: [::core::ffi::c_char; 512] = [0; 512];
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut t: time_t = 0 as time_t;
-    let mut tm: tm = tm {
-        tm_sec: 0,
-        tm_min: 0,
-        tm_hour: 0,
-        tm_mday: 0,
-        tm_mon: 0,
-        tm_year: 0,
-        tm_wday: 0,
-        tm_yday: 0,
-        tm_isdst: 0,
-        tm_gmtoff: 0,
-        tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
-    };
-    let parsed_option = options_parse_owned(CStr::from_ptr(key));
-    if let Some(parsed) = &parsed_option {
-        let name = parsed.name.as_ptr();
-        let array_key = parsed
-            .array_key
-            .as_ref()
-            .map_or(std::ptr::null(), |key| key.as_ptr());
-        let lookup = |options: &mut options| {
-            let entry = options_get(options, name);
-            (!entry.is_null()).then(|| options_to_cstring(entry, array_key, 1))
+    // Format callbacks can remove the last published Window owner. Keep the
+    // temporary owner through lookup, then run explicit release on every exit.
+    let result = (|| {
+        let mut current_block: u64;
+        let mut found: Option<CString> = None;
+        let mut s: [::core::ffi::c_char; 512] = [0; 512];
+        let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let mut t: time_t = 0 as time_t;
+        let mut tm: tm = tm {
+            tm_sec: 0,
+            tm_min: 0,
+            tm_hour: 0,
+            tm_mday: 0,
+            tm_mon: 0,
+            tm_year: 0,
+            tm_wday: 0,
+            tm_yday: 0,
+            tm_isdst: 0,
+            tm_gmtoff: 0,
+            tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
         };
-        found = global_options.as_mut().and_then(lookup);
-        if found.is_none() {
-            found = format_pane_owner
+        let parsed_option = options_parse_owned(CStr::from_ptr(key));
+        if let Some(parsed) = &parsed_option {
+            let name = parsed.name.as_ptr();
+            let array_key = parsed
+                .array_key
                 .as_ref()
-                .and_then(|pane| pane.with_options_mut(lookup));
-        }
-        if found.is_none() {
-            found = format_window_owner
-                .as_ref()
-                .and_then(|window| window.with_options_mut(lookup));
-        }
-        if found.is_none() {
-            found = global_w_options.as_mut().and_then(lookup);
-        }
-        if found.is_none() {
-            found = format_session_owner
-                .as_ref()
-                .and_then(|session| session.with_options_mut(lookup));
-        }
-        if found.is_none() {
-            found = global_s_options.as_mut().and_then(lookup);
-        }
-    }
-    if found.is_none() {
-        if let Some(entry) = format_table_get(CStr::from_ptr(key)) {
-            match entry.get(ft) {
-                Some(FormatValue::String(value)) => found = Some(value),
-                Some(FormatValue::Time(value)) => t = value,
-                None => {}
+                .map_or(std::ptr::null(), |key| key.as_ptr());
+            let lookup = |options: &mut options| {
+                crate::src::options::options_read_entry(options, CStr::from_ptr(name), |entry| {
+                    options_to_cstring(entry, array_key, 1)
+                })
+            };
+            found = global_options.as_mut().and_then(lookup);
+            if found.is_none() {
+                found = format_pane_owner
+                    .as_ref()
+                    .and_then(|pane| pane.with_options_mut(lookup));
             }
-        } else {
-            let entry_key = CStr::from_ptr(key).to_owned();
-            if format_entry_tree_find(&(*ft).tree, &entry_key).is_some() {
-                match format_entry_get_value(ft, &entry_key) {
+            if found.is_none() {
+                found = format_window_owner
+                    .as_ref()
+                    .and_then(|window| window.with_options_mut(lookup));
+            }
+            if found.is_none() {
+                found = global_w_options.as_mut().and_then(lookup);
+            }
+            if found.is_none() {
+                found = format_session_owner
+                    .as_ref()
+                    .and_then(|session| session.with_options_mut(lookup));
+            }
+            if found.is_none() {
+                found = global_s_options.as_mut().and_then(lookup);
+            }
+        }
+        if found.is_none() {
+            if let Some(entry) = format_table_get(CStr::from_ptr(key)) {
+                match entry.get(ft) {
                     Some(FormatValue::String(value)) => found = Some(value),
                     Some(FormatValue::Time(value)) => t = value,
                     None => {}
                 }
             } else {
-                if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
-                    // Distinguish an absent variable from a locally removed
-                    // one: the latter must not fall back to the global value.
-                    let entry = format_session_owner
-                        .as_ref()
-                        .and_then(|session| {
-                            session.with_environment_mut(|environment| {
-                                environ_find(environment, key).cloned()
+                let entry_key = CStr::from_ptr(key).to_owned();
+                if format_entry_tree_find(&(*ft).tree, &entry_key).is_some() {
+                    match format_entry_get_value(ft, &entry_key) {
+                        Some(FormatValue::String(value)) => found = Some(value),
+                        Some(FormatValue::Time(value)) => t = value,
+                        None => {}
+                    }
+                } else {
+                    if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
+                        // Distinguish an absent variable from a locally removed
+                        // one: the latter must not fall back to the global value.
+                        let entry = format_session_owner
+                            .as_ref()
+                            .and_then(|session| {
+                                session.with_environment_mut(|environment| {
+                                    environ_find(environment, key).cloned()
+                                })
                             })
-                        })
-                        .or_else(|| {
-                            environ_find(global_environ.as_deref().expect("environment"), key)
-                                .cloned()
-                        });
-                    if let Some(value) = entry.and_then(|entry| entry.value) {
-                        found = Some(value);
-                        current_block = 11739001764845178280;
+                            .or_else(|| {
+                                environ_find(global_environ.as_deref().expect("environment"), key)
+                                    .cloned()
+                            });
+                        if let Some(value) = entry.and_then(|entry| entry.value) {
+                            found = Some(value);
+                            current_block = 11739001764845178280;
+                        } else {
+                            current_block = 1836292691772056875;
+                        }
                     } else {
                         current_block = 1836292691772056875;
                     }
-                } else {
-                    current_block = 1836292691772056875;
-                }
-                match current_block {
-                    11739001764845178280 => {}
-                    _ => return None,
+                    match current_block {
+                        11739001764845178280 => {}
+                        _ => return None,
+                    }
                 }
             }
         }
-    }
-    if modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
-        if t == 0 as time_t && found.is_some() {
-            t = strtonum(
-                found.as_ref().unwrap().as_ptr(),
-                0 as ::core::ffi::c_longlong,
-                INT64_MAX as ::core::ffi::c_longlong,
-                &raw mut errstr,
-            ) as time_t;
-            if !errstr.is_null() {
-                t = 0 as time_t;
+        if modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
+            if t == 0 as time_t && found.is_some() {
+                t = strtonum(
+                    found.as_ref().unwrap().as_ptr(),
+                    0 as ::core::ffi::c_longlong,
+                    INT64_MAX as ::core::ffi::c_longlong,
+                    &raw mut errstr,
+                ) as time_t;
+                if !errstr.is_null() {
+                    t = 0 as time_t;
+                }
+                found = None;
             }
-            found = None;
-        }
-        if t == 0 as time_t {
-            return None;
-        }
-        if modifiers & FORMAT_RELATIVE as uint64_t != 0 {
-            found = format_relative_time(t);
-        } else if modifiers as ::core::ffi::c_ulonglong & FORMAT_DIFFERENCE != 0 {
-            found = Some(format_time_difference(t));
-        } else if modifiers & FORMAT_PRETTY as uint64_t != 0 {
-            found = Some(format_pretty_time_cstring(t));
-        } else {
-            if !time_format.is_null() {
-                localtime_r(&raw mut t, &raw mut tm);
-                format_strftime(
-                    &raw mut s as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 512]>() as size_t,
-                    time_format,
-                    &raw mut tm,
-                );
+            if t == 0 as time_t {
+                return None;
+            }
+            if modifiers & FORMAT_RELATIVE as uint64_t != 0 {
+                found = format_relative_time(t);
+            } else if modifiers as ::core::ffi::c_ulonglong & FORMAT_DIFFERENCE != 0 {
+                found = Some(format_time_difference(t));
+            } else if modifiers & FORMAT_PRETTY as uint64_t != 0 {
+                found = Some(format_pretty_time_cstring(t));
             } else {
-                ctime_r(&raw mut t, &raw mut s as *mut ::core::ffi::c_char);
-                s[strcspn(
-                    &raw mut s as *mut ::core::ffi::c_char,
-                    b"\n\0" as *const u8 as *const ::core::ffi::c_char,
-                ) as usize] = '\0' as i32 as ::core::ffi::c_char;
+                if !time_format.is_null() {
+                    localtime_r(&raw mut t, &raw mut tm);
+                    format_strftime(
+                        &raw mut s as *mut ::core::ffi::c_char,
+                        ::core::mem::size_of::<[::core::ffi::c_char; 512]>() as size_t,
+                        time_format,
+                        &raw mut tm,
+                    );
+                } else {
+                    ctime_r(&raw mut t, &raw mut s as *mut ::core::ffi::c_char);
+                    s[strcspn(
+                        &raw mut s as *mut ::core::ffi::c_char,
+                        b"\n\0" as *const u8 as *const ::core::ffi::c_char,
+                    ) as usize] = '\0' as i32 as ::core::ffi::c_char;
+                }
+                found = Some(CStr::from_ptr(s.as_ptr()).to_owned());
             }
-            found = Some(CStr::from_ptr(s.as_ptr()).to_owned());
+            return found;
         }
-        return found;
+        let mut found = if t != 0 {
+            CString::new(t.to_string()).expect("timestamp contains no NUL")
+        } else {
+            found?
+        };
+        if modifiers & FORMAT_BASENAME as uint64_t != 0 {
+            // basename/dirname may mutate their input or return a static string.
+            let mut scratch = found.into_bytes_with_nul();
+            found = CStr::from_ptr(__xpg_basename(scratch.as_mut_ptr().cast())).to_owned();
+        }
+        if modifiers & FORMAT_DIRNAME as uint64_t != 0 {
+            let mut scratch = found.into_bytes_with_nul();
+            found = CStr::from_ptr(dirname(scratch.as_mut_ptr().cast())).to_owned();
+        }
+        if modifiers & FORMAT_QUOTE_SHELL as uint64_t != 0 {
+            found = format_quote_shell(found.as_c_str());
+        }
+        if modifiers & FORMAT_QUOTE_SHELL_SQ as uint64_t != 0 {
+            found = format_quote_shell_single(found.as_c_str());
+        }
+        if modifiers & FORMAT_QUOTE_STYLE as uint64_t != 0 {
+            found = format_quote_style(found.as_c_str());
+        }
+        if modifiers & FORMAT_QUOTE_ARGUMENTS as uint64_t != 0 {
+            found = args_escape_cstring(found.as_c_str());
+        }
+        Some(found)
+    })();
+    if let Some(window) = format_window_owner {
+        window.release(c"format lookup");
     }
-    let mut found = if t != 0 {
-        CString::new(t.to_string()).expect("timestamp contains no NUL")
-    } else {
-        found?
-    };
-    if modifiers & FORMAT_BASENAME as uint64_t != 0 {
-        // basename/dirname may mutate their input or return a static string.
-        let mut scratch = found.into_bytes_with_nul();
-        found = CStr::from_ptr(__xpg_basename(scratch.as_mut_ptr().cast())).to_owned();
-    }
-    if modifiers & FORMAT_DIRNAME as uint64_t != 0 {
-        let mut scratch = found.into_bytes_with_nul();
-        found = CStr::from_ptr(dirname(scratch.as_mut_ptr().cast())).to_owned();
-    }
-    if modifiers & FORMAT_QUOTE_SHELL as uint64_t != 0 {
-        found = format_quote_shell(found.as_c_str());
-    }
-    if modifiers & FORMAT_QUOTE_SHELL_SQ as uint64_t != 0 {
-        found = format_quote_shell_single(found.as_c_str());
-    }
-    if modifiers & FORMAT_QUOTE_STYLE as uint64_t != 0 {
-        found = format_quote_style(found.as_c_str());
-    }
-    if modifiers & FORMAT_QUOTE_ARGUMENTS as uint64_t != 0 {
-        found = args_escape_cstring(found.as_c_str());
-    }
-    Some(found)
+    result
 }
 
 pub(super) unsafe fn format_check_time(
@@ -1054,8 +1064,6 @@ pub(super) unsafe fn format_add_window_neighbour(
     s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
     mut prefix: *const ::core::ffi::c_char,
 ) {
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let prefix = CStr::from_ptr(prefix).to_bytes();
     let key = CString::new([prefix, b"_window_index"].concat()).expect("C string key");
     format_add(nft, key.as_ptr(), |out| {
@@ -1069,39 +1077,29 @@ pub(super) unsafe fn format_add_window_neighbour(
             ((wl == s_owner.current_winlink()) as ::core::ffi::c_int) as i32
         )
     });
-    let o_root = options_owner_ptr(
-        &mut (*wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .options,
-    )
-    .map_or(std::ptr::null_mut(), |options| options);
-    let mut o_names = crate::src::options::options_iter(&*o_root)
-        .map(|entry| entry.name.clone())
-        .collect::<Vec<_>>()
-        .into_iter();
-    o = o_names
-        .next()
-        .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
-        .map_or(std::ptr::null_mut(), |entry| entry);
-    while !o.is_null() {
-        oname = options_name(&*(o)).as_ptr();
-        if *oname as ::core::ffi::c_int == '@' as i32 {
-            let prefixed = CString::new([prefix, b"_", CStr::from_ptr(oname).to_bytes()].concat())
-                .expect("C string key");
-            let oval = options_to_cstring(
-                o,
-                ::core::ptr::null::<::core::ffi::c_char>(),
-                1 as ::core::ffi::c_int,
-            );
-            format_add_cstr(nft, &prefixed, &oval);
-        }
-        o = o_names
-            .next()
-            .and_then(|name| crate::src::options::options_get_only_mut(&mut *o_root, &name))
-            .map_or(std::ptr::null_mut(), |entry| entry);
+    let entries = wl
+        .get_unchecked()
+        .window_handle()
+        .expect("neighbour window")
+        .with_options_mut(|root| {
+            let names = crate::src::options::options_iter(root)
+                .filter(|entry| entry.name.to_bytes().first() == Some(&b'@'))
+                .map(|entry| entry.name.clone())
+                .collect::<Vec<_>>();
+            names
+                .into_iter()
+                .map(|name| {
+                    let entry = crate::src::options::options_get_only_mut(root, &name)
+                        .expect("enumerated option");
+                    let value = options_to_cstring(entry, std::ptr::null(), 1);
+                    (name, value)
+                })
+                .collect::<Vec<_>>()
+        });
+    for (name, value) in entries {
+        let prefixed =
+            CString::new([prefix, b"_", name.to_bytes()].concat()).expect("C string key");
+        format_add_cstr(nft, &prefixed, &value);
     }
 }
 pub(super) unsafe fn format_loop_windows(
@@ -1141,7 +1139,6 @@ pub(super) unsafe fn format_loop_windows(
     };
     let mut buffer = Vec::new();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut i: ::core::ffi::c_int = 0;
     if format_session_owner.is_none() {
         format_log1(
@@ -1158,11 +1155,11 @@ pub(super) unsafe fn format_loop_windows(
     i = 0 as ::core::ffi::c_int;
     while i < n {
         wl = l[i as usize].clone();
-        w = wl
+        let window_id = wl
             .get_unchecked()
             .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+            .expect("format loop window")
+            .id();
         format_log1(
             es,
             b"format_loop_windows\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1171,7 +1168,7 @@ pub(super) unsafe fn format_loop_windows(
                     out,
                     "window loop: {} @{}",
                     (wl.get_unchecked().idx) as u32,
-                    ((*w).id) as u32
+                    (window_id) as u32
                 )
             },
         );
@@ -1186,7 +1183,7 @@ pub(super) unsafe fn format_loop_windows(
                 .as_ref()
                 .and_then(|item| item.observer.upgrade())
                 .as_ref(),
-            (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
+            (FORMAT_WINDOW | window_id) as ::core::ffi::c_int,
             (*ft).flags,
         );
         nft = &raw mut *nft_owner;
@@ -1272,9 +1269,6 @@ pub(super) unsafe fn format_loop_panes(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_window_owner = (*ft).w.upgrade();
-    let format_window = format_window_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
     let format_client_owner = (*ft).c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
@@ -1307,7 +1301,7 @@ pub(super) unsafe fn format_loop_panes(
     let mut buffer = Vec::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut i: ::core::ffi::c_int = 0;
-    if format_window.is_null() {
+    if format_window_owner.is_none() {
         format_log1(
             es,
             b"format_loop_panes\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1316,7 +1310,7 @@ pub(super) unsafe fn format_loop_panes(
         return None;
     }
     let (all, active) = format_choose_loop(es, fmt);
-    let l = sort_get_panes_window(&*format_window, &*sc);
+    let l = sort_get_panes_window(format_window_owner.as_ref().expect("format window"), &*sc);
     let n = i32::try_from(l.len()).expect("too many panes in format loop");
     i = 0 as ::core::ffi::c_int;
     while i < n {
@@ -1328,7 +1322,7 @@ pub(super) unsafe fn format_loop_panes(
         );
         let use_0 = if active.is_some()
             && wp
-                == (*format_window)
+                == ((format_window_owner.as_ref()).expect("live window"))
                     .active_pane()
                     .as_ref()
                     .map_or(std::ptr::null_mut(), |owner| owner.get())
@@ -1381,6 +1375,9 @@ pub(super) unsafe fn format_loop_panes(
     }
     drop(active);
     drop(all);
+    format_window_owner
+        .expect("format window")
+        .release(c"format pane loop");
     Some(CString::new(buffer).expect("format loop output contains no NUL"))
 }
 
@@ -1588,7 +1585,13 @@ pub(super) unsafe fn format_loop_options(
             }
         }
     }
-    CString::new(buffer).expect("format loop output contains no NUL")
+    let result = CString::new(buffer).expect("format loop output contains no NUL");
+    // All option visits and recursive formatting have ended. This upgrade may
+    // now be the last owner after a format callback removed its winlink.
+    if let Some(window) = window {
+        window.release(c"format option loop");
+    }
+    result
 }
 
 pub(super) unsafe fn format_loop_environ(
@@ -3756,7 +3759,7 @@ mod option_loop_reentry_tests {
 
     unsafe fn fixture(array: bool) -> (Rc<UnsafeCell<window_pane>>, Rc<(Cell<u32>, bool)>) {
         let pane = window_pane::new();
-        (*pane.get()).options = Some(options_create(std::ptr::null_mut()));
+        (*pane.get()).options = Some(options_create(None));
         let state = Rc::new((Cell::new(0), array));
         (*pane.get())
             .modes
@@ -3838,6 +3841,168 @@ mod option_loop_reentry_tests {
             assert_eq!(state.0.get(), 1);
             format_free(tree);
             free_fixture(pane);
+        }
+    }
+}
+
+#[cfg(test)]
+mod window_owner_reentry_tests {
+    use super::*;
+    use crate::src::events::{events_add_sink, events_remove_sink};
+    use crate::src::events_payload::event_payload_get_window;
+    use crate::src::options::{options_create, options_free, options_set_string};
+    use crate::src::shared::events::events_callback;
+    use crate::src::shared::window::{window_mode, window_mode_entry, WindowWeak};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    struct State {
+        link: refbox::Weak<winlink>,
+        order: RefCell<Vec<&'static str>>,
+        value: Option<CString>,
+    }
+
+    unsafe fn unlink_window(state: &State) -> Option<CString> {
+        state.order.borrow_mut().push("callback");
+        // Match winlink removal: keep its owner published for the release
+        // decision, then detach it. The enclosing formatter still retains it.
+        state
+            .link
+            .get_unchecked()
+            .window_handle()
+            .unwrap()
+            .prepare_release(c"format test unlink");
+        drop(state.link.clone().get_mut_unchecked().window_owner.take());
+        state.order.borrow_mut().push("unlinked");
+        state.value.clone()
+    }
+
+    unsafe fn fixture(value: Option<&CStr>) -> (refbox::RefBox<winlink>, WindowWeak, Rc<State>) {
+        let window = window::with_options_for_test();
+        let observer = Rc::downgrade(&window);
+        let link = refbox::RefBox::new(winlink {
+            window_owner: Some(window),
+            ..Default::default()
+        });
+        let state = Rc::new(State {
+            link: link.downgrade(),
+            order: RefCell::new(Vec::new()),
+            value: value.map(CStr::to_owned),
+        });
+        (link, observer, state)
+    }
+
+    unsafe fn observe_close(
+        state: &Rc<State>,
+        observer: &WindowWeak,
+    ) -> crate::src::shared::events::EventSinkId {
+        let state = state.clone();
+        let observer = observer.clone();
+        events_add_sink(
+            c"window-closed",
+            events_callback(move |_, payload| {
+                let window = event_payload_get_window(payload).unwrap();
+                assert!(observer.ptr_eq(&Rc::downgrade(window)));
+                assert!(state.link.get_unchecked().window_handle().is_none());
+                // The final owner remains usable, with no component borrow held,
+                // until close notification has finished.
+                window.with_options_mut(|options| assert!(options.parent.is_none()));
+                state.order.borrow_mut().push("closed");
+            }),
+        )
+    }
+
+    #[test]
+    fn lookup_releases_final_window_after_callback_on_normal_and_early_returns() {
+        unsafe {
+            for (value, modifiers, expected) in [
+                (Some(c"expanded"), 0, Some(c"expanded")),
+                (None, 0, Some(c"")),
+                (Some(c"invalid time"), FORMAT_TIMESTRING as u64, None),
+            ] {
+                let (link, observer, state) = fixture(value);
+                let sink = observe_close(&state, &observer);
+                let mut tree = format_create(None, None, 0, 0);
+                tree.w = observer.clone();
+                let callback_state = state.clone();
+                format_add_owned_cb(&mut *tree, c"unlink_window", move |_| {
+                    unlink_window(&callback_state)
+                });
+                let result = format_find(
+                    &mut *tree,
+                    c"unlink_window".as_ptr(),
+                    modifiers,
+                    std::ptr::null(),
+                );
+                events_remove_sink(sink);
+                assert_eq!(result.as_deref(), expected);
+                assert_eq!(*state.order.borrow(), ["callback", "unlinked", "closed"]);
+                assert!(
+                    observer.upgrade().is_none(),
+                    "explicit destruction completed"
+                );
+                format_free(tree);
+                drop(link);
+            }
+        }
+    }
+
+    static MODE: std::sync::LazyLock<window_mode> = std::sync::LazyLock::new(|| window_mode {
+        name: c"window-release-test",
+        formats: Some(add_unlink_format),
+        ..window_mode::default()
+    });
+
+    unsafe fn add_unlink_format(entry: refbox::Weak<window_mode_entry>, tree: *mut format_tree) {
+        let state = entry.get_unchecked().retained_data::<State>().unwrap();
+        format_add_owned_cb(tree, c"unlink_window", move |_| unlink_window(&state));
+    }
+
+    #[test]
+    fn option_loop_releases_final_window_after_recursive_formatting() {
+        unsafe {
+            let (link, observer, state) = fixture(Some(c"expanded"));
+            link.get_unchecked()
+                .window_handle()
+                .unwrap()
+                .with_options_mut(|options| {
+                    options_set_string(options, c"@one".as_ptr(), 0, |out| out.write_all(b"value"));
+                });
+            let pane = window_pane::new();
+            (*pane.get()).options = Some(options_create(None));
+            (*pane.get()).window = observer.clone();
+            window_pane::install_mode_for_test(
+                &pane,
+                refbox::RefBox::new(window_mode_entry {
+                    wp: Rc::downgrade(&pane),
+                    swp: Default::default(),
+                    mode: &MODE,
+                    boxed_data: None,
+                    data_owner: Some(state.clone()),
+                    prefix: 0,
+                    kill: 0,
+                }),
+            );
+            let sink = observe_close(&state, &observer);
+            let mut tree = format_create(None, None, 0, 0);
+            tree.w = observer.clone();
+            tree.wp = Rc::downgrade(&pane);
+            let result = format_expand_cstring(
+                &mut *tree,
+                c"#{O/w:#{option_name}=#{option_value}[#{unlink_window}]}".as_ptr(),
+            );
+            events_remove_sink(sink);
+            assert_eq!(result.as_c_str(), c"@one=value[expanded]");
+            assert_eq!(*state.order.borrow(), ["callback", "unlinked", "closed"]);
+            assert!(
+                observer.upgrade().is_none(),
+                "the loop releases its final owner"
+            );
+            format_free(tree);
+            (*pane.get()).modes.clear();
+            options_free((*pane.get()).options.take().unwrap());
+            drop(pane);
+            drop(link);
         }
     }
 }

@@ -3,10 +3,10 @@
 
 use crate::src::format::{format_create, format_expand_cstring, format_free};
 use crate::src::grid::grid_default_cell;
-use crate::src::options::{options_get_only_mut, options_is_string};
+use crate::src::options::{options_get_only_mut, options_is_string, OptionsScope};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
 use crate::src::shared::grid::grid_cell;
-use crate::src::shared::options::{options, OPTIONS_TABLE_IS_COLOUR};
+use crate::src::shared::options::{options, options_entry, OPTIONS_TABLE_IS_COLOUR};
 use crate::src::shared::style::style;
 use crate::src::style::{style_parse, style_parse_colour, style_set};
 use std::ffi::{CStr, CString};
@@ -15,10 +15,10 @@ use std::ffi::{CStr, CString};
 /// component method. The accessor must synchronously call its visitor once.
 ///
 /// Format callbacks may inspect or shadow an inherited option. They must keep
-/// the resolved entry alive and preserve its parent chain during evaluation,
-/// as required by the existing option-style evaluator. No entry pointer escapes
-/// either visit; the depth identifies the original inherited entry after a
-/// callback adds an override nearer the receiver.
+/// the resolved entry alive during evaluation, as required by the existing
+/// option-style evaluator. No entry pointer escapes either visit; the resolved
+/// owner identifies an inherited entry even if a callback adds an override or
+/// changes the receiver's parent.
 pub unsafe fn style_apply_with_options(
     cell: &mut grid_cell,
     key: &CStr,
@@ -54,57 +54,41 @@ pub unsafe fn style_resolve_with_options(
     context: Option<&mut format_tree>,
     mut access: impl FnMut(&mut dyn FnMut(&mut options)),
 ) -> Option<style> {
-    let mut resolved: Option<Result<style, (usize, CString, bool, bool)>> = None;
+    enum Source {
+        Local,
+        Inherited(OptionsScope),
+    }
+
+    let mut source = None;
+    let mut resolved = None;
+    let mut parent = None;
     access(&mut |root| {
-        let mut current = root;
-        let mut depth = 0;
-        loop {
-            if let Some(entry) = options_get_only_mut(current, key) {
-                if options_is_string(entry) == 0 {
-                    break;
-                }
-                if entry.cached != 0 {
-                    resolved = Some(Ok(entry.style));
-                    break;
-                }
-                let value = entry.value.string_ptr().expect("string option").to_owned();
-                let colour = entry
-                    .tableentry_ptr()
-                    .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_COLOUR != 0);
-                let expand = value.as_bytes().windows(2).any(|bytes| bytes == b"#{");
-                // Publish the default and cache state before a format callback
-                // can recursively observe this option, just as the old API did.
-                style_set(&mut entry.style, &grid_default_cell);
-                entry.cached = (!expand) as i32;
-                resolved = Some(Err((depth, value, colour, expand)));
-                break;
-            }
-            let Some(parent) = current.parent.as_mut() else {
-                break;
-            };
-            current = parent;
-            depth += 1;
+        if let Some(entry) = options_get_only_mut(root, key) {
+            source = Some(Source::Local);
+            resolved = style_snapshot(entry);
+        } else {
+            parent = root.parent.clone();
         }
     });
+    if let Some(parent) = parent {
+        if let Some(owner) = parent.resolve(key, false) {
+            resolved = owner
+                .with_entry(key, |entry| style_snapshot(entry))
+                .expect("resolved style entry remains live");
+            source = Some(Source::Inherited(owner));
+        }
+    }
     let parsed = match resolved {
         None => None,
         Some(Ok(style)) => Some(style),
-        Some(Err((depth, value, colour, expand))) => {
+        Some(Err((value, colour, expand))) => {
             let text = if let Some(context) = context.filter(|_| expand) {
                 format_expand_cstring(context, value.as_ptr())
             } else {
                 value
             };
             let mut parsed = None;
-            access(&mut |root| {
-                let mut current = root;
-                for _ in 0..depth {
-                    current = current
-                        .parent
-                        .as_mut()
-                        .expect("style parent chain remains live");
-                }
-                let entry = options_get_only_mut(current, key).expect("style entry remains live");
+            let mut parse = |entry: &mut options_entry| {
                 let failed = if colour {
                     style_parse_colour(&mut entry.style, &grid_default_cell, text.as_ptr())
                 } else {
@@ -113,11 +97,42 @@ pub unsafe fn style_resolve_with_options(
                 if failed == 0 {
                     parsed = Some(entry.style);
                 }
-            });
+            };
+            match source.expect("resolved style has an owner") {
+                Source::Local => access(&mut |root| {
+                    parse(options_get_only_mut(root, key).expect("style entry remains live"));
+                }),
+                Source::Inherited(owner) => {
+                    owner
+                        .with_entry(key, parse)
+                        .expect("style entry remains live");
+                }
+            }
             parsed
         }
     };
     parsed
+}
+
+unsafe fn style_snapshot(
+    entry: &mut options_entry,
+) -> Option<Result<style, (CString, bool, bool)>> {
+    if options_is_string(entry) == 0 {
+        return None;
+    }
+    if entry.cached != 0 {
+        return Some(Ok(entry.style));
+    }
+    let value = entry.value.string_ptr().expect("string option").to_owned();
+    let colour = entry
+        .tableentry_ptr()
+        .is_some_and(|table| table.flags & OPTIONS_TABLE_IS_COLOUR != 0);
+    let expand = value.as_bytes().windows(2).any(|bytes| bytes == b"#{");
+    // Publish the default and cache state before a format callback can
+    // recursively observe this option, just as the old API did.
+    style_set(&mut entry.style, &grid_default_cell);
+    entry.cached = (!expand) as i32;
+    Some(Err((value, colour, expand)))
 }
 
 #[cfg(test)]
@@ -151,20 +166,29 @@ mod tests {
             options_set_string(child, c"@style".as_ptr(), 0, |out| {
                 out.write_all(b"fg=blue")
             });
+            (*child).parent = Some(OptionsScope::GlobalSession);
             slot.set((parent, child, true));
         });
         Some(c"red".to_owned())
     }
 
     #[test]
-    fn expansion_can_shadow_parent_after_observing_reset_cache() {
+    fn expansion_can_shadow_and_reparent_after_observing_reset_cache() {
         unsafe {
             let saved = (global_options, global_s_options, global_w_options);
-            let mut globals = options_create(std::ptr::null_mut());
+            let mut globals = options_create(None);
             global_options = &mut *globals;
             global_s_options = &mut *globals;
-            global_w_options = &mut *globals;
-            let mut parent = options_create(std::ptr::null_mut());
+            options_set_string(&mut *globals, c"@style".as_ptr(), 0, |out| {
+                out.write_all(b"fg=green")
+            });
+            options_get_only_mut(&mut globals, c"@style")
+                .unwrap()
+                .style
+                .gc
+                .fg = 321;
+            let mut parent = options_create(None);
+            global_w_options = &mut *parent;
             options_set_string(&mut *parent, c"@style".as_ptr(), 0, |out| {
                 out.write_all(b"fg=#{zz_scoped_style}")
             });
@@ -173,7 +197,7 @@ mod tests {
                 .style
                 .gc
                 .fg = 123;
-            let mut child = options_create(&mut *parent);
+            let mut child = options_create(Some(OptionsScope::GlobalWindow));
             let child_pointer = &mut *child as *mut options;
             EVALUATING.with(|slot| slot.set((&mut *parent, child_pointer, false)));
             let mut context = format_create(None, None, 0, FORMAT_NOJOBS);
@@ -195,6 +219,15 @@ mod tests {
                     .fg,
                 1,
                 "write parsed cache back to the originally resolved parent"
+            );
+            assert_eq!(
+                options_get_only_mut(&mut globals, c"@style")
+                    .unwrap()
+                    .style
+                    .gc
+                    .fg,
+                321,
+                "reparenting cannot redirect the in-flight cache update"
             );
             style_apply_with_options(&mut cell, c"@style", Some(&mut context), |visit| {
                 MODEL_BORROW.with(|model| {

@@ -63,17 +63,18 @@ mod tests {
     }
 }
 
-/// Box-owned by options_create; parent and entry back-pointers are borrowed.
+/// Box-owned by options_create; inheritance carries the parent's owner identity.
 #[repr(C)]
 pub struct options {
     pub(crate) tree: BTreeMap<Vec<u8>, Box<options_entry>>,
-    pub parent: *mut options,
+    pub parent: Option<crate::src::options::OptionsScope>,
 }
 
 /// Box-owned by options_array_new; returned key and value pointers expire when
 /// the item is removed.
 #[repr(C)]
 pub struct options_array_item {
+    pub(crate) identity: OptionsIdentity,
     pub key: CString,
     pub value: options_value,
     pub owner: *mut options_entry,
@@ -81,6 +82,7 @@ pub struct options_array_item {
 
 #[repr(C)]
 pub struct options_entry {
+    pub(crate) identity: OptionsIdentity,
     pub owner: *mut options,
     pub name: ::std::ffi::CString,
     pub tableentry: Option<&'static options_table_entry>,
@@ -90,6 +92,33 @@ pub struct options_entry {
     pub monitor_data: Option<Box<crate::src::hooks::hooks_monitor>>,
     pub fire_count: u_int,
     pub fire_time: time_t,
+}
+
+/// Entry and array-item IDs share a namespace. Replacing a value keeps its ID;
+/// removing and recreating the record cannot revive an old customization row.
+pub(crate) struct OptionsIdentity(u64);
+impl OptionsIdentity {
+    pub(crate) fn new() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+        let id = NEXT_ID
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
+                let next = id.checked_add(1)?;
+                (next < (1 << 62)).then_some(next)
+            })
+            .expect("option identity exhausted");
+        Self(id)
+    }
+}
+impl options_entry {
+    pub fn id(&self) -> u64 {
+        self.identity.0
+    }
+}
+impl options_array_item {
+    pub fn id(&self) -> u64 {
+        self.identity.0
+    }
 }
 
 pub struct OptionCommand(pub Option<std::rc::Rc<std::cell::RefCell<cmd_list>>>);

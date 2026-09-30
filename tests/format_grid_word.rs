@@ -11,7 +11,7 @@ use hmux2::src::tmux::global_s_options;
 fn grid_word_collects_wide_cells_and_returns_owned_strings() {
     unsafe {
         let saved_s_options = global_s_options;
-        let mut s_options_owner = options_create(core::ptr::null_mut());
+        let mut s_options_owner = options_create(None);
         let s_options = &raw mut *s_options_owner;
         let definition = (*(&raw const options_table))
             .iter()

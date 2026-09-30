@@ -17,12 +17,13 @@ use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::tree::RB_NEGINF;
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
+use crate::src::window::Window as _;
 use std::cmp::Ordering;
 
 use crate::src::window::{
-    window_pane_first, window_pane_index, window_pane_next, window_pane_zindex, winlinks_minmax,
-    winlinks_next,
+    window_pane_index, window_pane_next, window_pane_zindex, winlinks_minmax, winlinks_next,
 };
 
 pub(super) fn sort_ordering(result: ::core::ffi::c_int, reversed: ::core::ffi::c_int) -> Ordering {
@@ -144,71 +145,30 @@ unsafe fn sort_winlink_cmp(
     wlb: refbox::Weak<winlink>,
     sort_crit: &sort_criteria,
 ) -> Ordering {
-    let mut wa: *mut window = wla
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wb: *mut window = wlb
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    match sort_crit.order as ::core::ffi::c_uint {
-        2 => {
-            result = wla.get_unchecked().idx - wlb.get_unchecked().idx;
-        }
+    let a = wla.get_unchecked().window_handle().expect("linked window");
+    let b = wlb.get_unchecked().window_handle().expect("linked window");
+    let mut result = match sort_crit.order as u32 {
+        2 => wla.get_unchecked().idx - wlb.get_unchecked().idx,
         1 => {
-            if if (*wa).creation_time.tv_sec == (*wb).creation_time.tv_sec {
-                ((*wa).creation_time.tv_usec > (*wb).creation_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*wa).creation_time.tv_sec > (*wb).creation_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = 1 as ::core::ffi::c_int;
-            } else if if (*wa).creation_time.tv_sec == (*wb).creation_time.tv_sec {
-                ((*wa).creation_time.tv_usec < (*wb).creation_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*wa).creation_time.tv_sec < (*wb).creation_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = -(1 as ::core::ffi::c_int);
-            }
+            let (a, b) = (a.creation_time(), b.creation_time());
+            (a.tv_sec, a.tv_usec).cmp(&(b.tv_sec, b.tv_usec)) as i32
         }
         0 => {
-            if if (*wa).activity_time.tv_sec == (*wb).activity_time.tv_sec {
-                ((*wa).activity_time.tv_usec > (*wb).activity_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*wa).activity_time.tv_sec > (*wb).activity_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = -(1 as ::core::ffi::c_int);
-            } else if if (*wa).activity_time.tv_sec == (*wb).activity_time.tv_sec {
-                ((*wa).activity_time.tv_usec < (*wb).activity_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*wa).activity_time.tv_sec < (*wb).activity_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = 1 as ::core::ffi::c_int;
-            }
+            let (a, b) = (a.activity_time(), b.activity_time());
+            (b.tv_sec, b.tv_usec).cmp(&(a.tv_sec, a.tv_usec)) as i32
         }
-        4 => {
-            result = strcmp((*wa).name.as_ptr(), (*wb).name.as_ptr());
-        }
+        4 => strcmp(a.name().as_ptr(), b.name().as_ptr()),
         6 => {
-            result = (*wa)
-                .sx
-                .wrapping_mul((*wa).sy)
-                .wrapping_sub((*wb).sx.wrapping_mul((*wb).sy))
-                as ::core::ffi::c_int;
+            let (ax, ay) = a.size();
+            let (bx, by) = b.size();
+            ax.wrapping_mul(ay).wrapping_sub(bx.wrapping_mul(by)) as i32
         }
-        3 | 5 | 7 | 8 | _ => {}
+        _ => 0,
+    };
+    if result == 0 {
+        result = strcmp(a.name().as_ptr(), b.name().as_ptr());
     }
-    if result == 0 as ::core::ffi::c_int {
-        result = strcmp((*wa).name.as_ptr(), (*wb).name.as_ptr());
-    }
-    return sort_ordering(result, sort_crit.reversed);
+    sort_ordering(result, sort_crit.reversed)
 }
 unsafe fn sort_key_binding_cmp(
     a: &key_binding,
@@ -391,10 +351,10 @@ pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<ClientRef> 
 }
 pub use crate::src::session::sort_get_sessions;
 pub unsafe fn sort_get_panes_window(
-    w: &window,
+    w: &WindowRef,
     sort_crit: &sort_criteria,
 ) -> Vec<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-    let mut panes = w.panes.snapshot();
+    let mut panes = w.pane_snapshot();
     sort_by_criteria(&mut panes, sort_crit, |a, b, criteria| unsafe {
         sort_pane_cmp(&*a.get(), &*b.get(), criteria)
     });

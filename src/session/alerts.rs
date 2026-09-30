@@ -7,6 +7,7 @@ use crate::src::server_fn::server_status_session;
 use crate::src::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER, VISUAL_BOTH, VISUAL_OFF};
 use crate::src::shared::client::{client, CLIENT_CONTROL};
 use crate::src::shared::tty::TTYC_BEL;
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{
     WINDOW_ACTIVITY, WINDOW_BELL, WINDOW_SILENCE, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
@@ -41,7 +42,7 @@ unsafe fn alerts_action_applies(
     return 0 as ::core::ffi::c_int;
 }
 
-pub(crate) unsafe fn alerts_check_all(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
+pub(crate) unsafe fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut alerts: ::core::ffi::c_int = 0;
     alerts = alerts_check_bell(w_owner);
     alerts |= alerts_check_activity(w_owner);
@@ -49,7 +50,7 @@ pub(crate) unsafe fn alerts_check_all(w_owner: &Rc<UnsafeCell<window>>) -> ::cor
     return alerts;
 }
 
-unsafe fn alerts_check_bell(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
+unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !w_owner.pending_alerts() & WINDOW_BELL != 0 {
@@ -105,7 +106,7 @@ unsafe fn alerts_check_bell(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_
     return 0x1 as ::core::ffi::c_int;
 }
 
-unsafe fn alerts_check_activity(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
+unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !w_owner.pending_alerts() & WINDOW_ACTIVITY != 0 {
@@ -163,7 +164,7 @@ unsafe fn alerts_check_activity(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi
     return 0x2 as ::core::ffi::c_int;
 }
 
-unsafe fn alerts_check_silence(w_owner: &Rc<UnsafeCell<window>>) -> ::core::ffi::c_int {
+unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     if !w_owner.pending_alerts() & WINDOW_SILENCE != 0 {

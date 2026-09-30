@@ -70,13 +70,15 @@ use crate::src::sort::{
     sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
     sort_would_window_tree_swap,
 };
-use crate::src::style::style_apply;
+use crate::src::style::style_apply_with_options;
 use crate::src::window::window_pane_upgrade;
+use crate::src::window::Window as _;
+use crate::src::window::Window as _;
 use crate::src::window::Window;
+use crate::src::window::WindowPane;
 use crate::src::window::{
-    window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_first,
-    window_pane_index, window_pane_next, window_pane_reset_mode, window_winlinks_append,
-    window_winlinks_remove, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
+    window_pane_find_by_id, window_pane_index, window_pane_next, window_pane_reset_mode,
+    winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -321,22 +323,13 @@ unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget
         return WindowTreeTarget::default();
     };
     let pane = if item.type_0 == WINDOW_TREE_SESSION || item.type_0 == WINDOW_TREE_WINDOW {
-        (*link
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .active
-        .upgrade()
+        link.window_handle().expect("live window").active_pane()
     } else {
         let pane = window_pane_find_by_id(item.pane as u_int);
         if !pane.as_ref().is_some_and(|owner| {
-            window_has_pane(
-                &*link
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                &Rc::downgrade(owner),
-            )
+            link.window_handle()
+                .expect("live window")
+                .contains_pane(&Rc::downgrade(owner))
         }) {
             return WindowTreeTarget::default();
         }
@@ -472,23 +465,15 @@ unsafe fn window_tree_build_window(
         },
     );
     if !wl.get_unchecked().window_handle().is_none()
-        && !(*wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .active_pane()
-        .is_none()
+        && !((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+            .active_pane()
+            .is_none()
     {
         tag = (FORMAT_PANE
-            | (*(*wl
-                .get_unchecked()
-                .window_handle()
+            | (*((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+                .active_pane()
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .active_pane()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
             .id) as uint64_t;
     }
     let mut ft_owner = format_create(
@@ -523,10 +508,7 @@ unsafe fn window_tree_build_window(
     );
     mode_tree_align(&mti);
     let l = sort_get_panes_window(
-        &*wl.get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()),
+        wl.get_unchecked().window_handle().expect("linked window"),
         &*sort_crit,
     );
     let n = u_int::try_from(l.len()).expect("too many panes in window tree");
@@ -578,23 +560,15 @@ unsafe fn window_tree_build_session(
     );
     if wl.is_alive()
         && !wl.get_unchecked().window_handle().is_none()
-        && !(*wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .active_pane()
-        .is_none()
+        && !((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+            .active_pane()
+            .is_none()
     {
         tag = (FORMAT_PANE
-            | (*(*wl
-                .get_unchecked()
-                .window_handle()
+            | (*((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+                .active_pane()
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .active_pane()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
             .id) as uint64_t;
     }
     let mut ft_owner = format_create(
@@ -731,14 +705,15 @@ unsafe fn window_tree_build(
             }
         }
         3 => {
-            if window_count_panes(
-                &*((*data).fs.winlink_handle())
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()),
-                1 as ::core::ffi::c_int,
-            ) == 1 as u_int
+            if (*data)
+                .fs
+                .winlink_handle()
+                .get_unchecked()
+                .window_handle()
+                .expect("live window")
+                .pane_snapshot()
+                .len()
+                == 1
             {
                 *tag = (*data).fs.winlink_handle().as_ptr() as uint64_t;
             } else {
@@ -834,21 +809,11 @@ unsafe fn window_tree_draw_label(
     );
 }
 unsafe fn window_tree_border_cell(
-    mut gc: *mut grid_cell,
-    mut oo: *mut options,
-    mut ft: *mut format_tree,
+    gc: *mut grid_cell,
+    access: impl FnMut(&mut dyn FnMut(&mut options)),
+    ft: *mut format_tree,
 ) {
-    memcpy(
-        gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    style_apply(
-        gc,
-        oo,
-        b"tree-mode-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
+    style_apply_with_options(&mut *gc, c"tree-mode-border-style", ft.as_mut(), access);
 }
 unsafe fn window_tree_draw_session(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
@@ -864,7 +829,6 @@ unsafe fn window_tree_draw_session(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
     let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
     let mut loop_0: u_int = 0;
@@ -908,9 +872,7 @@ unsafe fn window_tree_draw_session(
     };
     let mut left: ::core::ffi::c_int = 0;
     let mut right: ::core::ffi::c_int = 0;
-    let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     total = s
         .as_ref()
         .expect("live session")
@@ -977,17 +939,16 @@ unsafe fn window_tree_draw_session(
     if each == 0 as u_int {
         return;
     }
+    let border_window = mode_pane_owner.window_observer();
     window_tree_border_cell(
         &raw mut gc,
-        options_owner_ptr(
-            &mut (*(*mode_pane)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
-        ::core::ptr::null_mut::<format_tree>(),
+        |visit| {
+            border_window
+                .upgrade()
+                .expect("live tree-mode window")
+                .with_options_mut(visit)
+        },
+        std::ptr::null_mut(),
     );
     if left != 0 {
         (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
@@ -1043,32 +1004,30 @@ unsafe fn window_tree_draw_session(
         if loop_0 < start {
             loop_0 = loop_0.wrapping_add(1);
         } else {
-            w = wl
+            let window = wl
                 .get_unchecked()
                 .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            oo = options_owner_ptr(&mut (*w).options)
-                .map_or(std::ptr::null_mut(), |options| options);
+                .cloned()
+                .expect("preview window");
             let mut ft_owner = format_create(
                 None,
                 None,
-                (FORMAT_WINDOW | (*w).id) as ::core::ffi::c_int,
+                (FORMAT_WINDOW | window.id()) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
             ft = &raw mut *ft_owner;
             format_defaults(ft, None, s.as_ref(), wl.clone(), None);
-            window_tree_border_cell(&raw mut gc, oo, ft);
+            window_tree_border_cell(&raw mut gc, |visit| window.with_options_mut(visit), ft);
             memcpy(
                 &raw mut label_gc as *mut ::core::ffi::c_void,
                 &raw const grid_default_cell as *const ::core::ffi::c_void,
                 ::core::mem::size_of::<grid_cell>() as size_t,
             );
-            style_apply(
-                &raw mut label_gc,
-                oo,
-                b"tree-mode-preview-style\0" as *const u8 as *const ::core::ffi::c_char,
-                ft,
+            style_apply_with_options(
+                &mut label_gc,
+                c"tree-mode-preview-style",
+                Some(&mut *ft),
+                |visit| window.with_options_mut(visit),
             );
             label_gc.bg = gc.bg;
             if left != 0 {
@@ -1087,22 +1046,17 @@ unsafe fn window_tree_draw_session(
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            screen_write_preview(
-                &mut *ctx,
-                &(*(*w)
-                    .active_pane()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .base,
-                width,
-                sy,
+            let preview_pane = window.active_pane().expect("active preview pane");
+            screen_write_preview(&mut *ctx, &(*preview_pane.get()).base, width, sy);
+            crate::src::window_pane::window_pane_remove_ref(
+                preview_pane,
+                c"tree window preview".as_ptr(),
             );
-            format = options_get_string(
-                oo,
-                b"tree-mode-preview-format\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            if *format as ::core::ffi::c_int != '\0' as i32 {
-                let label = format_expand_cstring(ft, format);
+            let format = window.with_options_mut(|options| {
+                options_get_string(options, c"tree-mode-preview-format".as_ptr())
+            });
+            if !format.as_bytes().is_empty() {
+                let label = format_expand_cstring(ft, format.as_ptr());
                 if !label.as_bytes().is_empty() {
                     window_tree_draw_label(
                         ctx,
@@ -1117,6 +1071,7 @@ unsafe fn window_tree_draw_session(
                 }
             }
             format_free(ft_owner);
+            window.release(c"tree session preview");
             if loop_0 != end.wrapping_sub(1 as u_int) {
                 screen_write_cursormove(
                     &mut *ctx,
@@ -1146,292 +1101,308 @@ unsafe fn window_tree_draw_window(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut w: *mut window = wl
+    let window = wl
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
-    let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
-    let mut loop_0: u_int = 0;
-    let mut total: u_int = 0;
-    let mut visible: u_int = 0;
-    let mut each: u_int = 0;
-    let mut width: u_int = 0;
-    let mut offset: u_int = 0;
-    let mut current: u_int = 0;
-    let mut start: u_int = 0;
-    let mut end: u_int = 0;
-    let mut remaining: u_int = 0;
-    let mut i: u_int = 0;
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut label_gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut left: ::core::ffi::c_int = 0;
-    let mut right: ::core::ffi::c_int = 0;
-    let mut format: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    total = window_count_panes(&*w, 1 as ::core::ffi::c_int);
-    if (*data).hide_preview_this_pane != 0
-        && (*mode_pane)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())
-            == w
-    {
-        total = total.wrapping_sub(1);
-    }
-    if total == 0 as u_int {
-        return;
-    }
-    if sx.wrapping_div(total) < 24 as u_int {
-        visible = sx.wrapping_div(24 as u_int);
-        if visible == 0 as u_int {
-            visible = 1 as u_int;
+        .cloned()
+        .expect("preview window");
+    (|| {
+        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+        let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
+        let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
+        let mut loop_0: u_int = 0;
+        let mut total: u_int = 0;
+        let mut visible: u_int = 0;
+        let mut each: u_int = 0;
+        let mut width: u_int = 0;
+        let mut offset: u_int = 0;
+        let mut current: u_int = 0;
+        let mut start: u_int = 0;
+        let mut end: u_int = 0;
+        let mut remaining: u_int = 0;
+        let mut i: u_int = 0;
+        let mut gc: grid_cell = grid_cell {
+            data: utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            },
+            attr: 0,
+            flags: 0,
+            fg: 0,
+            bg: 0,
+            us: 0,
+            link: 0,
+        };
+        let mut label_gc: grid_cell = grid_cell {
+            data: utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            },
+            attr: 0,
+            flags: 0,
+            fg: 0,
+            bg: 0,
+            us: 0,
+            link: 0,
+        };
+        let mut left: ::core::ffi::c_int = 0;
+        let mut right: ::core::ffi::c_int = 0;
+        let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
+        total = window.pane_snapshot().len() as u_int;
+        if (*data).hide_preview_this_pane != 0
+            && mode_pane_owner
+                .window_observer()
+                .ptr_eq(&Rc::downgrade(&window))
+        {
+            total = total.wrapping_sub(1);
         }
-    } else {
-        visible = total;
-    }
-    current = 0 as u_int;
-    wp = window_pane_first(w.as_ref())
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
-            if wp
-                == (*w)
-                    .active_pane()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
-            {
-                break;
+        if total == 0 as u_int {
+            return;
+        }
+        if sx.wrapping_div(total) < 24 as u_int {
+            visible = sx.wrapping_div(24 as u_int);
+            if visible == 0 as u_int {
+                visible = 1 as u_int;
             }
-            current = current.wrapping_add(1);
+        } else {
+            visible = total;
         }
-        wp = window_pane_next(wp.as_ref())
+        current = 0 as u_int;
+        wp = window
+            .next_pane(None)
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
-    }
-    if current < visible {
-        start = 0 as u_int;
-        end = visible;
-    } else if current >= total.wrapping_sub(visible) {
-        start = total.wrapping_sub(visible);
-        end = total;
-    } else {
-        start = current.wrapping_sub(visible.wrapping_div(2 as u_int));
-        end = start.wrapping_add(visible);
-    }
-    if (*data).offset < -(start as ::core::ffi::c_int) {
-        (*data).offset = -(start as ::core::ffi::c_int);
-    }
-    if (*data).offset > total.wrapping_sub(end) as ::core::ffi::c_int {
-        (*data).offset = total.wrapping_sub(end) as ::core::ffi::c_int;
-    }
-    start = start.wrapping_add((*data).offset as u_int);
-    end = end.wrapping_add((*data).offset as u_int);
-    left = (start != 0 as u_int) as ::core::ffi::c_int;
-    right = (end != total) as ::core::ffi::c_int;
-    if left != 0 && right != 0 && sx <= 6 as u_int || (left != 0 || right != 0) && sx <= 3 as u_int
-    {
-        right = 0 as ::core::ffi::c_int;
-        left = right;
-    }
-    if left != 0 && right != 0 {
-        each = sx.wrapping_sub(6 as u_int).wrapping_div(visible);
-        remaining = sx
-            .wrapping_sub(6 as u_int)
-            .wrapping_sub(visible.wrapping_mul(each));
-    } else if left != 0 || right != 0 {
-        each = sx.wrapping_sub(3 as u_int).wrapping_div(visible);
-        remaining = sx
-            .wrapping_sub(3 as u_int)
-            .wrapping_sub(visible.wrapping_mul(each));
-    } else {
-        each = sx.wrapping_div(visible);
-        remaining = sx.wrapping_sub(visible.wrapping_mul(each));
-    }
-    if each == 0 as u_int {
-        return;
-    }
-    window_tree_border_cell(
-        &raw mut gc,
-        options_owner_ptr(
-            &mut (*(*mode_pane)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .options,
-        )
-        .map_or(std::ptr::null_mut(), |options| options),
-        ::core::ptr::null_mut::<format_tree>(),
-    );
-    if left != 0 {
-        (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
-        screen_write_cursormove(
-            &mut *ctx,
-            cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
-            cy as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-        screen_write_vline(&mut *ctx, sy, Some(&gc));
-        screen_write_cursormove(
-            &mut *ctx,
-            cx as ::core::ffi::c_int,
-            cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b"<"));
-    } else {
-        (*data).left = -(1 as ::core::ffi::c_int);
-    }
-    if right != 0 {
-        (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
-        screen_write_cursormove(
-            &mut *ctx,
-            cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
-            cy as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-        screen_write_vline(&mut *ctx, sy, Some(&gc));
-        screen_write_cursormove(
-            &mut *ctx,
-            cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
-            cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-        screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b">"));
-    } else {
-        (*data).right = -(1 as ::core::ffi::c_int);
-    }
-    (*data).start = start;
-    (*data).end = end;
-    (*data).each = each;
-    loop_0 = 0 as u_int;
-    i = loop_0;
-    wp = window_pane_first(w.as_ref())
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    while !wp.is_null() {
-        if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
-            if loop_0 == end {
-                break;
+        while !wp.is_null() {
+            if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
+                if wp
+                    == window
+                        .active_pane()
+                        .as_ref()
+                        .map_or(std::ptr::null_mut(), |owner| owner.get())
+                {
+                    break;
+                }
+                current = current.wrapping_add(1);
             }
-            if loop_0 < start {
-                loop_0 = loop_0.wrapping_add(1);
-            } else {
-                oo = options_owner_ptr(&mut (*wp).options)
-                    .map_or(std::ptr::null_mut(), |options| options);
-                let mut ft_owner = format_create(
-                    None,
-                    None,
-                    (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                );
-                ft = &raw mut *ft_owner;
-                format_defaults(
-                    ft,
-                    None,
-                    s.as_ref(),
-                    wl.clone(),
-                    (wp).as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
-                );
-                window_tree_border_cell(&raw mut gc, oo, ft);
-                memcpy(
-                    &raw mut label_gc as *mut ::core::ffi::c_void,
-                    &raw const grid_default_cell as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
-                );
-                style_apply(
-                    &raw mut label_gc,
-                    oo,
-                    b"tree-mode-preview-style\0" as *const u8 as *const ::core::ffi::c_char,
-                    ft,
-                );
-                label_gc.bg = gc.bg;
-                if left != 0 {
-                    offset = (3 as u_int).wrapping_add(i.wrapping_mul(each));
-                } else {
-                    offset = i.wrapping_mul(each);
+            wp = window_pane_next(wp.as_ref())
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        }
+        if current < visible {
+            start = 0 as u_int;
+            end = visible;
+        } else if current >= total.wrapping_sub(visible) {
+            start = total.wrapping_sub(visible);
+            end = total;
+        } else {
+            start = current.wrapping_sub(visible.wrapping_div(2 as u_int));
+            end = start.wrapping_add(visible);
+        }
+        if (*data).offset < -(start as ::core::ffi::c_int) {
+            (*data).offset = -(start as ::core::ffi::c_int);
+        }
+        if (*data).offset > total.wrapping_sub(end) as ::core::ffi::c_int {
+            (*data).offset = total.wrapping_sub(end) as ::core::ffi::c_int;
+        }
+        start = start.wrapping_add((*data).offset as u_int);
+        end = end.wrapping_add((*data).offset as u_int);
+        left = (start != 0 as u_int) as ::core::ffi::c_int;
+        right = (end != total) as ::core::ffi::c_int;
+        if left != 0 && right != 0 && sx <= 6 as u_int
+            || (left != 0 || right != 0) && sx <= 3 as u_int
+        {
+            right = 0 as ::core::ffi::c_int;
+            left = right;
+        }
+        if left != 0 && right != 0 {
+            each = sx.wrapping_sub(6 as u_int).wrapping_div(visible);
+            remaining = sx
+                .wrapping_sub(6 as u_int)
+                .wrapping_sub(visible.wrapping_mul(each));
+        } else if left != 0 || right != 0 {
+            each = sx.wrapping_sub(3 as u_int).wrapping_div(visible);
+            remaining = sx
+                .wrapping_sub(3 as u_int)
+                .wrapping_sub(visible.wrapping_mul(each));
+        } else {
+            each = sx.wrapping_div(visible);
+            remaining = sx.wrapping_sub(visible.wrapping_mul(each));
+        }
+        if each == 0 as u_int {
+            return;
+        }
+        let border_window = mode_pane_owner.window_observer();
+        window_tree_border_cell(
+            &raw mut gc,
+            |visit| {
+                border_window
+                    .upgrade()
+                    .expect("live tree-mode window")
+                    .with_options_mut(visit)
+            },
+            std::ptr::null_mut(),
+        );
+        if left != 0 {
+            (*data).left = cx.wrapping_add(2 as u_int) as ::core::ffi::c_int;
+            screen_write_cursormove(
+                &mut *ctx,
+                cx.wrapping_add(2 as u_int) as ::core::ffi::c_int,
+                cy as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+            );
+            screen_write_vline(&mut *ctx, sy, Some(&gc));
+            screen_write_cursormove(
+                &mut *ctx,
+                cx as ::core::ffi::c_int,
+                cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+            );
+            screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b"<"));
+        } else {
+            (*data).left = -(1 as ::core::ffi::c_int);
+        }
+        if right != 0 {
+            (*data).right = cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int;
+            screen_write_cursormove(
+                &mut *ctx,
+                cx.wrapping_add(sx).wrapping_sub(3 as u_int) as ::core::ffi::c_int,
+                cy as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+            );
+            screen_write_vline(&mut *ctx, sy, Some(&gc));
+            screen_write_cursormove(
+                &mut *ctx,
+                cx.wrapping_add(sx).wrapping_sub(1 as u_int) as ::core::ffi::c_int,
+                cy.wrapping_add(sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int,
+                0 as ::core::ffi::c_int,
+            );
+            screen_write_puts(&mut *ctx, &gc, |out| out.write_all(b">"));
+        } else {
+            (*data).right = -(1 as ::core::ffi::c_int);
+        }
+        (*data).start = start;
+        (*data).end = end;
+        (*data).each = each;
+        loop_0 = 0 as u_int;
+        i = loop_0;
+        wp = window
+            .next_pane(None)
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        while !wp.is_null() {
+            if !((*data).hide_preview_this_pane != 0 && wp == mode_pane) {
+                if loop_0 == end {
+                    break;
                 }
-                if loop_0 == end.wrapping_sub(1 as u_int) {
-                    width = each.wrapping_add(remaining);
+                if loop_0 < start {
+                    loop_0 = loop_0.wrapping_add(1);
                 } else {
-                    width = each.wrapping_sub(1 as u_int);
-                }
-                screen_write_cursormove(
-                    &mut *ctx,
-                    cx.wrapping_add(offset) as ::core::ffi::c_int,
-                    cy as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                );
-                screen_write_preview(&mut *ctx, &(*wp).base, width, sy);
-                format = options_get_string(
-                    oo,
-                    b"tree-mode-preview-format\0" as *const u8 as *const ::core::ffi::c_char,
-                );
-                if *format as ::core::ffi::c_int != '\0' as i32 {
-                    let label = format_expand_cstring(ft, format);
-                    if !label.as_bytes().is_empty() {
-                        window_tree_draw_label(
-                            ctx,
-                            cx.wrapping_add(offset),
-                            cy,
-                            width,
-                            sy,
-                            &raw mut gc,
-                            &raw mut label_gc,
-                            label.as_ptr(),
-                        );
+                    let options_pane = (*wp).observer.clone();
+                    let mut ft_owner = format_create(
+                        None,
+                        None,
+                        (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
+                        0 as ::core::ffi::c_int,
+                    );
+                    ft = &raw mut *ft_owner;
+                    format_defaults(
+                        ft,
+                        None,
+                        s.as_ref(),
+                        wl.clone(),
+                        (wp).as_ref()
+                            .and_then(|model| model.observer.upgrade())
+                            .as_ref(),
+                    );
+                    window_tree_border_cell(
+                        &raw mut gc,
+                        |visit| {
+                            options_pane
+                                .upgrade()
+                                .expect("live preview pane")
+                                .with_options_mut(visit)
+                        },
+                        ft,
+                    );
+                    memcpy(
+                        &raw mut label_gc as *mut ::core::ffi::c_void,
+                        &raw const grid_default_cell as *const ::core::ffi::c_void,
+                        ::core::mem::size_of::<grid_cell>() as size_t,
+                    );
+                    style_apply_with_options(
+                        &mut label_gc,
+                        c"tree-mode-preview-style",
+                        Some(&mut *ft),
+                        |visit| {
+                            options_pane
+                                .upgrade()
+                                .expect("live preview pane")
+                                .with_options_mut(visit)
+                        },
+                    );
+                    label_gc.bg = gc.bg;
+                    if left != 0 {
+                        offset = (3 as u_int).wrapping_add(i.wrapping_mul(each));
+                    } else {
+                        offset = i.wrapping_mul(each);
                     }
-                }
-                format_free(ft_owner);
-                if loop_0 != end.wrapping_sub(1 as u_int) {
+                    if loop_0 == end.wrapping_sub(1 as u_int) {
+                        width = each.wrapping_add(remaining);
+                    } else {
+                        width = each.wrapping_sub(1 as u_int);
+                    }
                     screen_write_cursormove(
                         &mut *ctx,
-                        cx.wrapping_add(offset).wrapping_add(width) as ::core::ffi::c_int,
+                        cx.wrapping_add(offset) as ::core::ffi::c_int,
                         cy as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    screen_write_vline(&mut *ctx, sy, Some(&gc));
+                    screen_write_preview(&mut *ctx, &(*wp).base, width, sy);
+                    let format = options_pane
+                        .upgrade()
+                        .expect("live preview pane")
+                        .with_options_mut(|options| {
+                            options_get_string(options, c"tree-mode-preview-format".as_ptr())
+                        });
+                    if !format.as_bytes().is_empty() {
+                        let label = format_expand_cstring(ft, format.as_ptr());
+                        if !label.as_bytes().is_empty() {
+                            window_tree_draw_label(
+                                ctx,
+                                cx.wrapping_add(offset),
+                                cy,
+                                width,
+                                sy,
+                                &raw mut gc,
+                                &raw mut label_gc,
+                                label.as_ptr(),
+                            );
+                        }
+                    }
+                    format_free(ft_owner);
+                    if loop_0 != end.wrapping_sub(1 as u_int) {
+                        screen_write_cursormove(
+                            &mut *ctx,
+                            cx.wrapping_add(offset).wrapping_add(width) as ::core::ffi::c_int,
+                            cy as ::core::ffi::c_int,
+                            0 as ::core::ffi::c_int,
+                        );
+                        screen_write_vline(&mut *ctx, sy, Some(&gc));
+                    }
+                    loop_0 = loop_0.wrapping_add(1);
+                    i = i.wrapping_add(1);
                 }
-                loop_0 = loop_0.wrapping_add(1);
-                i = i.wrapping_add(1);
             }
+            wp = window_pane_next(wp.as_ref())
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        wp = window_pane_next(wp.as_ref())
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-    }
+    })();
+    window.release(c"tree window preview");
 }
 unsafe fn window_tree_draw_info(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
@@ -1532,17 +1503,16 @@ unsafe fn window_tree_draw_info(
             if i == sy {
                 break;
             }
+            let border_window = mode_pane_owner.window_observer();
             window_tree_border_cell(
                 &raw mut gc,
-                options_owner_ptr(
-                    &mut (*(*mode_pane)
-                        .window_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                    .options,
-                )
-                .map_or(std::ptr::null_mut(), |options| options),
-                ::core::ptr::null_mut::<format_tree>(),
+                |visit| {
+                    border_window
+                        .upgrade()
+                        .expect("live tree-mode window")
+                        .with_options_mut(visit)
+                },
+                std::ptr::null_mut(),
             );
             screen_write_cursormove(
                 &mut *ctx,
@@ -1599,17 +1569,16 @@ unsafe fn window_tree_draw_info(
         j = j.wrapping_add(1);
     }
     if sx > 14 as u_int && i < sy {
+        let border_window = mode_pane_owner.window_observer();
         window_tree_border_cell(
             &raw mut gc,
-            options_owner_ptr(
-                &mut (*(*mode_pane)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .options,
-            )
-            .map_or(std::ptr::null_mut(), |options| options),
-            ::core::ptr::null_mut::<format_tree>(),
+            |visit| {
+                border_window
+                    .upgrade()
+                    .expect("live tree-mode window")
+                    .with_options_mut(visit)
+            },
+            std::ptr::null_mut(),
         );
         screen_write_cursormove(
             &mut *ctx,
@@ -1729,25 +1698,23 @@ unsafe fn window_tree_search(
             }
             if icase != 0 {
                 return (strcasestr(
-                    (*wl.get_unchecked()
+                    wl.get_unchecked()
                         .window_handle()
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                    .name
-                    .as_ptr()
-                    .cast_mut(),
+                        .expect("live window")
+                        .name()
+                        .as_ptr()
+                        .cast_mut(),
                     ss,
                 ) != NULL as *mut ::core::ffi::c_char)
                     as ::core::ffi::c_int;
             }
             return (strstr(
-                (*wl.get_unchecked()
+                wl.get_unchecked()
                     .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .name
-                .as_ptr()
-                .cast_mut(),
+                    .expect("live window")
+                    .name()
+                    .as_ptr()
+                    .cast_mut(),
                 ss,
             ) != NULL as *mut ::core::ffi::c_char) as ::core::ffi::c_int;
         }
@@ -1857,8 +1824,6 @@ unsafe fn window_tree_swap(
     let mut other_session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
     let mut cur_winlink: refbox::Weak<winlink> = refbox::Weak::new();
     let mut other_winlink: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut cur_window: *mut window = ::core::ptr::null_mut::<window>();
-    let mut other_window: *mut window = ::core::ptr::null_mut::<window>();
     let mut cur_pane: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut other_pane: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*cur).type_0 as ::core::ffi::c_uint != (*other).type_0 as ::core::ffi::c_uint {
@@ -1895,26 +1860,32 @@ unsafe fn window_tree_swap(
     if sort_would_window_tree_swap(sort_crit, (cur_winlink).clone(), (other_winlink).clone()) != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    other_window = other_winlink
+    other_winlink
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    cur_window = cur_winlink
+        .expect("linked window")
+        .remove_winlink(other_winlink.clone());
+    cur_winlink
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    window_winlinks_remove(&mut *(other_window), (other_winlink).clone());
-    window_winlinks_remove(&mut *(cur_window), (cur_winlink).clone());
+        .expect("linked window")
+        .remove_winlink(cur_winlink.clone());
     if other_winlink != cur_winlink {
         std::mem::swap(
             &mut other_winlink.get_mut_unchecked().window_owner,
             &mut cur_winlink.get_mut_unchecked().window_owner,
         );
     }
-    window_winlinks_append(&mut *(cur_window), (other_winlink).clone());
-    window_winlinks_append(&mut *(other_window), (cur_winlink).clone());
+    other_winlink
+        .get_unchecked()
+        .window_handle()
+        .expect("linked window")
+        .add_winlink(other_winlink.clone());
+    cur_winlink
+        .get_unchecked()
+        .window_handle()
+        .expect("linked window")
+        .add_winlink(cur_winlink.clone());
     if cur_session
         .as_ref()
         .expect("live session")

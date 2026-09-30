@@ -119,11 +119,9 @@ pub unsafe fn prompt_set_options(
     };
     let read_string = |key: &CStr| {
         if let Some(session) = session {
-            session.with_options_mut(|options| {
-                CStr::from_ptr(options_get_string(options, key.as_ptr())).to_owned()
-            })
+            session.with_options_mut(|options| options_get_string(options, key.as_ptr()))
         } else {
-            CStr::from_ptr(options_get_string(global_s_options, key.as_ptr())).to_owned()
+            options_get_string(global_s_options, key.as_ptr())
         }
     };
     let read_number = |key: &CStr| {

@@ -43,8 +43,7 @@ pub(super) unsafe fn value(
             let default = session
                 .map(|session| {
                     session.with_options_mut(|options| {
-                        CStr::from_ptr(options_get_string(options, c"key-table".as_ptr()))
-                            .to_owned()
+                        options_get_string(options, c"key-table".as_ptr())
                     })
                 })
                 .filter(|name| !name.as_bytes().is_empty())

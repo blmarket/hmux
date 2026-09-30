@@ -35,11 +35,11 @@ use crate::src::spawn::spawn_editor_finish;
 use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, start_time};
 use crate::src::tty::tty_create_log;
-use crate::src::window::windows;
 use crate::src::window::{
-    all_window_panes, window_pane_destroy_ready, window_pane_first, window_pane_next,
-    window_pane_wait_finish, windows_minmax, windows_next,
+    all_window_panes, window_pane_destroy_ready, window_pane_next, window_pane_wait_finish,
+    windows_minmax,
 };
+use crate::src::window::{windows, Window as _};
 
 use std::ffi::{CStr, CString};
 
@@ -74,7 +74,7 @@ use crate::src::shared::socket::{
 };
 use crate::src::shared::time::timespec;
 use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::winlink;
 
 pub type mode_t = __mode_t;
 
@@ -131,13 +131,7 @@ pub unsafe fn server_set_marked(
     marked_pane.set_s(s_owner);
     marked_pane.set_wl(wl.clone());
     if wl.is_alive() {
-        marked_pane.set_w(
-            (wl.get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .as_ref(),
-        );
+        marked_pane.set_w(wl.get_unchecked().window_handle());
     }
     marked_pane.set_wp((wp).as_ref());
 }
@@ -661,13 +655,11 @@ unsafe fn server_child_signal() {
     }
 }
 unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.get();
-        window_cursor = windows_next(&*w);
-        let mut pane_cursor = window_pane_first(w.as_ref());
+        window_cursor = window_owner.next_window();
+        let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
             wp = pane_owner.get();
             if (*wp).pid == pid {
@@ -692,7 +684,6 @@ unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     job_check_died(pid, status);
 }
 unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int == SIGTTIN
         || (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int == SIGTTOU
@@ -701,8 +692,8 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
     }
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.get();
-        wp = window_pane_first(w.as_ref())
+        wp = window_owner
+            .next_pane(None)
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
         while !wp.is_null() {
@@ -715,7 +706,7 @@ unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |owner| owner.get());
         }
-        window_cursor = windows_next(&*w);
+        window_cursor = window_owner.next_window();
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
     job_check_died(pid, status);

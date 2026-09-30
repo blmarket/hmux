@@ -101,9 +101,8 @@ pub use crate::src::shared::session::session;
 pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_options;
-use crate::src::window::{
-    window_find_by_id, window_has_pane, window_pane_find_by_id, winlink_find_by_window,
-};
+use crate::src::window::Window as _;
+use crate::src::window::{window_find_by_id, window_pane_find_by_id, winlink_find_by_window};
 use std::ffi::{CStr, CString};
 
 pub const DQ: C2RustUnnamed_38 = 2;
@@ -660,7 +659,6 @@ pub unsafe fn cmd_mouse_window(
     sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
 ) -> refbox::Weak<winlink> {
     let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if (*m).valid == 0 {
         return refbox::Weak::new();
@@ -675,19 +673,14 @@ pub unsafe fn cmd_mouse_window(
     if (*m).w == -(1 as ::core::ffi::c_int) {
         wl = s.as_ref().expect("live session").current_winlink();
     } else {
-        let window_owner = window_find_by_id((*m).w as u_int);
-        w = window_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr);
-        if w.is_null() {
+        let Some(window) = window_find_by_id((*m).w as u_int) else {
             return refbox::Weak::new();
-        }
-        wl = s.as_ref().expect("live session").with_winlinks(|links| {
-            winlink_find_by_window(links, &(*(w)).observer.upgrade().expect("live window"))
-        });
-        if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(window, c"cmd_mouse_window".as_ptr());
-        }
+        };
+        wl = s
+            .as_ref()
+            .expect("live session")
+            .with_winlinks(|links| winlink_find_by_window(links, &window));
+        window.release(c"cmd_mouse_window");
     }
     if let Some(sp) = sp {
         *sp = Some(session_owner);
@@ -699,65 +692,32 @@ pub unsafe fn cmd_mouse_pane(
     sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
     mut wlp: *mut refbox::Weak<winlink>,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    wl = cmd_mouse_window(m, sp);
-    if !wl.is_alive() {
+    let link = cmd_mouse_window(m, sp);
+    if !link.is_alive() {
         return None;
     }
-    let pane_owner;
-    if (*m).wp == -(1 as ::core::ffi::c_int) {
-        pane_owner = (*wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .active
-        .upgrade();
-        wp = pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let window = link.get_unchecked().window_handle().expect("linked window");
+    let pane = if (*m).wp == -1 {
+        window.active_pane()
     } else {
-        pane_owner = window_pane_find_by_id((*m).wp as u_int);
-        wp = pane_owner
+        let pane = window_pane_find_by_id((*m).wp as u_int)?;
+        if !window.contains_pane(&std::rc::Rc::downgrade(&pane)) {
+            return None;
+        }
+        Some(pane)
+    };
+    if let Some(modal) = window.modal_pane() {
+        if !pane
             .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if wp.is_null() {
+            .is_some_and(|pane| std::rc::Rc::ptr_eq(pane, &modal))
+        {
             return None;
         }
-        if !window_has_pane(
-            &*wl.get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()),
-            &(*wp).observer,
-        ) {
-            return None;
-        }
-    }
-    if (*wl
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .modal
-    .upgrade()
-    .is_some()
-        && !pane_owner.as_ref().is_some_and(|owner| {
-            (*wl.get_unchecked()
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .modal
-            .ptr_eq(&std::rc::Rc::downgrade(owner))
-        })
-    {
-        return None;
     }
     if !wlp.is_null() {
-        *wlp = wl;
+        *wlp = link;
     }
-    return pane_owner;
+    pane
 }
 pub unsafe fn cmd_template_replace(template: &CStr, s: &CStr, idx: ::core::ffi::c_int) -> CString {
     cmd_template_replace_cstring(template, s, idx)

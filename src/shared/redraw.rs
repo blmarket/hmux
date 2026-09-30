@@ -6,12 +6,13 @@ use super::layout::pane_lines;
 use super::pane::window_pane;
 use super::window::window;
 use crate::src::shared::client::ClientWeak;
+use crate::src::shared::window::WindowWeak;
 use std::{cell::UnsafeCell, rc::Weak};
 
 #[repr(C)]
 pub struct redraw_scene {
     pub c: ClientWeak,
-    pub w: Weak<UnsafeCell<window>>,
+    pub w: WindowWeak,
     /// Stable boxed row slice owned by this scene, with length `sy`.
     /// Dropping the rows also drops their spans.
     pub lines: Box<[redraw_line]>,

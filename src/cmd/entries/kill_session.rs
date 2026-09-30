@@ -21,6 +21,7 @@ use crate::src::shared::session::session_group;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::shared::window::{WINDOW_ALERTFLAGS, WINLINK_ALERTFLAGS};
+use crate::src::window::Window as _;
 use crate::src::window::{winlinks_minmax, winlinks_next};
 pub static cmd_kill_session_entry: cmd_entry = {
     cmd_entry {
@@ -70,11 +71,10 @@ unsafe fn cmd_kill_session_exec(
     if args_has(args, 'C' as i32 as u_char) != 0 {
         wl = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
         while wl.is_alive() {
-            (*wl.get_unchecked()
+            wl.get_unchecked()
                 .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .flags &= !WINDOW_ALERTFLAGS;
+                .expect("live window")
+                .clear_alert_flags();
             wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
             wl = winlinks_next(wl.get_unchecked());
         }

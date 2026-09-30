@@ -56,6 +56,7 @@ use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink
 use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply;
+use crate::src::window::Window as _;
 use crate::src::window::{window_pane_reset_mode, window_zoom, winlink_find_by_index};
 use std::ffi::{CStr, CString};
 
@@ -535,19 +536,13 @@ unsafe fn window_switch_init(
     if args_has(args, 'Z' as i32 as u_char) == 0 {
         (*data).zoomed = -(1 as ::core::ffi::c_int);
     } else {
-        (*data).zoomed = (*(*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .flags
-            & WINDOW_ZOOMED;
+        (*data).zoomed = if (*wp).window_handle().expect("live window").is_zoomed() {
+            WINDOW_ZOOMED
+        } else {
+            0
+        };
         if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(
-                &*((*wp)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())),
-            );
+            server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
         }
     }
     window_switch_build(data);
@@ -571,15 +566,9 @@ unsafe fn window_switch_free(mut wme: refbox::Weak<window_mode_entry>) {
     let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
     if (*data).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window(
-            &(*((*mode_pane)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window"),
-        );
+        server_unzoom_window(&std::rc::Rc::clone(
+            &(((*mode_pane).window_handle().as_ref()).expect("live window")),
+        ));
     }
     (*data).matches.clear();
     (*data).item_list.clear();

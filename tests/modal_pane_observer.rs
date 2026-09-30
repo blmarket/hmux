@@ -1,5 +1,5 @@
 use hmux2::src::shared::{pane::window_pane, window::window};
-use hmux2::src::window::window_lost_pane;
+use hmux2::src::window::{window_lost_pane, PaneOrder, Window};
 use std::rc::Rc;
 
 #[test]
@@ -7,21 +7,27 @@ fn losing_modal_pane_tolerates_expired_previous_target() {
     unsafe {
         let window = window::new();
         let previous = window_pane::new();
-        (*window.get()).modal_last = Rc::downgrade(&previous);
-        drop(previous);
-        assert!((*window.get()).modal_last.upgrade().is_none());
+        let previous_observer = Rc::downgrade(&previous);
+        window.initialize_pane(&previous, None);
         let modal = window_pane::new();
         (*modal.get()).window = Rc::downgrade(&window);
-        (*window.get()).set_active((modal.get()).as_ref());
-        (*window.get()).modal = Rc::downgrade(&modal);
-        (*window.get()).panes.push_back(Rc::downgrade(&modal));
+        window.begin_modal_pane(&modal);
+        window.initialize_pane(&modal, None);
+        for order in [PaneOrder::Index, PaneOrder::Stacking] {
+            let mut panes = window.borrow_pane_order_mut(order);
+            panes.storage.clear();
+            panes.push_back(Rc::downgrade(&modal));
+        }
+        drop(previous);
+        assert!(previous_observer.upgrade().is_none());
         window_lost_pane(&window, &modal);
-        assert!((*window.get()).active_pane().is_none());
-        assert!((*window.get()).modal.upgrade().is_none());
-        assert!((*window.get()).modal_last.upgrade().is_none());
-        (*window.get()).panes.storage.clear();
+        assert!(window.active_pane().is_none());
+        assert!(window.modal_pane().is_none());
+        for order in [PaneOrder::Index, PaneOrder::Stacking] {
+            window.borrow_pane_order_mut(order).storage.clear();
+        }
         drop(modal);
-        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
+        window.release(c"test owner");
     }
 }
 
@@ -32,11 +38,19 @@ fn losing_previous_target_clears_observer_without_retaining_it() {
         let previous = window_pane::new();
         let observer = Rc::downgrade(&previous);
         (*previous.get()).window = Rc::downgrade(&window);
-        (*window.get()).modal_last = observer.clone();
+        window.initialize_pane(&previous, None);
+        let modal = window_pane::new();
+        window.begin_modal_pane(&modal);
+        window.initialize_pane(&modal, None);
+        let weak_count = Rc::weak_count(&previous);
         window_lost_pane(&window, &previous);
-        assert!(!(*window.get()).modal_last.ptr_eq(&observer));
+        assert_eq!(Rc::weak_count(&previous), weak_count - 1);
+        assert!(Rc::ptr_eq(&window.modal_pane().unwrap(), &modal));
+        for order in [PaneOrder::Index, PaneOrder::Stacking] {
+            window.borrow_pane_order_mut(order).storage.clear();
+        }
         drop(previous);
         assert!(observer.upgrade().is_none());
-        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
+        window.release(c"test owner");
     }
 }

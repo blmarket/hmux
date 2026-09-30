@@ -1,10 +1,15 @@
+#[path = "support/window_fixture.rs"]
+mod window_fixture;
+use hmux2::src::options::options_set_number;
 use hmux2::src::shared::display::visible_range;
 use hmux2::src::shared::pane::{window_pane, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT};
-use hmux2::src::shared::window::window;
+use hmux2::src::shared::window::WindowRef;
+use hmux2::src::window::{PaneOrder, Window};
 use hmux2::src::window_visible::{window_position_is_visible, window_visible_ranges};
 use std::cell::UnsafeCell;
 use std::ptr::null_mut;
 use std::rc::Rc;
+use window_fixture::WindowOptions;
 
 fn segments(ranges: &[visible_range]) -> Vec<(u32, u32)> {
     ranges.iter().map(|range| (range.px, range.nx)).collect()
@@ -22,25 +27,27 @@ unsafe fn calculate_ranges(
 }
 
 struct Scene {
-    window: Rc<UnsafeCell<window>>,
+    window: WindowRef,
+    options: WindowOptions,
     panes: Vec<Rc<UnsafeCell<window_pane>>>,
 }
 
 impl Scene {
     fn new() -> Self {
-        let window = window::new();
         unsafe {
-            (*window.get()).sx = 80;
-            (*window.get()).sy = 24;
-        }
-        Self {
-            window,
-            panes: Vec::new(),
+            let options = WindowOptions::new();
+            let window = options.create(80, 24);
+            Self {
+                window,
+                options,
+                panes: Vec::new(),
+            }
         }
     }
 
     unsafe fn free(self) {
-        hmux2::src::window::window_remove_ref(self.window, c"test scene".as_ptr());
+        self.window.release(c"test scene");
+        self.options.free();
     }
 
     fn add_pane(&mut self, x: i32, y: i32, width: u32, height: u32) -> Rc<UnsafeCell<window_pane>> {
@@ -53,8 +60,8 @@ impl Scene {
         pane.sy = height;
         let owner = pane.into_shared();
         unsafe {
-            (*self.window.get())
-                .z_index
+            self.window
+                .borrow_pane_order_mut(PaneOrder::Stacking)
                 .push_front(Rc::downgrade(&owner));
         }
         self.panes.push(owner.clone());
@@ -149,11 +156,25 @@ fn reserved_scrollbar_is_included_in_occlusion() {
         let cover = scene.add_pane(15, 5, 5, 1).get();
         (*cover).scrollbar_style.width = 2;
         (*cover).scrollbar_style.pad = 1;
-        (*scene.window.get()).sb = PANE_SCROLLBARS_ALWAYS;
-        (*scene.window.get()).sb_pos = PANE_SCROLLBARS_LEFT;
+        scene.window.with_options_mut(|options| {
+            options_set_number(
+                options,
+                c"pane-scrollbars".as_ptr(),
+                PANE_SCROLLBARS_ALWAYS as i64,
+            );
+            options_set_number(
+                options,
+                c"pane-scrollbars-position".as_ptr(),
+                PANE_SCROLLBARS_LEFT as i64,
+            );
+        });
+        scene.window.refresh_scrollbars();
         let left = calculate_ranges((base).as_ref(), 10, 5, 20);
         assert_eq!(segments(&left), [(10, 1), (21, 9)]);
-        (*scene.window.get()).sb_pos = 0;
+        scene.window.with_options_mut(|options| {
+            options_set_number(options, c"pane-scrollbars-position".as_ptr(), 0);
+        });
+        scene.window.refresh_scrollbars();
         let right = calculate_ranges((base).as_ref(), 10, 5, 20);
         assert_eq!(segments(&right), [(10, 4), (24, 6)]);
         assert_eq!(segments(&left), [(10, 1), (21, 9)]);

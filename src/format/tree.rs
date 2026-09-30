@@ -485,11 +485,11 @@ mod tests {
         use crate::src::options::{options_create, options_free};
         unsafe {
             let saved = (global_options, global_w_options, global_s_options);
-            let mut global_options_owner = options_create(std::ptr::null_mut());
+            let mut global_options_owner = options_create(None);
             global_options = &raw mut *global_options_owner;
-            let mut global_w_options_owner = options_create(std::ptr::null_mut());
+            let mut global_w_options_owner = options_create(None);
             global_w_options = &raw mut *global_w_options_owner;
-            let mut global_s_options_owner = options_create(std::ptr::null_mut());
+            let mut global_s_options_owner = options_create(None);
             global_s_options = &raw mut *global_s_options_owner;
             let mut ft_owner = tree();
             let ft = &raw mut *ft_owner;

@@ -1,4 +1,10 @@
-//! Authoritative window declarations, shared by the C translation units.
+//! Window identities and shared link/mode component declarations.
+pub use crate::src::window::window;
+
+/// Retained Window identity. Final owners must use Window::release.
+pub type WindowRef = std::rc::Rc<std::cell::UnsafeCell<window>>;
+/// Nonowning Window identity, including callback and parent links.
+pub type WindowWeak = std::rc::Weak<std::cell::UnsafeCell<window>>;
 
 use super::abi::{timeval, u_int, uint64_t};
 use super::arguments::args;
@@ -48,85 +54,15 @@ pub type winlinks =
 pub struct winlink {
     pub idx: ::core::ffi::c_int,
     pub session: std::rc::Weak<std::cell::UnsafeCell<session>>,
-    pub window_owner: Option<std::rc::Rc<std::cell::UnsafeCell<window>>>,
+    pub window_owner: Option<WindowRef>,
     pub flags: ::core::ffi::c_int,
     /// Weak traversal handle into the containing index.
     pub owner:
         refbox::Weak<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>,
 }
 
-/// Explicit cleanup is separate from the lifetime of retained Rc allocations.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) enum WindowLifecycle {
-    #[default]
-    Live,
-    Destroying,
-    Destroyed,
-}
-
-#[derive(Default)]
-#[repr(C)]
-/// Rc-owned window record; retain/release preserves pre-close notifications.
-pub struct window {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<window>>,
-    pub(crate) lifecycle: WindowLifecycle,
-    pub id: u_int,
-    /// Nonowning identity of the client last active in this window.
-    pub latest: ClientWeak,
-    pub name: std::ffi::CString,
-    pub name_event: event,
-    pub name_time: timeval,
-    pub alerts_timer: event,
-    pub offset_timer: event,
-    pub activity_time: timeval,
-    pub creation_time: timeval,
-    /// Current pane identity; the pane index owns the allocation.
-    pub active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    /// Current modal pane is observed; the pane index owns its lifetime.
-    pub modal: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    /// Pane to restore after modal dismissal; does not own that pane.
-    pub modal_last: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    /// Saved zoom target observes its pane without extending its lifetime.
-    pub was_zoomed: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    pub last_panes: window_pane_history,
-    pub z_index: window_panes,
-    pub panes: window_panes,
-    pub lastlayout: ::core::ffi::c_int,
-    pub layout_root: Option<Box<layout_cell>>,
-    pub saved_layout_root: Option<Box<layout_cell>>,
-    pub old_layout: Option<std::ffi::CString>,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub manual_sx: u_int,
-    pub manual_sy: u_int,
-    pub xpixel: u_int,
-    pub ypixel: u_int,
-    pub new_sx: u_int,
-    pub new_sy: u_int,
-    pub new_xpixel: u_int,
-    pub new_ypixel: u_int,
-    pub redraw_scene_generation: uint64_t,
-    pub menu: Option<refbox::RefBox<crate::src::shared::menu::menu_data>>,
-    pub menu_last_px: u_int,
-    pub menu_last_py: u_int,
-    pub last_new_pane_x: u_int,
-    pub last_new_pane_y: u_int,
-    pub sb: ::core::ffi::c_int,
-    pub sb_pos: ::core::ffi::c_int,
-    pub inside_cell: grid_cell,
-    pub outside_cell: grid_cell,
-    pub flags: ::core::ffi::c_int,
-    pub alerts_queued: ::core::ffi::c_int,
-    pub options: Option<Box<options>>,
-    pub winlinks: window_winlinks,
-    /// Weak traversal handle into the containing index.
-    pub owner: refbox::Weak<WindowIndex>,
-}
-
 /// The global index observes windows; winlinks and callbacks own them.
-pub type WindowIndex =
-    std::collections::BTreeMap<u_int, std::rc::Weak<std::cell::UnsafeCell<window>>>;
+pub type WindowIndex = std::collections::BTreeMap<u_int, WindowWeak>;
 
 /// Ordered non-owning handles; session BTreeMaps own the RefBox allocations.
 pub type window_winlinks = Vec<refbox::Weak<winlink>>;
@@ -243,36 +179,8 @@ pub struct windows {
     pub storage: Option<refbox::RefBox<WindowIndex>>,
 }
 
-impl window {
-    /// Retain the active pane for the current operation.
-    pub fn active_pane(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-        self.active.upgrade()
-    }
-
-    /// The caller supplies a live Rc-backed pane.
-    pub fn set_active(&mut self, pane: Option<&window_pane>) {
-        self.active = pane.map_or_else(std::rc::Weak::new, |pane| pane.observer.clone());
-    }
-
-    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
-        std::rc::Rc::new_cyclic(|observer| {
-            let mut value = Self::default();
-            value.observer = observer.clone();
-            std::cell::UnsafeCell::new(value)
-        })
-    }
-
-    pub fn layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
-        self.layout_root.as_deref_mut()
-    }
-
-    pub fn saved_layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
-        self.saved_layout_root.as_deref_mut()
-    }
-}
-
 impl winlink {
-    pub fn window_handle(&self) -> Option<&std::rc::Rc<std::cell::UnsafeCell<window>>> {
+    pub fn window_handle(&self) -> Option<&WindowRef> {
         self.window_owner.as_ref()
     }
 }

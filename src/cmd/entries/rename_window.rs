@@ -68,19 +68,9 @@ unsafe fn cmd_rename_window_exec(
         options_set_number(options, c"automatic-rename".as_ptr(), 0);
     });
     server_redraw_window_borders(
-        &*(wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())),
+        &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
-    server_status_window(
-        &*(wl
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get())),
-    );
+    server_status_window(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")));
     window.release(c"cmd_rename_window");
     return CMD_RETURN_NORMAL;
 }

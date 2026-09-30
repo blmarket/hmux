@@ -46,11 +46,12 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{tty, tty_style_ctx};
 use crate::src::shared::window::window;
+use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_PANE_NO_MODE;
 use crate::src::status::{
     status_line_size, status_message_redraw, status_prompt_redraw, status_redraw,
 };
-use crate::src::style::style_add;
+use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
 use crate::src::tty::{
     tty_cell, tty_check_overlay_range, tty_cursor, tty_default_colours, tty_puts, tty_reset,
@@ -60,12 +61,12 @@ use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
+use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
 use crate::src::window::{
-    window_pane_first, window_pane_get_pane_lines, window_pane_get_pane_status,
-    window_pane_is_floating, window_pane_is_visible, window_pane_mode, window_pane_next,
-    window_pane_scrollbar_overlay, window_pane_scrollbar_visible, window_pane_z_last,
-    window_pane_z_previous, windows_minmax, windows_next,
+    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_is_floating,
+    window_pane_is_visible, window_pane_mode, window_pane_next, window_pane_scrollbar_overlay,
+    window_pane_scrollbar_visible, window_pane_z_previous, windows_minmax,
 };
 use crate::src::window_border::{
     window_get_border_cell, window_get_fill_cell, window_make_pane_status,
@@ -99,7 +100,7 @@ pub struct redraw_build_cell {
 }
 #[repr(C)]
 pub struct redraw_build_ctx<'a> {
-    pub w: &'a std::rc::Rc<std::cell::UnsafeCell<window>>,
+    pub w: &'a WindowRef,
     pub ox: u_int,
     pub oy: u_int,
     pub sx: u_int,
@@ -185,16 +186,15 @@ unsafe fn redraw_get_window_offset(c: &ClientRef) -> tty_window_view {
     view
 }
 unsafe fn redraw_set_context(c: &ClientRef, bctx: &mut redraw_build_ctx) {
-    let w = bctx.w.get();
     let view = redraw_get_window_offset(c);
     (*bctx).ox = view.ox;
     (*bctx).oy = view.oy;
     (*bctx).sx = view.sx;
     (*bctx).sy = view.sy;
-    (*bctx).ind = options_get_number(
-        options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"pane-border-indicators\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    bctx.ind = bctx
+        .w
+        .with_options_mut(|options| options_get_number(options, c"pane-border-indicators".as_ptr()))
+        as ::core::ffi::c_int;
 }
 unsafe fn redraw_get_build_cell(
     mut bctx: *mut redraw_build_ctx,
@@ -206,9 +206,10 @@ unsafe fn redraw_get_build_cell(
 }
 unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y: u_int) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
-    let mut w: *mut window = (*bctx).w.get();
     (*bc).data = redraw_span_data::default();
-    if (*bctx).ox.wrapping_add(x) < (*w).sx && (*bctx).oy.wrapping_add(y) < (*w).sy {
+    if (*bctx).ox.wrapping_add(x) < ((*bctx).w).size().0
+        && (*bctx).oy.wrapping_add(y) < ((*bctx).w).size().1
+    {
         (*bc).data = redraw_span_data::Empty;
     } else {
         (*bc).data = redraw_span_data::Outside;
@@ -226,7 +227,7 @@ unsafe fn redraw_window_to_scene(
     if wx < 0 as ::core::ffi::c_int || wy < 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    if wx as u_int > (*(*bctx).w.get()).sx || wy as u_int > (*(*bctx).w.get()).sy {
+    if wx as u_int > ((*bctx).w).size().0 || wy as u_int > ((*bctx).w).size().1 {
         return 0 as ::core::ffi::c_int;
     }
     if wx < (*bctx).ox as ::core::ffi::c_int || wy < (*bctx).oy as ::core::ffi::c_int {
@@ -263,16 +264,16 @@ unsafe fn redraw_pane_to_scene(
         if left < 0 as ::core::ffi::c_int && wx < 0 as ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
-        if right > (*(*bctx).w.get()).sx as ::core::ffi::c_int
-            && wx >= (*(*bctx).w.get()).sx as ::core::ffi::c_int
+        if right > ((*bctx).w).size().0 as ::core::ffi::c_int
+            && wx >= ((*bctx).w).size().0 as ::core::ffi::c_int
         {
             return 0 as ::core::ffi::c_int;
         }
         if top < 0 as ::core::ffi::c_int && wy < 0 as ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
-        if bottom > (*(*bctx).w.get()).sy as ::core::ffi::c_int
-            && wy >= (*(*bctx).w.get()).sy as ::core::ffi::c_int
+        if bottom > ((*bctx).w).size().1 as ::core::ffi::c_int
+            && wy >= ((*bctx).w).size().1 as ::core::ffi::c_int
         {
             return 0 as ::core::ffi::c_int;
         }
@@ -296,27 +297,31 @@ unsafe fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::core::ffi::c_i
     }
     return 12 as ::core::ffi::c_int;
 }
-unsafe fn redraw_check_two_pane_colours(w: &window) -> Option<layout_type> {
+unsafe fn redraw_check_two_pane_colours(w: &WindowRef) -> Option<layout_type> {
+    let cells: Vec<_> = w
+        .pane_snapshot()
+        .into_iter()
+        .filter_map(|pane| (*pane.get()).layout_cell)
+        .collect();
+    let tree = w.borrow_layout_root(crate::src::window::LayoutView::Visible)?;
     let mut count = 0;
     let mut direction = None;
-    for owner in w.panes.snapshot() {
-        let pane = &*owner.get();
-        if window_pane_is_floating(pane) != 0 || pane.layout_cell.is_null() {
+    for id in cells {
+        let Some(cell) = tree.find(id) else {
+            continue;
+        };
+        if cell.flags & crate::src::shared::layout::LAYOUT_CELL_FLOATING != 0 {
             continue;
         }
         count += 1;
-        let parent = (*pane.layout_cell).parent;
-        if count > 2 || parent.is_null() {
+        if count > 2 || cell.parent.is_null() {
             return None;
         }
-        direction = Some((*parent).type_0);
+        direction = Some((*cell.parent).type_0);
     }
-    if count == 2 {
-        direction
-    } else {
-        None
-    }
+    (count == 2).then_some(direction).flatten()
 }
+
 unsafe fn redraw_mark_pane_inside(
     mut bctx: *mut redraw_build_ctx,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -634,24 +639,24 @@ unsafe fn redraw_mark_pane_borders(
     mark_left = (left >= 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     mark_top = (top >= 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     if floating != 0 {
-        mark_right = (right < (*(*bctx).w.get()).sx as ::core::ffi::c_int) as ::core::ffi::c_int;
-        mark_bottom = (bottom < (*(*bctx).w.get()).sy as ::core::ffi::c_int) as ::core::ffi::c_int;
+        mark_right = (right < ((*bctx).w).size().0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+        mark_bottom = (bottom < ((*bctx).w).size().1 as ::core::ffi::c_int) as ::core::ffi::c_int;
         if left < 0 as ::core::ffi::c_int {
             left = 0 as ::core::ffi::c_int;
         }
-        if right >= (*(*bctx).w.get()).sx as ::core::ffi::c_int {
-            right = (*(*bctx).w.get()).sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+        if right >= ((*bctx).w).size().0 as ::core::ffi::c_int {
+            right = ((*bctx).w).size().0 as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
         }
         if top < 0 as ::core::ffi::c_int {
             top = 0 as ::core::ffi::c_int;
         }
-        if bottom >= (*(*bctx).w.get()).sy as ::core::ffi::c_int {
-            bottom = (*(*bctx).w.get()).sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+        if bottom >= ((*bctx).w).size().1 as ::core::ffi::c_int {
+            bottom = ((*bctx).w).size().1 as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
         }
     } else {
-        mark_right = (right <= (*(*bctx).w.get()).sx as ::core::ffi::c_int) as ::core::ffi::c_int;
-        mark_bottom = (bottom <= (*(*bctx).w.get()).sy as ::core::ffi::c_int) as ::core::ffi::c_int;
-        if pane_status == PANE_STATUS_TOP && bottom < (*(*bctx).w.get()).sy as ::core::ffi::c_int {
+        mark_right = (right <= ((*bctx).w).size().0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+        mark_bottom = (bottom <= ((*bctx).w).size().1 as ::core::ffi::c_int) as ::core::ffi::c_int;
+        if pane_status == PANE_STATUS_TOP && bottom < ((*bctx).w).size().1 as ::core::ffi::c_int {
             mark_bottom = 0 as ::core::ffi::c_int;
         } else if pane_status == PANE_STATUS_BOTTOM {
             mark_top = 0 as ::core::ffi::c_int;
@@ -781,7 +786,8 @@ unsafe fn redraw_mark_pane(
             sb_w = (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
         }
     }
-    if sb_w != 0 as ::core::ffi::c_int && (*(*bctx).w.get()).sb_pos == PANE_SCROLLBARS_LEFT {
+    if sb_w != 0 as ::core::ffi::c_int && ((*bctx).w).scrollbars().position == PANE_SCROLLBARS_LEFT
+    {
         sb_left = 1 as ::core::ffi::c_int;
     }
     redraw_mark_pane_inside(bctx, wp_owner);
@@ -807,7 +813,7 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
     if (*bctx).ind != PANE_BORDER_COLOUR && (*bctx).ind != PANE_BORDER_BOTH {
         return;
     }
-    let Some(type_0) = redraw_check_two_pane_colours(&*(*bctx).w.get()) else {
+    let Some(type_0) = redraw_check_two_pane_colours((*bctx).w) else {
         return;
     };
     y = 0 as u_int;
@@ -826,7 +832,7 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
                     && (*sd).border().left_wp.strong_count() != 0
                     && (*sd).border().right_wp.strong_count() != 0
                 {
-                    if wy <= (*(*bctx).w.get()).sy.wrapping_div(2 as u_int) {
+                    if wy <= ((*bctx).w).size().1.wrapping_div(2 as u_int) {
                         (*sd).border_mut().style_wp = (*sd).border().left_wp.clone();
                     } else {
                         (*sd).border_mut().style_wp = (*sd).border().right_wp.clone();
@@ -836,7 +842,7 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
                     && (*sd).border().top_wp.strong_count() != 0
                     && (*sd).border().bottom_wp.strong_count() != 0
                 {
-                    if wx <= (*(*bctx).w.get()).sx.wrapping_div(2 as u_int) {
+                    if wx <= ((*bctx).w).size().0.wrapping_div(2 as u_int) {
                         (*sd).border_mut().style_wp = (*sd).border().top_wp.clone();
                     } else {
                         (*sd).border_mut().style_wp = (*sd).border().bottom_wp.clone();
@@ -849,11 +855,7 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
     }
 }
 unsafe fn redraw_mark_menu(bctx: *mut redraw_build_ctx) {
-    let Some(owner) = (*(*bctx).w.get())
-        .menu
-        .as_ref()
-        .map(|menu| menu.downgrade())
-    else {
+    let Some(owner) = (*bctx).w.menu_observer() else {
         return;
     };
     let md = owner.try_borrow_mut().expect("live unborrowed menu");
@@ -897,8 +899,6 @@ unsafe fn redraw_build_cells<'a>(
     mut bctx: *mut redraw_build_ctx<'a>,
     cells: &'a mut Vec<redraw_build_cell>,
 ) {
-    let mut w: *mut window = (*bctx).w.get();
-    let _wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut ncells: size_t = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -937,7 +937,7 @@ unsafe fn redraw_build_cells<'a>(
         }
         y = y.wrapping_add(1);
     }
-    for pane_owner in (*w).z_index.snapshot().into_iter().rev() {
+    for pane_owner in (*bctx).w.stacking_snapshot().into_iter().rev() {
         redraw_mark_pane(bctx, &pane_owner);
     }
     redraw_mark_two_pane_colours(bctx);
@@ -950,12 +950,14 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
         .expect("live client")
         .attached_session()
         .upgrade();
-    let mut w: *mut window = (s.as_ref().expect("live session").current_winlink())
+    let window_owner = s
+        .as_ref()
+        .expect("live session")
+        .current_winlink()
         .get_unchecked()
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let window_owner = (*w).observer.upgrade()?;
+        .cloned()
+        .expect("current window");
     let mut bctx: redraw_build_ctx = redraw_build_ctx {
         w: &window_owner,
         ox: 0,
@@ -972,6 +974,7 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
     let mut y: u_int = 0;
     let mut x0: u_int = 0;
     if c.as_ref().expect("live client").flags() & CLIENT_SUSPENDED as uint64_t != 0 {
+        window_owner.release(c"suspended redraw scene");
         return None;
     }
     redraw_set_context(client_owner, &mut bctx);
@@ -984,19 +987,19 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        ((*w).id) as u32,
+        (window_owner.id()) as u32,
         (bctx.sx) as u32,
         (bctx.sy) as u32,
         (bctx.ox) as u32,
         (bctx.oy) as u32,
-        (*w).redraw_scene_generation as ::core::ffi::c_ulonglong
+        window_owner.scene_generation() as ::core::ffi::c_ulonglong
     ));
     redraw_build_cells(&raw mut bctx, &mut cells.0);
     let mut scene = Box::new(redraw_scene {
         c: std::rc::Rc::downgrade(client_owner),
-        w: (*w).observer.clone(),
+        w: std::rc::Rc::downgrade(&window_owner).clone(),
         lines: Box::default(),
-        generation: (*w).redraw_scene_generation,
+        generation: window_owner.scene_generation(),
         sx: bctx.sx,
         sy: bctx.sy,
         ox: bctx.ox,
@@ -1047,28 +1050,23 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        ((*w).id) as u32
+        (window_owner.id()) as u32
     ));
+    window_owner.release(c"redraw scene build");
     return Some(scene);
 }
 
-pub unsafe fn redraw_invalidate_scene(w_value: &mut window) {
-    let w: *mut window = w_value as *mut _;
-    (*w).redraw_scene_generation = (*w).redraw_scene_generation.wrapping_add(1);
-}
 pub unsafe fn redraw_invalidate_all_scenes() {
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
-        w = window_owner.get();
-        redraw_invalidate_scene(&mut *(w));
-        window_cursor = windows_next(&*w);
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.invalidate_scene();
+        window_cursor = window_owner.next_window();
+        window_owner.release(c"window traversal");
     }
 }
 unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>> {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
-    let w = (c
+    let window_owner = (c
         .as_ref()
         .expect("live client")
         .attached_session()
@@ -1077,21 +1075,23 @@ unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>
         .current_winlink())
     .get_unchecked()
     .window_handle()
-    .as_ref()
-    .map_or(std::ptr::null_mut(), |owner| owner.get());
+    .cloned()
+    .expect("current window");
     let tty_window_view { ox, oy, sx, sy, .. } = redraw_get_window_offset(client_owner);
     let scene = client_owner.take_redraw_scene();
     let reason = match scene.as_deref() {
         None => Some("missing"),
-        Some(scene) if !scene.w.ptr_eq(&(*w).observer) => Some("window changed"),
-        Some(scene) if scene.generation != (*w).redraw_scene_generation => {
+        Some(scene) if !scene.w.ptr_eq(&std::rc::Rc::downgrade(&window_owner)) => {
+            Some("window changed")
+        }
+        Some(scene) if scene.generation != window_owner.scene_generation() => {
             Some("generation changed")
         }
         Some(scene) if scene.ox != ox || scene.oy != oy => Some("offset changed"),
         Some(scene) if scene.sx != sx || scene.sy != sy => Some("size changed"),
         Some(_) => None,
     };
-    if let Some(reason) = reason {
+    let result = if let Some(reason) = reason {
         log_debug(format_args!(
             "{}: @{} scene invalid: {}",
             log_cstr(
@@ -1101,14 +1101,16 @@ unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>
                     .as_ref()
                     .map_or(std::ptr::null(), |name| name.as_ptr())
             ),
-            (*w).id,
+            window_owner.id(),
             reason
         ));
         drop(scene);
         redraw_make_scene(client_owner)
     } else {
         scene
-    }
+    };
+    window_owner.release(c"redraw scene lookup");
+    result
 }
 
 unsafe fn redraw_draw_pane_span(
@@ -1179,8 +1181,6 @@ unsafe fn redraw_get_default_border_style(
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
-    let mut oo: *mut options = options_owner_ptr(&mut (*window_owner.get()).options)
-        .map_or(std::ptr::null_mut(), |options| options);
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut dgc: *mut grid_cell = &mut dctx.default_gc;
     if !dctx.flags & REDRAW_DEFAULT_SET != 0 {
@@ -1192,22 +1192,11 @@ unsafe fn redraw_get_default_border_style(
             None,
         );
         ft = &raw mut *ft_owner;
-        memcpy(
-            dgc as *mut ::core::ffi::c_void,
-            &raw const grid_default_cell as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
-        style_add(
-            dgc,
-            oo,
-            b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char,
-            ft,
-        );
+        style_apply_with_options(&mut *dgc, c"pane-border-style", Some(&mut *ft), |visit| {
+            window_owner.with_options_mut(visit)
+        });
         format_free(ft_owner);
-        dctx.pane_lines = options_get_number(
-            oo,
-            b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as pane_lines;
+        dctx.pane_lines = window_owner.pane_border_lines();
         dctx.flags |= REDRAW_DEFAULT_SET;
     }
     memcpy(
@@ -1216,6 +1205,7 @@ unsafe fn redraw_get_default_border_style(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     *pane_lines = dctx.pane_lines;
+    window_owner.release(c"default border style");
 }
 fn redraw_get_pane_for_border_style(
     active: Option<&std::rc::Weak<std::cell::UnsafeCell<window_pane>>>,
@@ -1288,7 +1278,6 @@ unsafe fn redraw_draw_border_span(
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
-    let w = window_owner.get();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
@@ -1325,11 +1314,11 @@ unsafe fn redraw_draw_border_span(
         if span.data.kind() as ::core::ffi::c_uint
             == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            window_get_fill_cell(&*(w), 0 as ::core::ffi::c_int, &raw mut gc);
+            window_get_fill_cell(&window_owner, 0 as ::core::ffi::c_int, &raw mut gc);
         } else if span.data.kind() as ::core::ffi::c_uint
             == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            window_get_fill_cell(&*(w), 1 as ::core::ffi::c_int, &raw mut gc);
+            window_get_fill_cell(&window_owner, 1 as ::core::ffi::c_int, &raw mut gc);
         } else {
             if span.data.kind() as ::core::ffi::c_uint
                 != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -1773,7 +1762,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
         .upgrade();
     let mut dctx = redraw_draw_ctx {
         scene,
-        active: (*window_owner.get()).active.clone(),
+        active: window_owner.active_pane_observer(),
         marked: std::rc::Weak::new(),
         status_lines: status_line_size(c.as_ref().expect("live client")),
         pane_lines: PANE_LINES_SINGLE,
@@ -1916,11 +1905,6 @@ unsafe fn redraw_draw(
         .expect("live client")
         .attached_session()
         .upgrade();
-    let w = (s.as_ref().expect("live session").current_winlink())
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut redraw = 0;
     if c.as_ref().expect("live client").flags() & CLIENT_SUSPENDED as uint64_t != 0 {
         return;
@@ -1959,7 +1943,12 @@ unsafe fn redraw_draw(
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             ),
-            ((*w).id) as u32,
+            ((((s.as_ref().expect("live session").current_winlink())
+                .get_unchecked()
+                .window_handle()
+                .as_ref())
+            .expect("live window"))
+            .id()) as u32,
             log_cstr(redraw_flags_to_string(flags).as_ptr())
         ));
     }
@@ -1981,7 +1970,6 @@ unsafe fn redraw_draw_scene(
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
-    let w = window_owner.get();
     let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
         .as_ref()
         .expect("live client")
@@ -1993,13 +1981,14 @@ unsafe fn redraw_draw_scene(
     let mut j: u_int = 0;
     let mut redraw: ::core::ffi::c_int = 0;
     let Some(mut dctx) = redraw_set_draw_context(scene) else {
+        window_owner.release(c"unavailable redraw context");
         return;
     };
-    if let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) {
+    if let Some(menu) = window_owner.menu_observer() {
         menu_update(&mut menu.try_borrow_mut().expect("live unborrowed menu"));
     }
     if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
-        for pane_owner in (*w).panes.snapshot() {
+        for pane_owner in window_owner.pane_snapshot() {
             let loop_0 = pane_owner.get();
             (*loop_0).border_gc_set = 0 as ::core::ffi::c_int;
             (*loop_0).active_border_gc_set = 0 as ::core::ffi::c_int;
@@ -2007,7 +1996,7 @@ unsafe fn redraw_draw_scene(
     }
     if flags & REDRAW_PANE_STATUS != 0 {
         redraw = 0 as ::core::ffi::c_int;
-        for pane_owner in (*w).panes.snapshot() {
+        for pane_owner in window_owner.pane_snapshot() {
             let loop_0 = pane_owner.get();
             if flags == REDRAW_ALL {
                 (*loop_0).flags |= PANE_NEWSTATUS;
@@ -2035,6 +2024,7 @@ unsafe fn redraw_draw_scene(
         if redraw == 0 && !(flags == REDRAW_ALL) {
             flags &= !REDRAW_PANE_STATUS;
             if flags == 0 as ::core::ffi::c_int {
+                window_owner.release(c"unchanged pane status");
                 return;
             }
         }
@@ -2044,7 +2034,7 @@ unsafe fn redraw_draw_scene(
             pane.stop_sync();
             pane.clear_sync_dirty();
         } else {
-            for pane in (*w).panes.snapshot() {
+            for pane in window_owner.pane_snapshot() {
                 if window_pane_is_visible(&pane) != 0 {
                     pane.stop_sync();
                     pane.clear_sync_dirty();
@@ -2072,7 +2062,7 @@ unsafe fn redraw_draw_scene(
                 &(*(wp)).observer.upgrade().expect("live window_pane"),
             );
         } else {
-            for pane_owner in (*w).panes.snapshot() {
+            for pane_owner in window_owner.pane_snapshot() {
                 let loop_0 = pane_owner.get();
                 if window_pane_is_visible(&pane_owner) != 0 {
                     redraw_draw_pane_prompt(
@@ -2083,7 +2073,7 @@ unsafe fn redraw_draw_scene(
             }
         }
     }
-    if (*w).menu.is_some() && flags & REDRAW_MENU != 0 {
+    if window_owner.menu_observer().is_some() && flags & REDRAW_MENU != 0 {
         redraw_draw_menu_lines(&mut dctx);
     }
     if flags & REDRAW_STATUS != 0 {
@@ -2133,8 +2123,9 @@ unsafe fn redraw_draw_scene(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        ((*w).id) as u32
+        ((window_owner).id()) as u32
     ));
+    window_owner.release(c"redraw scene");
 }
 pub fn redraw_get_status_border_cell_type(
     spans: &redraw_spans,
@@ -2199,7 +2190,7 @@ pub unsafe fn redraw_screen(client_owner: &ClientRef) {
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWMENU as uint64_t != 0 {
             flags |= REDRAW_MENU;
         }
-        if (*(c
+        if (c
             .as_ref()
             .expect("live client")
             .attached_session()
@@ -2209,8 +2200,8 @@ pub unsafe fn redraw_screen(client_owner: &ClientRef) {
         .get_unchecked()
         .window_handle()
         .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .menu
+        .expect("current window")
+        .menu_observer()
         .is_some()
         {
             flags |= REDRAW_MENU;
@@ -2230,7 +2221,7 @@ pub unsafe fn redraw_pane(
         Some(pane_owner),
         REDRAW_PANE | REDRAW_PANE_SCROLLBAR,
     );
-    if (*(c
+    if (c
         .as_ref()
         .expect("live client")
         .attached_session()
@@ -2240,8 +2231,8 @@ pub unsafe fn redraw_pane(
     .get_unchecked()
     .window_handle()
     .as_ref()
-    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .menu
+    .expect("current window")
+    .menu_observer()
     .is_some()
     {
         redraw_draw(client_owner, None, REDRAW_MENU);
@@ -2362,9 +2353,7 @@ mod menu_observer_tests {
     #[test]
     fn build_context_borrows_window_and_preserves_inside_outside_cells() {
         unsafe {
-            let owner = window::new();
-            (*owner.get()).sx = 1;
-            (*owner.get()).sy = 1;
+            let owner = window::with_size_for_test(1, 1);
             let strong_count = std::rc::Rc::strong_count(&owner);
             let mut cells = Vec::new();
             let mut bctx = redraw_build_ctx {

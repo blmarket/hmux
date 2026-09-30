@@ -22,14 +22,13 @@ use crate::src::grid::view::grid_view_get_cell;
 use crate::src::grid::{grid_get_cell, grid_get_line, grid_line_length, grid_peek_line};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_event, job_run};
-use crate::src::layout::custom::layout_dump_owned;
 use crate::src::layout::layout_add_horizontal_border;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::names::parse_window_name_cstring;
 use crate::src::options::options_table_entry;
 use crate::src::options::{
-    options_array_item_key, options_get, options_get_number, options_get_string, options_is_array,
-    options_name, options_parse_owned, options_to_cstring,
+    options_array_item_key, options_get_number, options_get_string, options_is_array, options_name,
+    options_parse_owned, options_to_cstring,
 };
 use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
@@ -54,6 +53,7 @@ use crate::src::session::{
 use crate::src::session::{session_groups, sessions, Session};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;
+use crate::src::shared::window::WindowRef;
 use crate::src::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
 };
@@ -69,11 +69,12 @@ use crate::src::tmux::{
 use crate::src::tty::{tty_default_colours, tty_window_offset};
 use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
+use crate::src::window::Window as _;
 use crate::src::window::{
-    window_count_panes, window_get_pane_status, window_pane_get_pane_status, window_pane_index,
-    window_pane_is_floating, window_pane_mode, window_pane_printable_flags,
-    window_pane_scrollbar_reserve, window_pane_search, window_pane_zindex, window_printable_flags,
-    winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next,
+    window_pane_get_pane_status, window_pane_index, window_pane_is_floating, window_pane_mode,
+    window_pane_printable_flags, window_pane_scrollbar_reserve, window_pane_search,
+    window_pane_zindex, window_printable_flags, winlink_count, winlink_find_by_window,
+    winlinks_minmax, winlinks_next,
 };
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
@@ -492,7 +493,7 @@ pub unsafe fn format_defaults(
         wl.try_borrow_mut().ok().and_then(|link| {
             link.window_owner
                 .as_ref()
-                .and_then(|owner| (*owner.get()).active.upgrade())
+                .and_then(|owner| owner.active_pane())
         })
     });
     if let Some(client) = c_owner {
@@ -524,10 +525,7 @@ unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &ClientRef) 
     }
     (*ft).c = std::rc::Rc::downgrade(c_owner);
 }
-pub unsafe fn format_defaults_window(
-    mut ft: *mut format_tree,
-    w_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window>>>,
-) {
+pub unsafe fn format_defaults_window(mut ft: *mut format_tree, w_owner: Option<&WindowRef>) {
     (*ft).w = w_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
 }
 unsafe fn format_defaults_winlink(mut ft: *mut format_tree, mut wl: refbox::Weak<winlink>) {
@@ -587,15 +585,15 @@ pub(crate) unsafe fn format_grid_word_cstring(
         us: 0,
         link: 0,
     };
-    let ws: &CStr;
     let mut ud: Vec<utf8_data> = Vec::new();
     let mut end: u_int = 0;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut s = None;
-    ws = CStr::from_ptr(options_get_string(
+    let separators = options_get_string(
         global_s_options,
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
-    ));
+    );
+    let ws = separators.as_c_str();
     loop {
         grid_get_cell(gd, x, y, &mut gc);
         if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0

@@ -15,10 +15,7 @@ use crate::src::key_string::key_string_parse_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::menu::{menu_add_item, menu_create, menu_display};
 use crate::src::options::options_owner_ptr;
-use crate::src::options::options_table_entry;
-use crate::src::options::{
-    options_find_choice, options_get, options_get_number, options_get_string,
-};
+use crate::src::options::{options_find_choice, options_get_number, options_get_string};
 use crate::src::popup::{popup_display, popup_modify, popup_present};
 use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_clear_overlay, server_client_get_cwd};
@@ -50,6 +47,7 @@ use crate::src::shared::window::{window, winlink};
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::tmux::checkshell;
 use crate::src::tty::tty_window_offset;
+use crate::src::window::Window as _;
 pub static cmd_display_menu_entry: cmd_entry = {
     cmd_entry {
         name: c"display-menu",
@@ -208,37 +206,16 @@ unsafe fn cmd_display_menu_get_popup_pos(
             |out| write!(out, "{}", ((*event).m.y) as u32),
         );
     }
-    format_add(
-        ft,
-        b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                ((*(*target)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .menu_last_px) as u32
-            )
-        },
-    );
-    format_add(
-        ft,
-        b"popup_last_y\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                ((*(*target)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .menu_last_py
-                .wrapping_add(h)) as u32
-            )
-        },
-    );
+    let (last_x, last_y) = (*target)
+        .window_handle()
+        .expect("popup target window")
+        .last_menu_position();
+    format_add(ft, c"popup_last_x".as_ptr(), |out| {
+        write!(out, "{}", last_x)
+    });
+    format_add(ft, c"popup_last_y".as_ptr(), |out| {
+        write!(out, "{}", last_y.wrapping_add(h))
+    });
     top = status_at_line(tc.as_ref().expect("live client"));
     if top != -(1 as ::core::ffi::c_int) {
         lines = status_line_size(tc.as_ref().expect("live client"));
@@ -659,10 +636,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         .attached_session()
         .upgrade();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut window: *mut window = (*target)
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let window = (*target).window_handle().expect("menu target window");
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
         .as_ref()
@@ -678,13 +652,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut mouse_x: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
     let mut mouse_y: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    max_x = (if (*window).sx > w {
-        (*window).sx.wrapping_sub(w)
+    max_x = (if window.size().0 > w {
+        window.size().0.wrapping_sub(w)
     } else {
         0 as u_int
     }) as ::core::ffi::c_long;
-    max_y = (if (*window).sy > h {
-        (*window).sy.wrapping_sub(h)
+    max_y = (if window.size().1 > h {
+        window.size().1.wrapping_sub(h)
     } else {
         0 as u_int
     }) as ::core::ffi::c_long;
@@ -724,12 +698,18 @@ unsafe fn cmd_display_menu_get_menu_pos(
     format_add(
         ft,
         b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((*window).menu_last_px) as u32),
+        |out| write!(out, "{}", (window.last_menu_position().0) as u32),
     );
     format_add(
         ft,
         b"popup_last_y\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((*window).menu_last_py.wrapping_add(h)) as u32),
+        |out| {
+            write!(
+                out,
+                "{}",
+                (window.last_menu_position().1.wrapping_add(h)) as u32
+            )
+        },
     );
     lines = status_line_size(tc.as_ref().expect("live client"));
     position = s
@@ -763,7 +743,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", ((*window).sy) as u32),
+                    |out| write!(out, "{}", (window.size().1) as u32),
                 );
             }
         }
@@ -777,7 +757,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", ((*window).sy) as u32),
+                |out| write!(out, "{}", (window.size().1) as u32),
             );
         }
     }
@@ -791,7 +771,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
         b"popup_height\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write!(out, "{}", (h) as u32),
     );
-    n = ((*window).sx as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
+    n = (window.size().0 as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
+        / 2 as ::core::ffi::c_long
         - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
         format_add(
@@ -806,9 +787,10 @@ unsafe fn cmd_display_menu_get_menu_pos(
             |out| write!(out, "{}", (n) as ::core::ffi::c_long),
         );
     }
-    n = ((*window).sy as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
+    n = (window.size().1 as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
+        / 2 as ::core::ffi::c_long
         + h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-    if n >= (*window).sy as ::core::ffi::c_long {
+    if n >= window.size().1 as ::core::ffi::c_long {
         format_add(
             ft,
             b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
@@ -837,7 +819,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
             );
         }
         n = mouse_y - h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-        if n + h as ::core::ffi::c_long >= (*window).sy as ::core::ffi::c_long {
+        if n + h as ::core::ffi::c_long >= window.size().1 as ::core::ffi::c_long {
             format_add(
                 ft,
                 b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
@@ -851,11 +833,11 @@ unsafe fn cmd_display_menu_get_menu_pos(
             );
         }
         n = mouse_y + h as ::core::ffi::c_long;
-        if n >= (*window).sy as ::core::ffi::c_long {
+        if n >= window.size().1 as ::core::ffi::c_long {
             format_add(
                 ft,
                 b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", ((*window).sy.wrapping_sub(1 as u_int)) as u32),
+                |out| write!(out, "{}", (window.size().1.wrapping_sub(1 as u_int)) as u32),
             );
         } else {
             format_add(
@@ -880,7 +862,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         }
     }
     n = ((*wp).yoff as u_int).wrapping_add(h) as ::core::ffi::c_long;
-    if n >= (*window).sy as ::core::ffi::c_long {
+    if n >= window.size().1 as ::core::ffi::c_long {
         format_add(
             ft,
             b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1024,6 +1006,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         (h) as u32
     ));
     format_free(ft_owner);
+    window.release(c"menu position");
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn cmd_display_menu_exec(
@@ -1041,18 +1024,6 @@ unsafe fn cmd_display_menu_exec(
     let style = args_get(&*(args), b's').map_or(std::ptr::null(), |value| value.as_ptr());
     let border_style = args_get(&*(args), b'S').map_or(std::ptr::null(), |value| value.as_ptr());
     let selected_style = args_get(&*(args), b'H').map_or(std::ptr::null(), |value| value.as_ptr());
-    let o = options_owner_ptr(
-        &mut (*((*target)
-            .session_handle()
-            .expect("live session")
-            .current_winlink())
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .options,
-    )
-    .map_or(std::ptr::null_mut(), |options| options);
     let mut starting_choice = 0;
     if args_has(args, b'C') != 0 {
         if args_get(&*(args), b'C').expect("argument is present") == c"-" {
@@ -1136,12 +1107,12 @@ unsafe fn cmd_display_menu_exec(
     let mut lines = BOX_LINES_DEFAULT;
     let value = args_get(&*(args), b'b').map_or(std::ptr::null(), |value| value.as_ptr());
     if !value.is_null() {
-        let oe = options_get(o, c"menu-border-lines".as_ptr());
         let mut cause = None;
         lines = options_find_choice(
-            options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| {
-                entry as *const crate::src::shared::options::options_table_entry
-            }),
+            crate::src::options_table::options_table
+                .iter()
+                .find(|entry| entry.name == Some(c"menu-border-lines"))
+                .expect("built-in border choice"),
             value,
             &mut cause,
         ) as box_lines;
@@ -1215,16 +1186,6 @@ unsafe fn cmd_display_popup_exec(
     let mut h: u_int = 0;
     let mut count: u_int = args_count(args);
     let mut env: Option<Box<environ>> = None;
-    let mut o: *mut options = options_owner_ptr(
-        &mut (*(s.as_ref().expect("live session").current_winlink())
-            .get_unchecked()
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .options,
-    )
-    .map_or(std::ptr::null_mut(), |options| options);
-    let mut oe: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     if args_has(args, 'C' as i32 as u_char) != 0 {
         server_client_clear_overlay(&tc.clone().expect("live client"));
         return CMD_RETURN_NORMAL;
@@ -1340,12 +1301,11 @@ unsafe fn cmd_display_popup_exec(
                                 shellcmd_session_value =
                                     Some(s.as_ref().expect("live session").with_options_mut(
                                         |options| {
-                                            std::ffi::CStr::from_ptr(options_get_string(
+                                            options_get_string(
                                                 options,
                                                 b"default-command\0" as *const u8
                                                     as *const ::core::ffi::c_char,
-                                            ))
-                                            .to_owned()
+                                            )
                                         },
                                     ));
                                 shellcmd = shellcmd_session_value
@@ -1364,12 +1324,11 @@ unsafe fn cmd_display_popup_exec(
                                 shell_session_value =
                                     Some(s.as_ref().expect("live session").with_options_mut(
                                         |options| {
-                                            std::ffi::CStr::from_ptr(options_get_string(
+                                            options_get_string(
                                                 options,
                                                 b"default-shell\0" as *const u8
                                                     as *const ::core::ffi::c_char,
-                                            ))
-                                            .to_owned()
+                                            )
                                         },
                                     ));
                                 shell = shell_session_value
@@ -1410,14 +1369,11 @@ unsafe fn cmd_display_popup_exec(
                 lines = BOX_LINES_NONE;
                 current_block = 8151474771948790331;
             } else if !value.is_null() {
-                oe = options_get(
-                    o,
-                    b"popup-border-lines\0" as *const u8 as *const ::core::ffi::c_char,
-                );
                 lines = options_find_choice(
-                    options_table_entry(&*(oe)).map_or(std::ptr::null(), |entry| {
-                        entry as *const crate::src::shared::options::options_table_entry
-                    }),
+                    crate::src::options_table::options_table
+                        .iter()
+                        .find(|entry| entry.name == Some(c"popup-border-lines"))
+                        .expect("built-in border choice"),
                     value,
                     &raw mut cause,
                 ) as box_lines;

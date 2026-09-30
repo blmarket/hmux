@@ -15,7 +15,7 @@ use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatal, fatalx, log_bytes, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
-use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::reactor::{event_del, event_initialized};
 use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
     screen_reset_tabs, screen_select_cell,
@@ -73,6 +73,7 @@ use crate::src::tty::{
     tty_update_window_offset, tty_window_offset, tty_write,
 };
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
 use crate::src::window::{
     window_pane_clear_resizes, window_pane_is_floating, window_pane_scrollbar_overlay_visible,
@@ -122,12 +123,7 @@ unsafe fn screen_write_set_cursor(
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = write_pane;
-    let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut s: *mut screen = ctx.screen_ptr();
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 10000 as __suseconds_t,
-    };
     if cx != -(1 as ::core::ffi::c_int)
         && cx as u_int == (*s).cx
         && cy != -(1 as ::core::ffi::c_int)
@@ -150,31 +146,10 @@ unsafe fn screen_write_set_cursor(
     if wp.is_null() {
         return;
     }
-    w = (*wp)
+    (*wp)
         .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if event_initialized(&(*w).offset_timer) == 0 {
-        let window_observer = (*w).observer.clone();
-        event_set(
-            &raw mut (*w).offset_timer,
-            -(1 as ::core::ffi::c_int),
-            0 as ::core::ffi::c_short,
-            move |_, _| unsafe {
-                if let Some(owner) = window_observer.upgrade() {
-                    tty_update_window_offset(&owner);
-                }
-            },
-        );
-    }
-    if event_pending(
-        &raw mut (*w).offset_timer,
-        EV_TIMEOUT as ::core::ffi::c_short,
-        ::core::ptr::null_mut::<timeval>(),
-    ) == 0
-    {
-        event_add(&raw mut (*w).offset_timer, &raw mut tv);
-    }
+        .expect("live window")
+        .schedule_offset_update();
 }
 fn screen_write_redraw_cb(
     observer: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
@@ -219,17 +194,13 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> ::core::f
     if (*write_pane).xoff < 0 as ::core::ffi::c_int
         || (*write_pane).yoff < 0 as ::core::ffi::c_int
         || ((*write_pane).xoff as u_int).wrapping_add((*write_pane).sx)
-            > (*(*write_pane)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .sx
+            > (((*write_pane).window_handle().as_ref()).expect("live window"))
+                .size()
+                .0
         || ((*write_pane).yoff as u_int).wrapping_add((*write_pane).sy)
-            > (*(*write_pane)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .sy
+            > (((*write_pane).window_handle().as_ref()).expect("live window"))
+                .size()
+                .1
     {
         ctx.flags |= SCREEN_WRITE_OBSCURED;
         return 1 as ::core::ffi::c_int;
@@ -328,13 +299,10 @@ pub(crate) unsafe fn screen_write_initctx(
     if !ctx.flags & SCREEN_WRITE_SYNC != 0 {
         if !write_pane.is_null()
             && (write_pane
-                != (*(*write_pane)
-                    .window_handle()
+                != (((*write_pane).window_handle().as_ref()).expect("live window"))
+                    .active_pane()
                     .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .active_pane()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())
+                    .map_or(std::ptr::null_mut(), |owner| owner.get())
                 || (*write_pane).screen_ptr() != &raw mut (*write_pane).base)
         {
             ttyctx.flags |= TTY_CTX_SYNC;
@@ -2352,19 +2320,15 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> ::c
     }
     if !wp.is_null()
         && ((*wp).yoff as u_int).wrapping_add((*wp).sy)
-            > (*(*wp)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .sy
+            > (((*wp).window_handle().as_ref()).expect("live window"))
+                .size()
+                .1
     {
         ttyctx.orlower = ttyctx.orlower.wrapping_sub(
             ((*wp).yoff as u_int).wrapping_add((*wp).sy).wrapping_sub(
-                (*(*wp)
-                    .window_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .sy,
+                (((*wp).window_handle().as_ref()).expect("live window"))
+                    .size()
+                    .1,
             ),
         );
     }
@@ -2404,16 +2368,12 @@ unsafe fn screen_write_collect_flush_line(
     let mut c_end: ::core::ffi::c_int = 0;
     let mut ttyctx = tty_ctx::default();
     if !wp.is_null() {
-        wsx = (*(*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .sx;
-        wsy = (*(*wp)
-            .window_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .sy;
+        wsx = (((*wp).window_handle().as_ref()).expect("live window"))
+            .size()
+            .0;
+        wsy = (((*wp).window_handle().as_ref()).expect("live window"))
+            .size()
+            .1;
         xoff = (*wp).xoff;
         yoff = (*wp).yoff;
     } else {
@@ -3407,25 +3367,14 @@ pub unsafe fn screen_write_alternateon(
             event_del(&raw mut (*wp).resize_timer);
         }
         layout_fix_panes(
-            &(*((*wp)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window"),
+            &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
             None,
         );
         if !(*wp).resize_queue.is_empty() {
             window_pane_send_resize(&*wp, (*wp).sx, (*wp).sy);
             window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
         }
-        server_redraw_window_borders(
-            &*((*wp)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())),
-        );
+        server_redraw_window_borders(&(((*wp).window_handle().as_ref()).expect("live window")));
     }
     screen_write_initctx(
         ctx,
@@ -3462,21 +3411,10 @@ pub unsafe fn screen_write_alternateoff(
     }
     if !wp.is_null() {
         layout_fix_panes(
-            &(*((*wp)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window"),
+            &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
             None,
         );
-        server_redraw_window_borders(
-            &*((*wp)
-                .window_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())),
-        );
+        server_redraw_window_borders(&(((*wp).window_handle().as_ref()).expect("live window")));
     }
     screen_write_initctx(
         ctx,

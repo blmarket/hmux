@@ -11,6 +11,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_type};
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::terminal::termios;
+use crate::src::shared::window::WindowRef;
 use crate::src::window::Window;
 use std::any::Any;
 use std::cell::UnsafeCell;
@@ -76,14 +77,8 @@ pub trait Client {
     unsafe fn reset_pan(&self);
     /// Apply and clamp this window's explicit pan, if active, to a viewport.
     /// Window dimensions are read before borrowing Client state.
-    unsafe fn apply_pan(&self, window: &Rc<UnsafeCell<window>>, view: &mut tty_window_view)
-        -> bool;
-    unsafe fn pan_window(
-        &self,
-        window: &Rc<UnsafeCell<window>>,
-        direction: PanDirection,
-        amount: u32,
-    );
+    unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool;
+    unsafe fn pan_window(&self, window: &WindowRef, direction: PanDirection, amount: u32);
     type Status<'a>: std::ops::Deref<Target = crate::src::shared::status::status_line>
     where
         Self: 'a;
@@ -170,15 +165,10 @@ pub trait Client {
     unsafe fn alert(&self, kind: &CStr, visual: i32, current: bool, index: i32);
 
     unsafe fn uses_legacy_layout_format(&self) -> bool;
-    unsafe fn focuses_window(&self, window: &Rc<UnsafeCell<window>>) -> bool;
+    unsafe fn focuses_window(&self, window: &WindowRef) -> bool;
     unsafe fn participates_in_window_sizing(&self) -> bool;
-    unsafe fn window_size(&self, window: Option<&Rc<UnsafeCell<window>>>) -> (u32, u32, u32, u32);
-    unsafe fn constrain_window_size(
-        &self,
-        window: &Rc<UnsafeCell<window>>,
-        sx: &mut u32,
-        sy: &mut u32,
-    );
+    unsafe fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32);
+    unsafe fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32);
     /// `flags` contains only CLIENT_*REDRAW* bits, including status-force.
     unsafe fn request_redraw(&self, flags: u64);
     /// Ordered injection used by send-keys -K. The queue insertion point must
@@ -430,11 +420,7 @@ impl Client for ClientRef {
     unsafe fn reset_pan(&self) {
         (*self.get()).pan_window = Weak::new();
     }
-    unsafe fn apply_pan(
-        &self,
-        window: &Rc<UnsafeCell<window>>,
-        view: &mut tty_window_view,
-    ) -> bool {
+    unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
         let (sx, sy) = window.size();
         let observer = Rc::downgrade(window);
         let state = &mut *self.get();
@@ -455,12 +441,7 @@ impl Client for ClientRef {
         view.oy = state.pan_oy;
         true
     }
-    unsafe fn pan_window(
-        &self,
-        window: &Rc<UnsafeCell<window>>,
-        direction: PanDirection,
-        amount: u32,
-    ) {
+    unsafe fn pan_window(&self, window: &WindowRef, direction: PanDirection, amount: u32) {
         let (width, height) = window.size();
         let observer = Rc::downgrade(window);
         let state = &mut *self.get();
@@ -849,7 +830,7 @@ impl Client for ClientRef {
         self.is_control() && (*self.get()).flags & CLIENT_CONTROL_NEWLAYOUTS == 0
     }
 
-    unsafe fn focuses_window(&self, window: &Rc<UnsafeCell<window>>) -> bool {
+    unsafe fn focuses_window(&self, window: &WindowRef) -> bool {
         let flags = (*self.get()).flags;
         if flags & CLIENT_FOCUSED as u64 == 0 || (*self.get()).overlay_draw.is_some() {
             return false;
@@ -887,7 +868,7 @@ impl Client for ClientRef {
             || client.flags & (CLIENT_SIZECHANGED as u64 | CLIENT_WINDOWSIZECHANGED) != 0
     }
 
-    unsafe fn window_size(&self, window: Option<&Rc<UnsafeCell<window>>>) -> (u32, u32, u32, u32) {
+    unsafe fn window_size(&self, window: Option<&WindowRef>) -> (u32, u32, u32, u32) {
         let (mut sx, mut sy) = (0, 0);
         let overridden = window.is_some_and(|window| {
             control_get_window_size(self, window.id(), &mut sx, &mut sy) != 0 && sx != 0 && sy != 0
@@ -907,12 +888,7 @@ impl Client for ClientRef {
         (sx, sy, (*self.get()).tty.xpixel, (*self.get()).tty.ypixel)
     }
 
-    unsafe fn constrain_window_size(
-        &self,
-        window: &Rc<UnsafeCell<window>>,
-        sx: &mut u32,
-        sy: &mut u32,
-    ) {
+    unsafe fn constrain_window_size(&self, window: &WindowRef, sx: &mut u32, sy: &mut u32) {
         if (*self.get()).flags & CLIENT_WINDOWSIZECHANGED == 0 {
             return;
         }

@@ -6,8 +6,9 @@ use crate::src::reactor::{event_pending, Interests};
 use crate::src::server_client::Client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
-use crate::src::shared::pane::PANE_ACTIVITY;
+use crate::src::shared::pane::{PANE_ACTIVITY, PANE_MINIMUM};
 use crate::src::shared::screen::MODE_SYNC;
+use crate::src::shared::window::{WindowRef, WindowWeak};
 
 /// Access a pane without lending its model storage.
 ///
@@ -15,6 +16,19 @@ use crate::src::shared::screen::MODE_SYNC;
 /// preconditions. Component closures must not reenter model code, destroy an
 /// owner, alter component parent links, or let component references escape.
 pub trait WindowPane {
+    /// Visible geometry including the reserved scrollbar area, copied for hit testing.
+    unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32);
+    unsafe fn is_floating(&self) -> bool;
+    unsafe fn border_status(&self) -> i32;
+    /// Minimum width for splitting this pane into two, using the caller's
+    /// already-read scrollbar mode and this pane's own scrollbar dimensions.
+    unsafe fn split_minimum_width(&self, reserve_scrollbar: bool) -> u32;
+    unsafe fn unzoomed_width(&self) -> Option<u32>;
+    unsafe fn unzoomed_height(&self) -> Option<u32>;
+    unsafe fn has_pending_change(&self) -> bool;
+    unsafe fn acknowledge_change(&self);
+    /// Derive an owned default Window name from this pane's command or shell.
+    unsafe fn default_window_name(&self) -> CString;
     /// A borrow can become Ref::map on one RefCell containing the whole pane.
     type Palette<'a>: std::ops::Deref<Target = colour_palette>
     where
@@ -24,7 +38,10 @@ pub trait WindowPane {
     unsafe fn borrow_palette(&self) -> Self::Palette<'_>;
 
     unsafe fn id(&self) -> u32;
-    unsafe fn window_observer(&self) -> Weak<UnsafeCell<window>>;
+    unsafe fn window_observer(&self) -> WindowWeak;
+    /// Move the parent identity and option inheritance together, before the
+    /// caller publishes membership or dispatches move/layout notifications.
+    unsafe fn reparent(&self, window: &WindowRef);
     unsafe fn geometry(&self) -> (u32, u32, i32, i32);
     /// Visible cursor in window coordinates, for terminal viewport following.
     unsafe fn visible_cursor_in_window(&self) -> Option<(u32, u32)>;
@@ -102,6 +119,101 @@ pub trait WindowPane {
 }
 
 impl WindowPane for Rc<UnsafeCell<window_pane>> {
+    unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32) {
+        window_pane_full_size_offset(self)
+    }
+    unsafe fn is_floating(&self) -> bool {
+        window_pane_is_floating(&*self.get()) != 0
+    }
+    unsafe fn border_status(&self) -> i32 {
+        window_pane_get_pane_status(&*self.get())
+    }
+    unsafe fn split_minimum_width(&self, reserve_scrollbar: bool) -> u32 {
+        if reserve_scrollbar {
+            let style = &(*self.get()).scrollbar_style;
+            (PANE_MINIMUM * 2 + style.width + style.pad) as u32
+        } else {
+            (PANE_MINIMUM * 2 + 1) as u32
+        }
+    }
+    unsafe fn unzoomed_width(&self) -> Option<u32> {
+        let window = self.window_observer().upgrade().expect("pane window");
+        let geometry = window.pane_layout_geometry(
+            &Rc::downgrade(self),
+            crate::src::window::LayoutView::Unzoomed,
+        );
+        let Some(geometry) = geometry else {
+            window.release(c"unzoomed pane width");
+            return None;
+        };
+        let reserve = if geometry.saved {
+            let main_screen = (*self.get()).base.saved_grid.is_none();
+            main_screen && window.scrollbars().mode == PANE_SCROLLBARS_ALWAYS
+        } else {
+            window_pane_scrollbar_reserve(&*self.get()) != 0
+        };
+        let mut width = geometry.size.0;
+        if reserve {
+            let (bar, pad) = {
+                let state = &*self.get();
+                (
+                    state.scrollbar_style.width.max(1),
+                    state.scrollbar_style.pad.max(0),
+                )
+            };
+            width = if width as i32 - bar - pad < PANE_MINIMUM {
+                PANE_MINIMUM as u32
+            } else {
+                width.wrapping_sub((bar + pad) as u32)
+            };
+        }
+        window.release(c"unzoomed pane width");
+        Some(width)
+    }
+    unsafe fn unzoomed_height(&self) -> Option<u32> {
+        let window = self.window_observer().upgrade().expect("pane window");
+        let geometry = window.pane_layout_geometry(
+            &Rc::downgrade(self),
+            crate::src::window::LayoutView::Unzoomed,
+        );
+        let Some(geometry) = geometry else {
+            window.release(c"unzoomed pane height");
+            return None;
+        };
+        let status = if geometry.saved && !geometry.floating {
+            window.pane_border_status()
+        } else {
+            self.border_status()
+        };
+        let border = match status {
+            PANE_STATUS_TOP => geometry.top_border,
+            PANE_STATUS_BOTTOM => geometry.bottom_border,
+            _ => false,
+        };
+        let height = geometry.size.1;
+        let height = if !geometry.floating && border && height > 1 {
+            height - 1
+        } else {
+            height
+        };
+        window.release(c"unzoomed pane height");
+        Some(height)
+    }
+    unsafe fn has_pending_change(&self) -> bool {
+        (*self.get()).flags & PANE_CHANGED != 0
+    }
+    unsafe fn acknowledge_change(&self) {
+        (*self.get()).flags &= !PANE_CHANGED;
+    }
+    unsafe fn default_window_name(&self) -> CString {
+        let pane = &*self.get();
+        let command = crate::src::cmd::cmd_stringify_argv_cstring(&pane.argv);
+        let source = command
+            .as_deref()
+            .filter(|text| !text.to_bytes().is_empty())
+            .unwrap_or_else(|| pane.shell.as_deref().expect("pane shell"));
+        crate::src::names::parse_window_name_cstring(source)
+    }
     type Palette<'a> = &'a colour_palette;
     unsafe fn borrow_palette(&self) -> Self::Palette<'_> {
         &(*self.get()).palette
@@ -127,8 +239,20 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (*self.get()).id
     }
 
-    unsafe fn window_observer(&self) -> Weak<UnsafeCell<window>> {
+    unsafe fn window_observer(&self) -> WindowWeak {
         (*self.get()).window.clone()
+    }
+    unsafe fn reparent(&self, window: &WindowRef) {
+        let state = &mut *self.get();
+        state.window = Rc::downgrade(window);
+        state
+            .options
+            .as_deref_mut()
+            .expect("live pane options")
+            .parent = Some(crate::src::options::OptionsScope::Window(Rc::downgrade(
+            window,
+        )));
+        state.flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     }
 
     unsafe fn geometry(&self) -> (u32, u32, i32, i32) {
@@ -207,7 +331,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         window_redraw: bool,
     ) -> i32 {
         let pane = self.get();
-        if (*pane).layout_cell.is_null() {
+        if (*pane).layout_cell.is_none() {
             return 0;
         }
         if (*pane).flags & (PANE_REDRAW | crate::src::shared::pane::PANE_DROP) != 0 {
@@ -572,6 +696,63 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reparent_changes_inheritance_without_retaining_either_window() {
+        use crate::src::options::{
+            options_create, options_get_string, options_set_string, OptionsScope,
+        };
+        use crate::src::window::Window;
+        unsafe {
+            let first = window::with_options_for_test();
+            let second = window::with_options_for_test();
+            for (owner, value) in [(&first, c"first"), (&second, c"second")] {
+                owner.with_options_mut(|table| {
+                    options_set_string(table, c"@parent".as_ptr(), 0, |out| {
+                        out.write_all(value.to_bytes())
+                    });
+                });
+            }
+            let pane = window_pane::new();
+            (*pane.get()).options = Some(options_create(None));
+            pane.reparent(&first);
+            let scope = OptionsScope::Pane(Rc::downgrade(&pane));
+            let original = scope.resolve(c"@parent", false).expect("inherited option");
+            (*pane.get()).flags &= !(PANE_STYLECHANGED | PANE_THEMECHANGED);
+            pane.reparent(&second);
+            assert!(pane.window_observer().ptr_eq(&Rc::downgrade(&second)));
+            assert_eq!(
+                (*pane.get()).flags & (PANE_STYLECHANGED | PANE_THEMECHANGED),
+                PANE_STYLECHANGED | PANE_THEMECHANGED
+            );
+            assert_eq!(
+                pane.with_options_mut(|table| options_get_string(table, c"@parent".as_ptr()))
+                    .as_c_str(),
+                c"second"
+            );
+            // Work already in flight on the old inherited value keeps that
+            // table's identity, while the next lookup follows the new parent.
+            assert_eq!(
+                original
+                    .with_entry(c"@parent", |entry| entry
+                        .value
+                        .string_ptr()
+                        .unwrap()
+                        .to_owned())
+                    .unwrap()
+                    .as_c_str(),
+                c"first"
+            );
+            assert_eq!(Rc::strong_count(&first), 1);
+            assert_eq!(Rc::strong_count(&second), 1);
+            first.release(c"option inheritance test");
+            second.release(c"option inheritance test");
+            // The pane has no screen/event resources in this fixture; tear down
+            // its option table explicitly, matching the normal pane destructor.
+            drop((*pane.get()).options.take());
+            window_pane_remove_ref(pane, c"option inheritance test".as_ptr());
+        }
+    }
     use crate::src::grid::grid_create;
     use crate::src::reactor::{evbuffer_add, shutdown_runtime, StreamHandle};
 
@@ -588,7 +769,7 @@ mod tests {
     #[test]
     fn visibility_probe_preserves_pending_redraws_and_layout() {
         unsafe {
-            let window = super::super::zoom_teardown_tests::zoomed_window();
+            let window = crate::src::window::test_support::zoomed_window();
             let pane = window.active_pane().unwrap();
             let layout = (*pane.get()).layout_cell;
             for flags in [0, PANE_REDRAW, crate::src::shared::pane::PANE_DROP] {
@@ -597,12 +778,12 @@ mod tests {
                 assert_eq!((*pane.get()).flags, flags);
                 assert_eq!((*pane.get()).layout_cell, layout);
             }
-            (*pane.get()).layout_cell = std::ptr::null_mut();
+            (*pane.get()).layout_cell = None;
             assert_eq!(window_pane_is_visible(&pane), 0);
-            (*window.get()).flags &= !WINDOW_ZOOMED;
+            crate::src::window::test_support::set_zoomed(&window, false);
             assert_eq!(window_pane_is_visible(&pane), 1);
             assert_eq!((*pane.get()).flags, crate::src::shared::pane::PANE_DROP);
-            (*window.get()).flags |= WINDOW_ZOOMED;
+            crate::src::window::test_support::set_zoomed(&window, true);
             (*pane.get()).layout_cell = layout;
             window.release(c"visibility probe test");
         }
@@ -661,7 +842,7 @@ mod tests {
     #[test]
     fn copied_screen_and_hyperlinks_survive_source_changes() {
         unsafe {
-            let mut options = crate::src::options::options_create_owned(std::ptr::null_mut());
+            let mut options = crate::src::options::options_create_owned(None);
             let definition = crate::src::options_table::options_table
                 .iter()
                 .find(|entry| CStr::from_ptr(entry.name_ptr()) == c"extended-keys")

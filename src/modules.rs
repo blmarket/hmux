@@ -85,10 +85,12 @@ pub mod window_client;
 pub mod window_clock;
 pub mod window_copy;
 pub mod window_customize;
+pub mod window_pane;
 pub mod window_panes;
 pub mod window_switch;
 pub mod window_tree;
 pub mod window_visible;
+pub mod winlink;
 pub mod xmalloc;
 
 pub mod reactor;
