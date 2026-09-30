@@ -118,7 +118,7 @@ pub use crate::src::shared::client::{
 };
 
 impl client {
-    /// Allocate a client on the server thread. Final drop touches its registry.
+    /// Allocate a client on the server thread.
     ///
     /// # Safety
     /// The caller must serialize access to the global server model and perform
@@ -132,101 +132,65 @@ impl client {
     }
 }
 
-/// Own clients until client-loss cleanup transfers their Rc to deferred release.
-/// Weak observers and successor entries survive active removal until final cleanup.
+/// Own active clients in insertion order until explicit client-loss cleanup.
+/// Each client retains its weak successor even after active removal.
 pub struct ClientRegistry {
-    owners: Vec<ClientRef>,
-    ordered: Vec<ClientWeak>,
-    successors: Vec<(ClientWeak, ClientWeak)>,
+    ordered: Vec<ClientRef>,
 }
 
 impl ClientRegistry {
     pub(crate) const fn new() -> Self {
         Self {
-            owners: Vec::new(),
             ordered: Vec::new(),
-            successors: Vec::new(),
         }
     }
 
     pub(crate) fn first(&self) -> Option<ClientRef> {
-        self.ordered.first().and_then(std::rc::Weak::upgrade)
+        self.ordered.first().cloned()
     }
 
     pub(crate) fn next(&self, current: &ClientRef) -> Option<ClientRef> {
-        let observer = std::rc::Rc::downgrade(current);
-        self.successors
-            .iter()
-            .find(|(client, _)| std::rc::Weak::ptr_eq(client, &observer))
-            .and_then(|(_, next)| next.upgrade())
-    }
-
-    fn set_successor(&mut self, client: ClientWeak, next: ClientWeak) {
-        if let Some((_, successor)) = self
-            .successors
-            .iter_mut()
-            .find(|(current, _)| std::rc::Weak::ptr_eq(current, &client))
-        {
-            *successor = next;
-        } else {
-            self.successors.push((client, next));
-        }
+        unsafe { (*current.get()).registry_next.upgrade() }
     }
 
     pub(crate) fn push_back(&mut self, owner: ClientRef) {
         assert!(
             !self
-                .owners
+                .ordered
                 .iter()
                 .any(|current| std::rc::Rc::ptr_eq(current, &owner)),
             "client registered twice"
         );
-        let observer = std::rc::Rc::downgrade(&owner);
-        if let Some(previous) = self.ordered.last().cloned() {
-            self.set_successor(previous, observer.clone());
+        unsafe {
+            if let Some(previous) = self.ordered.last() {
+                (*previous.get()).registry_next = std::rc::Rc::downgrade(&owner);
+            }
+            (*owner.get()).registry_next = std::rc::Weak::new();
         }
-        self.set_successor(observer.clone(), std::rc::Weak::new());
-        self.ordered.push(observer);
-        self.owners.push(owner);
+        self.ordered.push(owner);
     }
 
-    /// Remove active membership, preserving the removed client's successor
-    /// until final cleanup so an in-progress traversal can continue.
-    pub(crate) fn remove(&mut self, observer: &ClientWeak) -> bool {
-        let Some(index) = self
+    /// Transfer the registry's strong reference to explicit cleanup, preserving
+    /// the removed client's successor so an in-progress traversal can continue.
+    pub(crate) fn remove(&mut self, observer: &ClientWeak) -> Option<ClientRef> {
+        let index = self
             .ordered
             .iter()
-            .position(|client| std::rc::Weak::ptr_eq(client, observer))
-        else {
-            return false;
-        };
-        let next = self.ordered.get(index + 1).cloned().unwrap_or_default();
-        if index > 0 {
-            self.set_successor(self.ordered[index - 1].clone(), next);
-        }
-        self.ordered.remove(index);
-        true
-    }
-
-    /// Transfer the registry's existing strong reference to explicit cleanup.
-    pub(crate) fn take_owner(&mut self, observer: &ClientWeak) -> Option<ClientRef> {
-        let index = self
-            .owners
-            .iter()
             .position(|owner| std::rc::Weak::ptr_eq(&std::rc::Rc::downgrade(owner), observer))?;
-        Some(self.owners.remove(index))
-    }
-
-    pub(crate) fn release(&mut self, observer: &ClientWeak) {
-        self.remove(observer);
-        self.successors
-            .retain(|(client, _)| !std::rc::Weak::ptr_eq(client, observer));
+        if index > 0 {
+            unsafe {
+                (*self.ordered[index - 1].get()).registry_next =
+                    (*self.ordered[index].get()).registry_next.clone();
+            }
+        }
+        Some(self.ordered.remove(index))
     }
 
     pub(crate) fn clear(&mut self) {
-        self.ordered.clear();
-        self.successors.clear();
-        for owner in std::mem::take(&mut self.owners) {
+        for owner in std::mem::take(&mut self.ordered) {
+            unsafe {
+                (*owner.get()).registry_next = std::rc::Weak::new();
+            }
             server_client_unref_owned(owner);
         }
     }
@@ -1511,7 +1475,9 @@ pub unsafe fn server_client_lost(client_owner: &ClientRef) {
     cmdq_abort_file_wait(client_owner);
     let files = crate::src::file::client_files_iter(&(*c).files);
     crate::src::file::client_files_interrupt(files, EINTR);
-    clients.remove(&(*c).observer);
+    let registry_owner = clients
+        .remove(&(*c).observer)
+        .expect("registered client owner");
     log_debug(format_args!(
         "lost client {}",
         log_pointer((c) as *const ::core::ffi::c_void)
@@ -1573,11 +1539,7 @@ pub unsafe fn server_client_lost(client_owner: &ClientRef) {
         close((*c).fd);
         (*c).fd = -(1 as ::core::ffi::c_int);
     }
-    server_client_unref_owned(
-        clients
-            .take_owner(&(*c).observer)
-            .expect("registered client owner"),
-    );
+    server_client_unref_owned(registry_owner);
     server_add_accept(0 as ::core::ffi::c_int);
     recalculate_sizes();
     server_check_unattached();
@@ -1598,17 +1560,11 @@ unsafe fn server_client_free(c_value: &mut client) {
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
     drop((*c).redraw_scene.take());
-    let had_queue = (*c).queue.is_some();
     drop((*c).queue.take());
     assert!(
         crate::src::file::client_files_is_empty(&(*c).files),
         "client file index still contains live records at client teardown"
     );
-    // Server-created clients have a queue before joining the global registry.
-    // Empty standalone records must not touch that registry on drop.
-    if had_queue {
-        clients.release(&(*c).observer);
-    }
 }
 pub unsafe fn server_client_suspend(c_owner: &ClientRef) {
     let mut c = c_owner.get();
@@ -5588,6 +5544,39 @@ mod client_registry_tests {
     use super::{client, ClientRegistry};
 
     #[test]
+    fn client_links_handle_head_tail_removal_and_append() {
+        use std::rc::Rc;
+        unsafe {
+            let mut registry = ClientRegistry::new();
+            let first = client::new();
+            let middle = client::new();
+            let last = client::new();
+            let appended = client::new();
+            for owner in [&first, &middle, &last] {
+                registry.push_back(owner.clone());
+            }
+
+            let removed = registry.remove(&Rc::downgrade(&first)).unwrap();
+            assert!(Rc::ptr_eq(&registry.first().unwrap(), &middle));
+            assert!(Rc::ptr_eq(&registry.next(&removed).unwrap(), &middle));
+            super::server_client_unref_owned(removed);
+
+            let removed = registry.remove(&Rc::downgrade(&last)).unwrap();
+            assert!(registry.next(&middle).is_none());
+            registry.push_back(appended.clone());
+            assert!(Rc::ptr_eq(&registry.next(&middle).unwrap(), &appended));
+            assert!(registry.next(&removed).is_none());
+            assert!(registry.next(&appended).is_none());
+            super::server_client_unref_owned(removed);
+
+            registry.clear();
+            assert!(registry.first().is_none());
+            assert!(registry.next(&middle).is_none());
+            crate::src::reactor::poll_runtime();
+        }
+    }
+
+    #[test]
     fn client_index_preserves_order_after_removal() {
         use std::rc::Rc;
         unsafe {
@@ -5603,15 +5592,12 @@ mod client_registry_tests {
             let held_successor = registry.next(&middle).unwrap();
             assert!(Rc::ptr_eq(&held_successor, &last));
             let middle_observer = Rc::downgrade(&middle);
-            assert!(registry.remove(&middle_observer));
-            let middle_owner = registry.take_owner(&middle_observer).unwrap();
+            let middle_owner = registry.remove(&middle_observer).unwrap();
             assert!(Rc::ptr_eq(&middle_owner, &middle));
-            assert!(registry.take_owner(&middle_observer).is_none());
+            assert!(registry.remove(&middle_observer).is_none());
             super::server_client_unref_owned(middle_owner);
             assert!(Rc::ptr_eq(&registry.next(&first).unwrap(), &last));
             assert!(Rc::ptr_eq(&registry.next(&middle).unwrap(), &last));
-            registry.release(&middle_observer);
-            assert!(registry.next(&middle).is_none());
             let last_observer = Rc::downgrade(&last);
             registry.clear();
             drop(first);

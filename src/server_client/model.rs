@@ -31,6 +31,8 @@ use crate::src::shared::client::*;
 pub struct client {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
     pub(super) observer: ClientWeak,
+    // Preserve after removal so a traversal holding this client can continue.
+    pub(super) registry_next: ClientWeak,
     pub(super) name: Option<std::ffi::CString>,
     pub(super) peer: *mut tmuxpeer,
     pub(super) user: Option<std::ffi::CString>,
@@ -139,6 +141,7 @@ impl client {
     pub fn empty() -> Self {
         Self {
             observer: std::rc::Weak::new(),
+            registry_next: std::rc::Weak::new(),
             name: Default::default(),
             peer: Default::default(),
             user: Default::default(),
