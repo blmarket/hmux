@@ -785,8 +785,8 @@ pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
     HOME.get().map(CString::as_c_str)
 }
 
-pub unsafe fn getversion() -> *const ::core::ffi::c_char {
-    return b"next-3.9\0" as *const u8 as *const ::core::ffi::c_char;
+pub fn getversion() -> &'static CStr {
+    c"next-3.9"
 }
 unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
     let mut argc = ::core::ffi::c_int::try_from(args.len()).expect("argv length exceeds c_int");
@@ -907,7 +907,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
             86 => {
                 printf(
                     b"tmux %s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    getversion(),
+                    getversion().as_ptr(),
                 );
                 exit(0 as ::core::ffi::c_int);
             }

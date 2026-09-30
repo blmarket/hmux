@@ -794,14 +794,7 @@ pub unsafe fn args_make_commands_now(
     idx: u_int,
     expand: ::core::ffi::c_int,
 ) -> Option<Rc<std::cell::RefCell<cmd_list>>> {
-    let mut state = args_make_commands_prepare(
-        self_0.clone(),
-        item_handle,
-        idx,
-        std::ptr::null(),
-        0,
-        expand,
-    );
+    let mut state = args_make_commands_prepare(self_0.clone(), item_handle, idx, None, 0, expand);
     match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => Some(commands),
         Err(error) => {
@@ -821,7 +814,7 @@ pub unsafe fn args_make_commands_prepare(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut idx: u_int,
-    mut default_command: *const ::core::ffi::c_char,
+    default_command: Option<&'static CStr>,
     mut wait: ::core::ffi::c_int,
     mut expand: ::core::ffi::c_int,
 ) -> Box<args_command_state> {
@@ -830,29 +823,23 @@ pub unsafe fn args_make_commands_prepare(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let _file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut state = Box::new(args_command_state::empty());
-    if idx < ((*args).values.len() as u_int) {
-        value = (*args).values.as_mut_ptr().offset(idx as isize) as *mut args_value;
-        if (*value).type_0() as ::core::ffi::c_uint
-            == ARGS_COMMANDS as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            state.cmdlist = (*value).as_commands().cloned();
+    let command = if let Some(value) = (&(*args).values).get(idx as usize) {
+        if let Some(commands) = value.as_commands() {
+            state.cmdlist = Some(commands.clone());
             return state;
         }
-        cmd = (*value).string_ptr();
+        value.as_string().expect("command string argument")
     } else {
-        if default_command.is_null() {
-            fatalx(|out| out.write_all(b"argument out of range"));
-        }
-        cmd = default_command;
-    }
+        default_command.unwrap_or_else(|| fatalx(|out| out.write_all(b"argument out of range")))
+    };
     if expand != 0 {
-        state.cmd = Some(format_single_from_target_cstring(item_handle, cmd));
+        state.cmd = Some(format_single_from_target_cstring(
+            item_handle,
+            command.as_ptr(),
+        ));
     } else {
-        state.cmd = Some(CStr::from_ptr(cmd).to_owned());
+        state.cmd = Some(command.to_owned());
     }
 
     log_debug(format_args!(

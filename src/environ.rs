@@ -283,7 +283,7 @@ pub unsafe fn environ_for_session(
             &mut env,
             b"TERM_PROGRAM_VERSION\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
-            |out| write_cstr(out, getversion()),
+            |out| out.write_all(getversion().to_bytes()),
         );
         environ_set(
             &mut env,

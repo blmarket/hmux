@@ -2553,7 +2553,7 @@ unsafe fn format_cb_socket_path(_ft: *mut format_tree) -> Option<CString> {
     return Some(CStr::from_ptr(socket_path).to_owned());
 }
 unsafe fn format_cb_version(_ft: *mut format_tree) -> Option<CString> {
-    return Some(CStr::from_ptr(getversion()).to_owned());
+    return Some(getversion().to_owned());
 }
 unsafe fn format_cb_sixel_support(_ft: *mut format_tree) -> Option<CString> {
     return Some(c"0".to_owned());

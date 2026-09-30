@@ -3754,7 +3754,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             if n == 0 as ::core::ffi::c_int {
                 input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
                     out.write_all(b"\x1BP>|tmux ")?;
-                    write_cstr(out, getversion())?;
+                    out.write_all(getversion().to_bytes())?;
                     out.write_all(b"\x1B\\")
                 });
             }

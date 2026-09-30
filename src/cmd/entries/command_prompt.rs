@@ -184,7 +184,7 @@ unsafe fn cmd_command_prompt_exec(
         self_0.clone(),
         item_handle,
         0 as u_int,
-        b"%1\0" as *const u8 as *const ::core::ffi::c_char,
+        Some(c"%1"),
         wait,
         args_has(args, 'F' as i32 as u_char),
     ));

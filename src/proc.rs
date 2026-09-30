@@ -214,7 +214,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
         "{} started ({}): version {}, socket {}, protocol {}",
         log_cstr((name) as *const _),
         getpid() as ::core::ffi::c_long,
-        log_cstr((getversion()) as *const _),
+        log_cstr(getversion().as_ptr()),
         log_cstr((socket_path) as *const _),
         (PROTOCOL_VERSION) as i32
     ));

@@ -1801,7 +1801,7 @@ unsafe fn window_panes_init(
         self_0.clone(),
         (item_handle).expect("command queue item"),
         0 as u_int,
-        b"select-pane -t \"%%%\"\0" as *const u8 as *const ::core::ffi::c_char,
+        Some(c"select-pane -t \"%%%\""),
         0 as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     ));

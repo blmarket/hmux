@@ -137,7 +137,7 @@ unsafe fn cmd_if_shell_exec(
         self_0.clone(),
         item_handle,
         1 as u_int,
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        None,
         wait,
         0 as ::core::ffi::c_int,
     ));
@@ -146,7 +146,7 @@ unsafe fn cmd_if_shell_exec(
             self_0.clone(),
             item_handle,
             2 as u_int,
-            ::core::ptr::null::<::core::ffi::c_char>(),
+            None,
             wait,
             0 as ::core::ffi::c_int,
         ));

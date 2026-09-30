@@ -274,7 +274,7 @@ unsafe fn cmd_run_shell_exec(
             self_0.clone(),
             item_handle,
             0 as u_int,
-            ::core::ptr::null::<::core::ffi::c_char>(),
+            None,
             wait,
             1 as ::core::ffi::c_int,
         ));
