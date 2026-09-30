@@ -162,17 +162,10 @@ pub(super) fn clear() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmux_rt::Runtime as _;
     use std::rc::Rc;
 
     fn poll() {
-        super::super::HOST.with(|host| {
-            host.borrow_mut()
-                .as_mut()
-                .unwrap()
-                .poll(Some(Duration::ZERO))
-                .unwrap();
-        });
+        super::super::poll_runtime_with_timeout(Some(Duration::ZERO));
     }
 
     #[test]

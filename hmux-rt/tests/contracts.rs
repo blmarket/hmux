@@ -116,6 +116,41 @@ fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
 }
 
 #[test]
+fn shutdown_during_poll_closes_io_and_releases_queued_callbacks() {
+    let runtime = Rc::new(mio::Runtime::new().unwrap());
+    let handle = runtime.handle();
+    let (_writer, fd) = pair();
+    let source = handle.io(fd.clone()).unwrap();
+    let observer = Rc::downgrade(&runtime);
+    handle
+        .defer(move || observer.upgrade().unwrap().shutdown())
+        .unwrap();
+    let count = Rc::new(Cell::new(0));
+    let spy = Dropped(count.clone());
+    handle
+        .defer(move || {
+            let _spy = spy;
+            panic!("shutdown must stop dispatching callbacks");
+        })
+        .unwrap();
+    runtime.poll(Some(Duration::ZERO)).unwrap();
+    assert!(runtime.is_shutdown());
+    assert_eq!(count.get(), 1);
+    assert_eq!(Rc::strong_count(&fd), 1);
+    assert!(handle.spawn(async {}).is_err());
+    assert!(matches!(
+        runtime.poll(Some(Duration::ZERO)),
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe
+    ));
+    let mut bytes = [0; 1];
+    let mut read = std::pin::pin!(source.read(&mut bytes));
+    assert!(matches!(
+        read.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::BrokenPipe
+    ));
+}
+
+#[test]
 fn ready_queue_orders_tasks_and_deferred_callbacks_without_inline_dispatch() {
     let mut runtime = mio::Runtime::new().unwrap();
     let handle = runtime.handle();

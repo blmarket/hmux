@@ -23,8 +23,9 @@ pub trait Runtime: Sized + 'static {
     /// Obtain a capability bound to this instance and process generation.
     fn handle(&self) -> Self::Handle;
 
-    /// poll tasks up to max duration. Will wait forever if max_wait is None.
-    fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()>;
+    /// Poll tasks, waiting at most max_wait for readiness. Callbacks may access
+    /// the runtime to schedule work; recursively polling it is an error.
+    fn poll(&self, max_wait: Option<Duration>) -> io::Result<()>;
 
     /// Replace an inherited executor/poller in a single-threaded fork child.
     fn reset_after_fork(&mut self) -> io::Result<()>;

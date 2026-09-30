@@ -272,8 +272,8 @@ impl crate::Handle for Handle {
 /// Host-driven local-waker executor with a mio Unix readiness backend.
 pub struct Runtime {
     core: Rc<Core>,
-    poller: mio::Poll,
-    events: mio::Events,
+    poller: RefCell<Option<mio::Poll>>,
+    events: RefCell<mio::Events>,
 }
 
 struct Driving(Rc<Core>);
@@ -305,8 +305,8 @@ impl crate::Runtime for Runtime {
                 signals: RefCell::default(),
                 error: RefCell::default(),
             }),
-            poller,
-            events: mio::Events::with_capacity(1024),
+            poller: RefCell::new(Some(poller)),
+            events: RefCell::new(mio::Events::with_capacity(1024)),
         })
     }
 
@@ -316,7 +316,7 @@ impl crate::Runtime for Runtime {
         }
     }
 
-    fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
+    fn poll(&self, max_wait: Option<Duration>) -> io::Result<()> {
         self.core.check()?;
         if self.core.driving.replace(true) {
             return Err(io::Error::new(
@@ -329,6 +329,9 @@ impl crate::Runtime for Runtime {
             return Err(error);
         }
         self.wake_timers();
+        if self.is_shutdown() {
+            return Ok(());
+        }
         let timeout = if self.core.runnable() || self.core.pending_tasks.get() == 0 {
             Some(Duration::ZERO)
         } else {
@@ -345,20 +348,25 @@ impl crate::Runtime for Runtime {
             }
         };
         let stop = timeout.and_then(|duration| Instant::now().checked_add(duration));
-        loop {
-            self.events.clear();
-            let remaining = stop.map(|stop| stop.saturating_duration_since(Instant::now()));
-            match self.poller.poll(&mut self.events, remaining) {
-                Ok(()) => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
-                    if stop.is_some_and(|stop| stop <= Instant::now()) {
-                        break;
+        {
+            let mut poller = self.poller.borrow_mut();
+            let poller = poller.as_mut().ok_or_else(invalid)?;
+            let mut events = self.events.borrow_mut();
+            loop {
+                events.clear();
+                let remaining = stop.map(|stop| stop.saturating_duration_since(Instant::now()));
+                match poller.poll(&mut events, remaining) {
+                    Ok(()) => break,
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                        if stop.is_some_and(|stop| stop <= Instant::now()) {
+                            break;
+                        }
                     }
+                    Err(error) => return Err(error),
                 }
-                Err(error) => return Err(error),
             }
         }
-        for event in &self.events {
+        for event in self.events.borrow().iter() {
             let source = self
                 .core
                 .io
@@ -371,7 +379,7 @@ impl crate::Runtime for Runtime {
         }
         self.wake_timers();
         let mut polled = 0;
-        while polled < MAX_POLLS_PER_TURN {
+        while polled < MAX_POLLS_PER_TURN && !self.is_shutdown() {
             let ready = self.core.ready.borrow_mut().pop_front();
             let Some(ready) = ready else {
                 break;
@@ -443,6 +451,17 @@ impl crate::Runtime for Runtime {
 }
 
 impl Runtime {
+    /// Close registrations and queued callbacks immediately, including during
+    /// dispatch. Task owners retain their futures but can no longer run them.
+    pub fn shutdown(&self) {
+        self.core.close();
+        self.poller.borrow_mut().take();
+    }
+
+    pub fn is_shutdown(&self) -> bool {
+        !self.core.alive.get()
+    }
+
     fn wake_timers(&self) {
         let now = Instant::now();
         loop {
@@ -467,7 +486,7 @@ impl Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        self.core.close();
+        self.shutdown();
     }
 }
 
@@ -498,7 +517,7 @@ mod tests {
 
     #[test]
     fn moving_a_pending_timer_refreshes_its_task_waker() {
-        let mut runtime = Runtime::new().unwrap();
+        let runtime = Runtime::new().unwrap();
         let handle = runtime.handle();
         let deadline = Instant::now() + Duration::from_millis(10);
         let timer = Rc::new(RefCell::new(handle.sleep_until(deadline)));

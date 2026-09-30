@@ -48,7 +48,6 @@ impl Task {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmux_rt::Runtime as _;
     use std::cell::{Cell, RefCell};
     use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
@@ -57,13 +56,7 @@ mod tests {
     use std::time::Duration;
 
     fn poll() {
-        super::super::HOST.with(|host| {
-            host.borrow_mut()
-                .as_mut()
-                .unwrap()
-                .poll(Some(Duration::ZERO))
-                .unwrap();
-        });
+        super::super::poll_runtime_with_timeout(Some(Duration::ZERO));
     }
 
     #[test]
@@ -270,6 +263,47 @@ mod tests {
         poll();
         assert_eq!(calls.get(), 1);
         assert!(!task.is_pending());
+        super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn shutdown_during_dispatch_stops_work_and_allows_later_initialization() {
+        let mut old = Task::new();
+        old.start(|| Ok(std::future::pending())).unwrap();
+        let owner = refbox::RefBox::new(());
+        let observer = owner.downgrade();
+        let returned = Rc::new(Cell::new(false));
+        let mark = returned.clone();
+        defer(move || {
+            super::super::shutdown_runtime();
+            assert!(handle().spawn(async {}).is_err());
+            // A callback can finish normally, but cannot create a replacement
+            // runtime or schedule more work while shutdown is in progress.
+            defer(move || {
+                drop(owner);
+                panic!("shutdown must reject new callbacks");
+            });
+            mark.set(true);
+        });
+        let queued = refbox::RefBox::new(());
+        let queued_observer = queued.downgrade();
+        defer(move || {
+            drop(queued);
+            panic!("shutdown must release callbacks without dispatching them");
+        });
+        poll();
+        assert!(returned.get());
+        assert!(!observer.is_alive());
+        assert!(!queued_observer.is_alive());
+        assert!(!old.is_pending());
+        assert!(!super::super::runtime_initialized());
+
+        let calls = Rc::new(Cell::new(0));
+        let observed = calls.clone();
+        defer(move || observed.set(1));
+        old.cancel();
+        poll();
+        assert_eq!(calls.get(), 1);
         super::super::shutdown_runtime();
     }
 

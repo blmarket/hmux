@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn acknowledging_an_old_generation_preserves_a_new_notification() {
-        let mut runtime = super::super::Runtime::new().unwrap();
+        let runtime = super::super::Runtime::new().unwrap();
         let (mut writer, reader) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
         let source = runtime.handle().io(Rc::new(reader.into())).unwrap();

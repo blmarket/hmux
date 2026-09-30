@@ -392,15 +392,12 @@ mod tests {
     }
 
     pub(super) fn poll_until(mut ready: impl FnMut() -> bool) {
-        use hmux_rt::Runtime as _;
         use std::time::{Duration, Instant};
 
         let deadline = Instant::now() + Duration::from_secs(2);
         while !ready() {
             assert!(Instant::now() < deadline, "stream did not make progress");
-            let mut runtime = super::super::HOST.with(|host| host.borrow_mut().take().unwrap());
-            runtime.poll(Some(Duration::from_millis(1))).unwrap();
-            super::super::HOST.with(|host| *host.borrow_mut() = Some(runtime));
+            super::super::poll_runtime_with_timeout(Some(Duration::from_millis(1)));
         }
     }
 
