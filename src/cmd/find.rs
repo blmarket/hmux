@@ -660,7 +660,6 @@ unsafe fn cmd_find_get_pane_with_window(
 ) -> ::core::ffi::c_int {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
-    let _wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut n: u_int = 0;
     log_debug(format_args!(
         "{}: {}",

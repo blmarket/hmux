@@ -1,5 +1,6 @@
 //! Pane-owned input parsing and independent screen-parser components.
 use crate::src::window::Window as _;
+use super::{window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client, window_pane_get_theme, window_pane_update_used_data};
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::compat::strtonum::strtonum;
@@ -62,10 +63,7 @@ use crate::src::style::colour::{
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
 use crate::src::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selection};
-use crate::src::window::{
-    window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client,
-    window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data,
-    };
+use crate::src::shared::pane::pane_output_data as window_pane_get_new_data;
 use crate::src::window::{Window as _, WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::collections::VecDeque;

@@ -1,4 +1,5 @@
 //! Pane-owned process and pipe lifecycle operations.
+use super::{window_pane_destroy_ready, window_pane_exited};
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
@@ -46,7 +47,6 @@ use crate::src::shared::signal::{__sigset_t, sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
-use crate::src::window::{window_pane_destroy_ready, window_pane_exited};
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut self_0: refbox::Weak<cmd>,

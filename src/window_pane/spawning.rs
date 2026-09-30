@@ -1,5 +1,6 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use crate::src::window::Window as _;
+use super::{window_pane_index, window_pane_next, window_pane_reset_mode_all, window_pane_resize, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell};
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
@@ -49,10 +50,8 @@ use crate::src::shared::events::event_payload;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
-use crate::src::window::window_pane_resize;
+
 use crate::src::window::{
-    window_pane_index, window_pane_next,
-    window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
     winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window,
     winlink_stack_remove,
 };

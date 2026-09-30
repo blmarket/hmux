@@ -45,8 +45,6 @@ use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
-use crate::src::window::{
-    window_fire_pane_moved, };
 use crate::src::window_pane::WindowPane as _;
 pub static cmd_join_pane_entry: cmd_entry = {
     cmd_entry {
@@ -1060,8 +1058,7 @@ unsafe fn cmd_join_pane_exec(
         } else {
             server_status_session(dst_s.as_ref().expect("live session"));
         }
-        window_fire_pane_moved(
-            &src_pane_owner,
+        src_pane_owner.notify_moved(
             src_owner,
             src_wl.get_unchecked().idx,
             &dst_window,

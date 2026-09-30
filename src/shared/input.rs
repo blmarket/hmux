@@ -1,4 +1,5 @@
 //! Authoritative input declarations.
+use crate::src::window_pane::WindowPane as _;
 
 use crate::src::shared::client::ClientWeak;
 use hmux_buffer::SegmentedBuf;
@@ -35,7 +36,12 @@ impl InputPalette {
             Self::None => None,
             Self::Pane(observer) => {
                 let owner = observer.upgrade()?;
-                Some(access(unsafe { &mut (*owner.get()).palette }))
+                let result = {
+                    let mut palette = unsafe { owner.borrow_palette_mut() };
+                    access(&mut palette)
+                };
+                unsafe { owner.release(c"input palette") };
+                Some(result)
             }
             Self::Popup(observer) => {
                 let mut palette = match observer.try_borrow_mut() {

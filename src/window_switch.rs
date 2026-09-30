@@ -58,7 +58,7 @@ use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::window::Window as _;
 use crate::src::window::{
-    window_pane_mode_weak, winlink_find_by_index,
+    winlink_find_by_index,
 };
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
@@ -505,7 +505,7 @@ unsafe fn window_switch_init(
     pd.input = Some(c"");
     pd.type_0 = PROMPT_TYPE_SEARCH;
     pd.flags = PROMPT_INCREMENTAL | PROMPT_NOFORMAT | PROMPT_ISMODE | PROMPT_EDITARROWS;
-    let prompt_mode = window_pane_mode_weak(wme.clone());
+    let prompt_mode = wme.clone();
     pd.inputcb = Some(Box::new(move |s, key| unsafe {
         window_switch_prompt_callback(prompt_mode.clone(), s, key)
     }));

@@ -9,7 +9,7 @@ use crate::src::shared::window::window;
 use crate::src::shared::window::WindowWeak;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use crate::src::window::Window;
-use crate::src::window_pane::{window_pane_remove_ref, WindowPane};
+use crate::src::window_pane::{WindowPane};
 use std::{cell::UnsafeCell, ffi::CStr, rc::Weak};
 
 /// A table's identity, independent of how its owning model stores state.
@@ -77,7 +77,7 @@ impl OptionsScope {
             Self::Pane(observer) => {
                 let owner = observer.upgrade().expect("live option pane");
                 let result = owner.with_options_mut(visit);
-                window_pane_remove_ref(owner, c"options scope".as_ptr());
+                owner.release(c"options scope");
                 result
             }
         }

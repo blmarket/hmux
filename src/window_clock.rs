@@ -26,7 +26,7 @@ use crate::src::shared::time::tm;
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply_with_options;
 use crate::src::window::Window as _;
-use crate::src::window::window_pane_mode_weak;
+
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -673,7 +673,7 @@ unsafe fn window_clock_init(
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
     (*data).tim = time(::core::ptr::null_mut::<time_t>());
-    let mode_observer = window_pane_mode_weak(wme.clone());
+    let mode_observer = wme.clone();
     (*data).timer.set(move || unsafe {
         let live = match mode_observer.try_borrow_mut() {
             Ok(_) => true,

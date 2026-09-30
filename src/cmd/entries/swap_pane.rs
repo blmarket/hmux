@@ -15,8 +15,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{window, WindowRef};
-use crate::src::window::{
-    window_fire_pane_moved, };
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -249,15 +247,13 @@ unsafe fn cmd_swap_pane_exec(
             dst_window_owner.invalidate_scene();
             server_redraw_window(&(dst_window_owner));
             if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
-                window_fire_pane_moved(
-                    &src_pane_owner,
+                src_pane_owner.notify_moved(
                     &src_window_owner,
                     src_idx,
                     &std::rc::Rc::clone(&(dst_window_owner)),
                     dst_idx,
                 );
-                window_fire_pane_moved(
-                    &dst_pane_owner,
+                dst_pane_owner.notify_moved(
                     &std::rc::Rc::clone(&(dst_window_owner)),
                     dst_idx,
                     &src_window_owner,

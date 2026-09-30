@@ -179,12 +179,7 @@ pub unsafe fn prompt_create(
             None,
             fs.session_handle().as_ref(),
             (fs.winlink_handle()).clone(),
-            (fs.pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()))
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+            fs.pane_handle().as_ref(),
         )
     } else {
         cmd_find_clear_state(&mut pr.state, 0);

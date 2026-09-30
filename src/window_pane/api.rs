@@ -97,6 +97,11 @@ pub trait WindowPane {
     /// Do not reenter the pane, dispatch callbacks or let component pointers
     /// escape while the returned guard is alive.
     unsafe fn borrow_palette(&self) -> Self::Palette<'_>;
+    type PaletteMut<'a>: std::ops::DerefMut<Target = colour_palette>
+    where
+        Self: 'a;
+    /// The mutation guard permits palette-only work and must end before dispatch.
+    unsafe fn borrow_palette_mut(&self) -> Self::PaletteMut<'_>;
 
     unsafe fn id(&self) -> u32;
     unsafe fn find_by_id(id: u32) -> Option<Self> where Self: Sized;
@@ -292,6 +297,25 @@ pub trait WindowPane {
     /// Allocate empty pane storage with its existing stable observer identity.
     fn allocate() -> Self where Self: Sized;
     unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self where Self: Sized;
+    unsafe fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32;
+    unsafe fn status_range(&self, x: u32, y: u32) -> Option<style_range>;
+    unsafe fn prompt_key(
+        &self,
+        client: Option<&ClientRef>,
+        key: key_code,
+        mouse: Option<&mut mouse_event>,
+    ) -> prompt_key_result;
+    unsafe fn notify_moved(
+        &self,
+        old_window: &WindowRef,
+        old_index: i32,
+        new_window: &WindowRef,
+        new_index: i32,
+    );
+    /// Reset the empty pane registry during fresh server startup.
+    unsafe fn reset_registry()
+    where
+        Self: Sized;
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -762,6 +786,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     type Palette<'a> = &'a colour_palette;
     unsafe fn borrow_palette(&self) -> Self::Palette<'_> {
         &(*self.get()).palette
+    }
+    type PaletteMut<'a> = &'a mut colour_palette;
+    unsafe fn borrow_palette_mut(&self) -> Self::PaletteMut<'_> {
+        &mut (*self.get()).palette
     }
 
     unsafe fn is_synchronized(&self) -> bool {
@@ -1248,6 +1276,32 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self {
         window_pane_create(window, sx, sy, history_limit)
+    }
+    unsafe fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32 {
+        window_pane_search(&*self.get(), term, regex as i32, ignore as i32)
+    }
+    unsafe fn status_range(&self, x: u32, y: u32) -> Option<style_range> {
+        window_pane_status_get_range(self, x, y)
+    }
+    unsafe fn prompt_key(
+        &self,
+        client: Option<&ClientRef>,
+        key: key_code,
+        mouse: Option<&mut mouse_event>,
+    ) -> prompt_key_result {
+        window_pane_prompt_key(self, client, key, mouse.map_or(std::ptr::null_mut(), |mouse| mouse))
+    }
+    unsafe fn notify_moved(
+        &self,
+        old_window: &WindowRef,
+        old_index: i32,
+        new_window: &WindowRef,
+        new_index: i32,
+    ) {
+        window_fire_pane_moved(self, old_window, old_index, new_window, new_index);
+    }
+    unsafe fn reset_registry() {
+        all_window_panes.storage = None;
     }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0

@@ -39,9 +39,7 @@ use crate::src::spawn::spawn_editor_finish;
 use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, start_time};
 use crate::src::tty::tty_create_log;
-use crate::src::window::{
-    all_window_panes, window_pane_destroy_ready, window_pane_next, window_pane_wait_finish,
-    };
+
 use crate::src::window::{windows, Window as _};
 use crate::src::window_pane::WindowPane as _;
 use hmux_rt::Handle as _;
@@ -300,7 +298,7 @@ pub(crate) unsafe fn server_start(
     input_key_build();
     utf8_update_width_cache();
     windows.storage = None;
-    all_window_panes.storage = None;
+    <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as crate::src::window_pane::WindowPane>::reset_registry();
     clients.clear();
     sessions.reset();
     key_bindings_init();

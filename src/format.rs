@@ -69,7 +69,7 @@ use crate::src::tty::{tty_default_colours, tty_window_offset};
 use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
 use crate::src::window::{
-    window_pane_search, winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next,
+    winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next,
 };
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;

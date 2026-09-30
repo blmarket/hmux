@@ -266,7 +266,7 @@ mod collection_index_tests {
             // No display resources in this fixture; exercise the actual pane
             // retain/release functions with ordinary field drop.
             let wp_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let wp = crate::src::shared::rc::as_ptr(&wp_owner);
+            let wp = wp_owner.get();
             let weak = window_pane_weak(&*(wp));
             let callback = window_pane_add_ref(
                 &(*(wp)).observer.upgrade().expect("live window_pane"),
@@ -274,7 +274,7 @@ mod collection_index_tests {
             );
             window_pane_remove_ref(wp_owner, c"pane shutdown".as_ptr());
             let retained = weak.upgrade().expect("callback keeps the pane alive");
-            assert_eq!(crate::src::shared::rc::as_ptr(&retained), wp);
+            assert_eq!(retained.get(), wp);
             window_pane_remove_ref(callback, c"callback complete".as_ptr());
             assert!(
                 weak.upgrade().is_some(),
@@ -291,13 +291,13 @@ mod collection_index_tests {
             let mut head = window_pane_tree { storage: None };
             let mut other = window_pane_tree { storage: None };
             let first_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let first = crate::src::shared::rc::as_ptr(&first_owner);
+            let first = first_owner.get();
             (*first).id = 1;
             let second_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let second = crate::src::shared::rc::as_ptr(&second_owner);
+            let second = second_owner.get();
             (*second).id = 2;
             let duplicate_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let duplicate = crate::src::shared::rc::as_ptr(&duplicate_owner);
+            let duplicate = duplicate_owner.get();
             (*duplicate).id = 1;
 
             assert!(window_pane_tree_insert(&mut head, first_owner.clone()).is_none());
@@ -317,17 +317,13 @@ mod collection_index_tests {
                 &second_owner
             ));
             assert_eq!(
-                crate::src::shared::rc::as_ptr(
-                    &window_pane_tree_remove(&mut moved, &mut *first).unwrap()
-                ),
+                window_pane_tree_remove(&mut moved, &mut *first).unwrap().get(),
                 first
             );
             assert!((*first).owner.is_empty());
             assert!(window_pane_tree_next(&*first).is_none());
             assert_eq!(
-                crate::src::shared::rc::as_ptr(
-                    &window_pane_tree_remove(&mut moved, &mut *second).unwrap()
-                ),
+                window_pane_tree_remove(&mut moved, &mut *second).unwrap().get(),
                 second
             );
 

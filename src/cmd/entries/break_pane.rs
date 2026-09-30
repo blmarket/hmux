@@ -42,7 +42,7 @@ use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::{
-    window_fire_pane_moved, winlink_find_by_index, winlink_find_by_window,
+    winlink_find_by_index, winlink_find_by_window,
     winlink_shuffle_up,
 };
 use crate::src::window_border::window_set_fill_cells;
@@ -226,8 +226,7 @@ unsafe fn cmd_break_pane_exec(
             if !wl.is_alive() {
                 return CMD_RETURN_ERROR;
             }
-            window_fire_pane_moved(
-                &pane_owner,
+            pane_owner.notify_moved(
                 &source_window,
                 old_idx,
                 &source_window,
@@ -310,8 +309,7 @@ unsafe fn cmd_break_pane_exec(
                 b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
                 destination.upgrade().expect("live destination window"),
             );
-            window_fire_pane_moved(
-                &pane_owner,
+            pane_owner.notify_moved(
                 &source_window,
                 old_idx,
                 &destination.upgrade().expect("live destination window"),

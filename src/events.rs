@@ -10,6 +10,7 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_get_level;
 use crate::src::session::Session as _;
+use crate::src::window_pane::WindowPane as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
@@ -166,13 +167,7 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: Cl
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(fs
-                .pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get())))
-            .observer
-            .upgrade()
-            .expect("live window_pane"),
+            fs.pane_handle().expect("event pane"),
         );
     }
     events_fire(name, ep);
@@ -225,7 +220,6 @@ pub unsafe fn events_fire_pane(
     mut name: *const ::core::ffi::c_char,
     owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
-    let wp = owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -237,10 +231,11 @@ pub unsafe fn events_fire_pane(
     let mut ep = event_payload_create();
     cmd_find_from_pane(
         &raw mut fs,
-        &(*(wp)).observer.upgrade().expect("live window_pane"),
+        &owner,
         0 as ::core::ffi::c_int,
     );
     event_payload_set_target(&mut *ep, &fs);
+    let window = owner.window_observer().upgrade().expect("event pane parent");
     event_payload_set_pane(
         &mut *ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
@@ -249,7 +244,7 @@ pub unsafe fn events_fire_pane(
     event_payload_set_window(
         &mut *ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        window,
     );
     events_fire(name, ep);
 }

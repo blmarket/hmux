@@ -31,11 +31,8 @@ use crate::src::shared::style::*;
 pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
-pub use crate::src::window::window_pane_resize;
-use crate::src::window::{
-    window_pane_get_pane_lines, window_pane_get_pane_status,
-    window_pane_is_floating, window_pane_next, window_pane_scrollbar_reserve, window_pane_z_next,
-    };
+
+
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
@@ -748,7 +745,7 @@ unsafe fn layout_clamp_floating_panes(window: &WindowRef, sx: u_int, sy: u_int) 
                     .is_some_and(|cell| cell.flags & LAYOUT_CELL_FLOATING != 0)
             };
             if floating {
-                let pad = (window_pane_get_pane_lines(&*pane.get()) != PANE_LINES_NONE) as u32;
+                let pad = (pane.pane_lines() != PANE_LINES_NONE) as u32;
                 let mut cell = window
                     .borrow_layout_cell_mut(id)
                     .expect("floating pane belongs to layout");
@@ -1129,7 +1126,7 @@ pub unsafe fn layout_resize_floating_pane_to(
         if !floating {
             return Err(c"pane is not floating".to_owned());
         }
-        if window_pane_get_pane_lines(&*pane.get()) != PANE_LINES_NONE
+        if pane.pane_lines() != PANE_LINES_NONE
             && size >= (PANE_MINIMUM + 2) as u32
         {
             size -= 2;
@@ -2671,10 +2668,7 @@ pub unsafe fn layout_tile_pane(
                 0
             };
             parent.release(c"tile split policy");
-            crate::src::window_pane::window_pane_remove_ref(
-                neighbour,
-                c"tile split policy".as_ptr(),
-            );
+            neighbour.release(c"tile split policy");
             policy.can_split = {
                 let mut tree = window.borrow_layout_root_mut();
                 let root = tree.as_deref_mut().expect("tiling root") as *mut layout_cell;

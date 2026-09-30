@@ -164,13 +164,13 @@ impl Default for window_pane {
 
 impl window_pane {
     /// Retain the parent for the current operation. Release potentially final
-    /// owners through window_remove_ref, as with other window handles.
-    pub fn window_handle(&self) -> Option<WindowRef> {
+    /// owners through Window::release, as with other window handles.
+    pub(super) fn window_handle(&self) -> Option<WindowRef> {
         self.window.upgrade()
     }
 
     /// Resolve the displayed screen while the pane and selected mode are live.
-    pub unsafe fn screen_ptr(&self) -> *mut screen {
+    pub(super) unsafe fn screen_ptr(&self) -> *mut screen {
         match &self.screen_source {
             PaneScreenSource::Base => (&raw const self.base).cast_mut(),
             PaneScreenSource::Mode(observer) => {
@@ -183,24 +183,24 @@ impl window_pane {
         }
     }
 
-    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+    pub(super) fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
         Self::empty().into_shared()
     }
 
-    pub fn into_shared(mut self) -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+    pub(super) fn into_shared(mut self) -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
         std::rc::Rc::new_cyclic(|observer| {
             self.observer = observer.clone();
             std::cell::UnsafeCell::new(self)
         })
     }
 
-    pub fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self::default()
     }
 }
 
 impl window_pane {
-    pub fn active_mode(&self) -> Option<&'static window_mode> {
+    pub(super) fn active_mode(&self) -> Option<&'static window_mode> {
         let entry = self.modes.first()?;
         Some(
             entry
@@ -211,7 +211,7 @@ impl window_pane {
     }
 
     /// Observe the current entry without retaining the pane-owned allocation.
-    pub fn active_mode_entry(&self) -> refbox::Weak<window_mode_entry> {
+    pub(super) fn active_mode_entry(&self) -> refbox::Weak<window_mode_entry> {
         self.modes
             .first()
             .map_or_else(refbox::Weak::new, refbox::RefBox::downgrade)
@@ -220,7 +220,7 @@ impl window_pane {
 
 impl window_pane {
     /// Append a separately allocated resize and return its stable address.
-    pub fn push_resize(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
+    pub(super) fn push_resize(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
         let resize = Box::new(resize);
         let pointer = (&*resize) as *const window_pane_resize as *mut window_pane_resize;
         self.resize_queue.push_back(resize);
@@ -228,7 +228,7 @@ impl window_pane {
     }
 
     /// Retain only `except`; removed entry pointers are invalid after return.
-    pub fn clear_resizes_except(&mut self, except: *mut window_pane_resize) {
+    pub(super) fn clear_resizes_except(&mut self, except: *mut window_pane_resize) {
         if except.is_null() {
             self.resize_queue = Default::default();
             return;

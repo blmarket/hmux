@@ -17,6 +17,18 @@ pub struct window_pane_offset {
     pub used: size_t,
 }
 
+/// Unconsumed output for a copied pane offset, without borrowing a pane model.
+pub fn pane_output_data<'a>(
+    input: &'a mut hmux_buffer::SegmentedBuf,
+    base_offset: size_t,
+    offset: &window_pane_offset,
+) -> &'a [u8] {
+    let used = offset.used.wrapping_sub(base_offset);
+    let data = crate::src::reactor::evbuffer_pullup(input, -1).unwrap_or_default();
+    data.get(used..)
+        .expect("pane offset is within input buffer")
+}
+
 /// Boxes preserve resize addresses while the queue grows or removes entries.
 pub type window_pane_resizes = VecDeque<Box<window_pane_resize>>;
 

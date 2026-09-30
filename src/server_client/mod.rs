@@ -99,15 +99,7 @@ use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::{
-    all_window_panes, window_pane_clear_resizes, window_pane_contains,
-    window_pane_find_by_id, window_pane_get_new_data, window_pane_get_pane_lines,
-    window_pane_get_pane_status, window_pane_has_prompt, window_pane_is_floating,
-    window_pane_is_visible, window_pane_key, window_pane_next, window_pane_paste,
-    window_pane_prompt_key, window_pane_scrollbar_overlay, window_pane_scrollbar_overlay_visible,
-    window_pane_scrollbar_reserve, window_pane_scrollbar_show, window_pane_scrollbar_start_timer,
-    window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
-    window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
-    window_pane_tree_next, winlink_find_by_index,
+    winlink_find_by_index,
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
@@ -1654,7 +1646,7 @@ unsafe fn server_client_check_mouse(
             ((*c).tty.mouse_drag_flag) as i32
         ));
         if (*c).tty.mouse_last_pane != -(1 as ::core::ffi::c_int) {
-            last_pane = window_pane_find_by_id((*c).tty.mouse_last_pane as u_int);
+            last_pane = Rc::<UnsafeCell<window_pane>>::find_by_id((*c).tty.mouse_last_pane as u_int);
             if let Some(pane) = last_pane.as_ref() {
                 log_debug(format_args!(
                     "{} mouse last pane %{}",
@@ -1807,7 +1799,7 @@ unsafe fn server_client_check_mouse(
                         loc = KEYC_MOUSE_LOCATION_STATUS_RIGHT;
                     }
                     3 => {
-                        if window_pane_find_by_id(sr.argument).is_none() {
+                        if Rc::<UnsafeCell<window_pane>>::find_by_id(sr.argument).is_none() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
                         (*m).wp = sr.argument as ::core::ffi::c_int;
@@ -1989,8 +1981,7 @@ unsafe fn server_client_check_mouse(
                 } else if loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    if let Some(range) = window_pane_status_get_range(
-                        selected_pane.as_ref().expect("mouse border pane"),
+                    if let Some(range) = selected_pane.as_ref().expect("mouse border pane").status_range(
                         px,
                         py,
                     ) {
@@ -3063,12 +3054,11 @@ unsafe fn server_client_handle_key0(
                 .expect("active pane")
                 .has_exited()
             {
-                window_pane_key(
-                    active_pane_owner.as_ref().expect("key target pane"),
+                active_pane_owner.as_ref().expect("key target pane").key(
                     Some(owner),
                     (s.as_ref().expect("live session").current_winlink()).clone(),
                     (*event).key,
-                    &raw mut (*event).m,
+                    Some(&mut (*event).m),
                 );
                 return 0 as ::core::ffi::c_int;
             }
@@ -3112,11 +3102,10 @@ unsafe fn server_client_handle_key0(
         if let Some(pane_owner) =
             prompt_pane.filter(|pane| pane.prompt_position(true).is_some() && pane.is_visible())
         {
-            match window_pane_prompt_key(
-                &pane_owner,
+            match pane_owner.prompt_key(
                 Some(owner),
                 (*event).key,
-                &raw mut (*event).m,
+                Some(&mut (*event).m),
             ) as ::core::ffi::c_uint
             {
                 1..=3 => return 0 as ::core::ffi::c_int,

@@ -428,7 +428,6 @@ unsafe fn window_tree_build_window(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return 0;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut i: u_int = 0;
     let mut found: u_int = 0;
     let mut expanded: ::core::ffi::c_int = 0;
@@ -804,7 +803,6 @@ unsafe fn window_tree_draw_session(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut cx: u_int = (*(*ctx).screen_ptr()).cx;
     let mut cy: u_int = (*(*ctx).screen_ptr()).cy;
@@ -1074,7 +1072,6 @@ unsafe fn window_tree_draw_window(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let window = wl
         .get_unchecked()
         .window_handle()
@@ -1369,7 +1366,6 @@ unsafe fn window_tree_draw_info(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = (*ctx).screen_ptr();
     let mut sp: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -1531,7 +1527,6 @@ unsafe fn window_tree_draw(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut sp: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let target_owners = window_tree_pull_item(item);
@@ -1681,7 +1676,6 @@ unsafe fn window_tree_menu(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     wme = mode_pane_owner.mode_entry();
     if !wme.is_alive()
@@ -2048,7 +2042,6 @@ unsafe fn window_tree_update(mut wme: refbox::Weak<window_mode_entry>) {
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     if (*data).dead != 0 {
         return;
@@ -2129,7 +2122,6 @@ fn window_tree_command_done(mode: Rc<UnsafeCell<window_tree_modedata>>) -> cmdq_
             else {
                 return CMD_RETURN_NORMAL;
             };
-            let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
             mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
             mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
             mode_pane_owner.request_redraw(false);

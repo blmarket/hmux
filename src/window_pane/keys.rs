@@ -1,4 +1,5 @@
 //! Encode pane process input without lending pane storage to consumers.
+use super::{window_pane_is_visible};
 use super::WindowPane;
 use crate::src::input_keys::{input_key, input_key_get_mouse};
 use crate::src::key_string::key_string_format;
@@ -8,7 +9,7 @@ use crate::src::shared::key::*;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::ALL_MOUSE_MODES;
-use crate::src::window::window_pane_is_visible;
+
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 

@@ -27,7 +27,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::window::{
-    window_pane_find_by_id, winlinks_minmax, winlinks_next, Window as _,
+    winlinks_minmax, winlinks_next, Window as _,
 };
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
@@ -363,7 +363,7 @@ unsafe fn monitor_check_pane(owner: &MonitorRef, item: &MonitorItemSnapshot) {
     let Some((client, session)) = monitor_context(owner) else {
         return;
     };
-    let Some(pane) = window_pane_find_by_id(item.target) else {
+    let Some(pane) = Rc::<UnsafeCell<window_pane>>::find_by_id(item.target) else {
         return;
     };
     if !pane.has_tty() {

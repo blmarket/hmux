@@ -1,5 +1,6 @@
 //! Pane process exit and explicit teardown transactions.
 use crate::src::window::Window as _;
+use super::{window_pane_wait_finish};
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::events::{events_fire, events_fire_winlink};
@@ -77,7 +78,7 @@ use crate::src::shared::window::WINLINK_ALERTFLAGS;
 use crate::src::server_fn::{server_kill_window, server_redraw_window};
 use crate::src::shared::pane::PANE_EXITED;
 use crate::src::spawn::spawn_editor_finish;
-use crate::src::window::window_pane_wait_finish;
+
 unsafe fn server_fire_pane_exit(
     mut name: *const ::core::ffi::c_char,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,

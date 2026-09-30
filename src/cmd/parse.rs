@@ -185,13 +185,8 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
                 client_owner.as_ref(),
                 (*fsp).session_handle().as_ref(),
                 ((*fsp).winlink_handle()).clone(),
-                ((*fsp)
-                    .pane_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+                (*fsp)
+                    .pane_handle().as_ref(),
             );
             let expanded = format_expand_cstring(ft, token.as_c_str().as_ptr());
             format_free(ft_owner);

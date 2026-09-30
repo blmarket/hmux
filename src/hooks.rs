@@ -142,12 +142,7 @@ unsafe fn hooks_parse(hd: *mut hooks_data, fs: &cmd_find_state, value: &CStr) ->
         client_owner.as_ref(),
         fs.session_handle().as_ref(),
         (fs.winlink_handle()).clone(),
-        (fs.pane_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get()))
-        .as_ref()
-        .and_then(|model| model.observer.upgrade())
-        .as_ref(),
+        fs.pane_handle().as_ref(),
     );
     ft = &raw mut *ft_owner;
     format_merge(ft, &raw mut *(*hd).formats);

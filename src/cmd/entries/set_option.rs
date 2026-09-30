@@ -321,10 +321,7 @@ unsafe fn unset_window_panes(
                 parent.release(c"set-option pane successor");
             }
         }
-        crate::src::window_pane::window_pane_remove_ref(
-            pane,
-            c"set-option pane traversal".as_ptr(),
-        );
+        pane.release(c"set-option pane traversal");
         result?;
     }
     Ok(())

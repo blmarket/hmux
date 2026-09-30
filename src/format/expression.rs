@@ -829,11 +829,15 @@ pub(super) fn format_sub(
     regsub_cstring(pattern, with, text, flags).unwrap_or_else(|| text.to_owned())
 }
 
-pub(super) unsafe fn format_search(fm: &format_modifier, wp: &window_pane, s: &CStr) -> CString {
+pub(super) unsafe fn format_search(
+    fm: &format_modifier,
+    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    s: &CStr,
+) -> CString {
     let options = fm.argv.first().map_or(&[][..], |s| s.as_bytes());
-    let ignore = options.contains(&b'i') as i32;
-    let regex = options.contains(&b'r') as i32;
-    CString::new(window_pane_search(wp, s, regex, ignore).to_string())
+    let ignore = options.contains(&b'i');
+    let regex = options.contains(&b'r');
+    CString::new(pane.search(s, regex, ignore).to_string())
         .expect("search count contains no NUL")
 }
 
@@ -1700,9 +1704,6 @@ pub(super) unsafe fn format_loop_clients(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_session_owner = (*ft).s.upgrade();
     let mut c: Option<ClientRef> = None;
     let item_owner = (*ft).item.upgrade();
@@ -1782,10 +1783,7 @@ pub(super) unsafe fn format_loop_clients(
             c.as_ref(),
             format_session_owner.as_ref(),
             ((*ft).winlink_handle()).clone(),
-            (format_pane)
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
+            format_pane_owner.as_ref(),
         );
         format_copy_state(&raw mut next, es, 0 as ::core::ffi::c_int);
         next.ft = nft;
@@ -2155,12 +2153,8 @@ pub(super) unsafe fn format_replace(
     let mut sc: *mut sort_criteria = &raw mut sort_crit;
     let mut ft: *mut format_tree = (*es).ft;
     let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let format_client_owner = (*ft).c.upgrade();
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
-    let mut wp: *mut window_pane = format_pane;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut copy: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2694,7 +2688,7 @@ pub(super) unsafe fn format_replace(
             current_block = 1803726662341650892;
         } else if !search.is_null() {
             let new = format_expand1_cstring(es, copy);
-            if wp.is_null() {
+            if format_pane_owner.is_none() {
                 format_log1(
                     es,
                     b"format_replace\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2712,12 +2706,12 @@ pub(super) unsafe fn format_replace(
                     |out| {
                         out.write_all(b"search '")?;
                         write_cstr(out, new.as_ptr())?;
-                        write!(out, "' pane %{}", ((*wp).id) as u32)
+                        write!(out, "' pane %{}", format_pane_owner.as_ref().expect("search pane owner").id())
                     },
                 );
                 value = format_search(
                     &*search,
-                    &*format_pane_owner.as_ref().expect("search pane owner").get(),
+                    format_pane_owner.as_ref().expect("search pane owner"),
                     &new,
                 );
             }
