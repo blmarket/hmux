@@ -248,57 +248,34 @@ pub static window_tree_mode: window_mode = {
     }
 };
 static window_tree_order_seq: [sort_order; 4] = [SORT_INDEX, SORT_NAME, SORT_ACTIVITY, SORT_Z];
-static mut window_tree_pane_info_lines: [*const ::core::ffi::c_char; 8] = [
-    b"#[fg=themelightgrey]Pane          #[#{E:tree-mode-border-style},acs]x#[default] #{pane_index} #[fg=themelightgrey](#{pane_id})#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Title         #[#{E:tree-mode-border-style},acs]x#[default] #{pane_title}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Command       #[#{E:tree-mode-border-style},acs]x#[default] #{pane_current_command} #[fg=themelightgrey](PID #{pane_pid})#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Path          #[#{E:tree-mode-border-style},acs]x#[default] #{pane_current_path}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]TTY           #[#{E:tree-mode-border-style},acs]x#[default] #{pane_tty}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Position      #[#{E:tree-mode-border-style},acs]x#[default] #{pane_x},#{pane_y} #{pane_width}x#{pane_height}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Mode          #[#{E:tree-mode-border-style},acs]x#[default] #{?pane_in_mode,#{pane_mode},none}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Flags         #[#{E:tree-mode-border-style},acs]x#[default] #{?pane_active,#[fg=themegreen],#[fg=themelightgrey]}active#[default] #{?window_zoomed_flag,#[fg=themegreen],#[fg=themelightgrey]}zoomed#[default] #{?pane_marked,#[fg=themegreen],#[fg=themelightgrey]}marked#[default] #{?pane_synchronized,#[fg=themegreen],#[fg=themelightgrey]}sync#[default] #{?pane_dead,#[fg=themegreen],#[fg=themelightgrey]}dead#[default] #{?pane_pipe,#[fg=themegreen],#[fg=themelightgrey]}piped#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
+const window_tree_pane_info_lines: [&CStr; 8] = [
+    c"#[fg=themelightgrey]Pane          #[#{E:tree-mode-border-style},acs]x#[default] #{pane_index} #[fg=themelightgrey](#{pane_id})#[default]",
+    c"#[fg=themelightgrey]Title         #[#{E:tree-mode-border-style},acs]x#[default] #{pane_title}",
+    c"#[fg=themelightgrey]Command       #[#{E:tree-mode-border-style},acs]x#[default] #{pane_current_command} #[fg=themelightgrey](PID #{pane_pid})#[default]",
+    c"#[fg=themelightgrey]Path          #[#{E:tree-mode-border-style},acs]x#[default] #{pane_current_path}",
+    c"#[fg=themelightgrey]TTY           #[#{E:tree-mode-border-style},acs]x#[default] #{pane_tty}",
+    c"#[fg=themelightgrey]Position      #[#{E:tree-mode-border-style},acs]x#[default] #{pane_x},#{pane_y} #{pane_width}x#{pane_height}",
+    c"#[fg=themelightgrey]Mode          #[#{E:tree-mode-border-style},acs]x#[default] #{?pane_in_mode,#{pane_mode},none}",
+    c"#[fg=themelightgrey]Flags         #[#{E:tree-mode-border-style},acs]x#[default] #{?pane_active,#[fg=themegreen],#[fg=themelightgrey]}active#[default] #{?window_zoomed_flag,#[fg=themegreen],#[fg=themelightgrey]}zoomed#[default] #{?pane_marked,#[fg=themegreen],#[fg=themelightgrey]}marked#[default] #{?pane_synchronized,#[fg=themegreen],#[fg=themelightgrey]}sync#[default] #{?pane_dead,#[fg=themegreen],#[fg=themelightgrey]}dead#[default] #{?pane_pipe,#[fg=themegreen],#[fg=themelightgrey]}piped#[default]",
 ];
-static mut window_tree_window_info_lines: [*const ::core::ffi::c_char; 6] = [
-    b"#[fg=themelightgrey]Window        #[#{E:tree-mode-border-style},acs]x#[default] #{window_index}: #{window_name} #[fg=themelightgrey](#{window_id})#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Size          #[#{E:tree-mode-border-style},acs]x#[default] #{window_width}x#{window_height}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Panes         #[#{E:tree-mode-border-style},acs]x#[default] #{window_panes}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Activity Time #[#{E:tree-mode-border-style},acs]x#[default] #{t:window_activity} #[fg=themelightgrey](#{t/r:window_activity})#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Sessions      #[#{E:tree-mode-border-style},acs]x#[default] #{s/,/ /:window_linked_sessions_list}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Flags         #[#{E:tree-mode-border-style},acs]x#[default] #{?window_active,#[fg=themegreen],#[fg=themelightgrey]}active#[default] #{?window_last_flag,#[fg=themegreen],#[fg=themelightgrey]}last#[default] #{?window_bell_flag,#[fg=themegreen],#[fg=themelightgrey]}bell#[default] #{?window_activity_flag,#[fg=themegreen],#[fg=themelightgrey]}activity#[default] #{?window_silence_flag,#[fg=themegreen],#[fg=themelightgrey]}silence#[default] #{?window_zoomed_flag,#[fg=themegreen],#[fg=themelightgrey]}zoomed#[default] #{?window_marked_flag,#[fg=themegreen],#[fg=themelightgrey]}marked#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
+const window_tree_window_info_lines: [&CStr; 6] = [
+    c"#[fg=themelightgrey]Window        #[#{E:tree-mode-border-style},acs]x#[default] #{window_index}: #{window_name} #[fg=themelightgrey](#{window_id})#[default]",
+    c"#[fg=themelightgrey]Size          #[#{E:tree-mode-border-style},acs]x#[default] #{window_width}x#{window_height}",
+    c"#[fg=themelightgrey]Panes         #[#{E:tree-mode-border-style},acs]x#[default] #{window_panes}",
+    c"#[fg=themelightgrey]Activity Time #[#{E:tree-mode-border-style},acs]x#[default] #{t:window_activity} #[fg=themelightgrey](#{t/r:window_activity})#[default]",
+    c"#[fg=themelightgrey]Sessions      #[#{E:tree-mode-border-style},acs]x#[default] #{s/,/ /:window_linked_sessions_list}",
+    c"#[fg=themelightgrey]Flags         #[#{E:tree-mode-border-style},acs]x#[default] #{?window_active,#[fg=themegreen],#[fg=themelightgrey]}active#[default] #{?window_last_flag,#[fg=themegreen],#[fg=themelightgrey]}last#[default] #{?window_bell_flag,#[fg=themegreen],#[fg=themelightgrey]}bell#[default] #{?window_activity_flag,#[fg=themegreen],#[fg=themelightgrey]}activity#[default] #{?window_silence_flag,#[fg=themegreen],#[fg=themelightgrey]}silence#[default] #{?window_zoomed_flag,#[fg=themegreen],#[fg=themelightgrey]}zoomed#[default] #{?window_marked_flag,#[fg=themegreen],#[fg=themelightgrey]}marked#[default]",
 ];
-static mut window_tree_session_info_lines: [*const ::core::ffi::c_char; 9] = [
-    b"#[fg=themelightgrey]Session       #[#{E:tree-mode-border-style},acs]x#[default] #{session_name} #[fg=themelightgrey](#{session_id})#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Created Time  #[#{E:tree-mode-border-style},acs]x#[default] #{t:session_created} #[fg=themelightgrey](#{t/r:session_created})#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Activity Time #[#{E:tree-mode-border-style},acs]x#[default] #{t:session_activity} #[fg=themelightgrey](#{t/r:session_activity})#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Attached Time #[#{E:tree-mode-border-style},acs]x#[default] #{?#{t:session_last_attached},#{t:session_last_attached} #[fg=themelightgrey](#{t/r:session_last_attached})#[default],never}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Clients       #[#{E:tree-mode-border-style},acs]x#[default] #{s/,/ /:session_attached_list}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Windows       #[#{E:tree-mode-border-style},acs]x#[default] #{session_windows}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Path          #[#{E:tree-mode-border-style},acs]x#[default] #{session_path}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Group         #[#{E:tree-mode-border-style},acs]x#[default] #{?session_grouped,#{session_group} (#{session_group_size}),none}\0"
-        as *const u8 as *const ::core::ffi::c_char,
-    b"#[fg=themelightgrey]Flags         #[#{E:tree-mode-border-style},acs]x#[default] #{?session_attached,#[fg=themegreen],#[fg=themelightgrey]}attached#[default] #{?session_grouped,#[fg=themegreen],#[fg=themelightgrey]}grouped#[default] #{?session_marked,#[fg=themegreen],#[fg=themelightgrey]}marked#[default] #{?session_bell_flag,#[fg=themegreen],#[fg=themelightgrey]}bell#[default] #{?session_activity_flag,#[fg=themegreen],#[fg=themelightgrey]}activity#[default] #{?session_silence_flag,#[fg=themegreen],#[fg=themelightgrey]}silence#[default]\0"
-        as *const u8 as *const ::core::ffi::c_char,
+const window_tree_session_info_lines: [&CStr; 9] = [
+    c"#[fg=themelightgrey]Session       #[#{E:tree-mode-border-style},acs]x#[default] #{session_name} #[fg=themelightgrey](#{session_id})#[default]",
+    c"#[fg=themelightgrey]Created Time  #[#{E:tree-mode-border-style},acs]x#[default] #{t:session_created} #[fg=themelightgrey](#{t/r:session_created})#[default]",
+    c"#[fg=themelightgrey]Activity Time #[#{E:tree-mode-border-style},acs]x#[default] #{t:session_activity} #[fg=themelightgrey](#{t/r:session_activity})#[default]",
+    c"#[fg=themelightgrey]Attached Time #[#{E:tree-mode-border-style},acs]x#[default] #{?#{t:session_last_attached},#{t:session_last_attached} #[fg=themelightgrey](#{t/r:session_last_attached})#[default],never}",
+    c"#[fg=themelightgrey]Clients       #[#{E:tree-mode-border-style},acs]x#[default] #{s/,/ /:session_attached_list}",
+    c"#[fg=themelightgrey]Windows       #[#{E:tree-mode-border-style},acs]x#[default] #{session_windows}",
+    c"#[fg=themelightgrey]Path          #[#{E:tree-mode-border-style},acs]x#[default] #{session_path}",
+    c"#[fg=themelightgrey]Group         #[#{E:tree-mode-border-style},acs]x#[default] #{?session_grouped,#{session_group} (#{session_group_size}),none}",
+    c"#[fg=themelightgrey]Flags         #[#{E:tree-mode-border-style},acs]x#[default] #{?session_attached,#[fg=themegreen],#[fg=themelightgrey]}attached#[default] #{?session_grouped,#[fg=themegreen],#[fg=themelightgrey]}grouped#[default] #{?session_marked,#[fg=themegreen],#[fg=themelightgrey]}marked#[default] #{?session_bell_flag,#[fg=themegreen],#[fg=themelightgrey]}bell#[default] #{?session_activity_flag,#[fg=themegreen],#[fg=themelightgrey]}activity#[default] #{?session_silence_flag,#[fg=themegreen],#[fg=themelightgrey]}silence#[default]",
 ];
 #[must_use = "retain the resolved session and pane while using the output pointers"]
 #[derive(Default)]
@@ -1436,9 +1413,7 @@ unsafe fn window_tree_draw_info(
     let mut j: u_int = 0;
     let mut k: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut lines: [*const *const ::core::ffi::c_char; 3] =
-        [::core::ptr::null::<*const ::core::ffi::c_char>(); 3];
-    let mut count: [u_int; 3] = [0; 3];
+    let mut lines: [&[&CStr]; 3] = [&[]; 3];
     let mut n: u_int = 0 as u_int;
     let _target_owners_1 = window_tree_pull_item(item);
     sp = _target_owners_1.session;
@@ -1453,34 +1428,19 @@ unsafe fn window_tree_draw_info(
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        lines[n as usize] = &raw mut window_tree_pane_info_lines as *mut *const ::core::ffi::c_char;
-        let fresh0 = n;
+        lines[n as usize] = &window_tree_pane_info_lines;
         n = n.wrapping_add(1);
-        count[fresh0 as usize] = (::core::mem::size_of::<[*const ::core::ffi::c_char; 8]>()
-            as usize)
-            .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
-            as u_int;
     }
     if item.type_0 as ::core::ffi::c_uint
         == WINDOW_TREE_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
         || item.type_0 as ::core::ffi::c_uint
             == WINDOW_TREE_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        lines[n as usize] =
-            &raw mut window_tree_window_info_lines as *mut *const ::core::ffi::c_char;
-        let fresh1 = n;
+        lines[n as usize] = &window_tree_window_info_lines;
         n = n.wrapping_add(1);
-        count[fresh1 as usize] = (::core::mem::size_of::<[*const ::core::ffi::c_char; 6]>()
-            as usize)
-            .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
-            as u_int;
     }
-    lines[n as usize] = &raw mut window_tree_session_info_lines as *mut *const ::core::ffi::c_char;
-    let fresh2 = n;
+    lines[n as usize] = &window_tree_session_info_lines;
     n = n.wrapping_add(1);
-    count[fresh2 as usize] = (::core::mem::size_of::<[*const ::core::ffi::c_char; 9]>() as usize)
-        .wrapping_div(::core::mem::size_of::<*const ::core::ffi::c_char>() as usize)
-        as u_int;
     let mut ft_owner = format_create(None, None, FORMAT_NONE, 0 as ::core::ffi::c_int);
     ft = &raw mut *ft_owner;
     format_defaults(
@@ -1537,11 +1497,11 @@ unsafe fn window_tree_draw_info(
             i = i.wrapping_add(1);
         }
         k = 0 as u_int;
-        while k < count[j as usize] {
+        while (k as usize) < lines[j as usize].len() {
             if i == sy {
                 break;
             }
-            let expanded = format_expand_cstring(ft, *lines[j as usize].offset(k as isize));
+            let expanded = format_expand_cstring(ft, lines[j as usize][k as usize].as_ptr());
             screen_write_cursormove(
                 &mut *ctx,
                 cx as ::core::ffi::c_int,

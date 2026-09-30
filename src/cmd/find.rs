@@ -48,101 +48,29 @@ use crate::src::shared::window::{window, winlink};
 
 pub const _PATH_DEV: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/dev/\0") };
-static mut cmd_find_session_table: [[*const ::core::ffi::c_char; 2]; 1] = [[
-    ::core::ptr::null::<::core::ffi::c_char>(),
-    ::core::ptr::null::<::core::ffi::c_char>(),
-]];
-static mut cmd_find_window_table: [[*const ::core::ffi::c_char; 2]; 6] = [
-    [
-        b"{start}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"^\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{last}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"!\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{end}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"$\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{next}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"+\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{previous}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"-\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        ::core::ptr::null::<::core::ffi::c_char>(),
-    ],
+const cmd_find_window_table: &[(&CStr, &CStr)] = &[
+    (c"{start}", c"^"),
+    (c"{last}", c"!"),
+    (c"{end}", c"$"),
+    (c"{next}", c"+"),
+    (c"{previous}", c"-"),
 ];
-static mut cmd_find_pane_table: [[*const ::core::ffi::c_char; 2]; 16] = [
-    [
-        b"{last}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"!\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{next}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"+\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{previous}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"-\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{top}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"top\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{bottom}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"bottom\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{left}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"left\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{right}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"right\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{top-left}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"top-left\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{top-right}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"top-right\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{bottom-left}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"bottom-left\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{bottom-right}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"bottom-right\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{up-of}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"{up-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{down-of}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"{down-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{left-of}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"{left-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        b"{right-of}\0" as *const u8 as *const ::core::ffi::c_char,
-        b"{right-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ],
-    [
-        ::core::ptr::null::<::core::ffi::c_char>(),
-        ::core::ptr::null::<::core::ffi::c_char>(),
-    ],
+const cmd_find_pane_table: &[(&CStr, &CStr)] = &[
+    (c"{last}", c"!"),
+    (c"{next}", c"+"),
+    (c"{previous}", c"-"),
+    (c"{top}", c"top"),
+    (c"{bottom}", c"bottom"),
+    (c"{left}", c"left"),
+    (c"{right}", c"right"),
+    (c"{top-left}", c"top-left"),
+    (c"{top-right}", c"top-right"),
+    (c"{bottom-left}", c"bottom-left"),
+    (c"{bottom-right}", c"bottom-right"),
+    (c"{up-of}", c"{up-of}"),
+    (c"{down-of}", c"{down-of}"),
+    (c"{left-of}", c"{left-of}"),
+    (c"{right-of}", c"{right-of}"),
 ];
 unsafe fn cmd_find_inside_pane(
     c_owner: Option<&ClientRef>,
@@ -323,24 +251,13 @@ unsafe fn cmd_find_best_winlink_with_window(fs: *mut cmd_find_state) -> ::core::
     0
 }
 
-unsafe fn cmd_find_map_table(
-    mut table: *mut [*const ::core::ffi::c_char; 2],
-    mut s: *const ::core::ffi::c_char,
-) -> *const ::core::ffi::c_char {
-    let mut i: u_int = 0;
-    i = 0 as u_int;
-    while !(*table.offset(i as isize))[0 as ::core::ffi::c_int as usize].is_null() {
-        if strcmp(
-            s,
-            (*table.offset(i as isize))[0 as ::core::ffi::c_int as usize],
-        ) == 0 as ::core::ffi::c_int
-        {
-            return (*table.offset(i as isize))[1 as ::core::ffi::c_int as usize];
-        }
-        i = i.wrapping_add(1);
-    }
-    return s;
+fn cmd_find_map_table<'a>(table: &[(&'static CStr, &'static CStr)], target: &'a CStr) -> &'a CStr {
+    table
+        .iter()
+        .find_map(|(source, mapped)| (*source == target).then_some(*mapped))
+        .unwrap_or(target)
 }
+
 unsafe fn cmd_find_get_session(fs: *mut cmd_find_state, target: *const ::core::ffi::c_char) -> i32 {
     let target = CStr::from_ptr(target);
     log_debug(format_args!(
@@ -1745,23 +1662,12 @@ pub unsafe fn cmd_find_target(
                 if !pane.is_null() && *pane as ::core::ffi::c_int == '\0' as i32 {
                     pane = ::core::ptr::null::<::core::ffi::c_char>();
                 }
-                if !session.is_null() {
-                    session = cmd_find_map_table(
-                        &raw mut cmd_find_session_table as *mut [*const ::core::ffi::c_char; 2],
-                        session,
-                    );
-                }
                 if !window.is_null() {
-                    window = cmd_find_map_table(
-                        &raw mut cmd_find_window_table as *mut [*const ::core::ffi::c_char; 2],
-                        window,
-                    );
+                    window =
+                        cmd_find_map_table(cmd_find_window_table, CStr::from_ptr(window)).as_ptr();
                 }
                 if !pane.is_null() {
-                    pane = cmd_find_map_table(
-                        &raw mut cmd_find_pane_table as *mut [*const ::core::ffi::c_char; 2],
-                        pane,
-                    );
+                    pane = cmd_find_map_table(cmd_find_pane_table, CStr::from_ptr(pane)).as_ptr();
                 }
                 if !session.is_null() || !window.is_null() || !pane.is_null() {
                     log_debug(format_args!(

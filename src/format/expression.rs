@@ -3340,9 +3340,11 @@ pub(super) unsafe fn format_expand1_cstring(
                     s = ::core::ptr::null::<::core::ffi::c_char>();
                     if fmt > style_end {
                         if ch >= 'A' as i32 && ch <= 'Z' as i32 {
-                            s = format_upper[(ch - 'A' as i32) as usize];
+                            s = format_upper[(ch - 'A' as i32) as usize]
+                                .map_or(std::ptr::null(), CStr::as_ptr);
                         } else if ch >= 'a' as i32 && ch <= 'z' as i32 {
-                            s = format_lower[(ch - 'a' as i32) as usize];
+                            s = format_lower[(ch - 'a' as i32) as usize]
+                                .map_or(std::ptr::null(), CStr::as_ptr);
                         }
                     }
                     if s.is_null() {
