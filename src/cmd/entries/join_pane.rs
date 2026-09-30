@@ -1,4 +1,8 @@
 #[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
@@ -1189,7 +1193,7 @@ mod layout_identity_tests {
     #[test]
     fn position_format_replacement_does_not_retarget_the_captured_cell() {
         unsafe {
-            let window = window::with_options_for_test();
+            let window = crate::src::shared::window::WindowRef::fixture_with_options();
             let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             pane.fixture_parent(Some(&window));
             let mut options = options_create(None);
@@ -1269,7 +1273,7 @@ mod layout_identity_tests {
 
             // Queue removal owns command-state cleanup even though the test
             // invoked the command helper directly.
-            let client = client::with_queue_for_test();
+            let client = crate::src::shared::client::ClientRef::fixture_with_queue();
             (*item.get()).flags |= CMDQ_FIRED;
             cmdq_append(Some(&client), item);
             assert_eq!(cmdq_next(Some(&client)), 0);

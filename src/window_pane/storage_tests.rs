@@ -1,4 +1,6 @@
 //! Storage assertions stay beside the pane implementation.
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use super::*;
 use crate::src::shared::pane::{
     pane_history_first, pane_history_next, pane_history_push, pane_history_remove, window_pane,
@@ -342,7 +344,7 @@ mod collection_index_tests {
 #[test]
 fn border_status_ranges_return_independent_values() {
     unsafe {
-        let window = crate::src::window::window::with_options_for_test();
+        let window = crate::src::shared::window::WindowRef::fixture_with_options();
         window.with_options_mut(|options| {
             let definition = crate::src::options_table::options_table
                 .iter()

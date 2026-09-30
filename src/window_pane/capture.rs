@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use super::WindowPane;
 use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand_result};
 use crate::src::ffi::libc::snprintf;
@@ -617,7 +619,7 @@ mod tests {
             assert_eq!(pane.capture(&mut arguments, &item), Ok(b"X\nY\n".to_vec()));
             assert_eq!(calls.get(), 1);
 
-            let client = client::with_queue_for_test();
+            let client = crate::src::shared::client::ClientRef::fixture_with_queue();
             (*item.get()).flags |= CMDQ_FIRED;
             cmdq_append(Some(&client), item);
             assert_eq!(cmdq_next(Some(&client)), 0);

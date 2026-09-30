@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::arguments::{
@@ -3199,7 +3201,7 @@ mod reservation_tests {
     #[test]
     fn tiling_a_floating_root_saves_geometry_without_querying_options() {
         unsafe {
-            let window = window::with_size_for_test(80, 24);
+            let window = crate::src::shared::window::WindowRef::fixture_with_size(80, 24);
             let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             pane.fixture_parent(Some(&window));
             let mut root = layout_create_cell();
@@ -3235,7 +3237,7 @@ mod reservation_tests {
     #[test]
     fn tiling_without_a_live_neighbor_preserves_saved_floating_geometry_on_failure() {
         unsafe {
-            let window = window::with_size_for_test(17, 5);
+            let window = crate::src::shared::window::WindowRef::fixture_with_size(17, 5);
             let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
             pane.fixture_parent(Some(&window));
             let mut root = layout_create_cell();

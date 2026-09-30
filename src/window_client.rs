@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::compat::imsg::*;
 use crate::src::ffi::libc::memcpy;
@@ -299,7 +301,7 @@ mod tests {
         use crate::src::{reactor, shared::rc};
         for cancel in [false, true] {
             unsafe {
-                let client_owner = client::with_names_for_test(None, Some(c"/dev/pts/7"));
+                let client_owner = crate::src::shared::client::ClientRef::fixture_with_names(None, Some(c"/dev/pts/7"));
                 let client_observer = Rc::downgrade(&client_owner);
                 let mut data = window_client_modedata {
                     wp: Weak::new(),

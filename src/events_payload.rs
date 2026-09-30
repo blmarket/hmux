@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::WindowPane as _;
 use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
@@ -569,8 +571,8 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
         unsafe {
-            let first_owner = window::with_id_for_test(11);
-            let second_owner = window::with_id_for_test(22);
+            let first_owner = crate::src::shared::window::WindowRef::fixture_with_id(11);
+            let second_owner = crate::src::shared::window::WindowRef::fixture_with_id(22);
             let first_observer = Rc::downgrade(&first_owner);
             let second_observer = Rc::downgrade(&second_owner);
             let closed = Rc::new(RefCell::new(Vec::new()));
@@ -651,9 +653,9 @@ mod tests {
         use std::rc::Rc;
 
         unsafe {
-            let first_owner = window::with_id_for_test(11);
-            let second_owner = window::with_id_for_test(22);
-            let target_owner = window::with_id_for_test(33);
+            let first_owner = crate::src::shared::window::WindowRef::fixture_with_id(11);
+            let second_owner = crate::src::shared::window::WindowRef::fixture_with_id(22);
+            let target_owner = crate::src::shared::window::WindowRef::fixture_with_id(33);
             let first_observer = Rc::downgrade(&first_owner);
             let second_observer = Rc::downgrade(&second_owner);
             let target_observer = Rc::downgrade(&target_owner);
@@ -703,7 +705,7 @@ mod tests {
         use std::rc::Rc;
 
         unsafe {
-            let window_owner = window::with_id_for_test(44);
+            let window_owner = crate::src::shared::window::WindowRef::fixture_with_id(44);
             let observer = Rc::downgrade(&window_owner);
             let observed = Rc::new(RefCell::new(Vec::new()));
             let mut sinks = Vec::new();

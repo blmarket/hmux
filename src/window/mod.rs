@@ -11,6 +11,10 @@ mod api;
 pub use api::{LayoutView, PaneLayoutGeometry, PaneOrder, Window, WindowIndex, WindowResize, WindowScrollbars};
 
 mod model;
+#[cfg(test)]
+mod fixtures;
+#[cfg(test)]
+pub(crate) use fixtures::WindowFixture;
 pub use crate::src::window_pane::*;
 pub use crate::src::winlink::*;
 pub use model::window;
@@ -1616,13 +1620,13 @@ mod zoom_teardown_tests {
 }
 
 #[cfg(test)]
-pub(crate) mod test_support {
+mod test_support {
     use super::*;
-    pub(crate) unsafe fn zoomed_window() -> WindowRef {
+    pub(super) unsafe fn zoomed_window() -> WindowRef {
         super::zoom_teardown_tests::zoomed_window()
     }
     /// Visibility tests deliberately change this flag without repairing layout.
-    pub(crate) unsafe fn set_zoomed(owner: &WindowRef, enabled: bool) {
+    pub(super) unsafe fn set_zoomed(owner: &WindowRef, enabled: bool) {
         if enabled {
             (*owner.get()).flags |= WINDOW_ZOOMED;
         } else {

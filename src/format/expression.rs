@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::WindowPane as _;
 #[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
@@ -3875,7 +3877,7 @@ mod window_owner_reentry_tests {
     }
 
     unsafe fn fixture(value: Option<&CStr>) -> (refbox::RefBox<winlink>, WindowWeak, Rc<State>) {
-        let window = window::with_options_for_test();
+        let window = crate::src::shared::window::WindowRef::fixture_with_options();
         let observer = Rc::downgrade(&window);
         let link = refbox::RefBox::new(winlink {
             window_owner: Some(window),

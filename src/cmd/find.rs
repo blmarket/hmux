@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_state_owned};
@@ -1963,10 +1965,10 @@ mod target_observer_tests {
             );
             let session_owner = crate::src::shared::session::SessionRef::allocate();
             let other_session = crate::src::shared::session::SessionRef::allocate();
-            let first = client::with_session_for_test(Some(&session_owner));
-            let second = client::with_session_for_test(Some(&other_session));
-            client::activity_for_test(&first, 10, 0);
-            client::activity_for_test(&second, 20, 0);
+            let first = crate::src::shared::client::ClientRef::fixture_with_session(Some(&session_owner));
+            let second = crate::src::shared::client::ClientRef::fixture_with_session(Some(&other_session));
+            first.fixture_activity(10, 0);
+            second.fixture_activity(20, 0);
             clients.push_back(first.clone());
             clients.push_back(second.clone());
             crate::src::session::test_support::metadata(&session_owner, None, None, Some(1));
@@ -1979,12 +1981,12 @@ mod target_observer_tests {
                 &cmd_find_best_client(&session_owner).unwrap(),
                 &second
             ));
-            client::activity_for_test(&second, 10, 0);
+            second.fixture_activity(10, 0);
             assert!(Rc::ptr_eq(
                 &cmd_find_best_client(&session_owner).unwrap(),
                 &first
             ));
-            client::activity_for_test(&second, 10, 1);
+            second.fixture_activity(10, 1);
             let selected = cmd_find_best_client(&session_owner).unwrap();
             let observer = Rc::downgrade(&second);
             let registry = std::mem::replace(&mut clients, saved);

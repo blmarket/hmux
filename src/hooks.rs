@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
@@ -679,7 +681,7 @@ mod CStrings_tests {
         use std::rc::Rc;
 
         unsafe {
-            let window = window::with_options_for_test();
+            let window = crate::src::shared::window::WindowRef::fixture_with_options();
             let scope = OptionsScope::Window(Rc::downgrade(&window));
             scope
                 .set_from_string(None, c"@watched", Some(c""), false)

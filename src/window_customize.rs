@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
@@ -5322,7 +5324,7 @@ mod option_scope_tests {
             global_options = &mut *globals;
             global_s_options = &mut *globals;
             global_w_options = &mut *globals;
-            let window = window::with_options_for_test();
+            let window = crate::src::shared::window::WindowRef::fixture_with_options();
             let scope = OptionsScope::Window(Rc::downgrade(&window));
             let definition = crate::src::options_table::options_table
                 .iter()
@@ -5411,7 +5413,7 @@ mod option_scope_tests {
     #[test]
     fn detached_option_row_relooks_up_recreated_entry_without_retaining_window() {
         unsafe {
-            let window = window::with_options_for_test();
+            let window = crate::src::shared::window::WindowRef::fixture_with_options();
             let observer = Rc::downgrade(&window);
             let scope = OptionsScope::Window(observer.clone());
             scope

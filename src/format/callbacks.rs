@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
@@ -2654,7 +2656,7 @@ mod owned_callback_tests {
     #[test]
     fn client_formats_observe_context_client_without_retaining_it() {
         unsafe {
-            let owner = client::with_names_for_test(Some(c"observed-client"), None);
+            let owner = crate::src::shared::client::ClientRef::fixture_with_names(Some(c"observed-client"), None);
             let observer = std::rc::Rc::downgrade(&owner);
             let mut ft_owner = format_create(None, None, 0, 0);
             let ft = &raw mut *ft_owner;

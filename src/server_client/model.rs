@@ -108,7 +108,7 @@ pub struct client {
 
 impl client {
     #[cfg(test)]
-    pub(crate) unsafe fn with_session_for_test(session: Option<&SessionRef>) -> ClientRef {
+    pub(super) unsafe fn with_session_for_test(session: Option<&SessionRef>) -> ClientRef {
         let owner = Self::new();
         (*owner.get()).set_session(session);
         owner
@@ -216,7 +216,7 @@ pub(super) fn client_retain(value: Option<&client>) -> Option<ClientRef> {
 impl client {
     /// No descriptors or monitors are installed; tests explicitly stop control
     /// after populating the component through its borrow API.
-    pub(crate) unsafe fn with_control_for_test(
+    pub(super) unsafe fn with_control_for_test(
         name: Option<&std::ffi::CStr>,
         session: Option<&SessionRef>,
     ) -> ClientRef {
@@ -227,12 +227,12 @@ impl client {
         owner
     }
 
-    pub(crate) unsafe fn activity_for_test(owner: &ClientRef, seconds: u64, micros: u64) {
+    pub(super) unsafe fn activity_for_test(owner: &ClientRef, seconds: u64, micros: u64) {
         (*owner.get()).activity_time =
             UNIX_EPOCH + Duration::from_secs(seconds) + Duration::from_micros(micros);
     }
 
-    pub(crate) unsafe fn with_names_for_test(
+    pub(super) unsafe fn with_names_for_test(
         name: Option<&std::ffi::CStr>,
         tty_name: Option<&std::ffi::CStr>,
     ) -> ClientRef {
@@ -243,7 +243,7 @@ impl client {
     }
 
     /// A queue fixture uses the same explicit item cleanup as server clients.
-    pub(crate) unsafe fn with_queue_for_test() -> ClientRef {
+    pub(super) unsafe fn with_queue_for_test() -> ClientRef {
         let owner = Self::new();
         (*owner.get()).queue = Some(crate::src::cmd::queue::cmdq_new());
         owner

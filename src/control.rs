@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::WindowPane as _;
 #[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
@@ -325,7 +327,7 @@ mod control_queue_tests {
     #[test]
     fn resetting_panes_drops_output_and_pending_ids_but_keeps_replies() {
         unsafe {
-            let client = client::with_control_for_test(None, None);
+            let client = crate::src::shared::client::ClientRef::fixture_with_control(None, None);
             let reply = {
                 let mut owner = client.borrow_control_mut().unwrap();
                 let reply = control_add_block(
@@ -426,7 +428,7 @@ mod control_queue_tests {
 
         unsafe {
             for shared_stream in [false, true] {
-                let owner = client::with_control_for_test(None, None);
+                let owner = crate::src::shared::client::ClientRef::fixture_with_control(None, None);
                 if shared_stream {
                     owner.update_flags(CLIENT_CONTROLCONTROL as uint64_t, 0);
                 }
@@ -516,7 +518,7 @@ mod control_queue_tests {
     fn reply_limit_discards_only_when_starting_exit() {
         unsafe {
             for exiting in [false, true] {
-                let owner = client::with_control_for_test(None, None);
+                let owner = crate::src::shared::client::ClientRef::fixture_with_control(None, None);
                 if exiting {
                     owner.update_flags(CLIENT_EXIT as u64, 0);
                 }
@@ -544,7 +546,7 @@ mod control_queue_tests {
     #[test]
     fn formatting_can_reenter_notifications_or_stop_the_owned_state() {
         unsafe {
-            let owner = client::with_control_for_test(None, None);
+            let owner = crate::src::shared::client::ClientRef::fixture_with_control(None, None);
             owner.borrow_control_mut().unwrap().guard_depth = 1;
             owner.notify(|out| {
                 owner.notify(|out| out.write_all(b"inner"));
@@ -565,7 +567,7 @@ mod control_queue_tests {
                 out.write_all(b"stopped while formatting reply")
             });
             assert!(owner.borrow_control_mut().is_none());
-            let owner = client::with_control_for_test(None, None);
+            let owner = crate::src::shared::client::ClientRef::fixture_with_control(None, None);
             owner.notify(|out| {
                 control_stop(&owner);
                 out.write_all(b"stopped while formatting notification")

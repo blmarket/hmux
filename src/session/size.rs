@@ -1,4 +1,6 @@
 //! Session-owned cache publication used by creation and the sizing pass.
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use super::*;
 use crate::src::server::clients;
 use crate::src::server_client::Client;
@@ -71,7 +73,7 @@ mod tests {
     }
 
     unsafe fn add_client(session: &SessionRef, flags: u64) {
-        let owner = client::with_session_for_test(Some(session));
+        let owner = crate::src::shared::client::ClientRef::fixture_with_session(Some(session));
         owner.update_flags(flags, 0);
         clients.push_back(owner);
     }

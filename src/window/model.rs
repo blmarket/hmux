@@ -22,7 +22,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use crate::src::shared::window::{window_winlinks, WindowIndex};
 /// Explicit cleanup is separate from the lifetime of retained Rc allocations.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) enum WindowLifecycle {
+pub(super) enum WindowLifecycle {
     #[default]
     Live,
     Destroying,
@@ -168,7 +168,7 @@ impl window {
 
     /// Unregistered identity for tests of event payload ownership and release order.
     #[cfg(test)]
-    pub(crate) fn with_id_for_test(id: u32) -> WindowRef {
+    pub(super) fn with_id_for_test(id: u32) -> WindowRef {
         let owner = Self::new();
         unsafe { (*owner.get()).id = id };
         owner
@@ -176,7 +176,7 @@ impl window {
 
     /// Geometry-only fixture, without a layout, panes, options or resize callbacks.
     #[cfg(test)]
-    pub(crate) fn with_size_for_test(sx: u32, sy: u32) -> WindowRef {
+    pub(super) fn with_size_for_test(sx: u32, sy: u32) -> WindowRef {
         let owner = Self::new();
         unsafe {
             (*owner.get()).sx = sx;
@@ -187,7 +187,7 @@ impl window {
 
     /// An unregistered owner for testing option inheritance without global state.
     #[cfg(test)]
-    pub(crate) fn with_options_for_test() -> WindowRef {
+    pub(super) fn with_options_for_test() -> WindowRef {
         let owner = Self::new();
         unsafe {
             (*owner.get()).options = Some(crate::src::options::options_create(None));

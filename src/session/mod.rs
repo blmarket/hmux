@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use crate::src::window::Window as _;
 mod alerts;
 mod api;
@@ -998,7 +1000,7 @@ mod group_synchronization_tests {
             let source = session::with_options_for_test(crate::src::options::options_create(None));
             let destination =
                 session::with_options_for_test(crate::src::options::options_create(None));
-            let windows = (1..=4).map(window::with_id_for_test).collect::<Vec<_>>();
+            let windows = (1..=4).map(crate::src::shared::window::WindowRef::fixture_with_id).collect::<Vec<_>>();
             let mut first = link(&source, 2, &windows[0]);
             let mut second = link(&source, 7, &windows[1]);
             first.get_mut_unchecked().flags |= WINLINK_BELL;

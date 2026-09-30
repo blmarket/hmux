@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::WindowPane as _;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
@@ -2073,7 +2075,7 @@ mod menu_observer_tests {
     #[test]
     fn build_context_borrows_window_and_preserves_inside_outside_cells() {
         unsafe {
-            let owner = window::with_size_for_test(1, 1);
+            let owner = crate::src::shared::window::WindowRef::fixture_with_size(1, 1);
             let strong_count = std::rc::Rc::strong_count(&owner);
             let mut cells = Vec::new();
             let mut bctx = redraw_build_ctx {

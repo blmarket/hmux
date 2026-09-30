@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::arguments::{
     args_count, args_flag_values, args_flags, args_get, args_print_cstring, args_string,
 };
@@ -1205,8 +1207,8 @@ mod client_observer_tests {
     #[test]
     fn dispatch_insertion_keeps_queue_identity_when_execution_context_changes() {
         unsafe {
-            let owner = client::with_queue_for_test();
-            let context = client::with_queue_for_test();
+            let owner = crate::src::shared::client::ClientRef::fixture_with_queue();
+            let context = crate::src::shared::client::ClientRef::fixture_with_queue();
             let context_observer = Rc::downgrade(&context);
             let queue_observer = Rc::downgrade(&owner);
             let calls = Rc::new(std::cell::Cell::new(0));
@@ -1284,7 +1286,7 @@ mod client_observer_tests {
     #[test]
     fn retained_client_queue_resumes_after_wait_and_drains_callbacks() {
         unsafe {
-            let owner = client::with_queue_for_test();
+            let owner = crate::src::shared::client::ClientRef::fixture_with_queue();
             let observer = Rc::downgrade(&owner);
             let calls = Rc::new(std::cell::Cell::new(0));
             let waiting_allocation =
@@ -1327,7 +1329,7 @@ mod client_observer_tests {
     #[test]
     fn append_and_insert_retain_client_for_every_queued_item() {
         unsafe {
-            let owner = client::with_queue_for_test();
+            let owner = crate::src::shared::client::ClientRef::fixture_with_queue();
             let observer = Rc::downgrade(&owner);
             let first_allocation = cmdq_get_callback_owned(c"first", None);
             let first = first_allocation.get();
@@ -1438,7 +1440,7 @@ mod cancellation_tests {
     fn client_owns_queue_while_cancelled_items_release_their_payloads() {
         let before = DROPPED.load(Ordering::SeqCst);
         unsafe {
-            let owner = client::with_queue_for_test();
+            let owner = crate::src::shared::client::ClientRef::fixture_with_queue();
             let item_allocation = cmdq_get_callback_owned(c"queued-cancel", None);
             let payload = Payload;
             cmdq_set_cancel_callback(&mut *item_allocation.get(), Box::new(move || drop(payload)));
@@ -1506,7 +1508,7 @@ mod lifecycle_tests {
     #[test]
     fn group_removal_cancels_only_matching_suffix_items() {
         unsafe {
-            let client = client::with_queue_for_test();
+            let client = crate::src::shared::client::ClientRef::fixture_with_queue();
             let cancelled = Rc::new(Cell::new(0));
             let first = cmdq_get_callback_owned(c"first", None);
             let same = cmdq_get_callback_owned(c"same group", None);
@@ -1546,6 +1548,7 @@ mod lifecycle_tests {
 
 #[cfg(test)]
 mod queue_state_ownership_tests {
+    use crate::src::server_client::ClientFixture as _;
     use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned, cmdq_new, cmdq_next};
     use crate::src::cmd::queue::{cmdq_get_event, cmdq_get_state_owned, cmdq_new_state};
     use crate::src::shared::client::client;
@@ -1559,7 +1562,7 @@ mod queue_state_ownership_tests {
             event.m.valid = 1;
             let state = cmdq_new_state(std::ptr::null_mut(), &mut *event, 7);
             let observed = Rc::downgrade(&state);
-            let client = client::with_queue_for_test();
+            let client = crate::src::shared::client::ClientRef::fixture_with_queue();
             let item_owner = cmdq_get_callback_owned(
                 c"state snapshot test",
                 Some(Box::new(|_| crate::src::shared::command::CMD_RETURN_NORMAL)),

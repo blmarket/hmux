@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::WindowPane as _;
 #[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
@@ -332,7 +334,7 @@ mod tests {
     use crate::src::shared::session::session;
 
     unsafe fn recipient(name: &CStr, session: Option<&SessionRef>, flags: u64) -> ClientRef {
-        let client = client::with_control_for_test(Some(name), session);
+        let client = crate::src::shared::client::ClientRef::fixture_with_control(Some(name), session);
         client.update_flags(flags, 0);
         client.borrow_control_mut().unwrap().guard_depth = 1;
         clients.push_back(client.clone());

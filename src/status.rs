@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::src::server_client::ClientFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{memcpy, memset};
@@ -953,7 +955,7 @@ mod status_screen_tests {
                 crate::src::shared::session::sessions::default(),
             );
             (&mut crate::src::session::sessions).insert(session_owner.clone());
-            let mut c = client::with_session_for_test(Some(&session_owner));
+            let mut c = crate::src::shared::client::ClientRef::fixture_with_session(Some(&session_owner));
             c.borrow_terminal_mut().sx = 80;
             for (style, expected) in [
                 ("default", (0, 80)),

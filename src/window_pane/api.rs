@@ -1,4 +1,6 @@
 //! Operations on retained panes. Logical destruction remains explicit.
+#[cfg(test)]
+use crate::src::window::WindowFixture as _;
 use super::*;
 use crate::src::shared::pane::{PANE_NEWSTATUS,PANE_DROP};
 use crate::src::grid::{grid_get_cell, grid_set_cell};
@@ -1448,8 +1450,8 @@ mod tests {
         };
         use crate::src::window::Window;
         unsafe {
-            let first = window::with_options_for_test();
-            let second = window::with_options_for_test();
+            let first = crate::src::shared::window::WindowRef::fixture_with_options();
+            let second = crate::src::shared::window::WindowRef::fixture_with_options();
             for (owner, value) in [(&first, c"first"), (&second, c"second")] {
                 owner.with_options_mut(|table| {
                     options_set_string(table, c"@parent".as_ptr(), 0, |out| {
@@ -1513,7 +1515,7 @@ mod tests {
     #[test]
     fn visibility_probe_preserves_pending_redraws_and_layout() {
         unsafe {
-            let window = crate::src::window::test_support::zoomed_window();
+            let window = crate::src::shared::window::WindowRef::fixture_zoomed();
             let pane = window.active_pane().unwrap();
             let layout = (*pane.get()).layout_cell;
             for flags in [0, PANE_REDRAW, crate::src::shared::pane::PANE_DROP] {
@@ -1524,10 +1526,10 @@ mod tests {
             }
             (*pane.get()).layout_cell = None;
             assert_eq!(window_pane_is_visible(&pane), 0);
-            crate::src::window::test_support::set_zoomed(&window, false);
+            window.fixture_set_zoomed(false);
             assert_eq!(window_pane_is_visible(&pane), 1);
             assert_eq!((*pane.get()).flags, crate::src::shared::pane::PANE_DROP);
-            crate::src::window::test_support::set_zoomed(&window, true);
+            window.fixture_set_zoomed(true);
             (*pane.get()).layout_cell = layout;
             window.release(c"visibility probe test");
         }

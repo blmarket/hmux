@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::src::window::WindowFixture as _;
+#[cfg(test)]
 use crate::src::window_pane::PaneFixture as _;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
@@ -13,6 +15,10 @@ use std::{cell::UnsafeCell, rc::Rc};
 mod api;
 mod format;
 mod model;
+#[cfg(test)]
+mod fixtures;
+#[cfg(test)]
+pub(crate) use fixtures::ClientFixture;
 mod overlay;
 pub use api::{Client, PanDirection};
 pub use model::client;
@@ -3364,7 +3370,7 @@ mod prompt_cursor_tests {
                 crate::src::session::recalculate_size_state();
                 let flags = if at == -1 { CLIENT_STATUSOFF as u64 } else { 0 };
                 c.update_flags(flags, !flags);
-                let window_owner = window::with_size_for_test(100, 40);
+                let window_owner = crate::src::shared::window::WindowRef::fixture_with_size(100, 40);
                 let prompt = refbox::RefBox::new(prompt::default());
                 let base = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
                 base.fixture_parent(Some(&window_owner));
