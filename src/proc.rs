@@ -247,9 +247,10 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
 pub unsafe fn proc_free(mut owner: Box<tmuxproc>) {
     let tp = &raw mut *owner;
     proc_clear_signals(tp, 0);
-    while let Some(peer) = (*tp).peers.last_mut() {
-        let peer = &raw mut **peer;
-        proc_remove_peer(peer);
+    // Remove through the owner, not a peer's parent back-pointer: that pointer
+    // predates the unique Box passed to this function and must not mutate it.
+    while let Some(peer) = owner.peers.pop() {
+        proc_free_peer(peer);
     }
     drop(owner);
 }
@@ -383,6 +384,11 @@ pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
         .position(|owned_peer| std::ptr::eq(&**owned_peer, peer))
         .expect("peer must be owned by its parent process");
     let owned_peer = peers.remove(peer_index);
+    proc_free_peer(owned_peer);
+}
+
+unsafe fn proc_free_peer(mut owned_peer: Box<tmuxpeer>) {
+    let peer = &raw mut *owned_peer;
     log_debug(format_args!(
         "remove peer {}",
         log_pointer((peer) as *const ::core::ffi::c_void)

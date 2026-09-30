@@ -1,6 +1,6 @@
 //! Alert dispatch owns queued references; Window owns flags and its timer.
 use crate::src::log::{log_debug, log_hex};
-use crate::src::reactor::timer_once;
+use crate::src::reactor::defer;
 use crate::src::session::{alerts_check_all, Session};
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
@@ -70,7 +70,7 @@ pub unsafe fn alerts_reset_all() {
 unsafe fn schedule(id: u32) {
     if alerts_fired == 0 {
         log_debug(format_args!("alerts check queued (by @{})", id));
-        timer_once(move || alerts_callback());
+        defer(move || alerts_callback());
         alerts_fired = 1;
     }
 }

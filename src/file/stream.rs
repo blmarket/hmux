@@ -59,9 +59,7 @@ pub(super) fn notify(read: &mut ReadState) {
     if let Some(wake) = read.wake.take() {
         // Wake after the caller releases its model borrow. No listener runs
         // inline from a data append or completion transition.
-        unsafe {
-            timer_once(move || wake.wake_by_ref());
-        }
+        defer(move || wake.wake_by_ref());
     }
 }
 

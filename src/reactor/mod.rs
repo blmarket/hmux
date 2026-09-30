@@ -15,8 +15,10 @@ use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 pub use streams::*;
-pub use tasks::Task;
-pub use timers::{timer_once, timer_once_owned, Timer};
+pub use tasks::{defer, Task};
+#[allow(deprecated)]
+pub use timers::timer_once;
+pub use timers::{timer_once_owned, Timer};
 
 #[repr(C)]
 pub struct bufferevent_ops {
@@ -100,8 +102,9 @@ pub fn reset_after_fork() -> std::io::Result<()> {
 pub fn shutdown_runtime() {
     tasks::clear();
     streams::clear();
-    // Stream callback captures may defer their cleanup with timer_once.
     timers::clear();
+    // Stream and timer captures may enqueue deferred cleanup while clearing.
+    tasks::clear();
     FDS.with(|f| f.borrow_mut().clear());
     HANDLE.with(|h| h.borrow_mut().take());
     HOST.with(|h| h.borrow_mut().take());

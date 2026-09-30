@@ -1,7 +1,7 @@
 //! Timer registrations survive the reactor's fork reset in both processes.
 #![cfg(unix)]
 
-use hmux2::src::reactor::{poll_runtime, reset_after_fork, shutdown_runtime, timer_once, Timer};
+use hmux2::src::reactor::{defer, poll_runtime, reset_after_fork, shutdown_runtime, Timer};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -19,7 +19,7 @@ fn pending_timers_keep_their_deadline_after_fork() {
     // Include a deferred callback whose task has not yet been polled.
     let deferred = Rc::new(Cell::new(false));
     let observed = deferred.clone();
-    timer_once(move || observed.set(true));
+    defer(move || observed.set(true));
     let pid = unsafe { libc::fork() };
     assert!(pid >= 0, "fork: {}", std::io::Error::last_os_error());
     if pid == 0 {

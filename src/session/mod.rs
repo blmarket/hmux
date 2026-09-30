@@ -33,7 +33,6 @@ use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_free, options_get_number};
-use crate::src::reactor::timer_once;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::{marked_pane, server_clear_marked};
 use crate::src::server_fn::server_lock_session;

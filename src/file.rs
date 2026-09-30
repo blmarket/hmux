@@ -14,8 +14,8 @@ use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
-    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
-    evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, timer_once,
+    bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, defer, evbuffer_add,
+    evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::server_client::{server_client_get_cwd, Client as _};
@@ -289,7 +289,7 @@ unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
     cf.terminal_scheduled = true;
     stream::finish(cf);
     let mut completion = Some(FileCompletion(owner.clone()));
-    timer_once(move || {
+    defer(move || {
         let completion = completion.take().expect("one terminal dispatch");
         file_fire_done_cb(&completion.0);
     });
@@ -805,7 +805,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     }
     if left != 0 as size_t {
         let owner = file_owner.clone();
-        timer_once(move || unsafe { file_push_cb(&owner) });
+        defer(move || unsafe { file_push_cb(&owner) });
     } else if cf.stream > 2 as ::core::ffi::c_int {
         close_0.stream = cf.stream;
         file_send(

@@ -126,16 +126,10 @@ fn register(id: NonZeroU64, delay: Duration, callback: Callback) -> io::Result<N
     Ok(id)
 }
 
-/// Defer a callback to a runtime turn, without allocating an event handle.
+/// Queue a callback without running it inline.
+#[deprecated(note = "use reactor::defer for deferred execution without a timer")]
 pub fn timer_once(callback: impl FnOnce() + 'static) {
-    let mut callback = Some(callback);
-    schedule(
-        Duration::ZERO,
-        Rc::new(RefCell::new(Box::new(move || {
-            callback.take().expect("one timer dispatch")();
-        }))),
-    )
-    .expect("schedule deferred callback");
+    super::defer(callback);
 }
 
 /// Keep the record in its Box; only the registration owns the callback.
@@ -201,6 +195,7 @@ pub(super) fn clear() {
 
 #[cfg(test)]
 mod tests {
+    use super::super::defer;
     use super::*;
     use hmux_rt::Runtime as _;
 
@@ -319,12 +314,12 @@ mod tests {
         impl Drop for DeferredDrop {
             fn drop(&mut self) {
                 let freed = self.0.clone();
-                timer_once(move || freed.set(freed.get() + 1));
+                defer(move || freed.set(freed.get() + 1));
             }
         }
         let freed = Rc::new(Cell::new(0));
         let owner = DeferredDrop(freed.clone());
-        timer_once(move || drop(owner));
+        defer(move || drop(owner));
         let stream_owner = DeferredDrop(freed.clone());
         unsafe {
             super::super::bufferevent_new(
@@ -355,6 +350,44 @@ mod tests {
         );
         new.cancel();
         super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn forked_shutdown_cancels_cleanup_enqueued_by_timer_captures() {
+        struct DeferredDrop(Rc<Cell<usize>>);
+        impl Drop for DeferredDrop {
+            fn drop(&mut self) {
+                let capture = self.0.clone();
+                defer(move || capture.set(capture.get() + 1));
+            }
+        }
+        let calls = Rc::new(Cell::new(0));
+        let owner = DeferredDrop(calls.clone());
+        let mut timer = Timer::new();
+        timer.set(move || {
+            let _keep_owner = &owner;
+            panic!("shutdown must not dispatch timers");
+        });
+        timer.arm(Duration::ZERO).unwrap();
+        drop(timer);
+        unsafe {
+            let pid = libc::fork();
+            assert!(pid >= 0);
+            if pid == 0 {
+                libc::alarm(5);
+                super::super::shutdown_runtime();
+                assert_eq!(calls.get(), 0, "shutdown must not dispatch callbacks");
+                assert_eq!(Rc::strong_count(&calls), 1, "all captures must be released");
+                libc::_exit(0);
+            }
+            let mut status = 0;
+            assert_eq!(libc::waitpid(pid, &mut status, 0), pid);
+            assert!(libc::WIFEXITED(status), "child status {status}");
+            assert_eq!(libc::WEXITSTATUS(status), 0);
+        }
+        super::super::shutdown_runtime();
+        assert_eq!(calls.get(), 0);
+        assert_eq!(Rc::strong_count(&calls), 1);
     }
 
     #[test]

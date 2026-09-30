@@ -28,6 +28,21 @@ thread_local! {
     static TASKS: RefCell<HashMap<NonZeroU64, Rc<Registration>>> = RefCell::new(HashMap::new());
 }
 
+/// Queue a callback without running it inline or creating a timer.
+/// Shutdown or a scheduling failure releases captures without dispatching it.
+pub fn defer(callback: impl FnOnce() + 'static) {
+    // Retain the callback in the factory until dispatch, so replacing the
+    // runtime after fork can recreate an unpolled future without losing it.
+    let pending = Rc::new(RefCell::new(Some(callback)));
+    let _ = Task::new().start(move || {
+        let pending = pending.clone();
+        Ok(async move {
+            let callback = pending.borrow_mut().take().expect("one deferred dispatch");
+            callback();
+        })
+    });
+}
+
 impl Task {
     pub const fn new() -> Self {
         Self { id: None }
@@ -147,6 +162,24 @@ mod tests {
                 .poll(Some(Duration::ZERO))
                 .unwrap();
         });
+    }
+
+    #[test]
+    fn deferred_callbacks_queue_without_inline_dispatch_and_release_captures() {
+        let order = Rc::new(RefCell::new(Vec::new()));
+        let observed = order.clone();
+        defer(move || {
+            observed.borrow_mut().push(1);
+            let nested = observed.clone();
+            defer(move || nested.borrow_mut().push(3));
+            observed.borrow_mut().push(2);
+        });
+        assert!(order.borrow().is_empty());
+        poll();
+        assert_eq!(*order.borrow(), [1, 2, 3]);
+        assert_eq!(Rc::strong_count(&order), 1);
+        assert!(TASKS.with(|tasks| tasks.borrow().is_empty()));
+        super::super::shutdown_runtime();
     }
 
     #[test]

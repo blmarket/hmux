@@ -23,7 +23,7 @@ pub fn same<T>(a: Option<&Rc<T>>, b: Option<&Rc<T>>) -> bool {
 /// Defer one ordinary Rc drop. Cancellation or a scheduling failure drops the
 /// capture normally, so cleanup still happens even without callback dispatch.
 pub fn release_later<T: 'static>(owner: Rc<T>) {
-    crate::src::reactor::timer_once(move || drop(owner));
+    crate::src::reactor::defer(move || drop(owner));
 }
 
 #[cfg(test)]

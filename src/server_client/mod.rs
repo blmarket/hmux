@@ -58,7 +58,7 @@ use crate::src::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_sen
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_get_input, evbuffer_add, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup, evbuffer_readln, timer_once,
+    evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
 use crate::src::screen::screen_mode_display;
