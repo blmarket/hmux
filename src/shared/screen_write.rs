@@ -45,12 +45,11 @@ pub struct screen_write_ctx {
 }
 
 /// The active write target. A borrowed target is valid only between start and
-/// stop; a pane base target is resolved from its owner on each access.
+/// stop; the pane operation installs the same bounded component target.
 #[derive(Default)]
 pub(crate) enum ScreenWriteTarget {
     #[default]
     None,
-    PaneBase(std::rc::Weak<std::cell::UnsafeCell<window_pane>>),
     Borrowed(std::ptr::NonNull<screen>),
 }
 
@@ -58,18 +57,8 @@ impl screen_write_ctx {
     pub fn screen_ptr(&self) -> *mut screen {
         match &self.target {
             ScreenWriteTarget::None => std::ptr::null_mut(),
-            ScreenWriteTarget::PaneBase(observer) => {
-                let owner = observer
-                    .upgrade()
-                    .expect("active pane base write has an owner");
-                unsafe { &raw mut (*owner.get()).base }
-            }
             ScreenWriteTarget::Borrowed(screen) => screen.as_ptr(),
         }
-    }
-
-    pub fn use_pane_base(&mut self, pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-        self.target = ScreenWriteTarget::PaneBase(std::rc::Rc::downgrade(pane));
     }
 
     /// # Safety

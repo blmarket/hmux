@@ -40,11 +40,8 @@ use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{checkshell, global_options, global_s_options, global_w_options};
 use crate::src::tty::tty_invalidate;
 use crate::src::tty_keys::tty_keys_build;
-use crate::src::window::{
-    all_window_panes, window_pane_default_cursor, window_pane_scrollbar_hide,
-    window_pane_tree_minmax, window_pane_tree_next, windows_minmax,
-};
-use crate::src::window::{windows, Window};
+use crate::src::window::windows_minmax;
+use crate::src::window::{windows, Window, WindowPane};
 use std::ffi::{CStr, CString};
 
 mod mutation;
@@ -1649,7 +1646,6 @@ pub unsafe fn options_from_string(
 pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut loop_0: Option<ClientRef> = None;
     let mut s: Option<SessionRef> = None;
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     log_debug(format_args!(
         "{}: {}",
         "options_push_changes",
@@ -1701,7 +1697,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         while let Some(window_owner) = window_cursor.take() {
             if let Some(active) = window_owner.active_pane() {
                 if window_owner.with_options_mut(|options| options_get_number(options, name)) != 0 {
-                    (*active.get()).flags |= PANE_CHANGED;
+                    active.mark_changed();
                 }
             }
             window_cursor = window_owner.next_window();
@@ -1713,16 +1709,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            window_pane_default_cursor(&(*(wp)).observer.upgrade().expect("live window_pane"));
-            indexed_pane_owner = window_pane_tree_next(&*wp);
-            wp = indexed_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        for pane_owner in
+            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
+        {
+            pane_owner.reset_default_cursor();
         }
     }
     if strcmp(
@@ -1730,16 +1720,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            window_pane_default_cursor(&(*(wp)).observer.upgrade().expect("live window_pane"));
-            indexed_pane_owner = window_pane_tree_next(&*wp);
-            wp = indexed_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        for pane_owner in
+            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
+        {
+            pane_owner.reset_default_cursor();
         }
     }
     if strcmp(
@@ -1859,29 +1843,17 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-            indexed_pane_owner = window_pane_tree_next(&*wp);
-            wp = indexed_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        for pane_owner in
+            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
+        {
+            pane_owner.mark_style_changed(true);
         }
     }
     if *name as ::core::ffi::c_int == '@' as i32 {
-        let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            (*wp).flags |= PANE_STYLECHANGED;
-            indexed_pane_owner = window_pane_tree_next(&*wp);
-            wp = indexed_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        for pane_owner in
+            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
+        {
+            pane_owner.mark_style_changed(false);
         }
     }
     if strcmp(
@@ -1889,20 +1861,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-colours\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            colour_palette_from_option(
-                Some(&mut (*wp).palette),
-                options_owner_ptr(&mut (*wp).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-            );
-            indexed_pane_owner = window_pane_tree_next(&*wp);
-            wp = indexed_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        for pane_owner in
+            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
+        {
+            pane_owner.refresh_palette();
         }
     }
     if strcmp(
@@ -1931,16 +1893,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            window_pane_scrollbar_hide(indexed_pane_owner.as_ref().expect("indexed pane"));
-            indexed_pane_owner = window_pane_tree_next(&*wp);
-            wp = indexed_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        for pane_owner in
+            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
+        {
+            pane_owner.hide_scrollbar();
         }
     }
     if strcmp(
@@ -1948,20 +1904,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"pane-scrollbars-style\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut indexed_pane_owner = window_pane_tree_minmax(&all_window_panes);
-        wp = indexed_pane_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            style_set_scrollbar_style_from_option(
-                &raw mut (*wp).scrollbar_style,
-                options_owner_ptr(&mut (*wp).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-            );
-            indexed_pane_owner = window_pane_tree_next(&*wp);
-            wp = indexed_pane_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+        for pane_owner in
+            <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::all_panes()
+        {
+            pane_owner.refresh_scrollbar_style();
         }
         let mut window_cursor = windows_minmax(&windows);
         while let Some(window_owner) = window_cursor.take() {

@@ -2215,82 +2215,8 @@ pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty
     })(owner);
 }
 
-fn tty_window_default_style(palette: &colour_palette) -> grid_cell {
-    grid_cell {
-        fg: palette.fg,
-        bg: palette.bg,
-        ..grid_default_cell
-    }
-}
-unsafe fn tty_style_changed(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
-    let mut wp = wp_owner.get();
-    let mut oo: *mut options =
-        options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options);
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut sy: style;
-    log_debug(format_args!("%{}: style changed", ((*wp).id) as u32));
-    (*wp).flags &= !PANE_STYLECHANGED;
-    let mut ft_owner = format_create(
-        None,
-        None,
-        (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
-        FORMAT_NOJOBS,
-    );
-    ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        None,
-        None,
-        (refbox::Weak::new()).clone(),
-        Some(wp_owner),
-    );
-    (*wp).cached_active_gc = tty_window_default_style(&(*wp).palette);
-    sy = style_add(
-        &raw mut (*wp).cached_active_gc,
-        oo,
-        b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
-    (*wp).cached_active_dim = sy.dim as u_int;
-    (*wp).cached_gc = tty_window_default_style(&(*wp).palette);
-    sy = style_add(
-        &raw mut (*wp).cached_gc,
-        oo,
-        b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
-        ft,
-    );
-    (*wp).cached_dim = sy.dim as u_int;
-    format_free(ft_owner);
-}
-pub unsafe fn tty_default_colours(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) -> (grid_cell, u_int) {
-    let mut wp = wp_owner.get();
-    if (*wp).flags & PANE_STYLECHANGED != 0 {
-        tty_style_changed(wp_owner);
-    }
-    let active = wp
-        == (((*wp).window_handle().as_ref()).expect("live window"))
-            .active_pane()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut gc = grid_default_cell;
-    gc.fg = if active && (*wp).cached_active_gc.fg != 8 {
-        (*wp).cached_active_gc.fg
-    } else {
-        (*wp).cached_gc.fg
-    };
-    gc.bg = if active && (*wp).cached_active_gc.bg != 8 {
-        (*wp).cached_active_gc.bg
-    } else {
-        (*wp).cached_gc.bg
-    };
-    let dim = if active {
-        (*wp).cached_active_dim
-    } else {
-        (*wp).cached_dim
-    };
-    (gc, dim)
+pub unsafe fn tty_default_colours(pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) -> (grid_cell,u_int) {
+    pane.default_colours()
 }
 
 unsafe fn tty_clipboard_query_callback(owner: &ClientRef) {

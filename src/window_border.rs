@@ -1,47 +1,24 @@
-use crate::src::ffi::libc::memcpy;
 use crate::src::format::{
-    format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
-    format_expand_time_cstring, format_free,
+    format_add, format_create, format_defaults, format_expand_cstring, format_free,
 };
 use crate::src::format_draw::format_draw;
+use crate::src::grid::grid_default_cell;
 use crate::src::grid::view::grid_view_get_cell;
-use crate::src::grid::{grid_compare, grid_default_cell};
 use crate::src::options::options_get_string;
-use crate::src::options::options_owner_ptr;
 use crate::src::screen::{screen_free, screen_init};
-use crate::src::screen_redraw::redraw_get_status_border_cell_type;
-use crate::src::screen_write::{
-    screen_write_cell, screen_write_cursormove, screen_write_start, screen_write_stop,
-};
-use crate::src::server_client::Client as _;
-use crate::src::session::Session;
+use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{CELL_BORDERS, CELL_NONE, SIMPLE_BORDERS};
-use crate::src::shared::client::client;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::cmdq_item;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE, FORMAT_STATUS, FORMAT_WINDOW};
+use crate::src::shared::format::{format_tree, FORMAT_NOJOBS, FORMAT_WINDOW};
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_STATUS_OFF;
-use crate::src::shared::redraw::redraw_spans;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::style::*;
+use crate::src::shared::style::style_ranges;
 use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{window, winlink};
-use crate::src::style::{style_apply, style_ranges_clear};
 use crate::src::text::utf8::{utf8_copy, utf8_set};
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::window::Window as _;
-use crate::src::window::{
-    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_index,
-};
-use crate::src::window_pane::WindowPane as _;
 
 pub(crate) unsafe fn window_render_fill_cell(
     w_owner: &WindowRef,
@@ -144,13 +121,11 @@ pub unsafe fn window_get_fill_cell(
 }
 
 pub unsafe fn window_get_border_cell(
-    wp_value: Option<&window_pane>,
+    index: Option<u32>,
     mut pane_lines: pane_lines,
     mut cell_type: ::core::ffi::c_int,
     gc: &mut grid_cell,
 ) {
-    let wp: *mut window_pane =
-        wp_value.map_or(std::ptr::null_mut(), |value| value as *const _ as *mut _);
     let mut idx: u_int = 0;
     match pane_lines as ::core::ffi::c_uint {
         4 => {
@@ -159,13 +134,8 @@ pub unsafe fn window_get_border_cell(
                 utf8_set(&mut gc.data, CELL_BORDERS[CELL_NONE as usize] as u_char);
             } else {
                 gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-                if !wp.is_null()
-                    && window_pane_index(&*wp)
-                        .map(|value| {
-                            idx = value;
-                        })
-                        .is_some()
-                {
+                if let Some(index) = index {
+                    idx = index;
                     utf8_set(
                         &mut gc.data,
                         ('0' as i32 as u_int).wrapping_add(idx.wrapping_rem(10 as u_int)) as u_char,
@@ -200,185 +170,4 @@ pub unsafe fn window_get_border_cell(
             utf8_set(&mut gc.data, CELL_BORDERS[cell_type as usize] as u_char);
         }
     };
-}
-pub unsafe fn window_pane_get_border_cell(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut cell_type: ::core::ffi::c_int,
-    gc: &mut grid_cell,
-) {
-    let mut wp = wp_owner.get();
-    let mut pane_lines: pane_lines = window_pane_get_pane_lines(&*wp);
-    window_get_border_cell((wp).as_ref(), pane_lines, cell_type, gc);
-}
-pub unsafe fn window_pane_get_border_style(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    c_owner: &ClientRef,
-    mut gc: *mut grid_cell,
-) {
-    let mut wp = wp_owner.get();
-    let mut c: Option<ClientRef> = Some(c_owner.clone());
-    let mut s: Option<SessionRef> = c
-        .as_ref()
-        .expect("live client")
-        .attached_session()
-        .upgrade();
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut option: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut saved: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
-    let mut flag: *mut ::core::ffi::c_int = ::core::ptr::null_mut::<::core::ffi::c_int>();
-    if wp
-        == (((c
-            .as_ref()
-            .expect("live client")
-            .attached_session()
-            .upgrade()
-            .expect("live session")
-            .current_winlink())
-        .get_unchecked()
-        .window_handle()
-        .as_ref())
-        .expect("live window"))
-        .active_pane()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get())
-    {
-        flag = &raw mut (*wp).active_border_gc_set;
-        saved = &raw mut (*wp).active_border_gc;
-        option = b"pane-active-border-style\0" as *const u8 as *const ::core::ffi::c_char;
-    } else {
-        flag = &raw mut (*wp).border_gc_set;
-        saved = &raw mut (*wp).border_gc;
-        option = b"pane-border-style\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    if *flag == 0 {
-        let mut ft_owner = format_create_defaults(
-            None,
-            Some(c_owner),
-            s.as_ref(),
-            (s.as_ref().expect("live session").current_winlink()).clone(),
-            Some(wp_owner),
-        );
-        ft = &raw mut *ft_owner;
-        style_apply(
-            saved,
-            options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-            option,
-            ft,
-        );
-        format_free(ft_owner);
-        *flag = 1 as ::core::ffi::c_int;
-    }
-    memcpy(
-        gc as *mut ::core::ffi::c_void,
-        saved as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-}
-pub unsafe fn window_make_pane_status(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    c_owner: &ClientRef,
-    mut width: u_int,
-    spans: &redraw_spans,
-    mut span_index: usize,
-) -> ::core::ffi::c_int {
-    let mut wp = wp_owner.get();
-    let mut c: Option<ClientRef> = Some(c_owner.clone());
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut sle: *mut style_line_entry = &raw mut (*wp).border_status_line;
-    let mut ctx: screen_write_ctx = screen_write_ctx {
-        wp: std::rc::Weak::new(),
-        target: Default::default(),
-        flags: 0,
-        init_ctx_cb: None,
-        item: None,
-        scrolled: 0,
-        bg: 0,
-    };
-    let mut old: screen = screen::empty();
-    let mut i: u_int = 0;
-    let mut pane_lines: pane_lines = PANE_LINES_SINGLE;
-    let mut pane_status: ::core::ffi::c_int = 0;
-    let mut cell_type: ::core::ffi::c_int = 0;
-    pane_status = window_pane_get_pane_status(&*wp);
-    if pane_status == PANE_STATUS_OFF || width == 0 as u_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    let mut ft_owner = format_create(
-        Some(c_owner),
-        None,
-        (FORMAT_PANE | (*wp).id) as ::core::ffi::c_int,
-        FORMAT_STATUS,
-    );
-    ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        Some(c_owner),
-        c.as_ref()
-            .expect("live client")
-            .attached_session()
-            .upgrade()
-            .as_ref(),
-        (c.as_ref()
-            .expect("live client")
-            .attached_session()
-            .upgrade()
-            .expect("live session")
-            .current_winlink())
-        .clone(),
-        Some(wp_owner),
-    );
-    let format = wp_owner
-        .with_options_mut(|options| options_get_string(options, c"pane-border-format".as_ptr()));
-    let expanded = format_expand_time_cstring(ft, format.as_ptr());
-    old = std::ptr::replace(&raw mut (*wp).status_screen, screen::empty());
-    screen_init(&mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
-    (*wp).status_screen.mode = 0 as ::core::ffi::c_int;
-    screen_write_start(&mut ctx, &raw mut (*wp).status_screen);
-    window_pane_get_border_style(wp_owner, c_owner, &raw mut gc);
-    pane_lines = window_pane_get_pane_lines(&*wp);
-    i = 0 as u_int;
-    while i < width {
-        cell_type = redraw_get_status_border_cell_type(spans, &mut span_index, i);
-        window_get_border_cell((wp).as_ref(), pane_lines, cell_type, &mut gc);
-        screen_write_cell(&mut ctx, &gc);
-        i = i.wrapping_add(1);
-    }
-    gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-    screen_write_cursormove(
-        &mut ctx,
-        0 as ::core::ffi::c_int,
-        0 as ::core::ffi::c_int,
-        0 as ::core::ffi::c_int,
-    );
-    style_ranges_clear(&raw mut (*sle).ranges);
-    format_draw(
-        &raw mut ctx,
-        &raw mut gc,
-        width,
-        expanded.as_ptr(),
-        &raw mut (*sle).ranges,
-        0 as ::core::ffi::c_int,
-    );
-    screen_write_stop(&mut ctx);
-    format_free(ft_owner);
-    if grid_compare((*wp).status_screen.grid(), old.grid()) == 0 as ::core::ffi::c_int {
-        screen_free(&mut old);
-        return 0 as ::core::ffi::c_int;
-    }
-    screen_free(&mut old);
-    return 1 as ::core::ffi::c_int;
 }

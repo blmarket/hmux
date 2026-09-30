@@ -3681,7 +3681,7 @@ unsafe fn server_client_prompt_cursor(
     cursor.cx = (px as u_int).wrapping_sub(ox);
     cursor.cy = (py as u_int).wrapping_sub(oy);
     window_visible_ranges(
-        Some(wp),
+        wp.observer.upgrade().as_ref(),
         cursor.cx as ::core::ffi::c_int,
         cursor.cy as ::core::ffi::c_int,
         1 as u_int,
@@ -3932,7 +3932,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     cy = ((*wp).yoff + s.cy as ::core::ffi::c_int - oy as ::core::ffi::c_int)
                         as u_int;
                     window_visible_ranges(
-                        wp.as_ref(),
+                        active_owner.as_ref(),
                         cx as ::core::ffi::c_int,
                         cy as ::core::ffi::c_int,
                         1 as u_int,

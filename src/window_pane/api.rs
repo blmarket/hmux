@@ -1,5 +1,6 @@
 //! Operations on retained panes. Logical destruction remains explicit.
 use super::*;
+use crate::src::shared::pane::{PANE_NEWSTATUS,PANE_DROP};
 use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
 use crate::src::reactor::Interests;
@@ -20,6 +21,40 @@ use std::time::Duration;
 /// preconditions. Component closures must not reenter model code, destroy an
 /// owner, alter component parent links, or let component references escape.
 pub trait WindowPane {
+    /// Retain registry membership before operations that may dispatch callbacks.
+    unsafe fn all_panes() -> Vec<Self> where Self: Sized;
+    /// Copied appearance and slider geometry; no pane storage is lent.
+    unsafe fn scrollbar(&self) -> super::render::PaneScrollbar;
+    unsafe fn redraw_scrollbar(&self);
+    unsafe fn hide_scrollbar(&self);
+    unsafe fn refresh_scrollbar_style(&self);
+    unsafe fn reset_default_cursor(&self);
+    unsafe fn reset_border_cache(&self);
+    unsafe fn border_cell(&self, kind:i32, cell:&mut grid_cell);
+    unsafe fn border_style(&self, client:&ClientRef) -> grid_cell;
+    unsafe fn make_status(&self, client:&ClientRef, width:u32, spans:&crate::src::shared::redraw::redraw_spans, first:usize) -> bool;
+    unsafe fn has_new_status(&self) -> bool;
+    unsafe fn set_new_status(&self, redraw: bool);
+    unsafe fn default_colours(&self) -> (grid_cell, u32);
+    /// Start a bounded screen write. A requested component must stay allocated
+    /// until stop. For a pane screen (including a null request for its displayed
+    /// screen), stop before replacing that screen, changing modes, or logically
+    /// destroying the pane. The context observes the pane without owning it.
+    unsafe fn prepare_write(&self, context: &mut crate::src::shared::screen_write::screen_write_ctx, requested: *mut screen);
+    unsafe fn is_obscured(&self) -> bool;
+    unsafe fn visible_ranges(base: Option<&Self>, x:i32, y:i32, width:u32, ranges: &mut Vec<visible_range>) where Self: Sized;
+    unsafe fn draws_inactive_screen(&self) -> bool;
+    unsafe fn window_size(&self) -> (u32,u32);
+    unsafe fn schedule_offset_update(&self);
+    unsafe fn output_suppressed(&self) -> bool;
+    unsafe fn alternate_screen_allowed(&self) -> bool;
+    unsafe fn alternate_screen_changed(&self, entered: bool);
+    /// Draw with screen ownership temporarily removed from pane storage.
+    unsafe fn draw_line(&self, client: &ClientRef, source: (u32,u32), width: u32, destination: (u32,u32), status: bool);
+    unsafe fn draw_scrollbar(&self, client: &ClientRef, span: &crate::src::shared::redraw::redraw_span, x: u32, y: u32, width: u32);
+    unsafe fn draw_prompt(&self, context: &mut crate::src::screen_redraw::redraw_draw_ctx<'_>);
+    unsafe fn mark_style_changed(&self, theme: bool);
+
     /// Visible geometry including the reserved scrollbar area, copied for hit testing.
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32);
     unsafe fn is_floating(&self) -> bool;
@@ -204,6 +239,42 @@ pub trait WindowPane {
 }
 
 impl WindowPane for Rc<UnsafeCell<window_pane>> {
+    unsafe fn all_panes() -> Vec<Self> {
+        let Some(index) = all_window_panes.storage.as_ref() else { return Vec::new() };
+        let panes=index.try_borrow_mut().expect("pane registry unborrowed");
+        panes.values().cloned().collect()
+    }
+    unsafe fn scrollbar(&self) -> super::render::PaneScrollbar { super::render::scrollbar(self) }
+    unsafe fn redraw_scrollbar(&self) { window_pane_scrollbar_redraw(self); }
+    unsafe fn hide_scrollbar(&self) { window_pane_scrollbar_hide(self); }
+    unsafe fn refresh_scrollbar_style(&self) { super::render::refresh_scrollbar_style(self); }
+    unsafe fn reset_default_cursor(&self) { window_pane_default_cursor(self); }
+    unsafe fn reset_border_cache(&self) { let pane = &mut *self.get(); pane.border_gc_set=0; pane.active_border_gc_set=0; }
+    unsafe fn border_cell(&self, kind:i32, cell:&mut grid_cell) { super::border::cell(self,kind,cell); }
+    unsafe fn border_style(&self, client:&ClientRef) -> grid_cell { super::border::border_style(self,client) }
+    unsafe fn make_status(&self, client:&ClientRef, width:u32, spans:&crate::src::shared::redraw::redraw_spans, first:usize) -> bool { super::border::make_status(self,client,width,spans,first) }
+    unsafe fn has_new_status(&self) -> bool { (*self.get()).flags & PANE_NEWSTATUS != 0 }
+    unsafe fn set_new_status(&self, redraw: bool) { if redraw { (*self.get()).flags |= PANE_NEWSTATUS; } else { (*self.get()).flags &= !PANE_NEWSTATUS; } }
+    unsafe fn default_colours(&self) -> (grid_cell,u32) { super::render::default_colours(self) }
+    unsafe fn prepare_write(&self, context: &mut crate::src::shared::screen_write::screen_write_ctx, requested: *mut screen) { super::render::prepare_write(self, context, requested); }
+    unsafe fn is_obscured(&self) -> bool { super::render::is_obscured(self) }
+    unsafe fn visible_ranges(base: Option<&Self>, x:i32, y:i32, width:u32, ranges: &mut Vec<visible_range>) { super::render::visible_ranges(base,x,y,width,ranges); }
+    unsafe fn draws_inactive_screen(&self) -> bool {
+        let window=self.window_observer().upgrade().expect("live pane parent");
+        let inactive=!window.active_pane().is_some_and(|owner| Rc::ptr_eq(&owner,self));
+        window.release(c"pane write screen");
+        inactive || !matches!((*self.get()).screen_source,PaneScreenSource::Base)
+    }
+    unsafe fn window_size(&self) -> (u32,u32) { let window=self.window_observer().upgrade().expect("live pane parent"); let size=window.size(); window.release(c"pane window size"); size }
+    unsafe fn schedule_offset_update(&self) { let window=self.window_observer().upgrade().expect("live pane parent"); window.schedule_offset_update(); window.release(c"pane cursor update"); }
+    unsafe fn output_suppressed(&self) -> bool { (*self.get()).flags & (PANE_REDRAW | PANE_DROP) != 0 }
+    unsafe fn alternate_screen_allowed(&self) -> bool { self.with_options_mut(|options| options_get_number(options, c"alternate-screen".as_ptr())) != 0 }
+    unsafe fn alternate_screen_changed(&self, entered: bool) { super::render::alternate_screen_changed(self, entered); }
+    unsafe fn draw_line(&self, client: &ClientRef, source: (u32,u32), width: u32, destination: (u32,u32), status: bool) { super::render::draw_line(self,client,source,width,destination,status); }
+    unsafe fn draw_scrollbar(&self, client: &ClientRef, span: &crate::src::shared::redraw::redraw_span, x: u32, y: u32, width: u32) { super::render::draw_scrollbar(self,client,span,x,y,width); }
+    unsafe fn draw_prompt(&self, context: &mut crate::src::screen_redraw::redraw_draw_ctx<'_>) { super::render::draw_prompt(self,context); }
+    unsafe fn mark_style_changed(&self, theme: bool) { (*self.get()).flags |= PANE_STYLECHANGED; if theme { (*self.get()).flags |= PANE_THEMECHANGED; } }
+
     unsafe fn set_layout_offset(&self, x: i32, y: i32) {
         let pane = &mut *self.get();
         pane.xoff = x;
