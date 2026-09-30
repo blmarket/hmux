@@ -136,9 +136,7 @@ use crate::src::shared::window::{
 use libc::{REG_EXTENDED, REG_ICASE};
 
 pub fn winlinks_find(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
-    let Some(owner) = head.as_ref() else {
-        return refbox::Weak::new();
-    };
+    let owner = head;
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
@@ -148,9 +146,7 @@ pub fn winlinks_find(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
 }
 
 pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
-    let Some(owner) = head.as_ref() else {
-        return refbox::Weak::new();
-    };
+    let owner = head;
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
@@ -161,9 +157,7 @@ pub fn winlinks_nfind(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
 }
 
 pub fn winlinks_minmax(head: &winlinks, direction: ::core::ffi::c_int) -> refbox::Weak<winlink> {
-    let Some(owner) = head.as_ref() else {
-        return refbox::Weak::new();
-    };
+    let owner = head;
     let map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
@@ -275,16 +269,16 @@ unsafe fn winlink_next_index(
     return -(1 as ::core::ffi::c_int);
 }
 
-pub unsafe fn winlink_count(wwl: &winlinks) -> u_int {
-    let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut n: u_int = 0;
-    n = 0 as u_int;
-    wl = winlinks_minmax(wwl, RB_NEGINF);
-    while wl.is_alive() {
-        n = n.wrapping_add(1);
-        wl = winlinks_next(wl.get_unchecked());
-    }
-    return n;
+pub fn winlink_count(wwl: &winlinks) -> u_int {
+    wwl.try_borrow_mut()
+        .expect("winlink index already borrowed")
+        .len() as u_int
+}
+
+pub fn winlinks_is_empty(wwl: &winlinks) -> bool {
+    wwl.try_borrow_mut()
+        .expect("winlink index already borrowed")
+        .is_empty()
 }
 
 pub unsafe fn winlink_add(
@@ -309,7 +303,7 @@ pub unsafe fn winlink_add(
         owner: refbox::Weak::new(),
     });
     wl = owner.downgrade();
-    let storage = (*wwl).get_or_insert_with(refbox::RefBox::default);
+    let storage = &*wwl;
     let observer = storage.downgrade();
     let mut map = storage
         .try_borrow_mut()
@@ -363,8 +357,8 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlin
     }
     // Window teardown above may reenter; borrow the owning map only afterward.
     let idx = wl.get_unchecked().idx;
-    let (owner, empty) = {
-        let storage = (*wwl).as_ref().expect("winlink index must be alive");
+    let owner = {
+        let storage = &*wwl;
         let mut map = storage
             .try_borrow_mut()
             .expect("winlink index already borrowed");
@@ -375,11 +369,8 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlin
         );
         let owner = map.remove(&idx).expect("winlink must have an owner");
         wl.get_mut_unchecked().owner = refbox::Weak::new();
-        (owner, map.is_empty())
+        owner
     };
-    if empty {
-        (*wwl) = None;
-    }
     drop(owner);
 }
 
@@ -450,7 +441,7 @@ unsafe fn winlink_weak(wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
 /// Move the owner between keys without invalidating the winlink or its observers.
 /// The caller must supply a live member of `head` and an unused destination index.
 pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: refbox::Weak<winlink>, idx: i32) {
-    let owner = (*head).as_ref().expect("winlink index must be alive");
+    let owner = &*head;
     let mut map = owner
         .try_borrow_mut()
         .expect("winlink index already borrowed");
@@ -561,7 +552,7 @@ mod tests {
     #[test]
     fn winlink_index_keeps_order_and_weak_observers_across_moves() {
         unsafe {
-            let mut head = None;
+            let mut head = Default::default();
             let first = winlink_add(&mut head, 1);
             let second = winlink_add(&mut head, 3);
             assert!(first.is_alive() && second.is_alive());

@@ -1459,7 +1459,7 @@ mod tests {
                 cwd: None,
                 flags: 0,
             };
-            let mut links = None;
+            let mut links = Default::default();
             let wl = winlink_add(&mut links, 0);
             context.set_wl(wl.clone());
             assert_eq!(context.winlink_handle(), wl);

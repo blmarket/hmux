@@ -47,7 +47,7 @@ pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::
 /// The session owns the index allocation. The index itself owns the
 /// `RefBox` allocations for winlinks created by `winlink_add`.
 pub type winlinks =
-    Option<refbox::RefBox<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>>;
+    refbox::RefBox<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>;
 
 #[derive(Default)]
 #[repr(C)]

@@ -238,7 +238,6 @@ pub unsafe fn session_create(
 
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).lastw.clear();
-    (*s).windows = None;
     (*s).environ = Some(env);
     (*s).options = oo;
     status_update_cache(&mut *(s));
@@ -344,7 +343,7 @@ pub unsafe fn session_destroy(
         winlink_stack_remove(&raw mut (*s).lastw, (first).clone());
     }
     crate::src::window::winlink_stack_clear(&mut (*s).lastw);
-    while (*s).windows.is_some() {
+    while !crate::src::window::winlinks_is_empty(&(*s).windows) {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
         events_fire_winlink(
             b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -696,7 +695,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         !Rc::ptr_eq(source, destination),
         "synchronized sessions must be distinct"
     );
-    if source.with_winlinks(Option::is_none) {
+    if source.with_winlinks(crate::src::window::winlinks_is_empty) {
         return;
     }
     let current = destination.current_winlink();
@@ -712,7 +711,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
 
     // Retain the old index locally. Window cleanup may reenter either Session,
     // so it cannot run through a pointer into the destination's model storage.
-    let mut old_windows = (&mut *destination.get()).windows.take();
+    let mut old_windows = std::mem::take(&mut (*destination.get()).windows);
     let mut link = source.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
         let index = link.get_unchecked().idx;
@@ -763,7 +762,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         }
     }
     crate::src::window::winlink_stack_clear(&mut old_history);
-    while old_windows.is_some() {
+    while !crate::src::window::winlinks_is_empty(&old_windows) {
         let old = winlinks_minmax(&old_windows, RB_NEGINF);
         let id = old
             .get_unchecked()
@@ -784,7 +783,7 @@ pub unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl1: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wl_new: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut old_wins: winlinks = std::ptr::replace(&mut (*s).windows, None);
+    let mut old_wins: winlinks = std::mem::take(&mut (*s).windows);
     let mut old_lastw: winlink_stack;
     let mut new_idx: ::core::ffi::c_int = 0;
     let mut new_curw_idx: ::core::ffi::c_int = 0;
@@ -998,8 +997,8 @@ mod group_synchronization_tests {
     unsafe fn clean(session: SessionRef) {
         (*session.get()).curw = refbox::Weak::new();
         (*session.get()).lastw.clear();
-        let mut links = (*session.get()).windows.take();
-        while links.is_some() {
+        let mut links = std::mem::take(&mut (*session.get()).windows);
+        while !crate::src::window::winlinks_is_empty(&links) {
             let link = winlinks_minmax(&links, RB_NEGINF);
             winlink_remove(&mut links, link);
         }

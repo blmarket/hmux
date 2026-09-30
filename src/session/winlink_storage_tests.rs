@@ -5,7 +5,7 @@ use refbox::BorrowError;
 #[test]
 fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
     unsafe {
-        let mut head = None;
+        let mut head = Default::default();
         assert!(!winlinks_minmax(&head, -1).is_alive());
         let ids = [i32::MAX, 0, 42, 7];
         let nodes: Vec<_> = ids.iter().map(|&id| winlink_add(&mut head, id)).collect();
@@ -14,8 +14,6 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
         let existing = nodes[2].clone();
         let weak = head
             .as_ref()
-            .as_ref()
-            .unwrap()
             .try_borrow_mut()
             .unwrap()
             .get(&42)
@@ -51,29 +49,22 @@ fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
             node = next;
         }
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
-        assert!(head.is_none());
+        assert!(crate::src::window::winlinks_is_empty(&head));
         assert!(!winlinks_nfind(&*head, &probe).is_alive());
         let replacement = winlink_add(&mut *head, 42);
         assert!(replacement.is_alive());
         winlink_remove(&mut *head, (replacement).clone());
-        assert!(head.is_none());
+        assert!(crate::src::window::winlinks_is_empty(&head));
     }
 }
 
 #[test]
 fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
     unsafe {
-        let mut head = None;
+        let mut head = Default::default();
         let first = winlink_add(&mut head, 0);
-        let weak = head
-            .as_ref()
-            .unwrap()
-            .try_borrow_mut()
-            .unwrap()
-            .get(&0)
-            .unwrap()
-            .downgrade();
-        let mut old = std::mem::replace(&mut head, None);
+        let weak = head.try_borrow_mut().unwrap().get(&0).unwrap().downgrade();
+        let mut old = std::mem::take(&mut head);
         let replacement = winlink_add(&mut head, 0);
         winlinks_reindex(&mut old, (first).clone(), 5);
         assert_eq!(winlink_find_by_index(&mut old, 5), first);
@@ -88,14 +79,14 @@ fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
             winlink_find_by_index(&mut old, 6)
         );
         assert!(!winlinks_next(replacement.get_unchecked()).is_alive());
-        while old.is_some() {
+        while !crate::src::window::winlinks_is_empty(&old) {
             let node = winlinks_minmax(&old, -1);
             winlink_remove(&mut old, (node).clone());
         }
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert_eq!(winlink_count(&mut head), 1);
         winlink_remove(&mut head, (replacement).clone());
-        assert!(head.is_none());
+        assert!(crate::src::window::winlinks_is_empty(&head));
     }
 }
 
@@ -114,8 +105,6 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         winlink_stack_push(&raw mut session.lastw, (nodes[1]).clone());
         let weak = session
             .windows
-            .as_ref()
-            .unwrap()
             .try_borrow_mut()
             .unwrap()
             .get(&1)
@@ -133,7 +122,7 @@ fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
         }
         assert!(winlink_stack_indices(&session.lastw).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
-        assert!(session.windows.is_none());
+        assert!(crate::src::window::winlinks_is_empty(&session.windows));
     }
 }
 
@@ -142,7 +131,7 @@ fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry(
     unsafe {
         let owner = session::new();
         let observer = std::rc::Rc::downgrade(&owner);
-        let mut links = None;
+        let mut links = Default::default();
         let mut link = winlink_add(&mut links, 1);
         link.get_mut_unchecked().session = observer.clone();
         assert!(std::rc::Rc::ptr_eq(
@@ -152,6 +141,6 @@ fn detached_winlink_does_not_keep_session_alive_and_can_be_removed_after_expiry(
         drop(owner);
         assert!(link.get_unchecked().session.upgrade().is_none());
         winlink_remove(&mut links, link.clone());
-        assert!(links.is_none());
+        assert!(crate::src::window::winlinks_is_empty(&links));
     }
 }

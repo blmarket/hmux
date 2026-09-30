@@ -1251,7 +1251,7 @@ mod layout_identity_tests {
                     prefix: 0,
                     kill: 0,
                 }));
-            let mut links = None;
+            let mut links = Default::default();
             let link = winlink_add(&mut links, 1);
             winlink_set_window(link.clone(), &window);
             let item = cmdq_get_callback_owned(c"layout identity test", None);

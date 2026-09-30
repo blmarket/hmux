@@ -2147,7 +2147,7 @@ mod target_observer_tests {
             let session = session::new();
             let window = window::new();
             let pane = window_pane::new();
-            let mut links = None;
+            let mut links = Default::default();
             let link = winlink_add(&mut links, 7);
             let mut state = cmd_find_state::default();
             state.set_s(Some(&session));

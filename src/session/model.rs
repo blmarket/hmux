@@ -76,7 +76,7 @@ impl session {
             lock_timer: Default::default(),
             curw: Default::default(),
             lastw: Default::default(),
-            windows: None,
+            windows: Default::default(),
             statusat: Default::default(),
             statuslines: Default::default(),
             options: Default::default(),

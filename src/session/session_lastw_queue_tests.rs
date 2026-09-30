@@ -8,18 +8,11 @@ use refbox::BorrowError;
 #[test]
 fn visit_order_uses_weak_links_and_survives_index_change() {
     unsafe {
-        let mut links = None;
+        let mut links = Default::default();
         let mut stack = Default::default();
         let first = winlink_add(&raw mut links, 1);
         let second = winlink_add(&raw mut links, 2);
-        let old_second = links
-            .as_ref()
-            .unwrap()
-            .try_borrow_mut()
-            .unwrap()
-            .get(&2)
-            .unwrap()
-            .downgrade();
+        let old_second = links.try_borrow_mut().unwrap().get(&2).unwrap().downgrade();
 
         winlink_stack_push(&raw mut stack, (first).clone());
         winlink_stack_push(&raw mut stack, (second).clone());
@@ -42,14 +35,14 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         winlink_stack_remove(&raw mut stack, (first).clone());
         winlink_remove(&raw mut links, (first).clone());
         winlink_stack_clear(&mut stack);
-        assert!(links.is_none());
+        assert!(crate::src::window::winlinks_is_empty(&links));
     }
 }
 
 #[test]
 fn history_entry_is_removed_before_its_owner() {
     unsafe {
-        let mut links = None;
+        let mut links = Default::default();
         let mut stack = Default::default();
         let link = winlink_add(&raw mut links, 7);
         winlink_stack_push(&raw mut stack, link.clone());
@@ -69,8 +62,6 @@ fn boxed_session_drops_its_winlink_owner() {
         let link = winlink_add(&raw mut owner.windows, 9);
         let weak = owner
             .windows
-            .as_ref()
-            .unwrap()
             .try_borrow_mut()
             .unwrap()
             .get(&9)
@@ -87,7 +78,7 @@ fn boxed_session_drops_its_winlink_owner() {
 #[should_panic(expected = "visited winlink owner was dropped before observer teardown")]
 fn expired_history_observer_is_an_invariant_violation() {
     unsafe {
-        let mut links = None;
+        let mut links = Default::default();
         let mut stack = Default::default();
         let link = winlink_add(&raw mut links, 1);
         winlink_stack_push(&raw mut stack, link.clone());

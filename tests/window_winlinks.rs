@@ -19,7 +19,7 @@ unsafe fn window_indices(w: &WindowRef) -> Vec<i32> {
 fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
         let session_owner = session::new();
-        let mut links = None;
+        let mut links = Default::default();
         let first_owner = window::new();
         let second_owner = window::new();
         // These synthetic windows retain one external reference so moving the
@@ -36,16 +36,12 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         assert_eq!(window_indices(&first_owner), [12, 3, 18]);
 
         let weak = links
-            .as_ref()
-            .unwrap()
             .try_borrow_mut()
             .unwrap()
             .get(&12)
             .unwrap()
             .downgrade();
         let weak_second = links
-            .as_ref()
-            .unwrap()
             .try_borrow_mut()
             .unwrap()
             .get(&3)
@@ -138,7 +134,7 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
     use std::{cell::Cell, rc::Rc};
 
     unsafe {
-        let mut links = None;
+        let mut links = Default::default();
         let link = winlink_add(&mut links, 0);
         let w_owner = window::new();
         let weak = Rc::downgrade(&w_owner);
@@ -169,7 +165,7 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         );
         winlink_remove(&mut links, link.clone());
         assert_eq!(count.get(), 1);
-        assert!(links.is_none());
+        assert!(hmux2::src::window::winlinks_is_empty(&links));
         assert_eq!(weak.strong_count(), 1);
         events_remove_sink(sink);
         let reference = retained.borrow_mut().take().unwrap();
@@ -186,7 +182,7 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
         let first = session::new();
         let other = session::new();
         let window_owner = window::new();
-        let mut links = None;
+        let mut links = Default::default();
         let mut link = winlink_add(&mut links, 0);
         link.get_mut_unchecked().session = Rc::downgrade(&first);
         winlink_set_window(link.clone(), &window_owner);
@@ -208,7 +204,7 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
     use std::rc::Rc;
 
     unsafe {
-        let mut links = None;
+        let mut links = Default::default();
         let first = winlink_add(&mut links, 0);
         let window = window::new();
         let observer = Rc::downgrade(&window);
