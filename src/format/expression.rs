@@ -39,7 +39,7 @@ pub(super) fn format_quote_shell(s: &CStr) -> CString {
     }
     CString::new(quoted).expect("shell-quoted C string contains no NUL")
 }
-pub(super) fn format_quote_shell_single(s: &CStr) -> CString {
+pub(crate) fn format_quote_shell_single(s: &CStr) -> CString {
     let input = s.to_bytes();
     let mut quoted = Vec::with_capacity(input.len().saturating_mul(4).saturating_add(2));
     quoted.push(b'\'');

@@ -177,12 +177,13 @@ mod jobs;
 use jobs::*;
 pub use jobs::{format_lost_client, format_tidy_jobs};
 mod callbacks;
+pub(crate) use callbacks::window_format_value;
 pub use callbacks::FormatValue;
 use callbacks::*;
-pub(crate) use callbacks::{pane_format_value, window_format_value};
 mod expression;
 pub use expression::format_expand_cstring;
 pub(crate) use expression::format_pretty_time_cstring;
+pub(crate) use expression::format_quote_shell_single;
 use expression::*;
 pub(crate) use expression::{
     format_expand_time_cstring, format_single_cstring, format_single_from_state_cstring,

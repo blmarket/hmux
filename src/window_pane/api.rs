@@ -44,6 +44,9 @@ pub trait WindowPane {
     /// caller publishes membership or dispatches move/layout notifications.
     unsafe fn reparent(&self, window: &WindowRef);
     unsafe fn geometry(&self) -> (u32, u32, i32, i32);
+    /// Translate a mouse report after copying pane geometry; no pane borrow
+    /// survives the coordinate calculation or the caller's following work.
+    unsafe fn mouse_position(&self, mouse: &mouse_event, last: bool) -> Option<(u32, u32)>;
     /// Visible cursor in window coordinates, for terminal viewport following.
     unsafe fn visible_cursor_in_window(&self) -> Option<(u32, u32)>;
     /// Whether the pane still has a PTY, including an exited process being drained.
@@ -259,6 +262,28 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn geometry(&self) -> (u32, u32, i32, i32) {
         let pane = &*self.get();
         (pane.sx, pane.sy, pane.xoff, pane.yoff)
+    }
+
+    unsafe fn mouse_position(&self, mouse: &mouse_event, last: bool) -> Option<(u32, u32)> {
+        let (width, height, xoff, yoff) = self.geometry();
+        let (mx, my) = if last {
+            (mouse.lx, mouse.ly)
+        } else {
+            (mouse.x, mouse.y)
+        };
+        let x = mx.wrapping_add(mouse.ox);
+        let mut y = my.wrapping_add(mouse.oy);
+        if mouse.statusat == 0 && y >= mouse.statuslines {
+            y = y.wrapping_sub(mouse.statuslines);
+        }
+        if (x as i32) < xoff
+            || (x as i32) >= xoff + width as i32
+            || (y as i32) < yoff
+            || (y as i32) >= yoff + height as i32
+        {
+            return None;
+        }
+        Some((x.wrapping_sub(xoff as u32), y.wrapping_sub(yoff as u32)))
     }
 
     unsafe fn visible_cursor_in_window(&self) -> Option<(u32, u32)> {
@@ -549,7 +574,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         key: &CStr,
         context: &mut crate::src::shared::format::format_tree,
     ) -> Option<crate::src::format::FormatValue> {
-        crate::src::format::pane_format_value(self, key, context)
+        super::format::format_value(self, key, context)
     }
 
     unsafe fn destroy_ready(&self) -> bool {
