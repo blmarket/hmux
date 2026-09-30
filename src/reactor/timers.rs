@@ -141,31 +141,6 @@ pub fn timer_once_owned<T: 'static>(
     .expect("arm owned timer");
 }
 
-pub(super) fn stop_tasks() {
-    let tasks = TIMERS.with(|timers| {
-        timers
-            .borrow_mut()
-            .values_mut()
-            .filter_map(|timer| timer.task.take())
-            .collect::<Vec<_>>()
-    });
-    drop(tasks);
-}
-
-pub(super) fn restart() -> io::Result<()> {
-    let timers = TIMERS.with(|timers| {
-        timers
-            .borrow()
-            .iter()
-            .map(|(&id, timer)| (id, timer.deadline))
-            .collect::<Vec<_>>()
-    });
-    for (id, deadline) in timers {
-        start(id, deadline)?;
-    }
-    Ok(())
-}
-
 pub(super) fn clear() {
     loop {
         let timers = TIMERS.with(|timers| {
@@ -316,23 +291,6 @@ mod tests {
         super::super::shutdown_runtime();
         assert!(!timer.is_pending());
         assert_eq!(Rc::strong_count(&calls), 1);
-    }
-
-    #[test]
-    fn restarting_tasks_preserves_deadlines_and_dispatches_only_once() {
-        let calls = Rc::new(Cell::new(0));
-        let observed = calls.clone();
-        let timer = Timer::new(Duration::ZERO, move || observed.set(observed.get() + 1)).unwrap();
-        let deadline = timer.deadline();
-        stop_tasks();
-        assert_eq!(timer.deadline(), deadline);
-        restart().unwrap();
-        poll();
-        assert_eq!(calls.get(), 1);
-        assert!(!timer.is_pending());
-        poll();
-        assert_eq!(calls.get(), 1);
-        super::super::shutdown_runtime();
     }
 
     #[test]

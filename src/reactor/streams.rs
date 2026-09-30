@@ -87,20 +87,6 @@ impl StreamState {
 fn state(stream: &bufferevent) -> Rc<StreamState> {
     stream.state.as_ref().expect("live stream").clone()
 }
-pub(super) fn stop_tasks() {
-    let states = live_states();
-    for s in states {
-        let task = s.task.borrow_mut().take();
-        drop(task);
-        s.wake.borrow_mut().take();
-    }
-}
-pub(super) fn restart() {
-    let states = live_states();
-    for s in states {
-        start(&s).expect("rebuild stream");
-    }
-}
 pub(super) fn clear() {
     for state in live_states() {
         let stream = state
@@ -493,8 +479,6 @@ mod tests {
         unsafe {
             let first = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None));
             let second = StreamHandle::from_ptr(bufferevent_new(-1, None, None, None));
-            stop_tasks();
-            restart();
             assert!(first.is_alive());
             assert!(second.is_alive());
             clear();

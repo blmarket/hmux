@@ -522,12 +522,13 @@ mod ownership_tests {
     fn process_signal_futures_dispatch_and_can_be_reinstalled() {
         use std::cell::RefCell;
         use std::rc::Rc;
+        reactor::shutdown_runtime();
         unsafe {
             let pid = libc::fork();
             assert!(pid >= 0);
             if pid == 0 {
                 libc::alarm(5);
-                reactor::reset_after_fork().unwrap();
+                reactor::init_runtime();
                 let mut owner = proc_start(c"signal-future-test".as_ptr());
                 let tp = &raw mut *owner;
                 let calls = Rc::new(RefCell::new(Vec::new()));

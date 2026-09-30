@@ -1,147 +1,65 @@
-//! Explicitly cancelled application futures, recreated after a fork.
+//! Explicitly cancelled application futures owned by the runtime.
 use super::{ensure_runtime, handle};
 use hmux_rt::Handle as _;
-use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::future::Future;
 use std::io;
-use std::num::NonZeroU64;
-use std::pin::Pin;
-use std::rc::Rc;
-
-type Factory = Box<dyn Fn() -> io::Result<Pin<Box<dyn Future<Output = ()>>>>>;
 
 /// A movable cancellation handle. Owners cancel it in their explicit cleanup.
 /// Dropping this handle leaves the registered future running.
 #[derive(Default)]
 pub struct Task {
-    id: Option<NonZeroU64>,
-}
-
-struct Registration {
-    factory: Factory,
-    task: RefCell<Option<hmux_rt::mio::Task>>,
-}
-
-thread_local! {
-    static NEXT_ID: Cell<u64> = const { Cell::new(0) };
-    static TASKS: RefCell<HashMap<NonZeroU64, Rc<Registration>>> = RefCell::new(HashMap::new());
+    task: Option<hmux_rt::mio::Task>,
 }
 
 /// Queue a callback without running it inline or creating a timer.
 /// Shutdown or a scheduling failure releases captures without dispatching it.
 pub fn defer(callback: impl FnOnce() + 'static) {
-    // Retain the callback in the factory until dispatch, so replacing the
-    // runtime after fork can recreate an unpolled future without losing it.
-    let pending = Rc::new(RefCell::new(Some(callback)));
-    let _ = Task::new().start(move || {
-        let pending = pending.clone();
-        Ok(async move {
-            let callback = pending.borrow_mut().take().expect("one deferred dispatch");
-            callback();
-        })
-    });
+    ensure_runtime();
+    if let Ok(task) = handle().spawn(async move { callback() }) {
+        task.detach();
+    }
 }
 
 impl Task {
     pub const fn new() -> Self {
-        Self { id: None }
+        Self { task: None }
     }
 
-    /// Replace pending work. The factory creates fresh runtime resources on
-    /// initial registration and after fork; it must not dispatch work inline.
-    pub fn start<F>(&mut self, factory: impl Fn() -> io::Result<F> + 'static) -> io::Result<()>
+    /// Replace pending work. Initialize resources once, without dispatching
+    /// work inline; the returned future owns those resources.
+    pub fn start<F>(&mut self, initialize: impl FnOnce() -> io::Result<F>) -> io::Result<()>
     where
         F: Future<Output = ()> + 'static,
     {
         self.cancel();
         ensure_runtime();
-        let id = NEXT_ID.with(|next| {
-            let id = next.get().checked_add(1).expect("task IDs exhausted");
-            next.set(id);
-            NonZeroU64::new(id).unwrap()
-        });
-        let registration = Rc::new(Registration {
-            factory: Box::new(move || Ok(Box::pin(factory()?))),
-            task: RefCell::new(None),
-        });
-        TASKS.with(|tasks| tasks.borrow_mut().insert(id, registration.clone()));
-        if let Err(error) = start(id, &registration) {
-            remove(id);
-            return Err(error);
-        }
-        self.id = Some(id);
+        let future = initialize()?;
+        self.task = Some(handle().spawn(future)?);
         Ok(())
     }
 
     pub fn cancel(&mut self) {
-        if let Some(id) = self.id.take() {
-            remove(id);
-        }
+        drop(self.task.take());
     }
 
     pub fn is_pending(&self) -> bool {
-        self.id
-            .is_some_and(|id| TASKS.with(|tasks| tasks.borrow().contains_key(&id)))
+        self.task.as_ref().is_some_and(|task| task.is_pending())
     }
 }
 
-fn remove(id: NonZeroU64) {
-    let registration = TASKS.with(|tasks| tasks.borrow_mut().remove(&id));
-    if let Some(registration) = registration {
-        let task = registration.task.borrow_mut().take();
-        drop(task);
+impl Drop for Task {
+    fn drop(&mut self) {
+        // Application owners still cancel work in their explicit free paths.
+        if let Some(task) = self.task.take() {
+            task.detach();
+        }
     }
-}
-
-fn start(id: NonZeroU64, registration: &Rc<Registration>) -> io::Result<()> {
-    let future = (registration.factory)()?;
-    let task = handle().spawn(async move {
-        future.await;
-        remove(id);
-    })?;
-    *registration.task.borrow_mut() = Some(task);
-    Ok(())
-}
-
-pub(super) fn stop_tasks() {
-    let tasks = TASKS.with(|tasks| tasks.borrow().values().cloned().collect::<Vec<_>>());
-    for registration in tasks {
-        let task = registration.task.borrow_mut().take();
-        drop(task);
-    }
-}
-
-pub(super) fn restart() -> io::Result<()> {
-    let tasks = TASKS.with(|tasks| {
-        tasks
-            .borrow()
-            .iter()
-            .map(|(&id, task)| (id, task.clone()))
-            .collect::<Vec<_>>()
-    });
-    for (id, registration) in tasks {
-        start(id, &registration)?;
-    }
-    Ok(())
 }
 
 pub(super) fn clear() {
-    loop {
-        let tasks = TASKS.with(|tasks| {
-            tasks
-                .borrow_mut()
-                .drain()
-                .map(|(_, task)| task)
-                .collect::<Vec<_>>()
-        });
-        if tasks.is_empty() {
-            break;
-        }
-        for registration in tasks {
-            let task = registration.task.borrow_mut().take();
-            drop(task);
-        }
+    let handle = super::HANDLE.with(|handle| handle.borrow().clone());
+    if let Some(handle) = handle {
+        handle.cancel_tasks();
     }
 }
 
@@ -149,9 +67,11 @@ pub(super) fn clear() {
 mod tests {
     use super::*;
     use hmux_rt::Runtime as _;
+    use std::cell::{Cell, RefCell};
     use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
     use std::os::unix::net::UnixStream;
+    use std::rc::Rc;
     use std::time::Duration;
 
     fn poll() {
@@ -178,7 +98,6 @@ mod tests {
         poll();
         assert_eq!(*order.borrow(), [1, 2, 3]);
         assert_eq!(Rc::strong_count(&order), 1);
-        assert!(TASKS.with(|tasks| tasks.borrow().is_empty()));
         super::super::shutdown_runtime();
     }
 
@@ -210,7 +129,7 @@ mod tests {
         assert_eq!(
             Rc::strong_count(&calls),
             1,
-            "cancel releases the factory capture"
+            "cancel releases the future capture"
         );
 
         let observed = calls.clone();
@@ -329,7 +248,7 @@ mod tests {
         .unwrap();
         drop(task);
         poll();
-        assert_eq!(Rc::strong_count(&retained), 3);
+        assert_eq!(Rc::strong_count(&retained), 2);
         super::super::shutdown_runtime();
         assert_eq!(Rc::strong_count(&retained), 1);
 
@@ -339,54 +258,72 @@ mod tests {
         });
         assert!(result.is_err());
         assert!(!task.is_pending());
-        assert!(TASKS.with(|tasks| tasks.borrow().is_empty()));
         super::super::shutdown_runtime();
     }
 
     #[test]
-    fn pending_descriptor_futures_restart_in_the_child_and_leave_the_parent_live() {
-        let (reader, mut writer) = UnixStream::pair().unwrap();
-        reader.set_nonblocking(true).unwrap();
-        let fd = reader.as_raw_fd();
+    fn shutdown_invalidates_old_handles_without_cancelling_new_tasks() {
+        let mut old = Task::new();
+        old.start(|| Ok(std::future::pending())).unwrap();
+        assert!(old.is_pending());
+        super::super::shutdown_runtime();
+        assert!(!old.is_pending());
+
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
         let mut task = Task::new();
         task.start(move || {
-            let source = super::super::descriptor(fd)?;
-            let observed = observed.clone();
             Ok(async move {
-                source.wait(true, false).await.unwrap();
-                let mut byte = 0_u8;
-                assert_eq!(
-                    unsafe { libc::read(fd, (&mut byte as *mut u8).cast(), 1) },
-                    1
-                );
                 observed.set(observed.get() + 1);
             })
         })
         .unwrap();
-        poll();
-        let pid = unsafe { libc::fork() };
-        assert!(pid >= 0);
-        if pid == 0 {
-            unsafe { libc::alarm(5) };
-            super::super::reset_after_fork().unwrap();
-            assert!(task.is_pending());
-            writer.write_all(b"c").unwrap();
-            poll();
-            let succeeded = calls.get() == 1 && !task.is_pending();
-            super::super::shutdown_runtime();
-            unsafe { libc::_exit(if succeeded { 0 } else { 1 }) };
-        }
-        let mut status = 0;
-        assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
-        assert!(libc::WIFEXITED(status));
-        assert_eq!(libc::WEXITSTATUS(status), 0);
+        old.cancel();
+        drop(old);
         assert!(task.is_pending());
-        writer.write_all(b"p").unwrap();
         poll();
         assert_eq!(calls.get(), 1);
         assert!(!task.is_pending());
         super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn initializer_transfers_its_only_owner_into_the_future() {
+        let owner = refbox::RefBox::new(());
+        let observer = owner.downgrade();
+        let mut task = Task::new();
+        task.start(move || {
+            Ok(async move {
+                let _owner = owner;
+                std::future::pending::<()>().await;
+            })
+        })
+        .unwrap();
+        poll();
+        assert!(observer.is_alive());
+        task.cancel();
+        assert!(!observer.is_alive());
+        super::super::shutdown_runtime();
+    }
+
+    #[test]
+    fn shutdown_releases_deferred_work_queued_by_capture_destructors() {
+        struct DeferOnDrop(Option<refbox::RefBox<()>>);
+        impl Drop for DeferOnDrop {
+            fn drop(&mut self) {
+                let owner = self.0.take().unwrap();
+                defer(move || {
+                    drop(owner);
+                    panic!("shutdown must not dispatch deferred work");
+                });
+            }
+        }
+
+        let owner = refbox::RefBox::new(());
+        let observer = owner.downgrade();
+        let guard = DeferOnDrop(Some(owner));
+        defer(move || drop(guard));
+        super::super::shutdown_runtime();
+        assert!(!observer.is_alive());
     }
 }

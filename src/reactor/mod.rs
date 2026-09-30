@@ -1,6 +1,6 @@
 //! Application compatibility over hmux-rt and hmux-buffer.
 //!
-//! Streams own their buffers. Registrations own cancellable local tasks;
+//! Streams own their buffers. The runtime owns cancellable local tasks;
 //! callbacks run without registry borrows. Descriptor leases are
 //! duplicated once per live endpoint and close after an executing poll finishes.
 #![allow(clippy::missing_safety_doc)]
@@ -10,7 +10,7 @@ mod tasks;
 mod timers;
 pub use buffer::*;
 use hmux_rt::Runtime as _;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
@@ -25,7 +25,6 @@ pub struct bufferevent_ops {
     _private: [u8; 0],
 }
 thread_local! {
-    static PID: Cell<u32> = const { Cell::new(0) };
     static HOST: RefCell<Option<hmux_rt::mio::Runtime>> = const { RefCell::new(None) };
     static HANDLE: RefCell<Option<hmux_rt::mio::Handle>> = const { RefCell::new(None) };
     static FDS: RefCell<HashMap<i32, Weak<hmux_rt::mio::Descriptor>>> = RefCell::new(HashMap::new());
@@ -41,7 +40,6 @@ fn ensure_runtime() {
         return;
     }
     let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
-    PID.with(|p| p.set(std::process::id()));
     HANDLE.with(|h| *h.borrow_mut() = Some(runtime.handle()));
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
@@ -77,29 +75,6 @@ pub fn poll_runtime() {
     let mut runtime = HOST.with(|h| h.borrow_mut().take().expect("recursive runtime dispatch"));
     runtime.poll(None).expect("hmux-rt poll");
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
-}
-
-pub fn reset_after_fork() -> std::io::Result<()> {
-    ensure_runtime();
-    if PID.with(|pid| pid.get() == std::process::id()) {
-        return Ok(());
-    }
-    tasks::stop_tasks();
-    streams::stop_tasks();
-    timers::stop_tasks();
-    FDS.with(|fds| fds.borrow_mut().clear());
-    HOST.with(|host| {
-        let mut host = host.borrow_mut();
-        let runtime = host.as_mut().expect("runtime initialized");
-        runtime.reset_after_fork()?;
-        HANDLE.with(|handle| *handle.borrow_mut() = Some(runtime.handle()));
-        Ok::<_, std::io::Error>(())
-    })?;
-    PID.with(|pid| pid.set(std::process::id()));
-    tasks::restart()?;
-    timers::restart()?;
-    streams::restart();
-    Ok(())
 }
 
 pub fn shutdown_runtime() {

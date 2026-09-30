@@ -92,6 +92,23 @@ impl Core {
         !ready.is_empty()
     }
 
+    fn cancel_tasks(&self) {
+        loop {
+            let tasks = self
+                .tasks
+                .borrow_mut()
+                .drain()
+                .map(|(_, task)| task)
+                .collect::<Vec<_>>();
+            if tasks.is_empty() {
+                break;
+            }
+            for task in tasks {
+                task.cancel();
+            }
+        }
+    }
+
     fn close(&self) {
         if !self.alive.replace(false) {
             return;
@@ -106,15 +123,7 @@ impl Core {
         for signal in signals {
             signal.close();
         }
-        let tasks = self
-            .tasks
-            .borrow_mut()
-            .drain()
-            .map(|(_, t)| t)
-            .collect::<Vec<_>>();
-        for task in tasks {
-            task.cancel();
-        }
+        self.cancel_tasks();
         let sources = self
             .io
             .borrow_mut()
@@ -178,14 +187,31 @@ impl LocalWake for TaskWake {
     }
 }
 
-/// Cancel-on-drop owner for a local task. It is neither cloneable nor detachable.
+/// A non-cloneable cancellation handle. The runtime owns the future.
+/// Dropping the handle cancels the task unless it has been detached.
 pub struct Task {
-    state: Rc<TaskState>,
+    state: Weak<TaskState>,
+}
+
+impl Task {
+    /// Whether the task has neither completed nor been cancelled.
+    pub fn is_pending(&self) -> bool {
+        self.state
+            .upgrade()
+            .is_some_and(|state| !state.cancelled.get())
+    }
+
+    /// Leave the task running until completion or runtime cleanup.
+    pub fn detach(mut self) {
+        self.state = Weak::new();
+    }
 }
 
 impl Drop for Task {
     fn drop(&mut self) {
-        self.state.cancel();
+        if let Some(state) = self.state.upgrade() {
+            state.cancel();
+        }
     }
 }
 
@@ -193,6 +219,15 @@ impl Drop for Task {
 #[derive(Clone)]
 pub struct Handle {
     pub(crate) core: Rc<Core>,
+}
+
+impl Handle {
+    /// Cancel all tasks, including detached work and work queued by capture
+    /// destructors. An executing task releases its future when its poll returns.
+    /// The runtime remains available for subsequent work.
+    pub fn cancel_tasks(&self) {
+        self.core.cancel_tasks();
+    }
 }
 
 impl crate::Handle for Handle {
@@ -216,7 +251,9 @@ impl crate::Handle for Handle {
         });
         self.core.tasks.borrow_mut().insert(id, state.clone());
         state.enqueue();
-        Ok(Task { state })
+        Ok(Task {
+            state: Rc::downgrade(&state),
+        })
     }
 
     fn io(&self, fd: Rc<OwnedFd>) -> io::Result<Io> {

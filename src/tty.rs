@@ -452,7 +452,6 @@ fn tty_start_read(terminal: &mut tty) {
         .read_task
         .start(move || {
             let source = reactor::descriptor(fd)?;
-            let observer = observer.clone();
             Ok(async move {
                 loop {
                     source.wait(true, false).await.expect("TTY input wait");
@@ -479,7 +478,6 @@ pub(crate) fn tty_start_write(terminal: &mut tty) {
         .write_task
         .start(move || {
             let source = reactor::descriptor(fd)?;
-            let observer = observer.clone();
             Ok(async move {
                 source.wait(false, true).await.expect("TTY output wait");
                 if let Some(owner) = observer.upgrade() {

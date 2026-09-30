@@ -1,52 +1,41 @@
-//! Timer registrations survive the reactor's fork reset in both processes.
+//! Each process initializes its own reactor after the fork.
 #![cfg(unix)]
 
-use hmux2::src::reactor::{defer, poll_runtime, reset_after_fork, shutdown_runtime, Timer};
+use hmux2::src::reactor::{defer, poll_runtime, shutdown_runtime, Timer};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-#[test]
-fn pending_timers_keep_their_deadline_after_fork() {
+fn run_callbacks() {
     let calls = Rc::new(Cell::new(0));
     let observed = calls.clone();
-    let timer = Timer::new(Duration::from_millis(500), move || {
+    let timer = Timer::new(Duration::from_millis(5), move || {
         observed.set(observed.get() + 1)
     })
     .unwrap();
-    let deadline = timer.deadline();
-    poll_runtime();
-    assert_eq!(calls.get(), 0, "the first poll registers the deadline wait");
-    // Include a deferred callback whose task has not yet been polled.
     let deferred = Rc::new(Cell::new(false));
     let observed = deferred.clone();
     defer(move || observed.set(true));
-    let pid = unsafe { libc::fork() };
-    assert!(pid >= 0, "fork: {}", std::io::Error::last_os_error());
-    if pid == 0 {
-        unsafe {
-            // Bound failures which leave an inherited wait unable to wake.
-            libc::alarm(5);
-            if reset_after_fork().is_err() || timer.deadline() != deadline {
-                libc::_exit(1);
-            }
-            while timer.is_pending() || !deferred.get() {
-                poll_runtime();
-            }
-            shutdown_runtime();
-            libc::_exit(if calls.get() == 1 { 0 } else { 2 });
-        }
-    }
-    // Resetting and cancelling child tasks must not disturb the parent runtime.
-    assert_eq!(timer.deadline(), deadline);
     while timer.is_pending() || !deferred.get() {
         poll_runtime();
     }
     assert_eq!(calls.get(), 1);
+    drop(timer);
+    shutdown_runtime();
+}
+
+#[test]
+fn runtimes_initialized_after_fork_run_independently() {
+    let pid = unsafe { libc::fork() };
+    assert!(pid >= 0, "fork: {}", std::io::Error::last_os_error());
+    if pid == 0 {
+        unsafe { libc::alarm(5) };
+        let succeeded = std::panic::catch_unwind(run_callbacks).is_ok();
+        unsafe { libc::_exit(if succeeded { 0 } else { 1 }) };
+    }
+    run_callbacks();
     let mut status = 0;
     assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
     assert!(libc::WIFEXITED(status), "child status {status}");
     assert_eq!(libc::WEXITSTATUS(status), 0);
-    drop(timer);
-    shutdown_runtime();
 }

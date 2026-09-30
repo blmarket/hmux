@@ -33,6 +33,88 @@ impl Drop for Dropped {
 }
 
 #[test]
+fn task_handles_observe_completion_and_runtime_shutdown() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let task = runtime.handle().spawn(async {}).unwrap();
+    assert!(task.is_pending());
+    tick(&mut runtime);
+    assert!(!task.is_pending());
+
+    let pending = runtime.handle().spawn(std::future::pending()).unwrap();
+    assert!(pending.is_pending());
+    drop(runtime);
+    assert!(!pending.is_pending());
+}
+
+#[test]
+fn detached_tasks_finish_or_release_captures_on_runtime_shutdown() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let count = Rc::new(Cell::new(0));
+    let spy = Dropped(count.clone());
+    runtime
+        .handle()
+        .spawn(async move { drop(spy) })
+        .unwrap()
+        .detach();
+    assert_eq!(count.get(), 0);
+    tick(&mut runtime);
+    assert_eq!(count.get(), 1);
+
+    let spy = Dropped(count.clone());
+    runtime
+        .handle()
+        .spawn(async move {
+            let _spy = spy;
+            std::future::pending::<()>().await;
+        })
+        .unwrap()
+        .detach();
+    drop(runtime);
+    assert_eq!(count.get(), 2);
+}
+
+#[test]
+fn bulk_cancellation_also_releases_work_spawned_by_capture_destructors() {
+    struct EnqueueOnDrop {
+        handle: mio::Handle,
+        dropped: Rc<Cell<usize>>,
+    }
+    impl Drop for EnqueueOnDrop {
+        fn drop(&mut self) {
+            let spy = Dropped(self.dropped.clone());
+            self.handle
+                .spawn(async move {
+                    let _spy = spy;
+                    panic!("cleanup must not dispatch queued work");
+                })
+                .unwrap()
+                .detach();
+        }
+    }
+
+    let mut runtime = mio::Runtime::new().unwrap();
+    let handle = runtime.handle();
+    let count = Rc::new(Cell::new(0));
+    let enqueue = EnqueueOnDrop {
+        handle: handle.clone(),
+        dropped: count.clone(),
+    };
+    handle
+        .spawn(async move {
+            let _enqueue = enqueue;
+            std::future::pending::<()>().await;
+        })
+        .unwrap()
+        .detach();
+    handle.cancel_tasks();
+    assert_eq!(count.get(), 1);
+    let spy = Dropped(count.clone());
+    handle.spawn(async move { drop(spy) }).unwrap().detach();
+    tick(&mut runtime);
+    assert_eq!(count.get(), 2);
+}
+
+#[test]
 fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
     let mut runtime = mio::Runtime::new().unwrap();
     let handle = runtime.handle();
