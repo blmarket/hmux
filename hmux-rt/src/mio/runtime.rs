@@ -17,6 +17,20 @@ const MAX_POLLS_PER_TURN: usize = 128;
 
 type TaskFuture = Pin<Box<dyn Future<Output = ()>>>;
 
+enum Ready {
+    Task(Weak<TaskState>),
+    Callback(Box<dyn FnOnce()>),
+}
+
+impl Ready {
+    fn is_runnable(&self) -> bool {
+        match self {
+            Self::Task(task) => task.upgrade().is_some_and(|task| !task.cancelled.get()),
+            Self::Callback(_) => true,
+        }
+    }
+}
+
 pub(crate) fn invalid() -> io::Error {
     io::Error::new(
         io::ErrorKind::BrokenPipe,
@@ -31,8 +45,10 @@ pub(crate) struct Core {
     driving: Cell<bool>,
     next_id: Cell<usize>,
     pub(crate) registry: RefCell<Option<mio::Registry>>,
-    tasks: RefCell<HashMap<usize, Rc<TaskState>>>,
-    ready: RefCell<VecDeque<Weak<TaskState>>>,
+    // Only a count for idle detection and queue compaction, never task ownership.
+    pending_tasks: Cell<usize>,
+    // Task entries observe their owners; callbacks transfer ownership to the queue.
+    ready: RefCell<VecDeque<Ready>>,
     pub(crate) timers: RefCell<BTreeMap<(Instant, usize), LocalWaker>>,
     pub(crate) io: RefCell<HashMap<usize, Weak<IoState>>>,
     pub(crate) fds: RefCell<HashMap<RawFd, usize>>,
@@ -70,43 +86,22 @@ impl Core {
 
     fn compact_ready(&self) {
         let threshold = self
-            .tasks
-            .borrow()
-            .len()
+            .pending_tasks
+            .get()
             .saturating_mul(2)
             .saturating_add(64);
         let mut ready = self.ready.borrow_mut();
         if ready.len() > threshold {
-            ready.retain(|weak| weak.upgrade().is_some_and(|task| !task.cancelled.get()));
+            ready.retain(Ready::is_runnable);
         }
     }
 
     fn runnable(&self) -> bool {
         let mut ready = self.ready.borrow_mut();
-        while ready
-            .front()
-            .is_some_and(|weak| weak.upgrade().is_none_or(|task| task.cancelled.get()))
-        {
+        while ready.front().is_some_and(|entry| !entry.is_runnable()) {
             ready.pop_front();
         }
         !ready.is_empty()
-    }
-
-    fn cancel_tasks(&self) {
-        loop {
-            let tasks = self
-                .tasks
-                .borrow_mut()
-                .drain()
-                .map(|(_, task)| task)
-                .collect::<Vec<_>>();
-            if tasks.is_empty() {
-                break;
-            }
-            for task in tasks {
-                task.cancel();
-            }
-        }
     }
 
     fn close(&self) {
@@ -123,7 +118,6 @@ impl Core {
         for signal in signals {
             signal.close();
         }
-        self.cancel_tasks();
         let sources = self
             .io
             .borrow_mut()
@@ -136,13 +130,15 @@ impl Core {
         self.registry.borrow_mut().take();
         self.fds.borrow_mut().clear();
         self.timers.borrow_mut().clear();
-        self.ready.borrow_mut().clear();
+        // Callback captures may queue more work when dropped. Reject it through
+        // the closed core, without holding a queue borrow during destruction.
+        let ready = std::mem::take(&mut *self.ready.borrow_mut());
+        drop(ready);
     }
 }
 
 struct TaskState {
     core: Weak<Core>,
-    id: usize,
     future: RefCell<Option<TaskFuture>>,
     cancelled: Cell<bool>,
     queued: Cell<bool>,
@@ -156,10 +152,10 @@ impl TaskState {
         }
         self.queued.set(false);
         if let Some(core) = self.core.upgrade() {
-            core.tasks.borrow_mut().remove(&self.id);
+            core.pending_tasks.set(core.pending_tasks.get() - 1);
             core.compact_ready();
         }
-        // Never run a user destructor while borrowing the task slot/table.
+        // Never run a user destructor while borrowing the future slot.
         let future = self.future.borrow_mut().take();
         drop(future);
     }
@@ -171,7 +167,9 @@ impl TaskState {
         if core.check().is_err() || self.cancelled.get() || self.queued.replace(true) {
             return;
         }
-        core.ready.borrow_mut().push_back(Rc::downgrade(self));
+        core.ready
+            .borrow_mut()
+            .push_back(Ready::Task(Rc::downgrade(self)));
     }
 }
 
@@ -187,31 +185,28 @@ impl LocalWake for TaskWake {
     }
 }
 
-/// A non-cloneable cancellation handle. The runtime owns the future.
-/// Dropping the handle cancels the task unless it has been detached.
+/// Owns a local future. Dropping it cancels queued or waiting work immediately;
+/// an executing future is released when its current poll returns.
+#[must_use = "dropping the task cancels its future"]
 pub struct Task {
-    state: Weak<TaskState>,
+    state: Rc<TaskState>,
 }
 
 impl Task {
-    /// Whether the task has neither completed nor been cancelled.
+    /// Whether the unfinished task can still run on its runtime.
     pub fn is_pending(&self) -> bool {
-        self.state
-            .upgrade()
-            .is_some_and(|state| !state.cancelled.get())
-    }
-
-    /// Leave the task running until completion or runtime cleanup.
-    pub fn detach(mut self) {
-        self.state = Weak::new();
+        !self.state.cancelled.get()
+            && self
+                .state
+                .core
+                .upgrade()
+                .is_some_and(|core| core.check().is_ok())
     }
 }
 
 impl Drop for Task {
     fn drop(&mut self) {
-        if let Some(state) = self.state.upgrade() {
-            state.cancel();
-        }
+        self.state.cancel();
     }
 }
 
@@ -222,11 +217,15 @@ pub struct Handle {
 }
 
 impl Handle {
-    /// Cancel all tasks, including detached work and work queued by capture
-    /// destructors. An executing task releases its future when its poll returns.
-    /// The runtime remains available for subsequent work.
-    pub fn cancel_tasks(&self) {
-        self.core.cancel_tasks();
+    /// Transfer a one-shot callback to the ready queue, without running it inline.
+    /// Runtime shutdown or a scheduling failure releases its captures.
+    pub fn defer(&self, callback: impl FnOnce() + 'static) -> io::Result<()> {
+        self.core.check()?;
+        self.core
+            .ready
+            .borrow_mut()
+            .push_back(Ready::Callback(Box::new(callback)));
+        Ok(())
     }
 }
 
@@ -240,20 +239,23 @@ impl crate::Handle for Handle {
     where
         F: Future<Output = ()> + 'static,
     {
-        let id = self.core.allocate()?;
+        self.core.check()?;
+        let pending = self
+            .core
+            .pending_tasks
+            .get()
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("too many pending tasks"))?;
         let state = Rc::new_cyclic(|weak| TaskState {
             core: Rc::downgrade(&self.core),
-            id,
             future: RefCell::new(Some(Box::pin(future))),
             cancelled: Cell::new(false),
             queued: Cell::new(false),
             waker: LocalWaker::from(Rc::new(TaskWake(weak.clone()))),
         });
-        self.core.tasks.borrow_mut().insert(id, state.clone());
+        self.core.pending_tasks.set(pending);
         state.enqueue();
-        Ok(Task {
-            state: Rc::downgrade(&state),
-        })
+        Ok(Task { state })
     }
 
     fn io(&self, fd: Rc<OwnedFd>) -> io::Result<Io> {
@@ -295,7 +297,7 @@ impl crate::Runtime for Runtime {
                 driving: Cell::new(false),
                 next_id: Cell::new(1),
                 registry: RefCell::new(Some(registry)),
-                tasks: RefCell::default(),
+                pending_tasks: Cell::new(0),
                 ready: RefCell::default(),
                 timers: RefCell::default(),
                 io: RefCell::default(),
@@ -327,7 +329,7 @@ impl crate::Runtime for Runtime {
             return Err(error);
         }
         self.wake_timers();
-        let timeout = if self.core.runnable() || self.core.tasks.borrow().is_empty() {
+        let timeout = if self.core.runnable() || self.core.pending_tasks.get() == 0 {
             Some(Duration::ZERO)
         } else {
             let timer = self
@@ -370,9 +372,22 @@ impl crate::Runtime for Runtime {
         self.wake_timers();
         let mut polled = 0;
         while polled < MAX_POLLS_PER_TURN {
-            let task = self.core.ready.borrow_mut().pop_front();
-            let Some(weak) = task else {
+            let ready = self.core.ready.borrow_mut().pop_front();
+            let Some(ready) = ready else {
                 break;
+            };
+            let weak = match ready {
+                Ready::Task(weak) => weak,
+                Ready::Callback(callback) => {
+                    polled += 1;
+                    if let Err(panic) =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(callback))
+                    {
+                        self.core.poisoned.set(true);
+                        std::panic::resume_unwind(panic);
+                    }
+                    continue;
+                }
             };
             let Some(task) = weak.upgrade() else {
                 continue;
@@ -476,7 +491,7 @@ mod tests {
             );
             drop(sleep);
         }
-        assert!(runtime.core.tasks.borrow().is_empty());
+        assert_eq!(runtime.core.pending_tasks.get(), 0);
         assert!(runtime.core.timers.borrow().is_empty());
         assert!(runtime.core.ready.borrow().len() <= 64);
     }

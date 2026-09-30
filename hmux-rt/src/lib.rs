@@ -32,7 +32,7 @@ pub trait Runtime: Sized + 'static {
 
 /// A cloneable capability to create local work
 pub trait Handle: Clone + 'static {
-    /// Cancellation owner for a spawned future.
+    /// Owns a spawned future; dropping it cancels the work.
     type Task: 'static;
 
     /// Leased descriptor supporting async reads and writes.
@@ -44,7 +44,8 @@ pub trait Handle: Clone + 'static {
     /// Monotonic deadline wait.
     type Sleep: Future<Output = io::Result<()>> + 'static;
 
-    /// Schedule a non-Send future, without polling it inline.
+    /// Schedule a non-Send future, without polling it inline. The returned task
+    /// owns the future and must be retained until completion or cancellation.
     fn spawn<F>(&self, future: F) -> io::Result<Self::Task>
     where
         F: Future<Output = ()> + 'static;

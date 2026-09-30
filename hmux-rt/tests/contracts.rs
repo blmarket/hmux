@@ -40,22 +40,29 @@ fn task_handles_observe_completion_and_runtime_shutdown() {
     tick(&mut runtime);
     assert!(!task.is_pending());
 
-    let pending = runtime.handle().spawn(std::future::pending()).unwrap();
+    let count = Rc::new(Cell::new(0));
+    let spy = Dropped(count.clone());
+    let pending = runtime
+        .handle()
+        .spawn(async move {
+            let _spy = spy;
+            std::future::pending::<()>().await;
+        })
+        .unwrap();
     assert!(pending.is_pending());
     drop(runtime);
     assert!(!pending.is_pending());
+    assert_eq!(count.get(), 0, "the task still owns its future");
+    drop(pending);
+    assert_eq!(count.get(), 1);
 }
 
 #[test]
-fn detached_tasks_finish_or_release_captures_on_runtime_shutdown() {
+fn deferred_callbacks_run_or_release_captures_on_runtime_shutdown() {
     let mut runtime = mio::Runtime::new().unwrap();
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
-    runtime
-        .handle()
-        .spawn(async move { drop(spy) })
-        .unwrap()
-        .detach();
+    runtime.handle().defer(move || drop(spy)).unwrap();
     assert_eq!(count.get(), 0);
     tick(&mut runtime);
     assert_eq!(count.get(), 1);
@@ -63,18 +70,17 @@ fn detached_tasks_finish_or_release_captures_on_runtime_shutdown() {
     let spy = Dropped(count.clone());
     runtime
         .handle()
-        .spawn(async move {
+        .defer(move || {
             let _spy = spy;
-            std::future::pending::<()>().await;
+            panic!("shutdown must not dispatch callbacks");
         })
-        .unwrap()
-        .detach();
+        .unwrap();
     drop(runtime);
     assert_eq!(count.get(), 2);
 }
 
 #[test]
-fn bulk_cancellation_also_releases_work_spawned_by_capture_destructors() {
+fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
     struct EnqueueOnDrop {
         handle: mio::Handle,
         dropped: Rc<Cell<usize>>,
@@ -82,17 +88,14 @@ fn bulk_cancellation_also_releases_work_spawned_by_capture_destructors() {
     impl Drop for EnqueueOnDrop {
         fn drop(&mut self) {
             let spy = Dropped(self.dropped.clone());
-            self.handle
-                .spawn(async move {
-                    let _spy = spy;
-                    panic!("cleanup must not dispatch queued work");
-                })
-                .unwrap()
-                .detach();
+            let _ = self.handle.defer(move || {
+                let _spy = spy;
+                panic!("cleanup must not dispatch queued work");
+            });
         }
     }
 
-    let mut runtime = mio::Runtime::new().unwrap();
+    let runtime = mio::Runtime::new().unwrap();
     let handle = runtime.handle();
     let count = Rc::new(Cell::new(0));
     let enqueue = EnqueueOnDrop {
@@ -100,18 +103,44 @@ fn bulk_cancellation_also_releases_work_spawned_by_capture_destructors() {
         dropped: count.clone(),
     };
     handle
-        .spawn(async move {
+        .defer(move || {
             let _enqueue = enqueue;
-            std::future::pending::<()>().await;
+            panic!("shutdown must not dispatch callbacks");
         })
-        .unwrap()
-        .detach();
-    handle.cancel_tasks();
+        .unwrap();
+    drop(runtime);
     assert_eq!(count.get(), 1);
     let spy = Dropped(count.clone());
-    handle.spawn(async move { drop(spy) }).unwrap().detach();
-    tick(&mut runtime);
+    assert!(handle.defer(move || drop(spy)).is_err());
     assert_eq!(count.get(), 2);
+}
+
+#[test]
+fn ready_queue_orders_tasks_and_deferred_callbacks_without_inline_dispatch() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let handle = runtime.handle();
+    let order = Rc::new(RefCell::new(Vec::new()));
+    let observed = order.clone();
+    handle.defer(move || observed.borrow_mut().push(1)).unwrap();
+    let observed = order.clone();
+    let _task = handle
+        .spawn(async move {
+            observed.borrow_mut().push(2);
+        })
+        .unwrap();
+    let observed = order.clone();
+    let nested = handle.clone();
+    handle
+        .defer(move || {
+            observed.borrow_mut().push(3);
+            let last = observed.clone();
+            nested.defer(move || last.borrow_mut().push(5)).unwrap();
+            observed.borrow_mut().push(4);
+        })
+        .unwrap();
+    assert!(order.borrow().is_empty());
+    tick(&mut runtime);
+    assert_eq!(*order.borrow(), [1, 2, 3, 4, 5]);
 }
 
 #[test]

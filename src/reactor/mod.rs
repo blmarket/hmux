@@ -1,6 +1,6 @@
 //! Application compatibility over hmux-rt and hmux-buffer.
 //!
-//! Streams own their buffers. The runtime owns cancellable local tasks;
+//! Streams own their buffers. Task handles own their cancellable futures;
 //! callbacks run without registry borrows. Descriptor leases are
 //! duplicated once per live endpoint and close after an executing poll finishes.
 #![allow(clippy::missing_safety_doc)]
@@ -78,14 +78,15 @@ pub fn poll_runtime() {
 }
 
 pub fn shutdown_runtime() {
-    tasks::clear();
     streams::clear();
     timers::clear();
-    // Stream and timer captures may enqueue deferred cleanup while clearing.
-    tasks::clear();
     FDS.with(|f| f.borrow_mut().clear());
+    // Drop the ready queue outside the host borrow. Keep the closed runtime's
+    // handle installed until capture destructors finish, so deferred cleanup
+    // cannot accidentally initialize a replacement runtime during shutdown.
+    let runtime = HOST.with(|h| h.borrow_mut().take());
+    drop(runtime);
     HANDLE.with(|h| h.borrow_mut().take());
-    HOST.with(|h| h.borrow_mut().take());
 }
 pub(crate) async fn yield_now() {
     let mut yielded = false;

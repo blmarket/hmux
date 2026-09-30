@@ -1,11 +1,11 @@
-//! Explicitly cancelled application futures owned by the runtime.
+//! Application-owned futures with explicit and drop cancellation.
 use super::{ensure_runtime, handle};
 use hmux_rt::Handle as _;
 use std::future::Future;
 use std::io;
 
-/// A movable cancellation handle. Owners cancel it in their explicit cleanup.
-/// Dropping this handle leaves the registered future running.
+/// Owns one future. Explicit cleanup and dropping the owner both cancel it.
+#[must_use = "dropping the task cancels its future"]
 #[derive(Default)]
 pub struct Task {
     task: Option<hmux_rt::mio::Task>,
@@ -15,9 +15,7 @@ pub struct Task {
 /// Shutdown or a scheduling failure releases captures without dispatching it.
 pub fn defer(callback: impl FnOnce() + 'static) {
     ensure_runtime();
-    if let Ok(task) = handle().spawn(async move { callback() }) {
-        task.detach();
-    }
+    let _ = handle().defer(callback);
 }
 
 impl Task {
@@ -44,22 +42,6 @@ impl Task {
 
     pub fn is_pending(&self) -> bool {
         self.task.as_ref().is_some_and(|task| task.is_pending())
-    }
-}
-
-impl Drop for Task {
-    fn drop(&mut self) {
-        // Application owners still cancel work in their explicit free paths.
-        if let Some(task) = self.task.take() {
-            task.detach();
-        }
-    }
-}
-
-pub(super) fn clear() {
-    let handle = super::HANDLE.with(|handle| handle.borrow().clone());
-    if let Some(handle) = handle {
-        handle.cancel_tasks();
     }
 }
 
@@ -234,23 +216,27 @@ mod tests {
     }
 
     #[test]
-    fn dropping_a_handle_keeps_work_pending_but_shutdown_releases_it() {
+    fn dropping_a_handle_releases_unpolled_and_parked_work() {
         let retained = Rc::new(());
-        let observed = retained.clone();
-        let mut task = Task::new();
-        task.start(move || {
-            let observed = observed.clone();
-            Ok(async move {
-                let _retained = observed;
-                std::future::pending::<()>().await;
+        for before_poll in [true, false] {
+            let observed = retained.clone();
+            let mut task = Task::new();
+            task.start(move || {
+                Ok(async move {
+                    let _retained = observed;
+                    std::future::pending::<()>().await;
+                })
             })
-        })
-        .unwrap();
-        drop(task);
-        poll();
-        assert_eq!(Rc::strong_count(&retained), 2);
-        super::super::shutdown_runtime();
-        assert_eq!(Rc::strong_count(&retained), 1);
+            .unwrap();
+            if !before_poll {
+                poll();
+            }
+            assert_eq!(Rc::strong_count(&retained), 2);
+            drop(task);
+            assert_eq!(Rc::strong_count(&retained), 1);
+            poll();
+            super::super::shutdown_runtime();
+        }
 
         let mut task = Task::new();
         let result = task.start(|| -> io::Result<std::future::Ready<()>> {
