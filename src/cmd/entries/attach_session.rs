@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
 use crate::src::arguments::{args_get, args_has};
@@ -35,8 +36,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
-use crate::src::window::window_set_active_pane;
-use crate::src::window::Window as _;
+
 use crate::src::window_pane::WindowPane as _;
 use crate::src::{server_client::Client, session::Session};
 pub static cmd_attach_session_entry: cmd_entry = {
@@ -133,7 +133,7 @@ pub unsafe fn cmd_attach_session(
                 .window_observer()
                 .upgrade()
                 .expect("attach pane window");
-            window_set_active_pane(&window, pane, 1);
+            window.select_pane(pane, true);
             window.release(c"attach pane selection");
         }
         (s.as_ref().expect("live session")).select_winlink(wl.clone());

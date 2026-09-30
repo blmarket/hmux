@@ -1,4 +1,5 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
 #[cfg(test)]
@@ -275,7 +276,7 @@ mod retained_client_tests {
     #[test]
     fn pan_window_observes_identity_without_retaining_the_window() {
         let mut client = client::empty();
-        let first = crate::src::shared::window::window::new();
+        let first = crate::src::shared::window::WindowRef::empty();
         let first_observer = Rc::downgrade(&first);
         unsafe {
             let first_window = &first;
@@ -285,11 +286,11 @@ mod retained_client_tests {
         }
         assert_eq!(Rc::strong_count(&first), 1);
         unsafe {
-            crate::src::window::window_remove_ref(first, c"test owner".as_ptr());
+            first.release(c"test owner");
         }
         assert!(first_observer.upgrade().is_none());
 
-        let second = crate::src::shared::window::window::new();
+        let second = crate::src::shared::window::WindowRef::empty();
         unsafe {
             assert!(!client.pan_window_is(&second));
             client.set_pan_window(&second);
@@ -297,7 +298,7 @@ mod retained_client_tests {
         }
         assert_eq!(Rc::strong_count(&second), 1);
         unsafe {
-            crate::src::window::window_remove_ref(second, c"test owner".as_ptr());
+            second.release(c"test owner");
         }
     }
 

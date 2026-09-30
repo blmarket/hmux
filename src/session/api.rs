@@ -1,4 +1,5 @@
 //! Operations on retained session holders. Cleanup remains explicit.
+use crate::src::window::Window as _;
 use super::*;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
@@ -523,17 +524,17 @@ mod index_boundary_tests {
     #[test]
     fn replacement_notifies_before_clearing_history_and_releasing_window() {
         use crate::src::events::{events_add_sink, events_remove_sink};
-        use crate::src::window::{window_remove_ref, winlink_set_window};
+        use crate::src::window::{winlink_set_window};
         use std::cell::RefCell;
         unsafe {
             let owner = session::new();
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let mut link = super::super::test_support::add_link(&owner, 1);
             (*owner.get()).curw = link.clone();
             link.get_mut_unchecked().flags |= WINLINK_ALERTFLAGS;
             winlink_stack_push(&mut (*owner.get()).lastw, link.clone());
             winlink_set_window(link.clone(), &window);
-            window_remove_ref(window, c"fixture creator".as_ptr());
+            window.release(c"fixture creator");
             let order = Rc::new(RefCell::new(Vec::new()));
             let callback_owner = Rc::downgrade(&owner);
             let calls = order.clone();

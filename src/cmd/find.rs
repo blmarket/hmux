@@ -17,10 +17,9 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::rc::same;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
 use crate::src::window::Window;
 use crate::src::window::{
-    window_find_by_id_str, window_find_string, winlink_find_by_index, winlink_next_by_number,
+    winlink_find_by_index, winlink_next_by_number,
     winlink_previous_by_number, winlinks_minmax, winlinks_next,
 };
 use crate::src::window_pane::WindowPane as _;
@@ -156,7 +155,7 @@ unsafe fn cmd_find_best_session(
     let candidates = match candidates {
         Some(candidates) => candidates,
         None => {
-            let mut cursor = (&sessions).first();
+            let mut cursor = sessions.first();
             while let Some(owner) = cursor {
                 cursor = owner.next_session();
                 all.push(owner);
@@ -183,7 +182,7 @@ unsafe fn cmd_find_best_session_with_window(fs: *mut cmd_find_state) -> ::core::
         return -1;
     };
     let mut candidates = Vec::new();
-    let mut cursor = (&sessions).first();
+    let mut cursor = sessions.first();
     while let Some(owner) = cursor {
         cursor = owner.next_session();
         if owner.contains_window(&window_owner) {
@@ -264,7 +263,7 @@ unsafe fn cmd_find_get_session(fs: *mut cmd_find_state, target: *const ::core::f
     // Prefix matching precedes glob matching; either must be unambiguous.
     for glob in [false, true] {
         let mut matched = None;
-        let mut cursor = (&sessions).first();
+        let mut cursor = sessions.first();
         while let Some(session) = cursor {
             let name = session.name();
             if if glob {
@@ -298,7 +297,7 @@ unsafe fn cmd_find_get_window(
         log_cstr((window) as *const _)
     ));
     if *window as ::core::ffi::c_int == '@' as i32 {
-        let window_owner = window_find_by_id_str(window);
+        let window_owner = crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
         let result = (|| {
             (*fs).set_w(window_owner.as_ref());
             if (*fs).window_handle().is_none() {
@@ -307,7 +306,7 @@ unsafe fn cmd_find_get_window(
             return cmd_find_best_session_with_window(fs);
         })();
         if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(window, c"cmd_find_get_window".as_ptr());
+            window.release(c"cmd_find_get_window");
         }
         return result;
     }
@@ -355,7 +354,7 @@ unsafe fn cmd_find_get_window_with_session(
     );
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
     if *window as ::core::ffi::c_int == '@' as i32 {
-        let window_owner = window_find_by_id_str(window);
+        let window_owner = crate::src::shared::window::WindowRef::find_by_id_str(std::ffi::CStr::from_ptr(window));
         let result = (|| {
             (*fs).set_w(window_owner.as_ref());
             if (*fs).window_handle().is_none()
@@ -369,10 +368,7 @@ unsafe fn cmd_find_get_window_with_session(
             return cmd_find_best_winlink_with_window(fs);
         })();
         if let Some(window) = window_owner {
-            crate::src::window::window_remove_ref(
-                window,
-                c"cmd_find_get_window_with_session".as_ptr(),
-            );
+            window.release(c"cmd_find_get_window_with_session");
         }
         return result;
     }
@@ -802,7 +798,7 @@ unsafe fn cmd_find_get_pane_with_window(
         }
     }
     let window_owner = (*fs).w.upgrade().expect("target window");
-    let selected = window_find_string(&window_owner, CStr::from_ptr(pane));
+    let selected = window_owner.find_pane(CStr::from_ptr(pane));
     (*fs).wp = selected
         .as_ref()
         .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -1924,8 +1920,8 @@ mod target_observer_tests {
     fn matching_window_prefers_current_link_then_lowest_index() {
         unsafe {
             let session = crate::src::shared::session::SessionRef::allocate();
-            let window = window::new();
-            let other = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
+            let other = crate::src::shared::window::WindowRef::empty();
             let first = crate::src::session::test_support::add_link(&session, 2);
             let current = crate::src::session::test_support::add_link(&session, 9);
             let unrelated = crate::src::session::test_support::add_link(&session, 1);
@@ -2043,7 +2039,7 @@ mod target_observer_tests {
     fn expired_targets_keep_identity_until_explicitly_cleared() {
         unsafe {
             let session = crate::src::shared::session::SessionRef::allocate();
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let pane = window_pane::new();
             let mut links = Default::default();
             let link = winlink_add(&mut links, 7);
@@ -2057,7 +2053,7 @@ mod target_observer_tests {
             assert_eq!(Rc::strong_count(&pane), 1);
             let snapshot = state.clone();
             drop(session);
-            crate::src::window::window_remove_ref(window, c"test owner".as_ptr());
+            window.release(c"test owner");
             drop(pane);
             winlink_remove(&mut links, link.clone());
             assert!(state.session_handle().is_none());
@@ -2117,7 +2113,7 @@ mod target_observer_tests {
                 crate::src::shared::session::sessions::default(),
             );
             let session_owner = crate::src::shared::session::SessionRef::allocate();
-            let window_owner = window::new();
+            let window_owner = crate::src::shared::window::WindowRef::empty();
             let pane_owner = window_pane::new();
             assert!(!session_owner.is_registered());
             let wp = rc::as_ptr(&pane_owner);
@@ -2174,7 +2170,7 @@ mod target_observer_tests {
             (*wp).window = std::rc::Weak::new();
             drop((&mut sessions).remove(&session_owner));
             sessions = saved;
-            crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
+            window_owner.release(c"test owner");
         }
     }
 }

@@ -1630,7 +1630,7 @@ mod tests {
             (*client.get()).tty.xpixel = 8;
             (*client.get()).tty.ypixel = 16;
             (*client.get()).control_state = Some(Box::new(control_state::empty()));
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
 
             crate::src::control::control_set_window_size(&client, window.id(), 80, 0);
             // A partial override falls back to terminal dimensions, but its
@@ -1646,7 +1646,7 @@ mod tests {
             crate::src::control::control_set_window_size(&client, window.id(), 90, 30);
             assert_eq!(client.window_size(Some(&window)), (90, 30, 8, 16));
             assert_eq!(client.window_size(None), (120, 40, 8, 16));
-            crate::src::window::window_remove_ref(window, c"client API sizing test".as_ptr());
+            window.release(c"client API sizing test");
         }
     }
 

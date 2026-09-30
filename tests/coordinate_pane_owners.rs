@@ -1,9 +1,10 @@
+use hmux2::src::window::Window as _;
 #[path = "support/window_fixture.rs"]
 mod window_fixture;
 use hmux2::src::options::{options_create_owned, options_default, options_set_number};
 use hmux2::src::shared::{pane::window_pane, window::window};
-use hmux2::src::window::{window_find_string, window_get_active_at};
-use hmux2::src::window::{window_lost_pane, PaneOrder, Window};
+
+use hmux2::src::window::{PaneOrder, Window};
 use std::rc::Rc;
 use window_fixture::WindowOptions;
 
@@ -25,20 +26,20 @@ fn coordinate_results_retain_panes_and_modal_observer_does_not() {
                 .push_back(Rc::downgrade(owner));
         }
         window.begin_modal_pane(&first);
-        hmux2::src::window::window_redraw_active_switch(&window, None);
+        window.redraw_active_switch(None);
         assert!(Rc::ptr_eq(
-            &window_get_active_at(&window, 2, 2).unwrap(),
+            &window.pane_at(2, 2).unwrap(),
             &first
         ));
-        assert!(window_get_active_at(&window, 12, 2).is_none());
-        window_lost_pane(&window, &first);
+        assert!(window.pane_at(12, 2).is_none());
+        window.forget_pane(&first);
         assert!(Rc::ptr_eq(
-            &window_get_active_at(&window, 12, 2).unwrap(),
+            &window.pane_at(12, 2).unwrap(),
             &second
         ));
-        assert!(window_get_active_at(&window, 30, 2).is_none());
-        assert!(window_find_string(&window, c"unknown").is_none());
-        let selected = window_find_string(&window, c"right").unwrap();
+        assert!(window.pane_at(30, 2).is_none());
+        assert!(window.find_pane(c"unknown").is_none());
+        let selected = window.find_pane(c"right").unwrap();
         assert!(Rc::ptr_eq(&selected, &second));
         let observer = Rc::downgrade(&second);
         window.begin_modal_pane(&second);
@@ -51,7 +52,7 @@ fn coordinate_results_retain_panes_and_modal_observer_does_not() {
         drop(selected);
         assert!(observer.upgrade().is_none());
         assert!(window.modal_pane().is_none());
-        assert!(window_get_active_at(&window, 12, 2).is_none());
+        assert!(window.pane_at(12, 2).is_none());
         window.with_options_mut(|options| {
             options_set_number(options, c"pane-border-status".as_ptr(), 1);
         });

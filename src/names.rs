@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::ffi::libc::{__ctype_b_loc, __xpg_basename, strchr, strcspn, strlen, strncmp};
 use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring, format_free,
@@ -169,7 +170,7 @@ mod owned_name_tests {
     #[test]
     fn window_without_active_pane_has_empty_owned_and_c_names() {
         unsafe {
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             assert_eq!(default_window_name_cstring(&window), c"");
             window.release(c"empty default name test");
         }

@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
@@ -40,10 +41,8 @@ use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{check_name, clean_name_cstring};
-use crate::src::window::Window as _;
 use crate::src::window::{
-    window_add_ref, window_create, window_fire_pane_moved, window_lost_pane, window_remove_ref,
-    window_set_active_pane, window_set_name, winlink_find_by_index, winlink_find_by_window,
+    window_fire_pane_moved, winlink_find_by_index, winlink_find_by_window,
     winlink_shuffle_up,
 };
 use crate::src::window_border::window_set_fill_cells;
@@ -124,7 +123,7 @@ unsafe fn cmd_break_pane_float(
         order.push_front(pane);
     }
     if args_has(args, 'd' as i32 as u_char) == 0 {
-        window_set_active_pane(w_owner, wp_owner, 1 as ::core::ffi::c_int);
+        w_owner.select_pane(wp_owner, true);
     }
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
@@ -214,7 +213,7 @@ unsafe fn cmd_break_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             if !name.is_null() {
-                window_set_name(&source_window, name, 0 as ::core::ffi::c_int);
+                source_window.rename(std::ffi::CStr::from_ptr(name), false);
                 source_window.with_options_mut(|options| {
                     options_set_number(options, c"automatic-rename".as_ptr(), 0)
                 });
@@ -249,7 +248,7 @@ unsafe fn cmd_break_pane_exec(
             }
             ClientRef::forget_pane(&pane_owner);
             // Select a replacement while the departing pane still has neighbors.
-            window_lost_pane(&source_window, &pane_owner);
+            source_window.forget_pane(&pane_owner);
             for order in [
                 crate::src::window::PaneOrder::Index,
                 crate::src::window::PaneOrder::Stacking,
@@ -264,7 +263,7 @@ unsafe fn cmd_break_pane_exec(
             layout_close_pane(&pane_owner);
             let (sx, sy) = source_window.size();
             let (xpixel, ypixel) = source_window.cell_size();
-            let window = window_create(sx, sy, xpixel, ypixel);
+            let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
             let destination = std::rc::Rc::downgrade(&window);
             pane_owner.reparent(&window);
             window.initialize_pane(&pane_owner, tc.as_ref());
@@ -299,14 +298,14 @@ unsafe fn cmd_break_pane_exec(
                 Ok(wl) => wl,
                 Err(error) => {
                     cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
-                    crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec".as_ptr());
+                    window.release(c"cmd_break_pane_exec");
                     return CMD_RETURN_ERROR;
                 }
             };
             layout_init(&window, &pane_owner);
             pane_owner.mark_changed();
             pane_owner.refresh_palette();
-            crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec".as_ptr());
+            window.release(c"cmd_break_pane_exec");
             events_fire_window(
                 b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
                 destination.upgrade().expect("live destination window"),

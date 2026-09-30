@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::events::{events_fire, events_fire_winlink};
@@ -37,10 +38,8 @@ use crate::src::tmux::sig2name;
 use crate::src::tty::{tty_raw, tty_stop_tty};
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;
-use crate::src::window::Window as _;
 use crate::src::window::{
-    window_add_ref, window_pop_zoom, window_push_zoom, window_remove_pane, window_remove_ref,
-    window_unzoom, winlink_find_by_index, winlink_find_by_window, winlink_remove,
+    winlink_find_by_index, winlink_find_by_window, winlink_remove,
     winlink_stack_remove,
 };
 use crate::src::window_pane::WindowPane as _;
@@ -191,7 +190,7 @@ pub unsafe fn server_redraw_window_borders(window: &WindowRef) {
     }
 }
 pub unsafe fn server_status_window(window: &WindowRef) {
-    let mut next = (&sessions).first();
+    let mut next = sessions.first();
     while let Some(session_owner) = next {
         if session_owner.contains_window(window) {
             server_status_session(&session_owner);
@@ -237,7 +236,7 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
 pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_int) {
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         // Destroying a group may remove both s and its next session.
@@ -268,10 +267,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
         s = s_owner.clone();
     }
     recalculate_sizes();
-    window_remove_ref(
-        owner,
-        b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    owner.release(std::ffi::CStr::from_ptr(b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char));
 }
 pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
@@ -301,7 +297,7 @@ pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
 }
 pub unsafe fn server_renumber_all() {
     let mut s: Option<SessionRef> = None;
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         server_renumber_session(s.as_ref().expect("live session"));
@@ -374,7 +370,7 @@ pub unsafe fn server_link_window(
         .expect("source window")
         .clone();
     let attached = (dst.as_ref().expect("live session")).attach_window(&window_owner, dstidx);
-    window_remove_ref(window_owner, c"server_link_window".as_ptr());
+    window_owner.release(c"server_link_window");
     dstwl = attached?;
     if marked_pane.winlink_handle() == srcwl {
         marked_pane.set_wl((dstwl).clone());
@@ -423,7 +419,7 @@ unsafe fn server_find_session(
     mut choose: impl FnMut(&SessionRef, Option<&SessionRef>) -> bool,
 ) -> Option<SessionRef> {
     let mut selected: Option<SessionRef> = None;
-    let mut current = (head).first();
+    let mut current = head.first();
     while let Some(owner) = current {
         current = owner.next_session();
         if !std::rc::Rc::ptr_eq(&owner, excluded) && choose(&owner, selected.as_ref()) {
@@ -514,7 +510,7 @@ pub unsafe fn server_check_unattached() {
     let mut s: Option<SessionRef> = None;
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current_block_4: u64;
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name().into_bytes();
@@ -644,7 +640,7 @@ pub unsafe fn server_check_unattached() {
     }
 }
 pub unsafe fn server_unzoom_window(w_owner: &WindowRef) {
-    if window_unzoom(w_owner, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int {
+    if w_owner.unzoom(true) == 0 as ::core::ffi::c_int {
         server_redraw_window(&(w_owner));
     }
 }

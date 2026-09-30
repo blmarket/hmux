@@ -1,3 +1,5 @@
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
@@ -39,8 +41,7 @@ use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, star
 use crate::src::tty::tty_create_log;
 use crate::src::window::{
     all_window_panes, window_pane_destroy_ready, window_pane_next, window_pane_wait_finish,
-    windows_minmax,
-};
+    };
 use crate::src::window::{windows, Window as _};
 use crate::src::window_pane::WindowPane as _;
 use hmux_rt::Handle as _;
@@ -434,7 +435,7 @@ unsafe fn server_send_exit() {
         registry_c_owner = clients.next(&client_owner);
         client_owner.shutdown();
     }
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name().into_bytes();
@@ -475,7 +476,7 @@ pub unsafe fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         if s.as_ref().expect("live session").is_attached() {
@@ -640,7 +641,7 @@ unsafe fn server_child_signal() {
     }
 }
 unsafe fn server_child_exited(pid: pid_t, status: i32) {
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         window_cursor = window_owner.next_window();
         let mut pane_cursor = window_owner.next_pane(None);
@@ -658,7 +659,7 @@ unsafe fn server_child_stopped(pid: pid_t, status: i32) {
     if (status & 0xff00) >> 8 == SIGTTIN || (status & 0xff00) >> 8 == SIGTTOU {
         return;
     }
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {

@@ -1,3 +1,4 @@
+use hmux2::src::window::Window as _;
 use hmux2::src::session::Session as _;
 use hmux2::src::session::SessionIndex as _;
 use hmux2::src::shared::session::session;
@@ -22,8 +23,8 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
         let session_owner = hmux2::src::shared::session::SessionRef::allocate();
         let mut links = Default::default();
-        let first_owner = window::new();
-        let second_owner = window::new();
+        let first_owner = hmux2::src::shared::window::WindowRef::empty();
+        let second_owner = hmux2::src::shared::window::WindowRef::empty();
         // These synthetic windows retain one external reference so moving the
         // test links never destroys a window before the assertions finish.
 
@@ -87,19 +88,19 @@ fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
         assert!(window_indices(&first_owner).is_empty());
         assert!(window_indices(&second_owner).is_empty());
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
-        hmux2::src::window::window_remove_ref(first_owner, c"test owner".as_ptr());
-        hmux2::src::window::window_remove_ref(second_owner, c"test owner".as_ptr());
+        first_owner.release(c"test owner");
+        second_owner.release(c"test owner");
     }
 }
 
 #[test]
 fn close_notification_can_retain_the_last_window_reference() {
     use hmux2::src::events::{events_add_sink, events_remove_sink};
-    use hmux2::src::window::{window_add_ref, window_remove_ref};
+
     use std::{cell::Cell, rc::Rc};
 
     unsafe {
-        let w_owner = window::new();
+        let w_owner = hmux2::src::shared::window::WindowRef::empty();
         let weak = Rc::downgrade(&w_owner);
         let notified = Rc::new(Cell::new(false));
         let observed = notified.clone();
@@ -110,21 +111,18 @@ fn close_notification_can_retain_the_last_window_reference() {
             c"window-closed",
             Rc::new(move |_, _| {
                 observed.set(true);
-                *retained_callback.borrow_mut() = Some(window_add_ref(
-                    &callback_window
+                *retained_callback.borrow_mut() = Some((&callback_window
                         .upgrade()
-                        .expect("window lives through notification"),
-                    c"close callback".as_ptr(),
-                ));
+                        .expect("window lives through notification")).retain(c"close callback"));
             }),
         );
-        window_remove_ref(w_owner, c"original owner".as_ptr());
+        w_owner.release(c"original owner");
         assert!(notified.get());
         assert!(weak.upgrade().is_some());
         assert_eq!(weak.strong_count(), 1);
         events_remove_sink(sink);
         let reference = retained.borrow_mut().take().unwrap();
-        window_remove_ref(reference, c"callback owner".as_ptr());
+        reference.release(c"callback owner");
         assert!(weak.upgrade().is_none());
     }
 }
@@ -132,16 +130,16 @@ fn close_notification_can_retain_the_last_window_reference() {
 #[test]
 fn removing_link_keeps_its_window_visible_during_close_notification() {
     use hmux2::src::events::{events_add_sink, events_remove_sink};
-    use hmux2::src::window::{window_add_ref, window_remove_ref};
+
     use std::{cell::Cell, rc::Rc};
 
     unsafe {
         let mut links = Default::default();
         let link = winlink_add(&mut links, 0);
-        let w_owner = window::new();
+        let w_owner = hmux2::src::shared::window::WindowRef::empty();
         let weak = Rc::downgrade(&w_owner);
         winlink_set_window(link.clone(), &w_owner);
-        window_remove_ref(w_owner, c"creator".as_ptr());
+        w_owner.release(c"creator");
         assert_eq!(weak.strong_count(), 1);
         let count = Rc::new(Cell::new(0));
         let calls = count.clone();
@@ -157,12 +155,9 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
                         .ptr_eq(&callback_window)
                 );
                 calls.set(calls.get() + 1);
-                *retained_callback.borrow_mut() = Some(window_add_ref(
-                    &callback_window
+                *retained_callback.borrow_mut() = Some((&callback_window
                         .upgrade()
-                        .expect("window lives through notification"),
-                    c"close observer".as_ptr(),
-                ));
+                        .expect("window lives through notification")).retain(c"close observer"));
             }),
         );
         winlink_remove(&mut links, link.clone());
@@ -171,7 +166,7 @@ fn removing_link_keeps_its_window_visible_during_close_notification() {
         assert_eq!(weak.strong_count(), 1);
         events_remove_sink(sink);
         let reference = retained.borrow_mut().take().unwrap();
-        window_remove_ref(reference, c"close observer".as_ptr());
+        reference.release(c"close observer");
         assert!(weak.upgrade().is_none());
     }
 }
@@ -183,7 +178,7 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
     unsafe {
         let first = hmux2::src::shared::session::SessionRef::allocate();
         let other = hmux2::src::shared::session::SessionRef::allocate();
-        let window_owner = window::new();
+        let window_owner = hmux2::src::shared::window::WindowRef::empty();
         let mut links = Default::default();
         let mut link = winlink_add(&mut links, 0);
         link.get_mut_unchecked().session = Rc::downgrade(&first);
@@ -196,7 +191,7 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
         assert!(!other.contains_window(&window_owner));
         winlink_remove(&mut links, link.clone());
         assert!(!other.contains_window(&window_owner));
-        hmux2::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
+        window_owner.release(c"test owner");
     }
 }
 
@@ -208,7 +203,7 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
     unsafe {
         let mut links = Default::default();
         let first = winlink_add(&mut links, 0);
-        let window = window::new();
+        let window = hmux2::src::shared::window::WindowRef::empty();
         let observer = Rc::downgrade(&window);
         winlink_set_window(first.clone(), &window);
         window.release(c"unlink guard creator");

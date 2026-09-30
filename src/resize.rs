@@ -1,3 +1,5 @@
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::ffi::libc::sscanf;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
@@ -16,7 +18,7 @@ use crate::src::shared::window::{
 };
 use crate::src::tmux::global_w_options;
 use crate::src::tty::tty_update_window_offset;
-use crate::src::window::{windows, windows_minmax, Window as _, WindowResize};
+use crate::src::window::{windows, Window as _, WindowResize};
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::src::window::Window;
@@ -500,10 +502,10 @@ pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
             clients.next(registry_c_owner.as_ref().expect("current registry client"));
         c = registry_c_owner.clone();
     }
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         recalculate_size(&window_owner, now);
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
 }

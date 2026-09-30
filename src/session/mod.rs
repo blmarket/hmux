@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 mod alerts;
 mod api;
 pub(crate) use alerts::alerts_check_all;
@@ -54,10 +55,9 @@ use crate::src::shared::window::{window, winlink, winlink_stack, winlinks};
 use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
-use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use crate::src::window::{
-    window_update_activity, window_update_focus, winlink_add,
+    winlink_add,
     winlink_clear_flags, winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id,
     winlink_next, winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push,
     winlink_stack_remove, winlinks_minmax, winlinks_next,
@@ -666,14 +666,14 @@ unsafe fn session_set_current(
     ) != 0
     {
         if old.is_alive() {
-            window_update_focus(old.get_unchecked().window_handle().cloned().as_ref());
+            crate::src::shared::window::WindowRef::update_focus_for(old.get_unchecked().window_handle().cloned().as_ref());
         }
-        window_update_focus(wl.get_unchecked().window_handle().cloned().as_ref());
+        crate::src::shared::window::WindowRef::update_focus_for(wl.get_unchecked().window_handle().cloned().as_ref());
     }
     winlink_clear_flags(wl.clone());
-    window_update_activity(&std::rc::Rc::clone(
+    (&std::rc::Rc::clone(
         &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-    ));
+    )).update_activity();
     tty_update_window_offset(&std::rc::Rc::clone(
         &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     ));

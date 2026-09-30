@@ -1,4 +1,5 @@
 //! Pane rendering operations. Model access ends before terminal or format callbacks.
+use crate::src::window::Window as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::server_client::Client as _;
 use super::*;
@@ -707,7 +708,7 @@ mod tests {
             options_create, options_default, options_free, options_set_string,
         };
         unsafe {
-            let window = crate::src::shared::window::window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let pane = window_pane::new();
             (*pane.get()).window = Rc::downgrade(&window);
             (*pane.get()).options = Some(options_create(None));
@@ -757,7 +758,7 @@ mod tests {
     fn drawing_restores_the_selected_screen_and_grid_owner() {
         unsafe {
             for displayed_mode in [false, true] {
-                let window = crate::src::shared::window::window::new();
+                let window = crate::src::shared::window::WindowRef::empty();
                 let pane = window_pane::new();
                 (*pane.get()).window = Rc::downgrade(&window);
                 (*pane.get()).cached_gc = grid_default_cell;

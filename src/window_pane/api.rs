@@ -289,6 +289,9 @@ pub trait WindowPane {
     unsafe fn take_pending_redraw(&self) -> bool;
     unsafe fn process_name(&self) -> Option<CString>;
     unsafe fn draw_editor_waiting(&self, pid: pid_t);
+    /// Allocate empty pane storage with its existing stable observer identity.
+    fn allocate() -> Self where Self: Sized;
+    unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self where Self: Sized;
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -1240,6 +1243,12 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         crate::src::osdep_linux::osdep_get_name_cstring(descriptor)
     }
     unsafe fn draw_editor_waiting(&self, pid: pid_t) { super::mode_visuals::draw_editor_waiting(self, pid); }
+    fn allocate() -> Self {
+        window_pane::new()
+    }
+    unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self {
+        window_pane_create(window, sx, sy, history_limit)
+    }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0
     }

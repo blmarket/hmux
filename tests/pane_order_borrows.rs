@@ -1,3 +1,4 @@
+use hmux2::src::window::Window as _;
 use hmux2::src::shared::{pane::window_pane, window::window};
 use hmux2::src::window::{PaneOrder, Window};
 use std::rc::Rc;
@@ -5,8 +6,8 @@ use std::rc::Rc;
 #[test]
 fn order_swaps_preserve_weak_membership_within_and_between_windows() {
     unsafe {
-        let left_owner = window::new();
-        let right_owner = window::new();
+        let left_owner = hmux2::src::shared::window::WindowRef::empty();
+        let right_owner = hmux2::src::shared::window::WindowRef::empty();
         let first_owner = window_pane::new();
         let second_owner = window_pane::new();
         let third_owner = window_pane::new();
@@ -64,7 +65,7 @@ fn order_swaps_preserve_weak_membership_within_and_between_windows() {
             left_owner.borrow_pane_order_mut(order).storage.clear();
             right_owner.borrow_pane_order_mut(order).storage.clear();
         }
-        hmux2::src::window::window_remove_ref(left_owner, c"test owner".as_ptr());
-        hmux2::src::window::window_remove_ref(right_owner, c"test owner".as_ptr());
+        left_owner.release(c"test owner");
+        right_owner.release(c"test owner");
     }
 }

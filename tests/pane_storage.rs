@@ -1,3 +1,4 @@
+use hmux2::src::window::Window as _;
 use hmux2::src::shared::pane::{
     pane_history_first, pane_history_next, pane_history_push, pane_history_remove, window_pane,
     window_pane_history, window_panes,
@@ -193,7 +194,7 @@ fn index_traversal_results_retain_panes_after_index_removal() {
 #[test]
 fn relative_pane_selection_wraps_and_retains_its_result() {
     unsafe {
-        let window = hmux2::src::shared::window::window::new();
+        let window = hmux2::src::shared::window::WindowRef::empty();
         let first = pane_owner();
         let last = pane_owner();
         window
@@ -223,14 +224,14 @@ fn relative_pane_selection_wraps_and_retains_its_result() {
         assert!(window.pane_by_number(None, 1, false).is_none());
         drop(selected);
         assert!(observer.upgrade().is_none());
-        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
+        window.release(c"test owner");
     }
 }
 
 #[test]
 fn window_membership_uses_live_allocation_identity() {
     unsafe {
-        let window = hmux2::src::shared::window::window::new();
+        let window = hmux2::src::shared::window::WindowRef::empty();
         let member = pane_owner();
         let unrelated = pane_owner();
         // Equal pane IDs do not make these the same allocation.
@@ -248,6 +249,6 @@ fn window_membership_uses_live_allocation_identity() {
             .borrow_pane_order_mut(PaneOrder::Index)
             .storage
             .clear();
-        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
+        window.release(c"test owner");
     }
 }

@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_percentage_result, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_target};
 use crate::src::cmd::{cmd_get_args_mut, cmd_mouse_pane, cmd_mouse_window};
@@ -32,10 +33,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
-use crate::src::window::Window as _;
-use crate::src::window::{
-    window_redraw_active_switch, window_set_active_pane, window_unzoom, window_zoom,
-};
+
 use crate::src::window_pane::WindowPane as _;
 pub static cmd_resize_pane_entry: cmd_entry = {
     cmd_entry {
@@ -109,12 +107,9 @@ unsafe fn cmd_resize_pane_exec(
                 .expect("resize window")
                 .is_zoomed()
             {
-                window_unzoom(
-                    wl.get_unchecked().window_handle().expect("resize window"),
-                    1 as ::core::ffi::c_int,
-                );
+                (wl.get_unchecked().window_handle().expect("resize window")).unzoom(true);
             } else {
-                window_zoom(&pane_owner);
+                crate::src::shared::window::WindowRef::zoom_pane(&pane_owner);
             }
             server_redraw_window(wl.get_unchecked().window_handle().expect("resize window"));
             return CMD_RETURN_NORMAL;
@@ -367,15 +362,8 @@ unsafe fn cmd_resize_pane_mouse_update(
         );
         return CMD_RETURN_NORMAL;
     }
-    window_redraw_active_switch(
-        &std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))),
-        Some(pane_owner),
-    );
-    window_set_active_pane(
-        &std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))),
-        &pane_owner,
-        1 as ::core::ffi::c_int,
-    );
+    (&std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")))).redraw_active_switch(Some(pane_owner));
+    (&std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")))).select_pane(&pane_owner, true);
     c.as_ref()
         .expect("live client")
         .borrow_terminal_mut()

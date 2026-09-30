@@ -149,11 +149,14 @@ impl window {
     }
 
     /// The caller supplies a live Rc-backed pane.
-    pub(super) fn set_active(&mut self, pane: Option<&window_pane>) {
-        self.active = pane.map_or_else(std::rc::Weak::new, |pane| pane.observer.clone());
+    pub(super) fn set_active(
+        &mut self,
+        pane: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
+    ) {
+        self.active = pane.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 
-    pub fn new() -> WindowRef {
+    pub(super) fn new() -> WindowRef {
         std::rc::Rc::new_cyclic(|observer| {
             let mut value = Self::default();
             value.observer = observer.clone();

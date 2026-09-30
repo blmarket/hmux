@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
@@ -6,7 +7,6 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 // Built-in callbacks return owned bytes or copied timestamps. The sorted
 // immutable table is shared by lookup and enumeration; external user callbacks
@@ -994,7 +994,7 @@ unsafe fn format_cb_scroll_region_upper(ft: *mut format_tree) -> Option<CString>
 unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
     let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         n = n.wrapping_add(1);
@@ -1255,10 +1255,7 @@ unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString>
 }
 unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(window_printable_flags(
-            ((*ft).winlink_handle()).clone(),
-            1 as ::core::ffi::c_int,
-        ));
+        return Some(crate::src::shared::window::WindowRef::winlink_flags(((*ft).winlink_handle()).clone(), true));
     }
     return None;
 }
@@ -1325,7 +1322,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut s: Option<SessionRef> = None;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*ft).winlink_handle().is_alive() {
-        let mut s_owner = (&sessions).first();
+        let mut s_owner = sessions.first();
         s = s_owner.clone();
         while !s.is_none() {
             wl = s_owner
@@ -1375,7 +1372,7 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
         }
         sg = session_groups_next(&*sg);
     }
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         if crate::src::session::session_group_for(&Rc::downgrade(
@@ -1450,10 +1447,7 @@ unsafe fn format_cb_window_panes(ft: *mut format_tree) -> Option<CString> {
 
 unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
-        return Some(window_printable_flags(
-            ((*ft).winlink_handle()).clone(),
-            0 as ::core::ffi::c_int,
-        ));
+        return Some(crate::src::shared::window::WindowRef::winlink_flags(((*ft).winlink_handle()).clone(), false));
     }
     return None;
 }
@@ -1646,7 +1640,7 @@ impl FormatTableEntry {
         } else if model_key(self.key, b"window_") {
             if let Some(owner) = (*ft).w.upgrade() {
                 let result = owner.format_value(self.key, &mut *ft);
-                crate::src::window::window_remove_ref(owner, c"format builtin".as_ptr());
+                owner.release(c"format builtin");
                 return result;
             }
         } else if model_key(self.key, b"pane_") {
@@ -2633,7 +2627,7 @@ mod owned_callback_tests {
     #[test]
     fn window_formats_observe_context_window_and_allow_clearing_it() {
         unsafe {
-            let owner = window::new();
+            let owner = crate::src::shared::window::WindowRef::empty();
             owner.initialize_name(c"observed-window".to_owned(), false);
             let observer = std::rc::Rc::downgrade(&owner);
             let mut ft_owner = format_create(None, None, 0, 0);
@@ -2647,7 +2641,7 @@ mod owned_callback_tests {
             super::super::format_defaults_window(ft, None);
             assert!(format_cb_window_name(ft).is_none());
             super::super::format_defaults_window(ft, Some(&owner));
-            crate::src::window::window_remove_ref(owner, c"test owner".as_ptr());
+            owner.release(c"test owner");
             assert!(observer.upgrade().is_none());
             assert!(format_cb_window_name(ft).is_none());
             assert!(format_cb_window_id(ft).is_none());

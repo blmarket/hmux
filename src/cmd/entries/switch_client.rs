@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
 use crate::src::arguments::{args_get, args_has};
@@ -35,10 +36,7 @@ use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::window::{window, winlink};
 use crate::src::sort::sort_order_from_string;
-use crate::src::window::Window as _;
-use crate::src::window::{
-    window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_set_active_pane,
-};
+
 use crate::src::window_pane::WindowPane as _;
 use crate::src::{server_client::Client, session::Session};
 pub static cmd_switch_client_entry: cmd_entry = {
@@ -227,17 +225,13 @@ unsafe fn cmd_switch_client_exec(
             } else {
                 visible = wp.as_ref().expect("target pane").is_visible() as i32;
             }
-            if visible == 0 && window_push_zoom(&window_owner, 0 as ::core::ffi::c_int, Zflag) != 0
+            if visible == 0 && window_owner.push_zoom(false, (Zflag) != 0) != 0
             {
                 server_redraw_window(&window_owner);
             }
-            window_redraw_active_switch(&window_owner, wp.as_ref());
-            window_set_active_pane(
-                &window_owner,
-                wp.as_ref().expect("target pane"),
-                1 as ::core::ffi::c_int,
-            );
-            if visible == 0 && window_pop_zoom(&window_owner) != 0 {
+            window_owner.redraw_active_switch(wp.as_ref());
+            window_owner.select_pane(wp.as_ref().expect("target pane"), true);
+            if visible == 0 && window_owner.pop_zoom() != 0 {
                 server_redraw_window(&window_owner);
             }
             window_owner.release(c"switch client pane");

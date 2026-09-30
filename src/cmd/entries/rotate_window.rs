@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
@@ -10,8 +11,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::layout::LayoutCellId;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{winlink, WindowRef};
-use crate::src::window::Window as _;
-use crate::src::window::{window_pop_zoom, window_push_zoom, window_set_active_pane};
+
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -129,29 +129,25 @@ unsafe fn cmd_rotate_window_exec(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window_owner = (*target).w.upgrade().expect("live rotation window");
     let result = (|| {
-        window_push_zoom(&window_owner, 0, args_has(args, 'Z' as u_char));
+        window_owner.push_zoom(false, (args_has(args, 'Z' as u_char)) != 0);
         let selected_pane = cmd_rotate_window_panes(
             &window_owner,
             args_has(args, 'D' as u_char) != 0,
             |pane, sx, sy| pane.resize(sx, sy),
         );
-        window_set_active_pane(
-            &std::rc::Rc::clone(&(window_owner)),
-            &selected_pane,
-            1 as ::core::ffi::c_int,
-        );
+        (&std::rc::Rc::clone(&(window_owner))).select_pane(&selected_pane, true);
         cmd_find_from_winlink_pane(
             &mut *current.current.borrow_mut(),
             wl.clone(),
             &selected_pane,
             0 as ::core::ffi::c_int,
         );
-        window_pop_zoom(&std::rc::Rc::clone(&(window_owner)));
+        (&std::rc::Rc::clone(&(window_owner))).pop_zoom();
         window_owner.invalidate_scene();
         server_redraw_window(&(window_owner));
         return CMD_RETURN_NORMAL;
     })();
-    crate::src::window::window_remove_ref(window_owner, c"cmd_rotate_window_exec".as_ptr());
+    window_owner.release(c"cmd_rotate_window_exec");
     result
 }
 
@@ -164,7 +160,7 @@ mod layout_identity_tests {
     use crate::src::window::{LayoutView, PaneOrder};
 
     unsafe fn fixture(count: u32) -> (WindowRef, Vec<Rc<UnsafeCell<window_pane>>>) {
-        let window = window::new();
+        let window = crate::src::shared::window::WindowRef::empty();
         let panes: Vec<_> = (0..count)
             .map(|index| {
                 let pane = window_pane::new();

@@ -24,7 +24,7 @@ fn event_snapshots_observe_clients_and_never_redirect_expired_targets() {
             .resolve_client(|| panic!("explicit target must win"))
             .unwrap();
         assert!(Rc::ptr_eq(&resolved, &explicit));
-        let window = window::new();
+        let window = hmux2::src::shared::window::WindowRef::empty();
         assert!(window.set_latest_client(Some(&explicit)));
         assert!(window.is_latest_client(&resolved));
         assert!(!window.is_latest_client(&fallback));

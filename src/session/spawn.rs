@@ -1,6 +1,7 @@
 //! Session-owned window creation/replacement transaction. Link index, current
 //! selection, MRU removal, and group synchronization remain inside Session.
 
+use crate::src::window::Window as _;
 use super::*;
 use crate::src::events::events_fire_window;
 use crate::src::resize::default_window_size;
@@ -10,7 +11,7 @@ use crate::src::shared::spawn::{
 use crate::src::spawn::{
     initialize_spawned_window, prepare_respawn_window, set_spawn_cause, spawn_log, spawn_pane,
 };
-use crate::src::window::{window_create, Window};
+use crate::src::window::{Window};
 
 pub(super) unsafe fn spawn_window(
     sc: *mut spawn_context,
@@ -73,7 +74,7 @@ pub(super) unsafe fn spawn_window(
             &mut ypixel,
             -1,
         );
-        let window = window_create(sx, sy, xpixel, ypixel);
+        let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
         created_window = Rc::downgrade(&window);
         if !(*s).curw.is_alive() {
             (*s).curw = (*sc).winlink_handle();

@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
@@ -57,9 +58,8 @@ use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
-use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
-use crate::src::window::{window_find_by_id, window_unzoom, window_zoom, winlink_find_by_window};
+use crate::src::window::{winlink_find_by_window};
 use crate::src::window_clock::window_clock_table;
 use std::cell::UnsafeCell;
 use std::ffi::CString;
@@ -152,7 +152,7 @@ unsafe fn window_panes_get_source(
     wlp: *mut refbox::Weak<winlink>,
     session_owner: &mut Option<SessionRef>,
 ) -> Option<WindowWeak> {
-    let window_owner = window_find_by_id((*data).source_window)?;
+    let window_owner = crate::src::shared::window::WindowRef::find_by_id((*data).source_window)?;
     let mut link = refbox::Weak::new();
     *session_owner = crate::src::shared::session::SessionRef::find_by_id((*data).source_session);
     if let Some(session) = session_owner.as_ref() {
@@ -168,7 +168,7 @@ unsafe fn window_panes_get_source(
         *wlp = link;
     }
     let window = Rc::downgrade(&window_owner);
-    crate::src::window::window_remove_ref(window_owner, c"window_panes_get_source".as_ptr());
+    window_owner.release(c"window_panes_get_source");
     Some(window)
 }
 unsafe fn window_panes_set_preview(data: *mut window_panes_modedata) {
@@ -1781,7 +1781,7 @@ unsafe fn window_panes_init(
         if (*data).zoomed == 0 {
             window_panes_set_preview(data);
         }
-        if (*data).zoomed == 0 && window_zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
+        if (*data).zoomed == 0 && crate::src::shared::window::WindowRef::zoom_pane(&mode_pane_owner) == 0 as ::core::ffi::c_int {
             server_redraw_window(
                 &mode_pane_owner
                     .window_observer()
@@ -2030,15 +2030,12 @@ unsafe fn window_panes_key(
         .expect("live display-panes window")
         .is_zoomed()
     {
-        window_unzoom(
-            &std::rc::Rc::clone(
+        (&std::rc::Rc::clone(
                 &mode_pane_owner
                     .window_observer()
                     .upgrade()
                     .expect("live pane parent"),
-            ),
-            1 as ::core::ffi::c_int,
-        );
+            )).unzoom(true);
     }
     window_panes_run_command(
         data,

@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_from_window};
 use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_error, cmdq_new_state};
@@ -38,7 +39,7 @@ use crate::src::shared::style::*;
 use crate::src::shared::window::window;
 use crate::src::shared::window::WindowWeak;
 use crate::src::style::{style_apply_with_options, style_parse, style_set};
-use crate::src::window::{window_update_focus, Window as _};
+use crate::src::window::{Window as _};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -270,7 +271,7 @@ pub unsafe fn menu_close(
     menu_free_data(menu);
     if let Some(owner) = window.upgrade() {
         owner.invalidate_scene();
-        window_update_focus(Some(&owner));
+        crate::src::shared::window::WindowRef::update_focus_for(Some(&owner));
         server_redraw_window(&owner);
         owner.release(c"menu close refresh");
     }
@@ -680,7 +681,7 @@ pub unsafe fn menu_display(
         }
         md.s.mode &= !MODE_CURSOR;
     }
-    crate::src::window::window_remove_ref(setup_window, c"menu_display".as_ptr());
+    setup_window.release(c"menu_display");
     menu_close(&window, None);
     let replaced = {
         let Some(retained) = window.upgrade() else {
@@ -694,7 +695,7 @@ pub unsafe fn menu_display(
     }
     if let Some(retained) = window.upgrade() {
         retained.invalidate_scene();
-        window_update_focus(Some(&retained));
+        crate::src::shared::window::WindowRef::update_focus_for(Some(&retained));
         server_redraw_window(&retained);
         retained.release(c"menu display refresh");
     }
@@ -929,7 +930,7 @@ mod tests {
     #[test]
     fn cancellation_preserves_a_replacement_and_windows_do_not_form_cycles() {
         unsafe {
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let weak_window = Rc::downgrade(&window);
             let first = refbox::RefBox::new(state(&[Some(c"first")]));
             first.try_borrow_mut().unwrap().w = weak_window.clone();
@@ -960,7 +961,7 @@ mod tests {
             assert!(replacement_observer == window.menu_observer().unwrap());
             assert_eq!(closed.get(), 0);
             assert_eq!(Rc::strong_count(&window), 1);
-            crate::src::window::window_remove_ref(window, c"test owner".as_ptr());
+            window.release(c"test owner");
             assert_eq!(closed.get(), 1);
             assert!(weak_window.upgrade().is_none());
             assert!(!replacement_observer.is_alive());
@@ -981,9 +982,9 @@ mod tests {
                 .unwrap();
             options_default(global_options, definition);
             for destroy_window in [false, true] {
-                let window = window::new();
+                let window = crate::src::shared::window::WindowRef::empty();
                 let observer = Rc::downgrade(&window);
-                crate::src::window::window_resize(&window, 80, 24, -1, -1);
+                window.resize(80, 24, -1, -1);
                 let slot = Rc::new(RefCell::new(Some(window)));
                 let callback_slot = Rc::clone(&slot);
                 let first = refbox::RefBox::new(state(&[Some(c"first")]));
@@ -1004,7 +1005,7 @@ mod tests {
                         assert!(window.replace_menu(intermediate).is_none());
                         *callback_slot.borrow_mut() = Some(window);
                     } else {
-                        crate::src::window::window_remove_ref(window, c"test callback".as_ptr());
+                        window.release(c"test callback");
                     }
                 }));
                 assert!(slot
@@ -1048,10 +1049,7 @@ mod tests {
                             .as_deref(),
                         Some(c"new")
                     );
-                    crate::src::window::window_remove_ref(
-                        slot.borrow_mut().take().unwrap(),
-                        c"test slot".as_ptr(),
-                    );
+                    (slot.borrow_mut().take().unwrap()).release(c"test slot");
                 }
                 assert_eq!(cancelled.get(), 1);
                 assert!(observer.upgrade().is_none());

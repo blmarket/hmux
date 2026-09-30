@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::arguments::args_parse;
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
@@ -84,8 +85,7 @@ use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_dat
 use crate::src::tmux::{get_timer, global_options, global_w_options};
 use crate::src::tty::tty_window_offset;
 use crate::src::tty_acs::tty_acs_get;
-use crate::src::window::Window as _;
-use crate::src::window::window_set_active_pane;
+
 use crate::src::window_pane::WindowPane as _;
 use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
@@ -925,11 +925,7 @@ pub unsafe fn window_copy_scroll(
 ) {
     let mut wme: refbox::Weak<window_mode_entry> = pane_owner.mode_entry();
     if !!wme.is_alive() {
-        window_set_active_pane(
-            &std::rc::Rc::clone(&pane_owner.window_observer().upgrade().expect("live window")),
-            &pane_owner,
-            0 as ::core::ffi::c_int,
-        );
+        (&std::rc::Rc::clone(&pane_owner.window_observer().upgrade().expect("live window"))).select_pane(&pane_owner, false);
         window_copy_scroll1(wme.clone(), pane_owner, sl_mpos, my, tty_oy, scroll_exit);
     }
 }

@@ -1,3 +1,5 @@
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::ffi::libc::{memcpy, memset};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
@@ -61,8 +63,7 @@ use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
-use crate::src::window::windows_minmax;
-use crate::src::window::Window as _;
+
 use crate::src::window::WindowPane;
 use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};
 use crate::src::window_copy::window_copy_get_current_offset;
@@ -1050,7 +1051,7 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
 }
 
 pub unsafe fn redraw_invalidate_all_scenes() {
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         window_owner.invalidate_scene();
         window_cursor = window_owner.next_window();
@@ -2087,7 +2088,7 @@ mod menu_observer_tests {
             assert_eq!(bctx.cells.len(), 2);
             assert!(matches!(bctx.cells[0].data, redraw_span_data::Empty));
             assert!(matches!(bctx.cells[1].data, redraw_span_data::Outside));
-            crate::src::window::window_remove_ref(owner, c"test owner".as_ptr());
+            owner.release(c"test owner");
         }
     }
 
@@ -2095,8 +2096,8 @@ mod menu_observer_tests {
     fn cached_scene_observes_window_identity_and_skips_expired_window() {
         unsafe {
             let client_owner = ClientRef::allocate();
-            let window_owner = window::new();
-            let other_window = window::new();
+            let window_owner = crate::src::shared::window::WindowRef::empty();
+            let other_window = crate::src::shared::window::WindowRef::empty();
             let observer = std::rc::Rc::downgrade(&window_owner);
             let scene = redraw_scene {
                 c: std::rc::Rc::downgrade(&client_owner),
@@ -2110,7 +2111,7 @@ mod menu_observer_tests {
             };
             assert!(scene.w.ptr_eq(&std::rc::Rc::downgrade(&window_owner)));
             assert!(!scene.w.ptr_eq(&std::rc::Rc::downgrade(&other_window)));
-            crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
+            window_owner.release(c"test owner");
             assert!(observer.upgrade().is_none());
             assert!(redraw_set_draw_context(&scene).is_none());
             redraw_draw_scene(&client_owner, None, REDRAW_ALL, &scene);
@@ -2132,7 +2133,7 @@ mod menu_observer_tests {
             let mut gc = grid_cell::default();
             let mut lines = PANE_LINES_SINGLE;
             redraw_get_default_border_style(&mut dctx, &mut gc, &mut lines);
-            crate::src::window::window_remove_ref(other_window, c"test owner".as_ptr());
+            other_window.release(c"test owner");
         }
     }
 

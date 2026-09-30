@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
 use crate::src::cmd::cmd_list_print_cstring;
@@ -733,7 +734,7 @@ mod CStrings_tests {
 
         unsafe {
             let session_owner = crate::src::shared::session::SessionRef::allocate();
-            let window_owner = window::new();
+            let window_owner = crate::src::shared::window::WindowRef::empty();
             let mut wl = crate::src::session::test_support::add_link(&session_owner, 2);
             wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);
             winlink_set_window(wl.clone(), &window_owner);
@@ -768,7 +769,7 @@ mod CStrings_tests {
             assert!(!change.wl.is_empty());
             events_remove_sink(sink);
             crate::src::reactor::shutdown_runtime();
-            crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
+            window_owner.release(c"test owner");
         }
     }
 

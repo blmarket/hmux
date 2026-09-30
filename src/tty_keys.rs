@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::bracketed_paste::{
     match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
@@ -48,7 +49,7 @@ use crate::src::tty::{tty_invalidate, tty_set_size, tty_update_features};
 use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;
-use crate::src::window::window_update_focus;
+
 use std::ffi::CStr;
 use std::time::Duration;
 
@@ -2329,7 +2330,7 @@ unsafe fn tty_keys_update_focus(client: &ClientRef) {
         let window = link.get_unchecked().window_handle().cloned();
         window
     };
-    window_update_focus(window.as_ref());
+    crate::src::shared::window::WindowRef::update_focus_for(window.as_ref());
     if let Some(window) = window {
         use crate::src::window::Window;
         window.release(c"terminal focus update");

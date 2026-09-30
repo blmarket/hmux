@@ -1,4 +1,5 @@
 //! Real Window construction for integration tests, with explicit option cleanup.
+use hmux2::src::window::Window as _;
 use hmux2::src::options::{options_create, options_default, options_free, options_set_number};
 use hmux2::src::shared::options::options;
 use hmux2::src::shared::window::WindowRef;
@@ -32,7 +33,7 @@ impl WindowOptions {
     }
 
     pub unsafe fn create(&self, width: u32, height: u32) -> WindowRef {
-        hmux2::src::window::window_create(width, height, 0, 0)
+        hmux2::src::shared::window::WindowRef::create(width, height, 0, 0)
     }
 
     /// Every created Window must have been explicitly released first.

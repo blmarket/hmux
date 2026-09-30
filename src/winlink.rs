@@ -1,4 +1,5 @@
 //! Session-owned links and their Window associations.
+use crate::src::window::Window as _;
 use crate::src::alerts::alerts_queue;
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_mouse_at;
@@ -343,7 +344,7 @@ pub unsafe fn winlink_set_window(mut wl: refbox::Weak<winlink>, w_owner: &Window
         winlink_release_window(wl.clone(), c"winlink_set_window");
     }
     wl.get_mut_unchecked().window_owner =
-        Some(window_add_ref(w_owner, c"winlink_set_window".as_ptr()));
+        Some(w_owner.retain(c"winlink_set_window"));
     w_owner.add_winlink(wl);
 }
 

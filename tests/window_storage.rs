@@ -1,3 +1,5 @@
+use hmux2::src::window::Window as _;
+use hmux2::src::window::WindowIndex as _;
 #[path = "support/window_fixture.rs"]
 mod window_fixture;
 use hmux2::src::window::*;
@@ -16,60 +18,60 @@ fn global_index_observes_windows_and_lookups_retain_them() {
         let second_id = second.id();
         let first_weak = Rc::downgrade(&first);
         let second_weak = Rc::downgrade(&second);
-        let existing = windows_insert(head, &first).unwrap();
+        let existing = (&mut *head).insert(&first).unwrap();
         assert!(Rc::ptr_eq(&existing, &first));
         existing.release(c"existing index entry");
         assert_eq!(Rc::strong_count(&first), 1, "index must not own windows");
-        let retained = window_find_by_id(first_id).unwrap();
+        let retained = hmux2::src::shared::window::WindowRef::find_by_id(first_id).unwrap();
         assert!(Rc::ptr_eq(&retained, &first));
-        assert!(window_find_by_id(second_id + 1).is_none());
-        let minimum = windows_minmax(&*head).unwrap();
+        assert!(hmux2::src::shared::window::WindowRef::find_by_id(second_id + 1).is_none());
+        let minimum = (&*head).first().unwrap();
         assert!(Rc::ptr_eq(&minimum, &first));
-        window_remove_ref(minimum, c"index minimum".as_ptr());
+        minimum.release(c"index minimum");
         let next = first.next_window().unwrap();
         assert!(Rc::ptr_eq(&next, &second));
-        window_remove_ref(next, c"index successor".as_ptr());
+        next.release(c"index successor");
         assert!(second.next_window().is_none());
 
-        let duplicate = window::new();
+        let duplicate = hmux2::src::shared::window::WindowRef::empty();
         assert_eq!(
             duplicate.id(),
             first_id,
             "the first allocated ID collides with an unregistered default"
         );
-        let existing = windows_insert(head, &duplicate).unwrap();
+        let existing = (&mut *head).insert(&duplicate).unwrap();
         assert!(Rc::ptr_eq(&existing, &first));
-        window_remove_ref(existing, c"duplicate lookup".as_ptr());
+        existing.release(c"duplicate lookup");
         assert!(duplicate.next_window().is_none());
-        assert!(!windows_remove(&mut *head, &duplicate));
-        window_remove_ref(duplicate, c"duplicate window".as_ptr());
+        assert!(!(&mut *head).remove(&duplicate));
+        duplicate.release(c"duplicate window");
 
         let mut other = hmux2::src::shared::window::windows { storage: None };
-        assert!(!windows_remove(&mut other, &first));
-        assert!(windows_remove(&mut *head, &second));
+        assert!(!(&mut other).remove(&first));
+        assert!((&mut *head).remove(&second));
         assert_eq!(
             Rc::strong_count(&second),
             1,
             "removal must not retain window"
         );
-        assert!(window_find_by_id(second_id).is_none());
+        assert!(hmux2::src::shared::window::WindowRef::find_by_id(second_id).is_none());
         assert!(first.next_window().is_none());
         assert!(
             second_weak.upgrade().is_some(),
             "removal must not destroy window"
         );
-        window_remove_ref(second, c"removed window".as_ptr());
+        second.release(c"removed window");
         assert!(second_weak.upgrade().is_none());
 
-        window_remove_ref(first, c"indexed window".as_ptr());
+        first.release(c"indexed window");
         assert!(first_weak.upgrade().is_some(), "lookup must retain window");
-        window_remove_ref(retained, c"retained lookup".as_ptr());
+        retained.release(c"retained lookup");
         assert!(first_weak.upgrade().is_none());
         assert!(
             (*head).storage.is_none(),
             "final explicit release must unlink the window"
         );
-        assert!(window_find_by_id(first_id).is_none());
+        assert!(hmux2::src::shared::window::WindowRef::find_by_id(first_id).is_none());
         options.free();
     }
 }

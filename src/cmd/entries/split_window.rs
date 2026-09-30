@@ -48,9 +48,7 @@ use crate::src::shared::spawn::{
 };
 use crate::src::shared::window::winlink;
 use crate::src::window::Window;
-use crate::src::window::{
-    window_active_pane_is_over_zoom, window_pop_zoom, window_remove_pane, window_unzoom,
-};
+
 use crate::src::window_pane::WindowPane as _;
 
 pub const SPLIT_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
@@ -167,9 +165,9 @@ unsafe fn cmd_split_window_exec(
         let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
         let mut lines: pane_lines = PANE_LINES_SINGLE;
         let mut count: u_int = args_count(args);
-        if window_active_pane_is_over_zoom(&std::rc::Rc::clone(
+        if (&std::rc::Rc::clone(
             &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-        )) != 0
+        )).active_pane_over_zoom() != 0
         {
             restore_zoom = 1 as ::core::ffi::c_int;
         }
@@ -180,12 +178,9 @@ unsafe fn cmd_split_window_exec(
                 restore_zoom = 0 as ::core::ffi::c_int;
             }
             if restore_zoom == 0 {
-                window_unzoom(
-                    &std::rc::Rc::clone(
+                (&std::rc::Rc::clone(
                         &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-                    ),
-                    1 as ::core::ffi::c_int,
-                );
+                    )).unzoom(true);
             }
             is_floating = original_pane.is_floating() as i32;
             flags |= SPAWN_SPLIT;
@@ -534,12 +529,12 @@ unsafe fn cmd_split_window_exec(
                                                 );
                                             }
                                             if restore_zoom != 0 {
-                                                window_pop_zoom(&original_window);
+                                                original_window.pop_zoom();
                                                 server_redraw_window(&original_window);
                                             } else if !flags & SPAWN_FLOATING != 0
                                                 && args_has(args, 'O' as i32 as u_char) == 0
                                             {
-                                                window_pop_zoom(&original_window);
+                                                original_window.pop_zoom();
                                                 server_redraw_window(&original_window);
                                             }
                                             server_redraw_session(
@@ -627,10 +622,10 @@ unsafe fn cmd_split_window_exec(
             if is_floating == 0 {
                 layout_close_pane(new_pane);
             }
-            window_remove_pane(&original_window, new_pane);
+            original_window.remove_pane(new_pane);
         }
         if restore_zoom != 0 || !flags & SPAWN_FLOATING != 0 {
-            window_pop_zoom(&original_window);
+            original_window.pop_zoom();
         }
         drop(sc.environ.take());
         window_owner.release(c"cmd_split_window");

@@ -1,11 +1,12 @@
+use hmux2::src::window::Window as _;
 use hmux2::src::shared::{pane::window_pane, window::window};
-use hmux2::src::window::{window_lost_pane, PaneOrder, Window};
+use hmux2::src::window::{PaneOrder, Window};
 use std::rc::Rc;
 
 #[test]
 fn losing_modal_pane_tolerates_expired_previous_target() {
     unsafe {
-        let window = window::new();
+        let window = hmux2::src::shared::window::WindowRef::empty();
         let previous = window_pane::new();
         let previous_observer = Rc::downgrade(&previous);
         window.initialize_pane(&previous, None);
@@ -20,7 +21,7 @@ fn losing_modal_pane_tolerates_expired_previous_target() {
         }
         drop(previous);
         assert!(previous_observer.upgrade().is_none());
-        window_lost_pane(&window, &modal);
+        window.forget_pane(&modal);
         assert!(window.active_pane().is_none());
         assert!(window.modal_pane().is_none());
         for order in [PaneOrder::Index, PaneOrder::Stacking] {
@@ -34,7 +35,7 @@ fn losing_modal_pane_tolerates_expired_previous_target() {
 #[test]
 fn losing_previous_target_clears_observer_without_retaining_it() {
     unsafe {
-        let window = window::new();
+        let window = hmux2::src::shared::window::WindowRef::empty();
         let previous = window_pane::new();
         let observer = Rc::downgrade(&previous);
         (*previous.get()).window = Rc::downgrade(&window);
@@ -43,7 +44,7 @@ fn losing_previous_target_clears_observer_without_retaining_it() {
         window.begin_modal_pane(&modal);
         window.initialize_pane(&modal, None);
         let weak_count = Rc::weak_count(&previous);
-        window_lost_pane(&window, &previous);
+        window.forget_pane(&previous);
         assert_eq!(Rc::weak_count(&previous), weak_count - 1);
         assert!(Rc::ptr_eq(&window.modal_pane().unwrap(), &modal));
         for order in [PaneOrder::Index, PaneOrder::Stacking] {

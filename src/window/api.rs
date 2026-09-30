@@ -5,6 +5,7 @@
 //! option callbacks must not reenter the window, free/reparent the component, or
 //! let references or pointers escape.
 
+use crate::src::window_pane::WindowPane as _;
 use crate::src::server_client::Client as _;
 use super::*;
 use crate::src::layout::custom::{layout_parse, LayoutSnapshot};
@@ -75,7 +76,91 @@ fn find_layout_pane<'a>(
         .find_map(|child| find_layout_pane(child, pane))
 }
 
+/// Operations on independently movable registry heads. Entries remain weak;
+/// successful lookup and traversal return one explicit Window release duty.
+pub trait WindowIndex {
+    unsafe fn insert(&mut self, window: &WindowRef) -> Option<WindowRef>;
+    unsafe fn remove(&mut self, window: &WindowRef) -> bool;
+    unsafe fn first(&self) -> Option<WindowRef>;
+    unsafe fn resolve(&self, id: u32) -> Option<WindowRef>;
+    fn is_empty(&self) -> bool;
+}
+
+impl WindowIndex for windows {
+    unsafe fn insert(&mut self, window: &WindowRef) -> Option<WindowRef> {
+        windows_insert(self, window)
+    }
+    unsafe fn remove(&mut self, window: &WindowRef) -> bool {
+        windows_remove(self, window)
+    }
+    unsafe fn first(&self) -> Option<WindowRef> {
+        windows_minmax(self)
+    }
+    unsafe fn resolve(&self, id: u32) -> Option<WindowRef> {
+        let map = self
+            .storage
+            .as_ref()?
+            .try_borrow_mut()
+            .expect("window index already borrowed");
+        map.get(&id)?.upgrade()
+    }
+    fn is_empty(&self) -> bool {
+        self.storage.as_ref().is_none_or(|owner| {
+            owner
+                .try_borrow_mut()
+                .expect("window index already borrowed")
+                .is_empty()
+        })
+    }
+}
+
 pub trait Window {
+    /// Allocate an unregistered retained owner with empty state. This is also
+    /// the foundation used by the fully initialized factory below.
+    fn empty() -> Self
+    where
+        Self: Sized;
+    /// Create and register an initialized Window; linking transfers the caller's
+    /// explicit release duty to its winlink.
+    unsafe fn create(sx: u32, sy: u32, xpixel: u32, ypixel: u32) -> Self
+    where
+        Self: Sized;
+    unsafe fn find_by_id(id: u32) -> Option<Self>
+    where
+        Self: Sized;
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self>
+    where
+        Self: Sized;
+    unsafe fn retain(&self, from: &CStr) -> Self
+    where
+        Self: Sized;
+    unsafe fn update_focus(&self);
+    unsafe fn update_focus_for(window: Option<&Self>)
+    where
+        Self: Sized;
+    unsafe fn zoom_pane(pane: &Rc<UnsafeCell<window_pane>>) -> i32
+    where
+        Self: Sized;
+    unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
+    unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
+    unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>>;
+    unsafe fn active_pane_over_zoom(&self) -> i32;
+    /// Save the previous zoom identity before temporarily displaying all panes.
+    unsafe fn push_zoom(&self, always: bool, flag: bool) -> i32;
+    unsafe fn pop_zoom(&self) -> i32;
+    unsafe fn add_pane(
+        &self,
+        other: Option<&Rc<UnsafeCell<window_pane>>>,
+        hlimit: u32,
+        flags: i32,
+    ) -> Rc<UnsafeCell<window_pane>>;
+    /// Retire selection and history before the caller removes or moves membership.
+    unsafe fn forget_pane(&self, pane: &Rc<UnsafeCell<window_pane>>);
+    unsafe fn destroy_panes(&self);
+    unsafe fn winlink_flags(link: refbox::Weak<winlink>, escape: bool) -> CString
+    where
+        Self: Sized;
+
     /// Immediate edits to weak pane membership only. End this guard before
     /// querying panes, resizing, calling Window operations or delivering events.
     /// A future whole-Window RefCell maps one borrow to this component.
@@ -315,6 +400,66 @@ pub trait Window {
 }
 
 impl Window for WindowRef {
+    fn empty() -> Self {
+        window::new()
+    }
+    unsafe fn create(sx: u32, sy: u32, xpixel: u32, ypixel: u32) -> Self {
+        window_create(sx, sy, xpixel, ypixel)
+    }
+    unsafe fn find_by_id(id: u32) -> Option<Self> {
+        window_find_by_id(id)
+    }
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> {
+        window_find_by_id_str(id.as_ptr())
+    }
+    unsafe fn retain(&self, from: &CStr) -> Self {
+        window_add_ref(self, from.as_ptr())
+    }
+    unsafe fn update_focus(&self) {
+        window_update_focus(Some(self));
+    }
+    unsafe fn update_focus_for(window: Option<&Self>) {
+        window_update_focus(window);
+    }
+    unsafe fn zoom_pane(pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
+        window_zoom(pane)
+    }
+    unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>) {
+        window_redraw_active_switch(self, pane);
+    }
+    unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>> {
+        window_get_active_at(self, x, y)
+    }
+    unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>> {
+        window_find_string(self, name)
+    }
+    unsafe fn active_pane_over_zoom(&self) -> i32 {
+        window_active_pane_is_over_zoom(self)
+    }
+    unsafe fn push_zoom(&self, always: bool, flag: bool) -> i32 {
+        window_push_zoom(self, always as i32, flag as i32)
+    }
+    unsafe fn pop_zoom(&self) -> i32 {
+        window_pop_zoom(self)
+    }
+    unsafe fn add_pane(
+        &self,
+        other: Option<&Rc<UnsafeCell<window_pane>>>,
+        hlimit: u32,
+        flags: i32,
+    ) -> Rc<UnsafeCell<window_pane>> {
+        window_add_pane(self, other, hlimit, flags)
+    }
+    unsafe fn forget_pane(&self, pane: &Rc<UnsafeCell<window_pane>>) {
+        window_lost_pane(self, pane);
+    }
+    unsafe fn destroy_panes(&self) {
+        window_destroy_panes(self);
+    }
+    unsafe fn winlink_flags(link: refbox::Weak<winlink>, escape: bool) -> CString {
+        window_printable_flags(link, escape as i32)
+    }
+
     type LayoutCell<'a> = &'a layout_cell;
     type LayoutCellMut<'a> = &'a mut layout_cell;
 

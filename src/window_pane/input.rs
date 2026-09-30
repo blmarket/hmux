@@ -1,4 +1,5 @@
 //! Pane-owned input parsing and independent screen-parser components.
+use crate::src::window::Window as _;
 use crate::src::alerts::alerts_queue;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::compat::strtonum::strtonum;
@@ -64,8 +65,7 @@ use crate::src::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_sel
 use crate::src::window::{
     window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client,
     window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data,
-    window_update_activity,
-};
+    };
 use crate::src::window::{Window as _, WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::collections::VecDeque;
@@ -2511,9 +2511,9 @@ pub(super) unsafe fn input_parse_buffer(
         return;
     }
     (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
-    window_update_activity(&std::rc::Rc::clone(
+    (&std::rc::Rc::clone(
         &(((*wp).window_handle().as_ref()).expect("live window")),
-    ));
+    )).update_activity();
     if !(*wp).flags & PANE_ACTIVITY != 0 {
         (*wp).flags |= PANE_ACTIVITY;
         events_fire_pane(

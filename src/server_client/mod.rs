@@ -1,10 +1,10 @@
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
-use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime};
 use std::{cell::UnsafeCell, rc::Rc};
@@ -97,7 +97,7 @@ use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::{
-    all_window_panes, window_get_active_at, window_pane_clear_resizes, window_pane_contains,
+    all_window_panes, window_pane_clear_resizes, window_pane_contains,
     window_pane_find_by_id, window_pane_get_new_data, window_pane_get_pane_lines,
     window_pane_get_pane_status, window_pane_has_prompt, window_pane_is_floating,
     window_pane_is_visible, window_pane_key, window_pane_next, window_pane_paste,
@@ -105,8 +105,7 @@ use crate::src::window::{
     window_pane_scrollbar_reserve, window_pane_scrollbar_show, window_pane_scrollbar_start_timer,
     window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
     window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
-    window_pane_tree_next, window_redraw_active_switch, window_set_active_pane,
-    window_update_focus, windows_minmax, winlink_find_by_index,
+    window_pane_tree_next, winlink_find_by_index,
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
@@ -784,7 +783,7 @@ unsafe fn server_client_update_overlay_focus(owner: &ClientRef) {
     };
     let link = session.current_winlink();
     if let Some(window) = link.get_unchecked().window_handle().cloned() {
-        window_update_focus(Some(&window));
+        crate::src::shared::window::WindowRef::update_focus_for(Some(&window));
         window.release(c"client overlay focus");
     }
 }
@@ -1140,7 +1139,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
         "lost attached client {}",
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         if window_owner.is_latest_client(c_owner) {
             found = ::core::ptr::null_mut::<client>();
@@ -1175,7 +1174,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
             }
         }
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
 }
 unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Option<&SessionRef>) {
@@ -1338,7 +1337,7 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
         let link = old.current_winlink();
         if link.is_alive() {
             if let Some(window) = link.get_unchecked().window_handle().cloned() {
-                window_update_focus(Some(&window));
+                crate::src::shared::window::WindowRef::update_focus_for(Some(&window));
                 window.release(c"client old-session focus");
             }
         }
@@ -1360,7 +1359,7 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
                 .window_handle()
                 .cloned()
                 .expect("attached session window");
-            window_update_focus(Some(&window));
+            crate::src::shared::window::WindowRef::update_focus_for(Some(&window));
             window.release(c"client new-session focus");
         }
         session.on_attached();
@@ -1583,10 +1582,7 @@ unsafe fn server_client_update_scrollbar_hover(
             cursor = window_owner.next_pane(Some(&pane_owner));
         }
     })();
-    crate::src::window::window_remove_ref(
-        window_owner,
-        c"server_client_update_scrollbar_hover".as_ptr(),
-    );
+    window_owner.release(c"server_client_update_scrollbar_hover");
     result
 }
 
@@ -1958,7 +1954,7 @@ unsafe fn server_client_check_mouse(
                     selected_pane = last_pane.clone();
                 } else {
                     let hit_window_owner = &window_owner;
-                    selected_pane = window_get_active_at(hit_window_owner, px, py);
+                    selected_pane = hit_window_owner.pane_at(px, py);
                 }
             }
             if selected_pane.is_none() {
@@ -2117,15 +2113,8 @@ unsafe fn server_client_check_mouse(
                     })
                     != 0
             {
-                window_redraw_active_switch(
-                    &std::rc::Rc::clone(&(window_owner)),
-                    selected_pane.as_ref(),
-                );
-                window_set_active_pane(
-                    &std::rc::Rc::clone(&(window_owner)),
-                    selected_pane.as_ref().expect("mouse pane"),
-                    1 as ::core::ffi::c_int,
-                );
+                (&std::rc::Rc::clone(&(window_owner))).redraw_active_switch(selected_pane.as_ref());
+                (&std::rc::Rc::clone(&(window_owner))).select_pane(selected_pane.as_ref().expect("mouse pane"), true);
                 server_redraw_window_borders(&(window_owner));
                 server_status_window(&(window_owner));
             }
@@ -2144,7 +2133,7 @@ unsafe fn server_client_check_mouse(
                 (b & MOUSE_MASK_BUTTONS as u_int).wrapping_add(1 as u_int) as ::core::ffi::c_int;
             if last_pane.is_none() {
                 let hit_window_owner = &window_owner;
-                selected_pane = window_get_active_at(hit_window_owner, px, py);
+                selected_pane = hit_window_owner.pane_at(px, py);
                 last_pane = selected_pane.clone();
                 if !selected_pane.is_none() {
                     (*c).tty.mouse_last_pane =
@@ -2210,7 +2199,7 @@ unsafe fn server_client_check_mouse(
         }
         return key;
     })();
-    crate::src::window::window_remove_ref(window_owner, c"server_client_check_mouse".as_ptr());
+    window_owner.release(c"server_client_check_mouse");
     result
 }
 unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
@@ -3187,13 +3176,13 @@ unsafe fn server_client_handle_key_after(
     return server_client_handle_key0(owner, event, after_handle, next);
 }
 unsafe fn server_client_loop() {
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         server_client_check_window_resize(&window_owner);
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
@@ -3201,7 +3190,7 @@ unsafe fn server_client_loop() {
             pane_cursor = pane_owner.next_in_window();
         }
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
@@ -3220,7 +3209,7 @@ unsafe fn server_client_loop() {
         }
         registry_c_owner = clients.next(&client_owner);
     }
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
@@ -3229,9 +3218,9 @@ unsafe fn server_client_loop() {
         }
         check_window_name(&window_owner);
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
-    let mut window_cursor = windows_minmax(&windows);
+    let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
@@ -3239,7 +3228,7 @@ unsafe fn server_client_loop() {
             pane_cursor = pane_owner.next_in_window();
         }
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
 }
 unsafe fn server_client_check_window_resize(owner: &WindowRef) {
@@ -3417,7 +3406,7 @@ mod prompt_cursor_tests {
                     expected,
                     "status {at}, prompt {has_prompt}, pane {x},{y}, covered {covered}"
                 );
-                crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
+                window_owner.release(c"test owner");
             }
             (&mut crate::src::session::sessions).remove(&session_owner);
             crate::src::session::sessions = previous_sessions;
@@ -3656,7 +3645,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         };
         (*tty).flags |= flags;
     })();
-    crate::src::window::window_remove_ref(window_owner, c"server_client_reset_state".as_ptr());
+    window_owner.release(c"server_client_reset_state");
     result
 }
 unsafe fn server_client_repeat_timer(owner: &ClientRef) {
@@ -3826,7 +3815,7 @@ unsafe fn server_client_check_modes(client_owner: &ClientRef) {
             cursor = pane_owner.next_in_window();
         }
     })();
-    crate::src::window::window_remove_ref(window_owner, c"server_client_check_modes".as_ptr());
+    window_owner.release(c"server_client_check_modes");
     result
 }
 unsafe fn server_client_any_pane_redraw(c: &client, window: &WindowRef) -> bool {
@@ -4042,7 +4031,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             ((*c).redraw) as usize
         ));
     })();
-    crate::src::window::window_remove_ref(window_owner, c"server_client_check_redraw".as_ptr());
+    window_owner.release(c"server_client_check_redraw");
     result
 }
 unsafe fn server_client_set_title(client_owner: &ClientRef) {

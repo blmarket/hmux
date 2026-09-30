@@ -1,4 +1,6 @@
 //! Alert dispatch owns queued references; Window owns flags and its timer.
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::log::{log_debug, log_hex};
 use crate::src::reactor::defer;
 use crate::src::session::{alerts_check_all, Session};
@@ -7,7 +9,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::{windows, windows_minmax, winlinks_minmax, winlinks_next, Window};
+use crate::src::window::{windows, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
 use std::{cell::UnsafeCell, rc::Rc};
 
@@ -59,7 +61,7 @@ pub unsafe fn alerts_check_session(session: &SessionRef) {
 }
 
 pub unsafe fn alerts_reset_all() {
-    let mut cursor = windows_minmax(&windows);
+    let mut cursor = windows.first();
     while let Some(owner) = cursor {
         owner.reset_alert_timer();
         cursor = owner.next_window();

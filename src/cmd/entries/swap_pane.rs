@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::server_client::Client as _;
 use crate::src::arguments::args_has;
@@ -14,10 +15,8 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{window, WindowRef};
-use crate::src::window::Window as _;
 use crate::src::window::{
-    window_fire_pane_moved, window_pop_zoom, window_push_zoom, window_set_active_pane,
-};
+    window_fire_pane_moved, };
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -108,11 +107,7 @@ unsafe fn cmd_swap_pane_exec(
             cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;
         }
-        if window_push_zoom(
-            &std::rc::Rc::clone(&(dst_window_owner)),
-            0 as ::core::ffi::c_int,
-            args_has(args, 'Z' as i32 as u_char),
-        ) != 0
+        if (&std::rc::Rc::clone(&(dst_window_owner))).push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0) != 0
         {
             server_redraw_window(&(dst_window_owner));
         }
@@ -124,7 +119,7 @@ unsafe fn cmd_swap_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec".as_ptr());
+            previous.release(c"cmd_swap_pane_exec");
 
             src_pane_owner = cmd_swap_pane_next_tiled_pane(
                 &dst_window_owner,
@@ -149,7 +144,7 @@ unsafe fn cmd_swap_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
-            crate::src::window::window_remove_ref(previous, c"cmd_swap_pane_exec".as_ptr());
+            previous.release(c"cmd_swap_pane_exec");
 
             src_pane_owner = cmd_swap_pane_prev_tiled_pane(
                 &dst_window_owner,
@@ -168,11 +163,7 @@ unsafe fn cmd_swap_pane_exec(
             .expect("tiled swap target remains in its window");
         }
         if !Rc::ptr_eq(&src_window_owner, &dst_window_owner)
-            && window_push_zoom(
-                &src_window_owner,
-                0 as ::core::ffi::c_int,
-                args_has(args, 'Z' as i32 as u_char),
-            ) != 0
+            && src_window_owner.push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0) != 0
         {
             server_redraw_window(&src_window_owner);
         }
@@ -220,43 +211,23 @@ unsafe fn cmd_swap_pane_exec(
             dst_pane_owner.resize(src_sx, src_sy);
             if args_has(args, 'd' as i32 as u_char) == 0 {
                 if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
-                    window_set_active_pane(
-                        &src_window_owner,
-                        &dst_pane_owner,
-                        1 as ::core::ffi::c_int,
-                    );
-                    window_set_active_pane(
-                        &std::rc::Rc::clone(&(dst_window_owner)),
-                        &src_pane_owner,
-                        1 as ::core::ffi::c_int,
-                    );
+                    src_window_owner.select_pane(&dst_pane_owner, true);
+                    (&std::rc::Rc::clone(&(dst_window_owner))).select_pane(&src_pane_owner, true);
                 } else {
-                    window_set_active_pane(
-                        &src_window_owner,
-                        &dst_pane_owner,
-                        1 as ::core::ffi::c_int,
-                    );
+                    src_window_owner.select_pane(&dst_pane_owner, true);
                 }
             } else {
                 if src_window_owner
                     .active_pane()
                     .is_some_and(|pane| Rc::ptr_eq(&pane, &src_pane_owner))
                 {
-                    window_set_active_pane(
-                        &src_window_owner,
-                        &dst_pane_owner,
-                        1 as ::core::ffi::c_int,
-                    );
+                    src_window_owner.select_pane(&dst_pane_owner, true);
                 }
                 if dst_window_owner
                     .active_pane()
                     .is_some_and(|pane| Rc::ptr_eq(&pane, &dst_pane_owner))
                 {
-                    window_set_active_pane(
-                        &std::rc::Rc::clone(&(dst_window_owner)),
-                        &src_pane_owner,
-                        1 as ::core::ffi::c_int,
-                    );
+                    (&std::rc::Rc::clone(&(dst_window_owner))).select_pane(&src_pane_owner, true);
                 }
             }
             if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
@@ -304,17 +275,17 @@ unsafe fn cmd_swap_pane_exec(
                 );
             }
         }
-        if window_pop_zoom(&src_window_owner) != 0 {
+        if src_window_owner.pop_zoom() != 0 {
             server_redraw_window(&src_window_owner);
         }
         if !Rc::ptr_eq(&src_window_owner, &dst_window_owner)
-            && window_pop_zoom(&std::rc::Rc::clone(&(dst_window_owner))) != 0
+            && (&std::rc::Rc::clone(&(dst_window_owner))).pop_zoom() != 0
         {
             server_redraw_window(&(dst_window_owner));
         }
         return CMD_RETURN_NORMAL;
     })();
-    crate::src::window::window_remove_ref(src_window_owner, c"cmd_swap_pane_exec".as_ptr());
-    crate::src::window::window_remove_ref(dst_window_owner, c"cmd_swap_pane_exec".as_ptr());
+    src_window_owner.release(c"cmd_swap_pane_exec");
+    dst_window_owner.release(c"cmd_swap_pane_exec");
     result
 }

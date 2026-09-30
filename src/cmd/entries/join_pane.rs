@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has, args_percentage_and_expand_result};
 use crate::src::cmd::find::cmd_find_from_session;
@@ -42,10 +43,8 @@ use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
-use crate::src::window::Window as _;
 use crate::src::window::{
-    window_fire_pane_moved, window_lost_pane, window_redraw_active_switch, window_set_active_pane,
-};
+    window_fire_pane_moved, };
 use crate::src::window_pane::WindowPane as _;
 pub static cmd_join_pane_entry: cmd_entry = {
     cmd_entry {
@@ -700,12 +699,8 @@ unsafe fn cmd_join_pane_mouse_update(
         .window_handle()
         .cloned()
         .expect("live window");
-    window_redraw_active_switch(&window, mouse_pane_owner.as_ref());
-    window_set_active_pane(
-        &window,
-        mouse_pane_owner.as_ref().expect("mouse pane"),
-        1 as ::core::ffi::c_int,
-    );
+    window.redraw_active_switch(mouse_pane_owner.as_ref());
+    window.select_pane(mouse_pane_owner.as_ref().expect("mouse pane"), true);
     window.release(c"join pane mouse selection");
     let drag_update: crate::src::shared::tty::mouse_drag_update_cb =
         Some(Box::new(crate::src::tty::tty_mouse_client_callback(
@@ -883,7 +878,7 @@ unsafe fn cmd_join_pane_tile(
         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
         .push_back(std::rc::Rc::downgrade(wp_owner));
     if args_has(args, 'd' as i32 as u_char) == 0 {
-        window_set_active_pane(w_owner, wp_owner, 1 as ::core::ffi::c_int);
+        w_owner.select_pane(wp_owner, true);
     }
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
@@ -1000,7 +995,7 @@ unsafe fn cmd_join_pane_exec(
             };
         layout_close_pane(&src_pane_owner);
         ClientRef::forget_pane(&src_pane_owner);
-        window_lost_pane(src_owner, &src_pane_owner);
+        src_owner.forget_pane(&src_pane_owner);
         assert!(
             src_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
@@ -1052,7 +1047,7 @@ unsafe fn cmd_join_pane_exec(
         server_redraw_window(src_owner);
         server_redraw_window(&dst_window);
         if args_has(args, 'd' as i32 as u_char) == 0 {
-            window_set_active_pane(&dst_window, &src_pane_owner, 1 as ::core::ffi::c_int);
+            dst_window.select_pane(&src_pane_owner, true);
             (dst_s.as_ref().expect("live session")).select_index(dst_idx);
             cmd_find_from_session(
                 &mut *current.current.borrow_mut(),
@@ -1104,8 +1099,8 @@ mod window_release_tests {
     #[test]
     fn empty_source_closes_before_destination_layout_notification() {
         unsafe {
-            let source = window::new();
-            let destination = window::new();
+            let source = crate::src::shared::window::WindowRef::empty();
+            let destination = crate::src::shared::window::WindowRef::empty();
             let source_observer = Rc::downgrade(&source);
             let destination_observer = Rc::downgrade(&destination);
             let calls = Rc::new(RefCell::new(Vec::new()));

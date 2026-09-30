@@ -1,3 +1,5 @@
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::alerts::alerts_reset_all;
 use crate::src::arguments::{args_get, args_has};
@@ -41,7 +43,7 @@ use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{checkshell, global_options, global_s_options, global_w_options};
 use crate::src::tty::tty_invalidate;
 use crate::src::tty_keys::tty_keys_build;
-use crate::src::window::windows_minmax;
+
 use crate::src::window::{windows, Window, WindowPane};
 use std::ffi::{CStr, CString};
 
@@ -1694,7 +1696,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"automatic-rename\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut window_cursor = windows_minmax(&windows);
+        let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
             if let Some(active) = window_owner.active_pane() {
                 if window_owner.with_options_mut(|options| options_get_number(options, name)) != 0 {
@@ -1702,7 +1704,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
                 }
             }
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+            window_owner.release(c"window traversal");
         }
     }
     if strcmp(
@@ -1732,11 +1734,11 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"fill-character\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut window_cursor = windows_minmax(&windows);
+        let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_fill_cells();
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+            window_owner.release(c"window traversal");
         }
     }
     if strcmp(
@@ -1878,12 +1880,12 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
     {
-        let mut window_cursor = windows_minmax(&windows);
+        let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_scrollbars();
             layout_fix_panes(&window_owner, None);
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+            window_owner.release(c"window traversal");
         }
     }
     if strcmp(
@@ -1907,11 +1909,11 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         {
             pane_owner.refresh_scrollbar_style();
         }
-        let mut window_cursor = windows_minmax(&windows);
+        let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
             layout_fix_panes(&window_owner, None);
             window_cursor = window_owner.next_window();
-            crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+            window_owner.release(c"window traversal");
         }
     }
     if strcmp(
@@ -1933,7 +1935,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut s_owner = (&sessions).first();
+        let mut s_owner = sessions.first();
         s = s_owner.clone();
         while !s.is_none() {
             s.as_ref().expect("live session").update_history();

@@ -1,14 +1,15 @@
+use hmux2::src::window::Window as _;
 use hmux2::src::grid::{grid_cells_equal, grid_default_cell};
 use hmux2::src::shared::grid::grid_cell;
 use hmux2::src::shared::pane::window_pane;
 use hmux2::src::shared::window::window;
 use hmux2::src::tty::tty_default_colours;
-use hmux2::src::window::{window_lost_pane, PaneOrder, Window};
+use hmux2::src::window::{PaneOrder, Window};
 
 #[test]
 fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes() {
     unsafe {
-        let window_owner = window::new();
+        let window_owner = hmux2::src::shared::window::WindowRef::empty();
         let pane_owner = window_pane::new();
         {
             let pane = &mut *pane_owner.get();
@@ -32,7 +33,7 @@ fn returned_defaults_preserve_active_fallback_and_dim_without_cached_attributes(
             (false, 2, 3, 1, 4, 20),
         ] {
             if !active {
-                window_lost_pane(&window_owner, &pane_owner);
+                window_owner.forget_pane(&pane_owner);
             }
             let (cached, cached_active) = {
                 let pane = &mut *pane_owner.get();

@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::arguments::{
     args_has, args_percentage_and_expand_result, args_strtonum_and_expand_result,
 };
@@ -29,12 +30,10 @@ pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
 pub use crate::src::window::window_pane_resize;
-use crate::src::window::Window as _;
 use crate::src::window::{
-    window_active_pane_is_over_zoom, window_pane_get_pane_lines, window_pane_get_pane_status,
+    window_pane_get_pane_lines, window_pane_get_pane_status,
     window_pane_is_floating, window_pane_next, window_pane_scrollbar_reserve, window_pane_z_next,
-    window_push_zoom,
-};
+    };
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
@@ -2198,18 +2197,10 @@ pub unsafe fn layout_get_tiled_cell(
             }
         };
     }
-    if window_active_pane_is_over_zoom(&std::rc::Rc::clone(&(w_owner))) != 0 {
-        window_push_zoom(
-            &std::rc::Rc::clone(&(w_owner)),
-            0 as ::core::ffi::c_int,
-            1 as ::core::ffi::c_int,
-        );
+    if (&std::rc::Rc::clone(&(w_owner))).active_pane_over_zoom() != 0 {
+        (&std::rc::Rc::clone(&(w_owner))).push_zoom(false, true);
     } else {
-        window_push_zoom(
-            &std::rc::Rc::clone(&(w_owner)),
-            1 as ::core::ffi::c_int,
-            flags & SPAWN_ZOOM,
-        );
+        (&std::rc::Rc::clone(&(w_owner))).push_zoom(true, (flags & SPAWN_ZOOM) != 0);
     }
     layout_split_pane(wp_owner, type_0, size, flags)
         .ok_or_else(|| c"no space for a new pane".to_owned())
@@ -2242,7 +2233,7 @@ pub unsafe fn layout_get_floating_cell(
         layout_floating_args_parse(item_handle, args, lines, w_owner, &mut fg)?;
     }
     let (unzoom, remember) =
-        if flags & SPAWN_FLOATOVERZOOM != 0 || window_active_pane_is_over_zoom(w_owner) != 0 {
+        if flags & SPAWN_FLOATOVERZOOM != 0 || w_owner.active_pane_over_zoom() != 0 {
             (0, 1)
         } else {
             (1, flags & SPAWN_ZOOM)
@@ -2251,7 +2242,7 @@ pub unsafe fn layout_get_floating_cell(
         .window_observer()
         .upgrade()
         .expect("floating pane window");
-    window_push_zoom(&parent, unzoom, remember);
+    parent.push_zoom((unzoom) != 0, (remember) != 0);
     parent.release(c"prepare floating layout");
     Ok(layout_floating_pane(w_owner, Some(wp_owner), &raw mut fg))
 }
@@ -3165,7 +3156,7 @@ mod reservation_tests {
     #[test]
     fn floating_resize_validates_before_edit_and_invalidates_after_the_tree_borrow() {
         unsafe {
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let pane = window_pane::new();
             (*pane.get()).window = Rc::downgrade(&window);
             let mut cell = layout_create_cell();
@@ -3293,7 +3284,7 @@ mod reservation_tests {
         unsafe {
             // Deliberately leave Window options uninitialized: a single pane
             // has no siblings to redistribute and must not query resize policy.
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let pane = window_pane::new();
             (*pane.get()).window = Rc::downgrade(&window);
             let mut root = layout_create_cell();
@@ -3320,7 +3311,7 @@ mod reservation_tests {
         use crate::src::events::{events_add_sink, events_remove_sink};
         use crate::src::shared::events::events_callback;
         unsafe {
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let pane = window_pane::new();
             (*pane.get()).window = Rc::downgrade(&window);
             let mut root = layout_create_cell();
@@ -3360,7 +3351,7 @@ mod reservation_tests {
     #[test]
     fn floating_reservation_attaches_without_retaining_a_tree_borrow_or_pane_owner() {
         unsafe {
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let mut root = layout_create_cell();
             layout_set_size(&mut *root, 80, 24, 0, 0);
             *window.borrow_layout_root_mut() = Some(root);
@@ -3401,7 +3392,7 @@ mod reservation_tests {
         use crate::src::events::{events_add_sink, events_remove_sink};
         use crate::src::shared::events::events_callback;
         unsafe {
-            let window = window::new();
+            let window = crate::src::shared::window::WindowRef::empty();
             let mut root = layout_create_cell();
             layout_set_size(&mut *root, 80, 24, 0, 0);
             let id = root.id();

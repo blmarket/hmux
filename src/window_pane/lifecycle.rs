@@ -1,4 +1,5 @@
 //! Pane process exit and explicit teardown transactions.
+use crate::src::window::Window as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::events::{events_fire, events_fire_winlink};
@@ -39,10 +40,8 @@ use crate::src::tmux::sig2name;
 use crate::src::tty::{tty_raw, tty_stop_tty};
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;
-use crate::src::window::Window as _;
 use crate::src::window::{
-    window_add_ref, window_pop_zoom, window_push_zoom, window_remove_pane, window_remove_ref,
-    window_unzoom, winlink_find_by_index, winlink_find_by_window, winlink_remove,
+    winlink_find_by_index, winlink_find_by_window, winlink_remove,
     winlink_stack_remove,
 };
 use crate::src::window_pane::WindowPane as _;
@@ -149,20 +148,13 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
         recalculate_sizes();
     } else {
         window_owner.release(c"server_kill_pane");
-        window_push_zoom(
-            &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
-            0 as ::core::ffi::c_int,
-            (*wp).flags & PANE_FLOATOVERZOOM,
-        );
+        (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window")))).push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
         ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
         layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-        window_remove_pane(
-            &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
-            pane_owner,
-        );
-        window_pop_zoom(&std::rc::Rc::clone(
+        (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window")))).remove_pane(pane_owner);
+        (&std::rc::Rc::clone(
             &(((*wp).window_handle().as_ref()).expect("live window")),
-        ));
+        )).pop_zoom();
         server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
     };
 }
@@ -316,17 +308,10 @@ pub(super) unsafe fn finish_process(
             &(*(wp)).observer.upgrade().expect("live window_pane"),
         );
     }
-    window_push_zoom(
-        &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
-        0 as ::core::ffi::c_int,
-        (*wp).flags & PANE_FLOATOVERZOOM,
-    );
+    (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window")))).push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
     ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
     layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-    window_remove_pane(
-        &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
-        pane_owner,
-    );
+    (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window")))).remove_pane(pane_owner);
     if window_owner.next_pane(None).is_none() {
         server_kill_window(
             std::rc::Rc::downgrade(&(((*wp).window_handle().as_ref()).expect("live window")))
@@ -335,9 +320,9 @@ pub(super) unsafe fn finish_process(
             1,
         );
     } else {
-        window_pop_zoom(&std::rc::Rc::clone(
+        (&std::rc::Rc::clone(
             &(((*wp).window_handle().as_ref()).expect("live window")),
-        ));
+        )).pop_zoom();
         server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
     };
     window_owner.release(c"server_destroy_pane");

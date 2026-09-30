@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -47,12 +48,10 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
 use crate::src::window::window_pane_resize;
-use crate::src::window::Window as _;
 use crate::src::window::{
-    window_add_pane, window_create, window_destroy_panes, window_pane_index, window_pane_next,
+    window_pane_index, window_pane_next,
     window_pane_reset_mode_all, window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
-    window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_remove_pane,
-    window_set_active_pane, winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window,
+    winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window,
     winlink_stack_remove,
 };
 use crate::src::window_border::window_set_fill_cells;
@@ -246,7 +245,7 @@ pub(crate) unsafe fn prepare_respawn_window(
             );
         }
         layout_free(&window);
-        window_destroy_panes(&window);
+        window.destroy_panes();
         window
             .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
             .push_front(source.clone());
@@ -418,13 +417,9 @@ pub(crate) unsafe fn spawn_editor(
             .1
             .wrapping_div(2 as u_int)
             .wrapping_sub(lg.sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int;
-        window_push_zoom(
-            &std::rc::Rc::clone(
+        (&std::rc::Rc::clone(
                 &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-            ),
-            0 as ::core::ffi::c_int,
-            1 as ::core::ffi::c_int,
-        );
+            )).push_zoom(false, true);
         let layout_id = layout_floating_pane(
             &std::rc::Rc::clone(
                 &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
@@ -453,14 +448,14 @@ pub(crate) unsafe fn spawn_editor(
         sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;
         let spawned_pane = spawn_pane(&raw mut sc, &raw mut cause);
         let Some(pane) = spawned_pane else {
-            window_pop_zoom(&std::rc::Rc::clone(
+            (&std::rc::Rc::clone(
                 &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-            ));
+            )).pop_zoom();
             return None;
         };
-        window_pop_zoom(&std::rc::Rc::clone(
+        (&std::rc::Rc::clone(
             &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-        ));
+        )).pop_zoom();
         Some(pane.install_editor(owner))
     })();
     original_window.release(c"spawn editor");

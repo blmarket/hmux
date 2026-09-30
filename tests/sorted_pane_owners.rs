@@ -1,3 +1,4 @@
+use hmux2::src::window::Window as _;
 use hmux2::src::shared::sort::{sort_criteria, SORT_CREATION};
 use hmux2::src::shared::{pane::window_pane, window::window};
 use hmux2::src::sort::sort_get_panes_window;
@@ -7,7 +8,7 @@ use std::rc::Rc;
 #[test]
 fn sorted_panes_survive_removal_of_ordering_and_source_handles() {
     unsafe {
-        let window = window::new();
+        let window = hmux2::src::shared::window::WindowRef::empty();
         let first = window_pane::new();
         let last = window_pane::new();
         (*first.get()).id = 1;
@@ -35,7 +36,7 @@ fn sorted_panes_survive_removal_of_ordering_and_source_handles() {
             .clear();
         drop(first);
         drop(last);
-        hmux2::src::window::window_remove_ref(window, c"test owner".as_ptr());
+        window.release(c"test owner");
         assert!(first_weak.upgrade().is_some());
         assert!(last_weak.upgrade().is_some());
         drop(sorted);

@@ -1,3 +1,5 @@
+use crate::src::window::Window as _;
+use crate::src::window::WindowIndex as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::ffi::libc::sscanf;
 use crate::src::format::{
@@ -25,7 +27,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::window::{
-    window_find_by_id, window_pane_find_by_id, winlinks_minmax, winlinks_next, Window as _,
+    window_pane_find_by_id, winlinks_minmax, winlinks_next, Window as _,
 };
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
@@ -190,7 +192,7 @@ unsafe fn monitor_get_session(
         return client?.attached_session().upgrade();
     }
     let Some(session) = session else {
-        return (&sessions).first();
+        return sessions.first();
     };
     let indexed = crate::src::shared::session::SessionRef::find_by_id(session.id())?;
     Rc::ptr_eq(&session, &indexed).then_some(indexed)
@@ -408,7 +410,7 @@ unsafe fn monitor_check_window(owner: &MonitorRef, item: &MonitorItemSnapshot) {
     let Some((client, session)) = monitor_context(owner) else {
         return;
     };
-    let Some(window) = window_find_by_id(item.target) else {
+    let Some(window) = crate::src::shared::window::WindowRef::find_by_id(item.target) else {
         return;
     };
     let mut link = window.next_winlink(None);
@@ -746,7 +748,7 @@ pub unsafe fn monitor_destroy(owner: MonitorRef) {
     });
     if let Some((session, callback, timer)) = retired {
         if let Some(session) = session {
-            (session).release(c"monitor_clear");
+            session.release(c"monitor_clear");
         }
         drop(callback);
         drop(timer);

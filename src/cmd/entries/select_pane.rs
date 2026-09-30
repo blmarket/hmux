@@ -1,3 +1,4 @@
+use crate::src::window::Window as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::{
     cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane,
@@ -28,10 +29,7 @@ use crate::src::shared::events::event_payload;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty::tty_window_bigger;
-use crate::src::window::Window as _;
-use crate::src::window::{
-    window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_set_active_pane,
-};
+
 use crate::src::window_pane::WindowPane as _;
 
 use crate::src::shared::abi::*;
@@ -217,8 +215,8 @@ unsafe fn cmd_select_pane_marked_pane(
             .window_observer()
             .upgrade()
             .expect("marked target window");
-        window_redraw_active_switch(&window, Some(&pane));
-        window_set_active_pane(&window, &pane, 1);
+        window.redraw_active_switch(Some(&pane));
+        window.select_pane(&pane, true);
         window.release(c"marked pane selection");
     }
     CMD_RETURN_NORMAL
@@ -268,15 +266,15 @@ unsafe fn cmd_select_pane_exec(
                     .modal_pane()
                     .is_some_and(|modal| !std::rc::Rc::ptr_eq(&modal, &last))
                     || last.is_visible();
-                if !visible && window_push_zoom(&window, 0, zoom) != 0 {
+                if !visible && window.push_zoom(false, (zoom) != 0) != 0 {
                     server_redraw_window(&window);
                 }
-                window_redraw_active_switch(&window, Some(&last));
-                if window_set_active_pane(&window, &last, 1) != 0 {
+                window.redraw_active_switch(Some(&last));
+                if window.select_pane(&last, true) != 0 {
                     cmd_find_from_winlink(&mut *current.current.borrow_mut(), link.clone(), 0);
                     cmd_select_pane_redraw(&window);
                 }
-                if !visible && window_pop_zoom(&window) != 0 {
+                if !visible && window.pop_zoom() != 0 {
                     server_redraw_window(&window);
                 }
             }
@@ -325,7 +323,7 @@ unsafe fn cmd_select_pane_exec(
             None
         };
         let pane = if let Some(direction) = direction {
-            window_push_zoom(&window, 0, 1);
+            window.push_zoom(false, true);
             let selected = match direction {
                 b'L' => original_pane.neighbor_left(),
                 b'R' => original_pane.neighbor_right(),
@@ -333,7 +331,7 @@ unsafe fn cmd_select_pane_exec(
                 b'D' => original_pane.neighbor_down(),
                 _ => unreachable!(),
             };
-            window_pop_zoom(&window);
+            window.pop_zoom();
             let Some(selected) = selected else {
                 return CMD_RETURN_NORMAL;
             };
@@ -378,11 +376,11 @@ unsafe fn cmd_select_pane_exec(
             .modal_pane()
             .is_some_and(|modal| !std::rc::Rc::ptr_eq(&modal, &pane))
             || pane.is_visible();
-        if !visible && window_push_zoom(&window, 0, zoom) != 0 {
+        if !visible && window.push_zoom(false, (zoom) != 0) != 0 {
             server_redraw_window(&window);
         }
-        window_redraw_active_switch(&window, Some(&pane));
-        if window_set_active_pane(&window, &pane, 1) != 0 {
+        window.redraw_active_switch(Some(&pane));
+        if window.select_pane(&pane, true) != 0 {
             cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), link.clone(), &pane, 0);
         }
         cmdq_insert_hook(
@@ -392,7 +390,7 @@ unsafe fn cmd_select_pane_exec(
             |out| out.write_all(b"after-select-pane"),
         );
         cmd_select_pane_redraw(&window);
-        if !visible && window_pop_zoom(&window) != 0 {
+        if !visible && window.pop_zoom() != 0 {
             server_redraw_window(&window);
         }
         CMD_RETURN_NORMAL
