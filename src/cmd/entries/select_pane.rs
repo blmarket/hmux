@@ -27,6 +27,7 @@ use crate::src::server_fn::{
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty::tty_window_bigger;
 use crate::src::window::Window as _;
@@ -182,7 +183,7 @@ unsafe fn cmd_select_pane_marked_pane(
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut lwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut mwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     if args_has(args, 'm' as i32 as u_char) != 0
         && window_pane_is_visible(&(*wp).observer.upgrade().expect("live pane")) == 0
     {
@@ -339,7 +340,7 @@ unsafe fn cmd_select_pane_exec(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let original_window =
         std::rc::Rc::downgrade(wl.get_unchecked().window_handle().expect("live window"));
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
         .as_ref()

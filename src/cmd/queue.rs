@@ -52,6 +52,7 @@ use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_sanitize_cstring;
@@ -524,7 +525,7 @@ pub unsafe fn cmdq_insert_after(
     last
 }
 pub unsafe fn cmdq_insert_hook(
-    _s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    _s_owner: Option<&SessionRef>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut current: *mut cmd_find_state,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,

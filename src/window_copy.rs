@@ -74,6 +74,7 @@ use crate::src::shared::pane::{PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHA
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::{tty, tty_ctx};
 pub use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
@@ -322,7 +323,7 @@ pub struct window_copy_cmd_state<'a> {
     pub wargs: Option<Box<args>>,
     pub m: Option<mouse_event>,
     pub c: Option<&'a ClientRef>,
-    pub s: Option<&'a std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    pub s: Option<&'a SessionRef>,
     pub wl: refbox::Weak<winlink>,
 }
 impl window_copy_cmd_state<'_> {
@@ -336,7 +337,7 @@ impl window_copy_cmd_state<'_> {
         self.wme.clone()
     }
 
-    fn session_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<session>>> {
+    fn session_handle(&self) -> Option<SessionRef> {
         self.s.cloned()
     }
 
@@ -419,7 +420,7 @@ pub static window_copy_mode: window_mode = {
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
                     Option<&ClientRef>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+                    Option<&SessionRef>,
                     refbox::Weak<winlink>,
                     *mut args,
                     *mut mouse_event,
@@ -467,7 +468,7 @@ pub static window_view_mode: window_mode = {
                 as unsafe fn(
                     refbox::Weak<window_mode_entry>,
                     Option<&ClientRef>,
-                    Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+                    Option<&SessionRef>,
                     refbox::Weak<winlink>,
                     *mut args,
                     *mut mouse_event,
@@ -1702,7 +1703,7 @@ unsafe fn window_copy_cmd_append_selection(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
+    let mut s: Option<SessionRef> = (*cs).session_handle();
     if !s.is_none() {
         window_copy_append_selection(wme.clone());
     }
@@ -1713,7 +1714,7 @@ unsafe fn window_copy_cmd_append_selection_and_cancel(
     mut cs: *mut window_copy_cmd_state,
 ) -> window_copy_cmd_action {
     let mut wme: refbox::Weak<window_mode_entry> = (*cs).mode_handle();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
+    let mut s: Option<SessionRef> = (*cs).session_handle();
     if !s.is_none() {
         window_copy_append_selection(wme.clone());
     }
@@ -1788,7 +1789,7 @@ unsafe fn window_copy_do_copy_end_of_line(
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let c = (*cs).c;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
+    let mut s: Option<SessionRef> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
     let mut count: u_int = args_count((*cs).parsed_args());
@@ -1920,7 +1921,7 @@ unsafe fn window_copy_do_copy_line(
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let c = (*cs).c;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
+    let mut s: Option<SessionRef> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
@@ -2050,7 +2051,7 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let c = (*cs).c;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
+    let mut s: Option<SessionRef> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
     let mut prefix: Option<CString> = None;
@@ -3477,7 +3478,7 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let c = (*cs).c;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
+    let mut s: Option<SessionRef> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
     let mut command: Option<CString> = None;
@@ -3553,7 +3554,7 @@ unsafe fn window_copy_cmd_pipe_no_clear(
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let c = (*cs).c;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*cs).session_handle();
+    let mut s: Option<SessionRef> = (*cs).session_handle();
     let mut wl: refbox::Weak<winlink> = (*cs).winlink_handle();
     let mut wp: *mut window_pane = mode_pane;
     let mut command: Option<CString> = None;
@@ -5354,7 +5355,7 @@ pub const WINDOW_COPY_CMD_FLAG_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi
 unsafe fn window_copy_command(
     wme: refbox::Weak<window_mode_entry>,
     client_owner: Option<&ClientRef>,
-    session: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    session: Option<&SessionRef>,
     wl: refbox::Weak<winlink>,
     args: *mut args,
     m: *mut mouse_event,
@@ -5374,7 +5375,7 @@ unsafe fn window_copy_command(
 unsafe fn window_copy_command_with_session(
     mut wme: refbox::Weak<window_mode_entry>,
     client_owner: Option<&ClientRef>,
-    s: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s: Option<&SessionRef>,
     wl: refbox::Weak<winlink>,
     args: *mut args,
     m: *mut mouse_event,
@@ -8612,7 +8613,7 @@ unsafe fn window_copy_copy_buffer(
 }
 unsafe fn window_copy_pipe_run(
     mut wme: refbox::Weak<window_mode_entry>,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut cmd: *const ::core::ffi::c_char,
 ) -> Option<Vec<u8>> {
     let mut job = refbox::Weak::new();
@@ -8655,14 +8656,14 @@ unsafe fn window_copy_pipe_run(
 }
 unsafe fn window_copy_pipe(
     mut wme: refbox::Weak<window_mode_entry>,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut cmd: *const ::core::ffi::c_char,
 ) {
     let _ = window_copy_pipe_run(wme.clone(), s_owner, cmd);
 }
 unsafe fn window_copy_copy_pipe(
     mut wme: refbox::Weak<window_mode_entry>,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut prefix: *const ::core::ffi::c_char,
     mut cmd: *const ::core::ffi::c_char,
     mut set_paste: ::core::ffi::c_int,

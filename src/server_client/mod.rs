@@ -1,5 +1,6 @@
 use crate::src::session::Session as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::Window as _;
@@ -1274,7 +1275,7 @@ pub unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
 }
 unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
     let mut c = c_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
     let mut found: *mut client = ::core::ptr::null_mut::<client>();
     log_debug(format_args!(
@@ -1327,12 +1328,8 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
         crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
     }
 }
-unsafe fn server_client_fire_session_changed(
-    c_owner: &ClientRef,
-    old_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-) {
+unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Option<&SessionRef>) {
     let mut c = c_owner.get();
-    let mut old = old_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -1357,11 +1354,11 @@ unsafe fn server_client_fire_session_changed(
             fs.session_handle().expect("live session"),
         );
     }
-    if !old.is_null() {
+    if let Some(old) = old_owner {
         event_payload_set_session(
             &mut *ep,
             b"old_session\0" as *const u8 as *const ::core::ffi::c_char,
-            old_owner.expect("live session").clone(),
+            old.clone(),
         );
     }
     if !fs.window_handle().is_none() {
@@ -1481,10 +1478,7 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
         ep,
     );
 }
-pub unsafe fn server_client_set_session(
-    c_owner: &ClientRef,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-) {
+pub unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&SessionRef>) {
     use crate::src::session::Session;
     use crate::src::window::Window;
 
@@ -1655,7 +1649,7 @@ unsafe fn server_client_free(c_value: &mut client) {
 }
 pub unsafe fn server_client_suspend(c_owner: &ClientRef) {
     let mut c = c_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut s: Option<SessionRef> = (*c).session_handle();
     if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return;
     }
@@ -1671,7 +1665,7 @@ pub unsafe fn server_client_suspend(c_owner: &ClientRef) {
 }
 pub unsafe fn server_client_detach(c_owner: &ClientRef, mut msgtype: msgtype) {
     let mut c = c_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut s: Option<SessionRef> = (*c).session_handle();
     if s.is_none() || (*c).flags & CLIENT_NODETACHFLAGS as uint64_t != 0 {
         return;
     }
@@ -1687,7 +1681,7 @@ pub unsafe fn server_client_exec(c_owner: &ClientRef, mut cmd: *const ::core::ff
     let mut shell_session_value: Option<std::ffi::CString> = None;
 
     let mut c = c_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut s: Option<SessionRef> = (*c).session_handle();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if *cmd as ::core::ffi::c_int == '\0' as i32 {
         return;
@@ -2727,7 +2721,7 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> :
         as ::core::ffi::c_int;
 }
 unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut s: Option<SessionRef> = (*c).session_handle();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -2824,7 +2818,7 @@ unsafe fn server_client_update_latest(c_owner: &ClientRef) {
 }
 
 unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut s: Option<SessionRef> = (*c).session_handle();
     let mut repeat: u_int = 0;
     let mut initial: u_int = 0;
     if !bd.flags & KEY_BINDING_REPEAT != 0 {
@@ -2912,7 +2906,7 @@ unsafe fn server_client_key_callback(
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut key: key_code = (*event).key;
     let mut m: *mut mouse_event = &raw mut (*event).m;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
@@ -3473,7 +3467,7 @@ unsafe fn server_client_handle_key0(
     let after = after_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let c = owner.get();
     let event: *mut key_event = &raw mut *owned;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*c).session_handle();
+    let mut s: Option<SessionRef> = (*c).session_handle();
     let item_allocation;
     let mut item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -4658,7 +4652,7 @@ unsafe fn server_client_dispatch(
     let c = owner.get();
     let mut current_block: u64;
     let mut datalen: ssize_t = 0;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut old_sx: u_int = 0;
     let mut old_sy: u_int = 0;
     if (*c).flags & CLIENT_DEAD as uint64_t != 0 {
@@ -5262,7 +5256,7 @@ unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
 /// Copy the selected directory while any observed startup client is retained.
 pub unsafe fn server_client_get_cwd(
     c: Option<&ClientRef>,
-    s: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s: Option<&SessionRef>,
 ) -> Option<CString> {
     use crate::src::session::Session;
     if let Some(client) = c {

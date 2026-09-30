@@ -15,6 +15,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::environment::environ;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::winlink;
@@ -69,7 +70,7 @@ unsafe fn cmd_respawn_window_exec(
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut _tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = (*item).observer.clone();

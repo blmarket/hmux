@@ -183,6 +183,7 @@ mod src {
         }
         pub mod session {
             pub use crate::session;
+            pub type SessionWeak = std::rc::Weak<std::cell::RefCell<session>>;
         }
     }
     pub mod tmux {

@@ -4,6 +4,7 @@ use crate::src::session::Session;
 use crate::src::shared::options::{options, options_entry};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionWeak;
 use crate::src::shared::window::window;
 use crate::src::shared::window::WindowWeak;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
@@ -18,7 +19,7 @@ pub enum OptionsScope {
     GlobalServer,
     GlobalSession,
     GlobalWindow,
-    Session(Weak<UnsafeCell<session>>),
+    Session(SessionWeak),
     Window(WindowWeak),
     Pane(Weak<UnsafeCell<window_pane>>),
 }

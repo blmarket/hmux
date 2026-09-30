@@ -17,6 +17,7 @@ use crate::src::shared::command::CMD_TARGET_SESSION_USAGE;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
 use crate::src::window::Window as _;
 pub static cmd_select_window_entry: cmd_entry = {
@@ -131,7 +132,7 @@ unsafe fn cmd_select_window_exec(
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut next: ::core::ffi::c_int = 0;
     let mut previous: ::core::ffi::c_int = 0;
     let mut last: ::core::ffi::c_int = 0;

@@ -98,6 +98,7 @@ pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
 pub use crate::src::shared::pane::window_pane;
 pub use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_options;
@@ -656,9 +657,9 @@ pub unsafe fn cmd_mouse_at(
 }
 pub unsafe fn cmd_mouse_window(
     mut m: *mut mouse_event,
-    sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
+    sp: Option<&mut Option<SessionRef>>,
 ) -> refbox::Weak<winlink> {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     if (*m).valid == 0 {
         return refbox::Weak::new();
@@ -689,7 +690,7 @@ pub unsafe fn cmd_mouse_window(
 }
 pub unsafe fn cmd_mouse_pane(
     mut m: *mut mouse_event,
-    sp: Option<&mut Option<std::rc::Rc<std::cell::UnsafeCell<session>>>>,
+    sp: Option<&mut Option<SessionRef>>,
     mut wlp: *mut refbox::Weak<winlink>,
 ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
     let link = cmd_mouse_window(m, sp);

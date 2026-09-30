@@ -4,6 +4,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::{options_array_item_value, options_get_string};
 use crate::src::session::Session;
+use crate::src::shared::session::SessionRef;
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
 use crate::src::xmalloc::xcalloc;
 use std::ffi::{CStr, CString, NulError};
@@ -45,11 +46,7 @@ impl environ {
         } else {
             self.entries.insert(
                 name.to_bytes().to_vec(),
-                Box::new(environ_entry {
-                    name: name.to_owned(),
-                    value: Some(value),
-                    flags,
-                }),
+                Box::new(environ_entry::new(name.to_owned(), flags, Some(value))),
             );
         }
     }
@@ -70,11 +67,7 @@ impl environ {
         } else {
             self.entries.insert(
                 name.to_bytes().to_vec(),
-                Box::new(environ_entry {
-                    name: name.to_owned(),
-                    value: None,
-                    flags: 0,
-                }),
+                Box::new(environ_entry::new(name.to_owned(), 0, None)),
             );
         }
     }
@@ -256,7 +249,7 @@ pub unsafe fn environ_log(
     }
 }
 pub unsafe fn environ_for_session(
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut no_TERM: ::core::ffi::c_int,
 ) -> Box<environ> {
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

@@ -19,6 +19,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::window::winlink;
@@ -69,7 +70,7 @@ unsafe fn cmd_list_windows_exec(
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut i: u_int = 0;
     let mut n: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();

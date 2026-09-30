@@ -61,6 +61,7 @@ use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -302,7 +303,7 @@ static mut window_tree_session_info_lines: [*const ::core::ffi::c_char; 9] = [
 #[must_use = "retain the resolved session and pane while using the output pointers"]
 #[derive(Default)]
 struct WindowTreeTarget {
-    session: Option<Rc<UnsafeCell<session>>>,
+    session: Option<SessionRef>,
     winlink: refbox::Weak<winlink>,
     pane: Option<Rc<UnsafeCell<window_pane>>>,
 }
@@ -361,7 +362,7 @@ fn window_tree_remove_last_item(
     items.pop();
 }
 unsafe fn window_tree_build_pane(
-    session_owner: &Rc<UnsafeCell<session>>,
+    session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     pane_owner: &Rc<UnsafeCell<window_pane>>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
@@ -413,7 +414,7 @@ unsafe fn window_tree_build_pane(
     mode_tree_align(&mti);
 }
 unsafe fn window_tree_filter_pane(
-    session_owner: &Rc<UnsafeCell<session>>,
+    session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     pane_owner: &Rc<UnsafeCell<window_pane>>,
     mut filter: *const ::core::ffi::c_char,
@@ -437,7 +438,7 @@ unsafe fn window_tree_filter_pane(
     return result;
 }
 unsafe fn window_tree_build_window(
-    session_owner: &Rc<UnsafeCell<session>>,
+    session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
@@ -536,7 +537,7 @@ unsafe fn window_tree_build_window(
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn window_tree_build_session(
-    session_owner: &Rc<UnsafeCell<session>>,
+    session_owner: &SessionRef,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
     mut filter: *const ::core::ffi::c_char,
@@ -643,7 +644,7 @@ unsafe fn window_tree_build(
 ) {
     let data = mode_owner.get();
     let mut squash_groups: ::core::ffi::c_int = (*data).squash_groups;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut i: u_int = 0;
@@ -690,13 +691,8 @@ unsafe fn window_tree_build(
     }
     match (*data).type_0 as ::core::ffi::c_uint {
         1 => {
-            if !(*data).fs.session_handle().is_none() {
-                *tag = (*data)
-                    .fs
-                    .session_handle()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get())
-                    as uint64_t;
+            if let Some(session) = (*data).fs.session_handle() {
+                *tag = std::rc::Rc::as_ptr(&session) as uint64_t;
             }
         }
         2 => {
@@ -817,7 +813,7 @@ unsafe fn window_tree_border_cell(
 }
 unsafe fn window_tree_draw_session(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
-    session_owner: &Rc<UnsafeCell<session>>,
+    session_owner: &SessionRef,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
     mut sy: u_int,
@@ -1089,7 +1085,7 @@ unsafe fn window_tree_draw_session(
 }
 unsafe fn window_tree_draw_window(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
-    session_owner: &Rc<UnsafeCell<session>>,
+    session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     mut ctx: *mut screen_write_ctx,
     mut sx: u_int,
@@ -1417,7 +1413,7 @@ unsafe fn window_tree_draw_info(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let mut s: *mut screen = (*ctx).screen_ptr();
-    let mut sp: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut sp: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {
@@ -1602,7 +1598,7 @@ unsafe fn window_tree_draw(
         return;
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
-    let mut sp: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut sp: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let target_owners = window_tree_pull_item(item);
@@ -1659,7 +1655,7 @@ unsafe fn window_tree_search(
     mut icase: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let ss = search.as_ptr();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut retval: ::core::ffi::c_int = 0;
@@ -1773,7 +1769,7 @@ unsafe fn window_tree_get_key(
 ) -> key_code {
     let data = mode_owner.get();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut key: key_code = 0;
@@ -1820,8 +1816,8 @@ unsafe fn window_tree_swap(
     other: &window_tree_itemdata,
     sort_crit: &mut sort_criteria,
 ) -> ::core::ffi::c_int {
-    let mut cur_session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
-    let mut other_session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut cur_session: Option<SessionRef> = None;
+    let mut other_session: Option<SessionRef> = None;
     let mut cur_winlink: refbox::Weak<winlink> = refbox::Weak::new();
     let mut other_winlink: refbox::Weak<winlink> = refbox::Weak::new();
     let mut cur_pane: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -2554,7 +2550,7 @@ unsafe fn window_tree_key(
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut idx: u_int = 0;
-    let mut ns: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut ns: Option<SessionRef> = None;
     let mut nwl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut nwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut selection = mode_tree_get_current(&*(*data).tree_owner().get());
@@ -2610,7 +2606,7 @@ unsafe fn window_tree_key(
                 (*fsp)
                     .session_handle()
                     .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()) as uint64_t,
+                    .map_or(0, |owner| std::rc::Rc::as_ptr(owner) as uint64_t),
             );
             mode_tree_expand(
                 (*data).data.clone().as_ref().expect("mode tree owner"),

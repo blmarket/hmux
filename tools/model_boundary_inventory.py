@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Compiler-assisted inventory of model field accesses across owner boundaries.
 
-Probe a disposable source copy with private model fields. Rust resolves aliases,
-raw dereferences and references passed to helpers; source spelling of .get() is
+Probe a disposable source copy with model fields restricted to their owner.
+Rust resolves aliases, raw dereferences and references passed to helpers; .get() spelling is
 irrelevant. The real worktree is never changed. Nonzero means violations remain.
 This complements, rather than replaces, the syntax checks in model_trait_boundary:
 field privacy alone cannot detect a reference/pointer forwarded without field use.
@@ -128,13 +128,30 @@ def owner(path, function):
     return None
 
 
-def private_fields(source, model):
+def field_visibility(model):
+    """Mirror a real owner submodule; shared/legacy model files remain private.
+
+    `pub(super)` in owner/model.rs grants access only to the owner implementation
+    and its descendants. Never use it for owner/mod.rs: that would grant access
+    to the owner's parent namespace instead.
+    """
+    path = MODELS[model]
+    if Path(path).name == 'model.rs' and owner(path, '') == model:
+        return 'pub(super)'
+    return ''
+
+
+def private_fields(source, model, visibility=''):
+    if visibility not in ('', 'pub(super)'):
+        raise ValueError('model field probe must stay within its owner module')
     code = mask(source)
     match = re.search(r'pub struct ' + model + r'\s*\{', code)
     assert match, model
     end = code.index('\n}', match.end())
     fields = source[match.end():end]
-    fields = re.sub(r'(?m)^(\s*)pub(?:\([^)]*\))? ', r'\1', fields)
+    prefix = visibility + ' ' if visibility else ''
+    fields = re.sub(r'(?m)^(\s*)pub(?:\([^)]*\))? ',
+                    lambda field: field[1] + prefix, fields)
     return source[:match.end()] + fields + source[end:]
 
 
@@ -180,7 +197,8 @@ def main():
             shutil.copy2(ROOT / name, probe / name)
         for model in selected:
             path = MODELS[model]
-            (probe / path).write_text(private_fields(sources[path], model))
+            (probe / path).write_text(
+                private_fields(sources[path], model, field_visibility(model)))
         # Preserve the probed offsets: removing pub changes columns/byte offsets.
         probe_sources = {p: (probe / p).read_text() for p in sources}
         result = subprocess.run(['cargo', 'check', '--offline', '--lib', '--message-format=json',

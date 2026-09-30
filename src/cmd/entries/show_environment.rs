@@ -164,15 +164,13 @@ mod tests {
     #[test]
     fn escape_preserves_non_utf8_bytes_and_stops_at_first_nul() {
         let mut value = b"\xff$`\"\\\0ignored".to_vec();
-        let entry = environ_entry {
-            name: Default::default(),
-            value: Some(
-                std::ffi::CStr::from_bytes_until_nul(&value)
-                    .unwrap()
-                    .to_owned(),
-            ),
-            flags: 0,
-        };
+        let mut env = crate::src::environ::environ_create();
+        env.set_cstr(
+            c"",
+            0,
+            std::ffi::CStr::from_bytes_until_nul(&value).unwrap(),
+        );
+        let entry = env.find(c"").unwrap();
         let escaped = cmd_show_environment_escape(entry.value.as_deref().unwrap());
         assert_eq!(escaped.as_bytes(), b"\xff\\$\\`\\\"\\\\");
     }

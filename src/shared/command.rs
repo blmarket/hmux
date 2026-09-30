@@ -9,6 +9,7 @@ use super::pane::window_pane;
 use super::session::session;
 use super::window::{window, winlink};
 use crate::src::shared::client::ClientWeak;
+use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::ffi::{CStr, CString};
 pub type cmd_retval = ::core::ffi::c_int;
@@ -148,7 +149,7 @@ pub use crate::src::cmd::queue::{cmdq_item, cmdq_list};
 #[repr(C)]
 pub struct cmd_find_state {
     pub flags: ::core::ffi::c_int,
-    pub s: std::rc::Weak<std::cell::UnsafeCell<session>>,
+    pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,
     pub w: WindowWeak,
     pub wp: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
@@ -157,11 +158,11 @@ pub struct cmd_find_state {
 
 impl cmd_find_state {
     /// Retain the target allocation; callbacks may still invalidate it logically.
-    pub fn session_handle(&self) -> Option<std::rc::Rc<std::cell::UnsafeCell<session>>> {
+    pub fn session_handle(&self) -> Option<SessionRef> {
         self.s.upgrade()
     }
 
-    pub fn set_s(&mut self, value: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
+    pub fn set_s(&mut self, value: Option<&SessionRef>) {
         self.s = value.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 

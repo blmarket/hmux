@@ -38,6 +38,7 @@ use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
@@ -643,7 +644,7 @@ unsafe fn cmd_join_pane_mouse_update(
     let event: *mut key_event = &mut event_snapshot;
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*event).m.valid == 0 {
@@ -886,7 +887,7 @@ unsafe fn cmd_join_pane_exec(
     let current = cmdq_get_state_owned(&*(item));
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
-    let mut dst_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut dst_s: Option<SessionRef> = None;
     let mut src_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut dst_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut src_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();

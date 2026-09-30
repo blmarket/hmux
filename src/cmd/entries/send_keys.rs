@@ -29,6 +29,7 @@ use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::utf8::*;
 use crate::src::shared::window::{window_mode_entry, winlink};
 use crate::src::style::colour::colour_palette_clear;
@@ -95,7 +96,7 @@ unsafe fn cmd_send_keys_inject_key(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut _s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
@@ -247,7 +248,7 @@ unsafe fn cmd_send_keys_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()

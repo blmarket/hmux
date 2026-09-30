@@ -16,6 +16,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{CMD_FIND_QUIET, CMD_FIND_WINDOW_INDEX};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::winlink_shuffle_up;
 pub static cmd_move_window_entry: cmd_entry = {
@@ -86,8 +87,8 @@ unsafe fn cmd_move_window_exec(
     };
     let mut tflag: *const ::core::ffi::c_char =
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut src: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*source).session_handle();
-    let mut dst: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut src: Option<SessionRef> = (*source).session_handle();
+    let mut dst: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut idx: ::core::ffi::c_int = 0;
     let mut kflag: ::core::ffi::c_int = 0;

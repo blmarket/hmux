@@ -45,6 +45,7 @@ use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tree::RB_NEGINF;
@@ -123,9 +124,9 @@ unsafe fn cmd_new_session_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
-    let mut as_0: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
-    let mut groupwith: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
+    let mut as_0: Option<SessionRef> = None;
+    let mut groupwith: Option<SessionRef> = None;
     let mut groupwith_owner = None;
     let mut env: Option<Box<environ>> = None;
     let mut oo: Option<Box<options>> = None;
@@ -280,12 +281,7 @@ unsafe fn cmd_new_session_exec(
                     return retval;
                 }
             }
-            if !sname.is_null()
-                && !session_find(std::ffi::CStr::from_ptr(sname))
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), crate::src::shared::rc::as_ptr)
-                    .is_null()
-            {
+            if !sname.is_null() && session_find(std::ffi::CStr::from_ptr(sname)).is_some() {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"duplicate session: ")?;
                     write_cstr(out, sname)

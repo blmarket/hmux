@@ -2,6 +2,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::session::SessionRef;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::Window as _;
 // Private expression parser/evaluator.  The modifier parser, loops,
@@ -1061,7 +1062,7 @@ pub(super) unsafe fn format_window_name(
 pub(super) unsafe fn format_add_window_neighbour(
     mut nft: *mut format_tree,
     mut wl: refbox::Weak<winlink>,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut prefix: *const ::core::ffi::c_char,
 ) {
     let prefix = CStr::from_ptr(prefix).to_bytes();
@@ -3466,7 +3467,7 @@ pub(crate) unsafe fn format_single_cstring(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut fmt: *const ::core::ffi::c_char,
     c_owner: Option<&ClientRef>,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> CString {

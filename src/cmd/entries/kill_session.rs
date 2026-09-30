@@ -18,6 +18,7 @@ use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::shared::window::{WINDOW_ALERTFLAGS, WINLINK_ALERTFLAGS};
@@ -57,7 +58,6 @@ unsafe fn cmd_kill_session_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let source = (*target).s.upgrade().expect("live target session");
-    let s = source.get();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut filter: *const ::core::ffi::c_char =
@@ -108,9 +108,9 @@ unsafe fn cmd_kill_session_all(
     mut filter: *const ::core::ffi::c_char,
 ) -> cmd_retval {
     let item = item_handle.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> =
+    let mut s: Option<SessionRef> =
         (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
-    let mut sloop: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut sloop: Option<SessionRef> = None;
     let mut sloop_owner = sessions_minmax(&sessions);
     sloop = sloop_owner.clone();
     while !sloop.is_none() {
@@ -137,7 +137,7 @@ unsafe fn cmd_kill_session_all(
 }
 unsafe fn cmd_kill_session_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let item = item_handle.get();

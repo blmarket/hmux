@@ -41,6 +41,7 @@ use crate::src::shared::redraw::{
 use crate::src::shared::screen::{screen, CURSOR_MODES, MODE_SYNC};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::*;
@@ -945,7 +946,7 @@ unsafe fn redraw_build_cells<'a>(
 }
 unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>> {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+    let mut s: Option<SessionRef> = c
         .as_ref()
         .expect("live client")
         .attached_session()
@@ -1173,7 +1174,7 @@ unsafe fn redraw_get_default_border_style(
         return;
     };
     let mut c: Option<ClientRef> = Some(client_owner.clone());
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+    let mut s: Option<SessionRef> = c
         .as_ref()
         .expect("live client")
         .attached_session()
@@ -1970,7 +1971,7 @@ unsafe fn redraw_draw_scene(
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
-    let mut _s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+    let mut _s: Option<SessionRef> = c
         .as_ref()
         .expect("live client")
         .attached_session()

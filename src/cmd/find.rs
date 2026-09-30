@@ -14,6 +14,7 @@ use crate::src::session::Session;
 use crate::src::session::{session_find, session_find_by_id_str, sessions_minmax};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::rc::same;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::Window;
@@ -200,7 +201,7 @@ unsafe fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> boo
         (c.tv_sec, c.tv_usec) > (than.tv_sec, than.tv_usec)
     })
 }
-pub unsafe fn cmd_find_best_client(s: &Rc<UnsafeCell<session>>) -> Option<ClientRef> {
+pub unsafe fn cmd_find_best_client(s: &SessionRef) -> Option<ClientRef> {
     let mut best: Option<ClientRef> = None;
     let mut cursor = clients.first();
     while let Some(owner) = cursor {
@@ -217,11 +218,7 @@ pub unsafe fn cmd_find_best_client(s: &Rc<UnsafeCell<session>>) -> Option<Client
     }
     best
 }
-unsafe fn cmd_find_session_better(
-    s: &Rc<UnsafeCell<session>>,
-    than: Option<&Rc<UnsafeCell<session>>>,
-    flags: i32,
-) -> bool {
+unsafe fn cmd_find_session_better(s: &SessionRef, than: Option<&SessionRef>, flags: i32) -> bool {
     let Some(than) = than else { return true };
     if flags & CMD_FIND_PREFER_UNATTACHED != 0 {
         if than.is_attached() && !s.is_attached() {
@@ -234,7 +231,7 @@ unsafe fn cmd_find_session_better(
     let (s, than) = (s.activity_time(), than.activity_time());
     (s.tv_sec, s.tv_usec) > (than.tv_sec, than.tv_usec)
 }
-unsafe fn cmd_find_session_valid(s: &Rc<UnsafeCell<session>>) -> i32 {
+unsafe fn cmd_find_session_valid(s: &SessionRef) -> i32 {
     if !s.is_registered() {
         return 0;
     }
@@ -247,9 +244,9 @@ unsafe fn cmd_find_session_valid(s: &Rc<UnsafeCell<session>>) -> i32 {
         .is_some_and(|window| window.active_pane().is_some()) as i32
 }
 unsafe fn cmd_find_best_session(
-    candidates: Option<&[std::rc::Rc<std::cell::UnsafeCell<session>>]>,
+    candidates: Option<&[SessionRef]>,
     flags: ::core::ffi::c_int,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<session>>> {
+) -> Option<SessionRef> {
     let mut all = Vec::new();
     let candidates = match candidates {
         Some(candidates) => candidates,
@@ -266,7 +263,7 @@ unsafe fn cmd_find_best_session(
         "cmd_find_best_session: {} sessions to try",
         candidates.len()
     ));
-    let mut best: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut best: Option<SessionRef> = None;
     for owner in candidates {
         if cmd_find_session_valid(owner) != 0
             && cmd_find_session_better(owner, best.as_ref(), flags)
@@ -1047,7 +1044,7 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
 }
 pub unsafe fn cmd_find_from_session(
     mut fs: *mut cmd_find_state,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut flags: ::core::ffi::c_int,
 ) {
     cmd_find_clear_state(fs, flags);
@@ -1095,7 +1092,7 @@ pub unsafe fn cmd_find_from_winlink(
 }
 pub unsafe fn cmd_find_from_session_window(
     mut fs: *mut cmd_find_state,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     w_owner: &WindowRef,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {

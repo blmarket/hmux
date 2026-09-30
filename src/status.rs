@@ -31,6 +31,7 @@ use crate::src::server_client::Client as _;
 use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::src::shared::session::SessionRef;
 use crate::src::style::{
     style_apply, style_ranges_clear, style_ranges_free, style_ranges_get_range, style_ranges_init,
 };
@@ -150,7 +151,7 @@ pub unsafe fn status_line_size(c: &ClientRef) -> u_int {
     }
 }
 pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c.attached_session().upgrade();
+    let mut s: Option<SessionRef> = c.attached_session().upgrade();
     let mut line: u_int = 0;
     let mut lines: u_int = 0;
     lines = status_line_size(c);
@@ -249,7 +250,7 @@ pub unsafe fn status_free(status: &mut status_line) {
 pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
 
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+    let mut s: Option<SessionRef> = c
         .as_ref()
         .expect("live client")
         .attached_session()
@@ -541,7 +542,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         scrolled: 0,
         bg: 0,
     };
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+    let mut s: Option<SessionRef> = c
         .as_ref()
         .expect("live client")
         .attached_session()

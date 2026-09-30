@@ -36,6 +36,7 @@ use crate::src::shared::posix_io::{
 };
 use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{
     __sigset_t, sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
@@ -92,7 +93,7 @@ pub unsafe fn job_run(
     cmd: Option<&CStr>,
     argv: &Vec<CString>,
     e: Option<&environ>,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     cwd: Option<&CStr>,
     mut updatecb: job_update_cb,
     mut completecb: job_complete_cb,

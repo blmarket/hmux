@@ -18,6 +18,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
 use crate::src::window::{window_pane_next, window_remove_pane, Window};
 pub static cmd_kill_pane_entry: cmd_entry = {
@@ -76,7 +77,7 @@ unsafe fn cmd_kill_pane_all(
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
@@ -115,7 +116,7 @@ unsafe fn cmd_kill_pane_all(
 }
 unsafe fn cmd_kill_pane_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut filter: *const ::core::ffi::c_char,

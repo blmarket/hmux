@@ -8,11 +8,12 @@ use crate::src::server::{clients, server_check_marked};
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
 use crate::src::window::winlink_count;
 
 pub(super) unsafe fn format_value(
-    owner: &Rc<UnsafeCell<session>>,
+    owner: &SessionRef,
     key: &CStr,
     context: &mut format_tree,
 ) -> Option<FormatValue> {

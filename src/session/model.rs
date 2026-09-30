@@ -4,13 +4,14 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::event::event;
 use crate::src::shared::options::options;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::terminal::termios;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};
 
 #[repr(C)]
 pub struct session {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(super) observer: std::rc::Weak<std::cell::UnsafeCell<session>>,
+    pub(super) observer: SessionWeak,
     pub(super) id: u_int,
     pub(super) name: std::ffi::CString,
     pub(super) cwd: Option<std::ffi::CString>,
@@ -30,9 +31,7 @@ pub struct session {
     pub(super) tio: Option<Box<termios>>,
     pub(super) environ: Option<Box<environ>>,
     /// Weak traversal handle into the containing index.
-    pub(super) owner: refbox::Weak<
-        std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    >,
+    pub(super) owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, SessionRef>>,
 }
 
 impl session {
@@ -46,7 +45,7 @@ impl session {
         self.curw = wl;
     }
 
-    pub fn new() -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+    pub fn new() -> SessionRef {
         std::rc::Rc::new_cyclic(|observer| {
             let mut value = Self::empty();
             value.observer = observer.clone();
@@ -55,9 +54,7 @@ impl session {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_options_for_test(
-        options: Box<options>,
-    ) -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+    pub(crate) fn with_options_for_test(options: Box<options>) -> SessionRef {
         let owner = Self::new();
         unsafe {
             (*owner.get()).options = Some(options);
@@ -65,7 +62,7 @@ impl session {
         owner
     }
 
-    pub fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self {
             observer: std::rc::Weak::new(),
             id: Default::default(),
@@ -143,7 +140,7 @@ mod retained_session_tests {
 
         unsafe {
             for cancel in [false, true] {
-                let owner = Rc::new(UnsafeCell::new(session::empty()));
+                let owner = session::new();
                 let observer = Rc::downgrade(&owner);
                 let from = c"typed-owner-test".to_owned();
                 crate::src::session::session_remove_ref(owner.clone(), &from);
@@ -167,11 +164,11 @@ mod retained_session_tests {
         unsafe {
             for cancel in [false, true] {
                 let initial = session::new();
-                let ptr = rc::as_ptr(&initial);
+                let ptr = initial.get();
                 let observer = (*ptr).observer.clone();
                 let owner = observer.upgrade().unwrap();
                 drop(initial);
-                assert_eq!(rc::as_ptr(&owner), ptr);
+                assert_eq!(owner.get(), ptr);
                 crate::src::session::session_remove_ref(owner, c"owner-test");
                 assert_eq!(observer.strong_count(), 1);
                 if cancel {

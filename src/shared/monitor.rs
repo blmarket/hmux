@@ -5,6 +5,7 @@ use super::pane::window_pane;
 use super::session::session;
 use super::window::winlink;
 use crate::src::shared::client::ClientWeak;
+use crate::src::shared::session::SessionWeak;
 use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
 pub type monitor_type = ::core::ffi::c_uint;
@@ -25,7 +26,7 @@ pub struct monitor_change<'a> {
     pub value: &'a std::ffi::CStr,
     pub last: Option<&'a std::ffi::CStr>,
     pub c: ClientWeak,
-    pub s: Weak<UnsafeCell<session>>,
+    pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,
     pub wp: Weak<UnsafeCell<window_pane>>,
 }

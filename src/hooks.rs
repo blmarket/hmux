@@ -53,6 +53,7 @@ use crate::src::shared::options::{
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::rc;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_s_options;
 use crate::src::window::{window_pane_upgrade, WindowPane};
@@ -578,7 +579,7 @@ pub unsafe fn hooks_monitor_add(
     format: *const ::core::ffi::c_char,
     flags: ::core::ffi::c_int,
     fs: *mut cmd_find_state,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT_MONITOR: AtomicUsize = AtomicUsize::new(1);

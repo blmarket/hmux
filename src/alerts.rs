@@ -3,6 +3,7 @@ use crate::src::log::{log_debug, log_hex};
 use crate::src::reactor::event_once;
 use crate::src::session::{alerts_check_all, Session};
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
@@ -49,7 +50,7 @@ unsafe fn alerts_callback() {
     alerts_fired = 0;
 }
 
-pub unsafe fn alerts_check_session(session: &Rc<UnsafeCell<session>>) {
+pub unsafe fn alerts_check_session(session: &SessionRef) {
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
     while link.is_alive() {
         alerts_check_all(link.get_unchecked().window_handle().expect("linked window"));

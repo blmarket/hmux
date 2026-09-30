@@ -21,6 +21,7 @@ use super::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
 use super::screen::screen;
 use super::session::session;
 use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::session::{SessionRef, SessionWeak};
 
 pub const WINDOW_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const WINDOW_ACTIVITY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
@@ -53,7 +54,7 @@ pub type winlinks =
 #[repr(C)]
 pub struct winlink {
     pub idx: ::core::ffi::c_int,
-    pub session: std::rc::Weak<std::cell::UnsafeCell<session>>,
+    pub session: SessionWeak,
     pub window_owner: Option<WindowRef>,
     pub flags: ::core::ffi::c_int,
     /// Weak traversal handle into the containing index.
@@ -137,7 +138,7 @@ pub struct window_mode {
         unsafe fn(
             refbox::Weak<window_mode_entry>,
             Option<&ClientRef>,
-            Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+            Option<&SessionRef>,
             refbox::Weak<winlink>,
             *mut args,
             *mut mouse_event,

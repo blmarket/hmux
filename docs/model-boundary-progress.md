@@ -1,8 +1,48 @@
 # Model boundary migration checkpoints
 
-The four traits are still being migrated. A passing test suite is not evidence
+The WindowPane boundary is still being migrated. A passing test suite is not evidence
 that every external projection has been removed. The compiled trait definitions
 are authoritative; `trait-models.md` describes the original adapter design.
+
+## Completed Session storage and group follow-up
+
+Following Window commit `c7c4700a`, Session now uses SessionRef/SessionWeak holder
+aliases throughout its consumers. Unused projections, pointer null checks and
+model-address UI tags were removed. UI identities use the retained allocation's
+identity without interpreting its payload. All Session fields and whole-model
+helpers remain private; the public factory returns a holder.
+
+Group registry and membership orchestration live in sibling `session_group.rs`,
+outside Session's implementation visibility. The Session trait supplies attached
+count and a window-index synchronization operation. Each state/index loan ends
+before linked/unlinked notifications; selection fallback, live source traversal,
+post-notification alert copying, MRU remapping and old-index cleanup keep their
+previous order. A callback regression adds a source link during traversal and
+checks partial publication and both Sessions through their traits.
+
+Session environment rows now carry stable entry IDs instead of component
+addresses. Updates and clears preserve identity; removal/recreation and cloning
+an entire environment create new identities. Detached entry snapshots retain
+provenance. The environment and static-option tag namespaces remain disjoint.
+
+Validation: the workspace passed 880 tests; Session, Window and Client opaque
+storage probes passed all targets. The compiler field inventory for these three
+models reports zero external accesses and zero other diagnostics. Its probe
+preserves owner-module visibility for `owner/model.rs`, so it no longer invents
+errors inside legitimate implementations; rustc mutation tests check that
+external aliased/raw accesses still fail. Python discovery passed 18 checks plus
+the existing 16 compiled options/layout cases. Formatting and diff checks pass.
+Default Clippy still stops at the existing hmux-refbox `mut_from_ref` denial;
+the complete capped run passes. `tools/session_boundary_smoke.py` passes group
+membership, window ordering/selection, per-session renumbering, environment
+inheritance and explicit final teardown against an isolated daemon.
+
+Existing logical-lifetime preconditions remain: group-removal callbacks keep the
+captured group/membership alive until removal completes, and linked callbacks
+keep the current source/replacement winlinks alive until the alert-copy step.
+Those preconditions were not replaced by Drop or by a broad implementation scope.
+Production model storage remains UnsafeCell. Pane privacy and screen/parser
+component boundaries are the remaining model migration phase.
 
 ## Completed Window boundary checkpoint
 

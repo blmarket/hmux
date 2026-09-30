@@ -34,6 +34,7 @@ use crate::src::shared::pane::{
     PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::Window as _;
@@ -368,7 +369,7 @@ unsafe fn cmd_resize_pane_mouse_update(
 
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }

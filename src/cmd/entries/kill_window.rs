@@ -17,6 +17,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{winlinks_minmax, winlinks_next, winlinks_prev};
@@ -79,7 +80,7 @@ unsafe fn cmd_kill_window_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut filter: *const ::core::ffi::c_char =
         args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if !filter.is_null() && args_has(args, 'a' as i32 as u_char) == 0 {
@@ -124,7 +125,7 @@ unsafe fn cmd_kill_window_all(
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut loop_0: refbox::Weak<winlink> = refbox::Weak::new();
     let mut found: u_int = 0;
@@ -209,7 +210,7 @@ unsafe fn cmd_kill_window_all(
 }
 unsafe fn cmd_kill_window_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     mut filter: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {

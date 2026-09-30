@@ -1,6 +1,7 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
@@ -85,9 +86,9 @@ pub struct client {
     pub(super) message_timer: event,
     pub(super) prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     /// Attached session identity; the session index owns the Rc allocation.
-    pub(super) session: std::rc::Weak<UnsafeCell<session>>,
+    pub(super) session: SessionWeak,
     /// Previous session observer; this link never keeps a session alive.
-    pub(super) last_session: std::rc::Weak<UnsafeCell<session>>,
+    pub(super) last_session: SessionWeak,
     pub(super) theme_colours: [::core::ffi::c_int; 10],
     /// Window whose manual pan offsets are active; this does not retain it.
     pub(super) pan_window: WindowWeak,
@@ -107,21 +108,19 @@ pub struct client {
 
 impl client {
     #[cfg(test)]
-    pub(crate) unsafe fn with_session_for_test(
-        session: Option<&Rc<UnsafeCell<session>>>,
-    ) -> ClientRef {
+    pub(crate) unsafe fn with_session_for_test(session: Option<&SessionRef>) -> ClientRef {
         let owner = Self::new();
         (*owner.get()).set_session(session);
         owner
     }
 
     /// Retain the attached session for the current operation.
-    pub(super) fn session_handle(&self) -> Option<Rc<UnsafeCell<session>>> {
+    pub(super) fn session_handle(&self) -> Option<SessionRef> {
         self.session.upgrade()
     }
 
     /// The caller supplies a live Rc-backed session.
-    pub(super) fn set_session(&mut self, session: Option<&Rc<UnsafeCell<session>>>) {
+    pub(super) fn set_session(&mut self, session: Option<&SessionRef>) {
         self.session = session.map_or_else(std::rc::Weak::new, Rc::downgrade);
     }
 
@@ -225,7 +224,7 @@ impl client {
     /// after populating the component through its borrow API.
     pub(crate) unsafe fn with_control_for_test(
         name: Option<&std::ffi::CStr>,
-        session: Option<&Rc<UnsafeCell<session>>>,
+        session: Option<&SessionRef>,
     ) -> ClientRef {
         let owner = Self::with_session_for_test(session);
         (*owner.get()).name = name.map(ToOwned::to_owned);
@@ -266,7 +265,7 @@ impl client {
 #[cfg(test)]
 mod retained_client_tests {
     use super::*;
-    use crate::src::{reactor, shared::rc};
+    use crate::src::reactor;
 
     #[test]
     fn attached_session_observer_does_not_retain_a_removed_session() {
@@ -276,13 +275,10 @@ mod retained_client_tests {
         unsafe {
             client.set_session(Some(&session));
         }
-        assert_eq!(
-            client
-                .session_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get()),
-            session.get()
-        );
+        assert!(Rc::ptr_eq(
+            &client.session_handle().expect("attached session"),
+            &session,
+        ));
         assert_eq!(Rc::strong_count(&session), 1);
         drop(session);
         assert!(observer.upgrade().is_none());

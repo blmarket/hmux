@@ -25,6 +25,7 @@ use crate::src::shared::events::{
 use crate::src::shared::format::format_tree;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::{
@@ -284,7 +285,7 @@ pub unsafe fn event_payload_set_client(ep: &mut event_payload, owner: ClientRef)
 pub unsafe fn event_payload_set_session(
     ep: &mut event_payload,
     name: *const ::core::ffi::c_char,
-    owner: std::rc::Rc<std::cell::UnsafeCell<session>>,
+    owner: SessionRef,
 ) {
     event_payload_set_item(ep, name, EventPayloadValue::Session(owner));
 }
@@ -472,9 +473,7 @@ pub fn event_payload_get_client(ep: &event_payload) -> Option<&ClientRef> {
         _ => None,
     }
 }
-pub fn event_payload_get_session(
-    ep: &event_payload,
-) -> Option<&std::rc::Rc<std::cell::UnsafeCell<session>>> {
+pub fn event_payload_get_session(ep: &event_payload) -> Option<&SessionRef> {
     match event_payload_find(ep, c"session").map(|item| &item.value) {
         Some(EventPayloadValue::Session(value)) => Some(value),
         _ => None,

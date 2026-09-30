@@ -9,6 +9,7 @@ use super::pane::window_pane;
 use super::session::session;
 use super::window::winlink;
 use crate::src::shared::client::ClientWeak;
+use crate::src::shared::session::SessionWeak;
 pub const SPAWN_BEFORE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const SPAWN_FULLSIZE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const SPAWN_HORIZONTAL: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
@@ -90,7 +91,7 @@ pub type spawn_finish_edit_cb =
 #[repr(C)]
 pub struct spawn_context {
     pub item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
-    pub s: std::rc::Weak<std::cell::UnsafeCell<session>>,
+    pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,
     /// Observe the target client; each spawn operation retains an upgrade while using it.
     pub tc: ClientWeak,

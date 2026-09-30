@@ -3,6 +3,7 @@ use super::*;
 use crate::src::server::clients;
 use crate::src::server_client::Client;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
+use crate::src::shared::session::SessionRef;
 
 /// Publish the Session-owned state used by the subsequent client/window sizing
 /// passes. A removed Session can still be retained by a closing client: preserve
@@ -53,7 +54,7 @@ mod tests {
     use crate::src::server_client::ClientRegistry;
     use crate::src::shared::client::{client, CLIENT_CONTROL, CLIENT_IGNORESIZE, CLIENT_SUSPENDED};
 
-    unsafe fn new_session(name: &CStr, status: i64) -> Rc<UnsafeCell<session>> {
+    unsafe fn new_session(name: &CStr, status: i64) -> SessionRef {
         let owner = session::new();
         (*owner.get()).name = name.to_owned();
         let mut options = options_create(None);
@@ -69,7 +70,7 @@ mod tests {
         owner
     }
 
-    unsafe fn add_client(session: &Rc<UnsafeCell<session>>, flags: u64) {
+    unsafe fn add_client(session: &SessionRef, flags: u64) {
         let owner = client::with_session_for_test(Some(session));
         owner.update_flags(flags, 0);
         clients.push_back(owner);

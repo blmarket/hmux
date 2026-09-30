@@ -31,6 +31,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::job::{JobCompletion, JobExitStatus};
 use crate::src::shared::rc;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
 use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
@@ -89,7 +90,7 @@ unsafe fn cmd_if_shell_exec(
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;

@@ -14,6 +14,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::{window, winlink};
@@ -66,7 +67,7 @@ unsafe fn cmd_respawn_pane_exec(
         flags: 0,
     };
     let mut argv_owner = Vec::new();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()

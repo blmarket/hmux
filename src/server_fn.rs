@@ -34,6 +34,7 @@ use crate::src::session::{
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tmux::sig2name;
 use crate::src::tty::{tty_raw, tty_stop_tty};
@@ -139,7 +140,7 @@ pub unsafe fn server_redraw_client(c: &ClientRef) {
 pub unsafe fn server_status_client(c: &ClientRef) {
     c.request_redraw(CLIENT_REDRAWSTATUS as u64);
 }
-pub unsafe fn server_redraw_session(session: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn server_redraw_session(session: &SessionRef) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
@@ -152,7 +153,7 @@ pub unsafe fn server_redraw_session(session: &std::rc::Rc<std::cell::UnsafeCell<
         }
     }
 }
-pub unsafe fn server_redraw_session_group(session: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn server_redraw_session_group(session: &SessionRef) {
     let group = crate::src::session::session_group_for(&std::rc::Rc::downgrade(session));
     if group.is_null() {
         server_redraw_session(session);
@@ -163,7 +164,7 @@ pub unsafe fn server_redraw_session_group(session: &std::rc::Rc<std::cell::Unsaf
     }
 }
 
-pub unsafe fn server_status_session(session: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn server_status_session(session: &SessionRef) {
     let mut next = clients.first();
     while let Some(client_owner) = next {
         next = clients.next(&client_owner);
@@ -176,7 +177,7 @@ pub unsafe fn server_status_session(session: &std::rc::Rc<std::cell::UnsafeCell<
         }
     }
 }
-pub unsafe fn server_status_session_group(session: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn server_status_session_group(session: &SessionRef) {
     let group = crate::src::session::session_group_for(&std::rc::Rc::downgrade(session));
     if group.is_null() {
         server_status_session(session);
@@ -268,7 +269,7 @@ pub unsafe fn server_lock() {
         next = clients.next(&owner);
     }
 }
-pub unsafe fn server_lock_session(session_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn server_lock_session(session_owner: &SessionRef) {
     let observer = std::rc::Rc::downgrade(session_owner);
     let mut next = clients.first();
     while let Some(owner) = next {
@@ -320,7 +321,7 @@ pub unsafe fn server_kill_pane(pane_owner: &std::rc::Rc<std::cell::UnsafeCell<wi
     };
 }
 pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_int) {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.clone();
@@ -358,7 +359,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
         b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-pub unsafe fn server_renumber_session(s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if s.as_ref()
@@ -385,7 +386,7 @@ pub unsafe fn server_renumber_session(s_owner: &std::rc::Rc<std::cell::UnsafeCel
     }
 }
 pub unsafe fn server_renumber_all() {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.clone();
     while !s.is_none() {
@@ -395,9 +396,9 @@ pub unsafe fn server_renumber_all() {
     }
 }
 pub unsafe fn server_link_window(
-    src_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    src_owner: &SessionRef,
     mut srcwl: refbox::Weak<winlink>,
-    dst_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    dst_owner: &SessionRef,
     mut dstidx: ::core::ffi::c_int,
     mut killflag: ::core::ffi::c_int,
     mut selectflag: ::core::ffi::c_int,
@@ -473,10 +474,7 @@ pub unsafe fn server_link_window(
     server_redraw_session_group(dst.as_ref().expect("live session"));
     Ok(())
 }
-pub unsafe fn server_unlink_window(
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
-    mut wl: refbox::Weak<winlink>,
-) {
+pub unsafe fn server_unlink_window(s_owner: &SessionRef, mut wl: refbox::Weak<winlink>) {
     let s = Some(s_owner.clone());
     if session_detach(s.as_ref().expect("live session"), wl.clone()) != 0 {
         server_destroy_session_group(s_owner);
@@ -660,7 +658,7 @@ pub unsafe fn server_destroy_pane(
     };
     window_owner.release(c"server_destroy_pane");
 }
-unsafe fn server_destroy_session_group(s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+unsafe fn server_destroy_session_group(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
     let source = s_owner.clone();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
@@ -688,13 +686,10 @@ unsafe fn server_destroy_session_group(s_owner: &std::rc::Rc<std::cell::UnsafeCe
 }
 unsafe fn server_find_session(
     head: &crate::src::shared::session::sessions,
-    excluded: &std::rc::Rc<std::cell::UnsafeCell<session>>,
-    mut choose: impl FnMut(
-        &std::rc::Rc<std::cell::UnsafeCell<session>>,
-        Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-    ) -> bool,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<session>>> {
-    let mut selected: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    excluded: &SessionRef,
+    mut choose: impl FnMut(&SessionRef, Option<&SessionRef>) -> bool,
+) -> Option<SessionRef> {
+    let mut selected: Option<SessionRef> = None;
     let mut current = sessions_minmax(head);
     while let Some(owner) = current {
         current = owner.next_session();
@@ -704,21 +699,15 @@ unsafe fn server_find_session(
     }
     selected
 }
-unsafe fn server_newer_session(
-    s: &std::rc::Rc<std::cell::UnsafeCell<session>>,
-    other: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-) -> bool {
+unsafe fn server_newer_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
     let Some(other) = other else { return true };
     let (a, b) = (s.activity_time(), other.activity_time());
     (a.tv_sec, a.tv_usec) > (b.tv_sec, b.tv_usec)
 }
-unsafe fn server_newer_detached_session(
-    s: &std::rc::Rc<std::cell::UnsafeCell<session>>,
-    other: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-) -> bool {
+unsafe fn server_newer_detached_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
     !s.is_attached() && server_newer_session(s, other)
 }
-pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<session>>) {
+pub unsafe fn server_destroy_session(source: &SessionRef) {
     let s = Some(source.clone());
     let mut c: Option<ClientRef> = None;
     let mut sort_crit: sort_criteria = sort_criteria {
@@ -789,7 +778,7 @@ pub unsafe fn server_destroy_session(source: &std::rc::Rc<std::cell::UnsafeCell<
     recalculate_sizes();
 }
 pub unsafe fn server_check_unattached() {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut current_block_4: u64;
     let mut s_owner = sessions_minmax(&sessions);

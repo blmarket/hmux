@@ -46,6 +46,7 @@ use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::spawn::{spawn_editor_state, EditorHandle};
@@ -223,7 +224,7 @@ unsafe fn window_buffer_build(
 ) {
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     window_buffer_clear_items(&mut (*data).item_list);
@@ -397,7 +398,7 @@ unsafe fn window_buffer_get_key(
     mut line: u_int,
 ) -> key_code {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut key: key_code = 0;

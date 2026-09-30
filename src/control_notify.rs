@@ -13,6 +13,7 @@ use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::{event_payload, events_callback};
 use crate::src::shared::format::FORMAT_NONE;
+use crate::src::shared::session::SessionRef;
 use crate::src::window::{winlink_find_by_window_id, Window, WindowPane};
 use std::{cell::UnsafeCell, ffi::CStr, rc::Rc};
 
@@ -325,11 +326,7 @@ mod tests {
     use crate::src::shared::pane::window_pane;
     use crate::src::shared::session::session;
 
-    unsafe fn recipient(
-        name: &CStr,
-        session: Option<&Rc<UnsafeCell<session>>>,
-        flags: u64,
-    ) -> ClientRef {
+    unsafe fn recipient(name: &CStr, session: Option<&SessionRef>, flags: u64) -> ClientRef {
         let client = client::with_control_for_test(Some(name), session);
         client.update_flags(flags, 0);
         client.borrow_control_mut().unwrap().guard_depth = 1;

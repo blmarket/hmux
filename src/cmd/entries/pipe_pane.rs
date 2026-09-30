@@ -40,6 +40,7 @@ use crate::src::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::window::winlink;
@@ -83,7 +84,7 @@ unsafe fn cmd_pipe_pane_exec(
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let pane_owner = (*target).wp.upgrade().expect("live pipe target pane");
     let wp = pane_owner.get();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let mut old_fd: ::core::ffi::c_int = 0;

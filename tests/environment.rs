@@ -257,3 +257,77 @@ fn copying_cleared_entries_preserves_existing_destination_flags() {
     assert_eq!(destination.find(c"kept").unwrap().value(), None);
     assert_eq!(destination.find(c"new").unwrap().flags(), 0);
 }
+
+#[test]
+fn entry_identity_survives_updates_and_clears_but_not_recreation() {
+    let mut env = environ_create();
+    env.set_cstr(c"NAME", 0, c"first");
+    let snapshot = env.find(c"NAME").unwrap().clone();
+    let id = snapshot.id();
+    assert!(id > 0 && id < (1 << 61));
+
+    env.set_cstr(c"NAME", ENVIRON_HIDDEN, c"second");
+    assert_eq!(env.find(c"NAME").unwrap().id(), id);
+    env.clear_cstr(c"NAME");
+    assert_eq!(env.find(c"NAME").unwrap().id(), id);
+    assert_eq!(env.find(c"NAME").unwrap().flags(), ENVIRON_HIDDEN);
+    env.set_cstr(c"NAME", 0, c"restored");
+    assert_eq!(env.find(c"NAME").unwrap().id(), id);
+
+    env.unset_cstr(c"NAME");
+    env.clear_cstr(c"NAME");
+    let recreated = env.find(c"NAME").unwrap().id();
+    assert_ne!(
+        recreated, id,
+        "a deleted row cannot regain its old identity"
+    );
+    env.set_cstr(c"NAME", 0, c"replacement");
+    assert_eq!(env.find(c"NAME").unwrap().id(), recreated);
+    assert_eq!(snapshot.id(), id);
+    assert_eq!(snapshot.value(), Some(c"first"));
+}
+
+#[test]
+fn independent_environment_clones_get_new_entry_ids_and_preserve_cleared_flags() {
+    let mut original = environ_create();
+    original.set_cstr(c"set", 0x40, c"value");
+    original.set_cstr(c"cleared", ENVIRON_HIDDEN, c"old");
+    original.clear_cstr(c"cleared");
+    let cloned = original.clone();
+
+    for entry in original.entries() {
+        let copy = cloned.find(entry.name()).unwrap();
+        assert_ne!(copy.id(), entry.id(), "a cloned owner has new records");
+        assert_eq!(copy.value(), entry.value());
+        assert_eq!(copy.flags(), entry.flags());
+    }
+    assert_eq!(cloned.find(c"cleared").unwrap().flags(), ENVIRON_HIDDEN);
+    assert_eq!(cloned.find(c"cleared").unwrap().value(), None);
+}
+
+#[test]
+fn environment_copy_preserves_destination_identity_without_importing_source_ids() {
+    let mut source = environ_create();
+    source.set_cstr(c"existing", 7, c"new value");
+    source.set_cstr(c"added", 0, c"new record");
+    source.clear_cstr(c"cleared");
+    let mut destination = environ_create();
+    destination.set_cstr(c"existing", ENVIRON_HIDDEN, c"old");
+    let retained_id = destination.find(c"existing").unwrap().id();
+
+    destination.copy_from(&source);
+    assert_eq!(destination.find(c"existing").unwrap().id(), retained_id);
+    for entry in source.entries() {
+        assert_ne!(destination.find(entry.name()).unwrap().id(), entry.id());
+    }
+    let ids: Vec<_> = destination.entries().map(|entry| entry.id()).collect();
+    destination.copy_from(&source);
+    assert_eq!(
+        destination
+            .entries()
+            .map(|entry| entry.id())
+            .collect::<Vec<_>>(),
+        ids,
+        "copying values again does not replace destination records"
+    );
+}

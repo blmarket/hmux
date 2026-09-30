@@ -15,6 +15,7 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::shared::window::{
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_MANUAL,
@@ -62,7 +63,7 @@ unsafe fn cmd_resize_window_exec(
         .cloned()
         .expect("resize target window");
     let result = (|| {
-        let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+        let mut s: Option<SessionRef> = (*target).session_handle();
         let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut adjust: u_int = 0;
         let mut sx: u_int = 0;

@@ -21,6 +21,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::tree::RB_NEGINF;
@@ -60,7 +61,7 @@ unsafe fn cmd_list_panes_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(
@@ -96,7 +97,7 @@ unsafe fn cmd_list_panes_server(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.clone();
     while !s.is_none() {
@@ -112,7 +113,7 @@ unsafe fn cmd_list_panes_server(
 }
 unsafe fn cmd_list_panes_session(
     mut self_0: refbox::Weak<cmd>,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut type_0: ::core::ffi::c_int,
 ) {
@@ -129,7 +130,7 @@ unsafe fn cmd_list_panes_session(
 }
 unsafe fn cmd_list_panes_window(
     mut self_0: refbox::Weak<cmd>,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut type_0: ::core::ffi::c_int,

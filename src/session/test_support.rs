@@ -1,9 +1,10 @@
 //! Minimal private-state fixture operations for other modules' behavior tests.
 //! No production API or raw Session/component view is exposed.
 use super::*;
+use crate::src::shared::session::SessionRef;
 
 pub(crate) unsafe fn metadata(
-    owner: &Rc<UnsafeCell<session>>,
+    owner: &SessionRef,
     name: Option<CString>,
     id: Option<u32>,
     attached: Option<u32>,
@@ -19,28 +20,21 @@ pub(crate) unsafe fn metadata(
         state.attached = attached;
     }
 }
-pub(crate) unsafe fn current(owner: &Rc<UnsafeCell<session>>, link: refbox::Weak<winlink>) {
+pub(crate) unsafe fn current(owner: &SessionRef, link: refbox::Weak<winlink>) {
     (*owner.get()).curw = link;
 }
-pub(crate) unsafe fn add_link(
-    owner: &Rc<UnsafeCell<session>>,
-    index: i32,
-) -> refbox::Weak<winlink> {
+pub(crate) unsafe fn add_link(owner: &SessionRef, index: i32) -> refbox::Weak<winlink> {
     let mut link = winlink_add(&mut (*owner.get()).windows, index);
     link.get_mut_unchecked().session = Rc::downgrade(owner);
     link
 }
-pub(crate) unsafe fn remove_link(owner: &Rc<UnsafeCell<session>>, link: refbox::Weak<winlink>) {
+pub(crate) unsafe fn remove_link(owner: &SessionRef, link: refbox::Weak<winlink>) {
     winlink_remove(&raw mut (*owner.get()).windows, link);
 }
-pub(crate) unsafe fn reindex(
-    owner: &Rc<UnsafeCell<session>>,
-    link: refbox::Weak<winlink>,
-    index: i32,
-) {
+pub(crate) unsafe fn reindex(owner: &SessionRef, link: refbox::Weak<winlink>, index: i32) {
     crate::src::window::winlinks_reindex(&mut (*owner.get()).windows, link, index);
 }
 
-pub(crate) unsafe fn activity(owner: &Rc<UnsafeCell<session>>, time: timeval) {
+pub(crate) unsafe fn activity(owner: &SessionRef, time: timeval) {
     (*owner.get()).activity_time = time;
 }

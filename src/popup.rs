@@ -49,6 +49,7 @@ use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEE
 use crate::src::shared::screen::{screen, ScreenMode};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::SIGHUP;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::TTY_CTX_WINDOW_BIGGER;
@@ -984,7 +985,7 @@ pub unsafe fn popup_display(
     mut cwd: *const ::core::ffi::c_char,
     mut title: *const ::core::ffi::c_char,
     c_owner: &ClientRef,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {

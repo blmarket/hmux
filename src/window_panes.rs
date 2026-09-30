@@ -45,10 +45,10 @@ use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
-use crate::src::shared::rc;
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::style::*;
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::shared::window::{WindowRef, WindowWeak};
@@ -73,7 +73,7 @@ use std::rc::{Rc, Weak};
 #[repr(C)]
 pub struct window_panes_modedata {
     pub wp: Weak<UnsafeCell<window_pane>>,
-    pub session: Weak<UnsafeCell<session>>,
+    pub session: SessionWeak,
     pub source_session: u_int,
     pub source_window: u_int,
     pub screen: screen,
@@ -140,9 +140,7 @@ pub const WINDOW_PANES_BORDER_L: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const WINDOW_PANES_BORDER_R: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const WINDOW_PANES_BORDER_U: ::core::ffi::c_int = 4;
 pub const WINDOW_PANES_BORDER_D: ::core::ffi::c_int = 8;
-unsafe fn window_panes_session(
-    data: *mut window_panes_modedata,
-) -> Option<Rc<UnsafeCell<session>>> {
+unsafe fn window_panes_session(data: *mut window_panes_modedata) -> Option<SessionRef> {
     let owner = (*data).session.upgrade()?;
     if !owner.is_registered() {
         drop(owner);
@@ -156,7 +154,7 @@ unsafe fn window_panes_session(
 unsafe fn window_panes_get_source(
     data: *mut window_panes_modedata,
     wlp: *mut refbox::Weak<winlink>,
-    session_owner: &mut Option<Rc<UnsafeCell<session>>>,
+    session_owner: &mut Option<SessionRef>,
 ) -> Option<WindowWeak> {
     let window_owner = window_find_by_id((*data).source_window)?;
     let mut link = refbox::Weak::new();
@@ -1742,7 +1740,7 @@ unsafe fn window_panes_init(
     let mut self_0: refbox::Weak<cmd> = refbox::Weak::new();
     let mut source: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut target: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 0,
@@ -2098,7 +2096,6 @@ mod session_observer_tests {
                 crate::src::shared::session::sessions { storage: None },
             );
             let owner = session::new();
-            let session = rc::as_ptr(&owner);
             crate::src::session::test_support::metadata(
                 &owner,
                 Some(c"panes-mode-session".to_owned()),
@@ -2123,7 +2120,7 @@ mod session_observer_tests {
             };
             assert_eq!(observer.strong_count(), 1);
             let guard = window_panes_session(&mut mode).unwrap();
-            assert_eq!(rc::as_ptr(&guard), session);
+            assert!(std::rc::Rc::downgrade(&guard).ptr_eq(&observer));
             let owner =
                 sessions_remove(&mut sessions, &observer.upgrade().expect("indexed session"))
                     .unwrap();

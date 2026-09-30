@@ -36,6 +36,7 @@ use crate::src::shared::layout::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_CHANGED, PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
@@ -149,8 +150,8 @@ unsafe fn cmd_break_pane_exec(
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
-    let mut src_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*source).session_handle();
-    let mut dst_s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut src_s: Option<SessionRef> = (*source).session_handle();
+    let mut dst_s: Option<SessionRef> = (*target).session_handle();
     let mut wp: *mut window_pane = (*source)
         .pane_handle()
         .as_ref()

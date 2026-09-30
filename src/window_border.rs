@@ -30,6 +30,7 @@ use crate::src::shared::redraw::redraw_spans;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
@@ -216,7 +217,7 @@ pub unsafe fn window_pane_get_border_style(
 ) {
     let mut wp = wp_owner.get();
     let mut c: Option<ClientRef> = Some(c_owner.clone());
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = c
+    let mut s: Option<SessionRef> = c
         .as_ref()
         .expect("live client")
         .attached_session()

@@ -7,6 +7,7 @@ use super::pane::window_pane;
 use super::session::session;
 use super::window::window;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use std::collections::BTreeMap;
 
@@ -17,7 +18,7 @@ pub struct event_payload {
     pub target: cmd_find_state,
     pub target_pane: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     pub target_window: Option<WindowRef>,
-    pub target_session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    pub target_session: Option<SessionRef>,
 }
 
 pub struct event_payload_item {
@@ -60,7 +61,7 @@ pub enum EventPayloadValue {
     Int(::core::ffi::c_int),
     Uint(u_int),
     Client(ClientRef),
-    Session(std::rc::Rc<std::cell::UnsafeCell<session>>),
+    Session(SessionRef),
     Window(WindowRef),
     Pane(std::rc::Rc<std::cell::UnsafeCell<window_pane>>),
     Identity(EventPayloadIdentity),
@@ -109,7 +110,7 @@ impl EventPayloadValue {
         };
         value
     }
-    pub fn session(&self) -> &std::rc::Rc<std::cell::UnsafeCell<session>> {
+    pub fn session(&self) -> &SessionRef {
         let Self::Session(value) = self else {
             panic!("incorrect event payload type")
         };

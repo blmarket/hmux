@@ -2,6 +2,7 @@ use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::Window as _;
@@ -2379,7 +2380,7 @@ unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CStr
     return None;
 }
 unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
     let mut s_owner = sessions_minmax(&sessions);
     s = s_owner.clone();
@@ -2709,7 +2710,7 @@ unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString
 }
 unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*ft).winlink_handle().is_alive() {
         let mut s_owner = sessions_minmax(&sessions);
@@ -2740,7 +2741,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<CString> {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut n: u_int = 0 as u_int;
     if !(*ft).winlink_handle().is_alive() {
         return None;

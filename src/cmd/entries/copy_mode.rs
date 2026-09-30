@@ -14,6 +14,7 @@ use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
 use crate::src::tty::tty_window_offset;
 use crate::src::window::WindowPane;
@@ -85,7 +86,7 @@ unsafe fn cmd_copy_mode_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut pane_owner = (*target).wp.upgrade().expect("copy-mode target pane");
     let mut wp = pane_owner.get();
     let mut line_numbers: ::core::ffi::c_int = 0;

@@ -41,6 +41,7 @@ use crate::src::shared::prompt::{
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
 use crate::src::shared::window::winlink;
@@ -105,10 +106,7 @@ fn prompt_write_flags(
     }
     Ok(())
 }
-pub unsafe fn prompt_set_options(
-    pd: &mut prompt_create_data<'_>,
-    session: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
-) {
+pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Option<&SessionRef>) {
     use crate::src::session::Session;
     let mut access = |visit: &mut dyn FnMut(&mut options)| {
         if let Some(session) = session {

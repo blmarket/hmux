@@ -44,6 +44,7 @@ use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOW
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::rc;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::window::Window as _;
@@ -60,7 +61,7 @@ pub struct cmd_run_shell_data {
     pub cwd: CString,
     pub item: Weak<UnsafeCell<cmdq_item>>,
     pub wait: bool,
-    pub s: Option<Rc<UnsafeCell<session>>>,
+    pub s: Option<SessionRef>,
     pub wp_id: ::core::ffi::c_int,
     pub timer: event,
     pub flags: ::core::ffi::c_int,
@@ -201,7 +202,7 @@ unsafe fn cmd_run_shell_exec(
     let mut c: Option<ClientRef> = c_owner.clone();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wp: *mut window_pane = (*target)
         .pane_handle()
         .as_ref()

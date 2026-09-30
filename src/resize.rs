@@ -8,6 +8,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, CLIENT_CONTROL, CLIENT_STATUSOFF};
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{
     window, WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST,
@@ -263,7 +264,7 @@ unsafe fn clients_calculate_size(
 }
 pub unsafe fn default_window_size(
     c_owner: Option<&ClientRef>,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     w_owner: Option<&WindowRef>,
     mut sx: *mut u_int,
     mut sy: *mut u_int,
@@ -459,7 +460,7 @@ pub unsafe fn recalculate_sizes() {
     recalculate_sizes_now(0 as ::core::ffi::c_int);
 }
 pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut c: Option<ClientRef> = None;
     crate::src::session::recalculate_size_state();
     let mut registry_c_owner = clients.first();

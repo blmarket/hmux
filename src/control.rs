@@ -44,6 +44,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{get_timer, setblocking};
 use crate::src::window::{window_pane_find_by_id, winlink_find_by_window, Window, WindowPane};
@@ -691,7 +692,7 @@ unsafe fn control_discard_pane(cs: &mut control_state, pane: u_int) {
 }
 
 unsafe fn control_session_has_pane(
-    session: &Rc<UnsafeCell<session>>,
+    session: &SessionRef,
     pane: &Rc<UnsafeCell<window_pane>>,
 ) -> bool {
     let parent = pane.window_observer().upgrade().expect("live pane parent");

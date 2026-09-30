@@ -1,5 +1,12 @@
 import unittest
-from model_boundary_inventory import mask, enclosing_function, owner, private_fields, classify
+from pathlib import Path
+import subprocess
+import tempfile
+from unittest.mock import patch
+
+from model_boundary_inventory import (
+    MODELS, mask, enclosing_function, owner, private_fields, field_visibility, classify,
+)
 from client_storage_boundary import private_storage_probe
 
 
@@ -55,6 +62,60 @@ fn next() { other(); }
         self.assertNotIn('pub id: u32,', changed)
         self.assertIn('pub struct other { pub id: u32 }', changed)
         self.assertEqual(changed.count('\n'), source.count('\n'))
+
+    def test_field_visibility_matches_only_a_real_owner_submodule(self):
+        for model in ('session', 'window', 'client'):
+            self.assertEqual(field_visibility(model), 'pub(super)')
+        self.assertEqual(field_visibility('window_pane'), '')
+        for path in ('src/window/mod.rs', 'src/window.rs', 'src/shared/window.rs'):
+            with self.subTest(path=path), patch.dict(MODELS, window=path):
+                self.assertEqual(field_visibility('window'), '')
+        with self.assertRaises(ValueError):
+            private_fields('pub struct window {\n    pub id: u32,\n}', 'window', 'pub(crate)')
+
+    def test_owner_visibility_does_not_broaden_existing_private_fields(self):
+        source = 'pub struct session {\n    pub id: u32,\n    hidden: u32,\n}\n'
+        changed = private_fields(source, 'session', field_visibility('session'))
+        self.assertIn('    pub(super) id: u32,', changed)
+        self.assertIn('    hidden: u32,', changed)
+        self.assertNotIn('pub(super) hidden', changed)
+        self.assertEqual(changed.count('\n'), source.count('\n'))
+
+    def test_rustc_accepts_owner_access_but_rejects_external_alias_and_raw_access(self):
+        for model in ('session', 'window', 'client'):
+            module = Path(MODELS[model]).parent.name
+            definition = private_fields(
+                f'pub struct {model} {{\n    pub id: u32,\n}}\n', model,
+                field_visibility(model),
+            )
+            internal = f'''
+mod {module} {{
+    mod model {{ {definition} }}
+    pub use model::{model};
+    pub fn read_owner() -> u32 {{
+        let value = {model} {{ id: 7 }};
+        value.id
+    }}
+}}
+'''
+            external = f'''
+mod external {{
+    type Alias = crate::{module}::{model};
+    pub unsafe fn read_pointer(value: *const Alias) -> u32 {{ (*value).id }}
+    pub fn read_reference(value: &Alias) -> u32 {{ value.id }}
+}}
+'''
+            with self.subTest(model=model), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / 'probe.rs'
+                command = ['rustc', '--edition=2021', '--crate-type=lib', '--emit=metadata',
+                           str(source), '-o', str(Path(directory) / 'probe.rmeta')]
+                source.write_text(internal)
+                accepted = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(accepted.returncode, 0, accepted.stderr)
+                source.write_text(internal + external)
+                rejected = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertEqual(rejected.stderr.count('error[E0616]'), 2, rejected.stderr)
 
     def test_compiler_types_classify_aliases_and_raw_dereferences(self):
         source = 'fn window_pane_resize() { /* 한글 */ (*parent).flags = 1; (*pane).flags = 1; }'

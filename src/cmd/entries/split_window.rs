@@ -45,6 +45,7 @@ use crate::src::shared::pane::{
     PANE_STYLECHANGED, PANE_THEMECHANGED,
 };
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FLOATOVERZOOM, SPAWN_FULLSIZE,
@@ -139,7 +140,7 @@ unsafe fn cmd_split_window_exec(
     let mut argv_owner = Vec::new();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let original_window = wl
         .get_unchecked()

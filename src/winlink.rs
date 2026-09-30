@@ -45,6 +45,7 @@ use crate::src::screen::{
 };
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::*;
 
@@ -393,7 +394,7 @@ pub unsafe fn winlink_previous(mut wl: refbox::Weak<winlink>) -> refbox::Weak<wi
 
 pub unsafe fn winlink_next_by_number(
     mut wl: refbox::Weak<winlink>,
-    s_owner: &Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut n: ::core::ffi::c_int,
 ) -> refbox::Weak<winlink> {
     let s = Some(s_owner.clone());
@@ -412,7 +413,7 @@ pub unsafe fn winlink_next_by_number(
 
 pub unsafe fn winlink_previous_by_number(
     mut wl: refbox::Weak<winlink>,
-    s_owner: &Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut n: ::core::ffi::c_int,
 ) -> refbox::Weak<winlink> {
     let s = Some(s_owner.clone());
@@ -548,7 +549,7 @@ pub unsafe fn winlink_clear_flags(mut wl: refbox::Weak<winlink>) {
 }
 
 pub unsafe fn winlink_shuffle_up(
-    session: &Rc<UnsafeCell<session>>,
+    session: &SessionRef,
     link: refbox::Weak<winlink>,
     before: i32,
 ) -> i32 {

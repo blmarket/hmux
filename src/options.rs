@@ -30,6 +30,7 @@ use crate::src::session::sessions_minmax;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::options::options_name_map;
+use crate::src::shared::session::SessionRef;
 use crate::src::status::status_timer_start_all;
 use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
 use crate::src::style::{
@@ -1647,7 +1648,7 @@ pub unsafe fn options_from_string(
 }
 pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut loop_0: Option<ClientRef> = None;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     log_debug(format_args!(
         "{}: {}",

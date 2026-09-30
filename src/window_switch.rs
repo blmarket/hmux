@@ -48,6 +48,7 @@ use crate::src::shared::prompt::{
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -150,7 +151,7 @@ unsafe fn window_switch_add_item(
 }
 unsafe fn window_switch_add_session(
     mut data: *mut window_switch_modedata,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     mut order: *mut u_int,
 ) {
     let s = Some(s_owner.clone());
@@ -603,7 +604,7 @@ unsafe fn window_switch_run_command(
         wp: Default::default(),
         idx: 0,
     };
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut target: Option<CString> = None;
     let state;

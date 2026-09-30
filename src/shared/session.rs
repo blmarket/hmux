@@ -2,13 +2,14 @@
 
 pub use crate::src::session::session;
 
+/// Retained Session identity. Logical destruction and deferred releases remain explicit.
+pub type SessionRef = std::rc::Rc<std::cell::UnsafeCell<session>>;
+/// Nonowning Session identity for callbacks, targets and membership.
+pub type SessionWeak = std::rc::Weak<std::cell::UnsafeCell<session>>;
+
 #[repr(C)]
 pub struct sessions {
-    pub storage: Option<
-        refbox::RefBox<
-            std::collections::BTreeMap<Vec<u8>, std::rc::Rc<std::cell::UnsafeCell<session>>>,
-        >,
-    >,
+    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, SessionRef>>>,
 }
 
 #[repr(C)]
@@ -17,7 +18,7 @@ pub struct session_group {
     /// Weak back-reference to the session group index that owns this group.
     pub owner: refbox::Weak<std::collections::BTreeMap<Vec<u8>, Box<session_group>>>,
     /// Membership observes globally owned sessions without retaining them.
-    pub(crate) members: Vec<std::rc::Weak<std::cell::UnsafeCell<session>>>,
+    pub(crate) members: Vec<SessionWeak>,
 }
 
 impl session_group {

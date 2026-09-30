@@ -1,5 +1,6 @@
 //! Operations on retained session holders. Cleanup remains explicit.
 use super::*;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 
@@ -23,13 +24,23 @@ pub trait Session {
     /// Registry liveness is distinct from retained allocation liveness.
     unsafe fn is_registered(&self) -> bool;
     /// Advance in the live containing registry; destructive walks use sessions_after.
-    unsafe fn next_session(&self) -> Option<Rc<UnsafeCell<session>>>;
+    unsafe fn next_session(&self) -> Option<SessionRef>;
     unsafe fn contains_window(&self, window: &WindowRef) -> bool;
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
     unsafe fn activity_time(&self) -> timeval;
     unsafe fn is_attached(&self) -> bool;
+    /// Number of attached clients, including multiple clients of one group member.
+    unsafe fn attached_count(&self) -> u32;
+    /// Rebuild this Session's owned winlinks from a distinct, live source.
+    /// The caller must pass different source and destination identities.
+    /// Live source traversal, selection/history remapping and link notifications
+    /// retain their order;
+    /// neither Session is borrowed during callbacks or old-window cleanup.
+    /// Linked callbacks must preserve the current source and replacement links
+    /// through the subsequent alert copy, as required by their logical lifetimes.
+    unsafe fn synchronize_windows_from(&self, source: &SessionRef);
     unsafe fn current_winlink(&self) -> refbox::Weak<winlink>;
     /// Observe MRU history without selecting it (notably command target `!`).
     unsafe fn last_winlink(&self) -> refbox::Weak<winlink>;
@@ -51,7 +62,7 @@ pub trait Session {
     ) -> Result<refbox::Weak<winlink>, CString>;
     unsafe fn link_window(
         &self,
-        source: &Rc<UnsafeCell<session>>,
+        source: &SessionRef,
         link: refbox::Weak<winlink>,
         index: i32,
         replace: bool,
@@ -84,7 +95,7 @@ pub trait Session {
     unsafe fn destroy(&self, notify: bool, from: &CStr);
 }
 
-impl Session for Rc<UnsafeCell<session>> {
+impl Session for SessionRef {
     type Environment<'a> = &'a environ;
     type EnvironmentMut<'a> = &'a mut environ;
     unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>> {
@@ -106,7 +117,7 @@ impl Session for Rc<UnsafeCell<session>> {
     unsafe fn is_registered(&self) -> bool {
         sessions_resolve(&sessions, &Rc::downgrade(self)).is_some()
     }
-    unsafe fn next_session(&self) -> Option<Rc<UnsafeCell<session>>> {
+    unsafe fn next_session(&self) -> Option<SessionRef> {
         sessions_next(&*self.get())
     }
     unsafe fn contains_window(&self, window: &WindowRef) -> bool {
@@ -177,6 +188,12 @@ impl Session for Rc<UnsafeCell<session>> {
     unsafe fn is_attached(&self) -> bool {
         (*self.get()).attached != 0
     }
+    unsafe fn attached_count(&self) -> u32 {
+        (*self.get()).attached
+    }
+    unsafe fn synchronize_windows_from(&self, source: &SessionRef) {
+        session_synchronize_windows(source, self);
+    }
     unsafe fn current_winlink(&self) -> refbox::Weak<winlink> {
         (*self.get()).curw.clone()
     }
@@ -236,7 +253,7 @@ impl Session for Rc<UnsafeCell<session>> {
     }
     unsafe fn link_window(
         &self,
-        source: &Rc<UnsafeCell<session>>,
+        source: &SessionRef,
         link: refbox::Weak<winlink>,
         index: i32,
         replace: bool,
@@ -416,7 +433,7 @@ mod tests {
 /// Fixture-only replacement also exercises removal while a UI target survives.
 #[cfg(test)]
 pub(crate) unsafe fn replace_test_environment(
-    owner: &Rc<UnsafeCell<session>>,
+    owner: &SessionRef,
     environment: Option<Box<environ>>,
 ) {
     (*owner.get()).environ = environment;

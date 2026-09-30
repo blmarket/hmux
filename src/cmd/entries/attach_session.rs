@@ -34,6 +34,7 @@ use crate::src::shared::command::{
 };
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_set_active_pane;
 use crate::src::{server_client::Client, session::Session};
@@ -87,7 +88,7 @@ pub unsafe fn cmd_attach_session(
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut c_loop: Option<ClientRef> = None;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut msgtype: msgtype = 0 as msgtype;

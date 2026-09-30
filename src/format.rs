@@ -53,6 +53,7 @@ use crate::src::session::{
 use crate::src::session::{session_groups, sessions, Session};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::sort::{
     sort_get_clients, sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
@@ -360,7 +361,7 @@ unsafe fn format_copy_state(
 pub unsafe fn format_create_defaults(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
@@ -409,7 +410,7 @@ pub unsafe fn format_create_from_target(
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,
     c_owner: Option<&ClientRef>,
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
@@ -512,10 +513,7 @@ pub unsafe fn format_defaults(
         format_defaults_paste_buffer(&mut *ft, &pb);
     }
 }
-unsafe fn format_defaults_session(
-    mut ft: *mut format_tree,
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
-) {
+unsafe fn format_defaults_session(mut ft: *mut format_tree, s_owner: &SessionRef) {
     (*ft).s = std::rc::Rc::downgrade(s_owner);
 }
 unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &ClientRef) {

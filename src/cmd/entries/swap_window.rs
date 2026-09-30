@@ -13,6 +13,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
 use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::Window as _;
 
@@ -50,8 +51,8 @@ unsafe fn cmd_swap_window_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut source: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_source_mut(&mut *item);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut src: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*source).session_handle();
-    let mut dst: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut src: Option<SessionRef> = (*source).session_handle();
+    let mut dst: Option<SessionRef> = (*target).session_handle();
     let mut sg_src: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut sg_dst: *mut session_group = ::core::ptr::null_mut::<session_group>();
     let mut wl_src: refbox::Weak<winlink> = (*source).winlink_handle();

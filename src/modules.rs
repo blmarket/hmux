@@ -65,6 +65,7 @@ pub mod server_acl;
 pub mod server_client;
 pub mod server_fn;
 pub mod session;
+pub mod session_group;
 pub mod shared;
 pub mod sort;
 pub mod spawn;

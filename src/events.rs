@@ -17,6 +17,7 @@ use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
 use std::ffi::CStr;
@@ -176,11 +177,7 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: Cl
     }
     events_fire(name, ep);
 }
-pub unsafe fn events_fire_session(
-    mut name: *const ::core::ffi::c_char,
-    owner: std::rc::Rc<std::cell::UnsafeCell<session>>,
-) {
-    let s = owner.get();
+pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, owner: SessionRef) {
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),

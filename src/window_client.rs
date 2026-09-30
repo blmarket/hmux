@@ -44,6 +44,7 @@ use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
@@ -572,8 +573,7 @@ unsafe fn window_client_draw(
     };
     let mode_pane = crate::src::shared::rc::as_ptr(&mode_pane_owner);
     let c = item.client();
-    let mut session: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> =
-        c.attached_session().upgrade();
+    let mut session: Option<SessionRef> = c.attached_session().upgrade();
     let mut s: *mut screen = (*ctx).screen_ptr();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut gc: grid_cell = grid_cell {

@@ -4,6 +4,7 @@ use crate::src::options::OptionsScope;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
+use crate::src::shared::session::{SessionRef, SessionWeak};
 use refbox::RefBox;
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
@@ -168,11 +169,11 @@ impl window_customize_itemdata {
 #[derive(Clone)]
 enum CustomizeEnvironment {
     Global,
-    Session(std::rc::Weak<UnsafeCell<session>>),
+    Session(SessionWeak),
 }
 
 impl CustomizeEnvironment {
-    fn session(s: &Rc<UnsafeCell<session>>) -> Self {
+    fn session(s: &SessionRef) -> Self {
         Self::Session(Rc::downgrade(s))
     }
 
@@ -196,7 +197,7 @@ impl CustomizeEnvironment {
 /// environment references are tied to this guard, rather than a saved pointer.
 enum CustomizeEnvironmentBorrow {
     Global,
-    Session(Rc<UnsafeCell<session>>),
+    Session(SessionRef),
 }
 
 impl CustomizeEnvironmentBorrow {
@@ -220,12 +221,9 @@ impl CustomizeEnvironmentBorrow {
         self.read(|env| {
             environ_iter(env)
                 .map(|entry| {
-                    // Preserve the existing mode-tree identity. This number is only a
-                    // row tag, never converted back to an address or used for access.
-                    (
-                        (2_u64 << 62) | std::ptr::from_ref(entry) as u64,
-                        entry.clone(),
-                    )
+                    // The low bit separates environment records from static
+                    // option tags, which share the same category bits.
+                    ((2_u64 << 62) | (entry.id() << 1), entry.clone())
                 })
                 .collect()
         })
@@ -5223,6 +5221,7 @@ mod environment_lifetime_tests {
             let environment = target.resolve().unwrap();
             environment.edit(|env| env.set(b"NAME", 0, b"first").unwrap());
             let before = environment.rows().unwrap();
+            assert_eq!(before[0].0, (2_u64 << 62) | (before[0].1.id() << 1));
             environment.edit(|env| env.set(b"NAME", ENVIRON_HIDDEN, b"second").unwrap());
             let after = environment.rows().unwrap();
             assert_eq!(
@@ -5231,6 +5230,21 @@ mod environment_lifetime_tests {
             );
             assert_eq!(before[0].1.value(), Some(c"first"));
             assert_eq!(after[0].1.value(), Some(c"second"));
+            environment.edit(|env| env.clear_cstr(c"NAME"));
+            let cleared = environment.rows().unwrap();
+            assert_eq!(cleared[0].0, before[0].0);
+            assert_eq!(cleared[0].1.value(), None);
+            environment.edit(|env| {
+                env.unset_cstr(c"NAME");
+                env.set_cstr(c"NAME", 0, c"recreated");
+            });
+            let recreated = environment.rows().unwrap();
+            assert_ne!(recreated[0].0, before[0].0);
+            let replacement = environment.get().unwrap();
+            crate::src::session::replace_test_environment(&owner, Some(Box::new(replacement)));
+            let replaced = environment.rows().unwrap();
+            assert_ne!(replaced[0].0, recreated[0].0);
+            assert_eq!(replaced[0].1.value(), Some(c"recreated"));
             crate::src::session::replace_test_environment(&owner, None);
             assert!(environment.rows().is_none());
             assert_eq!(
@@ -5238,6 +5252,38 @@ mod environment_lifetime_tests {
                 Some(c"first"),
                 "no live component reference escapes"
             );
+        }
+    }
+
+    #[test]
+    fn environment_tags_are_disjoint_from_every_static_option_tag() {
+        unsafe {
+            let owner = session::new();
+            crate::src::session::replace_test_environment(&owner, Some(environ_create()));
+            let environment = CustomizeEnvironment::session(&owner).resolve().unwrap();
+            environment.edit(|env| {
+                env.set_cstr(c"set", 0, c"value");
+                env.clear_cstr(c"cleared");
+            });
+            let rows = environment.rows().unwrap();
+            assert_ne!(rows[0].0, rows[1].0);
+            for (tag, _) in rows {
+                assert_eq!(tag >> 62, 2);
+                assert_eq!(tag & 1, 0);
+                for definition in crate::src::options_table::options_table.iter() {
+                    let Some(name) = definition.name else {
+                        continue;
+                    };
+                    let option = CustomizeOption {
+                        owner: OptionsScope::GlobalServer,
+                        name: name.to_owned(),
+                        definition: Some(definition),
+                        id: 0,
+                        is_monitor: false,
+                    };
+                    assert_ne!(tag, option.tag(None), "{name:?} shares an environment tag");
+                }
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 //! Authoritative format declarations.
 use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::session::SessionWeak;
 use crate::src::shared::window::WindowWeak;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -122,7 +123,7 @@ pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub struct format_tree {
     pub type_0: format_type,
     pub c: ClientWeak,
-    pub s: std::rc::Weak<UnsafeCell<session>>,
+    pub s: SessionWeak,
     pub wl: refbox::Weak<winlink>,
     pub w: WindowWeak,
     pub wp: std::rc::Weak<UnsafeCell<window_pane>>,

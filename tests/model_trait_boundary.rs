@@ -181,6 +181,8 @@ fn rejects_projection_references_pointer_helpers_and_representation_casts() {
         "fn f(window: &WindowRef) { let model = window.get(); }",
         "fn f(window: &WindowWeak) { let model = window.upgrade().unwrap().get(); }",
         "fn f(window: &WindowRef) { let model = rc::as_ptr(window); }",
+        "fn f(session: &SessionRef) { let model = session.get(); }",
+        "fn f(session: &SessionWeak) { let model = session.upgrade().unwrap().get(); }",
         "fn f(p: *mut window_pane) { let _ = p.cast::<UnsafeCell<window_pane>>(); }",
         "fn f(p: *mut u8) { let _ = p.cast::<Record>(); } use x::client as Record;",
         "fn f(p: *mut u8) { let _ = p as *mut UnsafeCell<session>; }",
@@ -890,12 +892,16 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
 // Exported helpers must use holder identities, even when an old whole-model
 // helper is reintroduced under a new name. Pane signatures are a separate phase.
 fn exported_window_storage_types(source: &str) -> Vec<String> {
+    model_storage_types(source, "window", true)
+}
+
+fn model_storage_types(source: &str, model: &str, exported_only: bool) -> Vec<String> {
     let syntax = syn::parse_file(source).unwrap();
-    struct WindowStorage {
+    struct ModelStorage {
         names: HashSet<String>,
         findings: Vec<String>,
     }
-    impl<'ast> Visit<'ast> for WindowStorage {
+    impl<'ast> Visit<'ast> for ModelStorage {
         fn visit_use_rename(&mut self, rename: &'ast syn::UseRename) {
             if self.names.contains(&rename.ident.to_string()) {
                 self.names.insert(rename.rename.to_string());
@@ -916,18 +922,21 @@ fn exported_window_storage_types(source: &str) -> Vec<String> {
                 .last()
                 .is_some_and(|part| self.names.contains(&part.ident.to_string()))
             {
-                self.findings
-                    .push("exported helper exposes Window storage".into());
+                self.findings.push("type exposes model storage".into());
             }
             visit::visit_type_path(self, ty);
         }
     }
-    let mut check = WindowStorage {
-        names: HashSet::from(["window".into()]),
+    let mut check = ModelStorage {
+        names: HashSet::from([model.into()]),
         findings: Vec::new(),
     };
     check.visit_file(&syntax);
     check.findings.clear();
+    if !exported_only {
+        check.visit_file(&syntax);
+        return check.findings;
+    }
     for item in &syntax.items {
         if let Item::Fn(function) = item {
             if !matches!(function.vis, syn::Visibility::Inherited) {
@@ -936,6 +945,48 @@ fn exported_window_storage_types(source: &str) -> Vec<String> {
         }
     }
     check.findings
+}
+
+#[test]
+fn session_consumers_and_exported_helpers_use_holder_identities() {
+    // This covers the group module too. Its BTreeMap OccupiedEntry::get() is
+    // legitimate; the separate compiler storage probe distinguishes it from
+    // SessionRef::get(), including unused or inferred model projections.
+    for source in [
+        "fn f(state: &session) {}",
+        "fn f(state: *mut session) {}",
+        "fn f(state: &Rc<UnsafeCell<session>>) {}",
+        "use model::session as State; fn f(state: &State) {}",
+        "type State = session; fn f(state: &State) {}",
+    ] {
+        assert!(
+            !model_storage_types(source, "session", false).is_empty(),
+            "missed {source}"
+        );
+    }
+    assert!(model_storage_types(
+        "fn f(owner: &SessionRef, weak: SessionWeak) { let tag = Rc::as_ptr(owner) as u64; }",
+        "session",
+        false,
+    )
+    .is_empty());
+    for path in rust_sources(Path::new("src")) {
+        if path.starts_with("src/session") || path == Path::new("src/shared/session.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            model_storage_types(&source, "session", false).is_empty(),
+            "{}: external Session types must use holders",
+            path.display()
+        );
+    }
+    let source = std::fs::read_to_string("src/session/mod.rs").unwrap();
+    assert!(model_storage_types(&source, "session", true).is_empty());
+    assert!(
+        Path::new("src/session_group.rs").exists(),
+        "groups have a separate owner boundary"
+    );
 }
 
 #[test]

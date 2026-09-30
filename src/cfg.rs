@@ -29,6 +29,7 @@ use crate::src::shared::errno::ENOENT;
 use crate::src::shared::key::key_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
@@ -317,7 +318,7 @@ pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<c
         }
     });
 }
-pub unsafe fn cfg_show_causes(s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>) {
+pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
     let mut s = s_owner.cloned();
     let mut registry_c_owner = clients.first();
     let mut c: Option<ClientRef> = registry_c_owner.clone();

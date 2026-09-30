@@ -23,6 +23,7 @@ pub use crate::src::shared::monitor::{
 };
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::window::{
@@ -44,7 +45,7 @@ pub struct MonitorWeak(Weak<UnsafeCell<MonitorState>>);
 struct MonitorState {
     alive: bool,
     client: ClientWeak,
-    session: Option<Rc<UnsafeCell<session>>>,
+    session: Option<SessionRef>,
     callback: Option<monitor_cb>,
     items: monitor_items,
     timer: event,
@@ -192,7 +193,7 @@ unsafe fn monitor_client(owner: &MonitorRef) -> Option<ClientRef> {
 unsafe fn monitor_get_session(
     owner: &MonitorRef,
     client: Option<&ClientRef>,
-) -> Option<Rc<UnsafeCell<session>>> {
+) -> Option<SessionRef> {
     let (has_client, session) = owner.with_state(|state| {
         state
             .alive
@@ -207,9 +208,7 @@ unsafe fn monitor_get_session(
     let indexed = session_find_by_id(session.id())?;
     Rc::ptr_eq(&session, &indexed).then_some(indexed)
 }
-unsafe fn monitor_context(
-    owner: &MonitorRef,
-) -> Option<(Option<ClientRef>, Rc<UnsafeCell<session>>)> {
+unsafe fn monitor_context(owner: &MonitorRef) -> Option<(Option<ClientRef>, SessionRef)> {
     if !owner.is_alive() {
         return None;
     }
@@ -222,7 +221,7 @@ unsafe fn monitor_context(
 }
 unsafe fn monitor_create_formats(
     client: Option<&ClientRef>,
-    session: Option<&Rc<UnsafeCell<session>>>,
+    session: Option<&SessionRef>,
     link: refbox::Weak<winlink>,
     pane: Option<&Rc<UnsafeCell<window_pane>>>,
 ) -> Box<format_tree> {
@@ -242,7 +241,7 @@ enum MonitorValueTarget {
 unsafe fn monitor_check_value(
     owner: &MonitorRef,
     identity: &MonitorItemIdentity,
-    session: Option<&Rc<UnsafeCell<session>>>,
+    session: Option<&SessionRef>,
     link: refbox::Weak<winlink>,
     pane: Option<&Rc<UnsafeCell<window_pane>>>,
     value: &CStr,
@@ -718,7 +717,7 @@ pub unsafe fn monitor_create_client(
     owner
 }
 pub unsafe fn monitor_create_session(
-    session: Option<&Rc<UnsafeCell<session>>>,
+    session: Option<&SessionRef>,
     callback: monitor_cb,
 ) -> MonitorRef {
     let owner = monitor_create(callback);
@@ -776,7 +775,7 @@ pub unsafe fn monitor_create_client_owned(
     monitor_create_client(client, callback)
 }
 pub unsafe fn monitor_create_session_owned(
-    session: Option<&Rc<UnsafeCell<session>>>,
+    session: Option<&SessionRef>,
     callback: monitor_cb,
 ) -> MonitorRef {
     monitor_create_session(session, callback)
@@ -1217,7 +1216,6 @@ unsafe fn monitor_windows_next(elm: &monitor_window) -> *mut monitor_window {
 mod last_owner_tests {
     use super::*;
     use crate::src::shared::client::{client, CLIENT_DEAD};
-    use crate::src::shared::rc;
 
     #[test]
     fn traversal_preserves_prefetched_successor_order_and_rejects_replacements() {
@@ -1548,7 +1546,6 @@ mod last_owner_tests {
                 crate::src::shared::session::sessions { storage: None },
             );
             let owner = session::new();
-            let session = rc::as_ptr(&owner);
             crate::src::session::test_support::metadata(
                 &owner,
                 Some(c"monitor-release-test".to_owned()),

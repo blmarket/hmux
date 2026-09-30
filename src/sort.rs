@@ -14,6 +14,7 @@ use crate::src::shared::key::{key_binding, key_table};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::paste::{paste_buffer, PasteBufferRef};
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::tree::RB_NEGINF;
@@ -380,7 +381,7 @@ pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::We
     links
 }
 pub unsafe fn sort_get_winlinks_session(
-    s_owner: &std::rc::Rc<std::cell::UnsafeCell<session>>,
+    s_owner: &SessionRef,
     sort_crit: *mut sort_criteria,
 ) -> Vec<refbox::Weak<winlink>> {
     let mut l = Vec::new();

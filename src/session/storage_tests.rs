@@ -1,8 +1,9 @@
 use crate::src::session::*;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::session::{session, sessions};
 use std::ffi::CStr;
 
-fn node(name: &CStr) -> std::rc::Rc<std::cell::UnsafeCell<session>> {
+fn node(name: &CStr) -> SessionRef {
     let node = session::new();
     unsafe {
         (*node.get()).name = name.to_owned();

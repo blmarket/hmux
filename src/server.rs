@@ -30,6 +30,7 @@ use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::{session_destroy, sessions_after, sessions_minmax};
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::status::message_list;
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::text::utf8::utf8_update_width_cache;
@@ -122,7 +123,7 @@ static mut message_next: u_int = 0;
 pub static mut message_log: message_list = message_list::new();
 pub static mut current_time: time_t = 0;
 pub unsafe fn server_set_marked(
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
@@ -139,7 +140,7 @@ pub unsafe fn server_clear_marked() {
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
 }
 pub unsafe fn server_is_marked(
-    s_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<session>>>,
+    s_owner: Option<&SessionRef>,
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> ::core::ffi::c_int {
@@ -437,7 +438,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     return 1 as ::core::ffi::c_int;
 }
 unsafe fn server_send_exit() {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     cmd_wait_for_flush();
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
@@ -459,7 +460,7 @@ unsafe fn server_send_exit() {
     }
 }
 pub unsafe fn server_update_socket() {
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = None;
+    let mut s: Option<SessionRef> = None;
     static mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut n: ::core::ffi::c_int = 0;
     let mut mode: ::core::ffi::c_int = 0;

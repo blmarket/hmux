@@ -41,6 +41,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::popup::{POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO};
 use crate::src::shared::posix_io::_PATH_BSHELL;
 use crate::src::shared::session::session;
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::tty::{tty, tty_window_view};
 use crate::src::shared::window::{window, winlink};
@@ -169,7 +170,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = tc
+    let mut s: Option<SessionRef> = tc
         .as_ref()
         .expect("live client")
         .attached_session()
@@ -630,7 +631,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = tc
+    let mut s: Option<SessionRef> = tc
         .as_ref()
         .expect("live client")
         .attached_session()
@@ -1160,7 +1161,7 @@ unsafe fn cmd_display_popup_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut s: Option<std::rc::Rc<std::cell::UnsafeCell<session>>> = (*target).session_handle();
+    let mut s: Option<SessionRef> = (*target).session_handle();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

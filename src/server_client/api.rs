@@ -9,6 +9,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::control::control_state;
 use crate::src::shared::environment::environ;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_type};
+use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::terminal::termios;
 use crate::src::shared::window::WindowRef;
@@ -100,9 +101,9 @@ pub trait Client {
     /// Check reply pressure and publish exit/discard state before discarding
     /// pending pane output. Returns false for a stopped or discarding client.
     unsafe fn accept_control_reply(&self, added: usize) -> bool;
-    unsafe fn attached_session(&self) -> Weak<UnsafeCell<session>>;
-    unsafe fn set_session(&self, session: Option<&Rc<UnsafeCell<session>>>);
-    unsafe fn reattach_after_session_destroy(&self, target: Option<&Rc<UnsafeCell<session>>>);
+    unsafe fn attached_session(&self) -> SessionWeak;
+    unsafe fn set_session(&self, session: Option<&SessionRef>);
+    unsafe fn reattach_after_session_destroy(&self, target: Option<&SessionRef>);
     unsafe fn is_dead(&self) -> bool;
     unsafe fn is_control(&self) -> bool;
     unsafe fn is_read_only(&self) -> bool;
@@ -150,7 +151,7 @@ pub trait Client {
     unsafe fn reply_input_request(&self, reply: crate::src::input::InputRequestReply<'_>);
     unsafe fn cancel_input_requests(&self);
     unsafe fn remember_session(&self);
-    unsafe fn previous_session(&self) -> Weak<UnsafeCell<session>>;
+    unsafe fn previous_session(&self) -> SessionWeak;
     unsafe fn has_input_fd(&self) -> bool;
     /// Capture terminal attributes before attaching; retain the existing fatal error policy.
     unsafe fn capture_termios(&self) -> termios;
@@ -198,7 +199,7 @@ pub trait Client {
     /// The closure cannot reenter models, destroy owners, or leak component
     /// references. Clone the environment before invoking another entity.
     unsafe fn with_environment<R>(&self, read: impl FnOnce(Option<&environ>) -> R) -> R;
-    unsafe fn cwd(&self, fallback: Option<&Rc<UnsafeCell<session>>>) -> Option<CString>;
+    unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString>;
     unsafe fn set_key_table(&self, name: Option<&CStr>);
     /// Switch to an already resolved table without refreshing its activity time.
     unsafe fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>);
@@ -742,7 +743,7 @@ impl Client for ClientRef {
         let state = &mut *self.get();
         state.last_session = state.session.clone();
     }
-    unsafe fn previous_session(&self) -> Weak<UnsafeCell<session>> {
+    unsafe fn previous_session(&self) -> SessionWeak {
         (*self.get()).last_session.clone()
     }
     unsafe fn has_input_fd(&self) -> bool {
@@ -794,15 +795,15 @@ impl Client for ClientRef {
         }
     }
 
-    unsafe fn attached_session(&self) -> Weak<UnsafeCell<session>> {
+    unsafe fn attached_session(&self) -> SessionWeak {
         (*self.get()).session.clone()
     }
 
-    unsafe fn set_session(&self, session: Option<&Rc<UnsafeCell<session>>>) {
+    unsafe fn set_session(&self, session: Option<&SessionRef>) {
         server_client_set_session(self, session);
     }
 
-    unsafe fn reattach_after_session_destroy(&self, target: Option<&Rc<UnsafeCell<session>>>) {
+    unsafe fn reattach_after_session_destroy(&self, target: Option<&SessionRef>) {
         // A normal set_session(None) has observable focus/socket effects here.
         (*self.get()).session = Weak::new();
         (*self.get()).last_session = Weak::new();
@@ -996,7 +997,7 @@ impl Client for ClientRef {
         read((*self.get()).environ.as_deref())
     }
 
-    unsafe fn cwd(&self, fallback: Option<&Rc<UnsafeCell<session>>>) -> Option<CString> {
+    unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString> {
         if cfg_finished == 0 {
             if let Some(startup) = (&cfg_client).upgrade() {
                 return (*startup.get()).cwd.clone();
