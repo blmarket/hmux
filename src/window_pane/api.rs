@@ -277,6 +277,17 @@ pub trait WindowPane {
     unsafe fn add_mode_formats(&self, context: &mut crate::src::shared::format::format_tree);
 
     unsafe fn reset_input(&self);
+    unsafe fn screen_size(&self, displayed: bool) -> (u32, u32);
+    unsafe fn clone_history(&self, hint: &screen, cursor: Option<(&mut u32, &mut u32)>, trim: bool) -> Box<screen>;
+    unsafe fn sync_history(&self, target: &mut screen, sync: (u32, u32, u32)) -> bool;
+    unsafe fn history_scroll(&self) -> (u32, u32, u32);
+    unsafe fn share_screen_hyperlinks(&self, target: &mut screen);
+    unsafe fn grid_hyperlink(&self, grid: &crate::src::shared::grid::grid, x: u32, y: u32) -> Option<CString>;
+    unsafe fn saved_search(&self) -> (Option<CString>, i32);
+    unsafe fn save_search(&self, value: CString, regex: i32);
+    unsafe fn show_scrollbar(&self);
+    unsafe fn take_pending_redraw(&self) -> bool;
+    unsafe fn process_name(&self) -> Option<CString>;
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -1184,6 +1195,48 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         };
         super::input::input_reset(context, 1);
         (*self.get()).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
+    }
+    unsafe fn screen_size(&self, displayed: bool) -> (u32, u32) {
+        let pane = &mut *self.get();
+        let source = if displayed { &*pane.screen_ptr() } else { &pane.base };
+        (source.grid().sx, source.grid().sy)
+    }
+    unsafe fn clone_history(&self, hint: &screen, cursor: Option<(&mut u32, &mut u32)>, trim: bool) -> Box<screen> {
+        crate::src::window_copy::window_copy_clone_screen(&(*self.get()).base, hint, cursor, trim)
+    }
+    unsafe fn sync_history(&self, target: &mut screen, sync: (u32, u32, u32)) -> bool {
+        crate::src::window_copy::window_copy_sync_screen(&(*self.get()).base, target, sync)
+    }
+    unsafe fn history_scroll(&self) -> (u32, u32, u32) {
+        let grid = (*self.get()).base.grid();
+        (grid.scroll_added, grid.scroll_collected, grid.scroll_generation)
+    }
+    unsafe fn share_screen_hyperlinks(&self, target: &mut screen) {
+        let source = &(*self.get()).base;
+        if source.hyperlinks.is_some() { crate::src::screen::screen_share_hyperlinks(target, source); }
+    }
+    unsafe fn grid_hyperlink(&self, grid: &crate::src::shared::grid::grid, x: u32, y: u32) -> Option<CString> {
+        crate::src::format::format_grid_hyperlink_cstring(grid, x, y, &*(*self.get()).screen_ptr())
+    }
+    unsafe fn saved_search(&self) -> (Option<CString>, i32) {
+        let pane = &*self.get();
+        (pane.searchstr.clone(), pane.searchregex)
+    }
+    unsafe fn save_search(&self, value: CString, regex: i32) {
+        let pane = &mut *self.get();
+        window_pane_set_searchstr(pane, Some(value));
+        pane.searchregex = regex;
+    }
+    unsafe fn show_scrollbar(&self) { window_pane_scrollbar_show(self); }
+    unsafe fn take_pending_redraw(&self) -> bool {
+        let pane = &mut *self.get();
+        let pending = pane.flags & PANE_REDRAW != 0;
+        pane.flags &= !PANE_REDRAW;
+        pending
+    }
+    unsafe fn process_name(&self) -> Option<CString> {
+        let descriptor = (*self.get()).fd;
+        crate::src::osdep_linux::osdep_get_name_cstring(descriptor)
     }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0

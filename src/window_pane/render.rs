@@ -341,7 +341,7 @@ pub(super) unsafe fn draw_scrollbar(
         if (*wp).modes.is_empty() {
             return;
         }
-        let Some((cm_y, cm_size)) = window_copy_get_current_offset(&*wp) else {
+        let Some((cm_y, cm_size)) = window_copy_get_current_offset(pane_owner) else {
             return;
         };
         total_height = (cm_size as u_int).wrapping_add(sb_h);
