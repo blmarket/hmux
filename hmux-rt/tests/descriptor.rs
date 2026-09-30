@@ -12,7 +12,7 @@ use std::time::Duration;
 
 #[test]
 fn cancelled_readiness_does_not_consume_input_and_rearming_needs_no_new_edge() {
-    let rt = mio::Runtime::new().unwrap();
+    let mut rt = mio::Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     fd.set_nonblocking(true).unwrap();
     let source = Rc::new(mio::Descriptor::new(&rt.handle(), Rc::new(fd.into())).unwrap());

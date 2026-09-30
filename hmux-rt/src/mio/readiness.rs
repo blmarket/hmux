@@ -50,6 +50,7 @@ impl IoState {
     }
 
     pub(crate) fn observe(&self, event: &mio::event::Event) -> io::Result<()> {
+        let core = self.core.upgrade().ok_or_else(invalid)?;
         for (direction, ready, closed) in [
             (Direction::Read, event.is_readable(), event.is_read_closed()),
             (
@@ -75,7 +76,7 @@ impl IoState {
             }));
             let wake = state.waiter.borrow().as_ref().map(|(_, wake)| wake.clone());
             if let Some(wake) = wake {
-                wake.wake();
+                core.queue_wake(wake);
             }
         }
         Ok(())
@@ -401,7 +402,7 @@ mod tests {
 
     #[test]
     fn acknowledging_an_old_generation_preserves_a_new_notification() {
-        let runtime = super::super::Runtime::new().unwrap();
+        let mut runtime = super::super::Runtime::new().unwrap();
         let (mut writer, reader) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
         let source = runtime.handle().io(Rc::new(reader.into())).unwrap();

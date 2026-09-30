@@ -20,13 +20,14 @@ type TaskFuture = Pin<Box<dyn Future<Output = ()>>>;
 enum Ready {
     Task(Weak<TaskState>),
     Callback(Box<dyn FnOnce()>),
+    Wake(LocalWaker),
 }
 
 impl Ready {
     fn is_runnable(&self) -> bool {
         match self {
             Self::Task(task) => task.upgrade().is_some_and(|task| !task.cancelled.get()),
-            Self::Callback(_) => true,
+            Self::Callback(_) | Self::Wake(_) => true,
         }
     }
 }
@@ -38,7 +39,8 @@ pub(crate) fn invalid() -> io::Error {
     )
 }
 
-pub(crate) struct Core {
+/// Scheduling state accessible independently of the runtime owner.
+pub struct Core {
     pub(crate) pid: u32,
     pub(crate) alive: Cell<bool>,
     poisoned: Cell<bool>,
@@ -82,6 +84,10 @@ impl Core {
         if pending.is_none() {
             *pending = Some(error);
         }
+    }
+
+    pub(crate) fn queue_wake(&self, wake: LocalWaker) {
+        self.ready.borrow_mut().push_back(Ready::Wake(wake));
     }
 
     fn compact_ready(&self) {
@@ -272,15 +278,8 @@ impl crate::Handle for Handle {
 /// Host-driven local-waker executor with a mio Unix readiness backend.
 pub struct Runtime {
     core: Rc<Core>,
-    poller: RefCell<Option<mio::Poll>>,
-    events: RefCell<mio::Events>,
-}
-
-struct Driving(Rc<Core>);
-impl Drop for Driving {
-    fn drop(&mut self) {
-        self.0.driving.set(false);
-    }
+    poller: mio::Poll,
+    events: mio::Events,
 }
 
 impl crate::Runtime for Runtime {
@@ -305,8 +304,8 @@ impl crate::Runtime for Runtime {
                 signals: RefCell::default(),
                 error: RefCell::default(),
             }),
-            poller: RefCell::new(Some(poller)),
-            events: RefCell::new(mio::Events::with_capacity(1024)),
+            poller,
+            events: mio::Events::with_capacity(1024),
         })
     }
 
@@ -316,22 +315,38 @@ impl crate::Runtime for Runtime {
         }
     }
 
-    fn poll(&self, max_wait: Option<Duration>) -> io::Result<()> {
+    fn poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
+        self.prepare_poll(max_wait)?.dispatch()
+    }
+
+    fn reset_after_fork(&mut self) -> io::Result<()> {
+        if self.core.pid == std::process::id() || self.core.driving.get() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "reset requires an idle inherited runtime",
+            ));
+        }
+        let replacement = Self::new()?;
+        *self = replacement;
+        Ok(())
+    }
+}
+
+impl Runtime {
+    /// Collect readiness without invoking wakers, callbacks, or futures.
+    /// Release the runtime borrow before calling Core::dispatch.
+    pub fn prepare_poll(&mut self, max_wait: Option<Duration>) -> io::Result<Rc<Core>> {
         self.core.check()?;
-        if self.core.driving.replace(true) {
+        if self.core.driving.get() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "reentrant driving",
             ));
         }
-        let _driving = Driving(self.core.clone());
         if let Some(error) = self.core.error.borrow_mut().take() {
             return Err(error);
         }
-        self.wake_timers();
-        if self.is_shutdown() {
-            return Ok(());
-        }
+        self.queue_ready_timers();
         let timeout = if self.core.runnable() || self.core.pending_tasks.get() == 0 {
             Some(Duration::ZERO)
         } else {
@@ -348,25 +363,20 @@ impl crate::Runtime for Runtime {
             }
         };
         let stop = timeout.and_then(|duration| Instant::now().checked_add(duration));
-        {
-            let mut poller = self.poller.borrow_mut();
-            let poller = poller.as_mut().ok_or_else(invalid)?;
-            let mut events = self.events.borrow_mut();
-            loop {
-                events.clear();
-                let remaining = stop.map(|stop| stop.saturating_duration_since(Instant::now()));
-                match poller.poll(&mut events, remaining) {
-                    Ok(()) => break,
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {
-                        if stop.is_some_and(|stop| stop <= Instant::now()) {
-                            break;
-                        }
+        loop {
+            self.events.clear();
+            let remaining = stop.map(|stop| stop.saturating_duration_since(Instant::now()));
+            match self.poller.poll(&mut self.events, remaining) {
+                Ok(()) => break,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    if stop.is_some_and(|stop| stop <= Instant::now()) {
+                        break;
                     }
-                    Err(error) => return Err(error),
                 }
+                Err(error) => return Err(error),
             }
         }
-        for event in self.events.borrow().iter() {
+        for event in &self.events {
             let source = self
                 .core
                 .io
@@ -377,21 +387,82 @@ impl crate::Runtime for Runtime {
                 source.observe(event)?;
             }
         }
-        self.wake_timers();
+        self.queue_ready_timers();
+        Ok(self.core.clone())
+    }
+
+    /// Close registrations and queued callbacks immediately, including during
+    /// dispatch. Task owners retain their futures but can no longer run them.
+    pub fn shutdown(&self) {
+        self.core.close();
+    }
+
+    pub fn is_shutdown(&self) -> bool {
+        !self.core.alive.get()
+    }
+
+    pub fn is_dispatching(&self) -> bool {
+        self.core.driving.get()
+    }
+
+    fn queue_ready_timers(&self) {
+        let now = Instant::now();
+        loop {
+            let wake = {
+                let mut timers = self.core.timers.borrow_mut();
+                if timers
+                    .first_key_value()
+                    .is_some_and(|(key, _)| key.0 <= now)
+                {
+                    timers.pop_first().map(|(_, wake)| wake)
+                } else {
+                    None
+                }
+            };
+            match wake {
+                Some(wake) => self.core.queue_wake(wake),
+                None => break,
+            }
+        }
+    }
+}
+
+impl Core {
+    /// Run queued notifications and work without borrowing the runtime owner.
+    pub fn dispatch(&self) -> io::Result<()> {
+        self.check()?;
+        if self.driving.replace(true) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "reentrant driving",
+            ));
+        }
+        struct Driving<'a>(&'a Cell<bool>);
+        impl Drop for Driving<'_> {
+            fn drop(&mut self) {
+                self.0.set(false);
+            }
+        }
+        let _driving = Driving(&self.driving);
         let mut polled = 0;
-        while polled < MAX_POLLS_PER_TURN && !self.is_shutdown() {
-            let ready = self.core.ready.borrow_mut().pop_front();
+        while polled < MAX_POLLS_PER_TURN && self.alive.get() {
+            let ready = self.ready.borrow_mut().pop_front();
             let Some(ready) = ready else {
                 break;
             };
             let weak = match ready {
                 Ready::Task(weak) => weak,
+                Ready::Wake(wake) => {
+                    polled += 1;
+                    wake.wake();
+                    continue;
+                }
                 Ready::Callback(callback) => {
                     polled += 1;
                     if let Err(panic) =
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(callback))
                     {
-                        self.core.poisoned.set(true);
+                        self.poisoned.set(true);
                         std::panic::resume_unwind(panic);
                     }
                     continue;
@@ -424,63 +495,17 @@ impl crate::Runtime for Runtime {
                     drop(future);
                 }
                 Err(panic) => {
-                    self.core.poisoned.set(true);
+                    self.poisoned.set(true);
                     task.cancel();
                     drop(future);
                     std::panic::resume_unwind(panic);
                 }
             }
         }
-        if let Some(error) = self.core.error.borrow_mut().take() {
+        if let Some(error) = self.error.borrow_mut().take() {
             return Err(error);
         }
         Ok(())
-    }
-
-    fn reset_after_fork(&mut self) -> io::Result<()> {
-        if self.core.pid == std::process::id() || self.core.driving.get() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "reset requires an idle inherited runtime",
-            ));
-        }
-        let replacement = Self::new()?;
-        *self = replacement;
-        Ok(())
-    }
-}
-
-impl Runtime {
-    /// Close registrations and queued callbacks immediately, including during
-    /// dispatch. Task owners retain their futures but can no longer run them.
-    pub fn shutdown(&self) {
-        self.core.close();
-        self.poller.borrow_mut().take();
-    }
-
-    pub fn is_shutdown(&self) -> bool {
-        !self.core.alive.get()
-    }
-
-    fn wake_timers(&self) {
-        let now = Instant::now();
-        loop {
-            let wake = {
-                let mut timers = self.core.timers.borrow_mut();
-                if timers
-                    .first_key_value()
-                    .is_some_and(|(key, _)| key.0 <= now)
-                {
-                    timers.pop_first().map(|(_, wake)| wake)
-                } else {
-                    None
-                }
-            };
-            match wake {
-                Some(wake) => wake.wake(),
-                None => break,
-            }
-        }
     }
 }
 
@@ -517,7 +542,7 @@ mod tests {
 
     #[test]
     fn moving_a_pending_timer_refreshes_its_task_waker() {
-        let runtime = Runtime::new().unwrap();
+        let mut runtime = Runtime::new().unwrap();
         let handle = runtime.handle();
         let deadline = Instant::now() + Duration::from_millis(10);
         let timer = Rc::new(RefCell::new(handle.sleep_until(deadline)));

@@ -117,13 +117,13 @@ fn runtime_drop_releases_callbacks_queued_by_capture_destructors() {
 
 #[test]
 fn shutdown_during_poll_closes_io_and_releases_queued_callbacks() {
-    let runtime = Rc::new(mio::Runtime::new().unwrap());
-    let handle = runtime.handle();
+    let runtime = Rc::new(RefCell::new(mio::Runtime::new().unwrap()));
+    let handle = runtime.borrow().handle();
     let (_writer, fd) = pair();
     let source = handle.io(fd.clone()).unwrap();
     let observer = Rc::downgrade(&runtime);
     handle
-        .defer(move || observer.upgrade().unwrap().shutdown())
+        .defer(move || observer.upgrade().unwrap().borrow().shutdown())
         .unwrap();
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
@@ -133,13 +133,17 @@ fn shutdown_during_poll_closes_io_and_releases_queued_callbacks() {
             panic!("shutdown must stop dispatching callbacks");
         })
         .unwrap();
-    runtime.poll(Some(Duration::ZERO)).unwrap();
-    assert!(runtime.is_shutdown());
+    let core = runtime
+        .borrow_mut()
+        .prepare_poll(Some(Duration::ZERO))
+        .unwrap();
+    core.dispatch().unwrap();
+    assert!(runtime.borrow().is_shutdown());
     assert_eq!(count.get(), 1);
     assert_eq!(Rc::strong_count(&fd), 1);
     assert!(handle.spawn(async {}).is_err());
     assert!(matches!(
-        runtime.poll(Some(Duration::ZERO)),
+        runtime.borrow_mut().poll(Some(Duration::ZERO)),
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe
     ));
     let mut bytes = [0; 1];
@@ -147,6 +151,59 @@ fn shutdown_during_poll_closes_io_and_releases_queued_callbacks() {
     assert!(matches!(
         read.as_mut().poll(&mut Context::from_waker(Waker::noop())),
         Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::BrokenPipe
+    ));
+}
+
+#[test]
+fn preparation_defers_wakers_and_dropping_prepared_core_preserves_readiness() {
+    use std::task::{ContextBuilder, LocalWake, LocalWaker};
+
+    struct Wake {
+        runtime: std::rc::Weak<RefCell<mio::Runtime>>,
+        calls: Rc<Cell<usize>>,
+    }
+    impl LocalWake for Wake {
+        fn wake(self: Rc<Self>) {
+            let runtime = self.runtime.upgrade().unwrap();
+            let runtime = runtime.borrow_mut();
+            let calls = self.calls.clone();
+            runtime
+                .handle()
+                .defer(move || calls.set(calls.get() + 1))
+                .unwrap();
+        }
+    }
+
+    let runtime = Rc::new(RefCell::new(mio::Runtime::new().unwrap()));
+    let calls = Rc::new(Cell::new(0));
+    let wake = LocalWaker::from(Rc::new(Wake {
+        runtime: Rc::downgrade(&runtime),
+        calls: calls.clone(),
+    }));
+    let mut context = ContextBuilder::from_waker(Waker::noop())
+        .local_waker(&wake)
+        .build();
+    let (mut writer, fd) = pair();
+    let source = runtime.borrow().handle().io(fd).unwrap();
+    let mut bytes = [0; 1];
+    let mut read = std::pin::pin!(source.read(&mut bytes));
+    assert!(read.as_mut().poll(&mut context).is_pending());
+    writer.write_all(b"x").unwrap();
+    let core = runtime
+        .borrow_mut()
+        .prepare_poll(Some(Duration::ZERO))
+        .unwrap();
+    assert_eq!(calls.get(), 0);
+    drop(core);
+    let core = runtime
+        .borrow_mut()
+        .prepare_poll(Some(Duration::ZERO))
+        .unwrap();
+    core.dispatch().unwrap();
+    assert_eq!(calls.get(), 1);
+    assert!(matches!(
+        read.as_mut().poll(&mut context),
+        Poll::Ready(Ok(1))
     ));
 }
 

@@ -77,6 +77,33 @@ mod tests {
     }
 
     #[test]
+    fn callbacks_and_futures_run_without_a_host_borrow() {
+        fn schedule_through_mutable_host(calls: Rc<Cell<usize>>) {
+            super::super::HOST.with(|host| {
+                let mut host = host.borrow_mut();
+                host.as_mut()
+                    .unwrap()
+                    .handle()
+                    .defer(move || calls.set(calls.get() + 1))
+                    .unwrap();
+            });
+        }
+
+        use hmux_rt::Runtime as _;
+        let calls = Rc::new(Cell::new(0));
+        let observed = calls.clone();
+        defer(move || schedule_through_mutable_host(observed));
+        let observed = calls.clone();
+        let mut task = Task::new();
+        task.start(move || Ok(async move { schedule_through_mutable_host(observed) }))
+            .unwrap();
+        poll();
+        assert_eq!(calls.get(), 2);
+        assert!(!task.is_pending());
+        super::super::shutdown_runtime();
+    }
+
+    #[test]
     fn moving_and_cancelling_a_wait_preserves_unread_input() {
         let (mut reader, mut writer) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();

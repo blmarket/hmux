@@ -75,11 +75,18 @@ pub fn poll_runtime() {
 
 fn poll_runtime_with_timeout(max_wait: Option<Duration>) {
     ensure_runtime();
+    let core = HOST.with(|h| {
+        h.borrow_mut()
+            .as_mut()
+            .expect("runtime initialized")
+            .prepare_poll(max_wait)
+            .expect("hmux-rt poll")
+    });
+    core.dispatch().expect("hmux-rt dispatch");
     let shutdown = HOST.with(|h| {
-        let host = h.borrow();
-        let runtime = host.as_ref().expect("runtime initialized");
-        runtime.poll(max_wait).expect("hmux-rt poll");
-        runtime.is_shutdown()
+        h.borrow()
+            .as_ref()
+            .is_some_and(|runtime| runtime.is_shutdown())
     });
     if shutdown {
         let runtime = HOST.with(|h| h.borrow_mut().take());
@@ -96,9 +103,13 @@ pub fn shutdown_runtime() {
         // scheduling through them cannot initialize a replacement runtime.
         if let Some(runtime) = h.borrow().as_ref() {
             runtime.shutdown();
+            // Keep the closed instance visible until the active dispatch ends.
+            if runtime.is_dispatching() {
+                return None;
+            }
         }
-        // Dispatch holds a shared borrow. In that case poll_runtime removes
-        // the closed owner after the executing callback or future returns.
+        // A capture destructor can reenter shutdown under the shared borrow
+        // above. The outer shutdown removes the owner once cleanup completes.
         h.try_borrow_mut().ok().and_then(|mut host| host.take())
     });
     drop(runtime);
