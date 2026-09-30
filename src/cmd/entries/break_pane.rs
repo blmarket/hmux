@@ -276,12 +276,8 @@ unsafe fn cmd_break_pane_exec(
                     - dst_s
                         .as_ref()
                         .expect("live session")
-                        .with_options_mut(|options| {
-                            options_get_number(
-                                options,
-                                b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
-                            )
-                        })) as ::core::ffi::c_int;
+                        .with_options_mut(|options| options_get_number(options, c"base-index")))
+                    as ::core::ffi::c_int;
             }
             let destination_session = (*target)
                 .session_handle()

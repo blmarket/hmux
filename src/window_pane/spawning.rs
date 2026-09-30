@@ -330,9 +330,8 @@ pub(super) unsafe fn spawn_pane(
                 None => ClientRef::working_directory(None, target_session_owner.as_ref()),
             };
         }
-        hlimit = session_owner.with_options_mut(|options| {
-            options_get_number(options, c"history-limit".as_ptr()) as u_int
-        });
+        hlimit = session_owner
+            .with_options_mut(|options| options_get_number(options, c"history-limit") as u_int);
         if (*sc).flags & SPAWN_RESPAWN != 0 {
             if (*source_pane).fd != -(1 as ::core::ffi::c_int) && !(*sc).flags & SPAWN_KILL != 0 {
                 idx = window_pane_index(&*source_pane).expect("pane belongs to window ordering");
@@ -724,10 +723,7 @@ pub(super) unsafe fn spawn_pane(
                 if let Some(terminal) = session_owner.termios() {
                     now.c_cc = terminal.c_cc;
                 }
-                key = options_get_number(
-                    global_options,
-                    b"backspace\0" as *const u8 as *const ::core::ffi::c_char,
-                ) as key_code;
+                key = options_get_number(global_options, c"backspace") as key_code;
                 if key >= 0x7f as key_code {
                     now.c_cc[VERASE as usize] = '\u{7f}' as i32 as cc_t;
                 } else {

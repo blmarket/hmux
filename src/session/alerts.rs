@@ -19,7 +19,7 @@ const SESSION_ALERTED: ::core::ffi::c_int = 0x1;
 
 unsafe fn alerts_action_applies(
     mut wl: refbox::Weak<winlink>,
-    mut name: *const ::core::ffi::c_char,
+    name: &'static CStr,
 ) -> ::core::ffi::c_int {
     let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
         return 0;
@@ -56,13 +56,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_BELL != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if w_owner.with_options_mut(|options| {
-        options_get_number(
-            options,
-            b"monitor-bell\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-    }) == 0
-    {
+    if w_owner.with_options_mut(|options| options_get_number(options, c"monitor-bell")) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     wl = w_owner.next_winlink(None);
@@ -83,11 +77,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
             wl.get_mut_unchecked().flags |= WINLINK_BELL;
             server_status_session(&session_owner);
         }
-        if !(alerts_action_applies(
-            wl.clone(),
-            b"bell-action\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0)
-        {
+        if !(alerts_action_applies(wl.clone(), c"bell-action") == 0) {
             events_fire_winlink(
                 b"alert-bell\0" as *const u8 as *const ::core::ffi::c_char,
                 wl.clone(),
@@ -97,7 +87,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 alerts_set_message(
                     wl.clone(),
                     b"Bell\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"visual-bell\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"visual-bell",
                 );
             }
         }
@@ -112,13 +102,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_ACTIVITY != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if w_owner.with_options_mut(|options| {
-        options_get_number(
-            options,
-            b"monitor-activity\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-    }) == 0
-    {
+    if w_owner.with_options_mut(|options| options_get_number(options, c"monitor-activity")) == 0 {
         return 0 as ::core::ffi::c_int;
     }
     wl = w_owner.next_winlink(None);
@@ -140,11 +124,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 wl.get_mut_unchecked().flags |= WINLINK_ACTIVITY;
                 server_status_session(&session_owner);
             }
-            if !(alerts_action_applies(
-                wl.clone(),
-                b"activity-action\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0)
-            {
+            if !(alerts_action_applies(wl.clone(), c"activity-action") == 0) {
                 events_fire_winlink(
                     b"alert-activity\0" as *const u8 as *const ::core::ffi::c_char,
                     wl.clone(),
@@ -154,7 +134,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
                     alerts_set_message(
                         wl.clone(),
                         b"Activity\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"visual-activity\0" as *const u8 as *const ::core::ffi::c_char,
+                        c"visual-activity",
                     );
                 }
             }
@@ -170,12 +150,8 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     if !w_owner.pending_alerts() & WINDOW_SILENCE != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if w_owner.with_options_mut(|options| {
-        options_get_number(
-            options,
-            b"monitor-silence\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-    }) == 0 as ::core::ffi::c_longlong
+    if w_owner.with_options_mut(|options| options_get_number(options, c"monitor-silence"))
+        == 0 as ::core::ffi::c_longlong
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -198,11 +174,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 wl.get_mut_unchecked().flags |= WINLINK_SILENCE;
                 server_status_session(&session_owner);
             }
-            if !(alerts_action_applies(
-                wl.clone(),
-                b"silence-action\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0)
-            {
+            if !(alerts_action_applies(wl.clone(), c"silence-action") == 0) {
                 events_fire_winlink(
                     b"alert-silence\0" as *const u8 as *const ::core::ffi::c_char,
                     wl.clone(),
@@ -212,7 +184,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
                     alerts_set_message(
                         wl.clone(),
                         b"Silence\0" as *const u8 as *const ::core::ffi::c_char,
-                        b"visual-silence\0" as *const u8 as *const ::core::ffi::c_char,
+                        c"visual-silence",
                     );
                 }
             }
@@ -225,7 +197,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
 unsafe fn alerts_set_message(
     mut wl: refbox::Weak<winlink>,
     mut type_0: *const ::core::ffi::c_char,
-    mut option: *const ::core::ffi::c_char,
+    option: &'static CStr,
 ) {
     let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
         return;

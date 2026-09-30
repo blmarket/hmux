@@ -79,10 +79,7 @@ unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
             .expect("argument is present")
             .to_owned();
     }
-    prefix = options_get_number(
-        global_s_options,
-        b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as key_code;
+    prefix = options_get_number(global_s_options, c"prefix") as key_code;
     if prefix == KEYC_NONE as ::core::ffi::c_ulong as key_code {
         return CString::default();
     }

@@ -1113,9 +1113,9 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
         if n <= 1 as u_int {
             return;
         }
-        max_columns = w_owner.with_options_mut(|options| {
-            options_get_number(options, c"tiled-layout-max-columns".as_ptr())
-        }) as u_int;
+        max_columns = w_owner
+            .with_options_mut(|options| options_get_number(options, c"tiled-layout-max-columns"))
+            as u_int;
         columns = 1 as u_int;
         rows = columns;
         while rows.wrapping_mul(columns) < n {

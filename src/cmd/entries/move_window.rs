@@ -166,12 +166,7 @@ unsafe fn cmd_move_window_exec(
         && src
             .as_ref()
             .expect("live session")
-            .with_options_mut(|options| {
-                options_get_number(
-                    options,
-                    b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
-                )
-            })
+            .with_options_mut(|options| options_get_number(options, c"renumber-windows"))
             != 0
     {
         (src.as_ref().expect("live session")).renumber_windows();

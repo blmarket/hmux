@@ -794,7 +794,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
     style = options_window
         .upgrade()
         .expect("live clock window")
-        .with_options_mut(|options| options_get_number(options, c"clock-mode-style".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"clock-mode-style"))
         as ::core::ffi::c_int;
     screen_write_start(&mut ctx, s);
     t = time(::core::ptr::null_mut::<time_t>());

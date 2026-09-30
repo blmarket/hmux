@@ -514,7 +514,7 @@ unsafe fn cmd_new_session_exec(
                                                             if sy > 0 as u_int
                                                                 && options_get_number(
                                                                     global_s_options,
-                                                                    b"status\0" as *const u8 as *const ::core::ffi::c_char,
+                                                                    c"status",
                                                                 ) != 0
                                                             {
                                                                 sy = sy.wrapping_sub(1);

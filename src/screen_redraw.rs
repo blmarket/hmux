@@ -189,7 +189,7 @@ unsafe fn redraw_set_context(c: &ClientRef, bctx: &mut redraw_build_ctx) {
     (*bctx).sy = view.sy;
     bctx.ind = bctx
         .w
-        .with_options_mut(|options| options_get_number(options, c"pane-border-indicators".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"pane-border-indicators"))
         as ::core::ffi::c_int;
 }
 unsafe fn redraw_get_build_cell(
@@ -1605,7 +1605,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     }
     if s.as_ref()
         .expect("live session")
-        .with_options_mut(|options| options_get_number(options, c"status-position".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"status-position"))
         == 0
     {
         dctx.flags |= REDRAW_STATUS_TOP;

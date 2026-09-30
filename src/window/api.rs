@@ -842,8 +842,8 @@ impl Window for WindowRef {
     unsafe fn refresh_scrollbars(&self) {
         let state = &mut *self.get();
         let options = state.options.as_deref_mut().expect("live window options");
-        state.sb = options_get_number(options, c"pane-scrollbars".as_ptr()) as i32;
-        state.sb_pos = options_get_number(options, c"pane-scrollbars-position".as_ptr()) as i32;
+        state.sb = options_get_number(options, c"pane-scrollbars") as i32;
+        state.sb_pos = options_get_number(options, c"pane-scrollbars-position") as i32;
     }
     unsafe fn pane_border_status(&self) -> i32 {
         window_get_pane_status(&*self.get())
@@ -855,7 +855,7 @@ impl Window for WindowRef {
         let state = &mut *self.get();
         let base = options_get_number(
             state.options.as_deref_mut().expect("window options"),
-            c"pane-base-index".as_ptr(),
+            c"pane-base-index",
         ) as u32;
         state
             .panes
@@ -867,7 +867,7 @@ impl Window for WindowRef {
         let state = &mut *self.get();
         let base = options_get_number(
             state.options.as_deref_mut().expect("window options"),
-            c"pane-base-index".as_ptr(),
+            c"pane-base-index",
         ) as u32;
         state
             .panes
@@ -1939,19 +1939,13 @@ mod tests {
             );
             window.initialize_name(c"generated".to_owned(), false);
             assert_eq!(
-                window.with_options_mut(|options| options_get_number(
-                    options,
-                    c"automatic-rename".as_ptr()
-                )),
+                window.with_options_mut(|options| options_get_number(options, c"automatic-rename")),
                 1
             );
             window.initialize_name(CString::new(vec![b'x', 0xff]).unwrap(), true);
             assert_eq!(window.name().as_bytes(), &[b'x', 0xff]);
             assert_eq!(
-                window.with_options_mut(|options| options_get_number(
-                    options,
-                    c"automatic-rename".as_ptr()
-                )),
+                window.with_options_mut(|options| options_get_number(options, c"automatic-rename")),
                 0
             );
             assert_eq!(

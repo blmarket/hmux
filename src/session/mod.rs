@@ -652,11 +652,7 @@ unsafe fn session_set_current(
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_stack_push(&raw mut (*s).lastw, ((*s).current_winlink()).clone());
     (*s).set_curw(wl.clone());
-    if options_get_number(
-        global_options,
-        b"focus-events\0" as *const u8 as *const ::core::ffi::c_char,
-    ) != 0
-    {
+    if options_get_number(global_options, c"focus-events") != 0 {
         if old.is_alive() {
             crate::src::shared::window::WindowRef::update_focus_for(
                 old.get_unchecked().window_handle().cloned().as_ref(),
@@ -784,7 +780,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     let mut marked_idx: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     new_idx = options_get_number(
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
+        c"base-index",
     ) as ::core::ffi::c_int;
     new_curw_idx = 0 as ::core::ffi::c_int;
     wl = winlinks_minmax(&old_wins, RB_NEGINF);

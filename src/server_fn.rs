@@ -277,12 +277,7 @@ pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
     if s.as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"renumber-windows\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        })
+        .with_options_mut(|options| options_get_number(options, c"renumber-windows"))
         != 0
     {
         sg = crate::src::session::session_group_for(
@@ -359,12 +354,8 @@ pub unsafe fn server_link_window(
             - dst
                 .as_ref()
                 .expect("live session")
-                .with_options_mut(|options| {
-                    options_get_number(
-                        options,
-                        b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
-                    )
-                })) as ::core::ffi::c_int;
+                .with_options_mut(|options| options_get_number(options, c"base-index")))
+            as ::core::ffi::c_int;
     }
     let window_owner = srcwl
         .get_unchecked()
@@ -461,12 +452,8 @@ pub unsafe fn server_destroy_session(source: &SessionRef) {
     detach_on_destroy = s
         .as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"detach-on-destroy\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"detach-on-destroy"))
+        as ::core::ffi::c_int;
     let head = &sessions;
     let mut replacement = match detach_on_destroy {
         0 => server_find_session(head, s.as_ref().expect("live session"), |a, b| {
@@ -533,12 +520,8 @@ pub unsafe fn server_check_unattached() {
             match s
                 .as_ref()
                 .expect("live session")
-                .with_options_mut(|options| {
-                    options_get_number(
-                        options,
-                        b"destroy-unattached\0" as *const u8 as *const ::core::ffi::c_char,
-                    )
-                }) {
+                .with_options_mut(|options| options_get_number(options, c"destroy-unattached"))
+            {
                 0 => {}
                 2 => {
                     current_block_4 = 6116987625208566775;

@@ -29,9 +29,7 @@ pub unsafe fn check_window_name(owner: &WindowRef) {
     if owner.active_pane().is_none() {
         return;
     }
-    if owner.with_options_mut(|options| options_get_number(options, c"automatic-rename".as_ptr()))
-        == 0
-    {
+    if owner.with_options_mut(|options| options_get_number(options, c"automatic-rename")) == 0 {
         return;
     }
     let pane = owner.active_pane().expect("active pane");

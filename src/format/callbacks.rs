@@ -1285,7 +1285,7 @@ unsafe fn format_cb_window_height(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_manual_height(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let manual = window.with_options_mut(|options| {
-        options_get_number(options, c"window-size".as_ptr()) == WINDOW_SIZE_MANUAL as _
+        options_get_number(options, c"window-size") == WINDOW_SIZE_MANUAL as _
     });
     let value = if manual {
         CString::new(window.manual_size().1.to_string()).expect("formatted number")
@@ -1493,7 +1493,7 @@ unsafe fn format_cb_window_width(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_manual_width(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
     let manual = window.with_options_mut(|options| {
-        options_get_number(options, c"window-size".as_ptr()) == WINDOW_SIZE_MANUAL as _
+        options_get_number(options, c"window-size") == WINDOW_SIZE_MANUAL as _
     });
     let value = if manual {
         CString::new(window.manual_size().0.to_string()).expect("formatted number")

@@ -987,7 +987,7 @@ impl Client for ClientRef {
                 } else if let Some(session) = self.attached_session().upgrade() {
                     session.status_layout().1
                 } else {
-                    options_get_number(global_s_options, c"status".as_ptr()) as u32
+                    options_get_number(global_s_options, c"status") as u32
                 };
             sx = (*self.get()).tty.sx;
             sy = (*self.get()).tty.sy.wrapping_sub(status_lines);
@@ -1222,7 +1222,7 @@ impl Client for ClientRef {
                 .attached_session()
                 .upgrade()
                 .expect("live session")
-                .with_options_mut(|options| options_get_number(options, c"display-time".as_ptr()))
+                .with_options_mut(|options| options_get_number(options, c"display-time"))
                 as i32;
         }
         let observer = Rc::downgrade(self);

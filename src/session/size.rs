@@ -34,13 +34,13 @@ pub(super) unsafe fn status_update_cache(s_value: &mut session) {
     let s: *mut session = s_value as *mut _;
     (*s).statuslines = options_get_number(
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status\0" as *const u8 as *const ::core::ffi::c_char,
+        c"status",
     ) as u_int;
     if (*s).statuslines == 0 as u_int {
         (*s).statusat = -(1 as ::core::ffi::c_int);
     } else if options_get_number(
         options_owner_ptr(&mut (*s).options).map_or(std::ptr::null_mut(), |options| options),
-        b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
+        c"status-position",
     ) == 0 as ::core::ffi::c_longlong
     {
         (*s).statusat = 0 as ::core::ffi::c_int;

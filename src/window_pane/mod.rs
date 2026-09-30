@@ -1774,7 +1774,7 @@ unsafe fn window_pane_copy_paste(
             && options_get_number(
                 options_owner_ptr(&mut (*loop_0).options)
                     .map_or(std::ptr::null_mut(), |options| options),
-                b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
+                c"synchronize-panes",
             ) != 0
         {
             log_debug(format_args!(
@@ -1808,7 +1808,7 @@ unsafe fn window_pane_copy_key(
             && options_get_number(
                 options_owner_ptr(&mut (*loop_0).options)
                     .map_or(std::ptr::null_mut(), |options| options),
-                b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
+                c"synchronize-panes",
             ) != 0
         {
             input_key_pane(&pane_owner, key, ::core::ptr::null_mut::<mouse_event>());
@@ -1851,7 +1851,7 @@ unsafe fn window_pane_paste(
     });
     if options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-        b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
+        c"synchronize-panes",
     ) != 0
     {
         window_pane_copy_paste(pane_owner, bytes);
@@ -1912,7 +1912,7 @@ unsafe fn window_pane_key(
     }
     if options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-        b"synchronize-panes\0" as *const u8 as *const ::core::ffi::c_char,
+        c"synchronize-panes",
     ) != 0
     {
         window_pane_copy_key(pane_owner, key);
@@ -2451,12 +2451,9 @@ unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::UnsafeCel
     if window_pane_scrollbar_auto_hide(&*wp) == 0 || (*wp).sb_auto_visible == 0 {
         return;
     }
-    delay = (((*wp).window_handle().as_ref()).expect("live window")).with_options_mut(|options| {
-        options_get_number(
-            options,
-            b"pane-scrollbars-timeout\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-    }) as u_int;
+    delay = (((*wp).window_handle().as_ref()).expect("live window"))
+        .with_options_mut(|options| options_get_number(options, c"pane-scrollbars-timeout"))
+        as u_int;
     let timeout = Duration::from_millis(delay as u64);
     drop((*wp).sb_auto_timer.take());
     let observer = (*wp).observer.clone();

@@ -1021,7 +1021,7 @@ pub unsafe fn popup_display(
         .expect("popup window");
     if lines == BOX_LINES_DEFAULT {
         lines = window
-            .with_options_mut(|options| options_get_number(options, c"popup-border-lines".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"popup-border-lines"))
             as box_lines;
     }
     if lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {

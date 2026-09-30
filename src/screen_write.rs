@@ -343,11 +343,7 @@ pub unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     screen_reset_tabs(&mut *s);
     screen_write_scrollregion(ctx, 0 as u_int, (*s).grid().sy.wrapping_sub(1 as u_int));
     (*s).mode = MODE_CURSOR | MODE_WRAP;
-    if options_get_number(
-        global_options,
-        b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 2 as ::core::ffi::c_longlong
-    {
+    if options_get_number(global_options, c"extended-keys") == 2 as ::core::ffi::c_longlong {
         (*s).mode = (*s).mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     screen_write_clearscreen(ctx, 8 as u_int);
@@ -1833,7 +1829,7 @@ pub unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, mut bg: 
         && write_pane.is_some()
         && write_pane
             .expect("write pane")
-            .with_options_mut(|options| options_get_number(options, c"scroll-on-clear".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"scroll-on-clear"))
             != 0
     {
         grid_view_clear_history((*s).grid_mut(), bg);
@@ -2042,7 +2038,7 @@ pub unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, mut bg: u_int
         && write_pane.is_some()
         && write_pane
             .expect("write pane")
-            .with_options_mut(|options| options_get_number(options, c"scroll-on-clear".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"scroll-on-clear"))
             != 0
     {
         grid_view_clear_history((*s).grid_mut(), bg);
@@ -3006,11 +3002,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> ::
         zero_width = 1 as ::core::ffi::c_int;
     } else if utf8_is_vs(ud) != 0 {
         zero_width = 1 as ::core::ffi::c_int;
-        if options_get_number(
-            oo,
-            b"variation-selector-always-wide\0" as *const u8 as *const ::core::ffi::c_char,
-        ) != 0
-        {
+        if options_get_number(oo, c"variation-selector-always-wide") != 0 {
             force_wide = 1 as ::core::ffi::c_int;
         }
     } else if ud.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {

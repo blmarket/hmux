@@ -1036,11 +1036,8 @@ pub unsafe fn options_get_number_ref(table: &options, name: &CStr) -> ::core::ff
     })
 }
 
-pub unsafe fn options_get_number(
-    oo: *mut options,
-    name: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_longlong {
-    options_get_number_ref(&*oo, CStr::from_ptr(name))
+pub unsafe fn options_get_number(oo: *mut options, name: &'static CStr) -> ::core::ffi::c_longlong {
+    options_get_number_ref(&*oo, name)
 }
 pub unsafe fn options_get_command(oo: *mut options) -> std::rc::Rc<std::cell::RefCell<cmd_list>> {
     let name = c"default-client-command";
@@ -1450,7 +1447,7 @@ unsafe fn options_from_string_flag(
 ) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = 0;
     if value.is_null() || *value as ::core::ffi::c_int == '\0' as i32 {
-        flag = (options_get_number(oo, name) == 0) as ::core::ffi::c_int;
+        flag = (options_get_number_ref(&*oo, CStr::from_ptr(name)) == 0) as ::core::ffi::c_int;
     } else if strcmp(value, b"1\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
         || strcasecmp(value, b"on\0" as *const u8 as *const ::core::ffi::c_char)
@@ -1508,7 +1505,7 @@ unsafe fn options_from_string_choice(
 ) -> ::core::ffi::c_int {
     let mut choice: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     if value.is_null() {
-        choice = options_get_number(oo, name) as ::core::ffi::c_int;
+        choice = options_get_number_ref(&*oo, CStr::from_ptr(name)) as ::core::ffi::c_int;
         if choice < 2 as ::core::ffi::c_int {
             choice = (choice == 0) as ::core::ffi::c_int;
         }
@@ -1699,7 +1696,10 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
             if let Some(active) = window_owner.active_pane() {
-                if window_owner.with_options_mut(|options| options_get_number(options, name)) != 0 {
+                if window_owner
+                    .with_options_mut(|options| options_get_number(options, c"automatic-rename"))
+                    != 0
+                {
                     active.mark_changed();
                 }
             }
@@ -1928,7 +1928,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"input-buffer-size\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        input_set_buffer_size(options_get_number(global_options, name) as size_t);
+        input_set_buffer_size(options_get_number(global_options, c"input-buffer-size") as size_t);
     }
     if strcmp(
         name,

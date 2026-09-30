@@ -52,7 +52,7 @@ pub(super) unsafe fn spawn_window(
             index = (-1i64
                 - options_get_number(
                     options_owner_ptr(&mut (*s).options).expect("session options"),
-                    c"base-index".as_ptr(),
+                    c"base-index",
                 )) as i32;
         }
         (*sc).set_wl(winlink_add(&mut (*s).windows, index));

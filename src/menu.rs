@@ -646,7 +646,7 @@ pub unsafe fn menu_display(
     (px, py) = setup_window.place_menu((px, py), (sx, sy));
     if lines == BOX_LINES_DEFAULT {
         lines = setup_window
-            .with_options_mut(|options| options_get_number(options, c"menu-border-lines".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"menu-border-lines"))
             as box_lines;
     }
     let owner = refbox::RefBox::new(menu_data {

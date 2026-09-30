@@ -1711,7 +1711,7 @@ unsafe fn window_panes_init(
         delay = original_window
             .upgrade()
             .expect("live display-panes window")
-            .with_options_mut(|options| options_get_number(options, c"display-panes-time".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"display-panes-time"))
             as u_int;
     } else {
         delay = match args_strtonum_result(

@@ -56,11 +56,7 @@ pub unsafe fn screen_reinit(s: &mut screen, mut check: ::core::ffi::c_int) {
     s.rupper = 0 as u_int;
     s.rlower = s.grid().sy.wrapping_sub(1 as u_int);
     s.mode = MODE_CURSOR | MODE_WRAP | s.mode & MODE_CRLF;
-    if options_get_number(
-        global_options,
-        b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 2 as ::core::ffi::c_longlong
-    {
+    if options_get_number(global_options, c"extended-keys") == 2 as ::core::ffi::c_longlong {
         s.mode = s.mode & !EXTENDED_KEY_MODES | MODE_KEYS_EXTENDED;
     }
     if s.saved_grid.is_some() {
@@ -156,10 +152,7 @@ pub unsafe fn screen_set_default_cursor(s: &mut screen, mut oo: *mut options) {
         ::core::ptr::null_mut::<format_tree>(),
     );
     s.default_ccolour = gc.fg;
-    c = options_get_number(
-        oo,
-        b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    c = options_get_number(oo, c"cursor-style") as ::core::ffi::c_int;
     s.default_mode = 0 as ::core::ffi::c_int;
     screen_set_cursor_style(c as u_int, &mut s.default_cstyle, &mut s.default_mode);
 }

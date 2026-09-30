@@ -213,7 +213,7 @@ pub(super) unsafe fn finish_process(
     }
     remain_on_exit = options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-        b"remain-on-exit\0" as *const u8 as *const ::core::ffi::c_char,
+        c"remain-on-exit",
     ) as ::core::ffi::c_int;
     let mut current_block_37: u64;
     match remain_on_exit {

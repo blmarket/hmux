@@ -226,12 +226,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
         position = s
             .as_ref()
             .expect("live session")
-            .with_options_mut(|options| {
-                options_get_number(
-                    options,
-                    b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-                )
-            }) as u_int;
+            .with_options_mut(|options| options_get_number(options, c"status-position"))
+            as u_int;
         let index = wl.get_unchecked().idx as u_int;
         if let Some((line, start)) =
             cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
@@ -710,12 +706,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
     position = s
         .as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"status-position\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as u_int;
+        .with_options_mut(|options| options_get_number(options, c"status-position"))
+        as u_int;
     if status_at_line(tc.as_ref().expect("live client")) != -(1 as ::core::ffi::c_int)
         && lines != 0 as u_int
     {

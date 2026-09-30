@@ -415,11 +415,11 @@ unsafe fn window_create(
     )));
     (*w).sb = options_get_number(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"pane-scrollbars\0" as *const u8 as *const ::core::ffi::c_char,
+        c"pane-scrollbars",
     ) as ::core::ffi::c_int;
     (*w).sb_pos = options_get_number(
         options_owner_ptr(&mut (*w).options).map_or(std::ptr::null_mut(), |options| options),
-        b"pane-scrollbars-position\0" as *const u8 as *const ::core::ffi::c_char,
+        c"pane-scrollbars-position",
     ) as ::core::ffi::c_int;
     (*w).winlinks = Default::default();
     (*w).owner = refbox::Weak::new();
@@ -597,7 +597,7 @@ unsafe fn window_set_active_pane(
     }
     (*w).active = observer;
     pane.on_selected(true);
-    if options_get_number(global_options, c"focus-events".as_ptr()) != 0 {
+    if options_get_number(global_options, c"focus-events") != 0 {
         if let Some(previous) = previous.as_ref() {
             previous.update_focus(false);
         }

@@ -2084,12 +2084,7 @@ unsafe fn server_client_check_mouse(
                 })
                 && s.as_ref()
                     .expect("live session")
-                    .with_options_mut(|options| {
-                        options_get_number(
-                            options,
-                            b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
-                        )
-                    })
+                    .with_options_mut(|options| options_get_number(options, c"focus-follows-mouse"))
                     != 0
             {
                 (&std::rc::Rc::clone(&(window_owner))).redraw_active_switch(selected_pane.as_ref());
@@ -2194,10 +2189,7 @@ unsafe fn server_client_update_theme_colours(c_owner: Option<&ClientRef>) {
     if c.is_null() {
         return;
     }
-    option = options_get_number(
-        global_options,
-        b"theme\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    option = options_get_number(global_options, c"theme") as ::core::ffi::c_int;
     if option == 1 as ::core::ffi::c_int {
         i = 0 as u_int;
         while i < COLOUR_THEME_COUNT as u_int {
@@ -2278,12 +2270,8 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     t = s
         .as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"assume-paste-time\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"assume-paste-time"))
+        as ::core::ffi::c_int;
     if t == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -2348,7 +2336,7 @@ unsafe fn server_client_update_latest(c_owner: &ClientRef) {
     let use_latest = window.with_options_mut(|options| {
         options_get_number(
             (options as *const crate::src::shared::options::options).cast_mut(),
-            c"window-size".as_ptr(),
+            c"window-size",
         ) == WINDOW_SIZE_LATEST as i64
     });
     if use_latest {
@@ -2368,12 +2356,8 @@ unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int
     repeat = s
         .as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as u_int;
+        .with_options_mut(|options| options_get_number(options, c"repeat-time"))
+        as u_int;
     if repeat == 0 as u_int {
         return 0 as u_int;
     }
@@ -2381,12 +2365,8 @@ unsafe fn server_client_repeat_time(c: &client, bd: &KeyBindingCommand) -> u_int
         initial = s
             .as_ref()
             .expect("live session")
-            .with_options_mut(|options| {
-                options_get_number(
-                    options,
-                    b"initial-repeat-time\0" as *const u8 as *const ::core::ffi::c_char,
-                )
-            }) as u_int;
+            .with_options_mut(|options| options_get_number(options, c"initial-repeat-time"))
+            as u_int;
         if initial != 0 as u_int {
             repeat = initial;
         }
@@ -2511,12 +2491,7 @@ unsafe fn server_client_key_callback(
                                 << 32 as ::core::ffi::c_int)
                     && s.as_ref()
                         .expect("live session")
-                        .with_options_mut(|options| {
-                            options_get_number(
-                                options,
-                                b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
-                            )
-                        })
+                        .with_options_mut(|options| options_get_number(options, c"mouse"))
                         == 0
                 {
                     current_block = 15469183920764600035;
@@ -2588,21 +2563,13 @@ unsafe fn server_client_key_callback(
                             prefix = s
                                 .as_ref()
                                 .expect("live session")
-                                .with_options_mut(|options| {
-                                    options_get_number(
-                                        options,
-                                        b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
-                                    )
-                                }) as key_code;
-                            prefix2 =
-                                s.as_ref()
-                                    .expect("live session")
-                                    .with_options_mut(|options| {
-                                        options_get_number(
-                                            options,
-                                            b"prefix2\0" as *const u8 as *const ::core::ffi::c_char,
-                                        )
-                                    }) as key_code;
+                                .with_options_mut(|options| options_get_number(options, c"prefix"))
+                                as key_code;
+                            prefix2 = s
+                                .as_ref()
+                                .expect("live session")
+                                .with_options_mut(|options| options_get_number(options, c"prefix2"))
+                                as key_code;
                             key0 = (key as ::core::ffi::c_ulonglong
                                 & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
                                 as key_code;
@@ -2650,12 +2617,9 @@ unsafe fn server_client_key_callback(
                                     }
                                     bd = key_bindings_get(&table.borrow(), key0)
                                         .map(|bd| bd.command());
-                                    prefix_delay = options_get_number(
-                                        global_options,
-                                        b"prefix-timeout\0" as *const u8
-                                            as *const ::core::ffi::c_char,
-                                    )
-                                        as uint64_t;
+                                    prefix_delay =
+                                        options_get_number(global_options, c"prefix-timeout")
+                                            as uint64_t;
                                     if prefix_delay > 0 as uint64_t
                                         && strcmp(
                                             (table.borrow().name).as_ptr().cast_mut(),
@@ -3581,13 +3545,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             mode |= (*tty).mode & CURSOR_MODES;
             s = None;
         }
-        if session_owner.with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"mouse\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) != 0
-        {
+        if session_owner.with_options_mut(|options| options_get_number(options, c"mouse")) != 0 {
             if !(*c)
                 .overlay
                 .as_ref()
@@ -3603,12 +3561,9 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     cursor = pane_owner.next_in_window();
                 }
             }
-            if session_owner.with_options_mut(|options| {
-                options_get_number(
-                    options,
-                    b"focus-follows-mouse\0" as *const u8 as *const ::core::ffi::c_char,
-                )
-            }) != 0
+            if session_owner
+                .with_options_mut(|options| options_get_number(options, c"focus-follows-mouse"))
+                != 0
                 || (window_owner).scrollbar_mode() == PANE_SCROLLBARS_MODAL
                 || (window_owner).scrollbar_mode() == PANE_SCROLLBARS_AUTOHIDE
             {
@@ -3988,12 +3943,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
             if s.as_ref()
                 .expect("live session")
-                .with_options_mut(|options| {
-                    options_get_number(
-                        options,
-                        b"set-titles\0" as *const u8 as *const ::core::ffi::c_char,
-                    )
-                })
+                .with_options_mut(|options| options_get_number(options, c"set-titles"))
                 != 0
             {
                 server_client_set_title(client_owner);

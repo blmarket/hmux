@@ -3119,10 +3119,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                ek = options_get_number(
-                    global_options,
-                    b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
-                ) as ::core::ffi::c_int;
+                ek = options_get_number(global_options, c"extended-keys") as ::core::ffi::c_int;
                 if !(ek == 0 as ::core::ffi::c_int) {
                     screen_write_mode_clear(&mut *sctx, EXTENDED_KEY_MODES);
                     if m == 2 as ::core::ffi::c_int {
@@ -3142,10 +3139,8 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             );
             if !(n != 4 as ::core::ffi::c_int) {
                 screen_write_mode_clear(&mut *sctx, MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2);
-                if options_get_number(
-                    global_options,
-                    b"extended-keys\0" as *const u8 as *const ::core::ffi::c_char,
-                ) == 2 as ::core::ffi::c_longlong
+                if options_get_number(global_options, c"extended-keys")
+                    == 2 as ::core::ffi::c_longlong
                 {
                     screen_write_mode_set(&mut *sctx, MODE_KEYS_EXTENDED);
                 }
@@ -3374,10 +3369,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                         } else {
                             oo = global_w_options;
                         }
-                        p = options_get_number(
-                            oo,
-                            b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
-                        ) as ::core::ffi::c_int;
+                        p = options_get_number(oo, c"cursor-style") as ::core::ffi::c_int;
                         n = if p == 1 as ::core::ffi::c_int
                             || p == 3 as ::core::ffi::c_int
                             || p == 5 as ::core::ffi::c_int
@@ -4704,10 +4696,7 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             } else {
                 oo = global_w_options;
             }
-            opt_ps = options_get_number(
-                oo,
-                b"cursor-style\0" as *const u8 as *const ::core::ffi::c_char,
-            ) as ::core::ffi::c_int;
+            opt_ps = options_get_number(oo, c"cursor-style") as ::core::ffi::c_int;
             if opt_ps < 0 as ::core::ffi::c_int || opt_ps > 6 as ::core::ffi::c_int {
                 opt_ps = 0 as ::core::ffi::c_int;
             }
@@ -4763,10 +4752,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             return input_handle_decrqss(ictx);
         }
     }
-    allow_passthrough = options_get_number(
-        oo,
-        b"allow-passthrough\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    allow_passthrough = options_get_number(oo, c"allow-passthrough");
     if allow_passthrough == 0 {
         return 0 as ::core::ffi::c_int;
     }
@@ -4849,7 +4835,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                 && options_get_number(
                     options_owner_ptr(&mut (*wp).options)
                         .map_or(std::ptr::null_mut(), |options| options),
-                    b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"allow-set-title",
                 ) != 0
                 && screen_set_title(
                     &mut *(*sctx).screen_ptr(),
@@ -4946,7 +4932,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
     if !wp.is_null()
         && options_get_number(
             options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
-            b"allow-set-title\0" as *const u8 as *const ::core::ffi::c_char,
+            c"allow-set-title",
         ) != 0
         && screen_set_title(
             &mut *(*sctx).screen_ptr(),
@@ -4975,7 +4961,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
     if (*ictx).flags & INPUT_DISCARD != 0 {
         return;
     }
-    if pane.with_options_mut(|options| options_get_number(options, c"allow-rename".as_ptr())) == 0 {
+    if pane.with_options_mut(|options| options_get_number(options, c"allow-rename")) == 0 {
         return;
     }
     log_debug(format_args!(
@@ -4995,9 +4981,8 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
         scope
             .remove_or_default(c"automatic-rename", None)
             .expect("remove local automatic-rename option");
-        let automatic = window.with_options_mut(|options| {
-            options_get_number(options, c"automatic-rename".as_ptr()) != 0
-        });
+        let automatic = window
+            .with_options_mut(|options| options_get_number(options, c"automatic-rename") != 0);
         if !automatic {
             window.rename(c"", true);
         }
@@ -5751,10 +5736,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
 }
 unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_char) {
     let mut state: ::core::ffi::c_int = 0;
-    state = options_get_number(
-        global_options,
-        b"get-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    state = options_get_number(global_options, c"get-clipboard") as ::core::ffi::c_int;
     if state == 0 as ::core::ffi::c_int {
         return;
     }
@@ -5806,11 +5788,7 @@ unsafe fn input_osc_52_parse(
         b"cpqs01234567\0" as *const u8 as *const ::core::ffi::c_char;
     let mut i: u_int = 0;
     let mut j: u_int = 0 as u_int;
-    if options_get_number(
-        global_options,
-        b"set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-    ) != 2 as ::core::ffi::c_longlong
-    {
+    if options_get_number(global_options, c"set-clipboard") != 2 as ::core::ffi::c_longlong {
         return None;
     }
     end = strchr(p, ';' as i32);
@@ -6196,10 +6174,7 @@ unsafe fn input_request_palette_reply(ir: *mut input_request, pd: &input_request
 unsafe fn input_request_clipboard_reply(ir: *mut input_request, cd: &input_request_clipboard_data) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
     let mut state: ::core::ffi::c_int = 0;
-    state = options_get_number(
-        global_options,
-        b"get-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as ::core::ffi::c_int;
+    state = options_get_number(global_options, c"get-clipboard") as ::core::ffi::c_int;
     if state == 0 as ::core::ffi::c_int || state == 1 as ::core::ffi::c_int {
         return;
     }

@@ -122,11 +122,11 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
             options_get_string(global_s_options, key.as_ptr())
         }
     };
-    let read_number = |key: &CStr| {
+    let read_number = |key: &'static CStr| {
         if let Some(session) = session {
-            session.with_options_mut(|options| options_get_number(options, key.as_ptr()))
+            session.with_options_mut(|options| options_get_number(options, key))
         } else {
-            options_get_number(global_s_options, key.as_ptr())
+            options_get_number(global_s_options, key)
         }
     };
     use crate::src::style::style_apply_with_options;

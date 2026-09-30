@@ -465,7 +465,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             return false;
         }
         let close = self.with_options_mut(|options| {
-            let remain = options_get_number(options, c"remain-on-exit".as_ptr());
+            let remain = options_get_number(options, c"remain-on-exit");
             if remain == 3 || remain == 4 {
                 crate::src::options::options_set_number(options, c"remain-on-exit".as_ptr(), 0);
                 true
@@ -686,8 +686,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (*self.get()).flags & (PANE_REDRAW | PANE_DROP) != 0
     }
     unsafe fn alternate_screen_allowed(&self) -> bool {
-        self.with_options_mut(|options| options_get_number(options, c"alternate-screen".as_ptr()))
-            != 0
+        self.with_options_mut(|options| options_get_number(options, c"alternate-screen")) != 0
     }
     unsafe fn alternate_screen_changed(&self, entered: bool) {
         super::render::alternate_screen_changed(self, entered);

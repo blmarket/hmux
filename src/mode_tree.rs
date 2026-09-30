@@ -1547,9 +1547,9 @@ pub unsafe fn mode_tree_set_prompt(
         freecb,
     });
     let position = if let Some(session) = session_owner.as_ref() {
-        session.with_options_mut(|options| options_get_number(options, c"status-position".as_ptr()))
+        session.with_options_mut(|options| options_get_number(options, c"status-position"))
     } else {
-        options_get_number(global_s_options, c"status-position".as_ptr())
+        options_get_number(global_s_options, c"status-position")
     };
     (*mtd).prompt_top = (position == 0) as i32;
     prompt_set_options(&mut pd, session_owner.as_ref());

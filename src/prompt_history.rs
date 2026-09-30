@@ -183,7 +183,7 @@ pub unsafe fn prompt_add_history(line: &CStr, kind: prompt_type) {
     if kind >= PROMPT_NTYPES as prompt_type {
         return;
     }
-    let limit = options_get_number(global_options, c"prompt-history-limit".as_ptr()) as u_int;
+    let limit = options_get_number(global_options, c"prompt-history-limit") as u_int;
     PROMPT_HISTORY.with_borrow_mut(|histories| {
         let history = &mut histories[kind as usize];
         let old_size = history.len() as u_int;

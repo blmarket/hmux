@@ -81,8 +81,7 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     let Some(session) = session else { return };
     client.redraw_status_if_unobscured();
     let timeout = Duration::from_secs(
-        (session
-            .with_options_mut(|options| options_get_number(options, c"status-interval".as_ptr())))
+        (session.with_options_mut(|options| options_get_number(options, c"status-interval")))
             as u64,
     );
     if timeout.as_secs() != 0 {
@@ -110,7 +109,7 @@ pub unsafe fn status_timer_start(client: &ClientRef) {
         drop(status.timer.take());
     }
     if session.is_some_and(|session| {
-        session.with_options_mut(|options| options_get_number(options, c"status".as_ptr())) != 0
+        session.with_options_mut(|options| options_get_number(options, c"status")) != 0
     }) {
         status_timer_callback(client);
     }
@@ -148,7 +147,7 @@ pub unsafe fn status_line_size(c: &ClientRef) -> u_int {
     }
     match c.attached_session().upgrade() {
         Some(session) => session.status_layout().1,
-        None => options_get_number(global_s_options, c"status".as_ptr()) as u_int,
+        None => options_get_number(global_s_options, c"status") as u_int,
     }
 }
 pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {
@@ -162,12 +161,8 @@ pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {
     line = s
         .as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"message-line\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as u_int;
+        .with_options_mut(|options| options_get_number(options, c"message-line"))
+        as u_int;
     if line >= lines {
         return lines.wrapping_sub(1 as u_int);
     }
@@ -310,24 +305,16 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     fg = s
         .as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"status-fg\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"status-fg"))
+        as ::core::ffi::c_int;
     if !(fg == 8 as ::core::ffi::c_int || fg == 9 as ::core::ffi::c_int) {
         gc.fg = fg;
     }
     bg = s
         .as_ref()
         .expect("live session")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"status-bg\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"status-bg"))
+        as ::core::ffi::c_int;
     if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
         gc.bg = bg;
     }
@@ -774,7 +761,7 @@ unsafe fn status_prompt_screen_line(c: &ClientRef) -> u_int {
     if c.attached_session()
         .upgrade()
         .expect("live session")
-        .with_options_mut(|options| options_get_number(options, c"status-position".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"status-position"))
         == 0 as ::core::ffi::c_longlong
     {
         return status_prompt_line_at(c);

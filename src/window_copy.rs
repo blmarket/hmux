@@ -704,12 +704,8 @@ unsafe fn window_copy_common_init(
         .window_observer()
         .upgrade()
         .expect("live window")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
+        as ::core::ffi::c_int;
     return data;
 }
 unsafe fn window_copy_init(
@@ -1605,12 +1601,7 @@ unsafe fn window_copy_key_table(
         .window_observer()
         .upgrade()
         .expect("live window")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        })
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
         == MODEKEY_VI as ::core::ffi::c_longlong
     {
         return b"copy-mode-vi\0" as *const u8 as *const ::core::ffi::c_char;
@@ -5383,12 +5374,8 @@ unsafe fn window_copy_command_with_session(
             .window_observer()
             .upgrade()
             .expect("live window")
-            .with_options_mut(|options| {
-                options_get_number(
-                    options,
-                    b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
-                )
-            }) as ::core::ffi::c_int;
+            .with_options_mut(|options| options_get_number(options, c"mode-keys"))
+            as ::core::ffi::c_int;
         if clear as ::core::ffi::c_uint
             == WINDOW_COPY_CMD_CLEAR_EMACS_ONLY as ::core::ffi::c_int as ::core::ffi::c_uint
             && keys == MODEKEY_VI
@@ -6411,23 +6398,15 @@ unsafe fn window_copy_search(
         .window_observer()
         .upgrade()
         .expect("live window")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"wrap-search\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"wrap-search"))
+        as ::core::ffi::c_int;
     cis = window_copy_is_lowercase(str);
     keys = mode_pane_owner
         .window_observer()
         .upgrade()
         .expect("live window")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
+        as ::core::ffi::c_int;
     if direction != 0 {
         if keys == MODEKEY_VI {
             if !(*data).searchmark.is_empty() {
@@ -7081,12 +7060,8 @@ unsafe fn window_copy_update_style(
             .window_observer()
             .upgrade()
             .expect("live window")
-            .with_options_mut(|options| {
-                options_get_number(
-                    options,
-                    b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
-                )
-            }) as ::core::ffi::c_int;
+            .with_options_mut(|options| options_get_number(options, c"mode-keys"))
+            as ::core::ffi::c_int;
         if cursor != 0 as u_int && keys == MODEKEY_EMACS && (*data).searchdirection != 0 {
             if (&(*data).searchmark)[cursor.wrapping_sub(1 as u_int) as usize] as u_int == mark {
                 cursor = cursor.wrapping_sub(1);
@@ -7208,7 +7183,7 @@ unsafe fn window_copy_line_number_mode(
     mode = options_window
         .upgrade()
         .expect("live copy-mode window")
-        .with_options_mut(|options| options_get_number(options, c"copy-mode-line-numbers".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"copy-mode-line-numbers"))
         as ::core::ffi::c_int;
     if (*data).line_numbers == 2 as ::core::ffi::c_int
         && mode == WINDOW_COPY_LINE_NUMBERS_OFF as ::core::ffi::c_int
@@ -7351,9 +7326,7 @@ unsafe fn window_copy_set_line_numbers1(
         && options_window
             .upgrade()
             .expect("live copy-mode window")
-            .with_options_mut(|options| {
-                options_get_number(options, c"copy-mode-line-numbers".as_ptr())
-            })
+            .with_options_mut(|options| options_get_number(options, c"copy-mode-line-numbers"))
             == WINDOW_COPY_LINE_NUMBERS_OFF as ::core::ffi::c_int as ::core::ffi::c_longlong
     {
         line_numbers = 2 as ::core::ffi::c_int;
@@ -8397,12 +8370,8 @@ unsafe fn window_copy_get_selection(mut wme: refbox::Weak<window_mode_entry>) ->
         .window_observer()
         .upgrade()
         .expect("live window")
-        .with_options_mut(|options| {
-            options_get_number(
-                options,
-                b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-        }) as ::core::ffi::c_int;
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
+        as ::core::ffi::c_int;
     if (*data).rectflag != 0 {
         if (*data).cursordrag as ::core::ffi::c_uint
             == CURSORDRAG_ENDSEL as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -8490,10 +8459,7 @@ unsafe fn window_copy_copy_buffer(
     };
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if set_clip != 0
-        && options_get_number(
-            global_options,
-            b"set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-        ) != 0 as ::core::ffi::c_longlong
+        && options_get_number(global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong
     {
         if window_copy_line_numbers_active(wme.clone()) != 0 && mode_pane_owner.needs_redraw(false)
         {
@@ -8612,11 +8578,7 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
         Some(buf) => buf,
         None => return,
     };
-    if options_get_number(
-        global_options,
-        b"set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-    ) != 0 as ::core::ffi::c_longlong
-    {
+    if options_get_number(global_options, c"set-clipboard") != 0 as ::core::ffi::c_longlong {
         screen_write_start_pane(
             &mut ctx,
             &mode_pane_owner,
@@ -8769,7 +8731,7 @@ unsafe fn window_copy_cursor_limit(
         || options_window
             .upgrade()
             .expect("live copy-mode window")
-            .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"mode-keys"))
             != MODEKEY_VI as ::core::ffi::c_longlong
     {
         return window_copy_find_length(wme.clone(), py);
@@ -8958,7 +8920,7 @@ unsafe fn window_copy_cursor_right(
     onemore = (options_window
         .upgrade()
         .expect("live copy-mode window")
-        .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
         != MODEKEY_VI as ::core::ffi::c_longlong) as ::core::ffi::c_int;
     let mut gr = grid_reader_start((*back_s).grid(), px, py);
     grid_reader_cursor_right(&mut gr, 1 as ::core::ffi::c_int, all, onemore);
@@ -9013,7 +8975,7 @@ unsafe fn window_copy_cursor_up(
         && options_window
             .upgrade()
             .expect("live copy-mode window")
-            .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"mode-keys"))
             == MODEKEY_VI as ::core::ffi::c_longlong
     {
         if (*data).cy < (*s).grid().sy.wrapping_sub(1 as u_int) {
@@ -9151,7 +9113,7 @@ unsafe fn window_copy_cursor_down(
         && options_window
             .upgrade()
             .expect("live copy-mode window")
-            .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+            .with_options_mut(|options| options_get_number(options, c"mode-keys"))
             == MODEKEY_VI as ::core::ffi::c_longlong
     {
         if (*data).cy > 0 as u_int {
@@ -9334,7 +9296,7 @@ unsafe fn window_copy_cursor_jump_to_back(mut wme: refbox::Weak<window_mode_entr
     onemore = (options_window
         .upgrade()
         .expect("live copy-mode window")
-        .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
         != MODEKEY_VI as ::core::ffi::c_longlong) as ::core::ffi::c_int;
     let mut gr = grid_reader_start((*back_s).grid(), px, py);
     grid_reader_cursor_left(&mut gr, 0 as ::core::ffi::c_int);
@@ -9402,7 +9364,7 @@ unsafe fn window_copy_cursor_next_word_end_pos(
     if options_window
         .upgrade()
         .expect("live copy-mode window")
-        .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
         == MODEKEY_VI as ::core::ffi::c_longlong
     {
         if grid_reader_in_set(&gr, c"\t ") == 0 {
@@ -9447,7 +9409,7 @@ unsafe fn window_copy_cursor_next_word_end(
     if options_window
         .upgrade()
         .expect("live copy-mode window")
-        .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
         == MODEKEY_VI as ::core::ffi::c_longlong
     {
         if grid_reader_in_set(&gr, c"\t ") == 0 {
@@ -9521,7 +9483,7 @@ unsafe fn window_copy_cursor_previous_word(
     if options_window
         .upgrade()
         .expect("live copy-mode window")
-        .with_options_mut(|options| options_get_number(options, c"mode-keys".as_ptr()))
+        .with_options_mut(|options| options_get_number(options, c"mode-keys"))
         == MODEKEY_EMACS as ::core::ffi::c_longlong
     {
         stop_at_eol = 1 as ::core::ffi::c_int;
