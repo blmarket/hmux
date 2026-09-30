@@ -31,7 +31,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 use crate::src::status::status_message_set;
-use crate::src::window::window_pane_start_input;
+use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 pub const DISPLAY_MESSAGE_TEMPLATE: [::core::ffi::c_char; 96] = unsafe {
@@ -81,10 +81,7 @@ unsafe fn cmd_display_message_exec(
     let mut c: Option<ClientRef> = None;
     let s = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = (*target).pane_handle();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cause: Option<CString> = None;
     let mut delay: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -94,13 +91,10 @@ unsafe fn cmd_display_message_exec(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut count: u_int = args_count(args);
     if args_has(args, 'I' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
-        if wp.is_null() {
+        if wp.is_none() {
             return CMD_RETURN_NORMAL;
         }
-        match window_pane_start_input(
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-            item_handle,
-        ) {
+        match wp.as_ref().expect("target pane").start_input(item_handle) {
             Err(error) => {
                 cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
                 return CMD_RETURN_ERROR;
@@ -171,15 +165,7 @@ unsafe fn cmd_display_message_exec(
     let mut ft_owner =
         format_create_with_client(queue_client.as_ref(), Some(item_handle), FORMAT_NONE, flags);
     ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        c.as_ref(),
-        s.as_ref(),
-        wl.clone(),
-        (wp).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-    );
+    format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), wp.as_ref());
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
             cmdq_print(item_handle, |out| {

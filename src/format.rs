@@ -71,16 +71,14 @@ use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
 use crate::src::window::Window as _;
 use crate::src::window::{
-    window_pane_get_pane_status, window_pane_index, window_pane_is_floating, window_pane_mode,
-    window_pane_printable_flags, window_pane_scrollbar_reserve, window_pane_search,
-    window_pane_zindex, window_printable_flags, winlink_count, winlink_find_by_window,
-    winlinks_minmax, winlinks_next,
+    window_pane_search, window_printable_flags, winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next,
 };
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
 use crate::src::window_copy::{
     window_copy_get_hyperlink_cstring, window_copy_get_line_cstring, window_copy_get_word_cstring,
 };
+use crate::src::window_pane::WindowPane as _;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 
@@ -414,7 +412,6 @@ pub unsafe fn format_defaults(
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
     let mut c: Option<ClientRef> = c_owner.cloned();
-    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     if !c.is_none() && !c.as_ref().expect("live client").name().is_none() {
         log_debug(format_args!(
             "{}: c={}",
@@ -447,11 +444,11 @@ pub unsafe fn format_defaults(
     } else {
         log_debug(format_args!("{}: wl=none", "format_defaults"));
     }
-    if !wp.is_null() {
+    if wp_owner.is_some() {
         log_debug(format_args!(
             "{}: wp=%{}",
             "format_defaults",
-            ((*wp).id) as u32
+            wp_owner.expect("format pane").id()
         ));
     } else {
         log_debug(format_args!("{}: wp=none", "format_defaults"));
@@ -472,7 +469,7 @@ pub unsafe fn format_defaults(
             "format_defaults"
         ));
     }
-    if !wp.is_null() {
+    if wp_owner.is_some() {
         (*ft).type_0 = FORMAT_TYPE_PANE;
     } else if wl.is_alive() {
         (*ft).type_0 = FORMAT_TYPE_WINDOW;
@@ -535,18 +532,11 @@ pub unsafe fn format_defaults_pane(
     mut ft: *mut format_tree,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
-    let mut wp = wp_owner.get();
-    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if (*ft).w.upgrade().is_none() {
-        format_defaults_window(ft, (*wp).window.upgrade().as_ref());
+        (*ft).w = wp_owner.window_observer();
     }
     (*ft).wp = std::rc::Rc::downgrade(wp_owner);
-    wme = (*wp).active_mode_entry();
-    if !!wme.is_alive() && (*wme.get_unchecked().mode).formats.is_some() {
-        (*wme.get_unchecked().mode)
-            .formats
-            .expect("non-null function pointer")(wme, ft);
-    }
+    wp_owner.add_mode_formats(&mut *ft);
 }
 pub fn format_defaults_paste_buffer(ft: &mut format_tree, pb: &PasteBufferRef) {
     ft.pb = Some(pb.clone());

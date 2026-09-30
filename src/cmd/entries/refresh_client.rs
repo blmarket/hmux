@@ -17,22 +17,22 @@ use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::client::client;
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_SIZECHANGED, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED,
 };
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::pane::PANE_THEMECHANGED;
+use crate::src::shared::pane::window_pane;
 use crate::src::shared::tty::tty;
 use crate::src::shared::window::window;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
 use crate::src::tty::{tty_clipboard_query, tty_set_size, tty_update_client_offset};
 use crate::src::tty_keys::tty_keys_colours;
-use crate::src::window::window_pane_find_by_id;
+use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 pub static cmd_refresh_client_entry: cmd_entry = {
     cmd_entry {
@@ -202,30 +202,15 @@ unsafe fn cmd_refresh_client_update_offset(
     let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
-    let lookup_wp_owner = window_pane_find_by_id(pane);
-    let wp = lookup_wp_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() {
+    let Some(pane_owner) = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)
+    else {
         return;
-    }
+    };
     match action.to_bytes() {
-        b"on" => control_set_pane_on(
-            tc_owner,
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-        ),
-        b"off" => control_set_pane_off(
-            tc_owner,
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-        ),
-        b"continue" => control_continue_pane(
-            tc_owner,
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-        ),
-        b"pause" => control_pause_pane(
-            tc_owner,
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-        ),
+        b"on" => control_set_pane_on(tc_owner, &pane_owner),
+        b"off" => control_set_pane_off(tc_owner, &pane_owner),
+        b"continue" => control_continue_pane(tc_owner, &pane_owner),
+        b"pause" => control_pause_pane(tc_owner, &pane_owner),
         _ => {}
     }
 }
@@ -234,15 +219,11 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: *const ::core::ffi::c_ch
     let Some((pane, report)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
         return;
     };
-    let lookup_wp_owner = window_pane_find_by_id(pane);
-    let wp = lookup_wp_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() {
+    let Some(pane_owner) = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)
+    else {
         return;
-    }
-    let mut fg = (*wp).control_fg;
-    let mut bg = (*wp).control_bg;
+    };
+    let (mut fg, mut bg) = pane_owner.control_colours();
     let mut size: size_t = 0;
     let terminal_owner = { client.borrow_terminal().client.upgrade() };
     let diagnostic_name = terminal_owner
@@ -261,11 +242,7 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: *const ::core::ffi::c_ch
         )
     };
     if parsed == 0 {
-        if bg != (*wp).control_bg {
-            (*wp).flags |= PANE_THEMECHANGED;
-        }
-        (*wp).control_fg = fg;
-        (*wp).control_bg = bg;
+        pane_owner.update_control_colours(fg, bg);
     }
 }
 

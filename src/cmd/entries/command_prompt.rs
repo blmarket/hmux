@@ -29,10 +29,7 @@ use crate::src::shared::prompt::{
 };
 use crate::src::shared::rc;
 use crate::src::status::{status_prompt_set, status_prompt_update};
-use crate::src::window::{
-    window_pane_has_prompt, window_pane_set_prompt, window_pane_update_prompt, window_pane_upgrade,
-    window_pane_weak,
-};
+use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
@@ -139,17 +136,14 @@ unsafe fn cmd_command_prompt_exec(
     let mut type_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut prompt_bytes = Vec::<u8>::new();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = (*target).pane_handle();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
     let mut space: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut pane: ::core::ffi::c_int = args_has(args, 'P' as i32 as u_char);
     if pane != 0 {
-        if wp.is_null() || window_pane_has_prompt(&*wp) != 0 {
+        if wp.is_none() || wp.as_ref().is_some_and(|pane| pane.has_prompt()) {
             return CMD_RETURN_NORMAL;
         }
     } else if tc
@@ -178,7 +172,7 @@ unsafe fn cmd_command_prompt_exec(
         cdata.item = (*item).observer.clone();
     }
     if pane != 0 {
-        cdata.wp = window_pane_weak(&*(wp));
+        cdata.wp = std::rc::Rc::downgrade(wp.as_ref().expect("prompt target pane"));
     }
     cdata.state = Some(args_make_commands_prepare(
         self_0.clone(),
@@ -250,12 +244,11 @@ unsafe fn cmd_command_prompt_exec(
     let prompt_type = cdata.prompt_type;
     let inputcb = cdata.into_callback();
     if pane != 0 {
-        window_pane_set_prompt(
-            &(*wp).observer.upgrade().expect("prompt target pane"),
+        wp.as_ref().expect("prompt target pane").set_prompt(
             tc_owner.as_ref(),
-            target,
-            prompt_ptr,
-            input_ptr,
+            Some(&mut *target),
+            CStr::from_ptr(prompt_ptr),
+            (!input_ptr.is_null()).then(|| CStr::from_ptr(input_ptr)),
             inputcb,
             None,
             flags,
@@ -310,10 +303,17 @@ unsafe fn cmd_command_prompt_callback(
                     let (prompt_ptr, input_ptr) =
                         (&cdata.prompts)[cdata.current as usize].pointers();
                     if !Weak::ptr_eq(&cdata.wp, &Weak::new()) {
-                        let Some(pane) = window_pane_upgrade(&cdata.wp) else {
+                        let Some(pane) =
+                            std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(
+                                &cdata.wp,
+                            )
+                        else {
                             return PROMPT_CLOSE;
                         };
-                        window_pane_update_prompt(&pane, prompt_ptr, input_ptr);
+                        pane.update_prompt(
+                            CStr::from_ptr(prompt_ptr),
+                            (!input_ptr.is_null()).then(|| CStr::from_ptr(input_ptr)),
+                        );
                     } else {
                         status_prompt_update(
                             &c.clone().expect("live client"),

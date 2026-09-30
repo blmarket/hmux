@@ -8,7 +8,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::pane::window_pane;
-use crate::src::window::window_pane_set_mode;
+use crate::src::window_pane::WindowPane as _;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 pub static cmd_find_window_entry: cmd_entry = {
@@ -44,10 +44,7 @@ unsafe fn cmd_find_window_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = (*target).pane_handle();
     let mut s: *const ::core::ffi::c_char =
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
@@ -87,13 +84,12 @@ unsafe fn cmd_find_window_exec(
         args_set_flag(&mut *new_args, 'Z' as i32 as u_char, 0);
     }
     args_set_owned_string(&mut *new_args, filter_value);
-    window_pane_set_mode(
-        &(*wp).observer.upgrade().expect("mode target pane"),
+    wp.as_ref().expect("mode target pane").set_mode(
         None,
         &window_tree_mode,
         Some(item_handle),
-        target,
-        &mut *new_args,
+        Some(&mut *target),
+        Some(&mut *new_args),
     );
     drop(new_args);
     return CMD_RETURN_NORMAL;

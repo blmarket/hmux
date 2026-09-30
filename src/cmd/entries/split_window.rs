@@ -49,8 +49,7 @@ use crate::src::shared::spawn::{
 use crate::src::shared::window::winlink;
 use crate::src::window::Window;
 use crate::src::window::{
-    window_active_pane_is_over_zoom, window_pane_find_by_id, window_pop_zoom, window_remove_pane,
-    window_unzoom,
+    window_active_pane_is_over_zoom, window_pop_zoom, window_remove_pane, window_unzoom,
 };
 use crate::src::window_pane::WindowPane as _;
 
@@ -657,7 +656,8 @@ unsafe fn cmd_split_window_mouse_resize(client_owner: &ClientRef, mut m: *mut mo
     if last_pane == -(1 as ::core::ffi::c_int) {
         return;
     }
-    let lookup_wp_owner = window_pane_find_by_id(last_pane as u_int);
+    let lookup_wp_owner =
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(last_pane as u_int);
 
     let Some(pane_owner) = lookup_wp_owner.filter(|pane| pane.is_floating()) else {
         client_owner.borrow_terminal_mut().mouse_drag_update = None;

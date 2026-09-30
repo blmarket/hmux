@@ -47,8 +47,8 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::window::Window as _;
-use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
+use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
@@ -102,82 +102,47 @@ fn cmd_run_shell_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, mut msg: *const ::core::ffi::c_char) {
+unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: *const ::core::ffi::c_char) {
     let item_owner = cdata.item.upgrade();
     if cdata.wait && item_owner.is_none() {
         return;
     }
-    let lookup_wp_owner;
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut fs: cmd_find_state = cmd_find_state {
-        flags: 0,
-        s: Default::default(),
-        wl: Default::default(),
-        w: Default::default(),
-        wp: Default::default(),
-        idx: 0,
+    let mut pane = if cdata.wp_id != -1 {
+        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(cdata.wp_id as u32)
+    } else {
+        None
     };
-    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    if cdata.wp_id != -(1 as ::core::ffi::c_int) {
-        lookup_wp_owner = window_pane_find_by_id(cdata.wp_id as u_int);
-        wp = lookup_wp_owner
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-    }
-    if wp.is_null() {
+    if pane.is_none() {
         if let Some(item) = item_owner.as_ref() {
-            cmdq_print(
-                &(*(item.get()))
-                    .observer
-                    .upgrade()
-                    .expect("live command queue item"),
-                |out| write_cstr(out, msg),
-            );
+            cmdq_print(item, |out| write_cstr(out, msg));
             return;
         }
-        if let Some(session) = cdata
+        pane = cdata
             .client
             .as_ref()
             .and_then(|client| client.attached_session().upgrade())
-        {
-            wp = ((session
-                .current_winlink()
-                .get_unchecked()
-                .window_handle()
-                .as_ref())
-            .expect("live window"))
-            .active_pane()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        }
-        if wp.is_null()
-            && cmd_find_from_nothing(&raw mut fs, 0 as ::core::ffi::c_int)
-                == 0 as ::core::ffi::c_int
-        {
-            wp = fs
-                .pane_handle()
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-        }
-        if wp.is_null() {
-            return;
+            .and_then(|session| {
+                session
+                    .current_winlink()
+                    .get_unchecked()
+                    .window_handle()
+                    .expect("live window")
+                    .active_pane()
+            });
+        if pane.is_none() {
+            let mut find = cmd_find_state::default();
+            if cmd_find_from_nothing(&mut find, 0) == 0 {
+                pane = find.pane_handle();
+            }
         }
     }
-    let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-    wme = (*wp).active_mode_entry();
-    if !wme.is_alive() || !std::ptr::eq(wme.get_unchecked().mode, &window_view_mode) {
-        window_pane_set_mode(
-            &pane_owner,
-            None,
-            &window_view_mode,
-            None,
-            ::core::ptr::null_mut::<cmd_find_state>(),
-            ::core::ptr::null_mut::<args>(),
-        );
+    let Some(pane) = pane else {
+        return;
+    };
+    if !pane.is_mode(&window_view_mode) {
+        pane.set_mode(None, &window_view_mode, None, None, None);
     }
-    window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
-        write_cstr(out, msg)
-    });
+    window_copy_add(&pane, 1, |out| write_cstr(out, msg));
 }
 fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_int) -> CString {
     let cmd = cmd.to_bytes();
@@ -203,10 +168,7 @@ unsafe fn cmd_run_shell_exec(
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let pane_owner = (*target).pane_handle();
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
@@ -279,8 +241,8 @@ unsafe fn cmd_run_shell_exec(
             1 as ::core::ffi::c_int,
         ));
     }
-    if args_has(args, 't' as i32 as u_char) != 0 && !wp.is_null() {
-        cdata.wp_id = (*wp).id as ::core::ffi::c_int;
+    if args_has(args, 't' as i32 as u_char) != 0 && pane_owner.is_some() {
+        cdata.wp_id = pane_owner.as_ref().expect("shell target pane").id() as ::core::ffi::c_int;
     } else {
         cdata.wp_id = -(1 as ::core::ffi::c_int);
     }

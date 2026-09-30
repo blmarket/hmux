@@ -99,6 +99,27 @@ pub trait WindowPane {
     unsafe fn borrow_palette(&self) -> Self::Palette<'_>;
 
     unsafe fn id(&self) -> u32;
+    unsafe fn find_by_id(id: u32) -> Option<Self> where Self: Sized;
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> where Self: Sized;
+    unsafe fn from_observer(observer: &std::rc::Weak<UnsafeCell<window_pane>>) -> Option<Self> where Self: Sized;
+    unsafe fn release(self, source: &CStr) where Self: Sized;
+    unsafe fn tty_name(&self) -> CString;
+    unsafe fn control_colours(&self) -> (i32, i32);
+    unsafe fn update_control_colours(&self, fg: i32, bg: i32);
+    unsafe fn has_prompt(&self) -> bool;
+    unsafe fn set_prompt(
+        &self, client: Option<&ClientRef>, find: Option<&mut cmd_find_state>,
+        message: &CStr, input: Option<&CStr>, inputcb: status_prompt_input_cb,
+        freecb: prompt_free_cb, flags: i32, kind: prompt_type,
+    );
+    unsafe fn update_prompt(&self, message: &CStr, input: Option<&CStr>);
+    unsafe fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool);
+    unsafe fn capture(&self, arguments: &mut args, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<Vec<u8>, CString>;
+    unsafe fn clear_history(&self, reset_links: bool);
+    unsafe fn neighbor_left(&self) -> Option<Self> where Self: Sized;
+    unsafe fn neighbor_right(&self) -> Option<Self> where Self: Sized;
+    unsafe fn neighbor_up(&self) -> Option<Self> where Self: Sized;
+    unsafe fn neighbor_down(&self) -> Option<Self> where Self: Sized;
     unsafe fn window_observer(&self) -> WindowWeak;
     /// Move the parent identity and option inheritance together, before the
     /// caller publishes membership or dispatches move/layout notifications.
@@ -394,6 +415,64 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         pane.xoff = x;
         pane.yoff = y;
     }
+    unsafe fn find_by_id(id: u32) -> Option<Self> { window_pane_find_by_id(id) }
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> { window_pane_find_by_id_str(id) }
+    unsafe fn from_observer(observer: &std::rc::Weak<UnsafeCell<window_pane>>) -> Option<Self> { window_pane_upgrade(observer) }
+    unsafe fn release(self, source: &CStr) { window_pane_remove_ref(self, source.as_ptr()); }
+    unsafe fn tty_name(&self) -> CString {
+        CStr::from_ptr((*self.get()).tty.as_ptr()).to_owned()
+    }
+    unsafe fn control_colours(&self) -> (i32, i32) {
+        ((*self.get()).control_fg, (*self.get()).control_bg)
+    }
+    unsafe fn update_control_colours(&self, fg: i32, bg: i32) {
+        let pane = &mut *self.get();
+        if bg != pane.control_bg { pane.flags |= PANE_THEMECHANGED; }
+        pane.control_fg = fg;
+        pane.control_bg = bg;
+    }
+    unsafe fn has_prompt(&self) -> bool { (*self.get()).prompt.is_some() }
+    unsafe fn set_prompt(
+        &self, client: Option<&ClientRef>, find: Option<&mut cmd_find_state>,
+        message: &CStr, input: Option<&CStr>, inputcb: status_prompt_input_cb,
+        freecb: prompt_free_cb, flags: i32, kind: prompt_type,
+    ) {
+        window_pane_set_prompt(self, client, find.map_or(std::ptr::null_mut(), |find| find),
+            message.as_ptr(), input.map_or(std::ptr::null(), CStr::as_ptr), inputcb, freecb, flags, kind);
+    }
+    unsafe fn update_prompt(&self, message: &CStr, input: Option<&CStr>) {
+        window_pane_update_prompt(self, message.as_ptr(), input.map_or(std::ptr::null(), CStr::as_ptr));
+    }
+    unsafe fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool) {
+        let pane = &*self.get();
+        if pane.flags & PANE_INPUTOFF != 0 { return; }
+        let bracket = bracket && (*pane.screen_ptr()).mode & crate::src::shared::screen::MODE_BRACKETPASTE != 0;
+        let write = |bytes: &[u8]| {
+            let _ = pane.event.with_ptr(|event| crate::src::reactor::bufferevent_write(event, bytes.as_ptr().cast(), bytes.len()));
+        };
+        if bracket { write(b"\x1b[200~"); }
+        for chunk in bytes.split_inclusive(|&byte| byte == b'\n') {
+            let line = chunk.strip_suffix(b"\n").unwrap_or(chunk);
+            if raw { write(line); }
+            else {
+                let escaped = crate::src::text::utf8::utf8_stravisx_bytes(line,
+                    crate::src::shared::vis::VIS_SAFE | crate::src::shared::vis::VIS_NOSLASH);
+                write(&escaped);
+            }
+            if line.len() != chunk.len() { write(separator); }
+        }
+        if bracket { write(b"\x1b[201~"); }
+    }
+    unsafe fn capture(&self, arguments: &mut args, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<Vec<u8>, CString> {
+        super::capture::capture(self, arguments, item)
+    }
+    unsafe fn clear_history(&self, reset_links: bool) {
+        super::capture::clear_history(self, reset_links);
+    }
+    unsafe fn neighbor_left(&self) -> Option<Self> { window_pane_find_left(Some(self)) }
+    unsafe fn neighbor_right(&self) -> Option<Self> { window_pane_find_right(Some(self)) }
+    unsafe fn neighbor_up(&self) -> Option<Self> { window_pane_find_up(Some(self)) }
+    unsafe fn neighbor_down(&self) -> Option<Self> { window_pane_find_down(Some(self)) }
     unsafe fn refresh_palette(&self) {
         let pane = &mut *self.get();
         crate::src::style::colour::colour_palette_from_option(

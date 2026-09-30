@@ -56,7 +56,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_s_options;
-use crate::src::window::{window_pane_upgrade, WindowPane};
+use crate::src::window::WindowPane;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Weak;
@@ -450,8 +450,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     let client_owner = change.c.upgrade();
     let session_owner = change.s.upgrade();
     let s = session_owner.clone();
-    let pane_owner = window_pane_upgrade(&change.wp);
-    let wp = pane_owner.as_ref().map_or(std::ptr::null_mut(), rc::as_ptr);
+    let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&change.wp);
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -468,7 +467,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     );
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     if wl.is_alive()
-        && !wp.is_null()
+        && pane_owner.is_some()
         && pane_owner
             .as_ref()
             .expect("live pane")
@@ -482,15 +481,15 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
         cmd_find_from_winlink_pane(
             &raw mut fs,
             wl.clone(),
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            pane_owner.as_ref().expect("monitor pane"),
             0 as ::core::ffi::c_int,
         );
     } else if wl.is_alive() {
         cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
-    } else if !wp.is_null() {
+    } else if pane_owner.is_some() {
         cmd_find_from_pane(
             &raw mut fs,
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            pane_owner.as_ref().expect("monitor pane"),
             0 as ::core::ffi::c_int,
         );
     } else if !s.is_none() {
@@ -551,17 +550,22 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
             wl.get_unchecked().idx,
         );
     }
-    if !wp.is_null() {
+    if pane_owner.is_some() {
         event_payload_set_pane(
             &mut *ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(wp)).observer.upgrade().expect("live window_pane"),
+            pane_owner.as_ref().expect("monitor pane").clone(),
         );
         if !wl.is_alive() {
             event_payload_set_window(
                 &mut *ep,
                 b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+                pane_owner
+                    .as_ref()
+                    .expect("monitor pane")
+                    .window_observer()
+                    .upgrade()
+                    .expect("monitor pane window"),
             );
         }
     }

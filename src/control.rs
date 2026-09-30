@@ -47,7 +47,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{get_timer, setblocking};
-use crate::src::window::{window_pane_find_by_id, winlink_find_by_window, Window, WindowPane};
+use crate::src::window::{winlink_find_by_window, Window, WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
@@ -702,7 +702,7 @@ unsafe fn control_session_has_pane(
 }
 unsafe fn control_window_pane(c: &ClientRef, pane: u_int) -> Option<Rc<UnsafeCell<window_pane>>> {
     let session = c.attached_session().upgrade()?;
-    let pane = window_pane_find_by_id(pane)?;
+    let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)?;
     control_session_has_pane(&session, &pane).then_some(pane)
 }
 pub unsafe fn control_reset_offsets(c: &ClientRef) {
@@ -1561,7 +1561,7 @@ unsafe fn control_sub_change(change: &monitor_change) {
     let wl = link
         .as_mut()
         .map_or(std::ptr::null_mut(), |link| &raw mut **link);
-    let pane_owner = crate::src::window::window_pane_upgrade(&change.wp);
+    let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&change.wp);
     if !std::rc::Weak::ptr_eq(&change.wp, &std::rc::Weak::new()) && pane_owner.is_none() {
         drop(session_owner);
         drop(client_owner);

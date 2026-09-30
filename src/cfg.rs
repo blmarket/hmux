@@ -33,9 +33,9 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::{window, window_mode_entry, winlink};
-use crate::src::window::window_pane_set_mode;
 use crate::src::window::Window as _;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
+use crate::src::window_pane::WindowPane as _;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::sync::{Mutex, OnceLock};
@@ -322,8 +322,6 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
     let mut s = s_owner.cloned();
     let mut registry_c_owner = clients.first();
     let mut c: Option<ClientRef> = registry_c_owner.clone();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     if CFG_CAUSES.lock().unwrap().is_empty() {
         return;
     }
@@ -357,25 +355,17 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
         if s.is_none() || !s.as_ref().expect("live session").is_attached() {
             return;
         }
-        wp = (((s.as_ref().expect("live session").current_winlink())
+        let pane_owner = s
+            .as_ref()
+            .expect("live session")
+            .current_winlink()
             .get_unchecked()
             .window_handle()
-            .as_ref())
-        .expect("live window"))
-        .active_pane()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-        let pane_owner = (*wp).observer.upgrade().expect("view-mode pane");
-        wme = (*wp).active_mode_entry();
-        if !wme.is_alive() || !std::ptr::eq(wme.get_unchecked().mode, &window_view_mode) {
-            window_pane_set_mode(
-                &pane_owner,
-                None,
-                &window_view_mode,
-                None,
-                ::core::ptr::null_mut::<cmd_find_state>(),
-                ::core::ptr::null_mut::<args>(),
-            );
+            .expect("live window")
+            .active_pane()
+            .expect("view-mode pane");
+        if !pane_owner.is_mode(&window_view_mode) {
+            pane_owner.set_mode(None, &window_view_mode, None, None, None);
         }
         cfg_drain_causes(|cause| {
             window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {

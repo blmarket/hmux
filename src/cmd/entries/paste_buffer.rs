@@ -3,18 +3,12 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
 use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
-use crate::src::reactor::bufferevent_write;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_INPUTOFF;
-use crate::src::shared::screen::MODE_BRACKETPASTE;
-use crate::src::shared::vis::{VIS_NOSLASH, VIS_SAFE};
-use crate::src::text::utf8::utf8_stravisx_bytes;
-use crate::src::window::window_pane_exited;
+use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;
 pub static cmd_paste_buffer_entry: cmd_entry = {
     cmd_entry {
@@ -41,12 +35,6 @@ pub static cmd_paste_buffer_entry: cmd_entry = {
         exec: Some(cmd_paste_buffer_exec),
     }
 };
-unsafe fn cmd_paste_buffer_paste(wp: &window_pane, buf: &[u8]) {
-    let escaped = utf8_stravisx_bytes(buf, VIS_SAFE | VIS_NOSLASH);
-    let _ = wp.event.with_ptr(|event| unsafe {
-        bufferevent_write(event, escaped.as_ptr().cast(), escaped.len());
-    });
-}
 unsafe fn cmd_paste_buffer_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -55,15 +43,12 @@ unsafe fn cmd_paste_buffer_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let pane_owner = (*target).pane_handle().expect("paste target pane");
     let pb;
     let mut sepstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bufname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut bracket: ::core::ffi::c_int = args_has(args, 'p' as i32 as u_char);
-    if window_pane_exited(&*wp) != 0 {
+    if !pane_owner.has_tty() || pane_owner.has_exited() {
         cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }
@@ -87,55 +72,20 @@ unsafe fn cmd_paste_buffer_exec(
     let Some(pb) = pb else {
         return CMD_RETURN_NORMAL;
     };
-    if !(*wp).flags & PANE_INPUTOFF != 0 {
-        sepstr = args_get(&*(args), 's' as i32 as u_char)
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        if sepstr.is_null() {
-            if args_has(args, 'r' as i32 as u_char) != 0 {
-                sepstr = b"\n\0" as *const u8 as *const ::core::ffi::c_char;
-            } else {
-                sepstr = b"\r\0" as *const u8 as *const ::core::ffi::c_char;
-            }
-        }
-        let separator = CStr::from_ptr(sepstr).to_bytes();
-        if bracket != 0 && (*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
-            let _ = (*wp).event.with_ptr(|event| unsafe {
-                bufferevent_write(
-                    event,
-                    b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char
-                        as *const ::core::ffi::c_void,
-                    6 as size_t,
-                )
-            });
-        }
-        let buffer = pb.borrow();
-        let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-        for chunk in bufdata.split_inclusive(|&byte| byte == b'\n') {
-            let line = chunk.strip_suffix(b"\n").unwrap_or(chunk);
-            if args_has(args, 'S' as i32 as u_char) != 0 {
-                let _ = (*wp).event.with_ptr(|event| unsafe {
-                    bufferevent_write(event, line.as_ptr().cast(), line.len());
-                });
-            } else {
-                cmd_paste_buffer_paste(&*wp, line);
-            }
-            if line.len() != chunk.len() {
-                let _ = (*wp).event.with_ptr(|event| unsafe {
-                    bufferevent_write(event, separator.as_ptr().cast(), separator.len());
-                });
-            }
-        }
-        if bracket != 0 && (*(*wp).screen_ptr()).mode & MODE_BRACKETPASTE != 0 {
-            let _ = (*wp).event.with_ptr(|event| unsafe {
-                bufferevent_write(
-                    event,
-                    b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char
-                        as *const ::core::ffi::c_void,
-                    6 as size_t,
-                )
-            });
-        }
+    sepstr = args_get(&*args, b's').map_or(std::ptr::null(), CStr::as_ptr);
+    if sepstr.is_null() {
+        sepstr = if args_has(args, b'r') != 0 {
+            c"\n".as_ptr()
+        } else {
+            c"\r".as_ptr()
+        };
     }
+    let separator = CStr::from_ptr(sepstr).to_bytes();
+    let bytes = {
+        let buffer = pb.borrow();
+        paste_buffer_data(&buffer).unwrap_or_default().to_vec()
+    };
+    pane_owner.paste_buffer(&bytes, separator, bracket != 0, args_has(args, b'S') != 0);
     if args_has(args, 'd' as i32 as u_char) != 0 {
         paste_free(&pb);
     }

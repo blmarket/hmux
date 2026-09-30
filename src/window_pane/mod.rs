@@ -9,6 +9,7 @@ use crate::src::window::Window as _;
 use crate::src::window::*;
 use std::time::Duration;
 mod api;
+mod capture;
 mod render;
 mod border;
 pub use render::PaneScrollbar;
@@ -1706,7 +1707,7 @@ pub unsafe fn window_pane_prompt_key(
             || (*m).b & MOUSE_MASK_BUTTONS as u_int != MOUSE_BUTTON_1 as u_int
             || (*m).b & MOUSE_MASK_DRAG as u_int != 0
             || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
-            || cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
+            || cmd_mouse_at(pane_owner, m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
                 != 0 as ::core::ffi::c_int
         {
             result = PROMPT_KEY_NOT_HANDLED;

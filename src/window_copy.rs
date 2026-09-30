@@ -9980,7 +9980,7 @@ unsafe fn window_copy_move_mouse(mut m: *mut mouse_event) {
     {
         return;
     }
-    if cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
+    if cmd_mouse_at(mouse_pane_owner.as_ref().expect("mouse pane was resolved"), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
         != 0 as ::core::ffi::c_int
     {
         return;
@@ -10035,7 +10035,7 @@ pub unsafe fn window_copy_start_drag(client_owner: Option<&ClientRef>, mut m: *m
     {
         return;
     }
-    if cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 1 as ::core::ffi::c_int)
+    if cmd_mouse_at(mouse_pane_owner.as_ref().expect("mouse pane was resolved"), m, &raw mut x, &raw mut y, 1 as ::core::ffi::c_int)
         != 0 as ::core::ffi::c_int
     {
         return;
@@ -10130,7 +10130,7 @@ unsafe fn window_copy_drag_update(_client_owner: &ClientRef, mut m: *mut mouse_e
     }
     data = window_copy_data(wme.clone());
     (*data).dragtimer.cancel();
-    if cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
+    if cmd_mouse_at(mouse_pane_owner.as_ref().expect("mouse pane was resolved"), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
         != 0 as ::core::ffi::c_int
     {
         return;

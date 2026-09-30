@@ -2104,7 +2104,7 @@ pub unsafe fn mode_tree_key(
                 || (*m).b & MOUSE_MASK_DRAG as u_int != 0
                 || (*m).b & MOUSE_MASK_BUTTONS as u_int == 3 as u_int
                 || cmd_mouse_at(
-                    &*(mode_pane),
+                    &mode_pane_owner,
                     m,
                     &raw mut x,
                     &raw mut y,
@@ -2207,7 +2207,7 @@ pub unsafe fn mode_tree_key(
         && !m.is_null()
     {
         if cmd_mouse_at(
-            &*(mode_pane),
+            &mode_pane_owner,
             m,
             &raw mut x,
             &raw mut y,

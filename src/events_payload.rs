@@ -28,9 +28,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
-use crate::src::window::{
-    window_pane_remove_ref, window_remove_ref, winlink_find_by_index, Window,
-};
+use crate::src::window::{window_remove_ref, winlink_find_by_index, Window};
 use crate::src::{server_client::Client, session::Session, window::WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
@@ -59,10 +57,7 @@ unsafe fn event_payload_free_target(ep: &mut event_payload) {
         window.release(c"event_payload_free_target");
     }
     if let Some(pane) = ep.target_pane.take() {
-        window_pane_remove_ref(
-            pane,
-            b"event_payload_free_target\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        pane.release(c"event_payload_free_target");
     }
     cmd_find_clear_state(target, 0 as ::core::ffi::c_int);
 }
@@ -80,9 +75,7 @@ impl Drop for event_payload_item {
                     session_remove_ref(session, c"event_payload_free_value")
                 }
                 EventPayloadValue::Window(window) => window.release(c"event_payload_free_value"),
-                EventPayloadValue::Pane(pane) => {
-                    window_pane_remove_ref(pane, c"event_payload_free_value".as_ptr())
-                }
+                EventPayloadValue::Pane(pane) => pane.release(c"event_payload_free_value"),
                 _ => {}
             }
         }

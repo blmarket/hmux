@@ -37,6 +37,8 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::window_set_active_pane;
+use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 use crate::src::{server_client::Client, session::Session};
 pub static cmd_attach_session_entry: cmd_entry = {
     cmd_entry {
@@ -90,7 +92,7 @@ pub unsafe fn cmd_attach_session(
     let mut c_loop: Option<ClientRef> = None;
     let mut s: Option<SessionRef> = None;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let mut wp = None;
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
     if sessions.storage.is_none() {
@@ -125,24 +127,22 @@ pub unsafe fn cmd_attach_session(
     }
     s = target.session_handle();
     wl = target.winlink_handle();
-    wp = target
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    wp = target.pane_handle();
     if wl.is_alive() {
-        if !wp.is_null() {
-            window_set_active_pane(
-                &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
-                &(*(wp)).observer.upgrade().expect("live window_pane"),
-                1 as ::core::ffi::c_int,
-            );
+        if let Some(pane) = wp.as_ref() {
+            let window = pane
+                .window_observer()
+                .upgrade()
+                .expect("attach pane window");
+            window_set_active_pane(&window, pane, 1);
+            window.release(c"attach pane selection");
         }
         session_set_current(s.as_ref().expect("live session"), wl.clone());
-        if !wp.is_null() {
+        if wp.is_some() {
             cmd_find_from_winlink_pane(
                 &mut *current.current.borrow_mut(),
                 wl.clone(),
-                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                wp.as_ref().expect("target pane"),
                 0 as ::core::ffi::c_int,
             );
         } else {
@@ -162,9 +162,7 @@ pub unsafe fn cmd_attach_session(
                 c.as_ref(),
                 s.as_ref(),
                 wl.clone(),
-                (wp).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                wp.as_ref(),
             )));
     }
     if !fflag.is_null() {

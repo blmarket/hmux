@@ -30,7 +30,6 @@ use crate::src::shared::window::WindowRef;
 use crate::src::tty::tty_window_bigger;
 use crate::src::window::Window as _;
 use crate::src::window::{
-    window_pane_find_down, window_pane_find_left, window_pane_find_right, window_pane_find_up,
     window_pop_zoom, window_push_zoom, window_redraw_active_switch, window_set_active_pane,
 };
 use crate::src::window_pane::WindowPane as _;
@@ -328,10 +327,10 @@ unsafe fn cmd_select_pane_exec(
         let pane = if let Some(direction) = direction {
             window_push_zoom(&window, 0, 1);
             let selected = match direction {
-                b'L' => window_pane_find_left(Some(&original_pane)),
-                b'R' => window_pane_find_right(Some(&original_pane)),
-                b'U' => window_pane_find_up(Some(&original_pane)),
-                b'D' => window_pane_find_down(Some(&original_pane)),
+                b'L' => original_pane.neighbor_left(),
+                b'R' => original_pane.neighbor_right(),
+                b'U' => original_pane.neighbor_up(),
+                b'D' => original_pane.neighbor_down(),
                 _ => unreachable!(),
             };
             window_pop_zoom(&window);

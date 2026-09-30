@@ -20,7 +20,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
-use crate::src::window::{window_pane_next, window_remove_pane, Window};
+use crate::src::window::{window_remove_pane, Window};
 pub static cmd_kill_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"kill-pane",
@@ -79,10 +79,7 @@ unsafe fn cmd_kill_pane_all(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let target_pane = (*target).pane_handle().expect("kill target pane");
     server_unzoom_window(&std::rc::Rc::clone(
         &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     ));
@@ -91,8 +88,16 @@ unsafe fn cmd_kill_pane_all(
         .window_handle()
         .and_then(|window| window.next_pane(None));
     while let Some(pane_owner) = cursor {
-        cursor = window_pane_next((pane_owner.get()).as_ref());
-        if pane_owner.get() != wp
+        cursor = wl
+            .get_unchecked()
+            .window_handle()
+            .expect("linked window")
+            .step_pane(
+                crate::src::window::PaneOrder::Index,
+                Some(&std::rc::Rc::downgrade(&pane_owner)),
+                false,
+            );
+        if !std::rc::Rc::ptr_eq(&pane_owner, &target_pane)
             && cmd_kill_pane_filter(
                 item_handle,
                 s.as_ref().expect("live session"),
@@ -136,16 +141,7 @@ unsafe fn cmd_kill_pane_filter(
         0 as ::core::ffi::c_int,
     );
     ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        None,
-        Some(s_owner),
-        wl.clone(),
-        (pane_owner.get())
-            .as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-    );
+    format_defaults(ft, None, Some(s_owner), wl.clone(), Some(pane_owner));
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
     format_free(ft_owner);

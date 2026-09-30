@@ -180,8 +180,8 @@ impl cmd_find_state {
         self.wp.upgrade()
     }
 
-    pub fn set_wp(&mut self, value: Option<&window_pane>) {
-        self.wp = value.map_or_else(std::rc::Weak::new, |value| value.observer.clone());
+    pub fn set_wp(&mut self, value: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>) {
+        self.wp = value.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
 
     /// Observe the selected link without extending its lifetime.

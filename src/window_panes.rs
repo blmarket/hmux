@@ -2004,7 +2004,7 @@ unsafe fn window_panes_get_target(
         if key != KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code
             || m.is_null()
             || cmd_mouse_at(
-                &*(mode_pane),
+                &mode_pane_owner,
                 m,
                 &raw mut x,
                 &raw mut y,

@@ -19,6 +19,8 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::{window, winlink};
 use crate::src::spawn::spawn_pane;
+use crate::src::window::Window as _;
+use crate::src::window_pane::WindowPane as _;
 pub static cmd_respawn_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"respawn-pane",
@@ -69,15 +71,12 @@ unsafe fn cmd_respawn_pane_exec(
     let mut argv_owner = Vec::new();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = (*target).pane_handle();
     let mut cause: Option<std::ffi::CString> = None;
     sc.item = (*item).observer.clone();
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
-    sc.wp0 = (*wp).observer.clone();
+    sc.wp0 = std::rc::Rc::downgrade(wp.as_ref().expect("respawn pane"));
     argv_owner = args_to_vector(&*args);
     sc.argv = argv_owner;
     sc.environ = Some(environ_create());
@@ -110,9 +109,15 @@ unsafe fn cmd_respawn_pane_exec(
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     }
-    (*wp).flags |= PANE_REDRAW;
-    server_redraw_window_borders(&(((*wp).window_handle().as_ref()).expect("live window")));
-    server_status_window(&(((*wp).window_handle().as_ref()).expect("live window")));
-    drop(sc.environ.take());
+    wp.as_ref().expect("respawn pane").request_redraw(false);
+    let window = wp
+        .as_ref()
+        .expect("respawn pane")
+        .window_observer()
+        .upgrade()
+        .expect("respawn pane window");
+    server_redraw_window_borders(&window);
+    server_status_window(&window);
+    window.release(c"respawn pane status");
     return CMD_RETURN_NORMAL;
 }

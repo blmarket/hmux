@@ -142,7 +142,6 @@ unsafe fn cmd_list_panes_window(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -185,7 +184,7 @@ unsafe fn cmd_list_panes_window(
     let n = u_int::try_from(l.len()).expect("too many panes to list");
     i = 0 as u_int;
     while i < n {
-        wp = l[i as usize].get();
+        let pane = &l[i as usize];
         let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
             Some(item_handle),
@@ -198,15 +197,7 @@ unsafe fn cmd_list_panes_window(
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (n) as u32),
         );
-        format_defaults(
-            ft,
-            c.as_ref(),
-            Some(s_owner),
-            wl.clone(),
-            (wp).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
+        format_defaults(ft, c.as_ref(), Some(s_owner), wl.clone(), Some(pane));
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);
             flag = format_true(expanded.as_ptr());

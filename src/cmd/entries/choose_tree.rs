@@ -13,10 +13,10 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::sort::*;
 use crate::src::shared::window::window_mode;
 use crate::src::sort::sort_order_from_string;
-use crate::src::window::window_pane_set_mode;
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
 use crate::src::window_customize::window_customize_mode;
+use crate::src::window_pane::WindowPane as _;
 use crate::src::window_panes::window_panes_mode;
 use crate::src::window_switch::window_switch_mode;
 use crate::src::window_tree::window_tree_mode;
@@ -190,10 +190,7 @@ unsafe fn cmd_choose_tree_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let wp = (*target).pane_handle();
     let mode: &'static window_mode;
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(
@@ -239,13 +236,12 @@ unsafe fn cmd_choose_tree_exec(
     } else {
         mode = &window_tree_mode;
     }
-    window_pane_set_mode(
-        &(*wp).observer.upgrade().expect("mode target pane"),
+    wp.as_ref().expect("mode target pane").set_mode(
         None,
         mode,
         Some(item_handle),
-        target,
-        args,
+        Some(&mut *target),
+        Some(&mut *args),
     );
     return CMD_RETURN_NORMAL;
 }

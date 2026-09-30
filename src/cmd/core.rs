@@ -103,7 +103,8 @@ pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_options;
 use crate::src::window::Window as _;
-use crate::src::window::{window_find_by_id, window_pane_find_by_id, winlink_find_by_window};
+use crate::src::window::{window_find_by_id, winlink_find_by_window};
+use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 pub const DQ: C2RustUnnamed_38 = 2;
@@ -605,55 +606,22 @@ pub unsafe fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn cmd_mouse_at(
-    wp_value: &window_pane,
-    mut m: *mut mouse_event,
-    mut xp: *mut u_int,
-    mut yp: *mut u_int,
-    mut last: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let wp = wp_value as *const window_pane;
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    if last != 0 {
-        x = (*m).lx.wrapping_add((*m).ox);
-        y = (*m).ly.wrapping_add((*m).oy);
-    } else {
-        x = (*m).x.wrapping_add((*m).ox);
-        y = (*m).y.wrapping_add((*m).oy);
+    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    mouse: *mut mouse_event,
+    x: *mut u_int,
+    y: *mut u_int,
+    last: i32,
+) -> i32 {
+    let Some((mx, my)) = pane.mouse_position(&*mouse, last != 0) else {
+        return -1;
+    };
+    if !x.is_null() {
+        *x = mx;
     }
-    log_debug(format_args!(
-        "{}: x={}, y={}{}",
-        "cmd_mouse_at",
-        (x) as u32,
-        (y) as u32,
-        log_cstr(
-            (if last != 0 {
-                b" (last)\0" as *const u8 as *const ::core::ffi::c_char
-            } else {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
-            }) as *const _
-        )
-    ));
-    if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {
-        y = y.wrapping_sub((*m).statuslines);
+    if !y.is_null() {
+        *y = my;
     }
-    if (x as ::core::ffi::c_int) < (*wp).xoff
-        || x as ::core::ffi::c_int >= (*wp).xoff + (*wp).sx as ::core::ffi::c_int
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (y as ::core::ffi::c_int) < (*wp).yoff
-        || y as ::core::ffi::c_int >= (*wp).yoff + (*wp).sy as ::core::ffi::c_int
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if !xp.is_null() {
-        *xp = x.wrapping_sub((*wp).xoff as u_int);
-    }
-    if !yp.is_null() {
-        *yp = y.wrapping_sub((*wp).yoff as u_int);
-    }
-    return 0 as ::core::ffi::c_int;
+    0
 }
 pub unsafe fn cmd_mouse_window(
     mut m: *mut mouse_event,
@@ -701,7 +669,7 @@ pub unsafe fn cmd_mouse_pane(
     let pane = if (*m).wp == -1 {
         window.active_pane()
     } else {
-        let pane = window_pane_find_by_id((*m).wp as u_int)?;
+        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id((*m).wp as u_int)?;
         if !window.contains_pane(&std::rc::Rc::downgrade(&pane)) {
             return None;
         }

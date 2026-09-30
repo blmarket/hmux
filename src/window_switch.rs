@@ -748,8 +748,13 @@ unsafe fn window_switch_key(
                     << 32 as ::core::ffi::c_int
     {
         if m.is_null()
-            || cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
-                != 0 as ::core::ffi::c_int
+            || cmd_mouse_at(
+                &mode_pane_owner,
+                m,
+                &raw mut x,
+                &raw mut y,
+                0 as ::core::ffi::c_int,
+            ) != 0 as ::core::ffi::c_int
         {
             return;
         }

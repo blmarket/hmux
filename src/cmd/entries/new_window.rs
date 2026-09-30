@@ -309,11 +309,7 @@ unsafe fn cmd_new_window_exec(
                 Some(&session_owner),
                 (new_wl).clone(),
                 (((new_wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-                    .active_pane()
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get()))
-                .as_ref()
-                .and_then(|model| model.observer.upgrade())
+                    .active_pane())
                 .as_ref(),
             );
             cmdq_print(item_handle, |out| out.write_all(cp.as_bytes()));
