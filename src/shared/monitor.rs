@@ -17,7 +17,7 @@ pub const MONITOR_SESSION: monitor_type = 0;
 pub const MONITOR_NOTIFY_TRUE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
-pub use crate::src::monitor::{MonitorRef, MonitorWeak};
+pub use crate::src::monitor::monitor_set;
 
 #[derive(Clone)]
 #[repr(C)]

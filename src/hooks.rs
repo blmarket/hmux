@@ -49,7 +49,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::monitor::monitor_type;
-use crate::src::shared::monitor::{monitor_callback, monitor_change, MonitorRef};
+use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
 use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
 use crate::src::shared::options::{
     options, options_array_item, options_entry, options_table_entry,
@@ -102,7 +102,7 @@ pub struct hooks_data<'a> {
 pub struct hooks_monitor {
     // Callbacks identify this record by owner, option name and generation.
     pub generation: usize,
-    pub set: Option<MonitorRef>,
+    pub set: Option<refbox::RefBox<monitor_set>>,
     pub sink: EventSinkId,
     pub type_0: monitor_type,
     pub id: ::core::ffi::c_int,
@@ -633,10 +633,10 @@ pub unsafe fn hooks_monitor_add(
                 .set
                 .as_ref()
                 .expect("monitor set")
-                .clone()
+                .downgrade()
         })
         .expect("monitor option");
-    // Only the independent monitor identity survives the option/model borrow.
+    // The option keeps sole ownership; only a weak observer leaves its borrow.
     monitor_add(&set, name, type_0, id, format, flags);
 }
 pub(crate) unsafe fn hooks_monitor_to_cstring(o: *mut options_entry) -> Option<CString> {
@@ -663,14 +663,14 @@ pub unsafe fn hooks_monitor_get_fire_count(mut o: *mut options_entry) -> u_int {
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as u_int;
     };
-    return monitor_get_fire_count(hm.set.as_ref().expect("hook monitor"), name);
+    return monitor_get_fire_count(&hm.set.as_ref().expect("hook monitor").downgrade(), name);
 }
 pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
     let name = (*o).name.as_ptr();
     let Some(hm) = options_get_monitor_data(&mut *o) else {
         return 0 as time_t;
     };
-    return monitor_get_fire_time(hm.set.as_ref().expect("hook monitor"), name);
+    return monitor_get_fire_time(&hm.set.as_ref().expect("hook monitor").downgrade(), name);
 }
 
 #[cfg(test)]

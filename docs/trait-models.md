@@ -98,11 +98,11 @@ appearance and slider geometry needed across drawing calls without allocation.
 Layout/resize snapshots and typed identities prevent component loans from
 escaping; their definitions are reviewed in the migration report.
 
-No additional core-model Rc allocation was introduced. The retained independent
-MonitorRef and runtime registration Rc allocations serve callback cancellation
-and logical teardown. RefBox has one strong owner and cloneable Weak observers;
-it cannot substitute for temporary retained MonitorRef ownership without
-changing that lifetime protocol.
+Monitor sets have one RefBox owner in their control client or hook. Operations
+and timers carry refbox::Weak observers, release state borrows before formatting
+or callbacks, and stop if the owner is destroyed. monitor_destroy consumes the
+owner, cancels its timer, clears records, and expires observers before releasing
+Session ownership and callback captures. Runtime task registrations still use Rc.
 
 ## Validation
 

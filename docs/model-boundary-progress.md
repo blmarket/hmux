@@ -84,19 +84,20 @@ rereads each next value and preserves first-missing/first-error behavior.
 Command parsing runs outside the model borrow. Monitor cleanup runs after value
 cleanup and before unlinking the same entry, with a replacement identity check.
 Monitor hook closures capture scope/generation and an owned fallback find state;
-stale generations cannot dispatch replacement hooks. Monitor sets now have an
-opaque, independently retained MonitorRef/MonitorWeak identity. Option/Client
-borrows end before monitor operations. Timers upgrade weak identities; dispatch
+stale generations cannot dispatch replacement hooks. Monitor sets have one
+RefBox<monitor_set> owner in their control client or hook. Option/Client borrows
+end before monitor operations, which use refbox::Weak observers. Timer dispatch
 copies each record and its prefetched successor identity before formatting or
 callbacks. Replacing an item cannot receive its predecessor's result. Explicit
 monitor destruction still cancels the timer, clears records, releases Session
-ownership once, and retires callbacks; active dispatch stops when it observes
-logical destruction.
+ownership once, and retires callbacks. It consumes the owner and expires weak
+observers before releasing Session ownership or callback captures; active
+dispatch stops when its next borrow finds the monitor destroyed.
 
-`tools/monitor_borrow_boundary.py` runs the actual ten monitor regressions with a
-single RefCell for the entire monitor state in a disposable source copy. They
-pass, including destruction during the timer's first phase, successor removal,
-same-name replacement, last-value/count ordering, and weak timer expiration.
+`tools/monitor_borrow_boundary.py` runs the monitor regressions against the checked
+RefBox borrows used in production. These cover destruction during the timer's
+first phase, successor removal, same-name replacement, last-value/count ordering,
+and weak timer expiration.
 The Client smoke covers all five subscription target kinds, initial/update
 delivery, removal, and detach while subscriptions remain active. Source guards
 reject exposed monitor state and raw monitor-set observers.
@@ -150,8 +151,8 @@ Validation for this checkpoint:
   plus 7 options-scope and 9 layout Rust cases, pass.
 - `python3 tools/window_storage_boundary.py` and
   `python3 tools/client_storage_boundary.py`: all targets pass.
-- `python3 tools/monitor_borrow_boundary.py`: 10 actual monitor cases pass with
-  one RefCell for the entire monitor state in a disposable build.
+- `python3 tools/monitor_borrow_boundary.py`: monitor cases exercise the checked
+  RefBox borrows used in production.
 - After `cargo build --bin hmux2`, both `tools/client_boundary_smoke.py` and
   `tools/window_boundary_smoke.py` pass against isolated temporary servers.
 - Default Clippy still fails at the pre-existing `hmux-refbox` `mut_from_ref`

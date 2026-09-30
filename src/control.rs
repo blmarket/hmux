@@ -1645,7 +1645,7 @@ pub unsafe fn control_start(owner: &ClientRef) {
 
 pub(crate) unsafe fn control_subscriptions(
     owner: &ClientRef,
-) -> crate::src::shared::monitor::MonitorRef {
+) -> refbox::RefBox<crate::src::shared::monitor::monitor_set> {
     monitor_create_client_owned(
         Some(owner),
         monitor_callback(|change| unsafe { control_sub_change(change) }),
@@ -1718,10 +1718,9 @@ pub unsafe fn control_add_sub(
 ) {
     let subscriptions = {
         let state = c_owner.borrow_control_mut().expect("control client state");
-        state.subs.as_ref().expect("control subscriptions").clone()
+        state.subs.as_ref().expect("control subscriptions").downgrade()
     };
-    // Retain only the independently owned monitor while publishing its timer.
-    // The Client component borrow has ended before monitor operations begin.
+    // The Client owns the monitor; only its weak observer leaves this borrow.
     monitor_add(
         &subscriptions,
         name,
@@ -1734,7 +1733,7 @@ pub unsafe fn control_add_sub(
 pub unsafe fn control_remove_sub(c_owner: &ClientRef, mut name: *const ::core::ffi::c_char) {
     let subscriptions = {
         let state = c_owner.borrow_control_mut().expect("control client state");
-        state.subs.as_ref().expect("control subscriptions").clone()
+        state.subs.as_ref().expect("control subscriptions").downgrade()
     };
     monitor_remove(&subscriptions, name);
 }

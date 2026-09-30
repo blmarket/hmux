@@ -35,16 +35,9 @@ use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-/// An independently owned monitor. The enclosing model owns one logical handle
-/// and must call monitor_destroy when removing it; temporary clones only retain
-/// memory while an operation or callback finishes.
-#[derive(Clone)]
-pub struct MonitorRef(Rc<UnsafeCell<MonitorState>>);
-#[derive(Clone, Default)]
-pub struct MonitorWeak(Weak<UnsafeCell<MonitorState>>);
-
-struct MonitorState {
-    alive: bool,
+/// Owned by one control client or hook, which calls monitor_destroy on removal.
+/// Operations and timers use weak observers and do not prolong this ownership.
+pub struct monitor_set {
     client: ClientWeak,
     session: Option<SessionRef>,
     callback: Option<monitor_cb>,
@@ -54,79 +47,59 @@ struct MonitorState {
     next_item_identity: u64,
 }
 
-impl MonitorWeak {
-    pub fn upgrade(&self) -> Option<MonitorRef> {
-        let owner = MonitorRef(self.0.upgrade()?);
-        owner.is_alive().then_some(owner)
+// Release this borrow before model queries, formatting, callbacks or Session
+// release. A callback may destroy the sole owner; the next borrow then expires.
+fn monitor_borrow(observer: &refbox::Weak<monitor_set>) -> Option<refbox::Borrow<'_, monitor_set>> {
+    match observer.try_borrow_mut() {
+        Ok(state) => Some(state),
+        Err(refbox::BorrowError::Dropped) => None,
+        Err(refbox::BorrowError::Borrowed) => panic!("monitor state already borrowed"),
     }
 }
-impl MonitorRef {
-    pub fn downgrade(&self) -> MonitorWeak {
-        MonitorWeak(Rc::downgrade(&self.0))
-    }
-    // Pure state work only. Model queries, formatting, callback invocation and
-    // logical Session release all happen after this bounded loan has ended.
-    fn with_state<R>(&self, operation: impl FnOnce(&mut MonitorState) -> R) -> R {
-        unsafe { operation(&mut *self.0.get()) }
-    }
-    fn is_alive(&self) -> bool {
-        self.with_state(|state| state.alive)
-    }
-    fn first_item(&self) -> Option<MonitorItemIdentity> {
-        self.with_state(|state| {
-            if !state.alive {
-                return None;
-            }
-            let map = &mut state.items;
-            map.first_key_value()
-                .map(|(_, item)| MonitorItemIdentity::of(item))
-        })
-    }
-    fn next_item(&self, after: &CStr) -> Option<MonitorItemIdentity> {
-        self.with_state(|state| {
-            if !state.alive {
-                return None;
-            }
-            let map = &mut state.items;
-            map.range((
-                std::ops::Bound::Excluded(after.to_bytes().to_vec()),
-                std::ops::Bound::Unbounded,
-            ))
-            .next()
-            .map(|(_, item)| MonitorItemIdentity::of(item))
-        })
-    }
-    fn with_item<R>(
-        &self,
-        id: &MonitorItemIdentity,
-        operation: impl FnOnce(&mut monitor_item) -> R,
-    ) -> Option<R> {
-        self.with_state(|state| {
-            if !state.alive {
-                return None;
-            }
-            let mut map = &mut state.items;
-            let item = map.get_mut(id.name.to_bytes())?;
-            (item.identity == id.identity).then(|| operation(item))
-        })
-    }
-    fn item(&self, id: &MonitorItemIdentity) -> Option<MonitorItemSnapshot> {
-        self.with_item(id, |item| MonitorItemSnapshot {
-            identity: id.clone(),
-            format: item.format.clone(),
-            type_0: item.type_0,
-            target: item.id,
-        })
-    }
-    fn next_generation(&self) -> Option<u32> {
-        self.with_state(|state| {
-            if !state.alive {
-                return None;
-            }
-            state.generation = state.generation.wrapping_add(1).max(1);
-            Some(state.generation)
-        })
-    }
+
+fn monitor_first_item(observer: &refbox::Weak<monitor_set>) -> Option<MonitorItemIdentity> {
+    monitor_borrow(observer)?
+        .items
+        .first_key_value()
+        .map(|(_, item)| MonitorItemIdentity::of(item))
+}
+fn monitor_next_item(
+    observer: &refbox::Weak<monitor_set>,
+    after: &CStr,
+) -> Option<MonitorItemIdentity> {
+    monitor_borrow(observer)?
+        .items
+        .range((
+            std::ops::Bound::Excluded(after.to_bytes().to_vec()),
+            std::ops::Bound::Unbounded,
+        ))
+        .next()
+        .map(|(_, item)| MonitorItemIdentity::of(item))
+}
+fn monitor_with_item<R>(
+    observer: &refbox::Weak<monitor_set>,
+    id: &MonitorItemIdentity,
+    operation: impl FnOnce(&mut monitor_item) -> R,
+) -> Option<R> {
+    let mut state = monitor_borrow(observer)?;
+    let item = state.items.get_mut(id.name.to_bytes())?;
+    (item.identity == id.identity).then(|| operation(item))
+}
+fn monitor_item_snapshot(
+    observer: &refbox::Weak<monitor_set>,
+    id: &MonitorItemIdentity,
+) -> Option<MonitorItemSnapshot> {
+    monitor_with_item(observer, id, |item| MonitorItemSnapshot {
+        identity: id.clone(),
+        format: item.format.clone(),
+        type_0: item.type_0,
+        target: item.id,
+    })
+}
+fn monitor_next_generation(observer: &refbox::Weak<monitor_set>) -> Option<u32> {
+    let mut state = monitor_borrow(observer)?;
+    state.generation = state.generation.wrapping_add(1).max(1);
+    Some(state.generation)
 }
 
 #[derive(Clone)]
@@ -151,14 +124,14 @@ struct MonitorItemSnapshot {
 
 // Preserve the original one-successor-ahead traversal: additions before the
 // prefetched successor wait for a later pass; later additions can be observed.
-fn monitor_visit(owner: &MonitorRef, mut visit: impl FnMut(MonitorItemSnapshot)) {
-    let mut cursor = owner.first_item();
+fn monitor_visit(monitor: &refbox::Weak<monitor_set>, mut visit: impl FnMut(MonitorItemSnapshot)) {
+    let mut cursor = monitor_first_item(monitor);
     while let Some(identity) = cursor {
-        if !owner.is_alive() {
+        if !monitor.is_alive() {
             break;
         }
-        let next = owner.next_item(&identity.name);
-        if let Some(item) = owner.item(&identity) {
+        let next = monitor_next_item(monitor, &identity.name);
+        if let Some(item) = monitor_item_snapshot(monitor, &identity) {
             visit(item);
         }
         cursor = next;
@@ -171,23 +144,22 @@ fn monitor_pane_new() -> Box<monitor_pane> {
 fn monitor_window_new() -> Box<monitor_window> {
     Box::new(monitor_window::empty())
 }
-unsafe fn monitor_has_client(owner: &MonitorRef) -> bool {
-    owner.with_state(|state| !state.client.ptr_eq(&Weak::new()))
+unsafe fn monitor_has_client(monitor: &refbox::Weak<monitor_set>) -> bool {
+    monitor_borrow(monitor).is_some_and(|state| !state.client.ptr_eq(&Weak::new()))
 }
-unsafe fn monitor_client(owner: &MonitorRef) -> Option<ClientRef> {
-    let observer = owner.with_state(|state| state.alive.then(|| state.client.clone()))?;
+unsafe fn monitor_client(monitor: &refbox::Weak<monitor_set>) -> Option<ClientRef> {
+    let observer = monitor_borrow(monitor)?.client.clone();
     let client = observer.upgrade()?;
     (!client.is_dead()).then_some(client)
 }
 unsafe fn monitor_get_session(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     client: Option<&ClientRef>,
 ) -> Option<SessionRef> {
-    let (has_client, session) = owner.with_state(|state| {
-        state
-            .alive
-            .then(|| (!state.client.ptr_eq(&Weak::new()), state.session.clone()))
-    })?;
+    let (has_client, session) = {
+        let state = monitor_borrow(monitor)?;
+        (!state.client.ptr_eq(&Weak::new()), state.session.clone())
+    };
     if has_client {
         return client?.attached_session().upgrade();
     }
@@ -197,15 +169,17 @@ unsafe fn monitor_get_session(
     let indexed = crate::src::shared::session::SessionRef::find_by_id(session.id())?;
     Rc::ptr_eq(&session, &indexed).then_some(indexed)
 }
-unsafe fn monitor_context(owner: &MonitorRef) -> Option<(Option<ClientRef>, SessionRef)> {
-    if !owner.is_alive() {
+unsafe fn monitor_context(
+    monitor: &refbox::Weak<monitor_set>,
+) -> Option<(Option<ClientRef>, SessionRef)> {
+    if !monitor.is_alive() {
         return None;
     }
-    let client = monitor_client(owner);
-    if monitor_has_client(owner) && client.is_none() {
+    let client = monitor_client(monitor);
+    if monitor_has_client(monitor) && client.is_none() {
         return None;
     }
-    let session = monitor_get_session(owner, client.as_ref())?;
+    let session = monitor_get_session(monitor, client.as_ref())?;
     Some((client, session))
 }
 unsafe fn monitor_create_formats(
@@ -228,7 +202,7 @@ enum MonitorValueTarget {
     Window(u32, u32),
 }
 unsafe fn monitor_check_value(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     identity: &MonitorItemIdentity,
     session: Option<&SessionRef>,
     link: refbox::Weak<winlink>,
@@ -240,88 +214,90 @@ unsafe fn monitor_check_value(
     let truth = format_true(value.as_ptr()) != 0;
     // Formatting may reenter a scan. Preserve the live generation used by the
     // original record commit, rather than the generation from before expansion.
-    let generation = generation.map(|_| owner.with_state(|state| state.generation));
-    let record = owner
-        .with_item(identity, |item| {
-            let last = match target {
-                MonitorValueTarget::Session => &mut item.last,
-                MonitorValueTarget::Pane(pane, index) => {
-                    let find = monitor_pane {
-                        pane,
-                        idx: index,
-                        ..monitor_pane::empty()
-                    };
-                    let mut record = monitor_panes_find(&mut item.panes, &find);
-                    if record.is_null() {
-                        assert!(monitor_panes_insert(&mut item.panes, Box::new(find)).is_ok());
-                        record = monitor_panes_find(
-                            &mut item.panes,
-                            &monitor_pane {
-                                pane,
-                                idx: index,
-                                ..monitor_pane::empty()
-                            },
-                        );
-                    }
-                    if let Some(generation) = generation {
-                        (*record).generation = generation;
-                    }
-                    &mut (*record).last
+    let Some(state) = monitor_borrow(monitor) else {
+        return;
+    };
+    let generation = generation.map(|_| state.generation);
+    drop(state);
+    let record = monitor_with_item(monitor, identity, |item| {
+        let last = match target {
+            MonitorValueTarget::Session => &mut item.last,
+            MonitorValueTarget::Pane(pane, index) => {
+                let find = monitor_pane {
+                    pane,
+                    idx: index,
+                    ..monitor_pane::empty()
+                };
+                let mut record = monitor_panes_find(&mut item.panes, &find);
+                if record.is_null() {
+                    assert!(monitor_panes_insert(&mut item.panes, Box::new(find)).is_ok());
+                    record = monitor_panes_find(
+                        &mut item.panes,
+                        &monitor_pane {
+                            pane,
+                            idx: index,
+                            ..monitor_pane::empty()
+                        },
+                    );
                 }
-                MonitorValueTarget::Window(window, index) => {
-                    let find = monitor_window {
-                        window,
-                        idx: index,
-                        ..monitor_window::empty()
-                    };
-                    let mut record = monitor_windows_find(&mut item.windows, &find);
-                    if record.is_null() {
-                        assert!(monitor_windows_insert(&mut item.windows, Box::new(find)).is_ok());
-                        record = monitor_windows_find(
-                            &mut item.windows,
-                            &monitor_window {
-                                window,
-                                idx: index,
-                                ..monitor_window::empty()
-                            },
-                        );
-                    }
-                    if let Some(generation) = generation {
-                        (*record).generation = generation;
-                    }
-                    &mut (*record).last
+                if let Some(generation) = generation {
+                    (*record).generation = generation;
                 }
-            };
-            if last.as_deref() == Some(value) {
-                return None;
+                &mut (*record).last
             }
-            let previous = last.replace(value.to_owned());
-            if (previous.is_none() && item.flags & MONITOR_NOTIFY_INITIAL == 0)
-                || (item.flags & MONITOR_NOTIFY_TRUE != 0 && !truth)
-            {
-                return None;
+            MonitorValueTarget::Window(window, index) => {
+                let find = monitor_window {
+                    window,
+                    idx: index,
+                    ..monitor_window::empty()
+                };
+                let mut record = monitor_windows_find(&mut item.windows, &find);
+                if record.is_null() {
+                    assert!(monitor_windows_insert(&mut item.windows, Box::new(find)).is_ok());
+                    record = monitor_windows_find(
+                        &mut item.windows,
+                        &monitor_window {
+                            window,
+                            idx: index,
+                            ..monitor_window::empty()
+                        },
+                    );
+                }
+                if let Some(generation) = generation {
+                    (*record).generation = generation;
+                }
+                &mut (*record).last
             }
-            item.fire_count = item.fire_count.wrapping_add(1);
-            item.fire_time = current_time;
-            Some((item.name.clone(), previous))
-        })
-        .flatten();
+        };
+        if last.as_deref() == Some(value) {
+            return None;
+        }
+        let previous = last.replace(value.to_owned());
+        if (previous.is_none() && item.flags & MONITOR_NOTIFY_INITIAL == 0)
+            || (item.flags & MONITOR_NOTIFY_TRUE != 0 && !truth)
+        {
+            return None;
+        }
+        item.fire_count = item.fire_count.wrapping_add(1);
+        item.fire_time = current_time;
+        Some((item.name.clone(), previous))
+    })
+    .flatten();
     let Some((name, previous)) = record else {
         return;
     };
-    let Some((callback, client)) = owner.with_state(|state| {
-        state.alive.then(|| {
-            (
-                state
-                    .callback
-                    .as_ref()
-                    .expect("live monitor callback")
-                    .clone(),
-                state.client.clone(),
-            )
-        })
-    }) else {
-        return;
+    let (callback, client) = {
+        let Some(state) = monitor_borrow(monitor) else {
+            return;
+        };
+        (
+            state
+                .callback
+                .as_ref()
+                .expect("live monitor callback")
+                .clone(),
+            state.client.clone(),
+        )
     };
     log_debug(format_args!(
         "monitor_report: {} changed to {}",
@@ -340,16 +316,16 @@ unsafe fn monitor_check_value(
     callback(&change);
 }
 unsafe fn monitor_check_session(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     item: &MonitorItemSnapshot,
     formats: &mut format_tree,
 ) {
-    let Some((_client, session)) = monitor_context(owner) else {
+    let Some((_client, session)) = monitor_context(monitor) else {
         return;
     };
     let value = format_expand_cstring(formats, item.format.as_ptr());
     monitor_check_value(
-        owner,
+        monitor,
         &item.identity,
         Some(&session),
         refbox::Weak::new(),
@@ -359,8 +335,8 @@ unsafe fn monitor_check_session(
         None,
     );
 }
-unsafe fn monitor_check_pane(owner: &MonitorRef, item: &MonitorItemSnapshot) {
-    let Some((client, session)) = monitor_context(owner) else {
+unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, item: &MonitorItemSnapshot) {
+    let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
     let Some(pane) = Rc::<UnsafeCell<window_pane>>::find_by_id(item.target) else {
@@ -373,7 +349,7 @@ unsafe fn monitor_check_pane(owner: &MonitorRef, item: &MonitorItemSnapshot) {
         return;
     };
     let mut link = window.next_winlink(None);
-    while link.is_alive() && owner.item(&item.identity).is_some() {
+    while link.is_alive() && monitor_item_snapshot(monitor, &item.identity).is_some() {
         let matches = link
             .get_unchecked()
             .session
@@ -386,7 +362,7 @@ unsafe fn monitor_check_pane(owner: &MonitorRef, item: &MonitorItemSnapshot) {
             if link.is_alive() {
                 let index = link.get_unchecked().idx as u32;
                 monitor_check_value(
-                    owner,
+                    monitor,
                     &item.identity,
                     Some(&session),
                     link.clone(),
@@ -406,15 +382,15 @@ unsafe fn monitor_check_pane(owner: &MonitorRef, item: &MonitorItemSnapshot) {
     }
     window.release(c"monitor_check_pane");
 }
-unsafe fn monitor_check_window(owner: &MonitorRef, item: &MonitorItemSnapshot) {
-    let Some((client, session)) = monitor_context(owner) else {
+unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, item: &MonitorItemSnapshot) {
+    let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
     let Some(window) = crate::src::shared::window::WindowRef::find_by_id(item.target) else {
         return;
     };
     let mut link = window.next_winlink(None);
-    while link.is_alive() && owner.item(&item.identity).is_some() {
+    while link.is_alive() && monitor_item_snapshot(monitor, &item.identity).is_some() {
         let matches = link
             .get_unchecked()
             .session
@@ -427,7 +403,7 @@ unsafe fn monitor_check_window(owner: &MonitorRef, item: &MonitorItemSnapshot) {
             if link.is_alive() {
                 let index = link.get_unchecked().idx as u32;
                 monitor_check_value(
-                    owner,
+                    monitor,
                     &item.identity,
                     Some(&session),
                     link.clone(),
@@ -446,14 +422,14 @@ unsafe fn monitor_check_window(owner: &MonitorRef, item: &MonitorItemSnapshot) {
     window.release(c"monitor_check_window");
 }
 unsafe fn monitor_check_all_panes_one(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     item: &MonitorItemSnapshot,
     formats: &mut format_tree,
     link: refbox::Weak<winlink>,
     pane: &Rc<UnsafeCell<window_pane>>,
     generation: u32,
 ) {
-    let Some((_client, session)) = monitor_context(owner) else {
+    let Some((_client, session)) = monitor_context(monitor) else {
         return;
     };
     let value = format_expand_cstring(formats, item.format.as_ptr());
@@ -462,7 +438,7 @@ unsafe fn monitor_check_all_panes_one(
     }
     let index = link.get_unchecked().idx as u32;
     monitor_check_value(
-        owner,
+        monitor,
         &item.identity,
         Some(&session),
         link,
@@ -473,13 +449,13 @@ unsafe fn monitor_check_all_panes_one(
     );
 }
 unsafe fn monitor_check_all_windows_one(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     item: &MonitorItemSnapshot,
     formats: &mut format_tree,
     link: refbox::Weak<winlink>,
     generation: u32,
 ) {
-    let Some((_client, session)) = monitor_context(owner) else {
+    let Some((_client, session)) = monitor_context(monitor) else {
         return;
     };
     let value = format_expand_cstring(formats, item.format.as_ptr());
@@ -494,7 +470,7 @@ unsafe fn monitor_check_all_windows_one(
         )
     };
     monitor_check_value(
-        owner,
+        monitor,
         &item.identity,
         Some(&session),
         link,
@@ -524,47 +500,47 @@ unsafe fn monitor_sweep_all_windows(item: &mut monitor_item, generation: u32) {
         record = next;
     }
 }
-unsafe fn monitor_check_sessions(owner: &MonitorRef) {
-    let Some((client, session)) = monitor_context(owner) else {
+unsafe fn monitor_check_sessions(monitor: &refbox::Weak<monitor_set>) {
+    let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
     let mut formats =
         monitor_create_formats(client.as_ref(), Some(&session), refbox::Weak::new(), None);
-    monitor_visit(owner, |item| {
+    monitor_visit(monitor, |item| {
         if item.type_0 == MONITOR_SESSION {
-            monitor_check_session(owner, &item, &mut *formats);
+            monitor_check_session(monitor, &item, &mut *formats);
         }
     });
     format_free(formats);
 }
-unsafe fn monitor_check_panes_windows(owner: &MonitorRef) {
-    monitor_visit(owner, |item| match item.type_0 {
-        MONITOR_PANE => monitor_check_pane(owner, &item),
-        MONITOR_WINDOW => monitor_check_window(owner, &item),
+unsafe fn monitor_check_panes_windows(monitor: &refbox::Weak<monitor_set>) {
+    monitor_visit(monitor, |item| match item.type_0 {
+        MONITOR_PANE => monitor_check_pane(monitor, &item),
+        MONITOR_WINDOW => monitor_check_window(monitor, &item),
         _ => {}
     });
 }
-unsafe fn monitor_check_all_panes(owner: &MonitorRef) {
-    let Some((client, session)) = monitor_context(owner) else {
+unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
+    let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
-    let Some(generation) = owner.next_generation() else {
+    let Some(generation) = monitor_next_generation(monitor) else {
         return;
     };
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
-    while link.is_alive() && owner.is_alive() {
+    while link.is_alive() && monitor.is_alive() {
         let window = link.get_unchecked().window_handle().cloned();
         let mut cursor = window.as_ref().and_then(|window| window.next_pane(None));
         while let Some(pane) = cursor {
-            if !link.is_alive() || !owner.is_alive() {
+            if !link.is_alive() || !monitor.is_alive() {
                 break;
             }
             let mut formats =
                 monitor_create_formats(client.as_ref(), Some(&session), link.clone(), Some(&pane));
-            monitor_visit(owner, |item| {
+            monitor_visit(monitor, |item| {
                 if item.type_0 == MONITOR_ALL_PANES && link.is_alive() {
                     monitor_check_all_panes_one(
-                        owner,
+                        monitor,
                         &item,
                         &mut *formats,
                         link.clone(),
@@ -591,30 +567,32 @@ unsafe fn monitor_check_all_panes(owner: &MonitorRef) {
         }
         link = winlinks_next(link.get_unchecked());
     }
-    monitor_visit(owner, |item| {
+    monitor_visit(monitor, |item| {
         if item.type_0 == MONITOR_ALL_PANES {
-            let generation = owner.with_state(|state| state.generation);
-            owner.with_item(&item.identity, |item| {
+            let generation = monitor_borrow(monitor)
+                .expect("live monitor traversal")
+                .generation;
+            monitor_with_item(monitor, &item.identity, |item| {
                 monitor_sweep_all_panes(item, generation)
             });
         }
     });
 }
-unsafe fn monitor_check_all_windows(owner: &MonitorRef) {
-    let Some((client, session)) = monitor_context(owner) else {
+unsafe fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
+    let Some((client, session)) = monitor_context(monitor) else {
         return;
     };
-    let Some(generation) = owner.next_generation() else {
+    let Some(generation) = monitor_next_generation(monitor) else {
         return;
     };
     let mut link = session.with_winlinks(|links| winlinks_minmax(links, RB_NEGINF));
-    while link.is_alive() && owner.is_alive() {
+    while link.is_alive() && monitor.is_alive() {
         let mut formats =
             monitor_create_formats(client.as_ref(), Some(&session), link.clone(), None);
-        monitor_visit(owner, |item| {
+        monitor_visit(monitor, |item| {
             if item.type_0 == MONITOR_ALL_WINDOWS && link.is_alive() {
                 monitor_check_all_windows_one(
-                    owner,
+                    monitor,
                     &item,
                     &mut *formats,
                     link.clone(),
@@ -628,73 +606,73 @@ unsafe fn monitor_check_all_windows(owner: &MonitorRef) {
         }
         link = winlinks_next(link.get_unchecked());
     }
-    monitor_visit(owner, |item| {
+    monitor_visit(monitor, |item| {
         if item.type_0 == MONITOR_ALL_WINDOWS {
-            let generation = owner.with_state(|state| state.generation);
-            owner.with_item(&item.identity, |item| {
+            let generation = monitor_borrow(monitor)
+                .expect("live monitor traversal")
+                .generation;
+            monitor_with_item(monitor, &item.identity, |item| {
                 monitor_sweep_all_windows(item, generation)
             });
         }
     });
 }
-unsafe fn monitor_timer(owner: &MonitorRef) {
-    let client = monitor_client(owner);
-    if monitor_has_client(owner) && client.is_none() {
+unsafe fn monitor_timer(monitor: &refbox::Weak<monitor_set>) {
+    let client = monitor_client(monitor);
+    if monitor_has_client(monitor) && client.is_none() {
         return;
     }
-    if !owner.is_alive() {
+    if !monitor.is_alive() {
         return;
     }
     log_debug(format_args!("monitor_timer: timer fired"));
-    owner.with_state(|state| {
-        let mut timeout = Duration::from_secs(1);
-        let observer = owner.downgrade();
+    {
+        let Some(mut state) = monitor_borrow(monitor) else {
+            return;
+        };
+        let timeout = Duration::from_secs(1);
+        let observer = monitor.clone();
         state.timer = Some(
             Timer::new(timeout, move || {
-                if let Some(owner) = observer.upgrade() {
-                    unsafe {
-                        monitor_timer(&owner);
-                    }
-                }
+                monitor_timer(&observer);
             })
             .expect("arm timer"),
         );
-    });
-    let Some(_session) = monitor_get_session(owner, client.as_ref()) else {
+    }
+    let Some(_session) = monitor_get_session(monitor, client.as_ref()) else {
         return;
     };
     let mut have_session = false;
     let mut have_all_panes = false;
     let mut have_all_windows = false;
-    monitor_visit(owner, |item| match item.type_0 {
+    monitor_visit(monitor, |item| match item.type_0 {
         MONITOR_SESSION => have_session = true,
         MONITOR_ALL_PANES => have_all_panes = true,
         MONITOR_ALL_WINDOWS => have_all_windows = true,
         _ => {}
     });
     if have_session {
-        monitor_check_sessions(owner);
+        monitor_check_sessions(monitor);
     }
-    if !owner.is_alive() {
+    if !monitor.is_alive() {
         return;
     }
-    monitor_check_panes_windows(owner);
-    if !owner.is_alive() {
+    monitor_check_panes_windows(monitor);
+    if !monitor.is_alive() {
         return;
     }
     if have_all_panes {
-        monitor_check_all_panes(owner);
+        monitor_check_all_panes(monitor);
     }
-    if !owner.is_alive() {
+    if !monitor.is_alive() {
         return;
     }
     if have_all_windows {
-        monitor_check_all_windows(owner);
+        monitor_check_all_windows(monitor);
     }
 }
-fn monitor_create(callback: monitor_cb) -> MonitorRef {
-    MonitorRef(Rc::new(UnsafeCell::new(MonitorState {
-        alive: true,
+fn monitor_create(callback: monitor_cb) -> refbox::RefBox<monitor_set> {
+    refbox::RefBox::new(monitor_set {
         client: Weak::new(),
         session: None,
         callback: Some(callback),
@@ -702,25 +680,26 @@ fn monitor_create(callback: monitor_cb) -> MonitorRef {
         timer: None,
         generation: 0,
         next_item_identity: 1,
-    })))
+    })
 }
 pub unsafe fn monitor_create_client(
     client: Option<&ClientRef>,
     callback: monitor_cb,
-) -> MonitorRef {
+) -> refbox::RefBox<monitor_set> {
     let owner = monitor_create(callback);
-    owner.with_state(|state| state.client = client.map_or_else(Weak::new, Rc::downgrade));
+    owner.try_borrow_mut().expect("new monitor").client =
+        client.map_or_else(Weak::new, Rc::downgrade);
     owner
 }
 pub unsafe fn monitor_create_session(
     session: Option<&SessionRef>,
     callback: monitor_cb,
-) -> MonitorRef {
+) -> refbox::RefBox<monitor_set> {
     let owner = monitor_create(callback);
-    owner.with_state(|state| state.session = session.cloned());
+    owner.try_borrow_mut().expect("new monitor").session = session.cloned();
     owner
 }
-unsafe fn monitor_free_item(state: &mut MonitorState, item: *mut monitor_item) {
+unsafe fn monitor_free_item(state: &mut monitor_set, item: *mut monitor_item) {
     let mut pane = monitor_panes_minmax(&mut (*item).panes);
     while !pane.is_null() {
         let next = monitor_panes_next(&mut (*item).panes, pane);
@@ -735,43 +714,37 @@ unsafe fn monitor_free_item(state: &mut MonitorState, item: *mut monitor_item) {
     }
     drop(monitor_items_remove(&mut state.items, item).expect("indexed monitor record"));
 }
-pub unsafe fn monitor_destroy(owner: MonitorRef) {
-    let retired = owner.with_state(|state| {
-        if !state.alive {
-            return None;
-        }
-        state.alive = false;
+pub unsafe fn monitor_destroy(owner: refbox::RefBox<monitor_set>) {
+    let (session, callback) = {
+        let mut state = owner
+            .try_borrow_mut()
+            .expect("monitor destruction outside a borrow");
         drop(state.timer.take());
         let mut item = monitor_items_minmax(&mut state.items);
         while !item.is_null() {
             let next = monitor_items_next(&mut state.items, item);
-            monitor_free_item(state, item);
+            monitor_free_item(&mut state, item);
             item = next;
         }
-        Some((
-            state.session.take(),
-            state.callback.take(),
-            std::mem::take(&mut state.timer),
-        ))
-    });
-    if let Some((session, callback, timer)) = retired {
-        if let Some(session) = session {
-            session.release(c"monitor_clear");
-        }
-        drop(callback);
-        drop(timer);
+        (state.session.take(), state.callback.take())
+    };
+    // Expire every observer before releasing resources that may reenter.
+    drop(owner);
+    if let Some(session) = session {
+        session.release(c"monitor_clear");
     }
+    drop(callback);
 }
 pub unsafe fn monitor_create_client_owned(
     client: Option<&ClientRef>,
     callback: monitor_cb,
-) -> MonitorRef {
+) -> refbox::RefBox<monitor_set> {
     monitor_create_client(client, callback)
 }
 pub unsafe fn monitor_create_session_owned(
     session: Option<&SessionRef>,
     callback: monitor_cb,
-) -> MonitorRef {
+) -> refbox::RefBox<monitor_set> {
     monitor_create_session(session, callback)
 }
 
@@ -839,7 +812,7 @@ pub fn monitor_parse_owned(value: &CStr) -> Option<ParsedMonitor> {
 }
 
 pub unsafe fn monitor_add(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     name: *const ::core::ffi::c_char,
     type_0: monitor_type,
     id: i32,
@@ -848,11 +821,11 @@ pub unsafe fn monitor_add(
 ) {
     let name = CStr::from_ptr(name).to_owned();
     let format = CStr::from_ptr(format).to_owned();
-    let observer = owner.downgrade();
-    owner.with_state(|state| {
-        if !state.alive {
+    let observer = monitor.clone();
+    {
+        let Some(mut state) = monitor_borrow(monitor) else {
             return;
-        }
+        };
         let old = monitor_items_find(
             &mut state.items,
             &monitor_item {
@@ -861,7 +834,7 @@ pub unsafe fn monitor_add(
             },
         );
         if !old.is_null() {
-            monitor_free_item(state, old);
+            monitor_free_item(&mut state, old);
         }
         let identity = state.next_item_identity;
         state.next_item_identity = identity
@@ -881,23 +854,22 @@ pub unsafe fn monitor_add(
             let timeout = Duration::from_secs(1);
             state.timer = Some(
                 Timer::new(timeout, move || {
-                    if let Some(owner) = observer.upgrade() {
-                        unsafe {
-                            monitor_timer(&owner);
-                        }
-                    }
+                    monitor_timer(&observer);
                 })
                 .expect("arm timer"),
             );
         }
-    });
+    }
 }
-pub unsafe fn monitor_remove(owner: &MonitorRef, name: *const ::core::ffi::c_char) {
+pub unsafe fn monitor_remove(
+    monitor: &refbox::Weak<monitor_set>,
+    name: *const ::core::ffi::c_char,
+) {
     let name = CStr::from_ptr(name).to_owned();
-    owner.with_state(|state| {
-        if !state.alive {
+    {
+        let Some(mut state) = monitor_borrow(monitor) else {
             return;
-        }
+        };
         let item = monitor_items_find(
             &mut state.items,
             &monitor_item {
@@ -906,38 +878,30 @@ pub unsafe fn monitor_remove(owner: &MonitorRef, name: *const ::core::ffi::c_cha
             },
         );
         if !item.is_null() {
-            monitor_free_item(state, item);
+            monitor_free_item(&mut state, item);
         }
         if state.items.is_empty() {
             drop(state.timer.take());
         }
-    });
+    }
 }
 pub unsafe fn monitor_get_fire_count(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     name: *const ::core::ffi::c_char,
 ) -> u_int {
     let name = CStr::from_ptr(name);
-    owner.with_state(|state| {
-        if !state.alive {
-            return 0;
-        }
-        let map = &state.items;
-        map.get(name.to_bytes()).map_or(0, |item| item.fire_count)
-    })
+    monitor_borrow(monitor)
+        .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_count))
+        .unwrap_or(0)
 }
 pub unsafe fn monitor_get_fire_time(
-    owner: &MonitorRef,
+    monitor: &refbox::Weak<monitor_set>,
     name: *const ::core::ffi::c_char,
 ) -> time_t {
     let name = CStr::from_ptr(name);
-    owner.with_state(|state| {
-        if !state.alive {
-            return 0;
-        }
-        let map = &state.items;
-        map.get(name.to_bytes()).map_or(0, |item| item.fire_time)
-    })
+    monitor_borrow(monitor)
+        .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_time))
+        .unwrap_or(0)
 }
 
 // Parent indexes own stable Box records; no independent index allocation.
@@ -1112,42 +1076,109 @@ unsafe fn monitor_windows_next(
 }
 
 #[cfg(test)]
-mod last_owner_tests {
+mod ownership_tests {
     use super::*;
     use crate::src::shared::client::{client, CLIENT_DEAD};
+
+    #[test]
+    fn destroy_expires_observers_before_releasing_callback_captures() {
+        use std::cell::{Cell, RefCell};
+
+        struct Capture {
+            observer: Rc<RefCell<refbox::Weak<monitor_set>>>,
+            drops: Rc<Cell<usize>>,
+        }
+        impl Drop for Capture {
+            fn drop(&mut self) {
+                let observer = self.observer.borrow();
+                assert!(matches!(
+                    observer.try_borrow_mut(),
+                    Err(refbox::BorrowError::Dropped)
+                ));
+                self.drops.set(self.drops.get() + 1);
+            }
+        }
+
+        unsafe {
+            let observer = Rc::new(RefCell::new(refbox::Weak::new()));
+            let drops = Rc::new(Cell::new(0));
+            let capture = Capture {
+                observer: observer.clone(),
+                drops: drops.clone(),
+            };
+            let owner = monitor_create(Rc::new(move |_| {
+                let _ = &capture;
+            }));
+            *observer.borrow_mut() = owner.downgrade();
+            monitor_add(
+                &owner.downgrade(),
+                c"watched".as_ptr(),
+                MONITOR_SESSION,
+                -1,
+                c"".as_ptr(),
+                0,
+            );
+            monitor_destroy(owner);
+            assert_eq!(drops.get(), 1);
+            // An outstanding observer and the cancelled timer do not keep captures alive.
+            crate::src::reactor::poll_runtime();
+            assert_eq!(drops.get(), 1);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 
     #[test]
     fn traversal_preserves_prefetched_successor_order_and_rejects_replacements() {
         unsafe {
             let owner = monitor_create(Rc::new(|_| {}));
             for name in [c"a", c"c", c"e"] {
-                monitor_add(&owner, name.as_ptr(), MONITOR_SESSION, -1, c"".as_ptr(), 0);
+                monitor_add(
+                    &owner.downgrade(),
+                    name.as_ptr(),
+                    MONITOR_SESSION,
+                    -1,
+                    c"".as_ptr(),
+                    0,
+                );
             }
             let mut visited = Vec::new();
-            monitor_visit(&owner, |item| {
+            monitor_visit(&owner.downgrade(), |item| {
                 visited.push(item.identity.name.to_bytes().to_vec());
                 if item.identity.name.as_c_str() == c"a" {
                     // b precedes the already-prefetched c; d is discovered later.
                     for name in [c"b", c"d"] {
-                        monitor_add(&owner, name.as_ptr(), MONITOR_SESSION, -1, c"".as_ptr(), 0);
+                        monitor_add(
+                            &owner.downgrade(),
+                            name.as_ptr(),
+                            MONITOR_SESSION,
+                            -1,
+                            c"".as_ptr(),
+                            0,
+                        );
                     }
                     // The prefetched c identity must not dispatch its replacement.
                     monitor_add(
-                        &owner,
+                        &owner.downgrade(),
                         c"c".as_ptr(),
                         MONITOR_SESSION,
                         -1,
                         c"new".as_ptr(),
                         0,
                     );
-                    monitor_remove(&owner, c"a".as_ptr());
+                    monitor_remove(&owner.downgrade(), c"a".as_ptr());
                 }
                 if item.identity.name.as_c_str() == c"d" {
-                    monitor_remove(&owner, c"e".as_ptr());
+                    monitor_remove(&owner.downgrade(), c"e".as_ptr());
                 }
             });
             assert_eq!(visited, [b"a".to_vec(), b"d".to_vec()]);
-            assert_eq!(owner.first_item().unwrap().name.as_c_str(), c"b");
+            assert_eq!(
+                monitor_first_item(&owner.downgrade())
+                    .unwrap()
+                    .name
+                    .as_c_str(),
+                c"b"
+            );
             monitor_destroy(owner);
         }
     }
@@ -1156,17 +1187,20 @@ mod last_owner_tests {
     fn callback_destroy_cancels_timer_and_stops_the_remaining_traversal() {
         use std::cell::{Cell, RefCell};
         unsafe {
-            let logical_owner = Rc::new(RefCell::new(None::<MonitorRef>));
-            let callback_owner = logical_owner.clone();
+            let owner_slot = Rc::new(RefCell::new(None::<refbox::RefBox<monitor_set>>));
+            let callback_owner = owner_slot.clone();
             let calls = Rc::new(Cell::new(0));
             let callback_calls = calls.clone();
             let owner = monitor_create(Rc::new(move |change| {
                 let owner = callback_owner.borrow_mut().take().unwrap();
                 // Count, time and last are committed before user callbacks.
-                assert_eq!(monitor_get_fire_count(&owner, change.name.as_ptr()), 1);
+                assert_eq!(
+                    monitor_get_fire_count(&owner.downgrade(), change.name.as_ptr()),
+                    1
+                );
                 let observer = owner.downgrade();
                 monitor_destroy(owner);
-                assert!(observer.upgrade().is_none());
+                assert!(!observer.is_alive());
                 assert_eq!(change.name, c"a");
                 assert_eq!(change.value, c"new");
                 assert_eq!(change.last, None);
@@ -1174,7 +1208,7 @@ mod last_owner_tests {
             }));
             for name in [c"a", c"b"] {
                 monitor_add(
-                    &owner,
+                    &owner.downgrade(),
                     name.as_ptr(),
                     MONITOR_SESSION,
                     -1,
@@ -1183,8 +1217,8 @@ mod last_owner_tests {
                 );
             }
             let observer = owner.downgrade();
-            let active_dispatch = owner.clone();
-            *logical_owner.borrow_mut() = Some(owner);
+            let active_dispatch = owner.downgrade();
+            *owner_slot.borrow_mut() = Some(owner);
             let mut visited = 0;
             monitor_visit(&active_dispatch, |item| {
                 visited += 1;
@@ -1201,15 +1235,17 @@ mod last_owner_tests {
             });
             assert_eq!(visited, 1);
             assert_eq!(calls.get(), 1);
-            assert!(observer.upgrade().is_none());
-            active_dispatch.with_state(|state| {
-                assert!(state.items.is_empty());
-                assert!(state.callback.is_none());
-                assert!(state.timer.is_none());
-            });
+            assert!(!observer.is_alive());
+            assert!(matches!(
+                active_dispatch.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
             // A captured weak timer cannot prolong ownership or revive a dead set.
             drop(active_dispatch);
-            assert!(observer.0.upgrade().is_none());
+            assert!(matches!(
+                observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
             crate::src::reactor::poll_runtime();
             assert_eq!(calls.get(), 1);
             crate::src::reactor::shutdown_runtime();
@@ -1228,8 +1264,8 @@ mod last_owner_tests {
             (&session).fixture_metadata(Some(c"monitor-timer-destroy".to_owned()), None, None);
             let session_observer = Rc::downgrade(&session);
             (&mut sessions).insert(session);
-            let logical_owner = Rc::new(RefCell::new(None::<MonitorRef>));
-            let callback_owner = logical_owner.clone();
+            let owner_slot = Rc::new(RefCell::new(None::<refbox::RefBox<monitor_set>>));
+            let callback_owner = owner_slot.clone();
             let calls = Rc::new(Cell::new(0));
             let callback_calls = calls.clone();
             let owner = monitor_create_session(
@@ -1252,7 +1288,7 @@ mod last_owner_tests {
                 (c"f-all-windows", MONITOR_ALL_WINDOWS),
             ] {
                 monitor_add(
-                    &owner,
+                    &owner.downgrade(),
                     name.as_ptr(),
                     kind,
                     -1,
@@ -1261,24 +1297,25 @@ mod last_owner_tests {
                 );
             }
             let observer = owner.downgrade();
-            let dispatch = owner.clone();
-            *logical_owner.borrow_mut() = Some(owner);
+            let dispatch = owner.downgrade();
+            *owner_slot.borrow_mut() = Some(owner);
             monitor_timer(&dispatch);
             assert_eq!(calls.get(), 1);
-            assert!(observer.upgrade().is_none());
-            dispatch.with_state(|state| {
-                assert_eq!(state.generation, 0);
-                assert!(state.timer.is_none());
-                assert!(state.items.is_empty());
-                assert!(state.session.is_none());
-            });
+            assert!(!observer.is_alive());
+            assert!(matches!(
+                dispatch.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
             // Only the Session registry and its original deferred monitor release
             // remain; temporary dispatch views did not enqueue extra releases.
             assert_eq!(session_observer.strong_count(), 2);
             (&mut sessions).remove(&session_observer.upgrade().unwrap());
             assert_eq!(session_observer.strong_count(), 1);
             drop(dispatch);
-            assert!(observer.0.upgrade().is_none());
+            assert!(matches!(
+                observer.try_borrow_mut(),
+                Err(refbox::BorrowError::Dropped)
+            ));
             crate::src::reactor::poll_runtime();
             assert_eq!(calls.get(), 1);
             assert!(session_observer.upgrade().is_none());
@@ -1297,16 +1334,16 @@ mod last_owner_tests {
                 callback_calls.set(callback_calls.get() + 1)
             }));
             monitor_add(
-                &owner,
+                &owner.downgrade(),
                 c"name".as_ptr(),
                 MONITOR_SESSION,
                 -1,
                 c"old".as_ptr(),
                 MONITOR_NOTIFY_INITIAL,
             );
-            let old = owner.first_item().unwrap();
+            let old = monitor_first_item(&owner.downgrade()).unwrap();
             monitor_add(
-                &owner,
+                &owner.downgrade(),
                 c"name".as_ptr(),
                 MONITOR_SESSION,
                 -1,
@@ -1314,7 +1351,7 @@ mod last_owner_tests {
                 MONITOR_NOTIFY_INITIAL,
             );
             monitor_check_value(
-                &owner,
+                &owner.downgrade(),
                 &old,
                 None,
                 refbox::Weak::new(),
@@ -1324,10 +1361,10 @@ mod last_owner_tests {
                 None,
             );
             assert_eq!(calls.get(), 0);
-            let replacement = owner.first_item().unwrap();
+            let replacement = monitor_first_item(&owner.downgrade()).unwrap();
             assert_ne!(old.identity, replacement.identity);
             assert_eq!(
-                owner.with_item(&replacement, |item| item.last.clone()),
+                monitor_with_item(&owner.downgrade(), &replacement, |item| item.last.clone()),
                 Some(None)
             );
             monitor_destroy(owner);
@@ -1346,17 +1383,17 @@ mod last_owner_tests {
                     .push((change.value.to_owned(), change.last.map(CStr::to_owned)))
             }));
             monitor_add(
-                &owner,
+                &owner.downgrade(),
                 c"name".as_ptr(),
                 MONITOR_SESSION,
                 -1,
                 c"".as_ptr(),
                 MONITOR_NOTIFY_INITIAL | MONITOR_NOTIFY_TRUE,
             );
-            let item = owner.first_item().unwrap();
+            let item = monitor_first_item(&owner.downgrade()).unwrap();
             for value in [c"0", c"0", c"yes", c"yes", c"0", c"next"] {
                 monitor_check_value(
-                    &owner,
+                    &owner.downgrade(),
                     &item,
                     None,
                     refbox::Weak::new(),
@@ -1373,9 +1410,12 @@ mod last_owner_tests {
                     (c"next".to_owned(), Some(c"0".to_owned()))
                 ]
             );
-            assert_eq!(monitor_get_fire_count(&owner, c"name".as_ptr()), 2);
             assert_eq!(
-                monitor_get_fire_time(&owner, c"name".as_ptr()),
+                monitor_get_fire_count(&owner.downgrade(), c"name".as_ptr()),
+                2
+            );
+            assert_eq!(
+                monitor_get_fire_time(&owner.downgrade(), c"name".as_ptr()),
                 current_time
             );
             monitor_destroy(owner);
@@ -1390,8 +1430,9 @@ mod last_owner_tests {
             for cancel in [false, true] {
                 let client = ClientRef::allocate();
                 let observer = Rc::downgrade(&client);
-                let mut set_owner = monitor_create_client(Some(&client), Rc::new(|_| {}));
-                let set = &set_owner;
+                let set_owner = monitor_create_client(Some(&client), Rc::new(|_| {}));
+                let set_observer = set_owner.downgrade();
+                let set = &set_observer;
                 assert!(monitor_has_client(set));
 
                 // The client exists, but the missing session ends the scan early.
@@ -1421,8 +1462,9 @@ mod last_owner_tests {
                 monitor_destroy(set_owner);
                 shutdown_runtime();
             }
-            let mut global_owner = monitor_create(Rc::new(|_| {}));
-            let global = &global_owner;
+            let global_owner = monitor_create(Rc::new(|_| {}));
+            let global_observer = global_owner.downgrade();
+            let global = &global_observer;
             assert!(!monitor_has_client(global));
             monitor_destroy(global_owner);
         }
@@ -1441,9 +1483,10 @@ mod last_owner_tests {
             (&owner).fixture_metadata(Some(c"monitor-release-test".to_owned()), None, None);
             let observer = std::rc::Rc::downgrade(&owner);
             (&mut sessions).insert(owner);
-            let mut set_owner =
+            let set_owner =
                 monitor_create_session(observer.upgrade().as_ref(), std::rc::Rc::new(|_| {}));
-            let set = &set_owner;
+            let set_observer = set_owner.downgrade();
+            let set = &set_observer;
             let item = MonitorItemSnapshot {
                 identity: MonitorItemIdentity {
                     name: c"absent".to_owned(),
@@ -1474,7 +1517,7 @@ mod last_owner_tests {
     }
 
     struct Capture {
-        set: MonitorWeak,
+        set: refbox::Weak<monitor_set>,
         name: Vec<u8>,
         value: Vec<u8>,
         last: Vec<u8>,
@@ -1484,24 +1527,25 @@ mod last_owner_tests {
     fn changed_value_survives_reentrant_item_removal() {
         unsafe {
             let capture = std::rc::Rc::new(std::cell::RefCell::new(Capture {
-                set: MonitorWeak::default(),
+                set: refbox::Weak::new(),
                 name: Vec::new(),
                 value: Vec::new(),
                 last: Vec::new(),
             }));
             let callback_capture = capture.clone();
-            let mut set_owner = monitor_create_client(
+            let set_owner = monitor_create_client(
                 None,
                 crate::src::shared::monitor::monitor_callback(move |change| {
                     let mut capture = callback_capture.borrow_mut();
                     capture.value = change.value.to_bytes().to_vec();
                     capture.last = change.last.expect("previous value").to_bytes().to_vec();
-                    monitor_remove(&capture.set.upgrade().unwrap(), change.name.as_ptr());
+                    monitor_remove(&capture.set, change.name.as_ptr());
                     capture.name = change.name.to_bytes().to_vec();
                 }),
             );
-            let set = &set_owner;
-            capture.borrow_mut().set = set.downgrade();
+            let set_observer = set_owner.downgrade();
+            let set = &set_observer;
+            capture.borrow_mut().set = set.clone();
             monitor_add(
                 set,
                 c"reentrant-last".as_ptr(),
@@ -1510,7 +1554,7 @@ mod last_owner_tests {
                 c"value".as_ptr(),
                 0,
             );
-            let item = set.first_item().unwrap();
+            let item = monitor_first_item(set).unwrap();
             let first = CString::from_vec_with_nul(b"\xffold\0".to_vec()).unwrap();
             monitor_check_value(
                 set,
@@ -1523,7 +1567,7 @@ mod last_owner_tests {
                 None,
             );
             assert_eq!(
-                set.with_item(&item, |item| item.last.clone())
+                monitor_with_item(set, &item, |item| item.last.clone())
                     .unwrap()
                     .as_deref()
                     .expect("string is present")
@@ -1556,7 +1600,7 @@ mod last_owner_tests {
             assert_eq!(capture.borrow().value.as_slice(), second.to_bytes());
             assert_eq!(capture.borrow().last.as_slice(), first.to_bytes());
             assert_eq!(capture.borrow().name.as_slice(), b"reentrant-last");
-            assert!(set.first_item().is_none());
+            assert!(monitor_first_item(set).is_none());
             monitor_destroy(set_owner);
         }
     }
