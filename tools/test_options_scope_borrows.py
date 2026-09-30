@@ -227,10 +227,14 @@ mod src {
         use super::super::*;
         pub trait WindowPane {
             unsafe fn with_options_mut<R>(&self, visit: impl FnOnce(&mut options) -> R) -> R;
+            unsafe fn release(self, from: &CStr);
         }
         impl WindowPane for Rc<RefCell<window_pane>> {
             unsafe fn with_options_mut<R>(&self, visit: impl FnOnce(&mut options) -> R) -> R {
                 visit(&mut *self.borrow_mut().table)
+            }
+            unsafe fn release(self, from: &CStr) {
+                window_pane_remove_ref(self, from.as_ptr());
             }
         }
         pub unsafe fn window_pane_remove_ref(
