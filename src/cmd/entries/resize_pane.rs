@@ -4,7 +4,6 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_mouse_pane, cmd_mouse_window};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_window;
 use crate::src::format::bytes::write_cstr;
-use crate::src::grid::grid_remove_history;
 use crate::src::layout::{
     layout_fix_offsets, layout_fix_panes, layout_resize_floating_pane,
     layout_resize_floating_pane_to, layout_resize_layout, layout_resize_pane,
@@ -22,25 +21,20 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, INT_MIN};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
-    PANE_MAXIMUM, PANE_MINIMUM, PANE_REDRAW, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_RIGHT,
-    PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
-};
+use crate::src::shared::pane::{PANE_MAXIMUM, PANE_MINIMUM, PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::Window as _;
 use crate::src::window::{
-    window_pane_is_floating, window_pane_scrollbar_reserve, window_redraw_active_switch,
-    window_set_active_pane, window_unzoom, window_zoom,
+    window_redraw_active_switch, window_set_active_pane, window_unzoom, window_zoom,
 };
 use crate::src::window_pane::WindowPane as _;
 pub static cmd_resize_pane_entry: cmd_entry = {
@@ -77,7 +71,6 @@ unsafe fn cmd_resize_pane_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let pane_owner = (*target).wp.upgrade().expect("live resize target pane");
-    let wp = pane_owner.get();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let original_window = wl
         .get_unchecked()
@@ -102,23 +95,8 @@ unsafe fn cmd_resize_pane_exec(
         let mut status: ::core::ffi::c_int = 0;
         let mut opposite: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut i: ::core::ffi::c_ulong = 0;
-        let mut gd: *mut grid = (*wp).base.grid_mut();
-        if args_has(args, 'T' as i32 as u_char) != 0 {
-            if !(*wp).modes.is_empty() {
-                return CMD_RETURN_NORMAL;
-            }
-            adjust = (*wp)
-                .base
-                .grid()
-                .sy
-                .wrapping_sub(1 as u_int)
-                .wrapping_sub((*wp).base.cy) as ::core::ffi::c_int;
-            if adjust > (*gd).hsize as ::core::ffi::c_int {
-                adjust = (*gd).hsize as ::core::ffi::c_int;
-            }
-            grid_remove_history(&mut *gd, adjust as u_int);
-            (*wp).base.cy = (*wp).base.cy.wrapping_add(adjust as u_int);
-            (*wp).flags |= PANE_REDRAW;
+        if args_has(args, 'T' as u_char) != 0 {
+            pane_owner.trim_history();
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'M' as i32 as u_char) != 0 {
@@ -142,7 +120,9 @@ unsafe fn cmd_resize_pane_exec(
             return CMD_RETURN_NORMAL;
         }
         server_unzoom_window(wl.get_unchecked().window_handle().expect("resize window"));
-        let cell_id = (*wp).layout_cell.expect("resized pane layout");
+        let cell_id = pane_owner
+            .layout_identity(false)
+            .expect("resized pane layout");
         layout_owner = Some(
             pane_owner
                 .window_observer()
@@ -170,12 +150,10 @@ unsafe fn cmd_resize_pane_exec(
                     return CMD_RETURN_ERROR;
                 }
             };
-            if window_pane_is_floating(&*wp) != 0 {
-                if let Err(cause) = layout_resize_floating_pane_to(
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
-                    LAYOUT_LEFTRIGHT,
-                    x as u_int,
-                ) {
+            if pane_owner.is_floating() {
+                if let Err(cause) =
+                    layout_resize_floating_pane_to(&pane_owner, LAYOUT_LEFTRIGHT, x as u_int)
+                {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"size ")?;
                         write_cstr(out, cause.as_ptr())
@@ -183,11 +161,7 @@ unsafe fn cmd_resize_pane_exec(
                     return CMD_RETURN_ERROR;
                 }
             } else {
-                layout_resize_pane_to(
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
-                    LAYOUT_LEFTRIGHT,
-                    x as u_int,
-                );
+                layout_resize_pane_to(&pane_owner, LAYOUT_LEFTRIGHT, x as u_int);
             }
         }
         if args_has(args, 'y' as i32 as u_char) != 0 {
@@ -214,13 +188,13 @@ unsafe fn cmd_resize_pane_exec(
             status = original_window.pane_border_status();
             match status {
                 PANE_STATUS_TOP => {
-                    if y != INT_MAX && (*wp).yoff == 1 as ::core::ffi::c_int {
+                    if y != INT_MAX && pane_owner.geometry().3 == 1 as ::core::ffi::c_int {
                         y += 1;
                     }
                 }
                 PANE_STATUS_BOTTOM => {
                     if y != INT_MAX
-                        && ((*wp).yoff as u_int).wrapping_add((*wp).sy)
+                        && (pane_owner.geometry().3 as u_int).wrapping_add(pane_owner.geometry().1)
                             == wl
                                 .get_unchecked()
                                 .window_handle()
@@ -234,12 +208,10 @@ unsafe fn cmd_resize_pane_exec(
                 }
                 _ => {}
             }
-            if window_pane_is_floating(&*wp) != 0 {
-                if let Err(cause) = layout_resize_floating_pane_to(
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
-                    LAYOUT_TOPBOTTOM,
-                    y as u_int,
-                ) {
+            if pane_owner.is_floating() {
+                if let Err(cause) =
+                    layout_resize_floating_pane_to(&pane_owner, LAYOUT_TOPBOTTOM, y as u_int)
+                {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"size ")?;
                         write_cstr(out, cause.as_ptr())
@@ -247,11 +219,7 @@ unsafe fn cmd_resize_pane_exec(
                     return CMD_RETURN_ERROR;
                 }
             } else {
-                layout_resize_pane_to(
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
-                    LAYOUT_TOPBOTTOM,
-                    y as u_int,
-                );
+                layout_resize_pane_to(&pane_owner, LAYOUT_TOPBOTTOM, y as u_int);
             }
         }
         i = 0 as ::core::ffi::c_ulong;
@@ -290,18 +258,15 @@ unsafe fn cmd_resize_pane_exec(
                 {
                     type_0 = LAYOUT_LEFTRIGHT;
                 }
-                if window_pane_is_floating(&*wp) != 0 {
+                if pane_owner.is_floating() {
                     if flag as ::core::ffi::c_int == 'L' as i32
                         || flag as ::core::ffi::c_int == 'U' as i32
                     {
                         opposite = 1 as ::core::ffi::c_int;
                     }
-                    if let Err(cause) = layout_resize_floating_pane(
-                        &(*(wp)).observer.upgrade().expect("live window_pane"),
-                        type_0,
-                        adjust,
-                        opposite,
-                    ) {
+                    if let Err(cause) =
+                        layout_resize_floating_pane(&pane_owner, type_0, adjust, opposite)
+                    {
                         cmdq_error(item_handle, |out| {
                             out.write_all(b"adjustment ")?;
                             write_cstr(out, cause.as_ptr())
@@ -315,11 +280,7 @@ unsafe fn cmd_resize_pane_exec(
                         // Preserve tmux's signed adjustment at the i32 boundary.
                         adjust = adjust.wrapping_neg();
                     }
-                    layout_resize_pane(
-                        &(*(wp)).observer.upgrade().expect("live window_pane"),
-                        type_0,
-                        adjust,
-                    );
+                    layout_resize_pane(&pane_owner, type_0, adjust);
                 }
             }
             i = i.wrapping_add(1);
@@ -361,10 +322,7 @@ unsafe fn cmd_resize_pane_mouse_update(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut event_snapshot = cmdq_get_event(&*(item));
     let event: *mut key_event = &mut event_snapshot;
-    let mut wp: *mut window_pane = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
 
     let c_owner = cmdq_get_client((item).as_ref());
@@ -380,10 +338,8 @@ unsafe fn cmd_resize_pane_mouse_update(
         ::core::ptr::null_mut::<refbox::Weak<winlink>>(),
     );
     s = mouse_session_owner.clone();
-    wp = mouse_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null()
+
+    if mouse_pane_owner.is_none()
         || c.is_none()
         || !crate::src::shared::rc::same(
             c.as_ref()
@@ -396,7 +352,8 @@ unsafe fn cmd_resize_pane_mouse_update(
     {
         return CMD_RETURN_NORMAL;
     }
-    if window_pane_is_floating(&*wp) == 0 {
+    let pane_owner = mouse_pane_owner.as_ref().expect("mouse pane");
+    if !pane_owner.is_floating() {
         c.as_ref()
             .expect("live client")
             .borrow_terminal_mut()
@@ -412,13 +369,11 @@ unsafe fn cmd_resize_pane_mouse_update(
     }
     window_redraw_active_switch(
         &std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))),
-        (wp).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        Some(pane_owner),
     );
     window_set_active_pane(
         &std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))),
-        &(*(wp)).observer.upgrade().expect("live window_pane"),
+        &pane_owner,
         1 as ::core::ffi::c_int,
     );
     c.as_ref()
@@ -441,7 +396,6 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
     let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mouse_pane_owner;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut y: ::core::ffi::c_int = 0;
     let mut ly: ::core::ffi::c_int = 0;
     let mut x: ::core::ffi::c_int = 0;
@@ -456,40 +410,33 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
     let mut new_yoff: ::core::ffi::c_int = 0;
     let mut resizes: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     mouse_pane_owner = cmd_mouse_pane(m, None, &raw mut wl);
-    wp = mouse_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() {
+
+    let Some(pane_owner) = mouse_pane_owner.as_ref() else {
         c.as_ref()
             .expect("live client")
             .borrow_terminal_mut()
             .mouse_drag_update = None;
         return;
-    }
+    };
     let window_owner = wl
         .get_unchecked()
         .window_handle()
         .cloned()
         .expect("mouse window");
     (|| {
-        let cell_id = (*wp).layout_cell.expect("dragged pane layout");
+        let cell_id = pane_owner
+            .layout_identity(false)
+            .expect("dragged pane layout");
         let mut geometry = window_owner
             .borrow_layout_cell(cell_id)
             .expect("dragged pane belongs to layout")
             .g;
-        sx = (*wp).sx as ::core::ffi::c_int;
-        sy = (*wp).sy as ::core::ffi::c_int;
-        left = (*wp).xoff - 1 as ::core::ffi::c_int;
-        right = (*wp).xoff + sx;
-        if window_pane_scrollbar_reserve(&*wp) != 0
-            && window_owner.scrollbars().position == PANE_SCROLLBARS_LEFT
-        {
-            left -= (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
-        } else if window_pane_scrollbar_reserve(&*wp) != 0
-            && window_owner.scrollbars().position == PANE_SCROLLBARS_RIGHT
-        {
-            right += (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
-        }
+        let (pane_sx, pane_sy, _, pane_y) = pane_owner.geometry();
+        sx = pane_sx as i32;
+        sy = pane_sy as i32;
+        let (outer_x, _, outer_sx, _) = pane_owner.outer_geometry();
+        left = outer_x - 1;
+        right = outer_x + outer_sx as i32;
         y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
         x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
         if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines as ::core::ffi::c_int {
@@ -508,7 +455,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
             ly = (*m).statusat - 1 as ::core::ffi::c_int;
         }
         if (lx == left || lx == left + 1 as ::core::ffi::c_int)
-            && ly == (*wp).yoff - 1 as ::core::ffi::c_int
+            && ly == pane_y - 1 as ::core::ffi::c_int
         {
             new_sx = geometry.sx.wrapping_add((lx - x) as u_int) as ::core::ffi::c_int;
             if new_sx < PANE_MINIMUM {
@@ -528,7 +475,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
             };
             resizes += 1;
         } else if (lx == right + 1 as ::core::ffi::c_int || lx == right)
-            && ly == (*wp).yoff - 1 as ::core::ffi::c_int
+            && ly == pane_y - 1 as ::core::ffi::c_int
         {
             new_sx = x - geometry.xoff;
             if new_sx < PANE_MINIMUM {
@@ -546,7 +493,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
                 yoff: new_yoff,
             };
             resizes += 1;
-        } else if (lx == left || lx == left + 1 as ::core::ffi::c_int) && ly == (*wp).yoff + sy {
+        } else if (lx == left || lx == left + 1 as ::core::ffi::c_int) && ly == pane_y + sy {
             new_sx = geometry.sx.wrapping_add((lx - x) as u_int) as ::core::ffi::c_int;
             if new_sx < PANE_MINIMUM {
                 new_sx = PANE_MINIMUM;
@@ -563,7 +510,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
                 yoff: geometry.yoff,
             };
             resizes += 1;
-        } else if (lx == right + 1 as ::core::ffi::c_int || lx == right) && ly == (*wp).yoff + sy {
+        } else if (lx == right + 1 as ::core::ffi::c_int || lx == right) && ly == pane_y + sy {
             new_sx = x - geometry.xoff;
             if new_sx < PANE_MINIMUM {
                 new_sx = PANE_MINIMUM;
@@ -604,7 +551,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
                 yoff: geometry.yoff,
             };
             resizes += 1;
-        } else if ly == (*wp).yoff + sy {
+        } else if ly == pane_y + sy {
             new_sy = y - geometry.yoff;
             if new_sy < PANE_MINIMUM {
                 return;
@@ -616,7 +563,7 @@ unsafe fn cmd_resize_pane_mouse_resize_move_floating(
                 yoff: geometry.yoff,
             };
             resizes += 1;
-        } else if ly == (*wp).yoff - 1 as ::core::ffi::c_int {
+        } else if ly == pane_y - 1 as ::core::ffi::c_int {
             new_xoff = geometry.xoff + (x - lx);
             new_yoff = y + 1 as ::core::ffi::c_int;
             geometry = layout_geometry {

@@ -13,7 +13,6 @@ use crate::src::layout::{
     layout_floating_args_parse, layout_init,
 };
 use crate::src::names::default_window_name_cstring;
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
 use crate::src::server_client::server_client_remove_pane;
 use crate::src::server_client::Client as _;
@@ -34,19 +33,17 @@ use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_CHANGED, PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
-use crate::src::style::colour::colour_palette_from_option;
 use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::Window as _;
 use crate::src::window::{
-    window_add_ref, window_create, window_fire_pane_moved, window_lost_pane,
-    window_pane_is_floating, window_remove_ref, window_set_active_pane, window_set_name,
-    winlink_find_by_index, winlink_find_by_window, winlink_shuffle_up,
+    window_add_ref, window_create, window_fire_pane_moved, window_lost_pane, window_remove_ref,
+    window_set_active_pane, window_set_name, winlink_find_by_index, winlink_find_by_window,
+    winlink_shuffle_up,
 };
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::window_pane::WindowPane as _;
@@ -152,10 +149,7 @@ unsafe fn cmd_break_pane_exec(
     let mut wl: refbox::Weak<winlink> = (*source).winlink_handle();
     let mut src_s: Option<SessionRef> = (*source).session_handle();
     let mut dst_s: Option<SessionRef> = (*target).session_handle();
-    let mut wp: *mut window_pane = (*source)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let pane_owner = (*source).pane_handle().expect("live break pane");
     let source_window = wl
         .get_unchecked()
         .window_handle()
@@ -171,18 +165,13 @@ unsafe fn cmd_break_pane_exec(
             .map_or(std::ptr::null(), |value| value.as_ptr());
         if source_window
             .modal_pane()
-            .is_some_and(|pane| std::rc::Rc::downgrade(&pane).ptr_eq(&(*wp).observer))
+            .is_some_and(|pane| std::rc::Rc::ptr_eq(&pane, &pane_owner))
         {
             cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;
         }
         if args_has(args, 'W' as i32 as u_char) != 0 {
-            return cmd_break_pane_float(
-                item_handle,
-                args,
-                &source_window,
-                &(*(wp)).observer.upgrade().expect("live window_pane"),
-            );
+            return cmd_break_pane_float(item_handle, args, &source_window, &pane_owner);
         }
         if !name.is_null() && !check_name(CStr::from_ptr(name)) {
             cmdq_error(item_handle, |out| {
@@ -238,7 +227,7 @@ unsafe fn cmd_break_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             window_fire_pane_moved(
-                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                &pane_owner,
                 &source_window,
                 old_idx,
                 &source_window,
@@ -257,12 +246,9 @@ unsafe fn cmd_break_pane_exec(
                 });
                 return CMD_RETURN_ERROR;
             }
-            server_client_remove_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
+            server_client_remove_pane(&pane_owner);
             // Select a replacement while the departing pane still has neighbors.
-            window_lost_pane(
-                &source_window,
-                &(*wp).observer.upgrade().expect("live pane"),
-            );
+            window_lost_pane(&source_window, &pane_owner);
             for order in [
                 crate::src::window::PaneOrder::Index,
                 crate::src::window::PaneOrder::Stacking,
@@ -270,21 +256,17 @@ unsafe fn cmd_break_pane_exec(
                 assert!(
                     source_window
                         .borrow_pane_order_mut(order)
-                        .remove(&(*wp).observer),
+                        .remove(&std::rc::Rc::downgrade(&pane_owner)),
                     "pane is not in its window order"
                 );
             }
-            layout_close_pane(&(*wp).observer.upgrade().expect("live pane"));
+            layout_close_pane(&pane_owner);
             let (sx, sy) = source_window.size();
             let (xpixel, ypixel) = source_window.cell_size();
             let window = window_create(sx, sy, xpixel, ypixel);
             let destination = std::rc::Rc::downgrade(&window);
-            (*wp)
-                .observer
-                .upgrade()
-                .expect("live pane")
-                .reparent(&window);
-            window.initialize_pane(&(*wp).observer.upgrade().expect("live pane"), tc.as_ref());
+            pane_owner.reparent(&window);
+            window.initialize_pane(&pane_owner, tc.as_ref());
             if name.is_null() {
                 window.initialize_name(default_window_name_cstring(&window), false);
             } else {
@@ -320,23 +302,16 @@ unsafe fn cmd_break_pane_exec(
                     return CMD_RETURN_ERROR;
                 }
             };
-            layout_init(
-                &window,
-                &(*(wp)).observer.upgrade().expect("live window_pane"),
-            );
-            (*wp).flags |= PANE_CHANGED;
-            colour_palette_from_option(
-                Some(&mut (*wp).palette),
-                options_owner_ptr(&mut (*wp).options)
-                    .map_or(std::ptr::null_mut(), |options| options),
-            );
+            layout_init(&window, &pane_owner);
+            pane_owner.mark_changed();
+            pane_owner.refresh_palette();
             crate::src::window::window_remove_ref(window, c"cmd_break_pane_exec".as_ptr());
             events_fire_window(
                 b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
                 destination.upgrade().expect("live destination window"),
             );
             window_fire_pane_moved(
-                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                &pane_owner,
                 &source_window,
                 old_idx,
                 &destination.upgrade().expect("live destination window"),
@@ -374,9 +349,7 @@ unsafe fn cmd_break_pane_exec(
                 tc.as_ref(),
                 dst_s.as_ref(),
                 wl.clone(),
-                (wp).as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
+                Some(&pane_owner),
             );
             cmdq_print(item_handle, |out| write_cstr(out, cp.as_ptr()));
         }

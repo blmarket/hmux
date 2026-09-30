@@ -13,7 +13,6 @@ use crate::src::layout::{
     layout_assign_pane, layout_close_pane, layout_fix_offsets, layout_fix_panes,
     layout_get_tiled_cell, layout_tile_pane,
 };
-use crate::src::options::options_owner_ptr;
 use crate::src::options::options_set_parent;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_client::server_client_remove_pane;
@@ -36,19 +35,15 @@ use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, INT_MIN, UINT_MAX};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
-use crate::src::style::colour::colour_palette_from_option;
 use crate::src::window::Window as _;
 use crate::src::window::{
-    window_fire_pane_moved, window_lost_pane, window_pane_get_pane_lines, window_pane_is_floating,
-    window_pane_z_next, window_pane_z_previous, window_redraw_active_switch,
-    window_set_active_pane,
+    window_fire_pane_moved, window_lost_pane, window_redraw_active_switch, window_set_active_pane,
 };
 use crate::src::window_pane::WindowPane as _;
 pub static cmd_join_pane_entry: cmd_entry = {
@@ -107,19 +102,18 @@ unsafe fn cmd_join_pane_place(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut position: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut wp = wp_owner.get();
     let window_owner = wl
         .get_unchecked()
         .window_handle()
         .cloned()
         .expect("pane window");
     let result = (|| {
-        let cell_id = (*wp).layout_cell.expect("placed pane layout");
+        let cell_id = wp_owner.layout_identity(false).expect("placed pane layout");
         let geometry = window_owner
             .borrow_layout_cell(cell_id)
             .expect("placed pane belongs to layout")
             .g;
-        let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+        let mut owp: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> = None;
         let mut wx: ::core::ffi::c_int = ((wl.get_unchecked().window_handle().as_ref())
             .expect("live window"))
         .size()
@@ -133,7 +127,7 @@ unsafe fn cmd_join_pane_place(
         let mut xoff: ::core::ffi::c_int = geometry.xoff;
         let mut yoff: ::core::ffi::c_int = geometry.yoff;
         let mut border: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-        if window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
+        if wp_owner.pane_lines() as ::core::ffi::c_uint
             == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             border = 0 as ::core::ffi::c_int;
@@ -277,12 +271,12 @@ unsafe fn cmd_join_pane_place(
             assert!(
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .remove(&(*wp).observer),
+                    .remove(&std::rc::Rc::downgrade(wp_owner)),
                 "pane is not in its stacking order"
             );
             window_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .push_front((*wp).observer.clone());
+                .push_front(std::rc::Rc::downgrade(wp_owner));
         } else if strcmp(
             position,
             b"back\0" as *const u8 as *const ::core::ffi::c_char,
@@ -291,107 +285,130 @@ unsafe fn cmd_join_pane_place(
             assert!(
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .remove(&(*wp).observer),
+                    .remove(&std::rc::Rc::downgrade(wp_owner)),
                 "pane is not in its stacking order"
             );
-            owp = window_owner
-                .step_pane(crate::src::window::PaneOrder::Stacking, None, false)
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            while !owp.is_null() {
-                if window_pane_is_floating(&*owp) == 0 {
+            owp = window_owner.step_pane(crate::src::window::PaneOrder::Stacking, None, false);
+            while owp.is_some() {
+                if !owp.as_ref().expect("ordered pane").is_floating() {
                     break;
                 }
-                owp = window_pane_z_next(owp.as_ref())
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get());
+                owp = owp.as_ref().and_then(|pane| {
+                    window_owner.step_pane(
+                        crate::src::window::PaneOrder::Stacking,
+                        Some(&std::rc::Rc::downgrade(pane)),
+                        false,
+                    )
+                });
             }
-            if !owp.is_null() {
+            if owp.is_some() {
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .insert_before(&(*owp).observer, (*wp).observer.clone());
+                    .insert_before(
+                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        std::rc::Rc::downgrade(wp_owner),
+                    );
             } else {
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .push_back((*wp).observer.clone());
+                    .push_back(std::rc::Rc::downgrade(wp_owner));
             }
         } else if strcmp(
             position,
             b"forward\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
         {
-            owp = window_pane_z_previous(wp.as_ref())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            if !owp.is_null() {
+            owp = window_owner.step_pane(
+                crate::src::window::PaneOrder::Stacking,
+                Some(&std::rc::Rc::downgrade(wp_owner)),
+                true,
+            );
+            if owp.is_some() {
                 assert!(
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                        .remove(&(*wp).observer),
+                        .remove(&std::rc::Rc::downgrade(wp_owner)),
                     "pane is not in its stacking order"
                 );
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .insert_before(&(*owp).observer, (*wp).observer.clone());
+                    .insert_before(
+                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        std::rc::Rc::downgrade(wp_owner),
+                    );
             }
         } else if strcmp(
             position,
             b"backward\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
         {
-            owp = window_pane_z_next(wp.as_ref())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            if !owp.is_null() && window_pane_is_floating(&*owp) != 0 {
+            owp = window_owner.step_pane(
+                crate::src::window::PaneOrder::Stacking,
+                Some(&std::rc::Rc::downgrade(wp_owner)),
+                false,
+            );
+            if owp.is_some() && owp.as_ref().expect("ordered pane").is_floating() {
                 assert!(
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                        .remove(&(*wp).observer),
+                        .remove(&std::rc::Rc::downgrade(wp_owner)),
                     "pane is not in its stacking order"
                 );
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .insert_after(&(*owp).observer, (*wp).observer.clone());
+                    .insert_after(
+                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        std::rc::Rc::downgrade(wp_owner),
+                    );
             }
         } else if strcmp(
             position,
             b"forward-loop\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
         {
-            owp = window_pane_z_previous(wp.as_ref())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            owp = window_owner.step_pane(
+                crate::src::window::PaneOrder::Stacking,
+                Some(&std::rc::Rc::downgrade(wp_owner)),
+                true,
+            );
             assert!(
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .remove(&(*wp).observer),
+                    .remove(&std::rc::Rc::downgrade(wp_owner)),
                 "pane is not in its stacking order"
             );
-            if !owp.is_null() {
+            if owp.is_some() {
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .insert_before(&(*owp).observer, (*wp).observer.clone());
+                    .insert_before(
+                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        std::rc::Rc::downgrade(wp_owner),
+                    );
             } else {
-                owp = window_owner
-                    .step_pane(crate::src::window::PaneOrder::Stacking, None, false)
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |owner| owner.get());
-                while !owp.is_null() {
-                    if window_pane_is_floating(&*owp) == 0 {
+                owp = window_owner.step_pane(crate::src::window::PaneOrder::Stacking, None, false);
+                while owp.is_some() {
+                    if !owp.as_ref().expect("ordered pane").is_floating() {
                         break;
                     }
-                    owp = window_pane_z_next(owp.as_ref())
-                        .as_ref()
-                        .map_or(std::ptr::null_mut(), |owner| owner.get());
+                    owp = owp.as_ref().and_then(|pane| {
+                        window_owner.step_pane(
+                            crate::src::window::PaneOrder::Stacking,
+                            Some(&std::rc::Rc::downgrade(pane)),
+                            false,
+                        )
+                    });
                 }
-                if !owp.is_null() {
+                if owp.is_some() {
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                        .insert_before(&(*owp).observer, (*wp).observer.clone());
+                        .insert_before(
+                            &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                            std::rc::Rc::downgrade(wp_owner),
+                        );
                 } else {
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                        .push_back((*wp).observer.clone());
+                        .push_back(std::rc::Rc::downgrade(wp_owner));
                 }
             }
         } else if strcmp(
@@ -399,29 +416,34 @@ unsafe fn cmd_join_pane_place(
             b"backward-loop\0" as *const u8 as *const ::core::ffi::c_char,
         ) == 0 as ::core::ffi::c_int
         {
-            owp = window_pane_z_next(wp.as_ref())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
-            if !owp.is_null() && window_pane_is_floating(&*owp) != 0 {
+            owp = window_owner.step_pane(
+                crate::src::window::PaneOrder::Stacking,
+                Some(&std::rc::Rc::downgrade(wp_owner)),
+                false,
+            );
+            if owp.is_some() && owp.as_ref().expect("ordered pane").is_floating() {
                 assert!(
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                        .remove(&(*wp).observer),
+                        .remove(&std::rc::Rc::downgrade(wp_owner)),
                     "pane is not in its stacking order"
                 );
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .insert_after(&(*owp).observer, (*wp).observer.clone());
+                    .insert_after(
+                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        std::rc::Rc::downgrade(wp_owner),
+                    );
             } else {
                 assert!(
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                        .remove(&(*wp).observer),
+                        .remove(&std::rc::Rc::downgrade(wp_owner)),
                     "pane is not in its stacking order"
                 );
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .push_front((*wp).observer.clone());
+                    .push_front(std::rc::Rc::downgrade(wp_owner));
             }
         } else {
             cmdq_error(item_handle, |out| {
@@ -462,14 +484,13 @@ unsafe fn cmd_join_pane_move(
     mut wl: refbox::Weak<winlink>,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> cmd_retval {
-    let mut wp = wp_owner.get();
     let window_owner = wl
         .get_unchecked()
         .window_handle()
         .cloned()
         .expect("moved pane window");
     let result = (|| {
-        let cell_id = (*wp).layout_cell.expect("moved pane layout");
+        let cell_id = wp_owner.layout_identity(false).expect("moved pane layout");
         let geometry = window_owner
             .borrow_layout_cell(cell_id)
             .expect("moved pane belongs to layout")
@@ -487,7 +508,7 @@ unsafe fn cmd_join_pane_move(
         let mut yoff: ::core::ffi::c_int = geometry.yoff;
         let mut adjust: ::core::ffi::c_int = 0;
         let mut i: u_int = 0;
-        let mut lines: pane_lines = window_pane_get_pane_lines(&*wp);
+        let mut lines: pane_lines = wp_owner.pane_lines();
         if args_has(args, 'X' as i32 as u_char) != 0 {
             xoff = match args_percentage_and_expand_result(
                 args,
@@ -646,7 +667,6 @@ unsafe fn cmd_join_pane_mouse_update(
     let mut c: Option<ClientRef> = c_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     if (*event).m.valid == 0 {
         return CMD_RETURN_NORMAL;
     }
@@ -657,10 +677,8 @@ unsafe fn cmd_join_pane_mouse_update(
         &raw mut wl,
     );
     s = mouse_session_owner.clone();
-    wp = mouse_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null()
+
+    if mouse_pane_owner.is_none()
         || c.is_none()
         || !crate::src::shared::rc::same(
             c.as_ref()
@@ -673,7 +691,7 @@ unsafe fn cmd_join_pane_mouse_update(
     {
         return CMD_RETURN_NORMAL;
     }
-    if window_pane_is_floating(&*wp) == 0 {
+    if !mouse_pane_owner.as_ref().expect("mouse pane").is_floating() {
         return CMD_RETURN_NORMAL;
     }
     let window = wl
@@ -681,15 +699,10 @@ unsafe fn cmd_join_pane_mouse_update(
         .window_handle()
         .cloned()
         .expect("live window");
-    window_redraw_active_switch(
-        &window,
-        (wp).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-    );
+    window_redraw_active_switch(&window, mouse_pane_owner.as_ref());
     window_set_active_pane(
         &window,
-        &(*(wp)).observer.upgrade().expect("live window_pane"),
+        mouse_pane_owner.as_ref().expect("mouse pane"),
         1 as ::core::ffi::c_int,
     );
     window.release(c"join pane mouse selection");
@@ -713,16 +726,13 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &ClientRef, mut m: *mut mouse_e
     let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mouse_pane_owner;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut y: ::core::ffi::c_int = 0;
     let mut ly: ::core::ffi::c_int = 0;
     let mut x: ::core::ffi::c_int = 0;
     let mut lx: ::core::ffi::c_int = 0;
     mouse_pane_owner = cmd_mouse_pane(m, None, &raw mut wl);
-    wp = mouse_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() {
+
+    if mouse_pane_owner.is_none() {
         client_owner.borrow_terminal_mut().mouse_drag_update = None;
         return;
     }
@@ -732,7 +742,11 @@ unsafe fn cmd_join_pane_mouse_move(client_owner: &ClientRef, mut m: *mut mouse_e
         .cloned()
         .expect("mouse window");
 
-    let cell_id = (*wp).layout_cell.expect("dragged pane layout");
+    let cell_id = mouse_pane_owner
+        .as_ref()
+        .expect("mouse pane")
+        .layout_identity(false)
+        .expect("dragged pane layout");
     y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
     x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
     if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines as ::core::ffi::c_int {
@@ -768,14 +782,13 @@ unsafe fn cmd_join_pane_zindex(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut s: *const ::core::ffi::c_char,
 ) -> cmd_retval {
-    let mut wp = wp_owner.get();
     let window_owner = wl
         .get_unchecked()
         .window_handle()
         .cloned()
         .expect("pane window");
     let result = (|| {
-        let mut owp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+        let mut owp: Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> = None;
         let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut n: u_int = 0;
         let mut z: u_int = 0;
@@ -795,34 +808,38 @@ unsafe fn cmd_join_pane_zindex(
         assert!(
             window_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .remove(&(*wp).observer),
+                .remove(&std::rc::Rc::downgrade(wp_owner)),
             "pane is not in its stacking order"
         );
         n = 0 as u_int;
-        owp = window_owner
-            .step_pane(crate::src::window::PaneOrder::Stacking, None, false)
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !owp.is_null() {
-            if window_pane_is_floating(&*owp) == 0 {
+        owp = window_owner.step_pane(crate::src::window::PaneOrder::Stacking, None, false);
+        while owp.is_some() {
+            if !owp.as_ref().expect("ordered pane").is_floating() {
                 break;
             }
             if n >= z {
                 break;
             }
             n = n.wrapping_add(1);
-            owp = window_pane_z_next(owp.as_ref())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            owp = owp.as_ref().and_then(|pane| {
+                window_owner.step_pane(
+                    crate::src::window::PaneOrder::Stacking,
+                    Some(&std::rc::Rc::downgrade(pane)),
+                    false,
+                )
+            });
         }
-        if !owp.is_null() {
+        if owp.is_some() {
             window_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .insert_before(&(*owp).observer, (*wp).observer.clone());
+                .insert_before(
+                    &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                    std::rc::Rc::downgrade(wp_owner),
+                );
         } else {
             window_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .push_back((*wp).observer.clone());
+                .push_back(std::rc::Rc::downgrade(wp_owner));
         }
         window_owner.invalidate_scene();
         events_fire_window(
@@ -890,17 +907,12 @@ unsafe fn cmd_join_pane_exec(
     let mut dst_s: Option<SessionRef> = None;
     let mut src_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut dst_wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut src_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut dst_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut dst_idx: ::core::ffi::c_int = 0;
     dst_s = (*target).session_handle();
     dst_wl = (*target).winlink_handle();
-    dst_wp = (*target)
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
+    let dst_pane_owner = (*target).pane_handle().expect("join target pane");
     let dst_window = dst_wl
         .get_unchecked()
         .window_handle()
@@ -922,7 +934,7 @@ unsafe fn cmd_join_pane_exec(
                 || args_has(args, 'L' as i32 as u_char) != 0
                 || args_has(args, 'R' as i32 as u_char) != 0
             {
-                if window_pane_is_floating(&*dst_wp) == 0 {
+                if !dst_pane_owner.is_floating() {
                     cmdq_error(item_handle, |out| out.write_all(b"pane is not floating"));
                     return CMD_RETURN_ERROR;
                 }
@@ -930,58 +942,35 @@ unsafe fn cmd_join_pane_exec(
                 s = args_get(&*(args), 'P' as i32 as u_char)
                     .map_or(std::ptr::null(), |value| value.as_ptr());
                 if !s.is_null() {
-                    return cmd_join_pane_place(
-                        item_handle,
-                        (dst_wl).clone(),
-                        &(*(dst_wp)).observer.upgrade().expect("live pane"),
-                        s,
-                    );
+                    return cmd_join_pane_place(item_handle, (dst_wl).clone(), &dst_pane_owner, s);
                 }
                 s = args_get(&*(args), 'z' as i32 as u_char)
                     .map_or(std::ptr::null(), |value| value.as_ptr());
                 if !s.is_null() {
-                    return cmd_join_pane_zindex(
-                        item_handle,
-                        (dst_wl).clone(),
-                        &(*(dst_wp)).observer.upgrade().expect("live pane"),
-                        s,
-                    );
+                    return cmd_join_pane_zindex(item_handle, (dst_wl).clone(), &dst_pane_owner, s);
                 }
-                return cmd_join_pane_move(
-                    item_handle,
-                    args,
-                    (dst_wl).clone(),
-                    &(*(dst_wp)).observer.upgrade().expect("live window_pane"),
-                );
+                return cmd_join_pane_move(item_handle, args, (dst_wl).clone(), &dst_pane_owner);
             }
         }
         src_wl = (*source).winlink_handle();
-        src_wp = (*source)
-            .pane_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
+        let src_pane_owner = (*source).pane_handle().expect("join source pane");
         src_window = src_wl.get_unchecked().window_handle().cloned();
         let src_owner = src_window.as_ref().expect("live source window");
         if src_owner
             .modal_pane()
-            .is_some_and(|pane| std::rc::Rc::downgrade(&pane).ptr_eq(&(*src_wp).observer))
+            .is_some_and(|pane| std::rc::Rc::ptr_eq(&pane, &src_pane_owner))
             || dst_window
                 .modal_pane()
-                .is_some_and(|pane| std::rc::Rc::downgrade(&pane).ptr_eq(&(*dst_wp).observer))
+                .is_some_and(|pane| std::rc::Rc::ptr_eq(&pane, &dst_pane_owner))
         {
             cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;
         }
         server_unzoom_window(&dst_window);
         server_unzoom_window(src_owner);
-        if src_wp == dst_wp {
-            if window_pane_is_floating(&*src_wp) != 0 {
-                return cmd_join_pane_tile(
-                    item_handle,
-                    args,
-                    src_owner,
-                    &(*(src_wp)).observer.upgrade().expect("live window_pane"),
-                );
+        if std::rc::Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
+            if src_pane_owner.is_floating() {
+                return cmd_join_pane_tile(item_handle, args, src_owner, &src_pane_owner);
             }
             cmdq_error(item_handle, |out| {
                 out.write_all(b"source and target panes must be different")
@@ -997,80 +986,72 @@ unsafe fn cmd_join_pane_exec(
         if args_has(args, 'f' as i32 as u_char) != 0 {
             flags |= SPAWN_FULLSIZE;
         }
-        let layout_id = match layout_get_tiled_cell(
-            item_handle,
-            args,
-            &dst_window,
-            &(*(dst_wp)).observer.upgrade().expect("live window_pane"),
-            flags,
-        ) {
-            Ok(cell) => cell,
-            Err(cause) => {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"size or position ")?;
-                    write_cstr(out, cause.as_ptr())
-                });
-                return CMD_RETURN_ERROR;
-            }
-        };
-        layout_close_pane(&(*(src_wp)).observer.upgrade().expect("live window_pane"));
-        server_client_remove_pane(&(*(src_wp)).observer.upgrade().expect("live window_pane"));
-        window_lost_pane(
-            src_owner,
-            &(*(src_wp)).observer.upgrade().expect("live window_pane"),
-        );
+        let layout_id =
+            match layout_get_tiled_cell(item_handle, args, &dst_window, &dst_pane_owner, flags) {
+                Ok(cell) => cell,
+                Err(cause) => {
+                    cmdq_error(item_handle, |out| {
+                        out.write_all(b"size or position ")?;
+                        write_cstr(out, cause.as_ptr())
+                    });
+                    return CMD_RETURN_ERROR;
+                }
+            };
+        layout_close_pane(&src_pane_owner);
+        server_client_remove_pane(&src_pane_owner);
+        window_lost_pane(src_owner, &src_pane_owner);
         assert!(
             src_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
-                .remove(&(*src_wp).observer),
+                .remove(&std::rc::Rc::downgrade(&src_pane_owner)),
             "pane is not in its window order"
         );
         assert!(
             src_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .remove(&(*src_wp).observer),
+                .remove(&std::rc::Rc::downgrade(&src_pane_owner)),
             "pane is not in its stacking order"
         );
-        (*src_wp)
-            .observer
-            .upgrade()
-            .expect("live pane")
-            .reparent(&dst_window);
+        src_pane_owner.reparent(&dst_window);
         if flags & SPAWN_BEFORE != 0 {
             dst_window
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
-                .insert_before(&(*dst_wp).observer, (*src_wp).observer.clone());
+                .insert_before(
+                    &std::rc::Rc::downgrade(&dst_pane_owner),
+                    std::rc::Rc::downgrade(&src_pane_owner),
+                );
             dst_window
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .insert_before(&(*dst_wp).observer, (*src_wp).observer.clone());
+                .insert_before(
+                    &std::rc::Rc::downgrade(&dst_pane_owner),
+                    std::rc::Rc::downgrade(&src_pane_owner),
+                );
         } else {
             dst_window
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
-                .insert_after(&(*dst_wp).observer, (*src_wp).observer.clone());
+                .insert_after(
+                    &std::rc::Rc::downgrade(&dst_pane_owner),
+                    std::rc::Rc::downgrade(&src_pane_owner),
+                );
             dst_window
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .insert_after(&(*dst_wp).observer, (*src_wp).observer.clone());
+                .insert_after(
+                    &std::rc::Rc::downgrade(&dst_pane_owner),
+                    std::rc::Rc::downgrade(&src_pane_owner),
+                );
         }
         layout_assign_pane(
             &dst_window,
             layout_id,
-            &(*(src_wp)).observer.upgrade().expect("live window_pane"),
+            &src_pane_owner,
             0 as ::core::ffi::c_int,
         );
-        colour_palette_from_option(
-            Some(&mut (*src_wp).palette),
-            options_owner_ptr(&mut (*src_wp).options)
-                .map_or(std::ptr::null_mut(), |options| options),
-        );
+        src_pane_owner.refresh_palette();
         recalculate_sizes();
         server_redraw_window(src_owner);
         server_redraw_window(&dst_window);
         if args_has(args, 'd' as i32 as u_char) == 0 {
-            window_set_active_pane(
-                &dst_window,
-                &(*(src_wp)).observer.upgrade().expect("live window_pane"),
-                1 as ::core::ffi::c_int,
-            );
+            window_set_active_pane(&dst_window, &src_pane_owner, 1 as ::core::ffi::c_int);
             session_select(dst_s.as_ref().expect("live session"), dst_idx);
             cmd_find_from_session(
                 &mut *current.current.borrow_mut(),
@@ -1082,7 +1063,7 @@ unsafe fn cmd_join_pane_exec(
             server_status_session(dst_s.as_ref().expect("live session"));
         }
         window_fire_pane_moved(
-            &(*(src_wp)).observer.upgrade().expect("live window_pane"),
+            &src_pane_owner,
             src_owner,
             src_wl.get_unchecked().idx,
             &dst_window,

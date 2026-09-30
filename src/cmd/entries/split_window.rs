@@ -16,11 +16,9 @@ use crate::src::events_payload::{
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_single_cstring, format_single_from_target_cstring};
 use crate::src::layout::{layout_close_pane, layout_fix_panes, layout_set_size};
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{
     options_find_choice, options_search, options_set_number, options_set_string,
 };
-use crate::src::screen::screen_set_title;
 use crate::src::server_client::server_client_remove_pane;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
@@ -40,10 +38,7 @@ use crate::src::shared::layout::*;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options_table_entry;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
-    PANE_CAPTUREALLKEYS, PANE_CLOSEONCANCEL, PANE_CLOSEONCLICK, PANE_MINIMUM, PANE_REDRAW,
-    PANE_STYLECHANGED, PANE_THEMECHANGED,
-};
+use crate::src::shared::pane::PANE_MINIMUM;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
@@ -54,10 +49,10 @@ use crate::src::shared::spawn::{
 use crate::src::shared::window::winlink;
 use crate::src::window::Window;
 use crate::src::window::{
-    window_active_pane_is_over_zoom, window_pane_find_by_id, window_pane_get_pane_lines,
-    window_pane_is_floating, window_pane_is_visible, window_pane_start_input, window_pop_zoom,
-    window_remove_pane, window_unzoom,
+    window_active_pane_is_over_zoom, window_pane_find_by_id, window_pop_zoom, window_remove_pane,
+    window_unzoom,
 };
+use crate::src::window_pane::WindowPane as _;
 
 pub const SPLIT_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
     ::core::mem::transmute::<[u8; 46], [::core::ffi::c_char; 46]>(
@@ -149,11 +144,7 @@ unsafe fn cmd_split_window_exec(
         .expect("split target window");
     let result = (|| {
         let mut current_block: u64;
-        let mut wp: *mut window_pane = (*target)
-            .pane_handle()
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+        let original_pane = (*target).pane_handle().expect("split target pane");
         let mut fs: cmd_find_state = cmd_find_state {
             flags: 0,
             s: Default::default(),
@@ -186,7 +177,7 @@ unsafe fn cmd_split_window_exec(
         if std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_new_pane_entry) {
             is_floating = (args_has(args, 'L' as i32 as u_char) == 0) as ::core::ffi::c_int;
         } else {
-            if window_pane_is_visible(&(*target).pane_handle().expect("target pane")) == 0 {
+            if !original_pane.is_visible() {
                 restore_zoom = 0 as ::core::ffi::c_int;
             }
             if restore_zoom == 0 {
@@ -197,7 +188,7 @@ unsafe fn cmd_split_window_exec(
                     1 as ::core::ffi::c_int,
                 );
             }
-            is_floating = window_pane_is_floating(&*wp);
+            is_floating = original_pane.is_floating() as i32;
             flags |= SPAWN_SPLIT;
         }
         if args_has(args, 'O' as i32 as u_char) != 0 {
@@ -295,7 +286,7 @@ unsafe fn cmd_split_window_exec(
         sc.item = (*item).observer.clone();
         sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
         sc.set_wl(wl.clone());
-        sc.wp0 = (*wp).observer.clone();
+        sc.wp0 = std::rc::Rc::downgrade(&original_pane);
         argv_owner = args_to_vector(&*args);
         sc.argv = argv_owner;
         sc.environ = Some(environ_create());
@@ -324,10 +315,7 @@ unsafe fn cmd_split_window_exec(
                     return CMD_RETURN_ERROR;
                 }
             };
-        new_wp = spawned_pane
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        if new_wp.is_null() {
+        if spawned_pane.is_none() {
             cmdq_error(item_handle, |out| {
                 write_cstr(
                     out,
@@ -337,47 +325,41 @@ unsafe fn cmd_split_window_exec(
                 )
             });
         } else {
-            if args_has(args, 'K' as i32 as u_char) != 0
-                && args_has(args, 'O' as i32 as u_char) != 0
-            {
-                (*new_wp).flags |= PANE_CAPTUREALLKEYS;
-            }
-            if args_has(args, 'C' as i32 as u_char) != 0
-                && args_has(args, 'O' as i32 as u_char) != 0
-            {
-                (*new_wp).flags |= PANE_CLOSEONCLICK;
-            }
-            if args_has(args, 'D' as i32 as u_char) != 0
-                && args_has(args, 'O' as i32 as u_char) != 0
-            {
-                (*new_wp).flags |= PANE_CLOSEONCANCEL;
-            }
+            let new_pane = spawned_pane.as_ref().expect("spawned pane");
+            let modal = args_has(args, 'O' as u_char) != 0;
+            new_pane.configure_modal(
+                modal && args_has(args, 'K' as u_char) != 0,
+                modal && args_has(args, 'C' as u_char) != 0,
+                modal && args_has(args, 'D' as u_char) != 0,
+            );
             style = args_get(&*(args), 's' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if !style.is_null() {
-                if options_set_string(
-                    options_owner_ptr(&mut (*new_wp).options)
-                        .map_or(std::ptr::null_mut(), |options| options),
-                    b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
-                    0 as ::core::ffi::c_int,
-                    |out| write_cstr(out, style),
-                )
-                .is_null()
-                {
+                if new_pane.with_options_mut(|options| {
+                    options_set_string(
+                        options,
+                        b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
+                        0 as ::core::ffi::c_int,
+                        |out| write_cstr(out, style),
+                    )
+                    .is_null()
+                }) {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"bad style: ")?;
                         write_cstr(out, style)
                     });
                     current_block = 9814746494299271243;
                 } else {
-                    options_set_string(
-                        options_owner_ptr(&mut (*new_wp).options)
-                            .map_or(std::ptr::null_mut(), |options| options),
-                        b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
-                        0 as ::core::ffi::c_int,
-                        |out| write_cstr(out, style),
-                    );
-                    (*new_wp).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
+                    new_pane.with_options_mut(|options| {
+                        options_set_string(
+                            options,
+                            b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
+                            0 as ::core::ffi::c_int,
+                            |out| write_cstr(out, style),
+                        )
+                        .is_null()
+                    });
+                    new_pane.invalidate_style();
                     current_block = 14329534724295951598;
                 }
             } else {
@@ -389,16 +371,16 @@ unsafe fn cmd_split_window_exec(
                     style = args_get(&*(args), 'S' as i32 as u_char)
                         .map_or(std::ptr::null(), |value| value.as_ptr());
                     if !style.is_null() {
-                        if options_set_string(
-                            options_owner_ptr(&mut (*new_wp).options)
-                                .map_or(std::ptr::null_mut(), |options| options),
-                            b"pane-active-border-style\0" as *const u8
-                                as *const ::core::ffi::c_char,
-                            0 as ::core::ffi::c_int,
-                            |out| write_cstr(out, style),
-                        )
-                        .is_null()
-                        {
+                        if new_pane.with_options_mut(|options| {
+                            options_set_string(
+                                options,
+                                b"pane-active-border-style\0" as *const u8
+                                    as *const ::core::ffi::c_char,
+                                0 as ::core::ffi::c_int,
+                                |out| write_cstr(out, style),
+                            )
+                            .is_null()
+                        }) {
                             cmdq_error(item_handle, |out| {
                                 out.write_all(b"bad active border style: ")?;
                                 write_cstr(out, style)
@@ -416,16 +398,16 @@ unsafe fn cmd_split_window_exec(
                             style = args_get(&*(args), 'R' as i32 as u_char)
                                 .map_or(std::ptr::null(), |value| value.as_ptr());
                             if !style.is_null() {
-                                if options_set_string(
-                                    options_owner_ptr(&mut (*new_wp).options)
-                                        .map_or(std::ptr::null_mut(), |options| options),
-                                    b"pane-border-style\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                    0 as ::core::ffi::c_int,
-                                    |out| write_cstr(out, style),
-                                )
-                                .is_null()
-                                {
+                                if new_pane.with_options_mut(|options| {
+                                    options_set_string(
+                                        options,
+                                        b"pane-border-style\0" as *const u8
+                                            as *const ::core::ffi::c_char,
+                                        0 as ::core::ffi::c_int,
+                                        |out| write_cstr(out, style),
+                                    )
+                                    .is_null()
+                                }) {
                                     cmdq_error(item_handle, |out| {
                                         out.write_all(b"bad inactive border style: ")?;
                                         write_cstr(out, style)
@@ -441,43 +423,48 @@ unsafe fn cmd_split_window_exec(
                                 9814746494299271243 => {}
                                 _ => {
                                     if args_has(args, 'B' as i32 as u_char) != 0 {
-                                        options_set_number(
-                                            options_owner_ptr(&mut (*new_wp).options)
-                                                .map_or(std::ptr::null_mut(), |options| options),
-                                            b"pane-border-lines\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            lines as ::core::ffi::c_longlong,
-                                        );
+                                        new_pane.with_options_mut(|options| {
+                                            options_set_number(
+                                                options,
+                                                b"pane-border-lines\0" as *const u8
+                                                    as *const ::core::ffi::c_char,
+                                                lines as ::core::ffi::c_longlong,
+                                            )
+                                        });
                                     }
                                     if args_has(args, 'k' as i32 as u_char) != 0
                                         || args_has(args, 'm' as i32 as u_char) != 0
                                     {
-                                        options_set_number(
-                                            options_owner_ptr(&mut (*new_wp).options)
-                                                .map_or(std::ptr::null_mut(), |options| options),
-                                            b"remain-on-exit\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            3 as ::core::ffi::c_longlong,
-                                        );
-                                        if args_has(args, 'm' as i32 as u_char) != 0 {
-                                            options_set_string(
-                                                options_owner_ptr(&mut (*new_wp).options)
-                                                    .map_or(std::ptr::null_mut(), |options| {
-                                                        options
-                                                    }),
-                                                b"remain-on-exit-format\0" as *const u8
+                                        new_pane.with_options_mut(|options| {
+                                            options_set_number(
+                                                options,
+                                                b"remain-on-exit\0" as *const u8
                                                     as *const ::core::ffi::c_char,
-                                                0 as ::core::ffi::c_int,
-                                                |out| {
-                                                    write_cstr(
-                                                        out,
-                                                        args_get(&*(args), 'm' as i32 as u_char)
+                                                3 as ::core::ffi::c_longlong,
+                                            )
+                                        });
+                                        if args_has(args, 'm' as i32 as u_char) != 0 {
+                                            new_pane.with_options_mut(|options| {
+                                                options_set_string(
+                                                    options,
+                                                    b"remain-on-exit-format\0" as *const u8
+                                                        as *const ::core::ffi::c_char,
+                                                    0 as ::core::ffi::c_int,
+                                                    |out| {
+                                                        write_cstr(
+                                                            out,
+                                                            args_get(
+                                                                &*(args),
+                                                                'm' as i32 as u_char,
+                                                            )
                                                             .map_or(std::ptr::null(), |value| {
                                                                 value.as_ptr()
                                                             }),
-                                                    )
-                                                },
-                                            );
+                                                        )
+                                                    },
+                                                )
+                                                .is_null()
+                                            });
                                         }
                                     }
                                     if args_has(args, 'T' as i32 as u_char) != 0 {
@@ -486,36 +473,26 @@ unsafe fn cmd_split_window_exec(
                                             args_get(&*(args), 'T' as i32 as u_char)
                                                 .map_or(std::ptr::null(), |value| value.as_ptr()),
                                         );
-                                        screen_set_title(
-                                            &mut (*new_wp).base,
-                                            &title,
-                                            0 as ::core::ffi::c_int,
-                                        );
+                                        new_pane.set_title(&title);
                                         let mut ep = event_payload_create();
                                         cmd_find_from_pane(
                                             &raw mut fs,
-                                            &(*(new_wp))
-                                                .observer
-                                                .upgrade()
-                                                .expect("live window_pane"),
+                                            new_pane,
                                             0 as ::core::ffi::c_int,
                                         );
                                         event_payload_set_target(&mut *ep, &fs);
                                         event_payload_set_pane(
                                             &mut *ep,
                                             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-                                            (*(new_wp))
-                                                .observer
-                                                .upgrade()
-                                                .expect("live window_pane"),
+                                            std::rc::Rc::clone(new_pane),
                                         );
                                         event_payload_set_window(
                                             &mut *ep,
                                             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-                                            std::rc::Rc::clone(
-                                                &(((*new_wp).window_handle().as_ref())
-                                                    .expect("live window")),
-                                            ),
+                                            new_pane
+                                                .window_observer()
+                                                .upgrade()
+                                                .expect("spawned pane window"),
                                         );
                                         event_payload_set_string(
                                             &mut *ep,
@@ -530,13 +507,7 @@ unsafe fn cmd_split_window_exec(
                                         );
                                     }
                                     if input != 0 {
-                                        match window_pane_start_input(
-                                            &(*(new_wp))
-                                                .observer
-                                                .upgrade()
-                                                .expect("live window_pane"),
-                                            item_handle,
-                                        ) {
+                                        match new_pane.start_input(item_handle) {
                                             Err(error) => {
                                                 cmdq_error(item_handle, |out| {
                                                     write_cstr(out, error.as_ptr())
@@ -559,35 +530,18 @@ unsafe fn cmd_split_window_exec(
                                                 cmd_find_from_winlink_pane(
                                                     &mut *current.current.borrow_mut(),
                                                     wl.clone(),
-                                                    &(*(new_wp))
-                                                        .observer
-                                                        .upgrade()
-                                                        .expect("live window_pane"),
+                                                    new_pane,
                                                     0 as ::core::ffi::c_int,
                                                 );
                                             }
                                             if restore_zoom != 0 {
-                                                window_pop_zoom(
-                                                    &(*wp).window_handle().expect("live window"),
-                                                );
-                                                server_redraw_window(
-                                                    (*wp)
-                                                        .window_handle()
-                                                        .as_ref()
-                                                        .expect("pane window"),
-                                                );
+                                                window_pop_zoom(&original_window);
+                                                server_redraw_window(&original_window);
                                             } else if !flags & SPAWN_FLOATING != 0
                                                 && args_has(args, 'O' as i32 as u_char) == 0
                                             {
-                                                window_pop_zoom(
-                                                    &(*wp).window_handle().expect("live window"),
-                                                );
-                                                server_redraw_window(
-                                                    (*wp)
-                                                        .window_handle()
-                                                        .as_ref()
-                                                        .expect("pane window"),
-                                                );
+                                                window_pop_zoom(&original_window);
+                                                server_redraw_window(&original_window);
                                             }
                                             server_redraw_session(
                                                 s.as_ref().expect("live session"),
@@ -599,7 +553,7 @@ unsafe fn cmd_split_window_exec(
                                                     .expect("live client")
                                                     .borrow_terminal_mut()
                                                     .mouse_last_pane =
-                                                    (*new_wp).id as ::core::ffi::c_int;
+                                                    new_pane.id() as ::core::ffi::c_int;
                                                 tc.as_ref()
                                                     .expect("live client")
                                                     .borrow_terminal_mut()
@@ -630,10 +584,7 @@ unsafe fn cmd_split_window_exec(
                                                     tc.as_ref(),
                                                     s.as_ref(),
                                                     wl.clone(),
-                                                    (new_wp)
-                                                        .as_ref()
-                                                        .and_then(|model| model.observer.upgrade())
-                                                        .as_ref(),
+                                                    Some(new_pane),
                                                 );
                                                 cmdq_print(item_handle, |out| {
                                                     write_cstr(out, cp.as_ptr())
@@ -642,10 +593,7 @@ unsafe fn cmd_split_window_exec(
                                             cmd_find_from_winlink_pane(
                                                 &raw mut fs,
                                                 wl.clone(),
-                                                &(*(new_wp))
-                                                    .observer
-                                                    .upgrade()
-                                                    .expect("live window_pane"),
+                                                new_pane,
                                                 0 as ::core::ffi::c_int,
                                             );
                                             cmdq_insert_hook(
@@ -660,7 +608,7 @@ unsafe fn cmd_split_window_exec(
                                                 return CMD_RETURN_WAIT;
                                             }
                                             if args_has(args, 'W' as i32 as u_char) != 0 {
-                                                (*new_wp).wait_item = (*item).observer.clone();
+                                                new_pane.wait_until_close(item_handle);
                                                 window_owner.release(c"cmd_split_window");
                                                 return CMD_RETURN_WAIT;
                                             }
@@ -675,21 +623,15 @@ unsafe fn cmd_split_window_exec(
                 }
             }
         }
-        if !new_wp.is_null() {
-            let pane_owner = (*new_wp).observer.upgrade().expect("new pane owner");
-            server_client_remove_pane(&(*(new_wp)).observer.upgrade().expect("live window_pane"));
+        if let Some(new_pane) = spawned_pane.as_ref() {
+            server_client_remove_pane(new_pane);
             if is_floating == 0 {
-                layout_close_pane(&(*(new_wp)).observer.upgrade().expect("live window_pane"));
+                layout_close_pane(new_pane);
             }
-            window_remove_pane(
-                &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
-                &pane_owner,
-            );
+            window_remove_pane(&original_window, new_pane);
         }
         if restore_zoom != 0 || !flags & SPAWN_FLOATING != 0 {
-            window_pop_zoom(&std::rc::Rc::clone(
-                &(((*wp).window_handle().as_ref()).expect("live window")),
-            ));
+            window_pop_zoom(&original_window);
         }
         drop(sc.environ.take());
         window_owner.release(c"cmd_split_window");
@@ -700,7 +642,6 @@ unsafe fn cmd_split_window_exec(
 }
 unsafe fn cmd_split_window_mouse_resize(client_owner: &ClientRef, mut m: *mut mouse_event) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut lines: pane_lines = PANE_LINES_SINGLE;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
@@ -717,16 +658,19 @@ unsafe fn cmd_split_window_mouse_resize(client_owner: &ClientRef, mut m: *mut mo
         return;
     }
     let lookup_wp_owner = window_pane_find_by_id(last_pane as u_int);
-    wp = lookup_wp_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if wp.is_null() || window_pane_is_floating(&*wp) == 0 {
+
+    let Some(pane_owner) = lookup_wp_owner.filter(|pane| pane.is_floating()) else {
         client_owner.borrow_terminal_mut().mouse_drag_update = None;
         return;
-    }
-    let window_owner = (*wp).window_handle().expect("mouse window");
+    };
+    let window_owner = pane_owner
+        .window_observer()
+        .upgrade()
+        .expect("mouse window");
 
-    let cell_id = (*wp).layout_cell.expect("resized pane layout");
+    let cell_id = pane_owner
+        .layout_identity(false)
+        .expect("resized pane layout");
     x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
     y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
     if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines as ::core::ffi::c_int {
@@ -734,7 +678,7 @@ unsafe fn cmd_split_window_mouse_resize(client_owner: &ClientRef, mut m: *mut mo
     } else if (*m).statusat > 0 as ::core::ffi::c_int && y >= (*m).statusat {
         y = (*m).statusat - 1 as ::core::ffi::c_int;
     }
-    lines = window_pane_get_pane_lines(&*wp);
+    lines = pane_owner.pane_lines();
     border = (lines as ::core::ffi::c_uint
         != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int;

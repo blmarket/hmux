@@ -10,12 +10,8 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::layout::LayoutCellId;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::window::{winlink, WindowRef};
-use crate::src::window::window_pane_resize;
 use crate::src::window::Window as _;
-use crate::src::window::{
-    window_pane_next, window_pane_previous, window_pop_zoom, window_push_zoom,
-    window_set_active_pane,
-};
+use crate::src::window::{window_pop_zoom, window_push_zoom, window_set_active_pane};
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
@@ -58,7 +54,11 @@ unsafe fn cmd_rotate_window_assign_cell(
         };
         cell.wp = std::rc::Rc::downgrade(pane);
     }
-    (*pane.get()).layout_cell = cell;
+    if let Some(cell) = cell {
+        pane.place_in_layout(cell);
+    } else if let Some(previous) = pane.layout_identity(false) {
+        pane.detach_layout(previous);
+    }
 }
 
 // The resize operation may dispatch mode callbacks. Only copied geometry and
@@ -81,37 +81,37 @@ unsafe fn cmd_rotate_window_panes(
             order.push_back(observer);
         }
     }
-    let saved_cell = (*moved.get()).layout_cell;
+    let saved_cell = moved.layout_identity(false);
     let (saved_sx, saved_sy, saved_x, saved_y) = moved.geometry();
     let mut cursor = window
         .step_pane(crate::src::window::PaneOrder::Index, None, !down)
         .expect("rotation window has panes");
     let next = |pane: &Rc<UnsafeCell<window_pane>>| {
-        if down {
-            window_pane_next(Some(&*pane.get()))
-        } else {
-            window_pane_previous(Some(&*pane.get()))
-        }
+        window.step_pane(
+            crate::src::window::PaneOrder::Index,
+            Some(&Rc::downgrade(pane)),
+            !down,
+        )
     };
     while let Some(neighbor) = next(&cursor) {
-        let cell = (*neighbor.get()).layout_cell;
+        let cell = neighbor.layout_identity(false);
         let (sx, sy, x, y) = neighbor.geometry();
         cmd_rotate_window_assign_cell(window, &cursor, cell);
-        (*cursor.get()).xoff = x;
-        (*cursor.get()).yoff = y;
+        cursor.set_layout_offset(x, y);
         resize(&cursor, sx, sy);
         cursor = next(&cursor).expect("rotation neighbor remains in order");
     }
     cmd_rotate_window_assign_cell(window, &cursor, saved_cell);
-    (*cursor.get()).xoff = saved_x;
-    (*cursor.get()).yoff = saved_y;
+    cursor.set_layout_offset(saved_x, saved_y);
     resize(&cursor, saved_sx, saved_sy);
     let active = window.active_pane();
-    let selected = if down {
-        window_pane_previous(active.as_ref().map(|pane| &*pane.get()))
-    } else {
-        window_pane_next(active.as_ref().map(|pane| &*pane.get()))
-    };
+    let selected = active.as_ref().and_then(|pane| {
+        window.step_pane(
+            crate::src::window::PaneOrder::Index,
+            Some(&Rc::downgrade(pane)),
+            down,
+        )
+    });
     selected
         .or_else(|| window.step_pane(crate::src::window::PaneOrder::Index, None, down))
         .expect("rotation window has an active candidate")
@@ -133,7 +133,7 @@ unsafe fn cmd_rotate_window_exec(
         let selected_pane = cmd_rotate_window_panes(
             &window_owner,
             args_has(args, 'D' as u_char) != 0,
-            |pane, sx, sy| window_pane_resize(pane, sx, sy),
+            |pane, sx, sy| pane.resize(sx, sy),
         );
         window_set_active_pane(
             &std::rc::Rc::clone(&(window_owner)),

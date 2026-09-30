@@ -7,7 +7,9 @@ use crate::src::server_client::Client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
 use crate::src::shared::command::{cmd, cmd_retval};
-use crate::src::shared::pane::{PANE_ACTIVITY, PANE_MINIMUM};
+use crate::src::shared::pane::{
+    PANE_ACTIVITY, PANE_CAPTUREALLKEYS, PANE_CLOSEONCANCEL, PANE_CLOSEONCLICK, PANE_MINIMUM,
+};
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::time::Duration;
@@ -66,6 +68,20 @@ pub trait WindowPane {
     ) -> bool;
     /// Mark redraw when the cached active and inactive appearance differs.
     unsafe fn redraw_selection_change(&self);
+    /// Move the visible origin before resizing; dispatches no callbacks.
+    unsafe fn set_layout_offset(&self, x: i32, y: i32);
+    unsafe fn refresh_palette(&self);
+    unsafe fn mark_changed(&self);
+    unsafe fn invalidate_style(&self);
+    unsafe fn set_input_enabled(&self, enabled: bool);
+    unsafe fn set_title(&self, title: &CStr) -> bool;
+    /// Trim history below the base cursor when no mode owns the displayed screen.
+    unsafe fn trim_history(&self);
+    /// Enable modal input behavior before publishing the new pane.
+    unsafe fn configure_modal(&self, capture_keys: bool, close_click: bool, close_cancel: bool);
+    unsafe fn wait_until_close(&self, item: &Rc<UnsafeCell<cmdq_item>>);
+    /// Start stdin delivery to an empty pane, retaining command waits in the file callback.
+    unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString>;
     unsafe fn is_visible(&self) -> bool;
     unsafe fn contains(&self, x: u32, y: u32) -> bool;
     unsafe fn pane_lines(&self) -> pane_lines;
@@ -181,6 +197,68 @@ pub trait WindowPane {
 }
 
 impl WindowPane for Rc<UnsafeCell<window_pane>> {
+    unsafe fn set_layout_offset(&self, x: i32, y: i32) {
+        let pane = &mut *self.get();
+        pane.xoff = x;
+        pane.yoff = y;
+    }
+    unsafe fn refresh_palette(&self) {
+        let pane = &mut *self.get();
+        crate::src::style::colour::colour_palette_from_option(
+            Some(&mut pane.palette),
+            crate::src::options::options_owner_ptr(&mut pane.options).expect("live pane options"),
+        );
+    }
+    unsafe fn mark_changed(&self) {
+        (*self.get()).flags |= PANE_CHANGED;
+    }
+    unsafe fn invalidate_style(&self) {
+        (*self.get()).flags |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
+    }
+    unsafe fn set_input_enabled(&self, enabled: bool) {
+        if enabled {
+            (*self.get()).flags &= !PANE_INPUTOFF;
+        } else {
+            (*self.get()).flags |= PANE_INPUTOFF;
+        }
+    }
+    unsafe fn set_title(&self, title: &CStr) -> bool {
+        crate::src::screen::screen_set_title(&mut (*self.get()).base, title, 0) != 0
+    }
+    unsafe fn trim_history(&self) {
+        let pane = &mut *self.get();
+        if !pane.modes.is_empty() {
+            return;
+        }
+        let adjust = pane
+            .base
+            .grid()
+            .sy
+            .wrapping_sub(1)
+            .wrapping_sub(pane.base.cy)
+            .min(pane.base.grid().hsize);
+        crate::src::grid::grid_remove_history(pane.base.grid_mut(), adjust);
+        pane.base.cy = pane.base.cy.wrapping_add(adjust);
+        pane.flags |= PANE_REDRAW;
+    }
+    unsafe fn configure_modal(&self, capture_keys: bool, close_click: bool, close_cancel: bool) {
+        let pane = &mut *self.get();
+        if capture_keys {
+            pane.flags |= PANE_CAPTUREALLKEYS;
+        }
+        if close_click {
+            pane.flags |= PANE_CLOSEONCLICK;
+        }
+        if close_cancel {
+            pane.flags |= PANE_CLOSEONCANCEL;
+        }
+    }
+    unsafe fn wait_until_close(&self, item: &Rc<UnsafeCell<cmdq_item>>) {
+        (*self.get()).wait_item = Rc::downgrade(item);
+    }
+    unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString> {
+        window_pane_start_input(self, item)
+    }
     unsafe fn layout_identity(&self, saved: bool) -> Option<LayoutCellId> {
         if saved {
             (*self.get()).saved_layout_cell
