@@ -149,6 +149,8 @@ pub trait WindowPane {
     unsafe fn editor_identity(&self) -> Option<crate::src::shared::spawn::EditorId>;
     unsafe fn cancel_editor(&self, identity: crate::src::shared::spawn::EditorId);
     unsafe fn editor_process_id(&self, identity: crate::src::shared::spawn::EditorId) -> pid_t;
+    /// Encode a key or mouse report for this pane's process stream.
+    unsafe fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32;
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -663,6 +665,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             .as_ref()
             .filter(|editor| editor.id == identity)
             .map_or(-1, |editor| editor.pid)
+    }
+    unsafe fn write_key(&self, key: key_code, mouse: Option<&mouse_event>) -> i32 {
+        super::keys::write_key(self, key, mouse)
     }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0

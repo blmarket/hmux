@@ -1,8 +1,7 @@
-use crate::src::cmd::cmd_mouse_at;
 use crate::src::ffi::libc::{strchr, strlen};
 use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::key_string::key_string_format;
-use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level};
+use crate::src::log::{log_cstr, log_cstr_n, log_debug};
 use crate::src::options::options_get_number;
 use crate::src::reactor::bufferevent_write;
 use crate::src::shared::abi::*;
@@ -24,7 +23,7 @@ use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::text::utf8::{utf8_to_data, utf8_towc};
 use crate::src::tmux::global_options;
-use crate::src::window::window_pane_is_visible;
+use crate::src::window_pane::WindowPane;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 
@@ -483,38 +482,11 @@ pub unsafe fn input_key_build() {
     }
 }
 pub unsafe fn input_key_pane(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut key: key_code,
-    mut m: *mut mouse_event,
-) -> ::core::ffi::c_int {
-    let wp = pane_owner.get();
-    if log_get_level() != 0 as ::core::ffi::c_int {
-        let key_string = key_string_format(key, true);
-        log_debug(format_args!(
-            "writing key 0x{:x} ({}) to %{}",
-            key,
-            log_cstr((key_string.as_ptr()) as *const _),
-            ((*wp).id) as u32
-        ));
-    }
-    if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-        == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-        || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-            >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                << 32 as ::core::ffi::c_int
-            && key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                    << 32 as ::core::ffi::c_int
-    {
-        if !m.is_null() && (*m).wp != -(1 as ::core::ffi::c_int) && (*m).wp as u_int == (*wp).id {
-            input_key_mouse(pane_owner, m);
-        }
-        return 0 as ::core::ffi::c_int;
-    }
-    return (*wp)
-        .event
-        .with_ptr(|event| unsafe { input_key((*wp).screen_ptr(), event, key) })
-        .unwrap_or(0);
+    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
+    key: key_code,
+    mouse: *mut mouse_event,
+) -> i32 {
+    pane.write_key(key, mouse.as_ref())
 }
 unsafe fn input_key_write(
     mut from: *const ::core::ffi::c_char,
@@ -912,7 +884,7 @@ pub unsafe fn input_key(
 /// Encode into caller-owned storage. Only the returned byte count is sent.
 pub unsafe fn input_key_get_mouse(
     mut s: *mut screen,
-    mut m: *mut mouse_event,
+    mut m: *const mouse_event,
     mut x: u_int,
     mut y: u_int,
     buf: &mut [::core::ffi::c_char; 40],
@@ -1002,43 +974,6 @@ pub unsafe fn input_key_get_mouse(
         }
     }
     Some(len)
-}
-unsafe fn input_key_mouse(
-    pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut m: *mut mouse_event,
-) {
-    let wp = pane_owner.get();
-    let mut s: *mut screen = (*wp).screen_ptr();
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    let mut buf = [0; 40];
-    if (*m).ignore != 0 || (*s).mode & ALL_MOUSE_MODES == 0 as ::core::ffi::c_int {
-        return;
-    }
-    if cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
-        != 0 as ::core::ffi::c_int
-    {
-        return;
-    }
-    if window_pane_is_visible(pane_owner) == 0 {
-        return;
-    }
-    let Some(len) = input_key_get_mouse(s, m, x, y, &mut buf) else {
-        return;
-    };
-    log_debug(format_args!(
-        "writing mouse {} to %{}",
-        log_cstr_n(buf.as_ptr(), len as ::core::ffi::c_int),
-        ((*wp).id) as u32
-    ));
-    let _ = (*wp).event.with_ptr(|event| unsafe {
-        input_key_write(
-            b"input_key_mouse\0" as *const u8 as *const ::core::ffi::c_char,
-            event,
-            buf.as_ptr(),
-            len,
-        );
-    });
 }
 
 #[cfg(test)]
