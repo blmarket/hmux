@@ -1812,7 +1812,7 @@ pub unsafe fn layout_split_pane(
 ) -> Option<*mut layout_cell> {
     let window = wp_owner.window_observer().upgrade().expect("split window");
     let status = window.pane_border_status();
-    let horizontal_minimum =
+    let split_horizontal_minimum =
         wp_owner.split_minimum_width(window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS);
     let (pane_status, horizontal_minimum) = if flags & SPAWN_FULLSIZE != 0 {
         layout_resize_limits(&window)
@@ -1857,7 +1857,7 @@ pub unsafe fn layout_split_pane(
             lc,
             type_0,
             status,
-            horizontal_minimum,
+            split_horizontal_minimum,
         ) == 0
         {
             return None;
