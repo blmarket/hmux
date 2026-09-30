@@ -99,6 +99,7 @@ use crate::src::tty_term::{
 };
 use crate::src::window::Window as _;
 use crate::src::window::{Window, WindowPane};
+use std::time::Duration;
 
 use std::ffi::CStr;
 
@@ -292,11 +293,8 @@ unsafe fn tty_timer_callback(owner: &ClientRef) {
             return;
         }
         terminal.discarded = 0;
-        let mut timeout = timeval {
-            tv_sec: 0,
-            tv_usec: TTY_BLOCK_INTERVAL as __suseconds_t,
-        };
-        event_add(&mut terminal.timer, &mut timeout);
+        let timeout = Duration::from_micros(TTY_BLOCK_INTERVAL as u64);
+        event_add(&mut terminal.timer, Some(timeout));
     });
 }
 
@@ -322,11 +320,8 @@ unsafe fn tty_block_maybe(terminal: &mut TerminalOutput<'_>) -> bool {
     evbuffer_drain(terminal.out.as_deref_mut().expect("open TTY buffer"), size);
     terminal.record_discard(size);
     terminal.discarded = 0;
-    let mut timeout = timeval {
-        tv_sec: 0,
-        tv_usec: TTY_BLOCK_INTERVAL as __suseconds_t,
-    };
-    event_add(&mut terminal.timer, &mut timeout);
+    let timeout = Duration::from_micros(TTY_BLOCK_INTERVAL as u64);
+    event_add(&mut terminal.timer, Some(timeout));
     true
 }
 
@@ -354,7 +349,7 @@ unsafe fn tty_write_callback(owner: &ClientRef) {
             return;
         }
         if evbuffer_get_length(terminal.out.as_deref().expect("open TTY buffer")) != 0 {
-            event_add(&mut terminal.event_out, std::ptr::null());
+            event_add(&mut terminal.event_out, None);
         }
     });
 }
@@ -460,10 +455,7 @@ unsafe fn tty_start_timer_callback(owner: &ClientRef) {
     terminal.flags &= !(TTY_WAITBG | TTY_WAITFG);
 }
 unsafe fn tty_start_start_timer(tty: &mut TerminalOutput<'_>) {
-    let mut tv: timeval = timeval {
-        tv_sec: TTY_QUERY_TIMEOUT as __time_t,
-        tv_usec: 0,
-    };
+    let tv = Duration::from_secs(TTY_QUERY_TIMEOUT as u64);
     log_debug(format_args!(
         "{}: start timer started",
         log_cstr(
@@ -474,7 +466,7 @@ unsafe fn tty_start_start_timer(tty: &mut TerminalOutput<'_>) {
         )
     ));
     event_del(&raw mut (*tty).start_timer);
-    event_add(&raw mut (*tty).start_timer, &raw mut tv);
+    event_add(&raw mut (*tty).start_timer, Some(tv));
 }
 pub unsafe fn tty_start_tty(owner: &ClientRef) {
     owner.with_terminal_output(|tty| {
@@ -492,7 +484,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
         };
         let mut i: u_int = 0;
         setblocking(fd, 0 as ::core::ffi::c_int);
-        event_add(&raw mut (*tty).event_in, ::core::ptr::null::<timeval>());
+        event_add(&raw mut (*tty).event_in, None);
         memcpy(
             &raw mut tio as *mut ::core::ffi::c_void,
             &raw mut (*tty).tio as *const ::core::ffi::c_void,
@@ -2402,13 +2394,10 @@ pub unsafe fn tty_clipboard_query(owner: &ClientRef) {
     if !query.is_empty() {
         owner.write_terminal(query.to_bytes());
     }
-    let mut timeout = timeval {
-        tv_sec: TTY_QUERY_TIMEOUT as __time_t,
-        tv_usec: 0,
-    };
+    let timeout = Duration::from_secs(TTY_QUERY_TIMEOUT as u64);
     let mut tty = owner.borrow_terminal_mut();
     tty.flags |= TTY_OSC52QUERY;
-    event_add(&mut tty.clipboard_timer, &mut timeout);
+    event_add(&mut tty.clipboard_timer, Some(timeout));
 }
 
 #[cfg(test)]

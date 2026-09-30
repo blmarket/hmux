@@ -4,9 +4,9 @@ use crate::src::cmd::queue::cmdq_next;
 use crate::src::compat::systemd::systemd_create_socket;
 use crate::src::control_notify::control_build_events;
 use crate::src::ffi::libc::{
-    __errno_location, accept, bind, chmod, close, exit, fprintf, gettimeofday, kill, killpg,
-    listen, malloc_trim, memset, sigfillset, sigprocmask, socket, stat, stderr, strerror, strlcpy,
-    strsignal, time, umask, unlink, waitpid,
+    __errno_location, accept, bind, chmod, close, exit, fprintf, kill, killpg, listen, malloc_trim,
+    memset, sigfillset, sigprocmask, socket, stat, stderr, strerror, strlcpy, strsignal, time,
+    umask, unlink, waitpid,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::format_tidy_jobs;
@@ -41,6 +41,7 @@ use crate::src::window::{
     windows_minmax,
 };
 use crate::src::window::{windows, Window as _};
+use std::time::{Duration, SystemTime};
 
 use std::ffi::{CStr, CString};
 
@@ -240,10 +241,7 @@ pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c
     Err(CString::new(message).expect("C strings contain no interior NUL"))
 }
 unsafe fn server_tidy_event() {
-    let mut tv: timeval = timeval {
-        tv_sec: 3600 as __time_t,
-        tv_usec: 0,
-    };
+    let tv = Duration::from_secs(3600);
     let mut t: uint64_t = get_timer();
     format_tidy_jobs();
     malloc_trim(0 as size_t);
@@ -252,7 +250,7 @@ unsafe fn server_tidy_event() {
         "server_tidy_event",
         get_timer().wrapping_sub(t) as ::core::ffi::c_ulonglong
     ));
-    event_add(&raw mut server_ev_tidy, &raw mut tv);
+    event_add(&raw mut server_ev_tidy, Some(tv));
 }
 pub(crate) unsafe fn server_start(
     mut client: *mut tmuxproc,
@@ -265,10 +263,7 @@ pub(crate) unsafe fn server_start(
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     let mut c: Option<ClientRef> = None;
     let mut cause: Option<CString> = None;
-    let mut tv: timeval = timeval {
-        tv_sec: 3600 as __time_t,
-        tv_usec: 0,
-    };
+    let tv = Duration::from_secs(3600);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     if !flags & CLIENT_NOFORK as uint64_t != 0 {
@@ -313,7 +308,7 @@ pub(crate) unsafe fn server_start(
     control_build_events();
     hooks_build_events();
     server_clear_messages();
-    gettimeofday(&raw mut start_time, NULL);
+    start_time = SystemTime::now();
     match systemd_create_socket(flags as ::core::ffi::c_int) {
         Ok(socket) => {
             server_fd = socket;
@@ -362,7 +357,7 @@ pub(crate) unsafe fn server_start(
         0 as ::core::ffi::c_short,
         move |_, _| unsafe { server_tidy_event() },
     );
-    event_add(&raw mut server_ev_tidy, &raw mut tv);
+    event_add(&raw mut server_ev_tidy, Some(tv));
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || unsafe { server_loop() == 0 };
@@ -570,10 +565,7 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
     }
 }
 pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
-    let mut tv: timeval = timeval {
-        tv_sec: timeout as __time_t,
-        tv_usec: 0 as __suseconds_t,
-    };
+    let tv = Duration::from_secs(timeout as u64);
     if server_fd == -(1 as ::core::ffi::c_int) {
         return;
     }
@@ -587,7 +579,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             EV_READ as ::core::ffi::c_short,
             move |fd, flags| unsafe { server_accept(fd, flags) },
         );
-        event_add(&raw mut server_ev_accept, ::core::ptr::null::<timeval>());
+        event_add(&raw mut server_ev_accept, None);
     } else {
         event_set(
             &raw mut server_ev_accept,
@@ -595,7 +587,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
             EV_TIMEOUT as ::core::ffi::c_short,
             move |fd, flags| unsafe { server_accept(fd, flags) },
         );
-        event_add(&raw mut server_ev_accept, &raw mut tv);
+        event_add(&raw mut server_ev_accept, Some(tv));
     };
 }
 unsafe fn server_signal(sig: ProcessSignal) {
@@ -723,11 +715,7 @@ pub unsafe fn server_add_message(
     ));
     let fresh0 = message_next;
     message_next = message_next.wrapping_add(1);
-    let mut msg_time = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    gettimeofday(&raw mut msg_time, NULL);
+    let msg_time = SystemTime::now();
     message_log.push_back(s, fresh0, msg_time);
     limit = options_get_number(
         global_options,

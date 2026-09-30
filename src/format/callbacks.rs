@@ -1798,7 +1798,7 @@ unsafe fn format_cb_pane_dead_time(mut ft: *mut format_tree) -> Option<time_t> {
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
         if (*wp).flags & PANE_STATUSDRAWN != 0 {
-            return Some(((*wp).dead_time).tv_sec as time_t);
+            return Some(crate::src::shared::time::unix_seconds((*wp).dead_time));
         }
         return None;
     }
@@ -2961,11 +2961,11 @@ unsafe fn format_cb_session_last_attached(ft: *mut format_tree) -> Option<time_t
     }
 }
 unsafe fn format_cb_start_time(_ft: *mut format_tree) -> Option<time_t> {
-    return Some((start_time).tv_sec as time_t);
+    return Some(crate::src::shared::time::unix_seconds(start_time));
 }
 unsafe fn format_cb_window_activity(ft: *mut format_tree) -> Option<time_t> {
     let window = (*ft).w.upgrade()?;
-    let value = window.activity_time().tv_sec as time_t;
+    let value = crate::src::shared::time::unix_seconds(window.activity_time());
     window.release(c"format window activity");
     Some(value)
 }

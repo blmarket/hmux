@@ -1,6 +1,4 @@
-use crate::src::ffi::libc::{
-    __ctype_b_loc, __xpg_basename, gettimeofday, strchr, strcspn, strlen, strncmp,
-};
+use crate::src::ffi::libc::{__ctype_b_loc, __xpg_basename, strchr, strcspn, strlen, strncmp};
 use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand_cstring, format_free,
 };
@@ -15,20 +13,15 @@ use crate::src::shared::window::WindowRef;
 use crate::src::tmux::clean_name_cstring;
 use crate::src::window::{Window as _, WindowPane as _};
 use std::ffi::{CStr, CString};
+use std::time::{Duration, Instant};
 
-pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
+pub const NAME_INTERVAL: Duration = Duration::from_millis(500);
 
-pub(crate) fn name_time_left(previous: timeval, now: timeval) -> i32 {
-    let mut seconds = now.tv_sec - previous.tv_sec;
-    let mut micros = now.tv_usec - previous.tv_usec;
-    if micros < 0 {
-        seconds -= 1;
-        micros += 1_000_000;
-    }
-    if seconds != 0 || micros > NAME_INTERVAL as _ {
-        return 0;
-    }
-    (NAME_INTERVAL as __suseconds_t - micros) as i32
+pub(crate) fn name_time_left(previous: Option<Instant>, now: Instant) -> Duration {
+    let Some(previous) = previous else {
+        return Duration::ZERO;
+    };
+    NAME_INTERVAL.saturating_sub(now.saturating_duration_since(previous))
 }
 
 pub unsafe fn check_window_name(owner: &WindowRef) {
@@ -46,11 +39,7 @@ pub unsafe fn check_window_name(owner: &WindowRef) {
         return;
     }
     log_debug(format_args!("@{} active pane changed", owner.id()));
-    let mut now = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    gettimeofday(&mut now, NULL);
+    let now = Instant::now();
     if !owner.begin_name_check(now) {
         return;
     }
@@ -158,29 +147,21 @@ mod owned_name_tests {
     use super::*;
 
     #[test]
-    fn automatic_name_delay_handles_second_rollover_and_exact_deadline() {
-        let previous = timeval {
-            tv_sec: 10,
-            tv_usec: 800_000,
-        };
-        for (seconds, micros, expected) in [
-            (10, 800_000, NAME_INTERVAL),
-            (10, 900_000, 400_000),
-            (11, 0, 300_000),
-            (11, 299_999, 1),
-            (11, 300_000, 0),
-            (11, 300_001, 0),
-            (12, 0, 0),
+    fn automatic_name_delay_handles_first_check_and_exact_deadline() {
+        let previous = Instant::now();
+        assert_eq!(name_time_left(None, previous), Duration::ZERO);
+        for (elapsed, expected) in [
+            (0, 500_000),
+            (100_000, 400_000),
+            (200_000, 300_000),
+            (499_999, 1),
+            (500_000, 0),
+            (500_001, 0),
+            (1_200_000, 0),
         ] {
             assert_eq!(
-                name_time_left(
-                    previous,
-                    timeval {
-                        tv_sec: seconds,
-                        tv_usec: micros
-                    }
-                ),
-                expected
+                name_time_left(Some(previous), previous + Duration::from_micros(elapsed)),
+                Duration::from_micros(expected)
             );
         }
     }

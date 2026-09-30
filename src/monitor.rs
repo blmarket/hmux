@@ -33,6 +33,7 @@ use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
+use std::time::Duration;
 
 /// An independently owned monitor. The enclosing model owns one logical handle
 /// and must call monitor_destroy when removing it; temporary clones only retain
@@ -658,11 +659,8 @@ unsafe fn monitor_timer(owner: &MonitorRef) {
     }
     log_debug(format_args!("monitor_timer: timer fired"));
     owner.with_state(|state| {
-        let mut timeout = timeval {
-            tv_sec: 1,
-            tv_usec: 0,
-        };
-        event_add(&mut state.timer, &mut timeout);
+        let mut timeout = Duration::from_secs(1);
+        event_add(&mut state.timer, Some(timeout));
     });
     let Some(_session) = monitor_get_session(owner, client.as_ref()) else {
         return;
@@ -892,12 +890,9 @@ pub unsafe fn monitor_add(
                 }
             });
         }
-        if event_pending(&mut state.timer, EV_TIMEOUT as i16, std::ptr::null_mut()) == 0 {
-            let mut timeout = timeval {
-                tv_sec: 1,
-                tv_usec: 0,
-            };
-            event_add(&mut state.timer, &mut timeout);
+        if event_pending(&mut state.timer, EV_TIMEOUT as i16, None) == 0 {
+            let timeout = Duration::from_secs(1);
+            event_add(&mut state.timer, Some(timeout));
         }
     });
 }

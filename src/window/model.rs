@@ -1,5 +1,5 @@
 //! Window storage is private to its implementation.
-use crate::src::shared::abi::{timeval, u_int, uint64_t};
+use crate::src::shared::abi::{u_int, uint64_t};
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
 use crate::src::shared::client::{ClientRef, ClientWeak};
@@ -15,6 +15,7 @@ use crate::src::shared::pane::{window_pane, window_pane_history, window_panes, P
 use crate::src::shared::screen::screen;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{WindowRef, WindowWeak};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::src::shared::window::{window_winlinks, WindowIndex};
 /// Explicit cleanup is separate from the lifetime of retained Rc allocations.
@@ -26,7 +27,6 @@ pub(crate) enum WindowLifecycle {
     Destroyed,
 }
 
-#[derive(Default)]
 #[repr(C)]
 /// Rc-owned window record; retain/release preserves pre-close notifications.
 pub struct window {
@@ -38,11 +38,11 @@ pub struct window {
     pub(super) latest: ClientWeak,
     pub(super) name: std::ffi::CString,
     pub(super) name_event: event,
-    pub(super) name_time: timeval,
+    pub(super) name_time: Option<Instant>,
     pub(super) alerts_timer: event,
     pub(super) offset_timer: event,
-    pub(super) activity_time: timeval,
-    pub(super) creation_time: timeval,
+    pub(super) activity_time: SystemTime,
+    pub(super) creation_time: SystemTime,
     /// Current pane identity; the pane index owns the allocation.
     pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     /// Current modal pane is observed; the pane index owns its lifetime.
@@ -84,6 +84,59 @@ pub struct window {
     pub(super) winlinks: window_winlinks,
     /// Weak traversal handle into the containing index.
     pub(super) owner: refbox::Weak<WindowIndex>,
+}
+impl Default for window {
+    fn default() -> Self {
+        Self {
+            observer: Default::default(),
+            lifecycle: Default::default(),
+            id: Default::default(),
+            latest: Default::default(),
+            name: Default::default(),
+            name_event: Default::default(),
+            name_time: Default::default(),
+            alerts_timer: Default::default(),
+            offset_timer: Default::default(),
+            activity_time: UNIX_EPOCH,
+            creation_time: UNIX_EPOCH,
+            active: Default::default(),
+            modal: Default::default(),
+            modal_last: Default::default(),
+            was_zoomed: Default::default(),
+            last_panes: Default::default(),
+            z_index: Default::default(),
+            panes: Default::default(),
+            lastlayout: Default::default(),
+            layout_root: Default::default(),
+            saved_layout_root: Default::default(),
+            old_layout: Default::default(),
+            sx: Default::default(),
+            sy: Default::default(),
+            manual_sx: Default::default(),
+            manual_sy: Default::default(),
+            xpixel: Default::default(),
+            ypixel: Default::default(),
+            new_sx: Default::default(),
+            new_sy: Default::default(),
+            new_xpixel: Default::default(),
+            new_ypixel: Default::default(),
+            redraw_scene_generation: Default::default(),
+            menu: Default::default(),
+            menu_last_px: Default::default(),
+            menu_last_py: Default::default(),
+            last_new_pane_x: Default::default(),
+            last_new_pane_y: Default::default(),
+            sb: Default::default(),
+            sb_pos: Default::default(),
+            inside_cell: Default::default(),
+            outside_cell: Default::default(),
+            flags: Default::default(),
+            alerts_queued: Default::default(),
+            options: Default::default(),
+            winlinks: Default::default(),
+            owner: Default::default(),
+        }
+    }
 }
 
 impl window {

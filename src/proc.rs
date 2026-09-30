@@ -32,6 +32,7 @@ use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::tmux::{getversion, socket_path};
 use std::ffi::CStr;
 use std::os::fd::FromRawFd;
+use std::time::Duration;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -135,9 +136,7 @@ unsafe fn proc_update_event(mut peer: *mut tmuxpeer) {
     }
     // Keep the descriptor registration while its interest is unchanged.
     // A callback may rearm it when the output queue changes direction.
-    if event_pending(&raw mut (*peer).event, 6, std::ptr::null_mut())
-        == events as ::core::ffi::c_int
-    {
+    if event_pending(&raw mut (*peer).event, 6, None) == events as ::core::ffi::c_int {
         return;
     }
     event_del(&raw mut (*peer).event);
@@ -147,7 +146,7 @@ unsafe fn proc_update_event(mut peer: *mut tmuxpeer) {
         events | EV_PERSIST as ::core::ffi::c_short,
         move |_, flags| unsafe { proc_event_cb(flags, peer) },
     );
-    event_add(&raw mut (*peer).event, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*peer).event, None);
 }
 pub unsafe fn proc_send(
     mut peer: *mut tmuxpeer,
@@ -320,56 +319,56 @@ pub unsafe fn proc_set_signals(
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sigint, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sigint, None);
     event_set(
         &raw mut (*tp).ev_sighup,
         1 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sighup, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sighup, None);
     event_set(
         &raw mut (*tp).ev_sigchld,
         17 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sigchld, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sigchld, None);
     event_set(
         &raw mut (*tp).ev_sigcont,
         18 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sigcont, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sigcont, None);
     event_set(
         &raw mut (*tp).ev_sigterm,
         15 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sigterm, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sigterm, None);
     event_set(
         &raw mut (*tp).ev_sigusr1,
         10 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sigusr1, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sigusr1, None);
     event_set(
         &raw mut (*tp).ev_sigusr2,
         12 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sigusr2, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sigusr2, None);
     event_set(
         &raw mut (*tp).ev_sigwinch,
         28 as ::core::ffi::c_int,
         (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
         move |fd, _| unsafe { proc_signal_cb(fd, tp) },
     );
-    event_add(&raw mut (*tp).ev_sigwinch, ::core::ptr::null::<timeval>());
+    event_add(&raw mut (*tp).ev_sigwinch, None);
 }
 pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
     let mut sa: sigaction = sigaction {
@@ -519,11 +518,8 @@ mod ownership_tests {
             event_set(&raw mut (*tp).ev_sigint, -1, 0, move |_, _| {
                 observed.set(observed.get() + 1);
             });
-            let timeout = timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            };
-            event_add(&raw mut (*tp).ev_sigint, &timeout);
+            let timeout = Duration::ZERO;
+            event_add(&raw mut (*tp).ev_sigint, Some(timeout));
 
             let mut pair = [0; 2];
             assert_eq!(

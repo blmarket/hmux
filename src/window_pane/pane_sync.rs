@@ -6,6 +6,7 @@ use crate::src::screen_write::{
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::tty::tty_ctx;
+use std::time::Duration;
 
 pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
     let wp = pane.get();
@@ -26,11 +27,8 @@ pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
             }
         });
     }
-    let mut timeout = timeval {
-        tv_sec: 1,
-        tv_usec: 0,
-    };
-    event_add(&raw mut (*wp).sync_timer, &mut timeout);
+    let timeout = Duration::from_secs(1);
+    event_add(&raw mut (*wp).sync_timer, Some(timeout));
     log_debug(format_args!(
         "screen_write_start_sync: %{} started sync mode",
         pane.id()
@@ -182,13 +180,7 @@ mod tests {
             (*pane.get()).fd = -1;
             (*pane.get()).pipe_fd = -1;
             let observer = Rc::downgrade(&pane);
-            let pending = || {
-                event_pending(
-                    &(*pane.get()).sync_timer,
-                    EV_TIMEOUT as i16,
-                    std::ptr::null_mut(),
-                )
-            };
+            let pending = || event_pending(&(*pane.get()).sync_timer, EV_TIMEOUT as i16, None);
             pane.start_sync();
             pane.start_sync();
             assert!(pane.is_synchronized());

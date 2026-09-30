@@ -19,6 +19,7 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
 use crate::src::spawn::spawn_pane;
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Clone, Copy)]
 pub enum LayoutView {
@@ -172,7 +173,7 @@ pub trait Window {
     unsafe fn rename(&self, name: &CStr, untrusted: bool);
     /// Commit a due automatic-name check, or queue its remaining delay. No
     /// formatting or pane callbacks execute while the timer state is borrowed.
-    unsafe fn begin_name_check(&self, now: timeval) -> bool;
+    unsafe fn begin_name_check(&self, now: Instant) -> bool;
     /// Coalesce cursor-driven offset updates at the existing 10 ms deadline.
     /// The timer observes this window weakly; dispatch borrows only on demand.
     unsafe fn schedule_offset_update(&self);
@@ -215,8 +216,8 @@ pub trait Window {
         count: u32,
         reverse: bool,
     ) -> Option<Rc<UnsafeCell<window_pane>>>;
-    unsafe fn creation_time(&self) -> timeval;
-    unsafe fn activity_time(&self) -> timeval;
+    unsafe fn creation_time(&self) -> SystemTime;
+    unsafe fn activity_time(&self) -> SystemTime;
     /// `None` starts traversal; `Some` continues after that pane, without wrapping.
     unsafe fn next_pane(
         &self,
@@ -635,12 +636,12 @@ impl Window for WindowRef {
     unsafe fn rename(&self, name: &CStr, untrusted: bool) {
         window_set_name(self, name.as_ptr(), untrusted as i32);
     }
-    unsafe fn begin_name_check(&self, now: timeval) -> bool {
+    unsafe fn begin_name_check(&self, now: Instant) -> bool {
         use crate::src::reactor::event_pending;
         use crate::src::shared::event::EV_TIMEOUT;
         let state = &mut *self.get();
         let left = crate::src::names::name_time_left(state.name_time, now);
-        if left != 0 {
+        if !left.is_zero() {
             if event_initialized(&state.name_event) == 0 {
                 let observer = Rc::downgrade(self);
                 event_set(&mut state.name_event, -1, 0, move |_, _| {
@@ -649,25 +650,23 @@ impl Window for WindowRef {
                     }
                 });
             }
-            if event_pending(&mut state.name_event, EV_TIMEOUT as _, std::ptr::null_mut()) == 0 {
+            if event_pending(&mut state.name_event, EV_TIMEOUT as _, None) == 0 {
                 log_debug(format_args!(
                     "@{} name timer queued ({} left)",
-                    state.id, left
+                    state.id,
+                    left.as_micros()
                 ));
-                let mut next = timeval {
-                    tv_sec: 0,
-                    tv_usec: left as _,
-                };
-                event_add(&mut state.name_event, &mut next);
+                event_add(&mut state.name_event, Some(left));
             } else {
                 log_debug(format_args!(
                     "@{} name timer already queued ({} left)",
-                    state.id, left
+                    state.id,
+                    left.as_micros()
                 ));
             }
             return false;
         }
-        state.name_time = now;
+        state.name_time = Some(now);
         if event_initialized(&state.name_event) != 0 {
             event_del(&mut state.name_event);
         }
@@ -686,12 +685,9 @@ impl Window for WindowRef {
                 }
             });
         }
-        if event_pending(&state.offset_timer, EV_TIMEOUT as _, std::ptr::null_mut()) == 0 {
-            let mut delay = timeval {
-                tv_sec: 0,
-                tv_usec: 10_000,
-            };
-            event_add(&mut state.offset_timer, &mut delay);
+        if event_pending(&state.offset_timer, EV_TIMEOUT as _, None) == 0 {
+            let delay = Duration::from_micros(10_000);
+            event_add(&mut state.offset_timer, Some(delay));
         }
     }
     unsafe fn active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>> {
@@ -834,10 +830,10 @@ impl Window for WindowRef {
         }
         current
     }
-    unsafe fn creation_time(&self) -> timeval {
+    unsafe fn creation_time(&self) -> SystemTime {
         (*self.get()).creation_time
     }
-    unsafe fn activity_time(&self) -> timeval {
+    unsafe fn activity_time(&self) -> SystemTime {
         (*self.get()).activity_time
     }
     unsafe fn next_pane(
@@ -1765,11 +1761,7 @@ mod tests {
                 (*window.get()).offset_timer.callback.as_ref().unwrap()
             ));
             assert_ne!(
-                event_pending(
-                    &(*window.get()).offset_timer,
-                    EV_TIMEOUT as _,
-                    std::ptr::null_mut()
-                ),
+                event_pending(&(*window.get()).offset_timer, EV_TIMEOUT as _, None),
                 0
             );
             assert_eq!(Rc::strong_count(&window), 1);
@@ -1792,20 +1784,11 @@ mod tests {
             use crate::src::shared::event::EV_TIMEOUT;
             let window = window::new();
             let observer = Rc::downgrade(&window);
-            assert!(window.begin_name_check(timeval {
-                tv_sec: 10,
-                tv_usec: 0
-            }));
-            assert!(!window.begin_name_check(timeval {
-                tv_sec: 10,
-                tv_usec: 100_000
-            }));
+            let now = Instant::now();
+            assert!(window.begin_name_check(now));
+            assert!(!window.begin_name_check(now + Duration::from_micros(100_000)));
             assert_ne!(
-                event_pending(
-                    &(*window.get()).name_event,
-                    EV_TIMEOUT as _,
-                    std::ptr::null_mut()
-                ),
+                event_pending(&(*window.get()).name_event, EV_TIMEOUT as _, None),
                 0
             );
             let callback = (*window.get())
@@ -1814,27 +1797,20 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .clone();
-            assert!(!window.begin_name_check(timeval {
-                tv_sec: 10,
-                tv_usec: 200_000
-            }));
+            assert!(!window.begin_name_check(now + Duration::from_micros(200_000)));
             assert!(Rc::ptr_eq(
                 &callback,
                 (*window.get()).name_event.callback.as_ref().unwrap()
             ));
-            assert!(window.begin_name_check(timeval {
-                tv_sec: 10,
-                tv_usec: 500_000
-            }));
+            assert!(window.begin_name_check(now + Duration::from_micros(500_000)));
             assert_eq!(
-                event_pending(
-                    &(*window.get()).name_event,
-                    EV_TIMEOUT as _,
-                    std::ptr::null_mut()
-                ),
+                event_pending(&(*window.get()).name_event, EV_TIMEOUT as _, None),
                 0
             );
-            assert_eq!((*window.get()).name_time.tv_usec, 500_000);
+            assert_eq!(
+                (*window.get()).name_time,
+                Some(now + Duration::from_micros(500_000))
+            );
             assert_eq!(Rc::strong_count(&window), 1);
             window.release(c"automatic name timer test");
             assert!(observer.upgrade().is_none());

@@ -3,7 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_get_target_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
+    format_add, format_add_time, format_create_from_target, format_expand_cstring, format_free,
 };
 use crate::src::job::job_print_summary;
 use crate::src::server::message_log;
@@ -126,11 +126,11 @@ unsafe fn cmd_show_messages_exec(
             b"message_number\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write!(out, "{}", (msg.msg_num) as u32),
         );
-        let mut msg_time = msg.msg_time;
-        format_add_tv(
+        let msg_time = msg.msg_time;
+        format_add_time(
             ft,
             b"message_time\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut msg_time,
+            msg_time,
         );
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
         cmdq_print(item_handle, |out| write_cstr(out, s.as_ptr()));

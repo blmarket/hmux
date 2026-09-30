@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
-    format_add, format_add_tv, format_create_from_target, format_expand_cstring, format_free,
+    format_add, format_add_time, format_create_from_target, format_expand_cstring, format_free,
     format_single_from_target_cstring,
 };
 use crate::src::hooks::{
@@ -31,6 +31,7 @@ use crate::src::shared::options::options_entry;
 use crate::src::shared::options::*;
 use crate::src::shared::options::{OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE};
 use std::ffi::{CStr, CString};
+use std::time::{Duration, UNIX_EPOCH};
 
 pub const SHOW_OPTIONS_TEMPLATE: [::core::ffi::c_char; 202] = unsafe {
     ::core::mem::transmute::<
@@ -451,11 +452,13 @@ unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: tim
         write!(out, "{count}")
     });
     if time != 0 {
-        let mut tv = timeval {
-            tv_sec: time as __time_t,
-            tv_usec: 0,
+        let offset = Duration::from_secs(time.unsigned_abs());
+        let timestamp = if time > 0 {
+            UNIX_EPOCH + offset
+        } else {
+            UNIX_EPOCH - offset
         };
-        format_add_tv(ft, c"hook_fire_time".as_ptr(), &mut tv);
+        format_add_time(ft, c"hook_fire_time".as_ptr(), timestamp);
     }
 }
 

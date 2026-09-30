@@ -48,6 +48,7 @@ use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};
 use crate::src::tty_features::tty_parse_features;
 use std::ffi::{CStr, CString};
 use std::sync::OnceLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _NL_NUM: C2RustUnnamed = 786449;
@@ -422,10 +423,7 @@ pub static mut global_options: *mut options = ::core::ptr::null::<options>() as 
 pub static mut global_s_options: *mut options = ::core::ptr::null::<options>() as *mut options;
 pub static mut global_w_options: *mut options = ::core::ptr::null::<options>() as *mut options;
 pub static mut global_environ: Option<Box<environ>> = None;
-pub static mut start_time: timeval = timeval {
-    tv_sec: 0,
-    tv_usec: 0,
-};
+pub static mut start_time: SystemTime = UNIX_EPOCH;
 pub static mut socket_path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
 pub static mut ptm_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub static mut shell_command: *const ::core::ffi::c_char =

@@ -26,6 +26,7 @@ use crate::src::window::{
 };
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
+use std::time::{Duration, UNIX_EPOCH};
 use std::{cell::UnsafeCell, rc::Rc};
 
 use crate::src::shared::abi::*;
@@ -198,7 +199,7 @@ unsafe fn cmd_find_inside_pane(
 unsafe fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> bool {
     than.is_none_or(|than| {
         let (c, than) = (c.activity_time(), than.activity_time());
-        (c.tv_sec, c.tv_usec) > (than.tv_sec, than.tv_usec)
+        c > than
     })
 }
 pub unsafe fn cmd_find_best_client(s: &SessionRef) -> Option<ClientRef> {
@@ -229,7 +230,7 @@ unsafe fn cmd_find_session_better(s: &SessionRef, than: Option<&SessionRef>, fla
         }
     }
     let (s, than) = (s.activity_time(), than.activity_time());
-    (s.tv_sec, s.tv_usec) > (than.tv_sec, than.tv_usec)
+    s > than
 }
 unsafe fn cmd_find_session_valid(s: &SessionRef) -> i32 {
     if !s.is_registered() {
@@ -2202,17 +2203,11 @@ mod target_observer_tests {
             let second = session::new();
             crate::src::session::test_support::activity(
                 &first,
-                timeval {
-                    tv_sec: 10,
-                    tv_usec: 0,
-                },
+                UNIX_EPOCH + Duration::from_secs(10),
             );
             crate::src::session::test_support::activity(
                 &second,
-                timeval {
-                    tv_sec: 9,
-                    tv_usec: 0,
-                },
+                UNIX_EPOCH + Duration::from_secs(9),
             );
             assert!(cmd_find_session_better(&first, None, 0));
             assert!(cmd_find_session_better(&first, Some(&second), 0));
@@ -2229,18 +2224,12 @@ mod target_observer_tests {
             ));
             crate::src::session::test_support::activity(
                 &second,
-                timeval {
-                    tv_sec: 10,
-                    tv_usec: 0,
-                },
+                UNIX_EPOCH + Duration::from_secs(10),
             );
             assert!(!cmd_find_session_better(&first, Some(&second), 0));
             crate::src::session::test_support::activity(
                 &first,
-                timeval {
-                    tv_sec: 10,
-                    tv_usec: 1,
-                },
+                UNIX_EPOCH + Duration::from_secs(10) + Duration::from_micros(1),
             );
             assert!(cmd_find_session_better(&first, Some(&second), 0));
         }

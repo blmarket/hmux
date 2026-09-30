@@ -6,9 +6,10 @@ use crate::src::shared::window::{WindowRef, WindowWeak};
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::rc::Rc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::src::compat::imsg::msgtype;
-use crate::src::shared::abi::{pid_t, size_t, time_t, timeval, u_int, uint64_t};
+use crate::src::shared::abi::{pid_t, size_t, time_t, u_int, uint64_t};
 use crate::src::shared::colour::client_theme;
 use crate::src::shared::command::cmdq_list;
 use crate::src::shared::control::control_state;
@@ -40,9 +41,9 @@ pub struct client {
     pub(super) fd: ::core::ffi::c_int,
     pub(super) out_fd: ::core::ffi::c_int,
     pub(super) retval: ::core::ffi::c_int,
-    pub(super) creation_time: timeval,
-    pub(super) activity_time: timeval,
-    pub(super) last_activity_time: timeval,
+    pub(super) creation_time: SystemTime,
+    pub(super) activity_time: SystemTime,
+    pub(super) last_activity_time: SystemTime,
     pub(super) environ: Option<Box<environ>>,
     /// Sole owner of this client's lazily allocated format-job cache.
     pub(super) jobs: Option<Box<format_job_tree>>,
@@ -148,9 +149,9 @@ impl client {
             fd: Default::default(),
             out_fd: Default::default(),
             retval: Default::default(),
-            creation_time: Default::default(),
-            activity_time: Default::default(),
-            last_activity_time: Default::default(),
+            creation_time: UNIX_EPOCH,
+            activity_time: UNIX_EPOCH,
+            last_activity_time: UNIX_EPOCH,
             environ: Default::default(),
             jobs: Default::default(),
             title: Default::default(),
@@ -233,15 +234,9 @@ impl client {
         owner
     }
 
-    pub(crate) unsafe fn activity_for_test(
-        owner: &ClientRef,
-        seconds: time_t,
-        micros: crate::src::shared::abi::__suseconds_t,
-    ) {
-        (*owner.get()).activity_time = timeval {
-            tv_sec: seconds,
-            tv_usec: micros,
-        };
+    pub(crate) unsafe fn activity_for_test(owner: &ClientRef, seconds: u64, micros: u64) {
+        (*owner.get()).activity_time =
+            UNIX_EPOCH + Duration::from_secs(seconds) + Duration::from_micros(micros);
     }
 
     pub(crate) unsafe fn with_names_for_test(

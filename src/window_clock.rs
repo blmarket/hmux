@@ -1,6 +1,4 @@
-use crate::src::ffi::libc::{
-    clock_gettime, gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time,
-};
+use crate::src::ffi::libc::{gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
@@ -11,7 +9,6 @@ use crate::src::screen_write::{
     screen_write_clearscreen, screen_write_cursormove, screen_write_putc, screen_write_puts,
     screen_write_start, screen_write_stop,
 };
-use crate::src::shared::abi::__syscall_slong_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
@@ -27,12 +24,13 @@ use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
-use crate::src::shared::time::{timespec, tm, CLOCK_REALTIME};
+use crate::src::shared::time::tm;
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply_with_options;
 use crate::src::window::Window as _;
 use crate::src::window::{window_pane_mode_weak, window_pane_reset_mode};
 use crate::src::window_pane::WindowPane as _;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[repr(C)]
 pub struct window_clock_mode_data {
@@ -605,25 +603,11 @@ unsafe fn window_clock_data(wme: refbox::Weak<window_mode_entry>) -> *mut window
 
 unsafe fn window_clock_start_timer(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    let mut ts: timespec = timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    let mut delay: ::core::ffi::c_long = 0;
-    clock_gettime(CLOCK_REALTIME, &raw mut ts);
-    delay = (1000000 as __syscall_slong_t - ts.tv_nsec / 1000 as __syscall_slong_t)
-        as ::core::ffi::c_long;
-    tv.tv_sec = (delay / 1000000 as ::core::ffi::c_long) as __time_t;
-    tv.tv_usec = (delay % 1000000 as ::core::ffi::c_long) as __suseconds_t;
-    if tv.tv_sec < 0 as __time_t || tv.tv_sec == 0 as __time_t && tv.tv_usec <= 0 as __suseconds_t {
-        tv.tv_sec = 1 as __time_t;
-        tv.tv_usec = 0 as __suseconds_t;
-    }
-    event_add(&raw mut (*data).timer, &raw mut tv);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let delay = Duration::from_micros(1_000_000 - u64::from(now.subsec_micros()));
+    event_add(&raw mut (*data).timer, Some(delay));
 }
 unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme

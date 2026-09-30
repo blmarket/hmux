@@ -1,8 +1,7 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::compat::vis::strvis;
 use crate::src::ffi::libc::{
-    __errno_location, exit, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf, snprintf,
-    strerror,
+    __errno_location, exit, fflush, fopen, fprintf, getpid, setvbuf, snprintf, strerror,
 };
 use crate::src::format::bytes::format_bytes;
 use crate::src::format::bytes::try_format_message_with;
@@ -11,6 +10,7 @@ use crate::src::shared::stdio::FILE;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use std::ffi::{CStr, CString};
 use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod format;
 pub use format::{log_byte, log_bytes, log_cstr, log_cstr_n, log_cstr_width, log_hex, log_pointer};
@@ -111,16 +111,14 @@ unsafe fn log_write_escaped(message: &CStr, prefix: &CStr) {
     if file.is_null() {
         return;
     }
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    gettimeofday(&raw mut tv, NULL);
+    let tv = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     if fprintf(
         file,
         b"%lld.%06d %s%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-        tv.tv_sec as ::core::ffi::c_longlong,
-        tv.tv_usec as ::core::ffi::c_int,
+        tv.as_secs() as ::core::ffi::c_longlong,
+        tv.subsec_micros() as ::core::ffi::c_int,
         prefix.as_ptr(),
         message.as_ptr(),
     ) != -(1 as ::core::ffi::c_int)

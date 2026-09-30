@@ -11,38 +11,10 @@ unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria
             result = (*sa).id.wrapping_sub((*sb).id) as ::core::ffi::c_int;
         }
         1 => {
-            if if (*sa).creation_time.tv_sec == (*sb).creation_time.tv_sec {
-                ((*sa).creation_time.tv_usec > (*sb).creation_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*sa).creation_time.tv_sec > (*sb).creation_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = 1 as ::core::ffi::c_int;
-            } else if if (*sa).creation_time.tv_sec == (*sb).creation_time.tv_sec {
-                ((*sa).creation_time.tv_usec < (*sb).creation_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*sa).creation_time.tv_sec < (*sb).creation_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = -(1 as ::core::ffi::c_int);
-            }
+            result = sa.creation_time.cmp(&sb.creation_time) as i32;
         }
         0 => {
-            if if (*sa).activity_time.tv_sec == (*sb).activity_time.tv_sec {
-                ((*sa).activity_time.tv_usec > (*sb).activity_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*sa).activity_time.tv_sec > (*sb).activity_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = -(1 as ::core::ffi::c_int);
-            } else if if (*sa).activity_time.tv_sec == (*sb).activity_time.tv_sec {
-                ((*sa).activity_time.tv_usec < (*sb).activity_time.tv_usec) as ::core::ffi::c_int
-            } else {
-                ((*sa).activity_time.tv_sec < (*sb).activity_time.tv_sec) as ::core::ffi::c_int
-            } != 0
-            {
-                result = 1 as ::core::ffi::c_int;
-            }
+            result = sb.activity_time.cmp(&sa.activity_time) as i32;
         }
         4 => {
             result = strcmp(

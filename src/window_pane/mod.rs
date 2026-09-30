@@ -5,6 +5,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::Window as _;
 use crate::src::window::*;
+use std::time::Duration;
 mod api;
 mod pane_sync;
 use crate::src::alerts::alerts_queue;
@@ -19,8 +20,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __ctype_b_loc, close, fnmatch, gethostname, getpid, gettimeofday, ioctl, kill, memcpy, memset,
-    strcasecmp,
+    __ctype_b_loc, close, fnmatch, gethostname, getpid, ioctl, kill, memcpy, memset, strcasecmp,
 };
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;
@@ -2458,10 +2458,6 @@ pub unsafe fn window_pane_scrollbar_start_timer(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     let wp = pane_owner.get();
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     let mut delay: u_int = 0;
     if window_pane_scrollbar_auto_hide(&*wp) == 0 || (*wp).sb_auto_visible == 0 {
         return;
@@ -2472,11 +2468,9 @@ pub unsafe fn window_pane_scrollbar_start_timer(
             b"pane-scrollbars-timeout\0" as *const u8 as *const ::core::ffi::c_char,
         )
     }) as u_int;
-    tv.tv_sec = delay.wrapping_div(1000 as u_int) as __time_t;
-    tv.tv_usec = (delay.wrapping_rem(1000 as u_int) as ::core::ffi::c_long
-        * 1000 as ::core::ffi::c_long) as __suseconds_t;
+    let timeout = Duration::from_millis(delay as u64);
     event_del(&raw mut (*wp).sb_auto_timer);
-    event_add(&raw mut (*wp).sb_auto_timer, &raw mut tv);
+    event_add(&raw mut (*wp).sb_auto_timer, Some(timeout));
 }
 
 pub unsafe fn window_pane_scrollbar_show(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {

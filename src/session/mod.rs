@@ -17,6 +17,7 @@ pub use crate::src::session_group::{
     session_groups_minmax, session_groups_next, session_groups_remove,
 };
 pub use api::Session;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::src::cmd::find::{cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::compat::strtonum::strtonum;
@@ -26,7 +27,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_uint,
     event_payload_set_window,
 };
-use crate::src::ffi::libc::{gettimeofday, memcpy, strcmp};
+use crate::src::ffi::libc::{memcpy, strcmp};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_debug};
@@ -274,9 +275,7 @@ pub unsafe fn session_create(
         log_bytes((*s).name.as_bytes()),
         ((*s).id) as u32
     ));
-    if gettimeofday(&raw mut (*s).creation_time, NULL) != 0 as ::core::ffi::c_int {
-        fatal(|out| out.write_all(b"gettimeofday failed"));
-    }
+    (*s).creation_time = SystemTime::now();
     let created = (*s).creation_time;
     session_update_activity(&mut *s, Some(created));
     owner
@@ -366,23 +365,27 @@ unsafe fn session_lock_timer(owner: &SessionRef) {
     log_debug(format_args!(
         "session {} locked, activity time {}",
         log_bytes(session.name.as_bytes()),
-        session.activity_time.tv_sec as ::core::ffi::c_longlong
+        crate::src::shared::time::unix_seconds(session.activity_time) as ::core::ffi::c_longlong
     ));
     server_lock_session(owner);
     recalculate_sizes();
 }
-unsafe fn session_update_activity(session: &mut session, from: Option<timeval>) {
+unsafe fn session_update_activity(session: &mut session, from: Option<SystemTime>) {
     if let Some(from) = from {
         session.activity_time = from;
     } else {
-        gettimeofday(&raw mut session.activity_time, NULL);
+        session.activity_time = SystemTime::now();
     }
     log_debug(format_args!(
         "session ${} {} activity {}.{:06}",
         session.id,
         log_bytes(session.name.as_bytes()),
-        session.activity_time.tv_sec as ::core::ffi::c_longlong,
-        session.activity_time.tv_usec as ::core::ffi::c_int
+        crate::src::shared::time::unix_seconds(session.activity_time) as ::core::ffi::c_longlong,
+        session
+            .activity_time
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_micros() as ::core::ffi::c_int
     ));
     if event_initialized(&session.lock_timer) != 0 {
         event_del(&raw mut session.lock_timer);
@@ -395,15 +398,14 @@ unsafe fn session_update_activity(session: &mut session, from: Option<timeval>) 
         });
     }
     if session.attached != 0 {
-        let mut timeout = timeval {
-            tv_sec: crate::src::options::options_get_number_ref(
+        let timeout = Duration::from_secs(
+            (crate::src::options::options_get_number_ref(
                 session.options.as_deref().expect("session options"),
                 c"lock-after-time",
-            ) as __time_t,
-            tv_usec: 0,
-        };
-        if timeout.tv_sec != 0 {
-            event_add(&raw mut session.lock_timer, &raw mut timeout);
+            )) as u64,
+        );
+        if timeout.as_secs() != 0 {
+            event_add(&raw mut session.lock_timer, Some(timeout));
         }
     }
 }

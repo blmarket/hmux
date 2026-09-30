@@ -2,7 +2,7 @@
 
 use crate::src::shared::abi::{
     __compar_fn_t, __gid_t, __int32_t, __mode_t, __off_t, __pid_t, __uid_t, clockid_t, size_t,
-    socklen_t, speed_t, ssize_t, time_t, timeval,
+    socklen_t, speed_t, ssize_t, time_t,
 };
 use crate::src::shared::account::{group, passwd};
 use crate::src::shared::posix_io::{glob_t, stat};
@@ -180,7 +180,6 @@ extern "C" {
         __optval: *mut ::core::ffi::c_void,
         __optlen: *mut socklen_t,
     ) -> ::core::ffi::c_int;
-    pub fn gettimeofday(__tv: *mut timeval, __tz: *mut ::core::ffi::c_void) -> ::core::ffi::c_int;
     pub fn getuid() -> __uid_t;
     pub fn glob(
         __pattern: *const ::core::ffi::c_char,

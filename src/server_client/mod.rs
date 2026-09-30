@@ -4,6 +4,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::Window as _;
+use std::time::{Duration, SystemTime};
 mod api;
 mod format;
 mod model;
@@ -33,8 +34,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    access, close, free, gettimeofday, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen,
-    strsep, ttyname,
+    access, close, free, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep, ttyname,
 };
 use crate::src::file::{
     file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
@@ -1060,50 +1060,24 @@ pub unsafe fn server_client_set_key_table(
     }
     drop((*c).keytable.take());
     (*c).keytable = key_bindings_get_table(std::ffi::CStr::from_ptr(name), 1);
-    if gettimeofday(
-        &mut (*c)
-            .keytable
-            .as_ref()
-            .expect("key table")
-            .borrow_mut()
-            .activity_time,
-        NULL,
-    ) != 0 as ::core::ffi::c_int
-    {
-        fatal(|out| out.write_all(b"gettimeofday failed"));
-    }
+    (*c).keytable
+        .as_ref()
+        .expect("key table")
+        .borrow_mut()
+        .activity_time = SystemTime::now();
 }
 unsafe fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
-    let mut diff: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    diff.tv_sec = (*c).activity_time.tv_sec
-        - (*c)
-            .keytable
-            .as_ref()
-            .expect("key table")
-            .borrow()
-            .activity_time
-            .tv_sec;
-    diff.tv_usec = (*c).activity_time.tv_usec
-        - (*c)
-            .keytable
-            .as_ref()
-            .expect("key table")
-            .borrow()
-            .activity_time
-            .tv_usec;
-    if diff.tv_usec < 0 as __suseconds_t {
-        diff.tv_sec -= 1;
-        diff.tv_usec += 1000000 as __suseconds_t;
-    }
-    return (diff.tv_sec as ::core::ffi::c_ulonglong)
-        .wrapping_mul(1000 as ::core::ffi::c_ulonglong)
-        .wrapping_add(
-            (diff.tv_usec as ::core::ffi::c_ulonglong)
-                .wrapping_div(1000 as ::core::ffi::c_ulonglong),
-        ) as uint64_t;
+    c.activity_time
+        .duration_since(
+            c.keytable
+                .as_ref()
+                .expect("key table")
+                .borrow()
+                .activity_time,
+        )
+        .unwrap_or(Duration::MAX)
+        .as_millis()
+        .min(u64::MAX as u128) as u64
 }
 unsafe fn server_client_get_key_table(c: &client) -> std::ffi::CString {
     let Some(session) = c.session_handle() else {
@@ -1175,14 +1149,8 @@ pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
             }
         }),
     );
-    if gettimeofday(&raw mut (*c).creation_time, NULL) != 0 as ::core::ffi::c_int {
-        fatal(|out| out.write_all(b"gettimeofday failed"));
-    }
-    memcpy(
-        &raw mut (*c).activity_time as *mut ::core::ffi::c_void,
-        &raw mut (*c).creation_time as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<timeval>() as size_t,
-    );
+    (*c).creation_time = SystemTime::now();
+    (*c).activity_time = (*c).creation_time;
     (*c).environ = Some(environ_create());
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
@@ -1299,15 +1267,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
                         .window_handle()
                         .is_none_or(|current| !std::rc::Rc::ptr_eq(current, &window_owner)))
                 {
-                    if found.is_null()
-                        || (if (*loop_0).activity_time.tv_sec == (*found).activity_time.tv_sec {
-                            ((*loop_0).activity_time.tv_usec > (*found).activity_time.tv_usec)
-                                as ::core::ffi::c_int
-                        } else {
-                            ((*loop_0).activity_time.tv_sec > (*found).activity_time.tv_sec)
-                                as ::core::ffi::c_int
-                        }) != 0
-                    {
+                    if found.is_null() || (*loop_0).activity_time > (*found).activity_time {
                         found = loop_0;
                     }
                 }
@@ -2043,10 +2003,6 @@ unsafe fn server_client_check_mouse(
         let mut ignore: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut modal_drag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut key: key_code = 0;
-        let mut tv: timeval = timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        };
         let mut type_0: key_code_type = KEYC_TYPE_NOTYPE;
         let mut loc: key_code_mouse_location = KEYC_MOUSE_LOCATION_NOWHERE;
         log_debug(format_args!(
@@ -2479,12 +2435,9 @@ unsafe fn server_client_check_mouse(
                 (*c).click_loc = loc as ::core::ffi::c_int;
                 (*c).click_wp = (*m).wp;
                 log_debug(format_args!("click timer started"));
-                tv.tv_sec = (KEYC_CLICK_TIMEOUT / 1000 as ::core::ffi::c_int) as __time_t;
-                tv.tv_usec = ((KEYC_CLICK_TIMEOUT % 1000 as ::core::ffi::c_int)
-                    as ::core::ffi::c_long
-                    * 1000 as ::core::ffi::c_long) as __suseconds_t;
+                let timeout = Duration::from_millis(KEYC_CLICK_TIMEOUT as u64);
                 event_del(&raw mut (*c).click_timer);
-                event_add(&raw mut (*c).click_timer, &raw mut tv);
+                event_add(&raw mut (*c).click_timer, Some(timeout));
             }
         }
         key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -2722,10 +2675,6 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> :
 }
 unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     let mut s: Option<SessionRef> = (*c).session_handle();
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     let mut t: ::core::ffi::c_int = 0;
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_BRACKETPASTING != 0 {
         return 0 as ::core::ffi::c_int;
@@ -2749,13 +2698,9 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
     {
         return 0 as ::core::ffi::c_int;
     }
-    tv.tv_sec = (*c).activity_time.tv_sec - (*c).last_activity_time.tv_sec;
-    tv.tv_usec = (*c).activity_time.tv_usec - (*c).last_activity_time.tv_usec;
-    if tv.tv_usec < 0 as __suseconds_t {
-        tv.tv_sec -= 1;
-        tv.tv_usec += 1000000 as __suseconds_t;
-    }
-    if tv.tv_sec == 0 as __time_t && tv.tv_usec < (t * 1000 as ::core::ffi::c_int) as __suseconds_t
+    let elapsed = c.activity_time.duration_since(c.last_activity_time);
+    if elapsed
+        .is_ok_and(|elapsed| elapsed.as_secs() == 0 && elapsed < Duration::from_millis(t as u64))
     {
         if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_ASSUMEPASTING != 0 {
             return 1 as ::core::ffi::c_int;
@@ -2910,10 +2855,6 @@ unsafe fn server_client_key_callback(
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     let mut table: std::rc::Rc<std::cell::RefCell<key_table>>;
     let mut table_owner;
     let mut first: std::rc::Rc<std::cell::RefCell<key_table>>;
@@ -2940,14 +2881,8 @@ unsafe fn server_client_key_callback(
     s = (*c).session_handle();
     if !(s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0) {
         wl = s.as_ref().expect("live session").current_winlink();
-        memcpy(
-            &raw mut (*c).last_activity_time as *mut ::core::ffi::c_void,
-            &raw mut (*c).activity_time as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<timeval>() as size_t,
-        );
-        if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
-            fatal(|out| out.write_all(b"gettimeofday failed"));
-        }
+        (*c).last_activity_time = (*c).activity_time;
+        (*c).activity_time = SystemTime::now();
         s.as_ref()
             .expect("live session")
             .update_activity(Some((*c).activity_time));
@@ -3278,14 +3213,9 @@ unsafe fn server_client_key_callback(
                                         if repeat != 0 as u_int {
                                             (*c).flags |= CLIENT_REPEAT as uint64_t;
                                             (*c).last_key = bd.key;
-                                            tv.tv_sec =
-                                                repeat.wrapping_div(1000 as u_int) as __time_t;
-                                            tv.tv_usec = (repeat.wrapping_rem(1000 as u_int)
-                                                as ::core::ffi::c_long
-                                                * 1000 as ::core::ffi::c_long)
-                                                as __suseconds_t;
+                                            let timeout = Duration::from_millis(repeat as u64);
                                             event_del(&raw mut (*c).repeat_timer);
-                                            event_add(&raw mut (*c).repeat_timer, &raw mut tv);
+                                            event_add(&raw mut (*c).repeat_timer, Some(timeout));
                                         } else {
                                             (*c).flags &= !CLIENT_REPEAT as uint64_t;
                                             server_client_set_key_table(
@@ -4174,17 +4104,14 @@ unsafe fn server_client_click_timer(owner: &ClientRef) {
     (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }
 unsafe fn server_client_start_exit_timer(c: &mut client) {
-    let mut tv: timeval = timeval {
-        tv_sec: 10 as __time_t,
-        tv_usec: 0,
-    };
+    let timeout = Duration::from_secs(10);
     if event_pending(
         &raw mut (*c).exit_timer,
         EV_TIMEOUT as ::core::ffi::c_short,
-        ::core::ptr::null_mut::<timeval>(),
+        None,
     ) == 0
     {
-        event_add(&raw mut (*c).exit_timer, &raw mut tv);
+        event_add(&raw mut (*c).exit_timer, Some(timeout));
     }
 }
 unsafe fn server_client_exit_timer(owner: &ClientRef) {
@@ -4357,10 +4284,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         let mut needed: ::core::ffi::c_int = 0;
         let mut tflags: ::core::ffi::c_int = 0;
         let mut mode: ::core::ffi::c_int = (*tty).mode;
-        let mut tv: timeval = timeval {
-            tv_sec: 0,
-            tv_usec: 1000 as __suseconds_t,
-        };
+        let timeout = Duration::from_micros(1000);
         static mut ev: event = event::new();
         let mut n: size_t = 0;
         if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
@@ -4457,14 +4381,9 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
                     move |_, _| unsafe { server_client_redraw_timer() },
                 );
             }
-            if event_pending(
-                &raw mut ev,
-                EV_TIMEOUT as ::core::ffi::c_short,
-                ::core::ptr::null_mut::<timeval>(),
-            ) == 0
-            {
+            if event_pending(&raw mut ev, EV_TIMEOUT as ::core::ffi::c_short, None) == 0 {
                 log_debug(format_args!("redraw timer started"));
-                event_add(&raw mut ev, &raw mut tv);
+                event_add(&raw mut ev, Some(timeout));
             }
             let mut cursor = window_owner.next_pane(None);
             while let Some(pane_owner) = cursor {
@@ -4753,9 +4672,7 @@ unsafe fn server_client_dispatch(
                     current_block = 14945149239039849694;
                 } else {
                     s = (*c).session_handle();
-                    if gettimeofday(&raw mut (*c).activity_time, NULL) != 0 as ::core::ffi::c_int {
-                        fatal(|out| out.write_all(b"gettimeofday failed"));
-                    }
+                    (*c).activity_time = SystemTime::now();
                     tty_start_tty(&(*c).observer.upgrade().expect("live client"));
                     (*c).flags |= CLIENT_ALLREDRAWFLAGS as u64;
                     recalculate_sizes();
@@ -5922,11 +5839,8 @@ mod client_timer_observer_tests {
             let observer = std::rc::Rc::downgrade(&owner);
             server_client_init_timers(&owner);
             (*owner.get()).flags |= CLIENT_DOUBLECLICK as uint64_t;
-            let mut immediate = timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            };
-            event_add(&mut (*owner.get()).click_timer, &mut immediate);
+            let immediate = Duration::ZERO;
+            event_add(&mut (*owner.get()).click_timer, Some(immediate));
             crate::src::reactor::event_loop();
             assert_eq!((*owner.get()).flags & CLIENT_DOUBLECLICK as uint64_t, 0);
             let mut detached_timer = std::mem::take(&mut (*owner.get()).click_timer);
@@ -5935,7 +5849,7 @@ mod client_timer_observer_tests {
                 observer.upgrade().is_none(),
                 "timer callbacks must not retain clients"
             );
-            event_add(&mut detached_timer, &mut immediate);
+            event_add(&mut detached_timer, Some(immediate));
             crate::src::reactor::event_loop();
             assert!(observer.upgrade().is_none());
             event_del(&mut detached_timer);

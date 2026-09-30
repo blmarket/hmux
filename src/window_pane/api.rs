@@ -9,6 +9,7 @@ use crate::src::shared::colour::colour_palette;
 use crate::src::shared::pane::{PANE_ACTIVITY, PANE_MINIMUM};
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
+use std::time::Duration;
 
 /// Access a pane without lending its model storage.
 ///
@@ -576,12 +577,7 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
             }
         });
     }
-    if event_pending(
-        &raw mut (*pane).resize_timer,
-        EV_TIMEOUT as _,
-        std::ptr::null_mut(),
-    ) != 0
-    {
+    if event_pending(&raw mut (*pane).resize_timer, EV_TIMEOUT as _, None) != 0 {
         return;
     }
     log_debug(format_args!(
@@ -611,11 +607,8 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
     };
     window_pane_send_resize(&*pane, sx, sy);
     (*pane).clear_resizes_except(keep);
-    let mut delay = timeval {
-        tv_sec: 0,
-        tv_usec: if keep.is_null() { 250000 } else { 10000 },
-    };
-    event_add(&raw mut (*pane).resize_timer, &mut delay);
+    let delay = Duration::from_micros((if keep.is_null() { 250000 } else { 10000 }) as u64);
+    event_add(&raw mut (*pane).resize_timer, Some(delay));
 }
 
 unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {

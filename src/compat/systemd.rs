@@ -1,5 +1,5 @@
 use crate::src::ffi::libc::{
-    __errno_location, free, getpid, getppid, getsockname, gettimeofday, strcmp, strerror,
+    __errno_location, free, getpid, getppid, getsockname, strcmp, strerror,
 };
 use crate::src::ffi::systemd::{
     sd_bus, sd_bus_error, sd_bus_message, sd_bus_slot, sd_id128, sd_id128_t,
@@ -18,6 +18,7 @@ use crate::src::shared::errno::E2BIG;
 use crate::src::shared::socket::{sockaddr, sockaddr_un, __SOCKADDR_ARG, SOCK_STREAM};
 use crate::src::tmux::socket_path;
 use std::ffi::{CStr, CString};
+use std::time::Instant;
 
 static mut SYSTEMD_SOCKET_PATH: Option<CString> = None;
 
@@ -215,14 +216,6 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
     let mut elapsed_usec: uint64_t = 0;
     let mut pid: pid_t = 0;
     let mut parent_pid: pid_t = 0;
-    let mut start: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    let mut now: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     let mut watch: systemd_job_watch = systemd_job_watch {
         path: None,
         done: 0,
@@ -234,7 +227,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
         slot: &raw mut slot,
         bus: &raw mut bus,
     };
-    gettimeofday(&raw mut start, NULL);
+    let start = Instant::now();
     r = sd_bus_default_user(&raw mut bus);
     if r < 0 as ::core::ffi::c_int {
         set_systemd_error!(
@@ -593,10 +586,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                     if r > 0 as ::core::ffi::c_int {
                                                                                         continue;
                                                                                     }
-                                                                                    gettimeofday(&raw mut now, NULL);
-                                                                                    elapsed_usec = ((now.tv_sec as __suseconds_t
-                                                                                        - start.tv_sec as __suseconds_t) * 1000000 as __suseconds_t
-                                                                                        + now.tv_usec - start.tv_usec) as uint64_t;
+                                                                                    elapsed_usec = start.elapsed().as_micros().min(u64::MAX as u128) as u64;
                                                                                     if elapsed_usec >= 1000000 as uint64_t {
                                                                                         set_systemd_error!(
                                                                                             cause,

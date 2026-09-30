@@ -220,10 +220,10 @@ pub(crate) unsafe fn tty_enqueue_bytes(
         && event_pending(
             &raw mut (*tty).event_out,
             EV_WRITE as ::core::ffi::c_short,
-            ::core::ptr::null_mut::<timeval>(),
+            None,
         ) == 0
     {
-        event_add(&raw mut (*tty).event_out, ::core::ptr::null::<timeval>());
+        event_add(&raw mut (*tty).event_out, None);
     }
 }
 

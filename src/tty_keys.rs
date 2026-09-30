@@ -54,6 +54,7 @@ use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;
 use crate::src::window::window_update_focus;
 use std::ffi::CStr;
+use std::time::Duration;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1634,10 +1635,6 @@ unsafe fn tty_keys_winsz(
 pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let diagnostic_name = terminal_client_owner.name();
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut len: size_t = 0;
     let mut size: size_t = 0;
@@ -2223,11 +2220,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         terminal.flags & TTY_TIMER != 0,
                         terminal.flags & TTY_TIMER != 0
                             && event_initialized(&terminal.key_timer) != 0
-                            && event_pending(
-                                &mut terminal.key_timer,
-                                EV_TIMEOUT as _,
-                                std::ptr::null_mut(),
-                            ) == 0,
+                            && event_pending(&mut terminal.key_timer, EV_TIMEOUT as _, None) == 0,
                     )
                 };
                 if timer_active {
@@ -2289,10 +2282,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                             delay = 500 as ::core::ffi::c_int;
                         }
                     }
-                    tv.tv_sec = (delay / 1000 as ::core::ffi::c_int) as __time_t;
-                    tv.tv_usec = ((delay % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
-                        * 1000 as ::core::ffi::c_long)
-                        as __suseconds_t;
+                    let timeout = Duration::from_millis(delay as u64);
                     {
                         let mut terminal = terminal_client_owner.borrow_terminal_mut();
                         if event_initialized(&terminal.key_timer) != 0 {
@@ -2307,7 +2297,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                                 tty_keys_callback,
                             ),
                         );
-                        event_add(&raw mut terminal.key_timer, &raw mut tv);
+                        event_add(&raw mut terminal.key_timer, Some(timeout));
                         terminal.flags |= TTY_TIMER;
                     }
                     return 0 as ::core::ffi::c_int;

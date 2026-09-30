@@ -6,7 +6,7 @@ pub type WindowRef = std::rc::Rc<std::cell::UnsafeCell<window>>;
 /// Nonowning Window identity, including callback and parent links.
 pub type WindowWeak = std::rc::Weak<std::cell::UnsafeCell<window>>;
 
-use super::abi::{timeval, u_int, uint64_t};
+use super::abi::{u_int, uint64_t};
 use super::arguments::args;
 use super::client::client;
 use super::command::{cmd_find_state, cmdq_item};

@@ -1,14 +1,11 @@
-use hmux2::src::shared::abi::timeval;
 use hmux2::src::shared::status::message_list;
 use std::ffi::CString;
+use std::time::{Duration, UNIX_EPOCH};
 
 #[test]
 fn message_list_owns_entries_trims_oldest_and_reverses_for_display() {
     let mut messages = message_list::new();
-    let time = timeval {
-        tv_sec: 123,
-        tv_usec: 456,
-    };
+    let time = UNIX_EPOCH + Duration::from_secs(123) + Duration::from_micros(456);
 
     messages.push_back(CString::new("one").unwrap(), 0, time);
     messages.push_back(CString::new("two").unwrap(), 1, time);
@@ -21,7 +18,7 @@ fn message_list_owns_entries_trims_oldest_and_reverses_for_display() {
             (
                 msg.msg.to_bytes().to_vec(),
                 msg.msg_num,
-                msg.msg_time.tv_sec,
+                msg.msg_time.duration_since(UNIX_EPOCH).unwrap().as_secs(),
             )
         })
         .collect();

@@ -1,10 +1,11 @@
 //! Authoritative key-code scalar domains.
 
-use super::abi::{size_t, timeval, u_int};
+use super::abi::{size_t, u_int};
 use super::client::client;
 use super::command::cmd_list;
 use super::mouse::mouse_event;
 use crate::src::shared::client::{ClientRef, ClientWeak};
+use std::time::{SystemTime, UNIX_EPOCH};
 // Underlying type of the historical 2,053-value anonymous KEYC enum.
 // Preserve unsigned long independently of key_code (unsigned long long).
 
@@ -1520,7 +1521,7 @@ pub struct key_table {
     /// Stable numeric identity for mode-tree sections; never an address.
     pub(crate) identity: u64,
     pub name: std::ffi::CString,
-    pub activity_time: timeval,
+    pub activity_time: SystemTime,
     pub key_bindings: key_bindings,
     pub default_key_bindings: key_bindings,
     /// Weak traversal handle into the containing index.
@@ -1541,7 +1542,7 @@ impl key_table {
         Self {
             identity,
             name: Default::default(),
-            activity_time: Default::default(),
+            activity_time: UNIX_EPOCH,
             key_bindings: key_bindings::default(),
             default_key_bindings: key_bindings::default(),
             owner: refbox::Weak::new(),

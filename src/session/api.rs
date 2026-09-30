@@ -3,6 +3,7 @@ use super::*;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
+use std::time::SystemTime;
 
 /// The caller must preserve the legacy single-threaded borrow and logical
 /// lifetime rules. No model/component reference may survive a callback.
@@ -29,7 +30,7 @@ pub trait Session {
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
-    unsafe fn activity_time(&self) -> timeval;
+    unsafe fn activity_time(&self) -> SystemTime;
     unsafe fn is_attached(&self) -> bool;
     /// Number of attached clients, including multiple clients of one group member.
     unsafe fn attached_count(&self) -> u32;
@@ -73,7 +74,7 @@ pub trait Session {
         context: &mut spawn_context,
     ) -> Result<refbox::Weak<winlink>, CString>;
     unsafe fn renumber_windows(&self);
-    unsafe fn update_activity(&self, from: Option<timeval>);
+    unsafe fn update_activity(&self, from: Option<SystemTime>);
     unsafe fn update_history(&self);
     unsafe fn on_attached(&self);
     unsafe fn theme_changed(&self);
@@ -182,7 +183,7 @@ impl Session for SessionRef {
         Ok(())
     }
 
-    unsafe fn activity_time(&self) -> timeval {
+    unsafe fn activity_time(&self) -> SystemTime {
         (*self.get()).activity_time
     }
     unsafe fn is_attached(&self) -> bool {
@@ -290,7 +291,7 @@ impl Session for SessionRef {
     unsafe fn update_history(&self) {
         session_update_history(&*self.get());
     }
-    unsafe fn update_activity(&self, from: Option<timeval>) {
+    unsafe fn update_activity(&self, from: Option<SystemTime>) {
         session_update_activity(&mut *self.get(), from);
     }
     unsafe fn theme_changed(&self) {
@@ -299,10 +300,7 @@ impl Session for SessionRef {
     unsafe fn on_attached(&self) {
         self.update_activity(None);
         session_theme_changed(Some(&*self.get()));
-        gettimeofday(
-            &raw mut (*self.get()).last_attached_time,
-            std::ptr::null_mut(),
-        );
+        (*self.get()).last_attached_time = SystemTime::now();
         self.current_winlink().get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
         crate::src::alerts::alerts_check_session(self);
     }

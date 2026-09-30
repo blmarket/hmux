@@ -4,7 +4,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::{close, getpid, gettimeofday, kill, memcpy, strlen};
+use crate::src::ffi::libc::{close, getpid, kill, memcpy, strlen};
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -47,6 +47,7 @@ use crate::src::window::{
     winlink_stack_remove,
 };
 use crate::src::window_pane::WindowPane as _;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
@@ -566,7 +567,7 @@ pub unsafe fn server_destroy_pane(
                 return;
             }
             (*wp).flags |= PANE_STATUSDRAWN;
-            gettimeofday(&raw mut (*wp).dead_time, NULL);
+            (*wp).dead_time = SystemTime::now();
             if notify != 0 {
                 server_fire_pane_exit(
                     b"pane-died\0" as *const u8 as *const ::core::ffi::c_char,
@@ -702,7 +703,7 @@ unsafe fn server_find_session(
 unsafe fn server_newer_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
     let Some(other) = other else { return true };
     let (a, b) = (s.activity_time(), other.activity_time());
-    (a.tv_sec, a.tv_usec) > (b.tv_sec, b.tv_usec)
+    a > b
 }
 unsafe fn server_newer_detached_session(s: &SessionRef, other: Option<&SessionRef>) -> bool {
     !s.is_attached() && server_newer_session(s, other)
@@ -954,10 +955,7 @@ mod session_selection_tests {
                 );
                 crate::src::session::test_support::activity(
                     owner,
-                    timeval {
-                        tv_sec: activity,
-                        tv_usec: 0,
-                    },
+                    UNIX_EPOCH + Duration::from_secs(activity as u64),
                 );
                 sessions_insert(&mut head, owner.clone());
             }

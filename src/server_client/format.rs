@@ -18,10 +18,14 @@ pub(super) unsafe fn value(
     }
     let text = match key.to_bytes() {
         b"client_activity" => {
-            return Some(FormatValue::Time(owner.activity_time().tv_sec as time_t))
+            return Some(FormatValue::Time(crate::src::shared::time::unix_seconds(
+                owner.activity_time(),
+            )))
         }
         b"client_created" => {
-            return Some(FormatValue::Time(owner.creation_time().tv_sec as time_t))
+            return Some(FormatValue::Time(crate::src::shared::time::unix_seconds(
+                owner.creation_time(),
+            )))
         }
         b"client_name" => owner.name()?,
         b"client_tty" => owner.tty_name()?,

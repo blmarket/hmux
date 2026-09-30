@@ -37,6 +37,7 @@ use crate::src::style::{
 };
 use crate::src::tmux::global_s_options;
 use std::ffi::{CStr, CString};
+use std::time::Duration;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -77,20 +78,19 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     }
     let Some(session) = session else { return };
     client.redraw_status_if_unobscured();
-    let mut timeout = timeval {
-        tv_sec: session
-            .with_options_mut(|options| options_get_number(options, c"status-interval".as_ptr()))
-            as __time_t,
-        tv_usec: 0,
-    };
-    if timeout.tv_sec != 0 {
+    let timeout = Duration::from_secs(
+        (session
+            .with_options_mut(|options| options_get_number(options, c"status-interval".as_ptr())))
+            as u64,
+    );
+    if timeout.as_secs() != 0 {
         let mut status = client.borrow_status_mut();
-        event_add(&mut status.timer, &mut timeout);
+        event_add(&mut status.timer, Some(timeout));
     }
     log_debug(format_args!(
         "client {}, status interval {}",
         log_pointer(std::rc::Rc::as_ptr(client).cast()),
-        timeout.tv_sec as i32
+        timeout.as_secs() as i32
     ));
 }
 pub unsafe fn status_timer_start(client: &ClientRef) {

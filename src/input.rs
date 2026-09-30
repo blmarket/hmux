@@ -70,6 +70,7 @@ use crate::src::window::{Window as _, WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
+use std::time::Duration;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -217,11 +218,8 @@ mod input_buffer_ownership_tests {
             for timer in [&mut owner.ground_timer, &mut owner.request_timer] {
                 let calls = calls.clone();
                 event_set(timer, -1, 0, move |_, _| calls.set(calls.get() + 1));
-                let timeout = timeval {
-                    tv_sec: 0,
-                    tv_usec: 0,
-                };
-                assert_eq!(event_add(timer, &timeout), 0);
+                let timeout = Duration::ZERO;
+                assert_eq!(event_add(timer, Some(timeout)), 0);
             }
             // Moving the owning Box into a model field must preserve timer
             // addresses. Dropping that field must cancel both registrations.
@@ -267,11 +265,8 @@ mod input_buffer_ownership_tests {
             event_set(&mut (*pointer).sync_timer, -1, 0, move |_, _| {
                 callback_calls.set(callback_calls.get() + 1)
             });
-            let timeout = timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            };
-            assert_eq!(event_add(&mut (*pointer).sync_timer, &timeout), 0);
+            let timeout = Duration::ZERO;
+            assert_eq!(event_add(&mut (*pointer).sync_timer, Some(timeout)), 0);
             drop(pane);
             assert!(observed.upgrade().is_none());
             crate::src::reactor::event_loop();
@@ -2299,12 +2294,9 @@ unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
     input_reset(ictx, 0 as ::core::ffi::c_int);
 }
 unsafe fn input_start_ground_timer(mut ictx: *mut input_ctx) {
-    let mut tv: timeval = timeval {
-        tv_sec: 5 as __time_t,
-        tv_usec: 0 as __suseconds_t,
-    };
+    let tv = Duration::from_secs(5);
     event_del(&raw mut (*ictx).ground_timer);
-    event_add(&raw mut (*ictx).ground_timer, &raw mut tv);
+    event_add(&raw mut (*ictx).ground_timer, Some(tv));
 }
 unsafe fn input_reset_cell(mut ictx: *mut input_ctx) {
     memcpy(
@@ -6064,12 +6056,9 @@ unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
     }
 }
 unsafe fn input_start_request_timer(mut ictx: *mut input_ctx) {
-    let mut tv: timeval = timeval {
-        tv_sec: 0 as __time_t,
-        tv_usec: 100000 as __suseconds_t,
-    };
+    let tv = Duration::from_micros(100000);
     event_del(&raw mut (*ictx).request_timer);
-    event_add(&raw mut (*ictx).request_timer, &raw mut tv);
+    event_add(&raw mut (*ictx).request_timer, Some(tv));
 }
 unsafe fn input_make_request(
     mut ictx: *mut input_ctx,
@@ -6145,21 +6134,8 @@ unsafe fn input_add_request(
                 if loop_0.as_ref().expect("live client").terminal_started() {
                     if c.is_none() {
                         c = loop_0;
-                    } else if if loop_0.as_ref().expect("live client").activity_time().tv_sec
-                        == c.as_ref().expect("live client").activity_time().tv_sec
-                    {
-                        (loop_0
-                            .as_ref()
-                            .expect("live client")
-                            .activity_time()
-                            .tv_usec
-                            > c.as_ref().expect("live client").activity_time().tv_usec)
-                            as ::core::ffi::c_int
-                    } else {
-                        (loop_0.as_ref().expect("live client").activity_time().tv_sec
-                            > c.as_ref().expect("live client").activity_time().tv_sec)
-                            as ::core::ffi::c_int
-                    } != 0
+                    } else if loop_0.as_ref().expect("live client").activity_time()
+                        > c.as_ref().expect("live client").activity_time()
                     {
                         c = loop_0;
                     }

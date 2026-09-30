@@ -102,7 +102,7 @@ pub trait Session {
     unsafe fn id(&self) -> u32;
     unsafe fn name(&self) -> CString;
     unsafe fn rename(&self, name: &CStr) -> Result<(), CString>;
-    unsafe fn activity_time(&self) -> timeval;
+    unsafe fn activity_time(&self) -> std::time::SystemTime;
     unsafe fn is_attached(&self) -> bool;
     unsafe fn current_winlink(&self) -> refbox::Weak<winlink>;
     /// Observe MRU history without selecting it (notably command target `!`).
@@ -130,7 +130,7 @@ pub trait Session {
         context: &mut spawn_context,
     ) -> Result<refbox::Weak<winlink>, CString>;
     unsafe fn renumber_windows(&self);
-    unsafe fn update_activity(&self, from: Option<timeval>);
+    unsafe fn update_activity(&self, from: Option<std::time::SystemTime>);
     unsafe fn on_attached(&self);
     unsafe fn status_layout(&self) -> (i32, u32);
     unsafe fn join_group(&self, name: &CStr);

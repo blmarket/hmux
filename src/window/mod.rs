@@ -2,6 +2,7 @@ use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
+use std::time::SystemTime;
 mod alerts;
 mod api;
 pub use api::{LayoutView, PaneLayoutGeometry, PaneOrder, Window, WindowResize, WindowScrollbars};
@@ -24,8 +25,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __ctype_b_loc, close, fnmatch, gethostname, getpid, gettimeofday, ioctl, kill, memcpy, memset,
-    strcasecmp,
+    __ctype_b_loc, close, fnmatch, gethostname, getpid, ioctl, kill, memcpy, memset, strcasecmp,
 };
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;
@@ -357,7 +357,7 @@ pub unsafe fn window_find_by_id(id: u_int) -> Option<WindowRef> {
 }
 pub unsafe fn window_update_activity(w_owner: &WindowRef) {
     let mut w = w_owner.get();
-    gettimeofday(&raw mut (*w).activity_time, NULL);
+    (*w).activity_time = SystemTime::now();
     alerts_queue(w_owner, WINDOW_ACTIVITY);
 }
 
@@ -420,9 +420,7 @@ pub unsafe fn window_create(
     next_window_id = next_window_id.wrapping_add(1);
     (*w).id = fresh0;
     windows_insert(&raw mut windows, &owner);
-    if gettimeofday(&raw mut (*w).creation_time, NULL) != 0 as ::core::ffi::c_int {
-        fatal(|out| out.write_all(b"gettimeofday failed"));
-    }
+    (*w).creation_time = SystemTime::now();
     window_update_activity(&(*(w)).observer.upgrade().expect("live window"));
     log_debug(format_args!(
         "{}: @{} create {}x{} ({}x{})",

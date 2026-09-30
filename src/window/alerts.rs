@@ -3,6 +3,7 @@ use super::*;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_set};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
+use std::time::Duration;
 
 pub(super) unsafe fn reset_timer(owner: &WindowRef) {
     let w = owner.get();
@@ -17,19 +18,17 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
     }
     (*w).flags &= !WINDOW_SILENCE;
     event_del(&raw mut (*w).alerts_timer);
-    let mut timeout = timeval {
-        tv_sec: owner
-            .with_options_mut(|options| options_get_number(options, c"monitor-silence".as_ptr()))
-            as _,
-        tv_usec: 0,
-    };
+    let timeout = Duration::from_secs(
+        (owner.with_options_mut(|options| options_get_number(options, c"monitor-silence".as_ptr())))
+            as u64,
+    );
     log_debug(format_args!(
         "@{} alerts timer reset {}",
         owner.id(),
-        timeout.tv_sec as u32
+        timeout.as_secs() as u32
     ));
-    if timeout.tv_sec != 0 {
-        event_add(&raw mut (*w).alerts_timer, &mut timeout);
+    if timeout.as_secs() != 0 {
+        event_add(&raw mut (*w).alerts_timer, Some(timeout));
     }
 }
 

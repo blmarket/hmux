@@ -2,6 +2,7 @@
 //! No production API or raw Session/component view is exposed.
 use super::*;
 use crate::src::shared::session::SessionRef;
+use std::time::SystemTime;
 
 pub(crate) unsafe fn metadata(
     owner: &SessionRef,
@@ -35,6 +36,6 @@ pub(crate) unsafe fn reindex(owner: &SessionRef, link: refbox::Weak<winlink>, in
     crate::src::window::winlinks_reindex(&mut (*owner.get()).windows, link, index);
 }
 
-pub(crate) unsafe fn activity(owner: &SessionRef, time: timeval) {
+pub(crate) unsafe fn activity(owner: &SessionRef, time: SystemTime) {
     (*owner.get()).activity_time = time;
 }

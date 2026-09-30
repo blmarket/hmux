@@ -273,13 +273,13 @@ pub unsafe fn grid_line_time(gl: &grid_line) -> time_t {
     if gl.time == 0 {
         return 0;
     }
-    start_time.tv_sec as time_t + gl.time as time_t - 1
+    crate::src::shared::time::unix_seconds(start_time) + gl.time as time_t - 1
 }
 unsafe fn grid_line_set_time(gl: &mut grid_line) {
     gl.time = if current_time == 0 {
         0
     } else {
-        (current_time as __time_t - start_time.tv_sec + 1) as u_int
+        (current_time as __time_t - crate::src::shared::time::unix_seconds(start_time) + 1) as u_int
     };
 }
 pub fn grid_adjust_lines(gd: &mut grid, lines: u_int) {
@@ -1831,9 +1831,15 @@ mod storage_tests {
             owner.linedata[3].time = 77;
             let history = grid_peek_line(&owner, 0).unwrap();
             assert_eq!(history.time, 1);
-            assert_eq!(grid_line_time(history), start_time.tv_sec);
+            assert_eq!(
+                grid_line_time(history),
+                crate::src::shared::time::unix_seconds(start_time)
+            );
             let visible = grid_peek_line(&owner, 1).unwrap();
-            assert_eq!(grid_line_time(visible), start_time.tv_sec + 8);
+            assert_eq!(
+                grid_line_time(visible),
+                crate::src::shared::time::unix_seconds(start_time) + 8
+            );
             assert_eq!(grid_line_time(grid_peek_line(&owner, 2).unwrap()), 0);
             assert!(grid_peek_line(&owner, 3).is_none());
             assert!(grid_peek_line(&owner, u_int::MAX).is_none());

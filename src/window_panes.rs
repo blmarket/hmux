@@ -69,6 +69,7 @@ use crate::src::window_clock::window_clock_table;
 use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::rc::{Rc, Weak};
+use std::time::Duration;
 
 #[repr(C)]
 pub struct window_panes_modedata {
@@ -1741,10 +1742,6 @@ unsafe fn window_panes_init(
     let mut source: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut target: *mut cmd_find_state = ::core::ptr::null_mut::<cmd_find_state>();
     let mut s: Option<SessionRef> = None;
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
     let mut sx: u_int = (*wp).base.grid().sx;
     let mut sy: u_int = (*wp).base.grid().sy;
     let mut delay: u_int = 0;
@@ -1851,12 +1848,8 @@ unsafe fn window_panes_init(
         },
     );
     if (*data).delay != 0 as u_int {
-        tv.tv_sec = (*data).delay.wrapping_div(1000 as u_int) as __time_t;
-        tv.tv_usec = (*data)
-            .delay
-            .wrapping_rem(1000 as u_int)
-            .wrapping_mul(1000 as u_int) as __suseconds_t;
-        event_add(&raw mut (*data).timer, &raw mut tv);
+        let timeout = Duration::from_millis(((*data).delay) as u64);
+        event_add(&raw mut (*data).timer, Some(timeout));
     }
     window_panes_draw_screen(wme.clone());
     return &raw mut (*data).screen;

@@ -1,5 +1,5 @@
 //! Session state is private to its implementation. Other models use Session.
-use crate::src::shared::abi::{timeval, u_int};
+use crate::src::shared::abi::u_int;
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::event;
 use crate::src::shared::options::options;
@@ -7,6 +7,7 @@ use crate::src::shared::session::session_group;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::terminal::termios;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[repr(C)]
 pub struct session {
@@ -15,10 +16,10 @@ pub struct session {
     pub(super) id: u_int,
     pub(super) name: std::ffi::CString,
     pub(super) cwd: Option<std::ffi::CString>,
-    pub(super) creation_time: timeval,
-    pub(super) last_attached_time: timeval,
-    pub(super) activity_time: timeval,
-    pub(super) last_activity_time: timeval,
+    pub(super) creation_time: SystemTime,
+    pub(super) last_attached_time: SystemTime,
+    pub(super) activity_time: SystemTime,
+    pub(super) last_activity_time: SystemTime,
     pub(super) lock_timer: event,
     pub(super) curw: refbox::Weak<winlink>,
     pub(super) lastw: winlink_stack,
@@ -68,10 +69,10 @@ impl session {
             id: Default::default(),
             name: Default::default(),
             cwd: Default::default(),
-            creation_time: Default::default(),
-            last_attached_time: Default::default(),
-            activity_time: Default::default(),
-            last_activity_time: Default::default(),
+            creation_time: UNIX_EPOCH,
+            last_attached_time: UNIX_EPOCH,
+            activity_time: UNIX_EPOCH,
+            last_activity_time: UNIX_EPOCH,
             lock_timer: Default::default(),
             curw: Default::default(),
             lastw: Default::default(),

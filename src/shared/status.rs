@@ -1,6 +1,6 @@
 //! Authoritative status model declarations.
 
-use super::abi::{timeval, u_int};
+use super::abi::u_int;
 use super::client::client;
 use super::event::event;
 use super::grid::grid_cell;
@@ -10,6 +10,7 @@ use super::style::style_line_entry;
 use crate::src::shared::client::ClientRef;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
+use std::time::SystemTime;
 
 #[derive(Default)]
 #[repr(C)]
@@ -43,7 +44,7 @@ pub type status_prompt_input_cb =
 pub struct message_entry {
     pub msg: CString,
     pub msg_num: u_int,
-    pub msg_time: timeval,
+    pub msg_time: SystemTime,
 }
 
 /// The message log owns its records and stores them in insertion order.
@@ -62,7 +63,7 @@ impl message_list {
         self.entries.clear();
     }
 
-    pub fn push_back(&mut self, msg: CString, msg_num: u_int, msg_time: timeval) {
+    pub fn push_back(&mut self, msg: CString, msg_num: u_int, msg_time: SystemTime) {
         self.entries.push_back(message_entry {
             msg,
             msg_num,

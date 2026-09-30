@@ -1,6 +1,6 @@
 //! Platform ABI declarations shared by all translated modules.
 //!
-//! These aliases and `timeval` were emitted identically by every C2Rust
+//! These aliases were emitted identically by every C2Rust
 //! translation unit.  Keeping one definition prevents otherwise identical C
 //! function signatures from acquiring distinct Rust type identities.
 
@@ -11,7 +11,6 @@ pub type __uint8_t = u8;
 pub type __uint64_t = u64;
 pub type __pid_t = ::core::ffi::c_int;
 pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
 
 pub type u_char = __u_char;
 pub type u_short = __u_short;
@@ -28,13 +27,6 @@ pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::
 pub type cc_t = ::core::ffi::c_uchar;
 pub type speed_t = ::core::ffi::c_uint;
 pub type tcflag_t = ::core::ffi::c_uint;
-
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
-}
 
 pub type __off_t = ::core::ffi::c_long;
 pub type __off64_t = ::core::ffi::c_long;
@@ -74,16 +66,7 @@ pub type clockid_t = __clockid_t;
 
 #[cfg(test)]
 mod tests {
-    use super::{timeval, NULL};
-    use ::core::mem::{align_of, offset_of, size_of};
-
-    #[test]
-    fn timeval_layout_matches_linux_amd64_baseline() {
-        assert_eq!(size_of::<timeval>(), 16);
-        assert_eq!(align_of::<timeval>(), 8);
-        assert_eq!(offset_of!(timeval, tv_sec), 0);
-        assert_eq!(offset_of!(timeval, tv_usec), 8);
-    }
+    use super::NULL;
 
     #[test]
     fn null_matches_the_c_null_pointer_constant() {

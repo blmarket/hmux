@@ -2,6 +2,7 @@ use crate::src::log::log_cstr;
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::format::FormatEntryState;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 // Private tree-storage implementation.  It owns the format-entry tree and
 // format-tree CRUD operations.
 // Shared C-layout types, allocator/FFI helpers, and callback-table symbols
@@ -258,15 +259,15 @@ unsafe fn format_add_value(ft: *mut format_tree, key: &CStr, value: CString) {
     format_entry_set(ft, key, FormatEntryState::Text(value));
 }
 
-pub unsafe fn format_add_tv(
+pub unsafe fn format_add_time(
     ft: *mut format_tree,
     key: *const ::core::ffi::c_char,
-    tv: *mut timeval,
+    time: SystemTime,
 ) {
     format_entry_set(
         ft,
         CStr::from_ptr(key),
-        FormatEntryState::Time((*tv).tv_sec as time_t),
+        FormatEntryState::Time(crate::src::shared::time::unix_seconds(time)),
     );
 }
 
@@ -357,11 +358,8 @@ mod tests {
             assert_eq!(calls.get(), 2);
             format_add_cstr(ft, c"owned", c"literal");
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"literal");
-            let mut tv = timeval {
-                tv_sec: 123,
-                tv_usec: 0,
-            };
-            format_add_tv(ft, c"owned".as_ptr(), &mut tv);
+            let time = UNIX_EPOCH + Duration::from_secs(123);
+            format_add_time(ft, c"owned".as_ptr(), time);
             assert!(matches!(
                 format_entry_get_value(ft, c"owned"),
                 Some(FormatValue::Time(123))
@@ -597,11 +595,8 @@ mod tests {
             format_add_owned_cb(source, c"lazy", |_| {
                 panic!("merge must not evaluate callbacks")
             });
-            let mut tv = timeval {
-                tv_sec: 123,
-                tv_usec: 0,
-            };
-            format_add_tv(source, c"time".as_ptr(), &mut tv);
+            let time = UNIX_EPOCH + Duration::from_secs(123);
+            format_add_time(source, c"time".as_ptr(), time);
             format_merge(destination, source);
             assert_eq!(
                 text_value(destination, c"literal").unwrap().as_c_str(),

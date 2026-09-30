@@ -53,6 +53,7 @@ use crate::src::window_copy::{window_copy_add, window_view_mode};
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::{Rc, Weak};
+use std::time::Duration;
 
 pub struct cmd_run_shell_data {
     pub client: Option<ClientRef>,
@@ -211,10 +212,7 @@ unsafe fn cmd_run_shell_exec(
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut d: ::core::ffi::c_double = 0.;
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
+    let mut tv = Duration::ZERO;
     let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: [::core::ffi::c_char; 16] = [0; 16];
     let mut i: u_int = 0;
@@ -304,14 +302,14 @@ unsafe fn cmd_run_shell_exec(
         // positive infinity into an enormous timer. The upper bound is
         // exclusive because time_t::MAX rounds up when converted to f64.
         if (0.0..time_t::MAX as f64).contains(&d) {
-            tv.tv_sec = d as time_t;
-            tv.tv_usec = ((d - tv.tv_sec as f64) * 1_000_000.0) as __suseconds_t;
+            tv = Duration::from_secs(d as u64)
+                + Duration::from_micros((d.fract() * 1_000_000.0) as u64);
         }
     }
     event_once_owned(
         cdata,
         |data| &mut data.timer,
-        (!delay.is_null()).then_some(&tv),
+        (!delay.is_null()).then_some(tv),
         |data| unsafe { cmd_run_shell_timer(data) },
     );
     if wait == 0 {

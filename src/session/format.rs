@@ -11,6 +11,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE};
 use crate::src::window::winlink_count;
+use std::time::{Duration, UNIX_EPOCH};
 
 pub(super) unsafe fn format_value(
     owner: &SessionRef,
@@ -621,7 +622,9 @@ unsafe fn format_cb_session_activity(mut ft: *mut format_tree) -> Option<time_t>
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        return Some(((*format_session).activity_time).tv_sec as time_t);
+        return Some(crate::src::shared::time::unix_seconds(
+            (*format_session).activity_time,
+        ));
     }
     return None;
 }
@@ -632,7 +635,9 @@ unsafe fn format_cb_session_created(mut ft: *mut format_tree) -> Option<time_t> 
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        return Some(((*format_session).creation_time).tv_sec as time_t);
+        return Some(crate::src::shared::time::unix_seconds(
+            (*format_session).creation_time,
+        ));
     }
     return None;
 }
@@ -643,7 +648,9 @@ unsafe fn format_cb_session_last_attached(mut ft: *mut format_tree) -> Option<ti
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_session.is_null() {
-        return Some(((*format_session).last_attached_time).tv_sec as time_t);
+        return Some(crate::src::shared::time::unix_seconds(
+            (*format_session).last_attached_time,
+        ));
     }
     return None;
 }
@@ -768,7 +775,7 @@ mod tests {
             let session = session::new();
             let other = session::new();
             (*session.get()).options = Some(crate::src::options::options_create(None));
-            (*session.get()).creation_time.tv_sec = 123;
+            (*session.get()).creation_time = UNIX_EPOCH + Duration::from_secs(123);
             let mut context = format_tree::default();
             context.s = Rc::downgrade(&session);
             assert!(matches!(

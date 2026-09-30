@@ -17,6 +17,7 @@ use crate::src::window::Window;
 use std::any::Any;
 use std::cell::UnsafeCell;
 use std::rc::{Rc, Weak};
+use std::time::{Duration, SystemTime};
 
 #[derive(Clone, Copy)]
 pub enum PanDirection {
@@ -117,8 +118,8 @@ pub trait Client {
     unsafe fn flags(&self) -> u64;
     /// Apply an immediate flag transition, setting bits before clearing bits.
     unsafe fn update_flags(&self, set: u64, clear: u64);
-    unsafe fn activity_time(&self) -> timeval;
-    unsafe fn creation_time(&self) -> timeval;
+    unsafe fn activity_time(&self) -> SystemTime;
+    unsafe fn creation_time(&self) -> SystemTime;
     unsafe fn tty_name(&self) -> Option<CString>;
     unsafe fn terminal_theme(&self) -> crate::src::shared::colour::client_theme;
     unsafe fn colour_escape(&self, colour: i32, background: bool) -> Option<CString>;
@@ -469,10 +470,7 @@ impl Client for ClientRef {
         }
     }
     unsafe fn schedule_format_cycle(&self, interval_ms: i32) {
-        let mut timeout = timeval {
-            tv_sec: (interval_ms / 1000) as _,
-            tv_usec: ((interval_ms % 1000) * 1000) as _,
-        };
+        let timeout = Duration::from_millis(interval_ms.max(0) as u64);
         if event_initialized(&(*self.get()).cycle_timer) == 0 {
             let observer = Rc::downgrade(self);
             event_set(&raw mut (*self.get()).cycle_timer, -1, 0, move |_, _| {
@@ -485,13 +483,8 @@ impl Client for ClientRef {
                 }
             });
         }
-        if event_pending(
-            &raw mut (*self.get()).cycle_timer,
-            EV_TIMEOUT as i16,
-            std::ptr::null_mut(),
-        ) == 0
-        {
-            event_add(&raw mut (*self.get()).cycle_timer, &mut timeout);
+        if event_pending(&raw mut (*self.get()).cycle_timer, EV_TIMEOUT as i16, None) == 0 {
+            event_add(&raw mut (*self.get()).cycle_timer, Some(timeout));
         }
     }
     type QueueMut<'a> = &'a mut crate::src::cmd::queue::cmdq_list;
@@ -673,10 +666,10 @@ impl Client for ClientRef {
     unsafe fn update_flags(&self, set: u64, clear: u64) {
         (*self.get()).flags = ((*self.get()).flags | set) & !clear;
     }
-    unsafe fn activity_time(&self) -> timeval {
+    unsafe fn activity_time(&self) -> SystemTime {
         (*self.get()).activity_time
     }
-    unsafe fn creation_time(&self) -> timeval {
+    unsafe fn creation_time(&self) -> SystemTime {
         (*self.get()).creation_time
     }
     unsafe fn tty_name(&self) -> Option<CString> {
@@ -1122,10 +1115,7 @@ impl Client for ClientRef {
         let observer = Rc::downgrade(self);
         let state = &mut *self.get();
         if delay > 0 {
-            let mut timeout = timeval {
-                tv_sec: (delay / 1000).into(),
-                tv_usec: (i64::from(delay % 1000) * 1000) as _,
-            };
+            let timeout = Duration::from_millis(delay as u64);
             if event_initialized(&state.message_timer) != 0 {
                 event_del(&mut state.message_timer);
             }
@@ -1134,7 +1124,7 @@ impl Client for ClientRef {
                     owner.clear_status_message();
                 }
             });
-            event_add(&mut state.message_timer, &mut timeout);
+            event_add(&mut state.message_timer, Some(timeout));
         }
         if delay != 0 {
             state.message_ignore_keys = ignore_keys;

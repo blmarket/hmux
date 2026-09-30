@@ -6,8 +6,9 @@ use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::ffi::CString;
 use std::rc::{Rc, Weak};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::abi::{bitstr_t, pid_t, size_t, time_t, timeval, u_int, uint64_t};
+use super::abi::{bitstr_t, pid_t, size_t, time_t, u_int, uint64_t};
 use super::client::client;
 use super::colour::{client_theme, colour_palette};
 use super::command::cmdq_item;
@@ -92,7 +93,6 @@ pub struct window_pane_prompt {
     pub type_0: prompt_type,
 }
 
-#[derive(Default)]
 #[repr(C)]
 pub struct window_pane {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
@@ -123,7 +123,7 @@ pub struct window_pane {
     pub pid: pid_t,
     pub tty: [::core::ffi::c_char; 32],
     pub status: ::core::ffi::c_int,
-    pub dead_time: timeval,
+    pub dead_time: SystemTime,
     pub wait_item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub editor: Option<Box<spawn_editor_state>>,
     pub output_generation: uint64_t,
@@ -175,6 +175,81 @@ pub struct window_pane {
     pub owner: refbox::Weak<
         std::collections::BTreeMap<u_int, std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
     >,
+}
+impl Default for window_pane {
+    fn default() -> Self {
+        Self {
+            observer: Default::default(),
+            id: Default::default(),
+            active_point: Default::default(),
+            window: Default::default(),
+            options: Default::default(),
+            layout_cell: Default::default(),
+            saved_layout_cell: Default::default(),
+            sx: Default::default(),
+            sy: Default::default(),
+            xoff: Default::default(),
+            yoff: Default::default(),
+            flags: Default::default(),
+            sync_dirty: Default::default(),
+            sync_dirty_size: Default::default(),
+            sb_slider_y: Default::default(),
+            sb_slider_h: Default::default(),
+            sb_auto_visible: Default::default(),
+            sb_auto_timer: Default::default(),
+            argv: Default::default(),
+            shell: Default::default(),
+            cwd: Default::default(),
+            pid: Default::default(),
+            tty: Default::default(),
+            status: Default::default(),
+            dead_time: UNIX_EPOCH,
+            wait_item: Default::default(),
+            editor: Default::default(),
+            output_generation: Default::default(),
+            last_output_time: Default::default(),
+            last_prompt_time: Default::default(),
+            cmd_start_time: Default::default(),
+            cmd_end_time: Default::default(),
+            cmd_status: Default::default(),
+            fd: Default::default(),
+            event: Default::default(),
+            offset: Default::default(),
+            base_offset: Default::default(),
+            resize_queue: Default::default(),
+            resize_timer: Default::default(),
+            sync_timer: Default::default(),
+            ictx: Default::default(),
+            cached_gc: Default::default(),
+            cached_active_gc: Default::default(),
+            cached_dim: Default::default(),
+            cached_active_dim: Default::default(),
+            palette: Default::default(),
+            last_theme: Default::default(),
+            border_status_line: Default::default(),
+            pipe_fd: Default::default(),
+            pipe_pid: Default::default(),
+            pipe_event: Default::default(),
+            pipe_offset: Default::default(),
+            screen_source: Default::default(),
+            base: Default::default(),
+            status_screen: Default::default(),
+            modes: Default::default(),
+            searchstr: Default::default(),
+            searchregex: Default::default(),
+            prompt: Default::default(),
+            prompt_data: Default::default(),
+            prompt_cx: Default::default(),
+            border_gc_set: Default::default(),
+            border_gc: Default::default(),
+            active_border_gc_set: Default::default(),
+            active_border_gc: Default::default(),
+            control_bg: Default::default(),
+            control_fg: Default::default(),
+            scrollbar_style: Default::default(),
+            owner: Default::default(),
+        }
+    }
 }
 
 impl window_pane {

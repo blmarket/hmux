@@ -93,6 +93,7 @@ use crate::src::window_pane::WindowPane as _;
 use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
+use std::time::Duration;
 
 #[repr(C)]
 pub struct window_copy_mode_data {
@@ -498,19 +499,16 @@ unsafe fn window_copy_scroll_timer(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane = mode_pane_owner.get();
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: WINDOW_COPY_DRAG_REPEAT_TIME as __suseconds_t,
-    };
+    let tv = Duration::from_micros(WINDOW_COPY_DRAG_REPEAT_TIME as u64);
     event_del(&raw mut (*data).dragtimer);
     if (*wp).active_mode_entry() != wme {
         return;
     }
     if (*data).cy == 0 as u_int {
-        event_add(&raw mut (*data).dragtimer, &raw mut tv);
+        event_add(&raw mut (*data).dragtimer, Some(tv));
         window_copy_cursor_up(wme.clone(), 1 as ::core::ffi::c_int);
     } else if (*data).cy == (*data).screen.grid().sy.wrapping_sub(1 as u_int) {
-        event_add(&raw mut (*data).dragtimer, &raw mut tv);
+        event_add(&raw mut (*data).dragtimer, Some(tv));
         window_copy_cursor_down(wme.clone(), 1 as ::core::ffi::c_int);
     }
 }
@@ -3963,12 +3961,9 @@ unsafe fn window_copy_do_refresh(
 }
 unsafe fn window_copy_refresh_arm(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut tv: timeval = timeval {
-        tv_sec: (WINDOW_COPY_REFRESH_INTERVAL / 1000000 as ::core::ffi::c_int) as __time_t,
-        tv_usec: (WINDOW_COPY_REFRESH_INTERVAL % 1000000 as ::core::ffi::c_int) as __suseconds_t,
-    };
+    let tv = Duration::from_micros(WINDOW_COPY_REFRESH_INTERVAL as u64);
     if (*data).refresh_active != 0 {
-        event_add(&raw mut (*data).refresh_timer, &raw mut tv);
+        event_add(&raw mut (*data).refresh_timer, Some(tv));
     }
 }
 unsafe fn window_copy_refresh_allowed(
@@ -10120,10 +10115,7 @@ unsafe fn window_copy_drag_update(_client_owner: &ClientRef, mut m: *mut mouse_e
     let mut y: u_int = 0;
     let mut old_cx: u_int = 0;
     let mut old_cy: u_int = 0;
-    let mut tv: timeval = timeval {
-        tv_sec: 0,
-        tv_usec: WINDOW_COPY_DRAG_REPEAT_TIME as __suseconds_t,
-    };
+    let tv = Duration::from_micros(WINDOW_COPY_DRAG_REPEAT_TIME as u64);
     mouse_pane_owner = cmd_mouse_pane(m, None, ::core::ptr::null_mut::<refbox::Weak<winlink>>());
     wp = mouse_pane_owner
         .as_ref()
@@ -10161,10 +10153,10 @@ unsafe fn window_copy_drag_update(_client_owner: &ClientRef, mut m: *mut mouse_e
     }
     if old_cy != (*data).cy || old_cx == (*data).cx {
         if y == 0 as u_int {
-            event_add(&raw mut (*data).dragtimer, &raw mut tv);
+            event_add(&raw mut (*data).dragtimer, Some(tv));
             window_copy_cursor_up(wme.clone(), 1 as ::core::ffi::c_int);
         } else if y == (*data).screen.grid().sy.wrapping_sub(1 as u_int) {
-            event_add(&raw mut (*data).dragtimer, &raw mut tv);
+            event_add(&raw mut (*data).dragtimer, Some(tv));
             window_copy_cursor_down(wme.clone(), 1 as ::core::ffi::c_int);
         }
     }

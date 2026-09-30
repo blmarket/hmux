@@ -78,11 +78,11 @@ unsafe fn sort_client_cmp(ca: &ClientRef, cb: &ClientRef, sort_crit: &sort_crite
         }
         SORT_CREATION => {
             let (a, b) = (ca.creation_time(), cb.creation_time());
-            (a.tv_sec, a.tv_usec).cmp(&(b.tv_sec, b.tv_usec))
+            a.cmp(&b)
         }
         SORT_ACTIVITY => {
             let (a, b) = (ca.activity_time(), cb.activity_time());
-            (b.tv_sec, b.tv_usec).cmp(&(a.tv_sec, a.tv_usec))
+            b.cmp(&a)
         }
         _ => Ordering::Equal,
     }
@@ -152,11 +152,11 @@ unsafe fn sort_winlink_cmp(
         2 => wla.get_unchecked().idx - wlb.get_unchecked().idx,
         1 => {
             let (a, b) = (a.creation_time(), b.creation_time());
-            (a.tv_sec, a.tv_usec).cmp(&(b.tv_sec, b.tv_usec)) as i32
+            a.cmp(&b) as i32
         }
         0 => {
             let (a, b) = (a.activity_time(), b.activity_time());
-            (b.tv_sec, b.tv_usec).cmp(&(a.tv_sec, a.tv_usec)) as i32
+            b.cmp(&a) as i32
         }
         4 => strcmp(a.name().as_ptr(), b.name().as_ptr()),
         6 => {
