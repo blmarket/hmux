@@ -20,7 +20,7 @@ pub struct client_file {
     pub(super) peer: *mut tmuxpeer,
     pub(super) stream: ::core::ffi::c_int,
     pub(super) path: Option<std::ffi::CString>,
-    pub(super) buffer: Box<SegmentedBuf>,
+    pub(super) buffer: SegmentedBuf,
     pub(super) event: crate::src::reactor::StreamHandle,
     pub(super) fd: ::core::ffi::c_int,
     pub(super) error: ::core::ffi::c_int,

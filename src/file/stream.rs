@@ -80,7 +80,7 @@ pub(super) fn collect_for_callback(file: &mut client_file) {
     let mut cx = Context::from_waker(Waker::noop());
     while let Poll::Ready(Some(item)) = Pin::new(&mut *file).poll_next(&mut cx) {
         if let Ok(bytes) = item {
-            file.buffer.as_mut().put(SegmentedBuf::from(bytes));
+            file.buffer.put(SegmentedBuf::from(bytes));
         }
         // Legacy callbacks receive the existing file.error at terminal dispatch.
     }

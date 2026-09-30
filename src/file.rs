@@ -260,7 +260,7 @@ unsafe fn file_fire_done_cb(owner: &Rc<UnsafeCell<client_file>>) {
                 path: file.path.as_deref(),
                 error: file.error,
                 closed: true,
-                buffer: Some(&mut *file.buffer),
+                buffer: Some(&mut file.buffer),
             });
         }
     }
@@ -355,7 +355,7 @@ pub unsafe fn file_print(
             file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_formatted(&mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut (*cf).buffer, write);
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -367,7 +367,7 @@ pub unsafe fn file_print(
         );
     } else {
         let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
-        evbuffer_add_formatted(&mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut (*cf).buffer, write);
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
@@ -391,7 +391,7 @@ pub unsafe fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
             file_create_with_client(Some(client_owner), 1 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add(&mut *(*cf).buffer, data.as_ptr().cast(), data.len());
+        evbuffer_add(&mut (*cf).buffer, data.as_ptr().cast(), data.len());
         msg.stream = 1 as ::core::ffi::c_int;
         msg.fd = STDOUT_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -403,7 +403,7 @@ pub unsafe fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
         );
     } else {
         let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
-        evbuffer_add(&mut *(*cf).buffer, data.as_ptr().cast(), data.len());
+        evbuffer_add(&mut (*cf).buffer, data.as_ptr().cast(), data.len());
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
@@ -430,7 +430,7 @@ pub unsafe fn file_error(
             file_create_with_client(Some(client_owner), 2 as ::core::ffi::c_int, None);
         let cf = &mut *transfer_owner.get();
         file_set_path(&mut *cf, CString::new("-").unwrap());
-        evbuffer_add_formatted(&mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut (*cf).buffer, write);
         msg.stream = 2 as ::core::ffi::c_int;
         msg.fd = STDERR_FILENO;
         msg.flags = 0 as ::core::ffi::c_int;
@@ -442,7 +442,7 @@ pub unsafe fn file_error(
         );
     } else {
         let cf = &mut *file_owner.as_ref().expect("looked-up file").get();
-        evbuffer_add_formatted(&mut *(*cf).buffer, write);
+        evbuffer_add_formatted(&mut (*cf).buffer, write);
         file_push(file_owner.as_ref().expect("looked-up file"));
     };
 }
@@ -533,7 +533,7 @@ unsafe fn file_write_impl(
     }
     match current_block {
         8821498768635335055 => {
-            evbuffer_add(&mut *cf.buffer, bdata, bsize);
+            evbuffer_add(&mut cf.buffer, bdata, bsize);
             msglen = strlen(
                 cf.path
                     .as_ref()
@@ -756,7 +756,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     let mut sent: size_t = 0;
     let mut left: size_t = 0;
     let mut close_0: msg_write_close = msg_write_close { stream: 0 };
-    left = evbuffer_get_length(&*(cf.buffer));
+    left = evbuffer_get_length(&cf.buffer);
     while left != 0 as size_t {
         sent = left;
         if sent
@@ -779,7 +779,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         );
         memcpy(
             msg.as_mut_ptr().add(header_len).cast(),
-            evbuffer_pullup(&mut *cf.buffer, sent as ssize_t)
+            evbuffer_pullup(&mut cf.buffer, sent as ssize_t)
                 .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                 as *const ::core::ffi::c_void,
             sent,
@@ -794,8 +794,8 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         {
             break;
         }
-        evbuffer_drain(&mut *cf.buffer, sent);
-        left = evbuffer_get_length(&*(cf.buffer));
+        evbuffer_drain(&mut cf.buffer, sent);
+        left = evbuffer_get_length(&cf.buffer);
         log_debug(format_args!(
             "file {} sent {}, left {}",
             (cf.stream) as i32,
