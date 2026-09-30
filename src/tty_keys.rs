@@ -2240,7 +2240,6 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     (
                         terminal.flags & TTY_TIMER != 0,
                         terminal.flags & TTY_TIMER != 0
-                            && terminal.key_timer.is_some()
                             && !terminal.key_timer.as_ref().is_some_and(Timer::is_pending),
                     )
                 };
@@ -2342,6 +2341,9 @@ unsafe fn tty_keys_update_focus(client: &ClientRef) {
 }
 
 unsafe fn tty_keys_callback(owner: &ClientRef) {
+    // The task is still executing; clear the owner's wait before parsing the
+    // buffered escape sequence so it is recognized as expired.
+    drop(owner.borrow_terminal_mut().key_timer.take());
     let timer_active = owner.borrow_terminal().flags & TTY_TIMER != 0;
     if timer_active {
         while tty_keys_next(owner) != 0 {}

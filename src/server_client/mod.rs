@@ -31,7 +31,7 @@ use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd::parse::cmd_parse_from_argv;
 use crate::src::cmd::queue::{
-    cmdq_abort_file_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
+    cmdq_abort_owned_wait, cmdq_append, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
     cmdq_get_command, cmdq_get_error, cmdq_insert_after, cmdq_new,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_log_argv};
@@ -1361,7 +1361,7 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
     status_prompt_clear(&(*(c)).observer.upgrade().expect("live client"));
     status_message_clear(&(*c).observer.upgrade().expect("live client"));
-    cmdq_abort_file_wait(client_owner);
+    cmdq_abort_owned_wait(client_owner);
     let files = client_owner.file_handles();
     crate::src::file::client_files_interrupt(files, EINTR);
     let registry_owner = clients

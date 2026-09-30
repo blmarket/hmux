@@ -69,3 +69,36 @@ fn run_shell_prints_trailing_bytes_and_stops_at_embedded_nul() {
     assert!(output.status.success(), "run-shell: {:?}", output.stderr);
     assert_eq!(output.stdout, b"complete\npartial\n");
 }
+
+#[test]
+fn delayed_background_command_survives_its_initiating_client() {
+    let server = Server::new();
+    let create = server.run(&["new-session", "-d", "-s", "test", "sleep 30"]);
+    assert!(create.status.success(), "new-session: {:?}", create.stderr);
+
+    let output = server.run(&[
+        "run-shell",
+        "-b",
+        "-d",
+        "0.05",
+        "-C",
+        "set-option -g @delayed-background done",
+    ]);
+    assert!(
+        output.status.success(),
+        "background run-shell: {:?}",
+        output.stderr
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let output = server.run(&["show-options", "-gv", "@delayed-background"]);
+        if output.status.success() && output.stdout == b"done\n" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background command did not run"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}

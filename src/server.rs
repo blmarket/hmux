@@ -349,6 +349,7 @@ pub(crate) unsafe fn server_start(
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || unsafe { server_loop() == 0 };
     proc_loop(server_proc, Some(&mut loop_callback));
+    crate::src::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
     server_clear_messages();

@@ -1,161 +1,45 @@
-//! Callback timers owned by the reactor and cancelled by dropping their handles.
+//! Timer work is a future owned by the caller's task handle.
 use super::{ensure_runtime, handle};
 use hmux_rt::Handle as _;
-use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::io;
-use std::marker::PhantomData;
-use std::num::NonZeroU64;
 use std::time::{Duration, Instant};
 
-/// A movable handle to one scheduled callback. Dropping it stops pending work
-/// and releases the callback. Schedule a new timer to repeat or resume work.
+/// Owns one scheduled future and its deadline. Dropping it cancels the work.
+/// The task remains pending during callback execution, until it returns or the
+/// owner clears/replaces this timer.
 pub struct Timer {
-    id: NonZeroU64,
-    // Registrations belong to the current thread's reactor.
-    _local: PhantomData<*mut ()>,
-}
-
-struct Registration {
+    task: hmux_rt::mio::Task,
     deadline: Instant,
-    callback: Box<dyn FnMut()>,
-    task: Option<hmux_rt::mio::Task>,
-}
-
-thread_local! {
-    static NEXT_ID: Cell<u64> = const { Cell::new(0) };
-    static TIMERS: RefCell<HashMap<NonZeroU64, Registration>> = RefCell::new(HashMap::new());
 }
 
 impl Timer {
-    /// Schedule one callback. Zero duration defers it to a runtime turn.
-    pub fn new(delay: Duration, callback: impl FnMut() + 'static) -> io::Result<Self> {
-        let id = next_id();
-        register(id, delay, Box::new(callback))?;
-        Ok(Self {
-            id,
-            _local: PhantomData,
-        })
+    /// Zero duration defers execution to a runtime turn.
+    pub fn new(delay: Duration, callback: impl FnOnce() + 'static) -> io::Result<Self> {
+        ensure_runtime();
+        let now = Instant::now();
+        // Preserve the existing behavior: an overflowing deadline is expired.
+        let deadline = now.checked_add(delay).unwrap_or(now);
+        let sleep = handle().sleep_until(deadline);
+        let task = handle().spawn(async move {
+            sleep.await.expect("timer wait failed");
+            callback();
+        })?;
+        Ok(Self { task, deadline })
     }
 
     pub fn deadline(&self) -> Option<Instant> {
-        TIMERS.with(|timers| timers.borrow().get(&self.id).map(|timer| timer.deadline))
+        self.is_pending().then_some(self.deadline)
     }
 
     pub fn is_pending(&self) -> bool {
-        self.deadline().is_some()
-    }
-}
-
-impl Drop for Timer {
-    fn drop(&mut self) {
-        remove(self.id);
-    }
-}
-
-fn remove(id: NonZeroU64) -> Option<Registration> {
-    // Captured owners may drop their handles during thread-local teardown.
-    let mut registration = TIMERS
-        .try_with(|timers| timers.borrow_mut().remove(&id))
-        .ok()
-        .flatten();
-    if let Some(timer) = registration.as_mut() {
-        drop(timer.task.take());
-    }
-    registration
-}
-
-fn start(id: NonZeroU64, deadline: Instant) -> io::Result<()> {
-    let h = handle();
-    let task = h.clone().spawn(async move {
-        h.sleep_until(deadline).await.expect("timer wait failed");
-        // Remove before dispatch, with no registry borrow held. The callback
-        // may drop its handle or replace it with a newly scheduled timer.
-        if let Some(mut timer) = remove(id) {
-            (timer.callback)();
-        }
-    })?;
-    let previous = TIMERS.with(|timers| {
-        timers
-            .borrow_mut()
-            .get_mut(&id)
-            .expect("registered timer")
-            .task
-            .replace(task)
-    });
-    drop(previous);
-    Ok(())
-}
-
-fn next_id() -> NonZeroU64 {
-    NEXT_ID.with(|next| {
-        let id = next.get().checked_add(1).expect("timer IDs exhausted");
-        next.set(id);
-        NonZeroU64::new(id).unwrap()
-    })
-}
-
-fn register(id: NonZeroU64, delay: Duration, callback: Box<dyn FnMut()>) -> io::Result<()> {
-    ensure_runtime();
-    let now = Instant::now();
-    // Preserve the existing behavior: an overflowing deadline is expired.
-    let deadline = now.checked_add(delay).unwrap_or(now);
-    let registration = Registration {
-        deadline,
-        callback,
-        task: None,
-    };
-    let previous = TIMERS.with(|timers| timers.borrow_mut().insert(id, registration));
-    assert!(previous.is_none(), "timer IDs are never reused");
-    if let Err(error) = start(id, deadline) {
-        drop(remove(id));
-        return Err(error);
-    }
-    Ok(())
-}
-
-/// Transfer a record and its timer to the reactor until dispatch or shutdown.
-pub fn timer_once_owned<T: 'static>(
-    mut owner: Box<T>,
-    timer_handle: fn(&mut T) -> &mut Option<Timer>,
-    delay: Option<Duration>,
-    mut callback: impl FnMut(Box<T>) + 'static,
-) {
-    let id = next_id();
-    *timer_handle(&mut owner) = Some(Timer {
-        id,
-        _local: PhantomData,
-    });
-    let mut owner = Some(owner);
-    register(
-        id,
-        delay.unwrap_or(Duration::ZERO),
-        Box::new(move || callback(owner.take().expect("one owned timer dispatch"))),
-    )
-    .expect("arm owned timer");
-}
-
-pub(super) fn clear() {
-    loop {
-        let timers = TIMERS.with(|timers| {
-            timers
-                .borrow_mut()
-                .drain()
-                .map(|(_, t)| t)
-                .collect::<Vec<_>>()
-        });
-        if timers.is_empty() {
-            break;
-        }
-        for mut timer in timers {
-            drop(timer.task.take());
-        }
+        hmux_rt::mio::Handle::task_is_pending(&self.task)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     fn poll() {
@@ -217,7 +101,8 @@ mod tests {
         *slot.borrow_mut() = Some(
             Timer::new(Duration::ZERO, move || {
                 let slot = observer.upgrade().unwrap();
-                assert!(!slot.borrow().as_ref().unwrap().is_pending());
+                // The running future remains owned until it returns or is cancelled.
+                drop(slot.borrow_mut().take());
                 observed.set(observed.get() + 1);
                 let observer = Rc::downgrade(&slot);
                 let observed = observed.clone();
@@ -239,32 +124,6 @@ mod tests {
     }
 
     #[test]
-    fn owned_timers_dispatch_once_and_shutdown_releases_pending_owners() {
-        let calls = Rc::new(Cell::new(0));
-        let retained = Rc::new(());
-        for delay in [Duration::ZERO, Duration::from_secs(60)] {
-            let observed = calls.clone();
-            timer_once_owned(
-                Box::new((None, retained.clone())),
-                |owner| &mut owner.0,
-                Some(delay),
-                move |owner| {
-                    assert!(!owner.0.as_ref().unwrap().is_pending());
-                    observed.set(observed.get() + 1);
-                },
-            );
-        }
-        assert_eq!(Rc::strong_count(&retained), 3);
-        poll();
-        poll();
-        assert_eq!(calls.get(), 1);
-        assert_eq!(Rc::strong_count(&retained), 2);
-        super::super::shutdown_runtime();
-        assert_eq!(Rc::strong_count(&retained), 1);
-        assert_eq!(Rc::strong_count(&calls), 1);
-    }
-
-    #[test]
     fn shutdown_invalidates_old_handles_without_cancelling_new_timers() {
         let calls = Rc::new(Cell::new(0));
         let old = Timer::new(Duration::ZERO, || panic!("old timer must not dispatch")).unwrap();
@@ -278,19 +137,5 @@ mod tests {
         super::super::shutdown_runtime();
         assert!(!timer.is_pending());
         assert_eq!(Rc::strong_count(&calls), 1);
-    }
-
-    #[test]
-    fn thread_exit_releases_owned_timers_without_reentering_the_destroyed_registry() {
-        std::thread::spawn(|| {
-            timer_once_owned(
-                Box::new(None),
-                |timer| timer,
-                Some(Duration::from_secs(60)),
-                |_| panic!("thread exit must not dispatch"),
-            );
-        })
-        .join()
-        .unwrap();
     }
 }

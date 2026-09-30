@@ -17,7 +17,6 @@ use crate::src::format::{
 use crate::src::job::job_run;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
-    timer_once_owned,
 };
 use crate::src::session::SessionIndex as _;
 
@@ -63,7 +62,6 @@ pub struct cmd_run_shell_data {
     pub wait: bool,
     pub s: Option<SessionRef>,
     pub wp_id: ::core::ffi::c_int,
-    pub timer: Option<Timer>,
     pub flags: ::core::ffi::c_int,
 }
 pub static cmd_run_shell_entry: cmd_entry = {
@@ -207,7 +205,6 @@ unsafe fn cmd_run_shell_exec(
         wait: wait != 0,
         s: None,
         wp_id: 0,
-        timer: Default::default(),
         flags: 0,
     });
     if args_has(args, 'C' as i32 as u_char) == 0 {
@@ -267,21 +264,22 @@ unsafe fn cmd_run_shell_exec(
                 + Duration::from_micros((d.fract() * 1_000_000.0) as u64);
         }
     }
-    timer_once_owned(
-        cdata,
-        |data| &mut data.timer,
-        (!delay.is_null()).then_some(tv),
-        |data| unsafe { cmd_run_shell_timer(data) },
-    );
+    let timer = Timer::new(tv, move || unsafe { cmd_run_shell_timer(cdata) })
+        .expect("arm run-shell delay");
     if wait == 0 {
+        crate::src::cmd::queue::cmdq_background(timer);
         return CMD_RETURN_NORMAL;
     }
+    crate::src::cmd::queue::cmdq_set_wait_timer(&mut *item, timer);
     return CMD_RETURN_WAIT;
 }
 unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
     let item_owner = cdata.item.upgrade();
     if cdata.wait && item_owner.is_none() {
         return;
+    }
+    if let Some(item) = item_owner.as_ref() {
+        crate::src::cmd::queue::cmdq_clear_wait_timer(&mut *item.get());
     }
     let c = cdata.client.as_ref();
     let cmd = cdata.cmd.as_deref();
@@ -489,7 +487,6 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
 impl Drop for cmd_run_shell_data {
     fn drop(&mut self) {
         unsafe {
-            drop(self.timer.take());
             if let Some(session) = self.s.take() {
                 (session).release(c"cmd_run_shell_data::drop");
             }
@@ -516,7 +513,6 @@ mod tests {
             wait: true,
             s: None,
             wp_id: -1,
-            timer: Default::default(),
             flags: 0,
         };
         unsafe {

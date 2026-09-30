@@ -93,6 +93,8 @@ pub struct cmdq_item {
     pub cmd: refbox::Weak<cmd>,
     pub cb: cmdq_cb,
     cancel_data: Option<Box<dyn FnOnce()>>,
+    /// A foreground command owns its delayed work until dispatch or removal.
+    wait_timer: Option<crate::src::reactor::Timer>,
     wait_file: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
 }
 
@@ -134,6 +136,7 @@ impl cmdq_item {
             cmd: Default::default(),
             cb: Default::default(),
             cancel_data: Default::default(),
+            wait_timer: None,
             wait_file: Default::default(),
         }
     }
@@ -152,6 +155,8 @@ pub struct cmdq_list {
     /// Current execution position, observed without retaining the item.
     item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     list: std::collections::VecDeque<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
+    /// Detached commands belong to the server's global queue, not a client.
+    background: Vec<crate::src::reactor::Timer>,
 }
 
 impl cmdq_list {
@@ -195,6 +200,25 @@ pub(crate) fn cmdq_set_cancel_callback(item: &mut cmdq_item, cancel: Box<dyn FnO
     item.cancel_data = Some(cancel);
 }
 
+pub(crate) fn cmdq_set_wait_timer(item: &mut cmdq_item, timer: crate::src::reactor::Timer) {
+    assert!(item.wait_timer.is_none(), "command already owns delayed work");
+    item.wait_timer = Some(timer);
+}
+
+pub(crate) fn cmdq_clear_wait_timer(item: &mut cmdq_item) {
+    drop(item.wait_timer.take());
+}
+
+pub(crate) unsafe fn cmdq_background(timer: crate::src::reactor::Timer) {
+    QueueTarget::Global.with_queue(|queue| queue.background.push(timer));
+}
+
+/// Release detached command captures outside the queue borrow during shutdown.
+pub(crate) unsafe fn cmdq_cancel_background() {
+    let background = QueueTarget::Global.with_queue(|queue| std::mem::take(&mut queue.background));
+    drop(background);
+}
+
 unsafe fn cmdq_cancel_unfired_data(owner: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = owner.get();
     if (*item).flags & CMDQ_FIRED != 0 {
@@ -228,10 +252,10 @@ pub(crate) fn cmdq_clear_wait_file(
     }
 }
 
-/// A dead client cannot resume a file-backed waiting command. Cancel its
-/// callback data first, then remove the waiting item and its queued suffix.
+/// A dead client cannot resume a file read or delayed command. Cancel its
+/// owned work first, then remove the waiting item and its queued suffix.
 /// Other wait families need their own cancellation before they can be drained.
-pub(crate) unsafe fn cmdq_abort_file_wait(owner: &ClientRef) {
+pub(crate) unsafe fn cmdq_abort_owned_wait(owner: &ClientRef) {
     let queue = QueueTarget::for_client(Some(owner));
     let Some(first) = queue.with_queue(|queue| queue.first()) else {
         return;
@@ -239,10 +263,13 @@ pub(crate) unsafe fn cmdq_abort_file_wait(owner: &ClientRef) {
     if (*first.get()).flags & (CMDQ_FIRED | CMDQ_WAITING) != (CMDQ_FIRED | CMDQ_WAITING) {
         return;
     }
-    let Some(file) = (*first.get()).wait_file.upgrade() else {
+    if let Some(file) = (*first.get()).wait_file.upgrade() {
+        file_cancel_cmdq_wait(&file);
+    } else if (*first.get()).wait_timer.is_some() {
+        cmdq_clear_wait_timer(&mut *first.get());
+    } else {
         return;
-    };
-    file_cancel_cmdq_wait(&file);
+    }
     drop(first);
     queue.with_queue(|queue| queue.item = std::rc::Weak::new());
     while let Some(item) = queue.with_queue(|queue| queue.list.pop_front()) {
@@ -301,6 +328,7 @@ pub fn cmdq_new() -> Box<cmdq_list> {
     Box::new(cmdq_list {
         item: std::rc::Weak::new(),
         list: std::collections::VecDeque::new(),
+        background: Vec::new(),
     })
 }
 
@@ -616,6 +644,7 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
     let item = item_handle.get();
     assert!(!(*item).removed, "command item already removed");
     (*item).removed = true;
+    cmdq_clear_wait_timer(&mut *item);
     assert!(
         std::rc::Weak::ptr_eq(&(*item).wait_file, &std::rc::Weak::new()),
         "file wait must finish or cancel before queue item removal"
@@ -1012,6 +1041,14 @@ unsafe fn cmdq_fire_callback(
 }
 pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     let queue = QueueTarget::for_client(owner);
+    // Completed futures have already released their captures. Move handles out
+    // before dropping them so cancellation never reenters a borrowed queue.
+    let background = queue.with_queue(|queue| std::mem::take(&mut queue.background));
+    let pending: Vec<_> = background
+        .into_iter()
+        .filter(|timer| timer.is_pending())
+        .collect();
+    queue.with_queue(|queue| queue.background.extend(pending));
     let name = cmdq_name(owner);
     let mut items = 0;
     log_debug(format_args!(
@@ -1466,6 +1503,68 @@ mod cancellation_tests {
     impl Drop for Payload {
         fn drop(&mut self) {
             DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn disconnect_cancels_delayed_command_and_releases_its_client_capture() {
+        use std::time::Duration;
+        unsafe {
+            let client = crate::src::shared::client::ClientRef::fixture_with_queue();
+            let observer = std::rc::Rc::downgrade(&client);
+            let item = cmdq_get_callback_owned(c"delayed command", None);
+            let item_observer = std::rc::Rc::downgrade(&item);
+            let retained = client.clone();
+            let timer = crate::src::reactor::Timer::new(Duration::from_secs(60), move || {
+                drop(retained);
+                panic!("cancelled command must not run");
+            })
+            .unwrap();
+            cmdq_set_wait_timer(&mut *item.get(), timer);
+            (*item.get()).flags |= CMDQ_FIRED | CMDQ_WAITING;
+            cmdq_append(Some(&client), item);
+            cmdq_abort_owned_wait(&client);
+            assert!(item_observer.upgrade().is_none());
+            assert!(client.borrow_queue_mut().list.is_empty());
+            drop(client);
+            assert!(observer.upgrade().is_none());
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+
+    #[test]
+    fn background_commands_survive_item_removal_and_cancel_on_server_cleanup() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::time::Duration;
+        unsafe {
+            let item = cmdq_get_callback_owned(c"background command", None);
+            let calls = Rc::new(Cell::new(0));
+            let observed = calls.clone();
+            cmdq_background(
+                crate::src::reactor::Timer::new(Duration::ZERO, move || {
+                    observed.set(observed.get() + 1);
+                })
+                .unwrap(),
+            );
+            cmdq_remove(item);
+            crate::src::reactor::poll_runtime();
+            assert_eq!(calls.get(), 1);
+            assert_eq!(Rc::strong_count(&calls), 1);
+            cmdq_next(None);
+            assert!(QueueTarget::Global.with_queue(|queue| queue.background.is_empty()));
+
+            let retained = calls.clone();
+            cmdq_background(
+                crate::src::reactor::Timer::new(Duration::from_secs(60), move || {
+                    retained.set(100);
+                })
+                .unwrap(),
+            );
+            cmdq_cancel_background();
+            assert_eq!(Rc::strong_count(&calls), 1);
+            assert_eq!(calls.get(), 1);
+            crate::src::reactor::shutdown_runtime();
         }
     }
 

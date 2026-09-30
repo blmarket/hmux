@@ -17,7 +17,7 @@ use std::rc::{Rc, Weak};
 use std::time::Duration;
 pub use streams::*;
 pub use tasks::{task_is_pending, task_start};
-pub use timers::{timer_once_owned, Timer};
+pub use timers::Timer;
 
 #[repr(C)]
 pub struct bufferevent_ops {
@@ -90,7 +90,6 @@ pub fn shutdown_runtime() {
     let runtime = HOST.with(|h| h.borrow_mut().take());
     let Some(runtime) = runtime else { return };
     streams::clear();
-    timers::clear();
     FDS.with(|f| f.borrow_mut().clear());
     // Keep the scheduling handle accessible while destructors run.
     drop(runtime);
