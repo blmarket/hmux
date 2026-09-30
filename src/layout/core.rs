@@ -190,11 +190,10 @@ pub unsafe fn layout_make_leaf(
     lc: *mut layout_cell,
     owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
-    let wp = owner.get();
     (*lc).type_0 = LAYOUT_WINDOWPANE;
     layout_cells_require_empty(&*lc);
-    (*wp).layout_cell = Some((*lc).id());
-    (*lc).wp = (*wp).observer.clone();
+    owner.place_in_layout((*lc).id());
+    (*lc).wp = std::rc::Rc::downgrade(owner);
 }
 pub unsafe fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type) {
     if type_0 as ::core::ffi::c_uint
@@ -205,10 +204,7 @@ pub unsafe fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type
     (*lc).type_0 = type_0;
     layout_cells_require_empty(&*lc);
     if let Some(owner) = (*lc).wp.upgrade() {
-        let pane = &mut *owner.get();
-        if pane.layout_cell == Some((*lc).id()) {
-            pane.layout_cell = None;
-        }
+        owner.detach_layout((*lc).id());
     }
     (*lc).wp = std::rc::Weak::new();
 }
@@ -405,7 +401,7 @@ pub unsafe fn layout_fix_panes(
     let mut changed = false;
     let mut cursor = window.next_pane(None);
     while let Some(pane) = cursor {
-        if (*pane.get()).layout_cell.is_some()
+        if pane.layout_identity(false).is_some()
             && !skip.is_some_and(|skip| std::rc::Rc::ptr_eq(&pane, skip))
         {
             // Copy the tree geometry before any Pane/Window policy query. A
@@ -416,54 +412,7 @@ pub unsafe fn layout_fix_panes(
                     crate::src::window::LayoutView::Visible,
                 )
                 .expect("placed pane belongs to visible layout");
-            let old_geometry = pane.geometry();
-            let (mut sx, mut sy) = geometry.size;
-            {
-                let state = &mut *pane.get();
-                state.xoff = geometry.offset.0;
-                state.yoff = geometry.offset.1;
-            }
-            let status = pane.border_status();
-            let has_border = match status {
-                PANE_STATUS_TOP => geometry.top_border,
-                PANE_STATUS_BOTTOM => geometry.bottom_border,
-                _ => false,
-            };
-            if !geometry.floating && has_border {
-                if status == PANE_STATUS_TOP {
-                    (*pane.get()).yoff += 1;
-                }
-                if sy > 1 {
-                    sy -= 1;
-                }
-            }
-            if window_pane_scrollbar_reserve(&*pane.get()) != 0 {
-                let (width, pad) = {
-                    let state = &*pane.get();
-                    (
-                        state.scrollbar_style.width.max(1),
-                        state.scrollbar_style.pad.max(0),
-                    )
-                };
-                let left = window.scrollbars().position == PANE_SCROLLBARS_LEFT;
-                let state = &mut *pane.get();
-                if left {
-                    if sx as i32 - width - pad < PANE_MINIMUM {
-                        state.xoff += sx as i32 - PANE_MINIMUM;
-                        sx = PANE_MINIMUM as u32;
-                    } else {
-                        sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
-                        state.xoff += width + pad;
-                    }
-                } else if sx as i32 - width - pad < PANE_MINIMUM {
-                    sx = PANE_MINIMUM as u32;
-                } else {
-                    sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
-                }
-                state.flags |= PANE_REDRAWSCROLLBAR;
-            }
-            pane.resize(sx, sy);
-            changed |= pane.geometry() != old_geometry;
+            changed |= pane.apply_layout(geometry, window.scrollbars());
         }
         cursor = window.next_pane(Some(&pane));
     }
@@ -509,8 +458,7 @@ impl LayoutResizePolicy {
         let pane_status = owner.pane_border_status();
         let horizontal_minimum = if owner.scrollbars().mode == PANE_SCROLLBARS_ALWAYS {
             let active = owner.active_pane().expect("active layout pane");
-            let style = &(*active.get()).scrollbar_style;
-            (PANE_MINIMUM + style.width + style.pad) as u32
+            active.minimum_layout_width(true)
         } else {
             PANE_MINIMUM as u32
         };
@@ -791,7 +739,7 @@ pub unsafe fn layout_free(w_owner: &WindowRef) {
 unsafe fn layout_clamp_floating_panes(window: &WindowRef, sx: u_int, sy: u_int) {
     let mut cursor = window.step_pane(crate::src::window::PaneOrder::Stacking, None, false);
     while let Some(pane) = cursor {
-        let id = (*pane.get()).layout_cell;
+        let id = pane.layout_identity(false);
         if let Some(id) = id {
             let floating = {
                 window
@@ -947,7 +895,7 @@ pub unsafe fn layout_resize_pane_to(
         .window_observer()
         .upgrade()
         .expect("resized pane window");
-    let id = (*pane.get()).layout_cell.expect("resized pane layout");
+    let id = pane.layout_identity(false).expect("resized pane layout");
     let change = (|| {
         let mut guard = window
             .borrow_layout_cell_mut(id)
@@ -990,9 +938,9 @@ mod layout_cell_collection_tests {
             let mut cell = layout_create_cell();
             layout_make_leaf(&mut *cell, &owner);
             assert!(cell.wp.ptr_eq(&observer));
-            assert_eq!((*owner.get()).layout_cell, Some(cell.id()));
+            assert_eq!(owner.layout_identity(false), Some(cell.id()));
             layout_make_node(&mut *cell, LAYOUT_LEFTRIGHT);
-            assert!((*owner.get()).layout_cell.is_none());
+            assert!(owner.layout_identity(false).is_none());
             assert!(cell.wp.upgrade().is_none());
             layout_make_leaf(&mut *cell, &owner);
             drop(owner);
@@ -1012,11 +960,11 @@ mod layout_cell_collection_tests {
             layout_make_leaf(&mut *replacement, &pane);
             let replacement_id = replacement.id();
             layout_make_node(&mut *old, LAYOUT_LEFTRIGHT);
-            assert_eq!((*pane.get()).layout_cell, Some(replacement_id));
+            assert_eq!(pane.layout_identity(false), Some(replacement_id));
             drop(old);
-            assert_eq!((*pane.get()).layout_cell, Some(replacement_id));
+            assert_eq!(pane.layout_identity(false), Some(replacement_id));
             drop(replacement);
-            assert!((*pane.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
         }
     }
 
@@ -1168,7 +1116,7 @@ pub unsafe fn layout_resize_floating_pane_to(
         .upgrade()
         .expect("resized pane window");
     let result = (|| {
-        let id = (*pane.get()).layout_cell.expect("floating pane layout");
+        let id = pane.layout_identity(false).expect("floating pane layout");
         let floating = {
             window
                 .borrow_layout_cell(id)
@@ -1221,7 +1169,7 @@ pub unsafe fn layout_resize_floating_pane(
         .upgrade()
         .expect("resized pane window");
     let result = (|| {
-        let id = (*pane.get()).layout_cell.expect("floating pane layout");
+        let id = pane.layout_identity(false).expect("floating pane layout");
         {
             let mut guard = window
                 .borrow_layout_cell_mut(id)
@@ -1983,7 +1931,7 @@ pub unsafe fn layout_floating_pane(
 pub unsafe fn layout_close_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     // A logically destroyed pane may already have lost its parent Window. Keep
     // the legacy early return for a cleared Pane cell link.
-    if (*pane.get()).layout_cell.is_none() {
+    if pane.layout_identity(false).is_none() {
         return;
     }
     let window = pane
@@ -2013,8 +1961,9 @@ pub unsafe fn layout_close_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_
             .as_deref_mut()
             .and_then(|root| root.find_pane_mut(&observer))
             .unwrap() as *mut layout_cell;
+        let id = (*cell).id();
         layout_destroy_cell_with_policy(policy, cell, &mut tree);
-        (*pane.get()).layout_cell = None;
+        pane.detach_layout(id);
         tree.is_some()
     };
     if has_root {
@@ -3256,7 +3205,7 @@ mod reservation_tests {
             assert_eq!(window.scene_generation(), generation);
             assert_eq!(Rc::strong_count(&window), 1);
             window.release(c"floating resize guard test");
-            assert!((*pane.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
         }
     }
 
@@ -3292,7 +3241,7 @@ mod reservation_tests {
             assert_eq!(Rc::strong_count(&window), 1);
             assert_eq!(Rc::strong_count(&pane), 1);
             window.release(c"root tile conversion test");
-            assert!((*pane.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
         }
     }
 
@@ -3362,7 +3311,7 @@ mod reservation_tests {
                 assert_eq!((tree.g.sx, tree.g.sy), (80, 24));
             }
             window.release(c"single pane spread test");
-            assert!((*pane.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
         }
     }
 
@@ -3386,7 +3335,7 @@ mod reservation_tests {
                 events_callback(move |_, _| {
                     let window = observer.upgrade().unwrap();
                     let pane = pane_observer.upgrade().unwrap();
-                    assert!((*pane.get()).layout_cell.is_none());
+                    assert!(pane.layout_identity(false).is_none());
                     assert!(window
                         .borrow_layout_root(crate::src::window::LayoutView::Visible)
                         .is_none());
@@ -3442,7 +3391,7 @@ mod reservation_tests {
             assert_eq!(Rc::strong_count(&pane), 1, "cell membership is weak");
             let old = window.borrow_layout_root_mut().take();
             drop(old);
-            assert!((*pane.get()).layout_cell.is_none());
+            assert!(pane.layout_identity(false).is_none());
             window.release(c"floating reservation test");
         }
     }

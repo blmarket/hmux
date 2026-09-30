@@ -4,9 +4,9 @@ use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
 use crate::src::reactor::Interests;
 use crate::src::server_client::Client;
-use crate::src::shared::command::{cmd, cmd_retval};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
+use crate::src::shared::command::{cmd, cmd_retval};
 use crate::src::shared::pane::{PANE_ACTIVITY, PANE_MINIMUM};
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
@@ -45,6 +45,31 @@ pub trait WindowPane {
     /// caller publishes membership or dispatches move/layout notifications.
     unsafe fn reparent(&self, window: &WindowRef);
     unsafe fn geometry(&self) -> (u32, u32, i32, i32);
+    /// Stable, nonowning identity resolved only under the Window layout guard.
+    unsafe fn layout_identity(&self, saved: bool) -> Option<LayoutCellId>;
+    unsafe fn place_in_layout(&self, cell: LayoutCellId);
+    /// Clear placement only if this is still the cell that owns the pane.
+    unsafe fn detach_layout(&self, cell: LayoutCellId);
+    unsafe fn save_layout_for_zoom(&self);
+    unsafe fn restore_layout_after_zoom(&self);
+    unsafe fn mark_zoomed(&self);
+    unsafe fn is_zoomed(&self) -> bool;
+    unsafe fn floats_over_zoom(&self) -> bool;
+    unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32;
+    /// Apply copied Window geometry, including pane border and scrollbar policy.
+    /// Returns whether the visible geometry changed; resize callbacks run after
+    /// the pane's placement fields have been released.
+    unsafe fn apply_layout(
+        &self,
+        geometry: crate::src::window::PaneLayoutGeometry,
+        scrollbars: crate::src::window::WindowScrollbars,
+    ) -> bool;
+    /// Mark redraw when the cached active and inactive appearance differs.
+    unsafe fn redraw_selection_change(&self);
+    unsafe fn is_visible(&self) -> bool;
+    unsafe fn contains(&self, x: u32, y: u32) -> bool;
+    unsafe fn pane_lines(&self) -> pane_lines;
+
     /// Translate a mouse report after copying pane geometry; no pane borrow
     /// survives the coordinate calculation or the caller's following work.
     unsafe fn mouse_position(&self, mouse: &mouse_event, last: bool) -> Option<(u32, u32)>;
@@ -156,6 +181,125 @@ pub trait WindowPane {
 }
 
 impl WindowPane for Rc<UnsafeCell<window_pane>> {
+    unsafe fn layout_identity(&self, saved: bool) -> Option<LayoutCellId> {
+        if saved {
+            (*self.get()).saved_layout_cell
+        } else {
+            (*self.get()).layout_cell
+        }
+    }
+    unsafe fn place_in_layout(&self, cell: LayoutCellId) {
+        (*self.get()).layout_cell = Some(cell);
+    }
+    unsafe fn detach_layout(&self, cell: LayoutCellId) {
+        if (*self.get()).layout_cell == Some(cell) {
+            (*self.get()).layout_cell = None;
+        }
+    }
+    unsafe fn save_layout_for_zoom(&self) {
+        let pane = &mut *self.get();
+        pane.saved_layout_cell = pane.layout_cell.take();
+    }
+    unsafe fn restore_layout_after_zoom(&self) {
+        let pane = &mut *self.get();
+        pane.layout_cell = pane.saved_layout_cell.take();
+        pane.flags &= !PANE_ZOOMED;
+    }
+    unsafe fn mark_zoomed(&self) {
+        (*self.get()).flags |= PANE_ZOOMED;
+    }
+    unsafe fn is_zoomed(&self) -> bool {
+        (*self.get()).flags & PANE_ZOOMED != 0
+    }
+    unsafe fn floats_over_zoom(&self) -> bool {
+        (*self.get()).flags & PANE_FLOATOVERZOOM != 0
+    }
+    unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32 {
+        if reserve_scrollbar {
+            let style = &(*self.get()).scrollbar_style;
+            (PANE_MINIMUM + style.width + style.pad) as u32
+        } else {
+            PANE_MINIMUM as u32
+        }
+    }
+    unsafe fn apply_layout(
+        &self,
+        geometry: crate::src::window::PaneLayoutGeometry,
+        scrollbars: crate::src::window::WindowScrollbars,
+    ) -> bool {
+        let old_geometry = self.geometry();
+        let (mut sx, mut sy) = geometry.size;
+        let (mut xoff, mut yoff) = geometry.offset;
+        let status = self.border_status();
+        let has_border = match status {
+            PANE_STATUS_TOP => geometry.top_border,
+            PANE_STATUS_BOTTOM => geometry.bottom_border,
+            _ => false,
+        };
+        if !geometry.floating && has_border {
+            if status == PANE_STATUS_TOP {
+                yoff += 1;
+            }
+            if sy > 1 {
+                sy -= 1;
+            }
+        }
+        let reserve = window_pane_scrollbar_reserve(&*self.get()) != 0;
+        if reserve {
+            let (width, pad) = {
+                let pane = &*self.get();
+                (
+                    pane.scrollbar_style.width.max(1),
+                    pane.scrollbar_style.pad.max(0),
+                )
+            };
+            if scrollbars.position == PANE_SCROLLBARS_LEFT {
+                if sx as i32 - width - pad < PANE_MINIMUM {
+                    xoff += sx as i32 - PANE_MINIMUM;
+                    sx = PANE_MINIMUM as u32;
+                } else {
+                    sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
+                    xoff += width + pad;
+                }
+            } else if sx as i32 - width - pad < PANE_MINIMUM {
+                sx = PANE_MINIMUM as u32;
+            } else {
+                sx = sx.wrapping_sub(width as u32).wrapping_sub(pad as u32);
+            }
+        }
+        {
+            let pane = &mut *self.get();
+            pane.xoff = xoff;
+            pane.yoff = yoff;
+            if reserve {
+                pane.flags |= PANE_REDRAWSCROLLBAR;
+            }
+        }
+        self.resize(sx, sy);
+        self.geometry() != old_geometry
+    }
+    unsafe fn redraw_selection_change(&self) {
+        let pane = &mut *self.get();
+        if !grid_cells_look_equal(&pane.cached_gc, &pane.cached_active_gc)
+            || pane.cached_dim != pane.cached_active_dim
+            || colour_palette_get(Some(&pane.palette), pane.cached_gc.fg)
+                != colour_palette_get(Some(&pane.palette), pane.cached_active_gc.fg)
+            || colour_palette_get(Some(&pane.palette), pane.cached_gc.bg)
+                != colour_palette_get(Some(&pane.palette), pane.cached_active_gc.bg)
+        {
+            pane.flags |= PANE_REDRAW;
+        }
+    }
+    unsafe fn is_visible(&self) -> bool {
+        window_pane_is_visible(self) != 0
+    }
+    unsafe fn contains(&self, x: u32, y: u32) -> bool {
+        window_pane_contains(self, x, y) != 0
+    }
+    unsafe fn pane_lines(&self) -> pane_lines {
+        window_pane_get_pane_lines(&*self.get())
+    }
+
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32) {
         window_pane_full_size_offset(self)
     }

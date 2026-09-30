@@ -450,8 +450,8 @@ pub unsafe fn layout_parse(
                         let mut floating = Vec::new();
                         if pctx.version == 1 {
                             for pane in &panes {
-                                let cell = (*pane.get())
-                                    .layout_cell
+                                let cell = pane
+                                    .layout_identity(false)
                                     .and_then(|id| {
                                         tree.as_deref_mut().and_then(|root| root.find_mut(id))
                                     })
@@ -535,7 +535,7 @@ unsafe fn layout_assign_fallback_tiled(
     }
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
-            if let Some(owner) = panes.find(|owner| (*owner.get()).layout_cell.is_none()) {
+            if let Some(owner) = panes.find(|owner| owner.layout_identity(false).is_none()) {
                 layout_make_leaf(lc, &owner);
             }
             return;
@@ -567,7 +567,7 @@ unsafe fn layout_assign_fallback(
         layout_cells_push_front(root, previous);
     }
     for pane in panes {
-        if let Some(id) = (*pane.get()).layout_cell {
+        if let Some(id) = pane.layout_identity(false) {
             if floating
                 .iter()
                 .any(|cell| cell.id() == id && cell.flags & LAYOUT_CELL_FLOATING != 0)
@@ -1174,8 +1174,8 @@ mod restoration_borrow_tests {
             // Model a selection callback replacing the tree before history is
             // restored. No saved state may dereference the old cells afterward.
             drop(root);
-            assert!((*first.get()).layout_cell.is_none());
-            assert!((*second.get()).layout_cell.is_none());
+            assert!(first.layout_identity(false).is_none());
+            assert!(second.layout_identity(false).is_none());
             assert!(Rc::ptr_eq(&restored[0].pane.upgrade().unwrap(), &first));
             assert!(Rc::ptr_eq(&restored[1].pane.upgrade().unwrap(), &second));
             assert_eq!(
@@ -1208,8 +1208,8 @@ mod restoration_borrow_tests {
             layout_cells_push_back(&mut *old_root, old_floating);
             let mut detached = vec![layout_cells_remove(&mut *old_root, floating_ptr).unwrap()];
             drop(old_root);
-            assert!((*tiled.get()).layout_cell.is_none());
-            assert_eq!((*floating.get()).layout_cell, Some(floating_id));
+            assert!(tiled.layout_identity(false).is_none());
+            assert_eq!(floating.layout_identity(false), Some(floating_id));
             let mut tree = Some(layout_create_cell());
             layout_set_size(tree.as_deref_mut().unwrap(), 80, 24, 0, 0);
             let panes = [tiled.clone(), floating.clone()];
@@ -1232,8 +1232,8 @@ mod restoration_borrow_tests {
                 (12, 8, 5, 3)
             );
             drop(tree);
-            assert!((*tiled.get()).layout_cell.is_none());
-            assert!((*floating.get()).layout_cell.is_none());
+            assert!(tiled.layout_identity(false).is_none());
+            assert!(floating.layout_identity(false).is_none());
         }
     }
 }

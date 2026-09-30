@@ -371,7 +371,7 @@ fn migrated_terminal_helpers_do_not_reach_through_client_storage() {
             ],
         ),
         (
-            "src/input.rs",
+            "src/window_pane/input.rs",
             vec![
                 "input_request_reply",
                 "input_request_matches",
@@ -478,7 +478,7 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             "src/format/expression.rs",
             &["format_add_window_neighbour"][..],
         ),
-        ("src/input.rs", &["input_exit_rename"][..]),
+        ("src/window_pane/input.rs", &["input_exit_rename"][..]),
         (
             "src/cmd/entries/break_pane.rs",
             &["cmd_break_pane_float"][..],
@@ -1051,9 +1051,11 @@ fn external_client_types_use_holders_without_exposing_model_storage() {
 }
 
 #[test]
-fn terminal_output_cannot_recover_a_client_from_the_component() {
-    struct ComponentOnly;
-    impl<'ast> Visit<'ast> for ComponentOnly {
+fn terminal_output_uses_client_holders_without_component_backreferences() {
+    struct HolderOutput {
+        holders: usize,
+    }
+    impl<'ast> Visit<'ast> for HolderOutput {
         fn visit_item(&mut self, item: &'ast Item) {
             if matches!(item, Item::Mod(module) if module.attrs.iter().any(|attr|
                 attr.path().is_ident("cfg") && attr.parse_args::<syn::Path>()
@@ -1066,25 +1068,42 @@ fn terminal_output_cannot_recover_a_client_from_the_component() {
         fn visit_expr_field(&mut self, field: &'ast syn::ExprField) {
             assert!(
                 !matches!(&field.member, syn::Member::Named(name) if name == "client"),
-                "terminal output must not upgrade the Client back reference under a borrow"
+                "terminal output must not recover a Client through a component back reference"
             );
             visit::visit_expr_field(self, field);
         }
         fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
             assert!(
-                !ty.path.segments.iter().any(|part| matches!(
-                    part.ident.to_string().as_str(),
-                    "client" | "ClientRef" | "ClientWeak"
-                )),
-                "terminal output must receive component data and copied metadata"
+                !ty.path
+                    .segments
+                    .iter()
+                    .any(|part| part.ident == "TerminalOutput"),
+                "terminal output must use the retained Client holder"
             );
+            if ty
+                .path
+                .segments
+                .iter()
+                .any(|part| part.ident == "ClientRef")
+            {
+                self.holders += 1;
+            }
             visit::visit_type_path(self, ty);
         }
     }
     for path in ["src/tty/output.rs", "src/tty_draw.rs"] {
-        ComponentOnly
-            .visit_file(&syn::parse_file(&std::fs::read_to_string(path).unwrap()).unwrap());
+        let mut check = HolderOutput { holders: 0 };
+        check.visit_file(&syn::parse_file(&std::fs::read_to_string(path).unwrap()).unwrap());
+        assert!(
+            check.holders > 0,
+            "{path}: terminal operations must receive Client holders"
+        );
     }
+    let api = std::fs::read_to_string("src/server_client/api.rs").unwrap();
+    assert!(
+        !api.contains("with_terminal_output"),
+        "duplicated output views must remain removed"
+    );
 }
 
 #[test]
