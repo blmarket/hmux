@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
@@ -286,7 +287,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         session.as_ref(),
     );
     if let Some(session) = session {
-        crate::src::session::session_remove_ref(session, c"set-hook monitor");
+        (session).release(c"set-hook monitor");
     }
     CMD_RETURN_NORMAL
 }
@@ -368,7 +369,7 @@ unsafe fn cmd_set_option_exec(
             // Preserve the pinned oracle's parse-failure ambiguity diagnostic.
             let ambiguous = match failure {
                 OptionMatchFailure::Ambiguous => true,
-                OptionMatchFailure::Parse => sessions.storage.is_some(),
+                OptionMatchFailure::Parse => sessions.has_entries(),
                 _ => false,
             };
             cmdq_error(item_handle, |out| {

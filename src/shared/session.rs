@@ -1,16 +1,11 @@
 //! Session indexes and groups; Session state belongs to its owner module.
 
-pub use crate::src::session::session;
+pub use crate::src::session::{session, sessions};
 
 /// Retained Session identity. Logical destruction and deferred releases remain explicit.
 pub type SessionRef = std::rc::Rc<std::cell::UnsafeCell<session>>;
 /// Nonowning Session identity for callbacks, targets and membership.
 pub type SessionWeak = std::rc::Weak<std::cell::UnsafeCell<session>>;
-
-#[repr(C)]
-pub struct sessions {
-    pub storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, SessionRef>>>,
-}
 
 #[repr(C)]
 pub struct session_group {

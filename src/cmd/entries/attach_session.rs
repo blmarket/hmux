@@ -1,3 +1,5 @@
+use crate::src::session::SessionIndex as _;
+use crate::src::session::Session as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::cmd_get_args_mut;
@@ -14,7 +16,7 @@ use crate::src::proc::{proc_get_peer_uid, proc_send};
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 
-use crate::src::session::session_set_current;
+
 use crate::src::session::sessions;
 use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;
@@ -92,7 +94,7 @@ pub unsafe fn cmd_attach_session(
     let mut wp = None;
     let mut msgtype: msgtype = 0 as msgtype;
     let mut uid: uid_t = 0;
-    if sessions.storage.is_none() {
+    if !sessions.has_entries() {
         cmdq_error(item_handle, |out| out.write_all(b"no sessions"));
         return CMD_RETURN_ERROR;
     }
@@ -134,7 +136,7 @@ pub unsafe fn cmd_attach_session(
             window_set_active_pane(&window, pane, 1);
             window.release(c"attach pane selection");
         }
-        session_set_current(s.as_ref().expect("live session"), wl.clone());
+        (s.as_ref().expect("live session")).select_winlink(wl.clone());
         if wp.is_some() {
             cmd_find_from_winlink_pane(
                 &mut *current.current.borrow_mut(),

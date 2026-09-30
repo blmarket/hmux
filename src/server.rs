@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::src::cmd::queue::cmdq_next;
@@ -28,7 +29,7 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::sessions;
 use crate::src::session::Session;
-use crate::src::session::{session_destroy, sessions_after, sessions_minmax};
+
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::status::message_list;
@@ -300,7 +301,7 @@ pub(crate) unsafe fn server_start(
     windows.storage = None;
     all_window_panes.storage = None;
     clients.clear();
-    sessions.storage = None;
+    sessions.reset();
     key_bindings_init();
     control_build_events();
     hooks_build_events();
@@ -395,7 +396,7 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
         b"exit-unattached\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
-        if sessions.storage.is_some() {
+        if sessions.has_entries() {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -433,16 +434,12 @@ unsafe fn server_send_exit() {
         registry_c_owner = clients.next(&client_owner);
         client_owner.shutdown();
     }
-    let mut s_owner = sessions_minmax(&sessions);
+    let mut s_owner = (&sessions).first();
     s = s_owner.clone();
     while !s.is_none() {
         let name = s.as_ref().expect("live session").name().into_bytes();
-        session_destroy(
-            s_owner.as_ref().expect("registered session"),
-            1 as ::core::ffi::c_int,
-            b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
-        );
-        s_owner = sessions_after(&sessions, &name);
+        (s_owner.as_ref().expect("registered session")).destroy((1 as ::core::ffi::c_int) != 0, std::ffi::CStr::from_ptr(b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char));
+        s_owner = (&sessions).after(&name);
         s = s_owner.clone();
     }
 }
@@ -478,7 +475,7 @@ pub unsafe fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    let mut s_owner = sessions_minmax(&sessions);
+    let mut s_owner = (&sessions).first();
     s = s_owner.clone();
     while !s.is_none() {
         if s.as_ref().expect("live session").is_attached() {

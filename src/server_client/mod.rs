@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::session::Session as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionRef;
@@ -72,7 +73,7 @@ use crate::src::server_fn::{
     server_check_unattached, server_destroy_pane, server_kill_pane, server_redraw_client,
     server_redraw_window_borders, server_status_client, server_status_window,
 };
-use crate::src::session::session_find_by_id;
+
 use crate::src::shared::command::unpack_argv;
 use crate::src::shared::events::event_payload;
 use crate::src::status::{
@@ -1829,7 +1830,7 @@ unsafe fn server_client_check_mouse(
                         loc = KEYC_MOUSE_LOCATION_STATUS;
                     }
                     5 => {
-                        if session_find_by_id(sr.argument).is_none() {
+                        if crate::src::shared::session::SessionRef::find_by_id(sr.argument).is_none() {
                             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                         }
                         (*m).s = sr.argument as ::core::ffi::c_int;
@@ -3338,17 +3339,14 @@ mod prompt_cursor_tests {
                     .unwrap();
                 crate::src::options::options_default(&mut *options, definition);
             }
-            let session_owner = session::with_options_for_test(options);
+            let session_owner = crate::src::shared::session::SessionRef::allocate_with_options(options);
             let c = client::with_session_for_test(Some(&session_owner));
             c.borrow_terminal_mut().sy = 24;
             let previous_sessions = std::mem::replace(
                 &mut crate::src::session::sessions,
-                crate::src::shared::session::sessions { storage: None },
+                crate::src::shared::session::sessions::default(),
             );
-            crate::src::session::sessions_insert(
-                &mut crate::src::session::sessions,
-                session_owner.clone(),
-            );
+            (&mut crate::src::session::sessions).insert(session_owner.clone());
             {
                 let mut terminal = c.borrow_terminal_mut();
                 (terminal.oox, terminal.ooy, terminal.osx, terminal.osy) = (10, 5, 80, 20);
@@ -3421,10 +3419,7 @@ mod prompt_cursor_tests {
                 );
                 crate::src::window::window_remove_ref(window_owner, c"test owner".as_ptr());
             }
-            crate::src::session::sessions_remove(
-                &mut crate::src::session::sessions,
-                &session_owner,
-            );
+            (&mut crate::src::session::sessions).remove(&session_owner);
             crate::src::session::sessions = previous_sessions;
         }
     }
@@ -5286,7 +5281,7 @@ mod overlay_dispatch_tests {
     use std::rc::Rc;
 
     unsafe fn with_client(test: impl FnOnce(&ClientRef)) {
-        let session_owner = session::new();
+        let session_owner = crate::src::shared::session::SessionRef::allocate();
         let session = Some(session_owner.clone());
         let link = crate::src::session::test_support::add_link(&session_owner, 0);
         crate::src::session::test_support::current(&session_owner, link.clone());
@@ -5521,7 +5516,7 @@ mod cwd_observer_ownership_tests {
             cfg_finished = 0;
             let other = client::new();
             (*other.get()).cwd = Some(c"/other".to_owned());
-            let session = session::new();
+            let session = crate::src::shared::session::SessionRef::allocate();
             session.set_cwd(Some(c"/session".to_owned()));
             let saved = ClientRef::working_directory(Some(&other), Some(&session)).unwrap();
             assert_eq!(saved.as_c_str(), c"/startup");

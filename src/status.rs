@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
 use crate::src::ffi::libc::{memcpy, memset};
 use crate::src::format::bytes::format_message_with;
@@ -946,15 +947,12 @@ mod status_screen_tests {
                     .unwrap();
                 options_default(&mut *oo_owner, definition);
             }
-            let session_owner = session::with_options_for_test(oo_owner);
+            let session_owner = crate::src::shared::session::SessionRef::allocate_with_options(oo_owner);
             let previous_sessions = std::mem::replace(
                 &mut crate::src::session::sessions,
-                crate::src::shared::session::sessions { storage: None },
+                crate::src::shared::session::sessions::default(),
             );
-            crate::src::session::sessions_insert(
-                &mut crate::src::session::sessions,
-                session_owner.clone(),
-            );
+            (&mut crate::src::session::sessions).insert(session_owner.clone());
             let mut c = client::with_session_for_test(Some(&session_owner));
             c.borrow_terminal_mut().sx = 80;
             for (style, expected) in [
@@ -1016,10 +1014,7 @@ mod status_screen_tests {
             global_s_options = saved;
             options_free(global_options_owner);
             // The session owns and releases its option table.
-            crate::src::session::sessions_remove(
-                &mut crate::src::session::sessions,
-                &session_owner,
-            );
+            (&mut crate::src::session::sessions).remove(&session_owner);
             crate::src::session::sessions = previous_sessions;
         }
     }

@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::cmd::parse::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::src::cmd::queue::{
     cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_get_callback_owned,
@@ -14,7 +15,7 @@ use crate::src::prompt_history::prompt_load_history;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
-use crate::src::session::sessions_minmax;
+
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -348,7 +349,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
                     .attached_session()
                     .upgrade();
             } else {
-                let mut s_owner = sessions_minmax(&sessions);
+                let mut s_owner = (&sessions).first();
                 s = s_owner;
             }
         }

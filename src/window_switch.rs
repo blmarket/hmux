@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
@@ -20,7 +21,7 @@ use crate::src::screen_write::{
 };
 use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
 use crate::src::session::Session;
-use crate::src::session::session_find_by_id;
+
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
@@ -605,7 +606,7 @@ unsafe fn window_switch_run_command(
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
-            s = session_find_by_id((*item).session as u_int);
+            s = crate::src::shared::session::SessionRef::find_by_id((*item).session as u_int);
             if !s.is_none() {
                 let mut bytes = Vec::from(b"=".as_slice());
                 bytes.extend_from_slice(s.as_ref().expect("live session").name().as_bytes());
@@ -619,7 +620,7 @@ unsafe fn window_switch_run_command(
             }
         }
         1 => {
-            s = session_find_by_id((*item).session as u_int);
+            s = crate::src::shared::session::SessionRef::find_by_id((*item).session as u_int);
             if !s.is_none() {
                 wl = s
                     .as_ref()

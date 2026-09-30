@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
@@ -6,7 +7,7 @@ use crate::src::format::{
 };
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
-use crate::src::session::session_is_linked;
+
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -92,10 +93,7 @@ unsafe fn cmd_kill_window_exec(
         &cmd_unlink_window_entry,
     ) {
         if args_has(args, 'k' as i32 as u_char) == 0
-            && session_is_linked(
-                s.as_ref(),
-                wl.get_unchecked().window_handle().expect("live window"),
-            ) == 0
+            && (crate::src::shared::session::SessionRef::window_linked_outside_group(s.as_ref(), wl.get_unchecked().window_handle().expect("live window")) as i32) == 0
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"window only linked to one session")

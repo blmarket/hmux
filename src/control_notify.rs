@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::events::events_add_sink;
 use crate::src::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
@@ -348,7 +349,7 @@ mod tests {
     fn notifications_preserve_eligibility_order_and_non_utf8_names() {
         unsafe {
             let old_registry = std::mem::replace(&mut clients, ClientRegistry::new());
-            let session = session::new();
+            let session = crate::src::shared::session::SessionRef::allocate();
             crate::src::session::test_support::metadata(&session, None, Some(7), None);
             crate::src::session::test_support::metadata(
                 &session,

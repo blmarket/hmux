@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
@@ -30,9 +31,7 @@ use crate::src::server_fn::{
     server_renumber_all,
 };
 use crate::src::session::Session;
-use crate::src::session::{
-    session_destroy, session_find_by_id, session_group_synchronize_from, session_set_current,
-};
+use crate::src::session::{session_group_synchronize_from};
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -281,7 +280,7 @@ struct WindowTreeTarget {
 }
 
 unsafe fn window_tree_pull_item(item: &window_tree_itemdata) -> WindowTreeTarget {
-    let Some(session) = session_find_by_id(item.session as u_int) else {
+    let Some(session) = crate::src::shared::session::SessionRef::find_by_id(item.session as u_int) else {
         return WindowTreeTarget::default();
     };
     let s = Some(session.clone());
@@ -1810,20 +1809,14 @@ unsafe fn window_tree_swap(
         .current_winlink()
         == cur_winlink
     {
-        session_set_current(
-            cur_session.as_ref().expect("live session"),
-            (other_winlink).clone(),
-        );
+        (cur_session.as_ref().expect("live session")).select_winlink((other_winlink).clone());
     } else if cur_session
         .as_ref()
         .expect("live session")
         .current_winlink()
         == other_winlink
     {
-        session_set_current(
-            cur_session.as_ref().expect("live session"),
-            (cur_winlink).clone(),
-        );
+        (cur_session.as_ref().expect("live session")).select_winlink((cur_winlink).clone());
     }
     session_group_synchronize_from(cur_session.as_ref().expect("live session"));
     server_redraw_session_group(cur_session.as_ref().expect("live session"));
@@ -2214,7 +2207,7 @@ unsafe fn window_tree_kill_each(item: &window_tree_itemdata) {
         WINDOW_TREE_SESSION => {
             if let Some(session_owner) = target.session.as_ref() {
                 server_destroy_session(session_owner);
-                session_destroy(&session_owner, 1, c"window_tree_kill_each".as_ptr());
+                (&session_owner).destroy((1) != 0, std::ffi::CStr::from_ptr(c"window_tree_kill_each".as_ptr()));
             }
         }
         WINDOW_TREE_WINDOW => {

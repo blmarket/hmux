@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::client_handle;
@@ -916,7 +917,7 @@ pub(super) unsafe fn format_session_name(
     fmt: *const ::core::ffi::c_char,
 ) -> CString {
     let name = format_expand1_cstring(es, fmt);
-    if crate::src::session::session_find(&name).is_some() {
+    if crate::src::shared::session::SessionRef::find(&name).is_some() {
         c"1".to_owned()
     } else {
         c"0".to_owned()

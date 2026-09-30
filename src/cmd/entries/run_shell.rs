@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{
     args_count, args_get, args_has, args_make_commands, args_make_commands_prepare, args_string,
 };
@@ -22,7 +23,7 @@ use crate::src::reactor::{
 
 
 use crate::src::server_client::Client as _;
-use crate::src::session::session_remove_ref;
+
 use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -491,7 +492,7 @@ impl Drop for cmd_run_shell_data {
         unsafe {
             self.timer.cancel();
             if let Some(session) = self.s.take() {
-                session_remove_ref(session, c"cmd_run_shell_data::drop");
+                (session).release(c"cmd_run_shell_data::drop");
             }
             if let Some(client) = self.client.take() {
                 (client).release();

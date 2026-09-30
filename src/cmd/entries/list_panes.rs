@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_print};
@@ -8,7 +9,7 @@ use crate::src::format::{
 };
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
-use crate::src::session::sessions_minmax;
+
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -98,7 +99,7 @@ unsafe fn cmd_list_panes_server(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
     let mut s: Option<SessionRef> = None;
-    let mut s_owner = sessions_minmax(&sessions);
+    let mut s_owner = (&sessions).first();
     s = s_owner.clone();
     while !s.is_none() {
         cmd_list_panes_session(

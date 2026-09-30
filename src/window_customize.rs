@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::options::OptionsScope;
@@ -5161,7 +5162,7 @@ mod environment_lifetime_tests {
     #[test]
     fn detached_environment_rows_expire_after_their_session() {
         unsafe {
-            let owner = session::new();
+            let owner = crate::src::shared::session::SessionRef::allocate();
             let lifetime = Rc::downgrade(&owner);
             crate::src::session::replace_test_environment(&owner, Some(environ_create()));
             owner.with_environment_mut(|env| env.set(b"NAME", 0, b"value").unwrap());
@@ -5188,7 +5189,7 @@ mod environment_lifetime_tests {
     #[test]
     fn environment_row_snapshots_keep_tags_and_survive_reentrant_edits() {
         unsafe {
-            let owner = session::new();
+            let owner = crate::src::shared::session::SessionRef::allocate();
             crate::src::session::replace_test_environment(&owner, Some(environ_create()));
             let target = CustomizeEnvironment::session(&owner);
             let environment = target.resolve().unwrap();
@@ -5231,7 +5232,7 @@ mod environment_lifetime_tests {
     #[test]
     fn environment_tags_are_disjoint_from_every_static_option_tag() {
         unsafe {
-            let owner = session::new();
+            let owner = crate::src::shared::session::SessionRef::allocate();
             crate::src::session::replace_test_environment(&owner, Some(environ_create()));
             let environment = CustomizeEnvironment::session(&owner).resolve().unwrap();
             environment.edit(|env| {
@@ -5263,7 +5264,7 @@ mod environment_lifetime_tests {
     #[test]
     fn environment_guards_reborrow_the_current_box_and_detect_removal() {
         unsafe {
-            let owner = session::new();
+            let owner = crate::src::shared::session::SessionRef::allocate();
             let lifetime = Rc::downgrade(&owner);
             crate::src::session::replace_test_environment(&owner, Some(environ_create()));
             let target = CustomizeEnvironment::session(&owner);

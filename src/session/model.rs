@@ -9,6 +9,12 @@ use crate::src::shared::terminal::termios;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[derive(Default)]
+#[repr(C)]
+pub struct sessions {
+    pub(super) storage: Option<refbox::RefBox<std::collections::BTreeMap<Vec<u8>, SessionRef>>>,
+}
+
 #[repr(C)]
 pub struct session {
     /// Nonowning allocation observer for callbacks receiving borrowed pointers.
@@ -46,7 +52,7 @@ impl session {
         self.curw = wl;
     }
 
-    pub fn new() -> SessionRef {
+    pub(super) fn new() -> SessionRef {
         std::rc::Rc::new_cyclic(|observer| {
             let mut value = Self::empty();
             value.observer = observer.clone();
@@ -55,7 +61,7 @@ impl session {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_options_for_test(options: Box<options>) -> SessionRef {
+    pub(super) fn with_options_for_test(options: Box<options>) -> SessionRef {
         let owner = Self::new();
         unsafe {
             (*owner.get()).options = Some(options);

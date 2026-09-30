@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::ffi::libc::sscanf;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
@@ -6,9 +7,7 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::Timer;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
-use crate::src::session::{
-    session_find_by_id, session_remove_ref, sessions, sessions_minmax, Session as _,
-};
+use crate::src::session::{sessions, Session as _};
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
@@ -191,9 +190,9 @@ unsafe fn monitor_get_session(
         return client?.attached_session().upgrade();
     }
     let Some(session) = session else {
-        return sessions_minmax(&sessions);
+        return (&sessions).first();
     };
-    let indexed = session_find_by_id(session.id())?;
+    let indexed = crate::src::shared::session::SessionRef::find_by_id(session.id())?;
     Rc::ptr_eq(&session, &indexed).then_some(indexed)
 }
 unsafe fn monitor_context(owner: &MonitorRef) -> Option<(Option<ClientRef>, SessionRef)> {
@@ -747,7 +746,7 @@ pub unsafe fn monitor_destroy(owner: MonitorRef) {
     });
     if let Some((session, callback, timer)) = retired {
         if let Some(session) = session {
-            session_remove_ref(session, c"monitor_clear");
+            (session).release(c"monitor_clear");
         }
         drop(callback);
         drop(timer);
@@ -1209,14 +1208,14 @@ mod last_owner_tests {
 
     #[test]
     fn timer_destruction_in_session_phase_prevents_later_phases_and_rearming() {
-        use crate::src::session::{sessions_insert, sessions_remove};
+
         use std::cell::{Cell, RefCell};
         unsafe {
             let saved_sessions = std::ptr::replace(
                 &raw mut sessions,
-                crate::src::shared::session::sessions { storage: None },
+                crate::src::shared::session::sessions::default(),
             );
-            let session = session::new();
+            let session = crate::src::shared::session::SessionRef::allocate();
             crate::src::session::test_support::metadata(
                 &session,
                 Some(c"monitor-timer-destroy".to_owned()),
@@ -1224,7 +1223,7 @@ mod last_owner_tests {
                 None,
             );
             let session_observer = Rc::downgrade(&session);
-            sessions_insert(&mut sessions, session);
+            (&mut sessions).insert(session);
             let logical_owner = Rc::new(RefCell::new(None::<MonitorRef>));
             let callback_owner = logical_owner.clone();
             let calls = Rc::new(Cell::new(0));
@@ -1272,7 +1271,7 @@ mod last_owner_tests {
             // Only the Session registry and its original deferred monitor release
             // remain; temporary dispatch views did not enqueue extra releases.
             assert_eq!(session_observer.strong_count(), 2);
-            sessions_remove(&mut sessions, &session_observer.upgrade().unwrap());
+            (&mut sessions).remove(&session_observer.upgrade().unwrap());
             assert_eq!(session_observer.strong_count(), 1);
             drop(dispatch);
             assert!(observer.0.upgrade().is_none());
@@ -1428,14 +1427,14 @@ mod last_owner_tests {
     #[test]
     fn session_scan_guards_release_immediately_and_monitor_owner_releases_on_teardown() {
         use crate::src::reactor::{poll_runtime, shutdown_runtime};
-        use crate::src::session::{sessions_insert, sessions_remove};
+
 
         unsafe {
             let saved = std::ptr::replace(
                 &raw mut sessions,
-                crate::src::shared::session::sessions { storage: None },
+                crate::src::shared::session::sessions::default(),
             );
-            let owner = session::new();
+            let owner = crate::src::shared::session::SessionRef::allocate();
             crate::src::session::test_support::metadata(
                 &owner,
                 Some(c"monitor-release-test".to_owned()),
@@ -1443,7 +1442,7 @@ mod last_owner_tests {
                 None,
             );
             let observer = std::rc::Rc::downgrade(&owner);
-            sessions_insert(&mut sessions, owner);
+            (&mut sessions).insert(owner);
             let mut set_owner =
                 monitor_create_session(observer.upgrade().as_ref(), std::rc::Rc::new(|_| {}));
             let set = &set_owner;
@@ -1467,7 +1466,7 @@ mod last_owner_tests {
             poll_runtime();
             assert_eq!(observer.strong_count(), 2);
 
-            sessions_remove(&mut sessions, &observer.upgrade().expect("indexed session"));
+            (&mut sessions).remove(&observer.upgrade().expect("indexed session"));
             monitor_destroy(set_owner);
             assert_eq!(observer.strong_count(), 1);
             shutdown_runtime();

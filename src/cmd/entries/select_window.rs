@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::args_has;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
@@ -8,7 +9,7 @@ use crate::src::resize::recalculate_sizes;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_session;
 use crate::src::session::Session;
-use crate::src::session::{session_last, session_next, session_previous, session_select};
+
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -161,19 +162,19 @@ unsafe fn cmd_select_window_exec(
     if next != 0 || previous != 0 || last != 0 {
         activity = args_has(args, 'a' as i32 as u_char);
         if next != 0 {
-            if session_next(s.as_ref().expect("live session"), activity) != 0 as ::core::ffi::c_int
+            if (s.as_ref().expect("live session")).select_adjacent_window(false, (activity) != 0) != 0 as ::core::ffi::c_int
             {
                 cmdq_error(item_handle, |out| out.write_all(b"no next window"));
                 return CMD_RETURN_ERROR;
             }
         } else if previous != 0 {
-            if session_previous(s.as_ref().expect("live session"), activity)
+            if (s.as_ref().expect("live session")).select_adjacent_window(true, (activity) != 0)
                 != 0 as ::core::ffi::c_int
             {
                 cmdq_error(item_handle, |out| out.write_all(b"no previous window"));
                 return CMD_RETURN_ERROR;
             }
-        } else if session_last(s.as_ref().expect("live session")) != 0 as ::core::ffi::c_int {
+        } else if (s.as_ref().expect("live session")).select_last_window() != 0 as ::core::ffi::c_int {
             cmdq_error(item_handle, |out| out.write_all(b"no last window"));
             return CMD_RETURN_ERROR;
         }
@@ -193,7 +194,7 @@ unsafe fn cmd_select_window_exec(
         if args_has(args, 'T' as i32 as u_char) != 0
             && wl == s.as_ref().expect("live session").current_winlink()
         {
-            if session_last(s.as_ref().expect("live session")) != 0 as ::core::ffi::c_int {
+            if (s.as_ref().expect("live session")).select_last_window() != 0 as ::core::ffi::c_int {
                 cmdq_error(item_handle, |out| out.write_all(b"no last window"));
                 return CMD_RETURN_ERROR;
             }
@@ -208,7 +209,7 @@ unsafe fn cmd_select_window_exec(
                 );
             }
             server_redraw_session(s.as_ref().expect("live session"));
-        } else if session_select(s.as_ref().expect("live session"), wl.get_unchecked().idx)
+        } else if (s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx)
             == 0 as ::core::ffi::c_int
         {
             cmd_find_from_session(

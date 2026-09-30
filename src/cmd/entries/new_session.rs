@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_count, args_flag_values, args_get, args_has, args_to_vector};
 use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
@@ -22,10 +23,7 @@ use crate::src::proc::proc_send;
 use crate::src::server_client::Client as _;
 
 use crate::src::session::Session;
-use crate::src::session::{
-    session_create, session_destroy, session_find, session_group_add, session_group_find,
-    session_group_new, session_group_synchronize_to, session_select,
-};
+use crate::src::session::{session_group_add, session_group_find, session_group_new, session_group_synchronize_to};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
 use crate::src::shared::client::client;
@@ -256,7 +254,7 @@ unsafe fn cmd_new_session_exec(
         10043043949733653460 => {
             if args_has(args, 'A' as i32 as u_char) != 0 {
                 if !sname.is_null() {
-                    as_0 = session_find(std::ffi::CStr::from_ptr(sname));
+                    as_0 = crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname));
                 } else {
                     as_0 = (*target).session_handle();
                 }
@@ -278,7 +276,7 @@ unsafe fn cmd_new_session_exec(
                     return retval;
                 }
             }
-            if !sname.is_null() && session_find(std::ffi::CStr::from_ptr(sname)).is_some() {
+            if !sname.is_null() && crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname)).is_some() {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"duplicate session: ")?;
                     write_cstr(out, sname)
@@ -615,16 +613,9 @@ unsafe fn cmd_new_session_exec(
                                                                 0 as ::core::ffi::c_int,
                                                             );
                                                         }
-                                                        let session_owner = session_create(
-                                                            prefix.as_deref(),
-                                                            (!sname.is_null())
-                                                                .then(|| CStr::from_ptr(sname)),
-                                                            CStr::from_ptr(cwd),
-                                                            env.take()
-                                                                .expect("new session environment"),
-                                                            oo.take(),
-                                                            tiop.as_ref(),
-                                                        );
+                                                        let session_owner = crate::src::shared::session::SessionRef::create(prefix.as_deref(), (!sname.is_null())
+                                                                .then(|| CStr::from_ptr(sname)), CStr::from_ptr(cwd), env.take()
+                                                                .expect("new session environment"), oo.take(), tiop.as_ref());
                                                         s = Some(session_owner.clone());
                                                         sc.item = (*item).observer.clone();
                                                         sc.s =
@@ -653,13 +644,9 @@ unsafe fn cmd_new_session_exec(
                                                         )
                                                         .is_alive()
                                                         {
-                                                            session_destroy(
-                                                                &s.clone().expect("live session"),
-                                                                0 as ::core::ffi::c_int,
-                                                                b"cmd_new_session_exec\0"
+                                                            (&s.clone().expect("live session")).destroy((0 as ::core::ffi::c_int) != 0, std::ffi::CStr::from_ptr(b"cmd_new_session_exec\0"
                                                                     as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                            );
+                                                                    as *const ::core::ffi::c_char));
                                                             cmdq_error(item_handle, |out| {
                                                                 out.write_all(
                                                                     b"create window failed: ",
@@ -703,10 +690,8 @@ unsafe fn cmd_new_session_exec(
                                                                     &s.clone()
                                                                         .expect("live session"),
                                                                 );
-                                                                session_select(
-                                                                    &s.clone()
-                                                                        .expect("live session"),
-                                                                    (s.as_ref()
+                                                                (&s.clone()
+                                                                        .expect("live session")).select_index((s.as_ref()
                                                                         .expect("live session")
                                                                         .with_winlinks(|links| {
                                                                             winlinks_minmax(
@@ -714,8 +699,7 @@ unsafe fn cmd_new_session_exec(
                                                                             )
                                                                         }))
                                                                     .get_unchecked()
-                                                                    .idx,
-                                                                );
+                                                                    .idx);
                                                             }
                                                             events_fire_session(
                                                                 b"session-created\0" as *const u8

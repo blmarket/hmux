@@ -1,6 +1,7 @@
 //! Operations on retained clients. Legacy dispatch remains explicitly unsafe:
 //! an Rc keeps storage alive, but does not make reentrant model borrows exclusive.
 
+use crate::src::session::SessionIndex as _;
 use super::*;
 use crate::src::control::{control_get_window_size, control_write_output};
 use crate::src::reactor::BufferEvent;
@@ -1562,7 +1563,7 @@ mod tests {
     fn remembering_a_session_keeps_only_weak_identity() {
         unsafe {
             let owner = client::new();
-            let session = session::new();
+            let session = crate::src::shared::session::SessionRef::allocate();
             (*owner.get()).session = Rc::downgrade(&session);
             owner.remember_session();
             (*owner.get()).session = Weak::new();
@@ -1653,7 +1654,7 @@ mod tests {
     fn sizing_eligibility_does_not_filter_explicit_dimensions() {
         unsafe {
             let client = client::new();
-            let session = session::new();
+            let session = crate::src::shared::session::SessionRef::allocate();
             (*client.get()).session = Rc::downgrade(&session);
             (*client.get()).tty.sx = 100;
             (*client.get()).tty.sy = 35;
@@ -1673,7 +1674,7 @@ mod tests {
     #[test]
     fn holder_overlay_callback_can_close_itself_during_dispatch() {
         unsafe {
-            let session = session::new();
+            let session = crate::src::shared::session::SessionRef::allocate();
             let link = crate::src::session::test_support::add_link(&session, 0);
             crate::src::session::test_support::current(&session, link.clone());
             let client = client::new();

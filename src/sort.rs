@@ -1,9 +1,10 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::ffi::libc::{strcasecmp, strcmp};
 use crate::src::paste::paste_walk;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
-use crate::src::session::sessions_minmax;
+
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -307,7 +308,9 @@ pub unsafe fn sort_get_clients(sort_crit: *mut sort_criteria) -> Vec<ClientRef> 
     });
     clients_sorted
 }
-pub use crate::src::session::sort_get_sessions;
+pub unsafe fn sort_get_sessions(criteria: &sort_criteria) -> Vec<SessionRef> {
+    SessionRef::sorted(criteria)
+}
 pub unsafe fn sort_get_panes_window(
     w: &WindowRef,
     sort_crit: &sort_criteria,
@@ -320,7 +323,7 @@ pub unsafe fn sort_get_panes_window(
 }
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::Weak<winlink>> {
     let mut links = Vec::new();
-    let mut s_owner = sessions_minmax(&sessions);
+    let mut s_owner = (&sessions).first();
     while s_owner.is_some() {
         let mut wl = s_owner
             .as_ref()

@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::args_escape_cstring;
 use crate::src::cfg::cfg_files;
 use crate::src::cmd::queue::{
@@ -45,10 +46,7 @@ use crate::src::server::{marked_pane, server_check_marked};
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;
-use crate::src::session::{
-    next_session_id, session_group_attached_count, session_group_count, session_groups_minmax,
-    session_groups_next, sessions_minmax,
-};
+use crate::src::session::{session_group_attached_count, session_group_count, session_groups_minmax, session_groups_next};
 use crate::src::session::{session_groups, sessions, Session};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;

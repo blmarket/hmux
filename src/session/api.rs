@@ -5,9 +5,49 @@ use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use std::time::SystemTime;
 
+/// Operations on the independent Session registry, including detached test heads.
+/// Entries retain their existing weak index identity and retirement behavior.
+pub trait SessionIndex {
+    /// Restore the existing empty-registry state during server initialization.
+    unsafe fn reset(&mut self);
+    fn has_entries(&self) -> bool;
+    unsafe fn insert(&mut self, session: SessionRef) -> Option<SessionRef>;
+    unsafe fn remove(&mut self, session: &SessionRef) -> Option<SessionRef>;
+    fn first(&self) -> Option<SessionRef>;
+    fn after(&self, name: &[u8]) -> Option<SessionRef>;
+    fn resolve(&self, observer: &SessionWeak) -> Option<SessionRef>;
+}
+
+impl SessionIndex for crate::src::shared::session::sessions {
+    unsafe fn reset(&mut self) { self.storage = None; }
+    fn has_entries(&self) -> bool { self.storage.is_some() }
+    unsafe fn insert(&mut self, session: SessionRef) -> Option<SessionRef> { sessions_insert(self, session) }
+    unsafe fn remove(&mut self, session: &SessionRef) -> Option<SessionRef> { sessions_remove(self, session) }
+    fn first(&self) -> Option<SessionRef> { sessions_minmax(self) }
+    fn after(&self, name: &[u8]) -> Option<SessionRef> { sessions_after(self, name) }
+    fn resolve(&self, observer: &SessionWeak) -> Option<SessionRef> { sessions_resolve(self, observer) }
+}
+
 /// The caller must preserve the legacy single-threaded borrow and logical
 /// lifetime rules. No model/component reference may survive a callback.
 pub trait Session {
+    /// Allocate unregistered storage. Normal server sessions use `create`.
+    fn allocate() -> Self where Self: Sized;
+    #[cfg(test)]
+    fn allocate_with_options(options: Box<options>) -> Self where Self: Sized;
+    unsafe fn create(prefix: Option<&CStr>, name: Option<&CStr>, cwd: &CStr, environment: Box<environ>, options: Option<Box<options>>, termios: Option<&termios>) -> Self where Self: Sized;
+    unsafe fn find(name: &CStr) -> Option<Self> where Self: Sized;
+    unsafe fn find_by_id(id: u32) -> Option<Self> where Self: Sized;
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> where Self: Sized;
+    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> where Self: Sized;
+    unsafe fn next_id() -> u32 where Self: Sized;
+    /// Keep the original deferred allocation-release duty and diagnostics.
+    unsafe fn release(self, from: &CStr) where Self: Sized;
+    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self> where Self: Sized;
+    unsafe fn select_index(&self, index: i32) -> i32;
+    unsafe fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32;
+    unsafe fn select_last_window(&self) -> i32;
+    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool where Self: Sized;
     type Environment<'a>: std::ops::Deref<Target = environ>
     where
         Self: 'a;
@@ -97,6 +137,25 @@ pub trait Session {
 }
 
 impl Session for SessionRef {
+    fn allocate() -> Self { session::new() }
+    #[cfg(test)]
+    fn allocate_with_options(options: Box<options>) -> Self { session::with_options_for_test(options) }
+    unsafe fn create(prefix: Option<&CStr>, name: Option<&CStr>, cwd: &CStr, environment: Box<environ>, options: Option<Box<options>>, termios: Option<&termios>) -> Self {
+        session_create(prefix, name, cwd, environment, options, termios)
+    }
+    unsafe fn find(name: &CStr) -> Option<Self> { session_find(name) }
+    unsafe fn find_by_id(id: u32) -> Option<Self> { session_find_by_id(id) }
+    unsafe fn find_by_id_str(id: &CStr) -> Option<Self> { session_find_by_id_str(id) }
+    unsafe fn sorted(criteria: &sort_criteria) -> Vec<Self> { sort_get_sessions(criteria) }
+    unsafe fn next_id() -> u32 { next_session_id }
+    unsafe fn release(self, from: &CStr) { session_remove_ref(self, from); }
+    unsafe fn adjacent_session(&self, criteria: &sort_criteria, previous: bool) -> Option<Self> { session_adjacent(Some(self), criteria, previous) }
+    unsafe fn select_index(&self, index: i32) -> i32 { session_select(self, index) }
+    unsafe fn select_adjacent_window(&self, previous: bool, alert: bool) -> i32 {
+        if previous { session_previous(self, alert as i32) } else { session_next(self, alert as i32) }
+    }
+    unsafe fn select_last_window(&self) -> i32 { session_last(self) }
+    unsafe fn window_linked_outside_group(session: Option<&Self>, window: &WindowRef) -> bool { session_is_linked(session, window) != 0 }
     type Environment<'a> = &'a environ;
     type EnvironmentMut<'a> = &'a mut environ;
     unsafe fn borrow_environment(&self) -> Option<Self::Environment<'_>> {

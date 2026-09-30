@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
@@ -16,7 +17,7 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
-use crate::src::session::session_set_current;
+
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse, args_value};
@@ -205,7 +206,7 @@ unsafe fn cmd_new_window_exec(
         if args_has(args, 'd' as i32 as u_char) != 0 {
             return CMD_RETURN_NORMAL;
         }
-        if session_set_current(s.as_ref().expect("live session"), (new_wl).clone())
+        if (s.as_ref().expect("live session")).select_winlink((new_wl).clone())
             == 0 as ::core::ffi::c_int
         {
             server_redraw_session(s.as_ref().expect("live session"));

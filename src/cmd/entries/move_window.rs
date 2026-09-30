@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source};
@@ -7,7 +8,7 @@ use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_link_window, server_status_session, server_unlink_window};
-use crate::src::session::session_renumber_windows;
+
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -106,7 +107,7 @@ unsafe fn cmd_move_window_exec(
         {
             return CMD_RETURN_ERROR;
         }
-        session_renumber_windows(&target.session_handle().expect("live session"));
+        (&target.session_handle().expect("live session")).renumber_windows();
         recalculate_sizes();
         server_status_session(&target.session_handle().expect("live session"));
         return CMD_RETURN_NORMAL;
@@ -174,7 +175,7 @@ unsafe fn cmd_move_window_exec(
             })
             != 0
     {
-        session_renumber_windows(src.as_ref().expect("live session"));
+        (src.as_ref().expect("live session")).renumber_windows();
     }
     recalculate_sizes();
     return CMD_RETURN_NORMAL;

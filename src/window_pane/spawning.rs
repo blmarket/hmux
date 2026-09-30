@@ -1,4 +1,5 @@
 //! Pane process creation and editor completion keep storage inside its owner.
+use crate::src::session::SessionIndex as _;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
@@ -1072,7 +1073,7 @@ mod tests {
             let observer = std::rc::Rc::downgrade(&owner);
             let pane_owner = window_pane::new();
             let pane_observer = std::rc::Rc::downgrade(&pane_owner);
-            let session_owner = session::new();
+            let session_owner = crate::src::shared::session::SessionRef::allocate();
             let session_observer = std::rc::Rc::downgrade(&session_owner);
             let mut context = spawn_context {
                 item: std::rc::Weak::new(),

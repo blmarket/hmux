@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_session;
@@ -21,7 +22,7 @@ use crate::src::server_fn::{
     server_unlink_window, server_unzoom_window,
 };
 use crate::src::session::Session;
-use crate::src::session::{session_attach, session_select};
+
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::client;
@@ -318,10 +319,7 @@ unsafe fn cmd_break_pane_exec(
                 wl.get_unchecked().idx,
             );
             if args_has(args, 'd' as i32 as u_char) == 0 {
-                session_select(
-                    dst_s.as_ref().expect("live session"),
-                    wl.get_unchecked().idx,
-                );
+                (dst_s.as_ref().expect("live session")).select_index(wl.get_unchecked().idx);
                 cmd_find_from_session(
                     &mut *current.current.borrow_mut(),
                     dst_s.as_ref().expect("live session"),

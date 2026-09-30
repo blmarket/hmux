@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_prepare, args_strtonum_result,
 };
@@ -25,7 +26,7 @@ use crate::src::server_fn::{
     server_redraw_window, server_redraw_window_borders, server_status_window, server_unzoom_window,
 };
 use crate::src::session::Session;
-use crate::src::session::session_find_by_id;
+
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
@@ -153,7 +154,7 @@ unsafe fn window_panes_get_source(
 ) -> Option<WindowWeak> {
     let window_owner = window_find_by_id((*data).source_window)?;
     let mut link = refbox::Weak::new();
-    *session_owner = session_find_by_id((*data).source_session);
+    *session_owner = crate::src::shared::session::SessionRef::find_by_id((*data).source_session);
     if let Some(session) = session_owner.as_ref() {
         link = session.with_winlinks(|links| winlink_find_by_window(links, &window_owner));
     }
@@ -2051,16 +2052,16 @@ unsafe fn window_panes_key(
 mod session_observer_tests {
     use super::*;
     use crate::src::reactor::shutdown_runtime;
-    use crate::src::session::{sessions, sessions_insert, sessions_remove};
+    use crate::src::session::{sessions};
 
     #[test]
     fn session_observer_rejects_removed_sessions_and_releases_guard_immediately() {
         unsafe {
             let saved = std::ptr::replace(
                 &raw mut sessions,
-                crate::src::shared::session::sessions { storage: None },
+                crate::src::shared::session::sessions::default(),
             );
-            let owner = session::new();
+            let owner = crate::src::shared::session::SessionRef::allocate();
             crate::src::session::test_support::metadata(
                 &owner,
                 Some(c"panes-mode-session".to_owned()),
@@ -2068,7 +2069,7 @@ mod session_observer_tests {
                 None,
             );
             let observer = std::rc::Rc::downgrade(&owner);
-            sessions_insert(&mut sessions, owner);
+            (&mut sessions).insert(owner);
             let mut mode = window_panes_modedata {
                 wp: Weak::new(),
                 session: observer.clone(),
@@ -2087,7 +2088,7 @@ mod session_observer_tests {
             let guard = window_panes_session(&mut mode).unwrap();
             assert!(std::rc::Rc::downgrade(&guard).ptr_eq(&observer));
             let owner =
-                sessions_remove(&mut sessions, &observer.upgrade().expect("indexed session"))
+                (&mut sessions).remove(&observer.upgrade().expect("indexed session"))
                     .unwrap();
             assert!(window_panes_session(&mut mode).is_none());
             assert_eq!(observer.strong_count(), 2);

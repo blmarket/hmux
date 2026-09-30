@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 pub use crate::src::arguments::args_parse;
 use crate::src::arguments::ArgsParseError;
 use crate::src::arguments::{args_copy, args_escape_cstring, args_print_cstring};
@@ -81,7 +82,7 @@ use crate::src::cmd::entries::wait_for::cmd_wait_for_entry;
 use crate::src::ffi::libc::{strchr, strcmp, strlcat, strlcpy, strlen, strncmp};
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::{options_array_item_value, options_get_only};
-use crate::src::session::session_find_by_id;
+
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::ArgumentValue;
@@ -635,7 +636,7 @@ pub unsafe fn cmd_mouse_window(
     if (*m).s == -1 {
         return refbox::Weak::new();
     }
-    let Some(session_owner) = session_find_by_id((*m).s as u_int) else {
+    let Some(session_owner) = crate::src::shared::session::SessionRef::find_by_id((*m).s as u_int) else {
         return refbox::Weak::new();
     };
     s = Some(session_owner.clone());

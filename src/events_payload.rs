@@ -1,3 +1,5 @@
+use crate::src::session::SessionIndex as _;
+use crate::src::session::Session as _;
 use crate::src::cmd::find::{
     cmd_find_clear_state, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
     cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
@@ -11,7 +13,7 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
 
-use crate::src::session::session_remove_ref;
+
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -51,7 +53,7 @@ pub fn event_payload_items(ep: &event_payload) -> impl Iterator<Item = &event_pa
 unsafe fn event_payload_free_target(ep: &mut event_payload) {
     let target = &mut ep.target;
     if let Some(session) = ep.target_session.take() {
-        session_remove_ref(session, c"event_payload_free_target");
+        (session).release(c"event_payload_free_target");
     }
     if let Some(window) = ep.target_window.take() {
         window.release(c"event_payload_free_target");
@@ -72,7 +74,7 @@ impl Drop for event_payload_item {
             match value {
                 EventPayloadValue::Client(client) => (client).release(),
                 EventPayloadValue::Session(session) => {
-                    session_remove_ref(session, c"event_payload_free_value")
+                    (session).release(c"event_payload_free_value")
                 }
                 EventPayloadValue::Window(window) => window.release(c"event_payload_free_value"),
                 EventPayloadValue::Pane(pane) => pane.release(c"event_payload_free_value"),

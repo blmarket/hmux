@@ -1,3 +1,5 @@
+use hmux2::src::session::Session as _;
+use hmux2::src::session::SessionIndex as _;
 use hmux2::src::shared::session::session;
 use hmux2::src::shared::window::{window, WindowRef};
 use hmux2::src::window::{
@@ -18,7 +20,7 @@ unsafe fn window_indices(w: &WindowRef) -> Vec<i32> {
 #[test]
 fn window_winlinks_keep_association_order_and_stable_session_owned_links() {
     unsafe {
-        let session_owner = session::new();
+        let session_owner = hmux2::src::shared::session::SessionRef::allocate();
         let mut links = Default::default();
         let first_owner = window::new();
         let second_owner = window::new();
@@ -179,8 +181,8 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
     use hmux2::src::session::Session;
     use std::rc::Rc;
     unsafe {
-        let first = session::new();
-        let other = session::new();
+        let first = hmux2::src::shared::session::SessionRef::allocate();
+        let other = hmux2::src::shared::session::SessionRef::allocate();
         let window_owner = window::new();
         let mut links = Default::default();
         let mut link = winlink_add(&mut links, 0);
@@ -200,7 +202,7 @@ fn session_membership_uses_allocation_identity_and_tolerates_expired_back_refere
 
 #[test]
 fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
-    use hmux2::src::session::session_is_linked;
+
     use std::rc::Rc;
 
     unsafe {
@@ -213,7 +215,7 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
         // Just the published winlink owns the window. A getter that returns a
         // cloned Rc here would incorrectly permit unlinking its only link.
         assert_eq!(
-            session_is_linked(None, first.get_unchecked().window_handle().unwrap()),
+            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(None, first.get_unchecked().window_handle().unwrap()) as i32),
             0
         );
         assert_eq!(observer.strong_count(), 1);
@@ -224,7 +226,7 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
             first.get_unchecked().window_handle().unwrap(),
         );
         assert_eq!(
-            session_is_linked(None, first.get_unchecked().window_handle().unwrap()),
+            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(None, first.get_unchecked().window_handle().unwrap()) as i32),
             1
         );
         assert!(!first
@@ -234,7 +236,7 @@ fn unlink_guard_borrows_published_owner_without_adding_a_reference() {
             .is_linked_outside_group(2));
         winlink_remove(&mut links, second);
         assert_eq!(
-            session_is_linked(None, first.get_unchecked().window_handle().unwrap()),
+            (hmux2::src::shared::session::SessionRef::window_linked_outside_group(None, first.get_unchecked().window_handle().unwrap()) as i32),
             0
         );
         winlink_remove(&mut links, first);

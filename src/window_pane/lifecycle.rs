@@ -1,4 +1,5 @@
 //! Pane process exit and explicit teardown transactions.
+use crate::src::session::SessionIndex as _;
 use crate::src::cmd::find::cmd_find_from_pane;
 use crate::src::events::{events_fire, events_fire_winlink};
 use crate::src::events_payload::{
@@ -28,11 +29,7 @@ use crate::src::server_client::Client as _;
 use crate::src::server_client::{Client};
 use crate::src::session::sessions;
 use crate::src::session::Session;
-use crate::src::session::{
-    session_attach, session_destroy, session_detach, session_group_count, session_next_session,
-    session_previous_session, session_renumber_windows, session_select, sessions_after,
-    sessions_minmax,
-};
+use crate::src::session::{session_group_count};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::session::session_group;

@@ -1,7 +1,9 @@
 //! Owned, lazy builtin values. Cross-model lookups never retain a Client borrow.
+use crate::src::session::SessionIndex as _;
+use crate::src::session::Session as _;
 use super::*;
 use crate::src::format::FormatValue;
-use crate::src::session::{sessions, sessions_resolve};
+use crate::src::session::{sessions};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
 use crate::src::tty_term::{tty_term_number, tty_term_owner_ptr};
@@ -32,7 +34,7 @@ pub(super) unsafe fn value(
         b"client_session" => owner.attached_session().upgrade()?.name(),
         b"client_last_session" => {
             let previous = owner.previous_session();
-            sessions_resolve(&sessions, &previous)?.name()
+            (&sessions).resolve(&previous)?.name()
         }
         b"client_control_mode" => boolean(owner.is_control()),
         b"client_readonly" => boolean(owner.is_read_only()),

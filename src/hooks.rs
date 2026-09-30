@@ -1,3 +1,5 @@
+use crate::src::session::SessionIndex as _;
+use crate::src::session::Session as _;
 use crate::src::cmd::cmd_list_print_cstring;
 use crate::src::cmd::find::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing,
@@ -730,7 +732,7 @@ mod CStrings_tests {
         use std::rc::Rc;
 
         unsafe {
-            let session_owner = session::new();
+            let session_owner = crate::src::shared::session::SessionRef::allocate();
             let window_owner = window::new();
             let mut wl = crate::src::session::test_support::add_link(&session_owner, 2);
             wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);

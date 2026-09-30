@@ -1,3 +1,4 @@
+use crate::src::session::SessionIndex as _;
 use crate::src::alerts::alerts_reset_all;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_list_print_cstring;
@@ -26,7 +27,7 @@ use crate::src::server_client::Client as _;
 
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::sessions;
-use crate::src::session::sessions_minmax;
+
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::options::options_name_map;
@@ -1932,7 +1933,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        let mut s_owner = sessions_minmax(&sessions);
+        let mut s_owner = (&sessions).first();
         s = s_owner.clone();
         while !s.is_none() {
             s.as_ref().expect("live session").update_history();

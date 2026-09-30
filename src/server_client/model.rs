@@ -1,4 +1,6 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
+use crate::src::session::SessionIndex as _;
+use crate::src::session::Session as _;
 #[cfg(test)]
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
@@ -255,7 +257,7 @@ mod retained_client_tests {
     #[test]
     fn attached_session_observer_does_not_retain_a_removed_session() {
         let mut client = client::empty();
-        let session = crate::src::shared::session::session::new();
+        let session = crate::src::shared::session::SessionRef::allocate();
         let observer = Rc::downgrade(&session);
         unsafe {
             client.set_session(Some(&session));
