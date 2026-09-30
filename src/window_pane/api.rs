@@ -129,6 +129,26 @@ pub trait WindowPane {
     unsafe fn parse_input(&self);
     /// Parse caller-owned bytes without exposing pane screens or parser storage.
     unsafe fn parse_output(&self, bytes: &[u8]);
+    unsafe fn process_id(&self) -> pid_t;
+    /// Record an exit before finishing waits/editors; false means a different process.
+    unsafe fn process_exited(&self, pid: pid_t, status: i32) -> bool;
+    unsafe fn kill_process(&self);
+    /// Close descriptors before exit notifications and remain-on-exit rendering.
+    unsafe fn finish_process(&self, notify: i32);
+    unsafe fn spawn_process(
+        context: *mut crate::src::shared::spawn::spawn_context,
+        cause: *mut Option<CString>,
+    ) -> Option<Self>
+    where
+        Self: Sized;
+    unsafe fn install_editor(
+        &self,
+        editor: Box<crate::src::shared::spawn::spawn_editor_state>,
+    ) -> crate::src::shared::spawn::EditorHandle;
+    unsafe fn finish_editing(&self);
+    unsafe fn editor_identity(&self) -> Option<crate::src::shared::spawn::EditorId>;
+    unsafe fn cancel_editor(&self, identity: crate::src::shared::spawn::EditorId);
+    unsafe fn editor_process_id(&self, identity: crate::src::shared::spawn::EditorId) -> pid_t;
     unsafe fn destroy_ready(&self) -> bool;
     unsafe fn destroy(&self);
 }
@@ -600,6 +620,49 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn parse_output(&self, bytes: &[u8]) {
         super::input::input_parse_buffer(self, bytes.as_ptr(), bytes.len())
+    }
+    unsafe fn process_id(&self) -> pid_t {
+        (*self.get()).pid
+    }
+    unsafe fn process_exited(&self, pid: pid_t, status: i32) -> bool {
+        lifecycle::process_exited(self, pid, status)
+    }
+    unsafe fn kill_process(&self) {
+        lifecycle::kill_process(self)
+    }
+    unsafe fn finish_process(&self, notify: i32) {
+        lifecycle::finish_process(self, notify)
+    }
+    unsafe fn spawn_process(
+        context: *mut crate::src::shared::spawn::spawn_context,
+        cause: *mut Option<CString>,
+    ) -> Option<Self> {
+        spawning::spawn_pane(context, cause)
+    }
+    unsafe fn install_editor(
+        &self,
+        editor: Box<crate::src::shared::spawn::spawn_editor_state>,
+    ) -> crate::src::shared::spawn::EditorHandle {
+        spawning::install_editor(self, editor)
+    }
+    unsafe fn finish_editing(&self) {
+        spawning::finish_editing(self)
+    }
+    unsafe fn editor_identity(&self) -> Option<crate::src::shared::spawn::EditorId> {
+        (*self.get()).editor.as_ref().map(|editor| editor.id)
+    }
+    unsafe fn cancel_editor(&self, identity: crate::src::shared::spawn::EditorId) {
+        let pane = &mut *self.get();
+        if let Some(editor) = pane.editor.as_mut().filter(|editor| editor.id == identity) {
+            editor.cb = None;
+        }
+    }
+    unsafe fn editor_process_id(&self, identity: crate::src::shared::spawn::EditorId) -> pid_t {
+        (*self.get())
+            .editor
+            .as_ref()
+            .filter(|editor| editor.id == identity)
+            .map_or(-1, |editor| editor.pid)
     }
     unsafe fn destroy_ready(&self) -> bool {
         window_pane_destroy_ready(self) != 0

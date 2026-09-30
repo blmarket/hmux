@@ -1,4 +1,5 @@
 //! Authoritative spawn declarations, shared by the C translation units.
+use crate::src::window_pane::WindowPane as _;
 
 use super::abi::pid_t;
 use super::client::client;
@@ -48,7 +49,7 @@ impl EditorHandle {
         editor: std::ptr::NonNull<spawn_editor_state>,
     ) -> Self {
         assert_eq!(
-            (*pane.get()).editor.as_ref().map(|state| state.id),
+            pane.editor_identity(),
             Some(editor.as_ref().id),
             "editor must belong to the pane",
         );
@@ -66,9 +67,8 @@ impl EditorHandle {
         let Some(pane) = self.pane.upgrade() else {
             return;
         };
-        let pane = unsafe { &mut *pane.get() };
-        if let Some(editor) = pane.editor.as_mut().filter(|editor| editor.id == self.id) {
-            editor.cb = None;
+        unsafe {
+            pane.cancel_editor(self.id);
         }
     }
 
@@ -76,11 +76,7 @@ impl EditorHandle {
         let Some(pane) = self.pane.upgrade() else {
             return -1;
         };
-        let pane = unsafe { &*pane.get() };
-        pane.editor
-            .as_ref()
-            .filter(|editor| editor.id == self.id)
-            .map_or(-1, |editor| editor.pid)
+        unsafe { pane.editor_process_id(self.id) }
     }
 }
 

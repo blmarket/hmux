@@ -7,6 +7,8 @@ use crate::src::window::Window as _;
 use crate::src::window::*;
 use std::time::Duration;
 mod api;
+mod lifecycle;
+mod spawning;
 mod input;
 mod process;
 mod format;

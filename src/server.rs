@@ -41,6 +41,7 @@ use crate::src::window::{
     windows_minmax,
 };
 use crate::src::window::{windows, Window as _};
+use crate::src::window_pane::WindowPane as _;
 use hmux_rt::Handle as _;
 use std::time::{Duration, SystemTime};
 
@@ -128,14 +129,13 @@ pub unsafe fn server_set_marked(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
-    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
     marked_pane.set_s(s_owner);
     marked_pane.set_wl(wl.clone());
     if wl.is_alive() {
         marked_pane.set_w(wl.get_unchecked().window_handle());
     }
-    marked_pane.set_wp((wp).as_ref());
+    marked_pane.wp = wp_owner.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
 }
 pub unsafe fn server_clear_marked() {
     cmd_find_clear_state(&raw mut marked_pane, 0 as ::core::ffi::c_int);
@@ -145,8 +145,7 @@ pub unsafe fn server_is_marked(
     mut wl: refbox::Weak<winlink>,
     wp_owner: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) -> ::core::ffi::c_int {
-    let mut wp = wp_owner.map_or(std::ptr::null_mut(), |owner| owner.get());
-    if s_owner.is_none() || !wl.is_alive() || wp.is_null() {
+    if s_owner.is_none() || !wl.is_alive() || wp_owner.is_none() {
         return 0 as ::core::ffi::c_int;
     }
     if !marked_pane
@@ -156,13 +155,11 @@ pub unsafe fn server_is_marked(
     {
         return 0 as ::core::ffi::c_int;
     }
-    if marked_pane
-        .pane_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get())
-        != wp
+    if !marked_pane
+        .wp
+        .ptr_eq(&std::rc::Rc::downgrade(wp_owner.unwrap()))
     {
-        return 0 as ::core::ffi::c_int;
+        return 0;
     }
     return server_check_marked();
 }
@@ -645,60 +642,38 @@ unsafe fn server_child_signal() {
         }
     }
 }
-unsafe fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi::c_int) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+unsafe fn server_child_exited(pid: pid_t, status: i32) {
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
         window_cursor = window_owner.next_window();
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
-            wp = pane_owner.get();
-            if (*wp).pid == pid {
-                (*wp).status = status;
-                (*wp).flags |= PANE_STATUSREADY;
-                log_debug(format_args!("%{} exited", ((*wp).id) as u32));
-                (*wp).flags |= PANE_EXITED;
-                window_pane_wait_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
-                spawn_editor_finish(&(*(wp)).observer.upgrade().expect("live window_pane"));
-                if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane"))
-                    != 0
-                {
-                    server_destroy_pane(&pane_owner, 1);
-                }
+            if pane_owner.process_exited(pid, status) {
                 break;
-            } else {
-                pane_cursor = window_pane_next(wp.as_ref());
             }
+            pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
     job_check_died(pid, status);
 }
-unsafe fn server_child_stopped(mut pid: pid_t, mut status: ::core::ffi::c_int) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    if (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int == SIGTTIN
-        || (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int == SIGTTOU
-    {
+unsafe fn server_child_stopped(pid: pid_t, status: i32) {
+    if (status & 0xff00) >> 8 == SIGTTIN || (status & 0xff00) >> 8 == SIGTTOU {
         return;
     }
     let mut window_cursor = windows_minmax(&windows);
     while let Some(window_owner) = window_cursor.take() {
-        wp = window_owner
-            .next_pane(None)
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |owner| owner.get());
-        while !wp.is_null() {
-            if (*wp).pid == pid {
-                if killpg(pid as __pid_t, SIGCONT) != 0 as ::core::ffi::c_int {
+        let mut pane_cursor = window_owner.next_pane(None);
+        while let Some(pane_owner) = pane_cursor {
+            if pane_owner.process_id() == pid {
+                if killpg(pid as __pid_t, SIGCONT) != 0 {
                     kill(pid as __pid_t, SIGCONT);
                 }
             }
-            wp = window_pane_next(wp.as_ref())
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
+            pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }
         window_cursor = window_owner.next_window();
-        crate::src::window::window_remove_ref(window_owner, c"window traversal".as_ptr());
+        window_owner.release(c"window traversal");
     }
     job_check_died(pid, status);
 }
