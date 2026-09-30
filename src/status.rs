@@ -18,7 +18,6 @@ use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key,
     prompt_mouse, prompt_set_options, prompt_update,
 };
-use crate::src::reactor::{event_add, event_del, event_initialized, event_set};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_putc, screen_write_start,
@@ -74,7 +73,7 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     let session = client.attached_session().upgrade();
     {
         let mut status = client.borrow_status_mut();
-        event_del(&mut status.timer);
+        status.timer.cancel();
     }
     let Some(session) = session else { return };
     client.redraw_status_if_unobscured();
@@ -85,7 +84,7 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     );
     if timeout.as_secs() != 0 {
         let mut status = client.borrow_status_mut();
-        event_add(&mut status.timer, Some(timeout));
+        status.timer.arm(timeout).expect("arm timer");
     }
     log_debug(format_args!(
         "client {}, status interval {}",
@@ -97,11 +96,11 @@ pub unsafe fn status_timer_start(client: &ClientRef) {
     let session = client.attached_session().upgrade();
     {
         let mut status = client.borrow_status_mut();
-        if event_initialized(&status.timer) != 0 {
-            event_del(&mut status.timer);
+        if status.timer.is_initialized() {
+            status.timer.cancel();
         } else {
             let observer = std::rc::Rc::downgrade(client);
-            event_set(&mut status.timer, -1, 0, move |_, _| unsafe {
+            status.timer.set(move || unsafe {
                 if let Some(owner) = observer.upgrade() {
                     status_timer_callback(&owner);
                 }
@@ -239,8 +238,8 @@ pub unsafe fn status_free(status: &mut status_line) {
         (*sl).entries[i as usize].expanded = None;
         i = i.wrapping_add(1);
     }
-    if event_initialized(&(*sl).timer) != 0 {
-        event_del(&raw mut (*sl).timer);
+    if (*sl).timer.is_initialized() {
+        (*sl).timer.cancel();
     }
     if let Some(mut active) = (*sl).active.take() {
         screen_free(&mut *active);

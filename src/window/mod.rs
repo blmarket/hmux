@@ -51,7 +51,7 @@ use crate::src::prompt::{
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized, event_set,
+    evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::screen::{
     screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,
@@ -449,14 +449,14 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     drop(window_replace_old_layout(w_owner, None));
     menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
-    if event_initialized(&(*w).name_event) != 0 {
-        event_del(&raw mut (*w).name_event);
+    if (*w).name_event.is_initialized() {
+        (*w).name_event.cancel();
     }
-    if event_initialized(&(*w).alerts_timer) != 0 {
-        event_del(&raw mut (*w).alerts_timer);
+    if (*w).alerts_timer.is_initialized() {
+        (*w).alerts_timer.cancel();
     }
-    if event_initialized(&(*w).offset_timer) != 0 {
-        event_del(&raw mut (*w).offset_timer);
+    if (*w).offset_timer.is_initialized() {
+        (*w).offset_timer.cancel();
     }
     drop((*w).options.take());
     (*w).lifecycle = WindowLifecycle::Destroyed;

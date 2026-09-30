@@ -1,7 +1,7 @@
 //! Session state is private to its implementation. Other models use Session.
 use crate::src::shared::abi::u_int;
 use crate::src::shared::environment::environ;
-use crate::src::shared::event::event;
+use crate::src::shared::event::Timer;
 use crate::src::shared::options::options;
 use crate::src::shared::session::session_group;
 use crate::src::shared::session::{SessionRef, SessionWeak};
@@ -20,7 +20,7 @@ pub struct session {
     pub(super) last_attached_time: SystemTime,
     pub(super) activity_time: SystemTime,
     pub(super) last_activity_time: SystemTime,
-    pub(super) lock_timer: event,
+    pub(super) lock_timer: Timer,
     pub(super) curw: refbox::Weak<winlink>,
     pub(super) lastw: winlink_stack,
     pub(super) windows: winlinks,

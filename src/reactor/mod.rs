@@ -7,6 +7,7 @@
 mod buffer;
 mod events;
 mod streams;
+mod timers;
 pub use buffer::*;
 pub use events::*;
 use hmux_rt::Runtime as _;
@@ -15,6 +16,7 @@ use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 pub use streams::*;
+pub use timers::{timer_once, timer_once_owned, Timer};
 
 #[repr(C)]
 pub struct event_base {
@@ -69,6 +71,8 @@ fn run_once() {
 pub fn shutdown_runtime() {
     events::clear();
     streams::clear();
+    // Stream callback captures may defer their cleanup with timer_once.
+    timers::clear();
     FDS.with(|f| f.borrow_mut().clear());
     HANDLE.with(|h| h.borrow_mut().take());
     HOST.with(|h| h.borrow_mut().take());

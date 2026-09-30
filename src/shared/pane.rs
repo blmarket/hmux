@@ -12,7 +12,7 @@ use super::abi::{bitstr_t, pid_t, size_t, time_t, u_int, uint64_t};
 use super::client::client;
 use super::colour::{client_theme, colour_palette};
 use super::command::cmdq_item;
-use super::event::{bufferevent, event};
+use super::event::{bufferevent, Timer};
 use super::grid::grid_cell;
 use super::input::input_ctx;
 use super::layout::LayoutCellId;
@@ -116,7 +116,7 @@ pub struct window_pane {
     pub sb_slider_y: u_int,
     pub sb_slider_h: u_int,
     pub sb_auto_visible: ::core::ffi::c_int,
-    pub sb_auto_timer: event,
+    pub sb_auto_timer: Timer,
     pub argv: Vec<std::ffi::CString>,
     pub shell: Option<CString>,
     pub cwd: Option<CString>,
@@ -138,8 +138,8 @@ pub struct window_pane {
     pub offset: window_pane_offset,
     pub base_offset: size_t,
     pub resize_queue: window_pane_resizes,
-    pub resize_timer: event,
-    pub sync_timer: event,
+    pub resize_timer: Timer,
+    pub sync_timer: Timer,
     pub ictx: Option<Box<input_ctx>>,
     pub cached_gc: grid_cell,
     pub cached_active_gc: grid_cell,

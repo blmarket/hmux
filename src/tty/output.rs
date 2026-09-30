@@ -2,6 +2,7 @@
 //! expansion may run while this scope is borrowed. The caller resolves those
 //! before entering and releases the scope before dispatching further work.
 use super::*;
+use crate::src::reactor::event_pending;
 use std::ops::{Deref, DerefMut};
 
 /// A bounded output operation over disjoint pieces of one borrowed Client.
@@ -1618,6 +1619,7 @@ pub unsafe fn tty_set_progress_bar(tty: &mut TerminalOutput<'_>, mut pb: *mut pr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::reactor::event_pending;
     #[test]
     fn component_output_works_inside_one_refcell_without_a_client_backreference() {
         use std::cell::RefCell;

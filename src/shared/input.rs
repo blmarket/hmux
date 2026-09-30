@@ -8,7 +8,7 @@ use std::ffi::CString;
 use super::abi::{size_t, u_char, u_int, uint64_t};
 use super::client::client;
 use super::colour::colour_palette;
-use super::event::{bufferevent, event};
+use super::event::{bufferevent, Timer};
 use super::grid::{grid_cell, utf8_data};
 use super::pane::window_pane;
 use super::screen_write::screen_write_ctx;
@@ -81,9 +81,9 @@ pub struct input_ctx {
     pub state: &'static input_state,
     pub flags: ::core::ffi::c_int,
     pub(crate) requests: VecDeque<Box<input_request>>,
-    pub request_timer: event,
+    pub request_timer: Timer,
     pub since_ground: Box<SegmentedBuf>,
-    pub ground_timer: event,
+    pub ground_timer: Timer,
 }
 
 #[repr(C)]

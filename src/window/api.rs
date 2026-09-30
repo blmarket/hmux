@@ -637,26 +637,24 @@ impl Window for WindowRef {
         window_set_name(self, name.as_ptr(), untrusted as i32);
     }
     unsafe fn begin_name_check(&self, now: Instant) -> bool {
-        use crate::src::reactor::event_pending;
-        use crate::src::shared::event::EV_TIMEOUT;
         let state = &mut *self.get();
         let left = crate::src::names::name_time_left(state.name_time, now);
         if !left.is_zero() {
-            if event_initialized(&state.name_event) == 0 {
+            if !state.name_event.is_initialized() {
                 let observer = Rc::downgrade(self);
-                event_set(&mut state.name_event, -1, 0, move |_, _| {
+                state.name_event.set(move || {
                     if let Some(owner) = observer.upgrade() {
                         log_debug(format_args!("@{} name timer expired", owner.id()));
                     }
                 });
             }
-            if event_pending(&mut state.name_event, EV_TIMEOUT as _, None) == 0 {
+            if !state.name_event.is_pending() {
                 log_debug(format_args!(
                     "@{} name timer queued ({} left)",
                     state.id,
                     left.as_micros()
                 ));
-                event_add(&mut state.name_event, Some(left));
+                state.name_event.arm(left).expect("arm timer");
             } else {
                 log_debug(format_args!(
                     "@{} name timer already queued ({} left)",
@@ -667,27 +665,25 @@ impl Window for WindowRef {
             return false;
         }
         state.name_time = Some(now);
-        if event_initialized(&state.name_event) != 0 {
-            event_del(&mut state.name_event);
+        if state.name_event.is_initialized() {
+            state.name_event.cancel();
         }
         true
     }
     unsafe fn schedule_offset_update(&self) {
-        use crate::src::reactor::event_pending;
-        use crate::src::shared::event::EV_TIMEOUT;
         let state = &mut *self.get();
-        if event_initialized(&state.offset_timer) == 0 {
+        if !state.offset_timer.is_initialized() {
             let observer = Rc::downgrade(self);
-            event_set(&mut state.offset_timer, -1, 0, move |_, _| {
+            state.offset_timer.set(move || {
                 if let Some(window) = observer.upgrade() {
                     crate::src::tty::tty_update_window_offset(&window);
                     window.release(c"offset update timer");
                 }
             });
         }
-        if event_pending(&state.offset_timer, EV_TIMEOUT as _, None) == 0 {
+        if !state.offset_timer.is_pending() {
             let delay = Duration::from_micros(10_000);
-            event_add(&mut state.offset_timer, Some(delay));
+            state.offset_timer.arm(delay).expect("arm timer");
         }
     }
     unsafe fn active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>> {
@@ -1743,8 +1739,6 @@ mod tests {
 
     #[test]
     fn offset_timer_only_observes_window_and_tolerates_dispatch_after_close() {
-        use crate::src::reactor::event_pending;
-        use crate::src::shared::event::EV_TIMEOUT;
         unsafe {
             let window = window::new();
             let observer = Rc::downgrade(&window);
@@ -1760,12 +1754,9 @@ mod tests {
                 &callback,
                 (*window.get()).offset_timer.callback.as_ref().unwrap()
             ));
-            assert_ne!(
-                event_pending(&(*window.get()).offset_timer, EV_TIMEOUT as _, None),
-                0
-            );
+            assert!((*window.get()).offset_timer.is_pending());
             assert_eq!(Rc::strong_count(&window), 1);
-            callback.borrow_mut()(-1, EV_TIMEOUT as _);
+            callback.borrow_mut()();
             assert_eq!(
                 Rc::strong_count(&window),
                 1,
@@ -1773,24 +1764,19 @@ mod tests {
             );
             window.release(c"offset timer test");
             assert!(observer.upgrade().is_none());
-            callback.borrow_mut()(-1, EV_TIMEOUT as _);
+            callback.borrow_mut()();
         }
     }
 
     #[test]
     fn automatic_name_timer_is_cancelled_when_due_and_only_observes_window() {
         unsafe {
-            use crate::src::reactor::event_pending;
-            use crate::src::shared::event::EV_TIMEOUT;
             let window = window::new();
             let observer = Rc::downgrade(&window);
             let now = Instant::now();
             assert!(window.begin_name_check(now));
             assert!(!window.begin_name_check(now + Duration::from_micros(100_000)));
-            assert_ne!(
-                event_pending(&(*window.get()).name_event, EV_TIMEOUT as _, None),
-                0
-            );
+            assert!((*window.get()).name_event.is_pending());
             let callback = (*window.get())
                 .name_event
                 .callback
@@ -1803,10 +1789,7 @@ mod tests {
                 (*window.get()).name_event.callback.as_ref().unwrap()
             ));
             assert!(window.begin_name_check(now + Duration::from_micros(500_000)));
-            assert_eq!(
-                event_pending(&(*window.get()).name_event, EV_TIMEOUT as _, None),
-                0
-            );
+            assert!(!(*window.get()).name_event.is_pending());
             assert_eq!(
                 (*window.get()).name_time,
                 Some(now + Duration::from_micros(500_000))
@@ -1815,7 +1798,7 @@ mod tests {
             window.release(c"automatic name timer test");
             assert!(observer.upgrade().is_none());
             // A callback retained by dispatch must also tolerate explicit teardown.
-            callback.borrow_mut()(-1, EV_TIMEOUT as _);
+            callback.borrow_mut()();
         }
     }
 

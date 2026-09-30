@@ -24,8 +24,7 @@ use crate::src::options::{options_get_number, options_get_only, options_set_numb
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
-    bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, event_add,
-    event_del, event_set,
+    bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new,
 };
 use crate::src::screen::{screen_clear_tabs, screen_has_tab, screen_set_tab};
 use crate::src::screen::{
@@ -217,12 +216,12 @@ mod input_buffer_ownership_tests {
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             for timer in [&mut owner.ground_timer, &mut owner.request_timer] {
                 let calls = calls.clone();
-                event_set(timer, -1, 0, move |_, _| calls.set(calls.get() + 1));
+                timer.set(move || calls.set(calls.get() + 1));
                 let timeout = Duration::ZERO;
-                assert_eq!(event_add(timer, Some(timeout)), 0);
+                timer.arm(timeout).expect("arm timer");
             }
-            // Moving the owning Box into a model field must preserve timer
-            // addresses. Dropping that field must cancel both registrations.
+            // Moving the owning Box into a model field keeps both timers armed.
+            // The owner cleanup must cancel both registrations.
             let slot = Some(owner);
             drop(slot);
             crate::src::reactor::event_loop();
@@ -262,11 +261,11 @@ mod input_buffer_ownership_tests {
             let observed = std::rc::Rc::downgrade(&pane);
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             let callback_calls = calls.clone();
-            event_set(&mut (*pointer).sync_timer, -1, 0, move |_, _| {
-                callback_calls.set(callback_calls.get() + 1)
-            });
+            (*pointer)
+                .sync_timer
+                .set(move || callback_calls.set(callback_calls.get() + 1));
             let timeout = Duration::ZERO;
-            assert_eq!(event_add(&mut (*pointer).sync_timer, Some(timeout)), 0);
+            (*pointer).sync_timer.arm(timeout).expect("arm timer");
             drop(pane);
             assert!(observed.upgrade().is_none());
             crate::src::reactor::event_loop();
@@ -2295,8 +2294,8 @@ unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
 }
 unsafe fn input_start_ground_timer(mut ictx: *mut input_ctx) {
     let tv = Duration::from_secs(5);
-    event_del(&raw mut (*ictx).ground_timer);
-    event_add(&raw mut (*ictx).ground_timer, Some(tv));
+    (*ictx).ground_timer.cancel();
+    (*ictx).ground_timer.arm(tv).expect("arm timer");
 }
 unsafe fn input_reset_cell(mut ictx: *mut input_ctx) {
     memcpy(
@@ -2358,18 +2357,12 @@ pub unsafe fn input_init(
     (*ictx).event = crate::src::reactor::StreamHandle::from_ptr(bev);
     (*ictx).palette = palette;
     (*ictx).c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    event_set(
-        &raw mut (*ictx).ground_timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe { input_ground_timer_callback(ictx) },
-    );
-    event_set(
-        &raw mut (*ictx).request_timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe { input_request_timer_callback(ictx) },
-    );
+    (*ictx)
+        .ground_timer
+        .set(move || unsafe { input_ground_timer_callback(ictx) });
+    (*ictx)
+        .request_timer
+        .set(move || unsafe { input_request_timer_callback(ictx) });
     input_reset(ictx, 0 as ::core::ffi::c_int);
     owner
 }
@@ -2392,8 +2385,8 @@ impl Drop for input_ctx {
                 };
                 input_free_request(ir);
             }
-            event_del(&raw mut (*ictx).request_timer);
-            event_del(&raw mut (*ictx).ground_timer);
+            (*ictx).request_timer.cancel();
+            (*ictx).ground_timer.cancel();
             if let Some(pane) = self.wp.upgrade() {
                 pane.stop_sync();
             }
@@ -2683,7 +2676,7 @@ unsafe fn input_reply(
     };
 }
 unsafe fn input_clear(mut ictx: *mut input_ctx) {
-    event_del(&raw mut (*ictx).ground_timer);
+    (*ictx).ground_timer.cancel();
     *(&raw mut (*ictx).interm_buf as *mut u_char) = '\0' as i32 as u_char;
     (*ictx).interm_len = 0 as size_t;
     *(&raw mut (*ictx).param_buf as *mut u_char) = '\0' as i32 as u_char;
@@ -2694,7 +2687,7 @@ unsafe fn input_clear(mut ictx: *mut input_ctx) {
     (*ictx).flags &= !INPUT_DISCARD;
 }
 unsafe fn input_ground(mut ictx: *mut input_ctx) {
-    event_del(&raw mut (*ictx).ground_timer);
+    (*ictx).ground_timer.cancel();
     evbuffer_drain(
         &mut *(*ictx).since_ground,
         evbuffer_get_length(&*(*ictx).since_ground),
@@ -6057,8 +6050,8 @@ unsafe fn input_request_timer_callback(ictx: *mut input_ctx) {
 }
 unsafe fn input_start_request_timer(mut ictx: *mut input_ctx) {
     let tv = Duration::from_micros(100000);
-    event_del(&raw mut (*ictx).request_timer);
-    event_add(&raw mut (*ictx).request_timer, Some(tv));
+    (*ictx).request_timer.cancel();
+    (*ictx).request_timer.arm(tv).expect("arm timer");
 }
 unsafe fn input_make_request(
     mut ictx: *mut input_ctx,

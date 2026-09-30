@@ -33,14 +33,13 @@ use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_debug};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_free, options_get_number};
-use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
+use crate::src::reactor::timer_once;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::{marked_pane, server_clear_marked};
 use crate::src::server_fn::server_lock_session;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::environment::environ;
-use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 use crate::src::shared::events::event_payload;
 use crate::src::shared::grid::*;
@@ -337,8 +336,8 @@ pub unsafe fn session_destroy(
     }
     (*s).tio = None;
     (*s).tio = None;
-    if event_initialized(&(*s).lock_timer) != 0 {
-        event_del(&raw mut (*s).lock_timer);
+    if (*s).lock_timer.is_initialized() {
+        (*s).lock_timer.cancel();
     }
     session_group_remove(s_owner);
     while crate::src::window::winlink_stack_first(&(*s).lastw).is_alive() {
@@ -387,11 +386,11 @@ unsafe fn session_update_activity(session: &mut session, from: Option<SystemTime
             .unwrap_or_default()
             .subsec_micros() as ::core::ffi::c_int
     ));
-    if event_initialized(&session.lock_timer) != 0 {
-        event_del(&raw mut session.lock_timer);
+    if session.lock_timer.is_initialized() {
+        session.lock_timer.cancel();
     } else {
         let observer = session.observer.clone();
-        event_set(&raw mut session.lock_timer, -1, 0, move |_, _| unsafe {
+        session.lock_timer.set(move || unsafe {
             if let Some(owner) = observer.upgrade() {
                 session_lock_timer(&owner);
             }
@@ -405,7 +404,7 @@ unsafe fn session_update_activity(session: &mut session, from: Option<SystemTime
             )) as u64,
         );
         if timeout.as_secs() != 0 {
-            event_add(&raw mut session.lock_timer, Some(timeout));
+            session.lock_timer.arm(timeout).expect("arm timer");
         }
     }
 }

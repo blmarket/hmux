@@ -16,8 +16,8 @@ use crate::src::format::{
 };
 use crate::src::job::job_run;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln, event_del,
-    event_once_owned,
+    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
+    timer_once_owned,
 };
 use crate::src::server_client::server_client_get_cwd;
 use crate::src::server_client::server_client_unref_owned;
@@ -37,7 +37,6 @@ use crate::src::shared::command::{
     cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item, cmdq_state,
 };
 use crate::src::shared::environment::environ;
-use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
@@ -64,7 +63,7 @@ pub struct cmd_run_shell_data {
     pub wait: bool,
     pub s: Option<SessionRef>,
     pub wp_id: ::core::ffi::c_int,
-    pub timer: event,
+    pub timer: Timer,
     pub flags: ::core::ffi::c_int,
 }
 pub static cmd_run_shell_entry: cmd_entry = {
@@ -306,7 +305,7 @@ unsafe fn cmd_run_shell_exec(
                 + Duration::from_micros((d.fract() * 1_000_000.0) as u64);
         }
     }
-    event_once_owned(
+    timer_once_owned(
         cdata,
         |data| &mut data.timer,
         (!delay.is_null()).then_some(tv),
@@ -528,7 +527,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
 impl Drop for cmd_run_shell_data {
     fn drop(&mut self) {
         unsafe {
-            event_del(&mut self.timer);
+            self.timer.cancel();
             if let Some(session) = self.s.take() {
                 session_remove_ref(session, c"cmd_run_shell_data::drop");
             }

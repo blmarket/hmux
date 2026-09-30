@@ -15,7 +15,7 @@ use crate::src::proc::proc_send;
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
     bufferevent_enable, bufferevent_get_input, bufferevent_new, bufferevent_write, evbuffer_add,
-    evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_once,
+    evbuffer_add_formatted, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, timer_once,
 };
 use crate::src::server_client::server_client_unref_owned;
 use crate::src::server_client::{server_client_get_cwd, Client as _};
@@ -27,7 +27,7 @@ use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, C
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_TIMEOUT, EV_WRITE};
+use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::posix_io::{
     O_APPEND, O_CREAT, O_NONBLOCK, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
@@ -289,7 +289,7 @@ unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
     cf.terminal_scheduled = true;
     stream::finish(cf);
     let mut completion = Some(FileCompletion(owner.clone()));
-    event_once(move |_, _| {
+    timer_once(move || {
         let completion = completion.take().expect("one terminal dispatch");
         file_fire_done_cb(&completion.0);
     });
@@ -805,7 +805,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
     }
     if left != 0 as size_t {
         let owner = file_owner.clone();
-        event_once(move |_, _| unsafe { file_push_cb(&owner) });
+        timer_once(move || unsafe { file_push_cb(&owner) });
     } else if cf.stream > 2 as ::core::ffi::c_int {
         close_0.stream = cf.stream;
         file_send(

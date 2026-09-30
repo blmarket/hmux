@@ -11,15 +11,15 @@ use std::time::Duration;
 pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
     let wp = pane.get();
     (*wp).base.mode |= MODE_SYNC;
-    if event_initialized(&(*wp).sync_timer) == 0 {
+    if !(*wp).sync_timer.is_initialized() {
         let observer = Rc::downgrade(pane);
-        event_set(&raw mut (*wp).sync_timer, -1, 0, move |_, _| {
+        (*wp).sync_timer.set(move || {
             if let Some(pane) = observer.upgrade() {
                 log_debug(format_args!(
                     "screen_write_sync_callback: %{} sync timer expired",
                     pane.id()
                 ));
-                event_del(&raw mut (*pane.get()).sync_timer);
+                (*pane.get()).sync_timer.cancel();
                 if pane.is_synchronized() {
                     (*pane.get()).base.mode &= !MODE_SYNC;
                     flush_dirty(&pane);
@@ -28,7 +28,7 @@ pub(super) unsafe fn start(pane: &Rc<UnsafeCell<window_pane>>) {
         });
     }
     let timeout = Duration::from_secs(1);
-    event_add(&raw mut (*wp).sync_timer, Some(timeout));
+    (*wp).sync_timer.arm(timeout).expect("arm timer");
     log_debug(format_args!(
         "screen_write_start_sync: %{} started sync mode",
         pane.id()
@@ -41,8 +41,8 @@ pub(super) unsafe fn stop(pane: &Rc<UnsafeCell<window_pane>>) {
     }
     {
         let state = &mut *pane.get();
-        if event_initialized(&state.sync_timer) != 0 {
-            event_del(&mut state.sync_timer);
+        if state.sync_timer.is_initialized() {
+            state.sync_timer.cancel();
         }
         state.base.mode &= !MODE_SYNC;
     }
@@ -59,8 +59,8 @@ pub(super) unsafe fn stop_unowned(state: &mut window_pane) {
     if state.base.mode & MODE_SYNC == 0 {
         return;
     }
-    if event_initialized(&state.sync_timer) != 0 {
-        event_del(&mut state.sync_timer);
+    if state.sync_timer.is_initialized() {
+        state.sync_timer.cancel();
     }
     state.base.mode &= !MODE_SYNC;
     assert!(
@@ -169,8 +169,7 @@ unsafe fn flush_dirty(pane: &Rc<UnsafeCell<window_pane>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::reactor::{event_pending, shutdown_runtime};
-    use crate::src::shared::event::EV_TIMEOUT;
+    use crate::src::reactor::shutdown_runtime;
 
     #[test]
     fn stopping_and_destroying_sync_cancel_the_timer_without_retaining_the_pane() {
@@ -180,21 +179,21 @@ mod tests {
             (*pane.get()).fd = -1;
             (*pane.get()).pipe_fd = -1;
             let observer = Rc::downgrade(&pane);
-            let pending = || event_pending(&(*pane.get()).sync_timer, EV_TIMEOUT as i16, None);
+            let pending = || (*pane.get()).sync_timer.is_pending();
             pane.start_sync();
             pane.start_sync();
             assert!(pane.is_synchronized());
-            assert_ne!(pending(), 0);
+            assert!(pending());
             assert_eq!(Rc::strong_count(&pane), 1, "timer only observes the pane");
             pane.stop_sync();
             assert!(!pane.is_synchronized());
-            assert_eq!(pending(), 0);
+            assert!(!pending());
             pane.stop_sync();
             pane.start_sync();
             assert!(!pane.should_draw_rows(true, 0, 1, 2));
             window_pane_tree_insert(&mut all_window_panes, pane.clone());
             pane.destroy();
-            assert_eq!(pending(), 0);
+            assert!(!pending());
             assert!((*pane.get()).sync_dirty.is_none());
             drop(pane);
             assert!(observer.upgrade().is_none());

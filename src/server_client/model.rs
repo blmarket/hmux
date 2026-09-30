@@ -15,7 +15,7 @@ use crate::src::shared::command::cmdq_list;
 use crate::src::shared::control::control_state;
 use crate::src::shared::display::{progress_bar, visible_ranges};
 use crate::src::shared::environment::environ;
-use crate::src::shared::event::{bufferevent, event};
+use crate::src::shared::event::{bufferevent, Timer};
 use crate::src::shared::format::format_job_tree;
 use crate::src::shared::key::{key_code, key_event, key_table};
 use crate::src::shared::mouse::mouse_event;
@@ -62,15 +62,15 @@ pub struct client {
     pub(super) discarded: size_t,
     pub(super) redraw: size_t,
     pub(super) redraw_scene: Option<Box<redraw_scene>>,
-    pub(super) repeat_timer: event,
-    pub(super) click_timer: event,
+    pub(super) repeat_timer: Timer,
+    pub(super) click_timer: Timer,
     pub(super) click_loc: ::core::ffi::c_int,
     pub(super) click_wp: ::core::ffi::c_int,
-    pub(super) exit_timer: event,
+    pub(super) exit_timer: Timer,
     pub(super) click_button: u_int,
     pub(super) click_event: mouse_event,
     pub(super) status: status_line,
-    pub(super) cycle_timer: event,
+    pub(super) cycle_timer: Timer,
     pub(super) theme: client_theme,
     pub(super) input_requests: Vec<*mut crate::src::shared::input::input_request>,
     pub(super) flags: uint64_t,
@@ -84,7 +84,7 @@ pub struct client {
     pub(super) message_ignore_keys: ::core::ffi::c_int,
     pub(super) message_ignore_styles: ::core::ffi::c_int,
     pub(super) message_string: Option<std::ffi::CString>,
-    pub(super) message_timer: event,
+    pub(super) message_timer: Timer,
     pub(super) prompt: Option<refbox::RefBox<crate::src::shared::prompt::prompt>>,
     /// Attached session identity; the session index owns the Rc allocation.
     pub(super) session: SessionWeak,

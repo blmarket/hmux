@@ -58,8 +58,7 @@ use crate::src::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_sen
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_get_input, evbuffer_add, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_add, event_del, event_initialized,
-    event_once, event_pending, event_set,
+    evbuffer_get_length, evbuffer_pullup, evbuffer_readln, timer_once,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
 use crate::src::screen::screen_mode_display;
@@ -724,8 +723,8 @@ use crate::src::shared::display::visible_ranges;
 use crate::src::shared::display::*;
 use crate::src::shared::environment::environ_entry;
 use crate::src::shared::errno::EINTR;
+use crate::src::shared::event::EV_READ;
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_TIMEOUT};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::KEY_BINDING_REPEAT;
@@ -1100,38 +1099,23 @@ unsafe fn server_client_is_default_key_table(c: &client, table: &key_table) -> :
 unsafe fn server_client_init_timers(owner: &ClientRef) {
     let c = owner.get();
     let repeat_timer_observer = std::rc::Rc::downgrade(owner);
-    event_set(
-        &raw mut (*c).repeat_timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe {
-            if let Some(owner) = repeat_timer_observer.upgrade() {
-                server_client_repeat_timer(&owner);
-            }
-        },
-    );
+    (*c).repeat_timer.set(move || unsafe {
+        if let Some(owner) = repeat_timer_observer.upgrade() {
+            server_client_repeat_timer(&owner);
+        }
+    });
     let click_timer_observer = std::rc::Rc::downgrade(owner);
-    event_set(
-        &raw mut (*c).click_timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe {
-            if let Some(owner) = click_timer_observer.upgrade() {
-                server_client_click_timer(&owner);
-            }
-        },
-    );
+    (*c).click_timer.set(move || unsafe {
+        if let Some(owner) = click_timer_observer.upgrade() {
+            server_client_click_timer(&owner);
+        }
+    });
     let exit_timer_observer = std::rc::Rc::downgrade(owner);
-    event_set(
-        &raw mut (*c).exit_timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe {
-            if let Some(owner) = exit_timer_observer.upgrade() {
-                server_client_exit_timer(&owner);
-            }
-        },
-    );
+    (*c).exit_timer.set(move || unsafe {
+        if let Some(owner) = exit_timer_observer.upgrade() {
+            server_client_exit_timer(&owner);
+        }
+    });
 }
 pub unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
@@ -1542,18 +1526,18 @@ pub unsafe fn server_client_lost(client_owner: &ClientRef) {
     server_client_set_cwd(&mut *c, None);
     server_client_set_exit_session(&mut *c, None);
     server_client_set_exit_message(&mut *c, None);
-    event_del(&raw mut (*c).repeat_timer);
-    event_del(&raw mut (*c).click_timer);
-    event_del(&raw mut (*c).exit_timer);
-    if event_initialized(&(*c).cycle_timer) != 0 {
-        event_del(&raw mut (*c).cycle_timer);
+    (*c).repeat_timer.cancel();
+    (*c).click_timer.cancel();
+    (*c).exit_timer.cancel();
+    if (*c).cycle_timer.is_initialized() {
+        (*c).cycle_timer.cancel();
     }
     drop((*c).keytable.take());
     // Callbacks during client loss can set another message after the earlier
     // clear. Preserve the final release point before cancelling its timer.
     server_client_set_message(&mut *c, None);
-    if event_initialized(&(*c).message_timer) != 0 {
-        event_del(&raw mut (*c).message_timer);
+    if (*c).message_timer.is_initialized() {
+        (*c).message_timer.cancel();
     }
     if let Some(prompt) = (*c).prompt.take() {
         prompt_free(&prompt.downgrade());
@@ -2098,7 +2082,7 @@ unsafe fn server_client_check_mouse(
             log_debug(format_args!("up at {},{}", (x) as u32, (y) as u32));
         } else {
             if (*c).flags & CLIENT_DOUBLECLICK as uint64_t != 0 {
-                event_del(&raw mut (*c).click_timer);
+                (*c).click_timer.cancel();
                 (*c).flags &= !CLIENT_DOUBLECLICK as uint64_t;
                 type_0 = KEYC_TYPE_SECONDCLICK;
                 x = (*m).x;
@@ -2112,7 +2096,7 @@ unsafe fn server_client_check_mouse(
                 (*c).flags |= CLIENT_TRIPLECLICK as uint64_t;
                 current_block = 16799951812150840583;
             } else if (*c).flags & CLIENT_TRIPLECLICK as uint64_t != 0 {
-                event_del(&raw mut (*c).click_timer);
+                (*c).click_timer.cancel();
                 (*c).flags &= !CLIENT_TRIPLECLICK as uint64_t;
                 type_0 = KEYC_TYPE_TRIPLECLICK;
                 x = (*m).x;
@@ -2436,8 +2420,8 @@ unsafe fn server_client_check_mouse(
                 (*c).click_wp = (*m).wp;
                 log_debug(format_args!("click timer started"));
                 let timeout = Duration::from_millis(KEYC_CLICK_TIMEOUT as u64);
-                event_del(&raw mut (*c).click_timer);
-                event_add(&raw mut (*c).click_timer, Some(timeout));
+                (*c).click_timer.cancel();
+                (*c).click_timer.arm(timeout).expect("arm timer");
             }
         }
         key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -3214,8 +3198,8 @@ unsafe fn server_client_key_callback(
                                             (*c).flags |= CLIENT_REPEAT as uint64_t;
                                             (*c).last_key = bd.key;
                                             let timeout = Duration::from_millis(repeat as u64);
-                                            event_del(&raw mut (*c).repeat_timer);
-                                            event_add(&raw mut (*c).repeat_timer, Some(timeout));
+                                            (*c).repeat_timer.cancel();
+                                            (*c).repeat_timer.arm(timeout).expect("arm timer");
                                         } else {
                                             (*c).flags &= !CLIENT_REPEAT as uint64_t;
                                             server_client_set_key_table(
@@ -4105,13 +4089,8 @@ unsafe fn server_client_click_timer(owner: &ClientRef) {
 }
 unsafe fn server_client_start_exit_timer(c: &mut client) {
     let timeout = Duration::from_secs(10);
-    if event_pending(
-        &raw mut (*c).exit_timer,
-        EV_TIMEOUT as ::core::ffi::c_short,
-        None,
-    ) == 0
-    {
-        event_add(&raw mut (*c).exit_timer, Some(timeout));
+    if !(*c).exit_timer.is_pending() {
+        (*c).exit_timer.arm(timeout).expect("arm timer");
     }
 }
 unsafe fn server_client_exit_timer(owner: &ClientRef) {
@@ -4172,7 +4151,7 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
         return;
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;
-    event_del(&raw mut (*c).exit_timer);
+    (*c).exit_timer.cancel();
     server_client_start_exit_timer(&mut *c);
     match (*c).exit_type as ::core::ffi::c_uint {
         0 => {
@@ -4285,7 +4264,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         let mut tflags: ::core::ffi::c_int = 0;
         let mut mode: ::core::ffi::c_int = (*tty).mode;
         let timeout = Duration::from_micros(1000);
-        static mut ev: event = event::new();
+        static mut ev: Timer = Timer::new();
         let mut n: size_t = 0;
         if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
             return;
@@ -4373,17 +4352,12 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
                     )
                 ));
             }
-            if event_initialized(&ev) == 0 {
-                event_set(
-                    &raw mut ev,
-                    -(1 as ::core::ffi::c_int),
-                    0 as ::core::ffi::c_short,
-                    move |_, _| unsafe { server_client_redraw_timer() },
-                );
+            if !ev.is_initialized() {
+                ev.set(move || unsafe { server_client_redraw_timer() });
             }
-            if event_pending(&raw mut ev, EV_TIMEOUT as ::core::ffi::c_short, None) == 0 {
+            if !ev.is_pending() {
                 log_debug(format_args!("redraw timer started"));
-                event_add(&raw mut ev, Some(timeout));
+                ev.arm(timeout).expect("arm timer");
             }
             let mut cursor = window_owner.next_pane(None);
             while let Some(pane_owner) = cursor {
@@ -5840,7 +5814,10 @@ mod client_timer_observer_tests {
             server_client_init_timers(&owner);
             (*owner.get()).flags |= CLIENT_DOUBLECLICK as uint64_t;
             let immediate = Duration::ZERO;
-            event_add(&mut (*owner.get()).click_timer, Some(immediate));
+            (*owner.get())
+                .click_timer
+                .arm(immediate)
+                .expect("arm timer");
             crate::src::reactor::event_loop();
             assert_eq!((*owner.get()).flags & CLIENT_DOUBLECLICK as uint64_t, 0);
             let mut detached_timer = std::mem::take(&mut (*owner.get()).click_timer);
@@ -5849,10 +5826,10 @@ mod client_timer_observer_tests {
                 observer.upgrade().is_none(),
                 "timer callbacks must not retain clients"
             );
-            event_add(&mut detached_timer, Some(immediate));
+            detached_timer.arm(immediate).expect("arm timer");
             crate::src::reactor::event_loop();
             assert!(observer.upgrade().is_none());
-            event_del(&mut detached_timer);
+            detached_timer.cancel();
         }
     }
 }

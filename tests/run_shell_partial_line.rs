@@ -57,6 +57,14 @@ fn run_shell_prints_trailing_bytes_and_stops_at_embedded_nul() {
     assert!(output.status.success(), "run-shell: {:?}", output.stderr);
     assert_eq!(output.stdout, b"complete\npartial\n");
 
+    let output = server.run(&["run-shell", "-d", "0.01", "printf 'delayed'"]);
+    assert!(
+        output.status.success(),
+        "delayed run-shell: {:?}",
+        output.stderr
+    );
+    assert_eq!(output.stdout, b"delayed\n");
+
     let output = server.run(&["run-shell", "printf 'complete\\npartial\\000hidden'"]);
     assert!(output.status.success(), "run-shell: {:?}", output.stderr);
     assert_eq!(output.stdout, b"complete\npartial\n");

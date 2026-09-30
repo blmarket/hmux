@@ -11,10 +11,7 @@ use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
 use crate::src::options::{options_array_get_index, options_get_number};
 use crate::src::paste::paste_add_owned;
-use crate::src::reactor::{
-    evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized,
-    event_pending, event_set,
-};
+use crate::src::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_handle_key, server_client_update_theme_colours};
 use crate::src::session::Session;
@@ -25,7 +22,6 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_FOCUSED;
 use crate::src::shared::control_character::{C0_CR, C0_ESC, C0_HT, C0_NUL};
 use crate::src::shared::ctype::_ISdigit;
-use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 use crate::src::shared::input::{INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE};
@@ -2154,8 +2150,8 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 ));
                 {
                     let mut terminal = terminal_client_owner.borrow_terminal_mut();
-                    if event_initialized(&terminal.key_timer) != 0 {
-                        event_del(&raw mut terminal.key_timer);
+                    if terminal.key_timer.is_initialized() {
+                        terminal.key_timer.cancel();
                     }
                     terminal.flags &= !TTY_TIMER;
                     if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -2219,8 +2215,8 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     (
                         terminal.flags & TTY_TIMER != 0,
                         terminal.flags & TTY_TIMER != 0
-                            && event_initialized(&terminal.key_timer) != 0
-                            && event_pending(&mut terminal.key_timer, EV_TIMEOUT as _, None) == 0,
+                            && terminal.key_timer.is_initialized()
+                            && !terminal.key_timer.is_pending(),
                     )
                 };
                 if timer_active {
@@ -2285,19 +2281,16 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     let timeout = Duration::from_millis(delay as u64);
                     {
                         let mut terminal = terminal_client_owner.borrow_terminal_mut();
-                        if event_initialized(&terminal.key_timer) != 0 {
-                            event_del(&raw mut terminal.key_timer);
+                        if terminal.key_timer.is_initialized() {
+                            terminal.key_timer.cancel();
                         }
-                        event_set(
-                            &raw mut terminal.key_timer,
-                            -(1 as ::core::ffi::c_int),
-                            0 as ::core::ffi::c_short,
-                            crate::src::tty::tty_client_callback(
+                        terminal
+                            .key_timer
+                            .set(crate::src::tty::tty_client_timer_callback(
                                 &terminal_client_owner,
                                 tty_keys_callback,
-                            ),
-                        );
-                        event_add(&raw mut terminal.key_timer, Some(timeout));
+                            ));
+                        terminal.key_timer.arm(timeout).expect("arm timer");
                         terminal.flags |= TTY_TIMER;
                     }
                     return 0 as ::core::ffi::c_int;
@@ -2764,7 +2757,7 @@ unsafe fn tty_keys_clipboard(
     if clipboard_query {
         paste_add_owned(None, cd.data.into_boxed_slice());
         let mut terminal = terminal_client_owner.borrow_terminal_mut();
-        event_del(&raw mut terminal.clipboard_timer);
+        terminal.clipboard_timer.cancel();
         terminal.flags &= !TTY_OSC52QUERY;
     }
     return 0 as ::core::ffi::c_int;
@@ -3552,19 +3545,20 @@ mod key_tree_tests {
         unsafe {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
-            event_set(
-                &raw mut owner.borrow_terminal_mut().key_timer,
-                -1,
-                0,
-                crate::src::tty::tty_client_callback(&owner, tty_keys_callback),
-            );
+            owner
+                .borrow_terminal_mut()
+                .key_timer
+                .set(crate::src::tty::tty_client_timer_callback(
+                    &owner,
+                    tty_keys_callback,
+                ));
             let callback = owner.borrow_terminal().key_timer.callback.clone().unwrap();
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
             // A cancelled ambiguity timer does not parse input.
-            callback.borrow_mut()(-1, 0);
+            callback.borrow_mut()();
             drop(owner);
             assert!(observer.upgrade().is_none());
-            callback.borrow_mut()(-1, 0);
+            callback.borrow_mut()();
         }
     }
 

@@ -3,7 +3,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::options::options_get_number;
-use crate::src::reactor::{event_add, event_del, event_set};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_clearscreen, screen_write_cursormove, screen_write_putc, screen_write_puts,
@@ -36,7 +35,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub struct window_clock_mode_data {
     pub screen: screen,
     pub tim: time_t,
-    pub timer: event,
+    pub timer: Timer,
 }
 pub static window_clock_mode: window_mode = {
     window_mode {
@@ -607,7 +606,7 @@ unsafe fn window_clock_start_timer(mut wme: refbox::Weak<window_mode_entry>) {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     let delay = Duration::from_micros(1_000_000 - u64::from(now.subsec_micros()));
-    event_add(&raw mut (*data).timer, Some(delay));
+    (*data).timer.arm(delay).expect("arm timer");
 }
 unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
     let mode_pane_owner = wme
@@ -645,7 +644,7 @@ unsafe fn window_clock_timer_callback(wme: refbox::Weak<window_mode_entry>) {
         tm_zone: ::core::ptr::null::<::core::ffi::c_char>(),
     };
     let mut t: time_t = 0;
-    event_del(&raw mut (*data).timer);
+    (*data).timer.cancel();
     t = time(::core::ptr::null_mut::<time_t>());
     gmtime_r(&raw mut t, &raw mut now);
     gmtime_r(&raw mut (*data).tim, &raw mut then);
@@ -680,18 +679,13 @@ unsafe fn window_clock_init(
     wme.get_mut_unchecked().boxed_data = Some(owner);
     (*data).tim = time(::core::ptr::null_mut::<time_t>());
     let mode_observer = window_pane_mode_weak(wme.clone());
-    event_set(
-        &raw mut (*data).timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe {
-            match mode_observer.try_borrow_mut() {
-                Ok(_mode) => window_clock_timer_callback(mode_observer.clone()),
-                Err(refbox::BorrowError::Dropped) => {}
-                Err(refbox::BorrowError::Borrowed) => panic!("clock mode already borrowed"),
-            }
-        },
-    );
+    (*data).timer.set(move || unsafe {
+        match mode_observer.try_borrow_mut() {
+            Ok(_mode) => window_clock_timer_callback(mode_observer.clone()),
+            Err(refbox::BorrowError::Dropped) => {}
+            Err(refbox::BorrowError::Borrowed) => panic!("clock mode already borrowed"),
+        }
+    });
     window_clock_start_timer(wme.clone());
     s = &raw mut (*data).screen;
     screen_init(
@@ -713,7 +707,7 @@ unsafe fn window_clock_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut 
 
 unsafe fn window_clock_free(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_clock_mode_data = window_clock_data(wme.clone());
-    event_del(&raw mut (*data).timer);
+    (*data).timer.cancel();
     screen_free(&mut (*data).screen);
     drop(wme.get_mut_unchecked().boxed_data.take());
 }

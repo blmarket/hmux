@@ -18,11 +18,8 @@ struct EventState {
     callback: Callback,
     deadline: Cell<Option<Instant>>,
     interval: Option<Duration>,
-    active: Cell<c_short>,
     live: Cell<bool>,
     task: RefCell<Option<hmux_rt::mio::Task>>,
-    activation: RefCell<Option<hmux_rt::mio::Task>>,
-    owned: RefCell<Option<Box<event>>>,
 }
 thread_local! { static EVENTS: RefCell<HashMap<usize, Rc<EventState>>> = RefCell::new(HashMap::new()); }
 fn remove(key: usize) {
@@ -31,9 +28,7 @@ fn remove(key: usize) {
         state.live.set(false);
         super::FDS.with(|f| f.borrow_mut().remove(&state.fd));
         let task = state.task.borrow_mut().take();
-        let activation = state.activation.borrow_mut().take();
         drop(task);
-        drop(activation);
     }
 }
 pub(super) fn clear() {
@@ -45,12 +40,9 @@ pub(super) fn clear() {
         for state in states {
             state.live.set(false);
             let task = state.task.borrow_mut().take();
-            let activation = state.activation.borrow_mut().take();
             drop(task);
-            drop(activation);
         }
-        // Dropping callback owners may defer their own cleanup with event_once.
-        // Cancel those registrations too before the runtime is torn down.
+        // Callback destruction may trigger further explicit event cleanup.
     }
 }
 fn fire(state: &Rc<EventState>, flags: c_short) {
@@ -141,11 +133,8 @@ fn configure(ev: &event, interval: Option<Duration>) -> Rc<EventState> {
         callback: ev.callback.clone(),
         deadline: Cell::new(interval.map(deadline)),
         interval,
-        active: Cell::new(0),
         live: Cell::new(true),
         task: RefCell::new(None),
-        activation: RefCell::new(None),
-        owned: RefCell::new(None),
     })
 }
 pub unsafe fn event_init() -> *mut event_base {
@@ -159,11 +148,10 @@ pub unsafe fn event_reinit() -> c_int {
     let states = EVENTS.with(|e| e.borrow().values().cloned().collect::<Vec<_>>());
     for s in &states {
         let task = s.task.borrow_mut().take();
-        let activation = s.activation.borrow_mut().take();
         drop(task);
-        drop(activation);
     }
     super::streams::stop_tasks();
+    super::timers::stop_tasks();
     super::FDS.with(|f| f.borrow_mut().clear());
     let result = super::HOST.with(|h| {
         let mut h = h.borrow_mut();
@@ -180,9 +168,9 @@ pub unsafe fn event_reinit() -> c_int {
         if start(&s).is_err() {
             return -1;
         }
-        if s.active.get() != 0 {
-            activate(&s);
-        }
+    }
+    if super::timers::restart().is_err() {
+        return -1;
     }
     super::streams::restart();
     0
@@ -224,88 +212,6 @@ pub unsafe fn event_add(ev: *mut event, timeout: Option<Duration>) -> c_int {
     }
     0
 }
-fn activate(state: &Rc<EventState>) {
-    if state.activation.borrow().is_some() {
-        return;
-    }
-    let s = state.clone();
-    let task = handle()
-        .spawn(async move {
-            let flags = s.active.replace(0);
-            let task = s.activation.borrow_mut().take();
-            drop(task);
-            fire(&s, flags);
-        })
-        .expect("activate event");
-    *state.activation.borrow_mut() = Some(task);
-}
-pub unsafe fn event_active(ev: *mut event) {
-    let flags: c_int = EV_TIMEOUT;
-    ensure_runtime();
-    let existing = EVENTS.with(|e| e.borrow().get(&(ev as usize)).cloned());
-    let state = existing.unwrap_or_else(|| {
-        let s = configure(&*ev, None);
-        EVENTS.with(|e| e.borrow_mut().insert(ev as usize, s.clone()));
-        s
-    });
-    state.active.set(state.active.get() | flags as c_short);
-    activate(&state);
-}
-pub unsafe fn event_once<F>(cb: F) -> c_int
-where
-    F: FnMut(c_int, c_short) + 'static,
-{
-    let mut ev: Box<event> = Box::default();
-    event_set(&mut *ev, -1, EV_TIMEOUT as c_short, cb);
-    let zero = Duration::ZERO;
-    let result = event_add(&mut *ev, Some(zero));
-    if result == 0 {
-        let key = &*ev as *const event as usize;
-        EVENTS.with(|e| *e.borrow().get(&key).unwrap().owned.borrow_mut() = Some(ev));
-    }
-    result
-}
-/// Schedule a one-shot callback that owns a record containing its event handle.
-///
-/// The record stays in its original Box allocation. Only the reactor holds the
-/// callback, so the embedded event cannot keep its enclosing owner alive in a
-/// cycle. A missing timeout activates the callback immediately, like event_active.
-pub fn event_once_owned<T: 'static>(
-    mut owner: Box<T>,
-    event_handle: fn(&mut T) -> &mut event,
-    timeout: Option<Duration>,
-    callback: impl FnOnce(Box<T>) + 'static,
-) -> c_int {
-    ensure_runtime();
-    let ev = event_handle(&mut owner);
-    remove(ev as *mut event as usize);
-    *ev = event {
-        initialized: true,
-        fd: -1,
-        flags: 0,
-        callback: None,
-    };
-    let mut state = configure(ev, timeout);
-    let mut pending = Some((owner, callback));
-    Rc::get_mut(&mut state).unwrap().callback =
-        Some(Rc::new(RefCell::new(Box::new(move |_, _| {
-            if let Some((owner, callback)) = pending.take() {
-                callback(owner);
-            }
-        }))));
-    EVENTS.with(|events| events.borrow_mut().insert(state.key, state.clone()));
-    if timeout.is_some() {
-        if let Err(error) = start(&state) {
-            remove(state.key);
-            unsafe { *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO) };
-            return -1;
-        }
-    } else {
-        state.active.set(EV_TIMEOUT as c_short);
-        activate(&state);
-    }
-    0
-}
 /// Report pending flags, optionally returning the monotonic timer deadline.
 pub unsafe fn event_pending(ev: *const event, flags: c_short, out: Option<&mut Instant>) -> c_int {
     EVENTS.with(|e| {
@@ -320,7 +226,6 @@ pub unsafe fn event_pending(ev: *const event, flags: c_short, out: Option<&mut I
                 *out = deadline;
             }
         }
-        pending |= s.active.get();
         (pending & flags) as c_int
     })
 }

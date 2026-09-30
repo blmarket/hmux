@@ -2,7 +2,7 @@
 use super::*;
 use crate::src::grid::{grid_get_cell, grid_set_cell};
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
-use crate::src::reactor::{event_pending, Interests};
+use crate::src::reactor::Interests;
 use crate::src::server_client::Client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
@@ -565,19 +565,19 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
     if (*pane).resize_queue.is_empty() {
         return;
     }
-    if event_initialized(&(*pane).resize_timer) == 0 {
+    if !(*pane).resize_timer.is_initialized() {
         let observer = Rc::downgrade(owner);
-        event_set(&raw mut (*pane).resize_timer, -1, 0, move |_, _| {
+        (*pane).resize_timer.set(move || {
             if let Some(owner) = observer.upgrade() {
                 log_debug(format_args!(
                     "server_client_resize_timer: %{} resize timer expired",
                     owner.id()
                 ));
-                event_del(&raw mut (*owner.get()).resize_timer);
+                (*owner.get()).resize_timer.cancel();
             }
         });
     }
-    if event_pending(&raw mut (*pane).resize_timer, EV_TIMEOUT as _, None) != 0 {
+    if (*pane).resize_timer.is_pending() {
         return;
     }
     log_debug(format_args!(
@@ -608,7 +608,7 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
     window_pane_send_resize(&*pane, sx, sy);
     (*pane).clear_resizes_except(keep);
     let delay = Duration::from_micros((if keep.is_null() { 250000 } else { 10000 }) as u64);
-    event_add(&raw mut (*pane).resize_timer, Some(delay));
+    (*pane).resize_timer.arm(delay).expect("arm timer");
 }
 
 unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {

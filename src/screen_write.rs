@@ -15,7 +15,6 @@ use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatal, fatalx, log_bytes, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;
-use crate::src::reactor::{event_del, event_initialized};
 use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
     screen_reset_tabs, screen_select_cell,
@@ -31,7 +30,6 @@ use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_REDRAWWINDOW;
 use crate::src::shared::colour::*;
 use crate::src::shared::display::visible_range;
-use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
@@ -3363,8 +3361,8 @@ pub unsafe fn screen_write_alternateon(
     }
     if !wp.is_null() {
         window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
-        if event_initialized(&(*wp).resize_timer) != 0 {
-            event_del(&raw mut (*wp).resize_timer);
+        if (*wp).resize_timer.is_initialized() {
+            (*wp).resize_timer.cancel();
         }
         layout_fix_panes(
             &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),

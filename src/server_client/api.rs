@@ -471,9 +471,9 @@ impl Client for ClientRef {
     }
     unsafe fn schedule_format_cycle(&self, interval_ms: i32) {
         let timeout = Duration::from_millis(interval_ms.max(0) as u64);
-        if event_initialized(&(*self.get()).cycle_timer) == 0 {
+        if !(*self.get()).cycle_timer.is_initialized() {
             let observer = Rc::downgrade(self);
-            event_set(&raw mut (*self.get()).cycle_timer, -1, 0, move |_, _| {
+            (*self.get()).cycle_timer.set(move || {
                 if let Some(owner) = observer.upgrade() {
                     // No formatting or callback occurs under this state access.
                     let state = &mut *owner.get();
@@ -483,8 +483,8 @@ impl Client for ClientRef {
                 }
             });
         }
-        if event_pending(&raw mut (*self.get()).cycle_timer, EV_TIMEOUT as i16, None) == 0 {
-            event_add(&raw mut (*self.get()).cycle_timer, Some(timeout));
+        if !(*self.get()).cycle_timer.is_pending() {
+            (*self.get()).cycle_timer.arm(timeout).expect("arm timer");
         }
     }
     type QueueMut<'a> = &'a mut crate::src::cmd::queue::cmdq_list;
@@ -1116,15 +1116,15 @@ impl Client for ClientRef {
         let state = &mut *self.get();
         if delay > 0 {
             let timeout = Duration::from_millis(delay as u64);
-            if event_initialized(&state.message_timer) != 0 {
-                event_del(&mut state.message_timer);
+            if state.message_timer.is_initialized() {
+                state.message_timer.cancel();
             }
-            event_set(&mut state.message_timer, -1, 0, move |_, _| unsafe {
+            state.message_timer.set(move || unsafe {
                 if let Some(owner) = observer.upgrade() {
                     owner.clear_status_message();
                 }
             });
-            event_add(&mut state.message_timer, Some(timeout));
+            state.message_timer.arm(timeout).expect("arm timer");
         }
         if delay != 0 {
             state.message_ignore_keys = ignore_keys;
@@ -1623,15 +1623,15 @@ mod cycle_owner_tests {
                 .unwrap()
                 .clone();
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            callback.borrow_mut()(-1, EV_TIMEOUT as _);
+            callback.borrow_mut()();
             assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
 
             // Cancel registration explicitly before releasing the client, but
             // retain a callback to exercise a dispatch after its owner expires.
-            crate::src::reactor::event_del(&raw mut (*owner.get()).cycle_timer);
+            (*owner.get()).cycle_timer.cancel();
             drop(owner);
             assert!(observer.upgrade().is_none());
-            callback.borrow_mut()(-1, EV_TIMEOUT as _);
+            callback.borrow_mut()();
         }
     }
 }

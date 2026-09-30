@@ -1,15 +1,14 @@
 //! Window-owned alert flags, queue membership and silence timer.
 use super::*;
-use crate::src::reactor::{event_add, event_del, event_initialized, event_set};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE};
 use std::time::Duration;
 
 pub(super) unsafe fn reset_timer(owner: &WindowRef) {
     let w = owner.get();
-    if event_initialized(&(*w).alerts_timer) == 0 {
+    if !(*w).alerts_timer.is_initialized() {
         let observer = Rc::downgrade(owner);
-        event_set(&raw mut (*w).alerts_timer, -1, 0, move |_, _| {
+        (*w).alerts_timer.set(move || {
             if let Some(owner) = observer.upgrade() {
                 log_debug(format_args!("@{} alerts timer expired", owner.id()));
                 crate::src::alerts::alerts_queue(&owner, WINDOW_SILENCE);
@@ -17,7 +16,7 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
         });
     }
     (*w).flags &= !WINDOW_SILENCE;
-    event_del(&raw mut (*w).alerts_timer);
+    (*w).alerts_timer.cancel();
     let timeout = Duration::from_secs(
         (owner.with_options_mut(|options| options_get_number(options, c"monitor-silence".as_ptr())))
             as u64,
@@ -28,7 +27,7 @@ pub(super) unsafe fn reset_timer(owner: &WindowRef) {
         timeout.as_secs() as u32
     ));
     if timeout.as_secs() != 0 {
-        event_add(&raw mut (*w).alerts_timer, Some(timeout));
+        (*w).alerts_timer.arm(timeout).expect("arm timer");
     }
 }
 

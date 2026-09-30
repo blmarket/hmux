@@ -2,7 +2,7 @@
 
 use super::abi::u_int;
 use super::client::client;
-use super::event::event;
+use super::event::Timer;
 use super::grid::grid_cell;
 use super::prompt::{prompt_key_result, prompt_result};
 use super::screen::screen;
@@ -15,7 +15,7 @@ use std::time::SystemTime;
 #[derive(Default)]
 #[repr(C)]
 pub struct status_line {
-    pub timer: event,
+    pub timer: Timer,
     pub screen: screen,
     /// Owns the temporary message/prompt screen; None selects the base screen.
     pub active: Option<Box<screen>>,

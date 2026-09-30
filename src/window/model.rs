@@ -4,7 +4,7 @@ use crate::src::shared::arguments::args;
 use crate::src::shared::client::client;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::event::event;
+use crate::src::shared::event::Timer;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::grid_cell;
 use crate::src::shared::key::key_code;
@@ -37,10 +37,10 @@ pub struct window {
     /// Nonowning identity of the client last active in this window.
     pub(super) latest: ClientWeak,
     pub(super) name: std::ffi::CString,
-    pub(super) name_event: event,
+    pub(super) name_event: Timer,
     pub(super) name_time: Option<Instant>,
-    pub(super) alerts_timer: event,
-    pub(super) offset_timer: event,
+    pub(super) alerts_timer: Timer,
+    pub(super) offset_timer: Timer,
     pub(super) activity_time: SystemTime,
     pub(super) creation_time: SystemTime,
     /// Current pane identity; the pane index owns the allocation.

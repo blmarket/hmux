@@ -4,7 +4,7 @@ use super::abi::{size_t, time_t, u_int};
 use super::client::client;
 use super::colour::colour_palette;
 use super::display::{screen_cursor_style, visible_ranges};
-use super::event::event;
+use super::event::{event, Timer};
 use super::grid::grid_cell;
 use super::key::key_code;
 use super::mouse::mouse_event;
@@ -333,8 +333,8 @@ pub struct tty_window_view {
 pub struct tty {
     /// The client owns its terminal; this backreference must not retain it.
     pub client: ClientWeak,
-    pub start_timer: event,
-    pub clipboard_timer: event,
+    pub start_timer: Timer,
+    pub clipboard_timer: Timer,
     pub last_requests: time_t,
     pub sx: u_int,
     pub sy: u_int,
@@ -360,7 +360,7 @@ pub struct tty {
     pub in_0: Option<Box<crate::src::tty::TerminalInput>>,
     pub event_out: event,
     pub out: Option<Box<SegmentedBuf>>,
-    pub timer: event,
+    pub timer: Timer,
     pub discarded: size_t,
     pub tio: termios,
     pub r: visible_ranges,
@@ -380,7 +380,7 @@ pub struct tty {
     pub mouse_last_pane: ::core::ffi::c_int,
     pub mouse_drag_update: mouse_drag_update_cb,
     pub mouse_drag_release: mouse_drag_release_cb,
-    pub key_timer: event,
+    pub key_timer: Timer,
     /// Exclusively owned terminal key tree; cleared on rebuild or tty_close.
     pub key_tree: Option<Box<tty_key>>,
 }

@@ -1,10 +1,10 @@
 //! Application callback handles for the Rust reactor.
 //!
 //! Scheduling and registration ownership live in the reactor's Rust collections.
-//! Event handles can be zero initialized by translated callers. Streams own
-//! their buffers; neither layout is tied to libevent.
+//! Timer handles schedule monotonic waits; events serve descriptors and signals.
+//! Streams own their buffers; these layouts are independent of libevent.
 use super::abi::*;
-pub use crate::src::reactor::{bufferevent_ops, event_base};
+pub use crate::src::reactor::{bufferevent_ops, event_base, Timer};
 use hmux_buffer::SegmentedBuf;
 
 pub type EventCallback = Option<

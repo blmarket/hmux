@@ -32,7 +32,7 @@ use crate::src::job::{job_get_event, job_run};
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
-use crate::src::reactor::{bufferevent_write, event_add, event_del, event_set};
+use crate::src::reactor::bufferevent_write;
 use crate::src::screen::screen_share_hyperlinks;
 use crate::src::screen::{
     screen_check_selection, screen_clear_selection, screen_free, screen_hide_selection,
@@ -151,8 +151,8 @@ pub struct window_copy_mode_data {
     pub timeout: ::core::ffi::c_int,
     pub jumptype: ::core::ffi::c_int,
     pub jumpchar: Vec<utf8_data>,
-    pub dragtimer: event,
-    pub refresh_timer: event,
+    pub dragtimer: Timer,
+    pub refresh_timer: Timer,
     pub refresh_active: ::core::ffi::c_int,
 }
 
@@ -238,8 +238,8 @@ impl Default for window_copy_mode_data {
             timeout: 0,
             jumptype: 0,
             jumpchar: Vec::new(),
-            dragtimer: event::new(),
-            refresh_timer: event::new(),
+            dragtimer: Timer::new(),
+            refresh_timer: Timer::new(),
             refresh_active: 0,
         }
     }
@@ -500,15 +500,15 @@ unsafe fn window_copy_scroll_timer(wme: refbox::Weak<window_mode_entry>) {
     let mut wp: *mut window_pane = mode_pane;
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let tv = Duration::from_micros(WINDOW_COPY_DRAG_REPEAT_TIME as u64);
-    event_del(&raw mut (*data).dragtimer);
+    (*data).dragtimer.cancel();
     if (*wp).active_mode_entry() != wme {
         return;
     }
     if (*data).cy == 0 as u_int {
-        event_add(&raw mut (*data).dragtimer, Some(tv));
+        (*data).dragtimer.arm(tv).expect("arm timer");
         window_copy_cursor_up(wme.clone(), 1 as ::core::ffi::c_int);
     } else if (*data).cy == (*data).screen.grid().sy.wrapping_sub(1 as u_int) {
-        event_add(&raw mut (*data).dragtimer, Some(tv));
+        (*data).dragtimer.arm(tv).expect("arm timer");
         window_copy_cursor_down(wme.clone(), 1 as ::core::ffi::c_int);
     }
 }
@@ -691,30 +691,20 @@ unsafe fn window_copy_common_init(
         }) as ::core::ffi::c_int;
     let mode_observer = crate::src::window::window_pane_mode_weak(wme.clone());
     let scroll_observer = mode_observer.clone();
-    event_set(
-        &raw mut (*data).dragtimer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe {
-            match scroll_observer.try_borrow_mut() {
-                Ok(_mode) => window_copy_scroll_timer(scroll_observer.clone()),
-                Err(refbox::BorrowError::Dropped) => {}
-                Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
-            }
-        },
-    );
-    event_set(
-        &raw mut (*data).refresh_timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe {
-            match mode_observer.try_borrow_mut() {
-                Ok(_mode) => window_copy_refresh_timer(mode_observer.clone()),
-                Err(refbox::BorrowError::Dropped) => {}
-                Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
-            }
-        },
-    );
+    (*data).dragtimer.set(move || unsafe {
+        match scroll_observer.try_borrow_mut() {
+            Ok(_mode) => window_copy_scroll_timer(scroll_observer.clone()),
+            Err(refbox::BorrowError::Dropped) => {}
+            Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
+        }
+    });
+    (*data).refresh_timer.set(move || unsafe {
+        match mode_observer.try_borrow_mut() {
+            Ok(_mode) => window_copy_refresh_timer(mode_observer.clone()),
+            Err(refbox::BorrowError::Dropped) => {}
+            Err(refbox::BorrowError::Borrowed) => panic!("copy mode already borrowed"),
+        }
+    });
     return data;
 }
 unsafe fn window_copy_init(
@@ -830,8 +820,8 @@ unsafe fn window_copy_view_init(
 }
 unsafe fn window_copy_free(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    event_del(&raw mut (*data).dragtimer);
-    event_del(&raw mut (*data).refresh_timer);
+    (*data).dragtimer.cancel();
+    (*data).refresh_timer.cancel();
     window_copy_clear_searchmark(&mut *data);
     if let Some(ictx) = (*data).ictx.take() {
         input_free(ictx);
@@ -3963,7 +3953,7 @@ unsafe fn window_copy_refresh_arm(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let tv = Duration::from_micros(WINDOW_COPY_REFRESH_INTERVAL as u64);
     if (*data).refresh_active != 0 {
-        event_add(&raw mut (*data).refresh_timer, Some(tv));
+        (*data).refresh_timer.arm(tv).expect("arm timer");
     }
 }
 unsafe fn window_copy_refresh_allowed(
@@ -4018,7 +4008,7 @@ unsafe fn window_copy_refresh_start(mut wme: refbox::Weak<window_mode_entry>) {
 unsafe fn window_copy_refresh_stop(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     (*data).refresh_active = 0 as ::core::ffi::c_int;
-    event_del(&raw mut (*data).refresh_timer);
+    (*data).refresh_timer.cancel();
 }
 unsafe fn window_copy_cmd_refresh_now(
     mut cs: *mut window_copy_cmd_state,
@@ -10133,7 +10123,7 @@ unsafe fn window_copy_drag_update(_client_owner: &ClientRef, mut m: *mut mouse_e
         return;
     }
     data = window_copy_data(wme.clone());
-    event_del(&raw mut (*data).dragtimer);
+    (*data).dragtimer.cancel();
     if cmd_mouse_at(&*(wp), m, &raw mut x, &raw mut y, 0 as ::core::ffi::c_int)
         != 0 as ::core::ffi::c_int
     {
@@ -10153,10 +10143,10 @@ unsafe fn window_copy_drag_update(_client_owner: &ClientRef, mut m: *mut mouse_e
     }
     if old_cy != (*data).cy || old_cx == (*data).cx {
         if y == 0 as u_int {
-            event_add(&raw mut (*data).dragtimer, Some(tv));
+            (*data).dragtimer.arm(tv).expect("arm timer");
             window_copy_cursor_up(wme.clone(), 1 as ::core::ffi::c_int);
         } else if y == (*data).screen.grid().sy.wrapping_sub(1 as u_int) {
-            event_add(&raw mut (*data).dragtimer, Some(tv));
+            (*data).dragtimer.arm(tv).expect("arm timer");
             window_copy_cursor_down(wme.clone(), 1 as ::core::ffi::c_int);
         }
     }
@@ -10187,7 +10177,7 @@ unsafe fn window_copy_drag_release(client_owner: &ClientRef, mut m: *mut mouse_e
         window_copy_drag_update(client_owner, m);
     }
     (*data).cursordrag = CURSORDRAG_NONE;
-    event_del(&raw mut (*data).dragtimer);
+    (*data).dragtimer.cancel();
 }
 unsafe fn window_copy_jump_to_mark(mut wme: refbox::Weak<window_mode_entry>) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());

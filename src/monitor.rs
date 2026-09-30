@@ -3,7 +3,7 @@ use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::reactor::Timer;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
 use crate::src::session::{
@@ -11,7 +11,6 @@ use crate::src::session::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::event::{event, EV_TIMEOUT};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS};
 use crate::src::shared::monitor::{
     monitor_cb, monitor_change, monitor_item, monitor_items, monitor_pane, monitor_panes,
@@ -49,7 +48,7 @@ struct MonitorState {
     session: Option<SessionRef>,
     callback: Option<monitor_cb>,
     items: monitor_items,
-    timer: event,
+    timer: Timer,
     generation: u_int,
     next_item_identity: u64,
 }
@@ -660,7 +659,7 @@ unsafe fn monitor_timer(owner: &MonitorRef) {
     log_debug(format_args!("monitor_timer: timer fired"));
     owner.with_state(|state| {
         let mut timeout = Duration::from_secs(1);
-        event_add(&mut state.timer, Some(timeout));
+        state.timer.arm(timeout).expect("arm timer");
     });
     let Some(_session) = monitor_get_session(owner, client.as_ref()) else {
         return;
@@ -701,7 +700,7 @@ fn monitor_create(callback: monitor_cb) -> MonitorRef {
         session: None,
         callback: Some(callback),
         items: None,
-        timer: event::default(),
+        timer: Timer::default(),
         generation: 0,
         next_item_identity: 1,
     })))
@@ -743,8 +742,8 @@ pub unsafe fn monitor_destroy(owner: MonitorRef) {
             return None;
         }
         state.alive = false;
-        if event_initialized(&state.timer) != 0 {
-            event_del(&mut state.timer);
+        if state.timer.is_initialized() {
+            state.timer.cancel();
         }
         let mut item = monitor_items_minmax(&state.items);
         while !item.is_null() {
@@ -881,8 +880,8 @@ pub unsafe fn monitor_add(
             ..monitor_item::empty()
         });
         assert!(monitor_items_insert(&mut state.items, item).is_ok());
-        if event_initialized(&state.timer) == 0 {
-            event_set(&mut state.timer, -1, 0, move |_, _| {
+        if !state.timer.is_initialized() {
+            state.timer.set(move || {
                 if let Some(owner) = observer.upgrade() {
                     unsafe {
                         monitor_timer(&owner);
@@ -890,9 +889,9 @@ pub unsafe fn monitor_add(
                 }
             });
         }
-        if event_pending(&mut state.timer, EV_TIMEOUT as i16, None) == 0 {
+        if !state.timer.is_pending() {
             let timeout = Duration::from_secs(1);
-            event_add(&mut state.timer, Some(timeout));
+            state.timer.arm(timeout).expect("arm timer");
         }
     });
 }
@@ -912,8 +911,8 @@ pub unsafe fn monitor_remove(owner: &MonitorRef, name: *const ::core::ffi::c_cha
         if !item.is_null() {
             monitor_free_item(state, item);
         }
-        if state.items.is_none() && event_initialized(&state.timer) != 0 {
-            event_del(&mut state.timer);
+        if state.items.is_none() && state.timer.is_initialized() {
+            state.timer.cancel();
         }
     });
 }
@@ -1301,7 +1300,7 @@ mod last_owner_tests {
             active_dispatch.with_state(|state| {
                 assert!(state.items.is_none());
                 assert!(state.callback.is_none());
-                assert_eq!(event_initialized(&state.timer), 0);
+                assert!(!state.timer.is_initialized());
             });
             // A captured weak timer cannot prolong ownership or revive a dead set.
             drop(active_dispatch);
@@ -1370,7 +1369,7 @@ mod last_owner_tests {
             assert!(observer.upgrade().is_none());
             dispatch.with_state(|state| {
                 assert_eq!(state.generation, 0);
-                assert_eq!(event_initialized(&state.timer), 0);
+                assert!(!state.timer.is_initialized());
                 assert!(state.items.is_none());
                 assert!(state.session.is_none());
             });

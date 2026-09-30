@@ -15,7 +15,6 @@ use crate::src::grid::grid_default_cell;
 use crate::src::layout::layout_add_horizontal_border;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
-use crate::src::reactor::{event_add, event_del, event_set};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_cell, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
@@ -79,7 +78,7 @@ pub struct window_panes_modedata {
     pub source_window: u_int,
     pub screen: screen,
     preview: Option<Box<screen>>,
-    pub timer: event,
+    pub timer: Timer,
     pub state: Option<Box<args_command_state>>,
     pub delay: u_int,
     pub ignore_keys: ::core::ffi::c_int,
@@ -1835,21 +1834,16 @@ unsafe fn window_panes_init(
         }
     }
     let mode_observer = window_pane_mode_weak(wme.clone());
-    event_set(
-        &raw mut (*data).timer,
-        -(1 as ::core::ffi::c_int),
-        0 as ::core::ffi::c_short,
-        move |_, _| unsafe {
-            match mode_observer.try_borrow_mut() {
-                Ok(_mode) => window_panes_timer_callback(mode_observer.clone()),
-                Err(refbox::BorrowError::Dropped) => {}
-                Err(refbox::BorrowError::Borrowed) => panic!("display-panes mode already borrowed"),
-            }
-        },
-    );
+    (*data).timer.set(move || unsafe {
+        match mode_observer.try_borrow_mut() {
+            Ok(_mode) => window_panes_timer_callback(mode_observer.clone()),
+            Err(refbox::BorrowError::Dropped) => {}
+            Err(refbox::BorrowError::Borrowed) => panic!("display-panes mode already borrowed"),
+        }
+    });
     if (*data).delay != 0 as u_int {
         let timeout = Duration::from_millis(((*data).delay) as u64);
-        event_add(&raw mut (*data).timer, Some(timeout));
+        (*data).timer.arm(timeout).expect("arm timer");
     }
     window_panes_draw_screen(wme.clone());
     return &raw mut (*data).screen;
@@ -1869,7 +1863,7 @@ unsafe fn window_panes_free(mut wme: refbox::Weak<window_mode_entry>) {
         .expect("mode belongs to a live pane");
     let mode_pane = mode_pane_owner.get();
     let mut data: *mut window_panes_modedata = window_panes_data(wme.clone());
-    event_del(&raw mut (*data).timer);
+    (*data).timer.cancel();
     if (*data).zoomed == 0 as ::core::ffi::c_int {
         server_unzoom_window(&std::rc::Rc::clone(
             &(((*mode_pane).window_handle().as_ref()).expect("live window")),
