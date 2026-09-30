@@ -14,12 +14,9 @@ use crate::src::ffi::libc::{
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_open, log_pointer, log_toggle};
-use crate::src::reactor::{
-    event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
-};
+use crate::src::reactor::{self, poll_runtime};
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
-use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::process::PeerMessage;
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 use crate::src::shared::signal::ProcessSignal;
@@ -30,9 +27,9 @@ pub use crate::src::shared::signal::{
 };
 use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::tmux::{getversion, socket_path};
+use hmux_rt::{Handle as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::FromRawFd;
-use std::time::Duration;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -59,8 +56,8 @@ unsafe fn proc_dispatch(peer: *mut tmuxpeer, message: PeerMessage<'_>) -> bool {
         false
     }
 }
-unsafe fn proc_event_cb(events: ::core::ffi::c_short, peer: *mut tmuxpeer) {
-    if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
+unsafe fn proc_io_ready(peer: *mut tmuxpeer, readable: bool, writable: bool) {
+    if (*peer).flags & PEER_BAD == 0 && readable {
         if !matches!(imsgbuf_read(&mut (*peer).ibuf), Ok(1)) {
             proc_dispatch(peer, PeerMessage::Disconnected);
             return;
@@ -89,7 +86,7 @@ unsafe fn proc_event_cb(events: ::core::ffi::c_short, peer: *mut tmuxpeer) {
             }
         }
     }
-    if events as ::core::ffi::c_int & EV_WRITE != 0 {
+    if writable {
         if imsgbuf_write(&mut (*peer).ibuf).is_err() {
             proc_dispatch(peer, PeerMessage::Disconnected);
             return;
@@ -99,7 +96,7 @@ unsafe fn proc_event_cb(events: ::core::ffi::c_short, peer: *mut tmuxpeer) {
         proc_dispatch(peer, PeerMessage::Disconnected);
         return;
     }
-    proc_update_event(peer);
+    proc_update_io(peer);
 }
 unsafe fn proc_signal_cb(signo: ::core::ffi::c_int, tp: *mut tmuxproc) {
     (*tp)
@@ -128,25 +125,29 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe fn proc_update_event(mut peer: *mut tmuxpeer) {
-    let mut events: ::core::ffi::c_short = 0;
-    events = EV_READ as ::core::ffi::c_short;
-    if imsgbuf_queuelen(&(*peer).ibuf) > 0 as uint32_t {
-        events = (events as ::core::ffi::c_int | EV_WRITE) as ::core::ffi::c_short;
-    }
-    // Keep the descriptor registration while its interest is unchanged.
-    // A callback may rearm it when the output queue changes direction.
-    if event_pending(&raw mut (*peer).event, 6, None) == events as ::core::ffi::c_int {
+unsafe fn proc_update_io(peer: *mut tmuxpeer) {
+    let writable = imsgbuf_queuelen(&(*peer).ibuf) > 0;
+    if (*peer).io_task.is_pending() && (*peer).io_writable == writable {
         return;
     }
-    event_del(&raw mut (*peer).event);
-    event_set(
-        &raw mut (*peer).event,
-        (*peer).ibuf.fd,
-        events | EV_PERSIST as ::core::ffi::c_short,
-        move |_, flags| unsafe { proc_event_cb(flags, peer) },
-    );
-    event_add(&raw mut (*peer).event, None);
+    (*peer).io_writable = writable;
+    let fd = (*peer).ibuf.fd;
+    (*peer)
+        .io_task
+        .start(move || {
+            let source = reactor::descriptor(fd)?;
+            Ok(async move {
+                loop {
+                    let (readable, writable) =
+                        source.wait(true, writable).await.expect("peer I/O wait");
+                    unsafe { proc_io_ready(peer, readable, writable) };
+                    // Dispatch can remove the peer or replace this task. Yield
+                    // before another wait so cancellation drops the old future.
+                    reactor::yield_now().await;
+                }
+            })
+        })
+        .expect("start peer I/O");
 }
 pub unsafe fn proc_send(
     mut peer: *mut tmuxpeer,
@@ -183,7 +184,7 @@ pub unsafe fn proc_send(
     {
         return -(1 as ::core::ffi::c_int);
     }
-    proc_update_event(peer);
+    proc_update_io(peer);
     return 0 as ::core::ffi::c_int;
 }
 pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> {
@@ -223,11 +224,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
         log_cstr((&raw mut u.release as *mut ::core::ffi::c_char) as *const _),
         log_cstr((&raw mut u.version as *mut ::core::ffi::c_char) as *const _)
     ));
-    log_debug(format_args!(
-        "using runtime {} {}",
-        log_cstr((event_get_version()) as *const _),
-        log_cstr((event_get_method()) as *const _)
-    ));
+    log_debug(format_args!("using runtime hmux-rt mio"));
     log_debug(format_args!(
         "using utf8proc {}",
         log_cstr((utf8proc_version()) as *const _)
@@ -241,14 +238,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
         name: CStr::from_ptr(name).to_owned(),
         exit: 0,
         signalcb: None,
-        ev_sigint: Default::default(),
-        ev_sighup: Default::default(),
-        ev_sigchld: Default::default(),
-        ev_sigcont: Default::default(),
-        ev_sigterm: Default::default(),
-        ev_sigusr1: Default::default(),
-        ev_sigusr2: Default::default(),
-        ev_sigwinch: Default::default(),
+        signal_task: Default::default(),
         peers: Vec::new(),
     })
 }
@@ -270,7 +260,7 @@ pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut
         crate::src::log::log_bytes((*tp).name.as_bytes())
     ));
     loop {
-        event_loop();
+        poll_runtime();
         if (*tp).exit != 0 || loopcb.as_mut().is_some_and(|callback| !callback()) {
             break;
         }
@@ -313,62 +303,21 @@ pub unsafe fn proc_set_signals(
     sigaction(SIGTTIN, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    event_set(
-        &raw mut (*tp).ev_sigint,
-        2 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sigint, None);
-    event_set(
-        &raw mut (*tp).ev_sighup,
-        1 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sighup, None);
-    event_set(
-        &raw mut (*tp).ev_sigchld,
-        17 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sigchld, None);
-    event_set(
-        &raw mut (*tp).ev_sigcont,
-        18 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sigcont, None);
-    event_set(
-        &raw mut (*tp).ev_sigterm,
-        15 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sigterm, None);
-    event_set(
-        &raw mut (*tp).ev_sigusr1,
-        10 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sigusr1, None);
-    event_set(
-        &raw mut (*tp).ev_sigusr2,
-        12 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sigusr2, None);
-    event_set(
-        &raw mut (*tp).ev_sigwinch,
-        28 as ::core::ffi::c_int,
-        (EV_SIGNAL | EV_PERSIST) as ::core::ffi::c_short,
-        move |fd, _| unsafe { proc_signal_cb(fd, tp) },
-    );
-    event_add(&raw mut (*tp).ev_sigwinch, None);
+    (*tp)
+        .signal_task
+        .start(move || {
+            let mut signals = reactor::handle().signals(&[
+                SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
+            ])?;
+            Ok(async move {
+                loop {
+                    let signo = signals.recv().await.expect("process signal wait");
+                    unsafe { proc_signal_cb(signo, tp) };
+                    reactor::yield_now().await;
+                }
+            })
+        })
+        .expect("start process signals");
 }
 pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
     let mut sa: sigaction = sigaction {
@@ -387,14 +336,7 @@ pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ff
     sa.__sigaction_handler.sa_handler = SIG_DFL;
     sigaction(SIGPIPE, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGTSTP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
-    event_del(&raw mut (*tp).ev_sigint);
-    event_del(&raw mut (*tp).ev_sighup);
-    event_del(&raw mut (*tp).ev_sigchld);
-    event_del(&raw mut (*tp).ev_sigcont);
-    event_del(&raw mut (*tp).ev_sigterm);
-    event_del(&raw mut (*tp).ev_sigusr1);
-    event_del(&raw mut (*tp).ev_sigusr2);
-    event_del(&raw mut (*tp).ev_sigwinch);
+    (*tp).signal_task.cancel();
     if defaults != 0 {
         crate::src::reactor::shutdown_runtime();
         sigaction(SIGINT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
@@ -421,12 +363,6 @@ pub unsafe fn proc_add_peer(
         fatalx(|out| write!(out, "imsgbuf_init failed (errno {})", (error) as i32));
     }
     imsgbuf_allow_fdpass(&mut (*peer).ibuf);
-    event_set(
-        &raw mut (*peer).event,
-        fd,
-        EV_READ as ::core::ffi::c_short,
-        move |_, flags| unsafe { proc_event_cb(flags, peer) },
-    );
     if getpeereid(fd, &raw mut (*peer).uid, &raw mut (*peer).gid) != 0 as ::core::ffi::c_int {
         (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
         (*peer).gid = -(1 as ::core::ffi::c_int) as gid_t;
@@ -437,7 +373,7 @@ pub unsafe fn proc_add_peer(
         (fd) as i32
     ));
     (*tp).peers.push(owned_peer);
-    proc_update_event(peer);
+    proc_update_io(peer);
     return peer;
 }
 pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
@@ -451,7 +387,8 @@ pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
         "remove peer {}",
         log_pointer((peer) as *const ::core::ffi::c_void)
     ));
-    event_del(&raw mut (*peer).event);
+    (*peer).io_task.cancel();
+    reactor::forget_descriptor((*peer).ibuf.fd);
     imsgbuf_clear(&mut (*peer).ibuf);
     close((*peer).ibuf.fd);
     drop(owned_peer);
@@ -509,23 +446,128 @@ mod ownership_tests {
     use super::*;
 
     #[test]
-    fn process_free_cancels_events_and_explicitly_closes_remaining_peers() {
+    fn peer_readiness_switches_direction_and_dispatch_can_remove_its_peer() {
+        use std::cell::{Cell, RefCell};
+        use std::os::fd::IntoRawFd;
+        use std::os::unix::net::UnixStream;
+        use std::rc::Rc;
+        use std::time::Duration;
+        unsafe {
+            let mut owner = proc_start(c"peer-future-test".as_ptr());
+            let tp = &raw mut *owner;
+            let (sender, receiver) = UnixStream::pair().unwrap();
+            sender.set_nonblocking(true).unwrap();
+            receiver.set_nonblocking(true).unwrap();
+            let sender_fd = sender.into_raw_fd();
+            let receiver_fd = receiver.into_raw_fd();
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let sender_slot = Rc::new(Cell::new(std::ptr::null_mut()));
+            let receiver_slot = Rc::new(Cell::new(std::ptr::null_mut()));
+            let observed = calls.clone();
+            let slot = sender_slot.clone();
+            let sender = proc_add_peer(
+                tp,
+                sender_fd,
+                Box::new(move |message| {
+                    assert!(matches!(message, PeerMessage::Disconnected));
+                    observed.borrow_mut().push("disconnected");
+                    proc_remove_peer(slot.get());
+                }),
+            );
+            sender_slot.set(sender);
+            let observed = calls.clone();
+            let slot = receiver_slot.clone();
+            let receiver = proc_add_peer(
+                tp,
+                receiver_fd,
+                Box::new(move |message| {
+                    assert!(matches!(message, PeerMessage::Message(_)));
+                    observed.borrow_mut().push("message");
+                    proc_remove_peer(slot.get());
+                }),
+            );
+            receiver_slot.set(receiver);
+            assert!(!(*sender).io_writable);
+            assert_eq!(proc_send(sender, MSG_COMMAND, -1, std::ptr::null(), 0), 0);
+            assert!((*sender).io_writable);
+
+            let expired = Rc::new(Cell::new(false));
+            let observed = expired.clone();
+            let mut timeout = reactor::Timer::new();
+            timeout.set(move || observed.set(true));
+            timeout.arm(Duration::from_secs(2)).unwrap();
+            while !owner.peers.is_empty() && !expired.get() {
+                poll_runtime();
+            }
+            assert_eq!(&*calls.borrow(), &["message", "disconnected"]);
+            assert!(owner.peers.is_empty());
+            assert_eq!(libc::fcntl(sender_fd, libc::F_GETFD), -1);
+            assert_eq!(libc::fcntl(receiver_fd, libc::F_GETFD), -1);
+            timeout.cancel();
+            proc_free(owner);
+            reactor::shutdown_runtime();
+        }
+    }
+
+    #[test]
+    fn process_signal_futures_dispatch_and_can_be_reinstalled() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        unsafe {
+            let pid = libc::fork();
+            assert!(pid >= 0);
+            if pid == 0 {
+                libc::alarm(5);
+                reactor::reset_after_fork().unwrap();
+                let mut owner = proc_start(c"signal-future-test".as_ptr());
+                let tp = &raw mut *owner;
+                let calls = Rc::new(RefCell::new(Vec::new()));
+                for signo in [SIGUSR1, SIGUSR2] {
+                    let observed = calls.clone();
+                    proc_set_signals(
+                        tp,
+                        Some(Box::new(move |signal| {
+                            observed.borrow_mut().push(signal.as_raw());
+                        })),
+                    );
+                    libc::raise(signo);
+                    poll_runtime();
+                }
+                assert_eq!(&*calls.borrow(), &[SIGUSR1, SIGUSR2]);
+                proc_clear_signals(tp, 1);
+                proc_free(owner);
+                libc::_exit(0);
+            }
+            let mut status = 0;
+            assert_eq!(libc::waitpid(pid, &mut status, 0), pid);
+            assert!(libc::WIFEXITED(status), "signal child status {status}");
+            assert_eq!(libc::WEXITSTATUS(status), 0);
+        }
+    }
+
+    #[test]
+    fn process_free_cancels_tasks_and_explicitly_closes_remaining_peers() {
         unsafe {
             let mut owner = proc_start(c"process-owner-test".as_ptr());
             let tp = &raw mut *owner;
             let calls = std::rc::Rc::new(std::cell::Cell::new(0));
             let observed = calls.clone();
-            event_set(&raw mut (*tp).ev_sigint, -1, 0, move |_, _| {
-                observed.set(observed.get() + 1);
-            });
-            let timeout = Duration::ZERO;
-            event_add(&raw mut (*tp).ev_sigint, Some(timeout));
+            (*tp)
+                .signal_task
+                .start(move || {
+                    let observed = observed.clone();
+                    Ok(async move {
+                        observed.set(observed.get() + 1);
+                    })
+                })
+                .unwrap();
 
             let mut pair = [0; 2];
             assert_eq!(
                 ::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()),
                 0
             );
+            crate::src::tmux::setblocking(pair[0], 0);
             let capture = refbox::RefBox::new(());
             let observer = capture.downgrade();
             proc_add_peer(
@@ -543,7 +585,7 @@ mod ownership_tests {
                 Err(refbox::BorrowError::Dropped)
             ));
             close(pair[1]);
-            event_loop();
+            poll_runtime();
             assert_eq!(calls.get(), 0);
             assert_eq!(std::rc::Rc::strong_count(&calls), 1);
             crate::src::reactor::shutdown_runtime();

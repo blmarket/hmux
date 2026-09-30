@@ -5,23 +5,19 @@
 //! duplicated once per live endpoint and close after an executing poll finishes.
 #![allow(clippy::missing_safety_doc)]
 mod buffer;
-mod events;
 mod streams;
+mod tasks;
 mod timers;
 pub use buffer::*;
-pub use events::*;
 use hmux_rt::Runtime as _;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 pub use streams::*;
+pub use tasks::Task;
 pub use timers::{timer_once, timer_once_owned, Timer};
 
-#[repr(C)]
-pub struct event_base {
-    _private: [u8; 0],
-}
 #[repr(C)]
 pub struct bufferevent_ops {
     _private: [u8; 0],
@@ -32,7 +28,7 @@ thread_local! {
     static HANDLE: RefCell<Option<hmux_rt::mio::Handle>> = const { RefCell::new(None) };
     static FDS: RefCell<HashMap<i32, Weak<hmux_rt::mio::Descriptor>>> = RefCell::new(HashMap::new());
 }
-fn handle() -> hmux_rt::mio::Handle {
+pub(crate) fn handle() -> hmux_rt::mio::Handle {
     HANDLE.with(|h| h.borrow().as_ref().expect("runtime initialized").clone())
 }
 fn ensure_runtime() {
@@ -44,7 +40,7 @@ fn ensure_runtime() {
     HANDLE.with(|h| *h.borrow_mut() = Some(runtime.handle()));
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
-fn descriptor(fd: i32) -> std::io::Result<Rc<hmux_rt::mio::Descriptor>> {
+pub(crate) fn descriptor(fd: i32) -> std::io::Result<Rc<hmux_rt::mio::Descriptor>> {
     if let Some(source) = FDS.with(|f| f.borrow().get(&fd).and_then(Weak::upgrade)) {
         return Ok(source);
     }
@@ -62,14 +58,47 @@ fn descriptor(fd: i32) -> std::io::Result<Rc<hmux_rt::mio::Descriptor>> {
     });
     Ok(source)
 }
-fn run_once() {
+pub fn init_runtime() {
+    ensure_runtime();
+}
+
+/// Forget a closing endpoint before its descriptor number can be reused.
+pub(crate) fn forget_descriptor(fd: i32) {
+    FDS.with(|fds| fds.borrow_mut().remove(&fd));
+}
+
+pub fn poll_runtime() {
     ensure_runtime();
     let mut runtime = HOST.with(|h| h.borrow_mut().take().expect("recursive runtime dispatch"));
     runtime.poll(None).expect("hmux-rt poll");
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
+
+pub fn reset_after_fork() -> std::io::Result<()> {
+    ensure_runtime();
+    if PID.with(|pid| pid.get() == std::process::id()) {
+        return Ok(());
+    }
+    tasks::stop_tasks();
+    streams::stop_tasks();
+    timers::stop_tasks();
+    FDS.with(|fds| fds.borrow_mut().clear());
+    HOST.with(|host| {
+        let mut host = host.borrow_mut();
+        let runtime = host.as_mut().expect("runtime initialized");
+        runtime.reset_after_fork()?;
+        HANDLE.with(|handle| *handle.borrow_mut() = Some(runtime.handle()));
+        Ok::<_, std::io::Error>(())
+    })?;
+    PID.with(|pid| pid.set(std::process::id()));
+    tasks::restart()?;
+    timers::restart()?;
+    streams::restart();
+    Ok(())
+}
+
 pub fn shutdown_runtime() {
-    events::clear();
+    tasks::clear();
     streams::clear();
     // Stream callback captures may defer their cleanup with timer_once.
     timers::clear();
@@ -77,7 +106,7 @@ pub fn shutdown_runtime() {
     HANDLE.with(|h| h.borrow_mut().take());
     HOST.with(|h| h.borrow_mut().take());
 }
-async fn yield_now() {
+pub(crate) async fn yield_now() {
     let mut yielded = false;
     std::future::poll_fn(|cx| {
         if yielded {

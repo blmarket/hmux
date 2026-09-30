@@ -2,7 +2,6 @@
 //! expansion may run while this scope is borrowed. The caller resolves those
 //! before entering and releases the scope before dispatching further work.
 use super::*;
-use crate::src::reactor::event_pending;
 use std::ops::{Deref, DerefMut};
 
 /// A bounded output operation over disjoint pieces of one borrowed Client.
@@ -217,14 +216,8 @@ pub(crate) unsafe fn tty_enqueue_bytes(
     if tty_log_fd != -(1 as ::core::ffi::c_int) {
         write(tty_log_fd, buf.as_ptr().cast(), len);
     }
-    if (*tty).flags & TTY_STARTED != 0
-        && event_pending(
-            &raw mut (*tty).event_out,
-            EV_WRITE as ::core::ffi::c_short,
-            None,
-        ) == 0
-    {
-        event_add(&raw mut (*tty).event_out, None);
+    if (*tty).flags & TTY_STARTED != 0 {
+        tty_start_write(tty);
     }
 }
 
@@ -1619,7 +1612,6 @@ pub unsafe fn tty_set_progress_bar(tty: &mut TerminalOutput<'_>, mut pb: *mut pr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::reactor::event_pending;
     #[test]
     fn component_output_works_inside_one_refcell_without_a_client_backreference() {
         use std::cell::RefCell;

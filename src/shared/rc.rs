@@ -65,7 +65,7 @@ mod tests {
                 if cancel {
                     crate::src::reactor::shutdown_runtime();
                 } else {
-                    crate::src::reactor::event_loop();
+                    crate::src::reactor::poll_runtime();
                 }
                 assert_eq!(calls.get(), 1);
                 crate::src::reactor::shutdown_runtime();

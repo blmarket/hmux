@@ -1250,7 +1250,7 @@ mod client_observer_tests {
             assert!(owner.borrow_queue_mut().list.is_empty());
             assert!(context.borrow_queue_mut().list.is_empty());
             drop((owner, context));
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             crate::src::reactor::shutdown_runtime();
         }
     }
@@ -1318,7 +1318,7 @@ mod client_observer_tests {
             assert_eq!(calls.get(), 1);
             assert!(owner.borrow_queue_mut().list.is_empty());
             drop(owner);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert!(observer.upgrade().is_none());
             crate::src::reactor::shutdown_runtime();
         }
@@ -1380,10 +1380,10 @@ mod client_observer_tests {
             while let Some(item) = queue.with_queue(|queue| queue.list.pop_front()) {
                 cmdq_remove(item);
             }
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert_eq!(Rc::strong_count(&retained), 1);
             drop(retained);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert!(observer.upgrade().is_none());
             crate::src::reactor::shutdown_runtime();
         }
@@ -1412,7 +1412,7 @@ mod client_observer_tests {
             assert!(cmdq_get_target_client(Some(&item)).is_none());
             assert!(observer.upgrade().is_some());
             cmdq_remove(item_owner);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert!(observer.upgrade().is_none());
             crate::src::reactor::shutdown_runtime();
         }
@@ -1448,7 +1448,7 @@ mod cancellation_tests {
             assert_eq!(DROPPED.load(Ordering::SeqCst), before + 1);
             assert!(owner.borrow_queue_mut().list.is_empty());
             drop(owner);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             crate::src::reactor::shutdown_runtime();
         }
     }
@@ -1538,7 +1538,7 @@ mod lifecycle_tests {
                 cmdq_remove(item);
             }
             drop(client);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             crate::src::reactor::shutdown_runtime();
         }
     }
@@ -1593,7 +1593,7 @@ mod queue_state_ownership_tests {
             assert!(observed.upgrade().is_none());
             assert_eq!(snapshot.key, 42);
             drop(client);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             crate::src::reactor::shutdown_runtime();
         }
     }

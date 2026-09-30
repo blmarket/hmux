@@ -1461,7 +1461,7 @@ impl Drop for client_file {
 #[cfg(test)]
 mod file_index_ownership_tests {
     use super::*;
-    use crate::src::reactor::{event_loop, shutdown_runtime};
+    use crate::src::reactor::{poll_runtime, shutdown_runtime};
 
     #[test]
     fn iteration_releases_borrows_and_survives_removing_the_current_file() {
@@ -1518,7 +1518,7 @@ mod file_index_ownership_tests {
             let guard = client_files_iter(&files).next().unwrap();
             file_fire_done(&file);
             drop(file);
-            event_loop();
+            poll_runtime();
 
             assert!(observed.upgrade().is_some());
             assert!(client_files_iter(&files).next().is_none());
@@ -1558,7 +1558,7 @@ mod file_index_ownership_tests {
 mod completion_cancellation_tests {
     use super::*;
     use crate::src::cmd::queue::cmdq_get_callback_owned;
-    use crate::src::reactor::event_loop;
+    use crate::src::reactor::poll_runtime;
 
     #[test]
     fn cancelled_completion_releases_index_and_client_owners() {
@@ -1599,7 +1599,7 @@ mod completion_cancellation_tests {
             file_fire_done(&file);
             drop(file);
             drop(client);
-            event_loop();
+            poll_runtime();
             assert!(file_observed.upgrade().is_none());
             assert!(Rc::ptr_eq(
                 saved.borrow().as_ref().unwrap(),

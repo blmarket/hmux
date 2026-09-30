@@ -324,7 +324,7 @@ mod retained_client_tests {
                 if cancel {
                     reactor::shutdown_runtime();
                 } else {
-                    reactor::event_loop();
+                    reactor::poll_runtime();
                 }
                 assert_eq!(observer.strong_count(), 0);
                 reactor::shutdown_runtime();

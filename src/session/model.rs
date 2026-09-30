@@ -150,7 +150,7 @@ mod retained_session_tests {
                 if cancel {
                     reactor::shutdown_runtime();
                 } else {
-                    reactor::event_loop();
+                    reactor::poll_runtime();
                 }
                 assert_eq!(Rc::strong_count(&owner), 1);
                 drop(owner);
@@ -175,7 +175,7 @@ mod retained_session_tests {
                 if cancel {
                     reactor::shutdown_runtime();
                 } else {
-                    reactor::event_loop();
+                    reactor::poll_runtime();
                 }
                 assert_eq!(observer.strong_count(), 0);
                 reactor::shutdown_runtime();

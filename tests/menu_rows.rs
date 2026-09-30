@@ -109,7 +109,7 @@ fn runtime_rows_own_expansions_across_growth_and_keep_separators() {
         assert_eq!((&(*menu).items)[66].name.as_deref(), Some(c"Last row"));
         assert_eq!((&(*menu).items)[66].command.as_deref(), Some(c""));
         drop(menu);
-        hmux2::src::reactor::event_loop();
+        hmux2::src::reactor::poll_runtime();
         assert_eq!(std::rc::Rc::strong_count(&owner), 1);
         options_free(global_options_owner);
         options_free(global_s_options_owner);

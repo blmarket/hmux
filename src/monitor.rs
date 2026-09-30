@@ -1305,7 +1305,7 @@ mod last_owner_tests {
             // A captured weak timer cannot prolong ownership or revive a dead set.
             drop(active_dispatch);
             assert!(observer.0.upgrade().is_none());
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert_eq!(calls.get(), 1);
             crate::src::reactor::shutdown_runtime();
         }
@@ -1380,7 +1380,7 @@ mod last_owner_tests {
             assert_eq!(session_observer.strong_count(), 1);
             drop(dispatch);
             assert!(observer.0.upgrade().is_none());
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert_eq!(calls.get(), 1);
             assert!(session_observer.upgrade().is_none());
             crate::src::reactor::shutdown_runtime();
@@ -1485,7 +1485,7 @@ mod last_owner_tests {
 
     #[test]
     fn client_scan_guards_release_immediately_on_missing_session_and_dead_client() {
-        use crate::src::reactor::{event_loop, shutdown_runtime};
+        use crate::src::reactor::{poll_runtime, shutdown_runtime};
 
         unsafe {
             for cancel in [false, true] {
@@ -1510,7 +1510,7 @@ mod last_owner_tests {
                 if cancel {
                     shutdown_runtime();
                 } else {
-                    event_loop();
+                    poll_runtime();
                 }
                 assert!(observer.upgrade().is_none());
                 assert!(
@@ -1531,7 +1531,7 @@ mod last_owner_tests {
 
     #[test]
     fn session_scan_guards_release_immediately_and_monitor_owner_releases_on_teardown() {
-        use crate::src::reactor::{event_loop, shutdown_runtime};
+        use crate::src::reactor::{poll_runtime, shutdown_runtime};
         use crate::src::session::{sessions_insert, sessions_remove};
 
         unsafe {
@@ -1568,7 +1568,7 @@ mod last_owner_tests {
             monitor_check_all_panes(set);
             monitor_check_all_windows(set);
             assert_eq!(observer.strong_count(), 2);
-            event_loop();
+            poll_runtime();
             assert_eq!(observer.strong_count(), 2);
 
             sessions_remove(&mut sessions, &observer.upgrade().expect("indexed session"));

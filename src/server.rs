@@ -21,7 +21,7 @@ use crate::src::proc::{
     proc_toggle_log,
 };
 use crate::src::prompt_history::prompt_save_history;
-use crate::src::reactor::{event_add, event_del, event_initialized, event_reinit, event_set};
+use crate::src::reactor::{self, Task};
 use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::Client as _;
 use crate::src::server_client::{server_client_create, server_client_loop, server_client_lost};
@@ -41,6 +41,7 @@ use crate::src::window::{
     windows_minmax,
 };
 use crate::src::window::{windows, Window as _};
+use hmux_rt::Handle as _;
 use std::time::{Duration, SystemTime};
 
 use std::ffi::{CStr, CString};
@@ -60,7 +61,6 @@ use crate::src::shared::client::{
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_TIMEOUT};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_EXITED, PANE_STATUSREADY};
 use crate::src::shared::posix_io::stat;
@@ -109,7 +109,7 @@ pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *
 static mut server_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
-static mut server_ev_accept: event = event::new();
+static mut server_accept_task: Task = Task::new();
 static mut server_ev_tidy: Timer = Timer::new();
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
@@ -278,8 +278,8 @@ pub(crate) unsafe fn server_start(
     }
     proc_clear_signals(client, 0 as ::core::ffi::c_int);
     server_client_flags = flags;
-    if event_reinit() != 0 as ::core::ffi::c_int {
-        fatalx(|out| out.write_all(b"event_reinit failed"));
+    if let Err(error) = reactor::reset_after_fork() {
+        fatalx(|out| write!(out, "runtime reset after fork failed: {error}"));
     }
     let mut process_owner = proc_start(c"server".as_ptr());
     server_proc = &raw mut *process_owner;
@@ -514,7 +514,7 @@ pub unsafe fn server_update_socket() {
         chmod(socket_path, mode as __mode_t);
     }
 }
-unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_short) {
+unsafe fn server_accept(mut fd: ::core::ffi::c_int) {
     let mut sa: sockaddr_storage = sockaddr_storage {
         ss_family: 0,
         __ss_padding: [0; 118],
@@ -524,9 +524,6 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
     let mut newfd: ::core::ffi::c_int = 0;
     let mut c: Option<ClientRef> = None;
     server_add_accept(0 as ::core::ffi::c_int);
-    if events as ::core::ffi::c_int & EV_READ == 0 {
-        return;
-    }
     newfd = accept(
         fd,
         __SOCKADDR_ARG {
@@ -561,28 +558,33 @@ unsafe fn server_accept(mut fd: ::core::ffi::c_int, mut events: ::core::ffi::c_s
 }
 pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     let tv = Duration::from_secs(timeout as u64);
+    server_accept_task.cancel();
     if server_fd == -(1 as ::core::ffi::c_int) {
         return;
     }
-    if event_initialized(&*(&raw const server_ev_accept)) != 0 {
-        event_del(&raw mut server_ev_accept);
-    }
+    let fd = server_fd;
     if timeout == 0 as ::core::ffi::c_int {
-        event_set(
-            &raw mut server_ev_accept,
-            server_fd,
-            EV_READ as ::core::ffi::c_short,
-            move |fd, flags| unsafe { server_accept(fd, flags) },
-        );
-        event_add(&raw mut server_ev_accept, None);
+        server_accept_task
+            .start(move || {
+                let source = reactor::descriptor(fd)?;
+                Ok(async move {
+                    source.wait(true, false).await.expect("accept wait");
+                    unsafe { server_accept(fd) };
+                })
+            })
+            .expect("start accept wait");
     } else {
-        event_set(
-            &raw mut server_ev_accept,
-            server_fd,
-            EV_TIMEOUT as ::core::ffi::c_short,
-            move |fd, flags| unsafe { server_accept(fd, flags) },
-        );
-        event_add(&raw mut server_ev_accept, Some(tv));
+        let now = std::time::Instant::now();
+        let deadline = now.checked_add(tv).unwrap_or(now);
+        server_accept_task
+            .start(move || {
+                let wait = reactor::handle().sleep_until(deadline);
+                Ok(async move {
+                    wait.await.expect("accept backoff wait");
+                    unsafe { server_add_accept(0) };
+                })
+            })
+            .expect("start accept backoff");
     };
 }
 unsafe fn server_signal(sig: ProcessSignal) {
@@ -601,8 +603,9 @@ unsafe fn server_signal(sig: ProcessSignal) {
             server_child_signal();
         }
         ProcessSignal::User1 => {
-            event_del(&raw mut server_ev_accept);
+            server_accept_task.cancel();
             if let Ok(fd) = server_create_socket(server_client_flags) {
+                reactor::forget_descriptor(server_fd);
                 close(server_fd);
                 server_fd = fd;
                 server_update_socket();

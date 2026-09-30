@@ -1,8 +1,8 @@
 //! Authoritative process model declarations.
 
 use super::abi::{gid_t, uid_t};
-use super::event::event;
 use crate::src::compat::imsg::{imsg, imsgbuf};
+use crate::src::reactor::Task;
 
 pub enum PeerMessage<'a> {
     Disconnected,
@@ -13,7 +13,8 @@ pub enum PeerMessage<'a> {
 pub struct tmuxpeer {
     pub parent: *mut tmuxproc,
     pub(crate) ibuf: imsgbuf,
-    pub event: event,
+    pub io_task: Task,
+    pub io_writable: bool,
     pub uid: uid_t,
     pub gid: gid_t,
     pub flags: ::core::ffi::c_int,
@@ -25,7 +26,8 @@ impl Default for tmuxpeer {
         Self {
             parent: std::ptr::null_mut(),
             ibuf: imsgbuf::default(),
-            event: event::default(),
+            io_task: Task::new(),
+            io_writable: false,
             uid: 0,
             gid: 0,
             flags: 0,
@@ -39,14 +41,7 @@ pub struct tmuxproc {
     pub name: std::ffi::CString,
     pub exit: ::core::ffi::c_int,
     pub signalcb: Option<Box<dyn FnMut(super::signal::ProcessSignal)>>,
-    pub ev_sigint: event,
-    pub ev_sighup: event,
-    pub ev_sigchld: event,
-    pub ev_sigcont: event,
-    pub ev_sigterm: event,
-    pub ev_sigusr1: event,
-    pub ev_sigusr2: event,
-    pub ev_sigwinch: event,
+    pub signal_task: Task,
     /// Owns stable peer allocations until `proc_remove_peer` removes them.
     pub peers: Vec<Box<tmuxpeer>>,
 }

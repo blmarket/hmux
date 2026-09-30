@@ -37,7 +37,7 @@ use crate::src::prompt::{
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup, event_add, event_del, event_initialized, event_set,
+    evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::screen::{
     screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,

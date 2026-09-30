@@ -10,7 +10,6 @@ use super::abi::{u_int, uint64_t};
 use super::arguments::args;
 use super::client::client;
 use super::command::{cmd_find_state, cmdq_item};
-use super::event::event;
 use super::format::format_tree;
 use super::grid::grid_cell;
 use super::key::key_code;

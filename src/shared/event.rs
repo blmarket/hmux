@@ -1,36 +1,11 @@
 //! Application callback handles for the Rust reactor.
 //!
 //! Scheduling and registration ownership live in the reactor's Rust collections.
-//! Timer handles schedule monotonic waits; events serve descriptors and signals.
+//! Timer handles schedule monotonic waits; application tasks await I/O and signals.
 //! Streams own their buffers; these layouts are independent of libevent.
 use super::abi::*;
-pub use crate::src::reactor::{bufferevent_ops, event_base, Timer};
+pub use crate::src::reactor::{bufferevent_ops, Timer};
 use hmux_buffer::SegmentedBuf;
-
-pub type EventCallback = Option<
-    std::rc::Rc<std::cell::RefCell<Box<dyn FnMut(::core::ffi::c_int, ::core::ffi::c_short)>>>,
->;
-
-#[derive(Default)]
-#[repr(C)]
-pub struct event {
-    pub(crate) initialized: bool,
-    pub(crate) fd: ::core::ffi::c_int,
-    pub(crate) flags: ::core::ffi::c_short,
-    pub(crate) callback: EventCallback,
-}
-
-impl event {
-    /// Const initialization for embedded events in static owners.
-    pub const fn new() -> Self {
-        Self {
-            initialized: false,
-            fd: 0,
-            flags: 0,
-            callback: None,
-        }
-    }
-}
 
 #[derive(Default)]
 #[repr(C)]
@@ -79,8 +54,5 @@ pub struct event_watermark {
     pub high: size_t,
 }
 
-pub const EV_TIMEOUT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const EV_SIGNAL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const EV_PERSIST: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;

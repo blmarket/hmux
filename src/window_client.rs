@@ -353,7 +353,7 @@ mod tests {
                 assert!(!item_observer.is_alive());
                 drop(another_selection);
                 assert!(!item_observer.is_alive());
-                reactor::event_loop();
+                reactor::poll_runtime();
                 assert!(
                     client_observer.upgrade().is_some(),
                     "action snapshot retains its client"
@@ -363,7 +363,7 @@ mod tests {
                 if cancel {
                     reactor::shutdown_runtime();
                 } else {
-                    reactor::event_loop();
+                    reactor::poll_runtime();
                 }
                 assert!(client_observer.upgrade().is_none());
                 reactor::shutdown_runtime();

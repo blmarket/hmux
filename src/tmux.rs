@@ -26,7 +26,7 @@ use crate::src::options::{
     options_create, options_default, options_set_number, options_set_string,
 };
 use crate::src::options_table::options_table;
-use crate::src::osdep_linux::osdep_event_init;
+use crate::src::reactor::init_runtime;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__mode_t, uid_t};
 use crate::src::shared::account::passwd;
@@ -1074,7 +1074,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
     let command_argv: Vec<CString> = (0..argc)
         .map(|i| CStr::from_ptr(*argv.add(i as usize)).to_owned())
         .collect();
-    osdep_event_init();
+    init_runtime();
     exit(client_main(&command_argv, flags, feat));
 }
 pub const TMUX_CONF: [::core::ffi::c_char; 85] = unsafe {

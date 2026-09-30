@@ -17,9 +17,9 @@ use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
+use crate::src::reactor;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, evbuffer_read, evbuffer_write,
-    event_add, event_del, event_set,
 };
 use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
@@ -46,7 +46,6 @@ use crate::src::shared::command::cmdq_item;
 use crate::src::shared::display::*;
 use crate::src::shared::display::{visible_range, visible_ranges};
 use crate::src::shared::errno::EAGAIN;
-use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_WRITE};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
 use crate::src::shared::grid::*;
@@ -262,7 +261,7 @@ unsafe fn tty_read_callback(owner: &ClientRef) {
                 log_cstr(strerror(*__errno_location()))
             ));
         }
-        event_del(&mut owner.borrow_terminal_mut().event_in);
+        owner.borrow_terminal_mut().read_task.cancel();
         server_client_lost(owner);
         return;
     }
@@ -349,29 +348,71 @@ unsafe fn tty_write_callback(owner: &ClientRef) {
             return;
         }
         if evbuffer_get_length(terminal.out.as_deref().expect("open TTY buffer")) != 0 {
-            event_add(&mut terminal.event_out, None);
+            tty_start_write(terminal);
         }
     });
 }
 
-pub(crate) fn tty_client_callback(
-    owner: &ClientRef,
-    callback: unsafe fn(&ClientRef),
-) -> impl FnMut(::core::ffi::c_int, ::core::ffi::c_short) {
-    let observer = std::rc::Rc::downgrade(owner);
-    move |_, _| {
-        if let Some(owner) = observer.upgrade() {
-            unsafe { callback(&owner) };
-        }
+fn tty_start_read(terminal: &mut tty) {
+    let fd = terminal.io_fd.expect("open TTY descriptor");
+    let observer = terminal.client.clone();
+    terminal
+        .read_task
+        .start(move || {
+            let source = reactor::descriptor(fd)?;
+            let observer = observer.clone();
+            Ok(async move {
+                loop {
+                    source.wait(true, false).await.expect("TTY input wait");
+                    let Some(owner) = observer.upgrade() else {
+                        return;
+                    };
+                    unsafe { tty_read_callback(&owner) };
+                    drop(owner);
+                    // Input handling can close the terminal and cancel this task.
+                    reactor::yield_now().await;
+                }
+            })
+        })
+        .expect("start TTY input");
+}
+
+pub(crate) fn tty_start_write(terminal: &mut tty) {
+    if terminal.write_task.is_pending() {
+        return;
     }
+    let fd = terminal.io_fd.expect("open TTY descriptor");
+    let observer = terminal.client.clone();
+    terminal
+        .write_task
+        .start(move || {
+            let source = reactor::descriptor(fd)?;
+            let observer = observer.clone();
+            Ok(async move {
+                source.wait(false, true).await.expect("TTY output wait");
+                if let Some(owner) = observer.upgrade() {
+                    // Complete the one-shot wait before writing: the write path
+                    // can schedule another wait if bytes remain in the buffer.
+                    unsafe {
+                        owner.borrow_terminal_mut().write_task.cancel();
+                        tty_write_callback(&owner);
+                    }
+                }
+            })
+        })
+        .expect("start TTY output");
 }
 
 pub(crate) fn tty_client_timer_callback(
     owner: &ClientRef,
     callback: unsafe fn(&ClientRef),
 ) -> impl FnMut() {
-    let mut callback = tty_client_callback(owner, callback);
-    move || callback(-1, 0)
+    let observer = std::rc::Rc::downgrade(owner);
+    move || {
+        if let Some(owner) = observer.upgrade() {
+            unsafe { callback(&owner) };
+        }
+    }
 }
 
 pub(crate) fn tty_mouse_client_callback(
@@ -410,19 +451,8 @@ pub unsafe fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
         terminal.flags |= TTY_OPENED;
         terminal.flags &= !(TTY_NOCURSOR | TTY_FREEZE | TTY_BLOCK | TTY_TIMER);
         let fd = terminal.fd();
-        event_set(
-            &mut terminal.event_in,
-            fd,
-            (EV_PERSIST | EV_READ) as _,
-            tty_client_callback(owner, tty_read_callback),
-        );
+        terminal.io_fd = Some(fd);
         terminal.in_0 = Some(Box::new(TerminalInput::default()));
-        event_set(
-            &mut terminal.event_out,
-            fd,
-            EV_WRITE as _,
-            tty_client_callback(owner, tty_write_callback),
-        );
         terminal.out = Some(evbuffer_new());
         terminal.clipboard_timer.set(tty_client_timer_callback(
             owner,
@@ -484,7 +514,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
         };
         let mut i: u_int = 0;
         setblocking(fd, 0 as ::core::ffi::c_int);
-        event_add(&raw mut (*tty).event_in, None);
+        tty_start_read(tty);
         memcpy(
             &raw mut tio as *mut ::core::ffi::c_void,
             &raw mut (*tty).tio as *const ::core::ffi::c_void,
@@ -699,8 +729,9 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         (*tty).clipboard_timer.cancel();
         (*tty).timer.cancel();
         (*tty).flags &= !TTY_BLOCK;
-        event_del(&raw mut (*tty).event_in);
-        event_del(&raw mut (*tty).event_out);
+        tty.read_task.cancel();
+        tty.write_task.cancel();
+        reactor::forget_descriptor(fd);
         if ioctl(fd, TIOCGWINSZ as ::core::ffi::c_ulong, &raw mut ws) == -(1 as ::core::ffi::c_int)
         {
             return;
@@ -926,10 +957,13 @@ pub unsafe fn tty_close(owner: &ClientRef) {
         if terminal.flags & TTY_OPENED == 0 {
             return;
         }
+        terminal.read_task.cancel();
+        terminal.write_task.cancel();
+        if let Some(fd) = terminal.io_fd.take() {
+            reactor::forget_descriptor(fd);
+        }
         terminal.in_0 = None;
-        event_del(&mut terminal.event_in);
         terminal.out = None;
-        event_del(&mut terminal.event_out);
         terminal.term.take()
     };
     if let Some(term) = term {
@@ -2529,30 +2563,62 @@ mod initialization_owner_tests {
     }
 
     #[test]
-    fn terminal_event_callbacks_skip_expired_clients() {
+    fn terminal_timer_callbacks_skip_expired_clients() {
         unsafe {
             let owner = client::new();
             let observer = Rc::downgrade(&owner);
-            let callbacks: [unsafe fn(&ClientRef); 5] = [
-                tty_read_callback,
-                tty_write_callback,
+            let callbacks: [unsafe fn(&ClientRef); 3] = [
                 tty_timer_callback,
                 tty_start_timer_callback,
                 tty_clipboard_query_callback,
             ];
             let mut callbacks: Vec<_> = callbacks
                 .into_iter()
-                .map(|callback| tty_client_callback(&owner, callback))
+                .map(|callback| tty_client_timer_callback(&owner, callback))
                 .collect();
             assert_eq!(Rc::strong_count(&owner), 1);
             owner.borrow_terminal_mut().flags |= TTY_OSC52QUERY;
-            callbacks[4](-1, 0);
+            callbacks[2]();
             assert_eq!(owner.borrow_terminal().flags & TTY_OSC52QUERY, 0);
             drop(owner);
             assert!(observer.upgrade().is_none());
             for callback in &mut callbacks {
-                callback(-1, 0);
+                callback();
             }
+        }
+    }
+
+    #[test]
+    fn terminal_io_futures_skip_expired_clients_without_retaining_them() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+        unsafe {
+            let (reader, mut writer) = UnixStream::pair().unwrap();
+            reader.set_nonblocking(true).unwrap();
+            let owner = client::new();
+            let observer = Rc::downgrade(&owner);
+            let (mut read_task, mut write_task) = {
+                let mut terminal = owner.borrow_terminal_mut();
+                terminal.client = observer.clone();
+                terminal.io_fd = Some(reader.as_raw_fd());
+                tty_start_read(&mut terminal);
+                tty_start_write(&mut terminal);
+                (
+                    std::mem::take(&mut terminal.read_task),
+                    std::mem::take(&mut terminal.write_task),
+                )
+            };
+            assert_eq!(Rc::strong_count(&owner), 1);
+            drop(owner);
+            assert!(observer.upgrade().is_none());
+            writer.write_all(b"input").unwrap();
+            reactor::poll_runtime();
+            assert!(!read_task.is_pending());
+            assert!(!write_task.is_pending());
+            read_task.cancel();
+            write_task.cancel();
+            reactor::forget_descriptor(reader.as_raw_fd());
+            reactor::shutdown_runtime();
         }
     }
 

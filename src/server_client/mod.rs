@@ -5594,7 +5594,7 @@ mod client_registry_tests {
             drop(first);
             drop(middle);
             drop(last);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert!(middle_observer.upgrade().is_none());
             assert!(
                 last_observer.upgrade().is_some(),
@@ -5635,7 +5635,7 @@ mod key_event_owner_tests {
             queued.client = std::rc::Rc::downgrade(&owner);
             drop(QueuedKeyEvent(queued, Some(owner.clone())));
             assert_eq!(std::rc::Rc::strong_count(&owner), 2);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert_eq!(std::rc::Rc::strong_count(&owner), 1);
         }
     }
@@ -5818,7 +5818,7 @@ mod client_timer_observer_tests {
                 .click_timer
                 .arm(immediate)
                 .expect("arm timer");
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert_eq!((*owner.get()).flags & CLIENT_DOUBLECLICK as uint64_t, 0);
             let mut detached_timer = std::mem::take(&mut (*owner.get()).click_timer);
             drop(owner);
@@ -5827,7 +5827,7 @@ mod client_timer_observer_tests {
                 "timer callbacks must not retain clients"
             );
             detached_timer.arm(immediate).expect("arm timer");
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert!(observer.upgrade().is_none());
             detached_timer.cancel();
         }

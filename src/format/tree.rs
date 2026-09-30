@@ -312,7 +312,7 @@ mod tests {
                 if cancel {
                     crate::src::reactor::shutdown_runtime();
                 } else {
-                    crate::src::reactor::event_loop();
+                    crate::src::reactor::poll_runtime();
                 }
                 assert!(observer.upgrade().is_none());
                 crate::src::reactor::shutdown_runtime();

@@ -37,8 +37,7 @@ use crate::src::paste::{
 };
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readline, event_add,
-    event_initialized, event_pending, event_set,
+    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readline,
 };
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
@@ -98,7 +97,6 @@ use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::ctype::_ISpunct;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
     format_entry, format_entry_tree, format_job, format_job_tree, format_tree, format_type,

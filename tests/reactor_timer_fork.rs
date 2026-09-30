@@ -1,7 +1,7 @@
 //! Timer registrations survive the reactor's fork reset in both processes.
 #![cfg(unix)]
 
-use hmux2::src::reactor::{event_loop, event_reinit, shutdown_runtime, timer_once, Timer};
+use hmux2::src::reactor::{poll_runtime, reset_after_fork, shutdown_runtime, timer_once, Timer};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -14,7 +14,7 @@ fn pending_timers_keep_their_deadline_after_fork() {
     timer.set(move || observed.set(observed.get() + 1));
     timer.arm(Duration::from_millis(500)).unwrap();
     let deadline = timer.deadline();
-    unsafe { event_loop() };
+    poll_runtime();
     assert_eq!(calls.get(), 0, "the first poll registers the deadline wait");
     // Include a deferred callback whose task has not yet been polled.
     let deferred = Rc::new(Cell::new(false));
@@ -26,11 +26,11 @@ fn pending_timers_keep_their_deadline_after_fork() {
         unsafe {
             // Bound failures which leave an inherited wait unable to wake.
             libc::alarm(5);
-            if event_reinit() != 0 || timer.deadline() != deadline {
+            if reset_after_fork().is_err() || timer.deadline() != deadline {
                 libc::_exit(1);
             }
             while timer.is_pending() || !deferred.get() {
-                event_loop();
+                poll_runtime();
             }
             shutdown_runtime();
             libc::_exit(if calls.get() == 1 { 0 } else { 2 });
@@ -39,7 +39,7 @@ fn pending_timers_keep_their_deadline_after_fork() {
     // Resetting and cancelling child tasks must not disturb the parent runtime.
     assert_eq!(timer.deadline(), deadline);
     while timer.is_pending() || !deferred.get() {
-        unsafe { event_loop() };
+        poll_runtime();
     }
     assert_eq!(calls.get(), 1);
     let mut status = 0;

@@ -4,12 +4,13 @@ use super::abi::{size_t, time_t, u_int};
 use super::client::client;
 use super::colour::colour_palette;
 use super::display::{screen_cursor_style, visible_ranges};
-use super::event::{event, Timer};
+use super::event::Timer;
 use super::grid::grid_cell;
 use super::key::key_code;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::terminal::termios;
+use crate::src::reactor::Task;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use hmux_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
@@ -356,9 +357,10 @@ pub struct tty {
     pub rupper: u_int,
     pub rleft: u_int,
     pub rright: u_int,
-    pub event_in: event,
+    pub read_task: Task,
     pub in_0: Option<Box<crate::src::tty::TerminalInput>>,
-    pub event_out: event,
+    pub write_task: Task,
+    pub io_fd: Option<i32>,
     pub out: Option<Box<SegmentedBuf>>,
     pub timer: Timer,
     pub discarded: size_t,

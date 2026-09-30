@@ -128,7 +128,7 @@ mod tests {
         notify(&mut file.read);
         assert_eq!(current.0.get(), 0, "no inline reentry");
         unsafe {
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
         }
         assert_eq!(old.0.get(), 0);
         assert_eq!(current.0.get(), 1);
@@ -139,7 +139,7 @@ mod tests {
         assert!(Pin::new(&mut file).poll_next(&mut cx).is_pending());
         finish(&mut file);
         unsafe {
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
         }
         assert_eq!(current.0.get(), 2, "EOF also wakes the reader");
         assert!(matches!(
@@ -195,7 +195,7 @@ mod tests {
             (*file.get()).read.active = true;
             (*file.get()).read.input.put_slice(b"retained");
             file_fire_done(&file);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert!(client_files_is_empty(&files));
             let mut cx = Context::from_waker(Waker::noop());
             let Poll::Ready(Some(Ok(bytes))) = Pin::new(&mut *file.get()).poll_next(&mut cx) else {
@@ -250,7 +250,7 @@ mod tests {
             assert_eq!(progress.get(), 2);
             file_fire_done(&file);
             assert!(!finished.get(), "completion remains deferred");
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert!(finished.get());
             assert!(client_files_is_empty(&files));
             drop(file);

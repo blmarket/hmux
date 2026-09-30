@@ -1,9 +1,6 @@
-use hmux2::src::reactor::{
-    evbuffer_drain, evbuffer_new, evbuffer_pullup, event_del, event_set, shutdown_runtime,
-};
+use hmux2::src::reactor::{evbuffer_drain, evbuffer_new, evbuffer_pullup, shutdown_runtime};
 use hmux2::src::server_client::Client;
 use hmux2::src::shared::client::client;
-use hmux2::src::shared::event::EV_WRITE;
 use hmux2::src::shared::tty::{
     tty, tty_code, tty_command_data, tty_ctx, tty_term, TTYC_MS, TTY_NOBLOCK, TTY_STARTED,
 };
@@ -15,6 +12,7 @@ use std::os::unix::net::UnixStream;
 fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
     unsafe {
         let (writer, _reader) = UnixStream::pair().unwrap();
+        writer.set_nonblocking(true).unwrap();
         let client_owner = client::new();
         let mut term = tty_term::empty();
         term.codes = vec![tty_code::None; TTYC_MS as usize + 1].into_boxed_slice();
@@ -25,14 +23,9 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
                 client: std::rc::Rc::downgrade(&client_owner),
                 term: Some(Box::new(term)),
                 out: Some(evbuffer_new()),
+                io_fd: Some(writer.as_raw_fd()),
                 ..Default::default()
             };
-            event_set(
-                &raw mut terminal.event_out,
-                writer.as_raw_fd(),
-                EV_WRITE as i16,
-                |_, _| {},
-            );
             terminal.term.as_deref_mut().unwrap().codes[TTYC_MS as usize] =
                 tty_code::String(capability.to_owned());
         }
@@ -78,9 +71,9 @@ fn selection_output_copies_binary_payloads_and_honours_terminal_capabilities() {
             let output = terminal.out.as_deref_mut().unwrap();
             assert_eq!(evbuffer_pullup(output, -1).unwrap(), expected);
             evbuffer_drain(output, expected.len());
-            event_del(&raw mut terminal.event_out);
+            terminal.write_task.cancel();
         }
-        event_del(&raw mut client_owner.borrow_terminal_mut().event_out);
+        client_owner.borrow_terminal_mut().write_task.cancel();
         shutdown_runtime();
     }
 }

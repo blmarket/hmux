@@ -224,7 +224,7 @@ mod input_buffer_ownership_tests {
             // The owner cleanup must cancel both registrations.
             let slot = Some(owner);
             drop(slot);
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert_eq!(calls.get(), 0);
             assert_eq!(std::rc::Rc::strong_count(&calls), 1);
             crate::src::reactor::shutdown_runtime();
@@ -268,7 +268,7 @@ mod input_buffer_ownership_tests {
             (*pointer).sync_timer.arm(timeout).expect("arm timer");
             drop(pane);
             assert!(observed.upgrade().is_none());
-            crate::src::reactor::event_loop();
+            crate::src::reactor::poll_runtime();
             assert_eq!(calls.get(), 0);
             assert_eq!(std::rc::Rc::strong_count(&calls), 1);
             crate::src::reactor::shutdown_runtime();

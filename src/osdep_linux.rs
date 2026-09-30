@@ -1,11 +1,9 @@
 use std::ffi::CString;
 
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::{fgetc, fopen, ioctl, readlink, setenv, tcgetpgrp, unsetenv};
-use crate::src::reactor::event_init;
+use crate::src::ffi::libc::{fgetc, fopen, ioctl, readlink, tcgetpgrp};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::event::*;
 use crate::src::shared::stdio::EOF;
 use crate::src::shared::stdio::FILE;
 
@@ -72,15 +70,4 @@ pub unsafe fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_c
         return &raw mut target as *mut ::core::ffi::c_char;
     }
     return ::core::ptr::null_mut::<::core::ffi::c_char>();
-}
-pub unsafe fn osdep_event_init() -> *mut event_base {
-    let mut base: *mut event_base = ::core::ptr::null_mut::<event_base>();
-    setenv(
-        b"EVENT_NOEPOLL\0" as *const u8 as *const ::core::ffi::c_char,
-        b"1\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
-    );
-    base = event_init();
-    unsetenv(b"EVENT_NOEPOLL\0" as *const u8 as *const ::core::ffi::c_char);
-    return base;
 }
