@@ -11,7 +11,7 @@ use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{
-    __errno_location, close, dup, ferror, fopen, fread, fwrite, memcpy, open, strcmp, strlen,
+    __errno_location, close, ferror, fopen, fread, fwrite, memcpy, strcmp, strlen,
 };
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
@@ -39,8 +39,12 @@ use crate::src::shared::stdio::FILE;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::tmux::find_home_cstr;
 use std::cell::UnsafeCell;
-use std::ffi::{CStr, CString};
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::ffi::{CStr, CString, OsStr};
+use std::fs::OpenOptions;
+use std::io;
+use std::os::fd::{AsFd, AsRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::OpenOptionsExt;
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
@@ -174,7 +178,7 @@ unsafe fn file_get_path(c: Option<&ClientRef>, file: &CStr) -> CString {
 unsafe fn file_send(
     file: &client_file,
     kind: msgtype,
-    fd: i32,
+    fd: Option<OwnedFd>,
     data: *const ::core::ffi::c_void,
     size: usize,
 ) -> i32 {
@@ -387,7 +391,7 @@ pub unsafe fn file_print(
         msg.flags = 0 as ::core::ffi::c_int;
         client_owner.send_message(
             MSG_WRITE_OPEN,
-            -(1 as ::core::ffi::c_int),
+            None,
             &raw mut msg as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
@@ -423,7 +427,7 @@ pub unsafe fn file_print_buffer(client_owner: Option<&ClientRef>, data: &[u8]) {
         msg.flags = 0 as ::core::ffi::c_int;
         client_owner.send_message(
             MSG_WRITE_OPEN,
-            -(1 as ::core::ffi::c_int),
+            None,
             &raw mut msg as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
@@ -462,7 +466,7 @@ pub unsafe fn file_error(
         msg.flags = 0 as ::core::ffi::c_int;
         client_owner.send_message(
             MSG_WRITE_OPEN,
-            -(1 as ::core::ffi::c_int),
+            None,
             &raw mut msg as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_open>() as size_t,
         );
@@ -591,13 +595,8 @@ unsafe fn file_write_impl(
                         as *const ::core::ffi::c_void,
                     msglen.wrapping_sub(::core::mem::size_of::<msg_write_open>() as size_t),
                 );
-                if file_send(
-                    cf,
-                    MSG_WRITE_OPEN,
-                    -(1 as ::core::ffi::c_int),
-                    msg.as_ptr().cast(),
-                    msglen,
-                ) != 0 as ::core::ffi::c_int
+                if file_send(cf, MSG_WRITE_OPEN, None, msg.as_ptr().cast(), msglen)
+                    != 0 as ::core::ffi::c_int
                 {
                     cf.error = EINVAL;
                 } else {
@@ -730,13 +729,8 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                     header_len,
                 );
                 msg[header_len..].copy_from_slice(path);
-                if file_send(
-                    cf,
-                    MSG_READ_OPEN,
-                    -(1 as ::core::ffi::c_int),
-                    msg.as_ptr().cast(),
-                    msglen,
-                ) != 0 as ::core::ffi::c_int
+                if file_send(cf, MSG_READ_OPEN, None, msg.as_ptr().cast(), msglen)
+                    != 0 as ::core::ffi::c_int
                 {
                     cf.error = EINVAL;
                 } else {
@@ -760,7 +754,7 @@ pub unsafe fn file_cancel(cf: &mut client_file) {
     file_send(
         cf,
         MSG_READ_CANCEL,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_read_cancel>() as size_t,
     );
@@ -811,14 +805,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
                 as *const ::core::ffi::c_void,
             sent,
         );
-        if file_send(
-            cf,
-            MSG_WRITE,
-            -(1 as ::core::ffi::c_int),
-            msg.as_ptr().cast(),
-            msglen,
-        ) != 0 as ::core::ffi::c_int
-        {
+        if file_send(cf, MSG_WRITE, None, msg.as_ptr().cast(), msglen) != 0 as ::core::ffi::c_int {
             break;
         }
         evbuffer_drain(&mut cf.buffer, sent);
@@ -845,7 +832,7 @@ unsafe fn file_push(file_owner: &Rc<UnsafeCell<client_file>>) {
         file_send(
             cf,
             MSG_WRITE_CLOSE,
-            -(1 as ::core::ffi::c_int),
+            None,
             &raw mut close_0 as *const ::core::ffi::c_void,
             ::core::mem::size_of::<msg_write_close>() as size_t,
         );
@@ -898,7 +885,7 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
     file_send(
         cf,
         MSG_WRITE_DONE,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_write_done>() as size_t,
     );
@@ -980,7 +967,6 @@ pub unsafe fn file_write_open(
         error: 0,
     };
     let mut find: client_file = client_file::empty();
-    let flags: ::core::ffi::c_int = O_NONBLOCK | O_WRONLY | O_CREAT;
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if msglen == ::core::mem::size_of::<msg_write_open>() as usize {
         path = b"-\0" as *const u8 as *const ::core::ffi::c_char;
@@ -1003,46 +989,53 @@ pub unsafe fn file_write_open(
         if cf.closed != 0 {
             error = EBADF;
         } else {
-            let mut fd = -1;
-            if msg.fd == -(1 as ::core::ffi::c_int) {
-                fd = open(path, msg.flags | flags, 0o644 as ::core::ffi::c_int);
+            let fd = if msg.fd == -1 {
+                OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .custom_flags(msg.flags | O_NONBLOCK)
+                    .mode(0o644)
+                    .open(OsStr::from_bytes(CStr::from_ptr(path).to_bytes()))
+                    .map(OwnedFd::from)
             } else {
-                if msg.fd != STDOUT_FILENO && msg.fd != STDERR_FILENO {
-                    *__errno_location() = EBADF;
-                } else {
-                    fd = dup(msg.fd);
-                    if close_received != 0 {
-                        close(msg.fd);
-                    }
+                let duplicate = match msg.fd {
+                    STDOUT_FILENO => io::stdout().as_fd().try_clone_to_owned(),
+                    STDERR_FILENO => io::stderr().as_fd().try_clone_to_owned(),
+                    _ => Err(io::Error::from_raw_os_error(EBADF)),
+                };
+                if close_received != 0 && (msg.fd == STDOUT_FILENO || msg.fd == STDERR_FILENO) {
+                    close(msg.fd);
                 }
-            }
-            if fd == -1 {
-                error = *__errno_location();
-            } else {
-                cf.fd = Some(OwnedFd::from_raw_fd(fd));
-                let data_observer = Rc::downgrade(&transfer_owner);
-                let error_observer = data_observer.clone();
-                let stream = bufferevent_new(
-                    cf.fd.as_ref().expect("open file").as_raw_fd(),
-                    None,
-                    bufferevent_data_callback(move |_| unsafe {
-                        if let Some(owner) = data_observer.upgrade() {
-                            file_write_callback(&owner);
-                        }
-                    }),
-                    bufferevent_event_callback(move |_, flags| unsafe {
-                        if let Some(owner) = error_observer.upgrade() {
-                            file_write_error_callback(flags, &owner);
-                        }
-                    }),
-                );
-                if stream.is_null() {
-                    error = *__errno_location();
-                    drop(cf.fd.take());
-                    client_files_remove(cf);
-                } else {
-                    cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
-                    bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short);
+                duplicate
+            };
+            match fd {
+                Err(open_error) => error = open_error.raw_os_error().unwrap_or(::libc::EIO),
+                Ok(fd) => {
+                    cf.fd = Some(fd);
+                    let data_observer = Rc::downgrade(&transfer_owner);
+                    let error_observer = data_observer.clone();
+                    let stream = bufferevent_new(
+                        cf.fd.as_ref().expect("open file").as_raw_fd(),
+                        None,
+                        bufferevent_data_callback(move |_| unsafe {
+                            if let Some(owner) = data_observer.upgrade() {
+                                file_write_callback(&owner);
+                            }
+                        }),
+                        bufferevent_event_callback(move |_, flags| unsafe {
+                            if let Some(owner) = error_observer.upgrade() {
+                                file_write_error_callback(flags, &owner);
+                            }
+                        }),
+                    );
+                    if stream.is_null() {
+                        error = *__errno_location();
+                        drop(cf.fd.take());
+                        client_files_remove(cf);
+                    } else {
+                        cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                        bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short);
+                    }
                 }
             }
         }
@@ -1052,7 +1045,7 @@ pub unsafe fn file_write_open(
     proc_send(
         peer,
         MSG_WRITE_READY,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut reply as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_write_ready>() as size_t,
     );
@@ -1126,7 +1119,7 @@ unsafe fn file_read_error_callback(
     file_send(
         cf,
         MSG_READ_DONE,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut msg as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
@@ -1169,13 +1162,7 @@ unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
             header_len,
         );
         msg[header_len..].copy_from_slice(&chunk);
-        file_send(
-            cf,
-            MSG_READ,
-            -(1 as ::core::ffi::c_int),
-            msg.as_ptr().cast(),
-            msglen,
-        );
+        file_send(cf, MSG_READ, None, msg.as_ptr().cast(), msglen);
         let _ = cf.event.with_ptr(|stream| unsafe {
             evbuffer_drain(bufferevent_get_input(&mut *stream), bsize)
         });
@@ -1199,7 +1186,6 @@ pub unsafe fn file_read_open(
         error: 0,
     };
     let mut find: client_file = client_file::empty();
-    let flags: ::core::ffi::c_int = O_NONBLOCK | O_RDONLY;
     let mut error: ::core::ffi::c_int = 0;
     if msglen == ::core::mem::size_of::<msg_read_open>() as usize {
         path = b"-\0" as *const u8 as *const ::core::ffi::c_char;
@@ -1222,47 +1208,51 @@ pub unsafe fn file_read_open(
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
-            let mut fd = -1;
-            if msg.fd == -(1 as ::core::ffi::c_int) {
-                fd = open(path, flags);
+            let fd = if msg.fd == -1 {
+                OpenOptions::new()
+                    .read(true)
+                    .custom_flags(O_NONBLOCK)
+                    .open(OsStr::from_bytes(CStr::from_ptr(path).to_bytes()))
+                    .map(OwnedFd::from)
             } else {
-                if msg.fd != STDIN_FILENO {
-                    *__errno_location() = EBADF;
-                } else {
-                    fd = dup(msg.fd);
-                    if close_received != 0 {
-                        close(msg.fd);
-                    }
+                let duplicate = match msg.fd {
+                    STDIN_FILENO => io::stdin().as_fd().try_clone_to_owned(),
+                    _ => Err(io::Error::from_raw_os_error(EBADF)),
+                };
+                if close_received != 0 && (msg.fd == STDIN_FILENO) {
+                    close(msg.fd);
                 }
-            }
-            if fd == -1 {
-                error = *__errno_location();
-            } else {
-                cf.fd = Some(OwnedFd::from_raw_fd(fd));
-                let data_observer = Rc::downgrade(&transfer_owner);
-                let error_observer = data_observer.clone();
-                let stream = bufferevent_new(
-                    (*cf).fd.as_ref().expect("open file").as_raw_fd(),
-                    bufferevent_data_callback(move |_| unsafe {
-                        if let Some(owner) = data_observer.upgrade() {
-                            file_read_callback(&owner);
-                        }
-                    }),
-                    None,
-                    bufferevent_event_callback(move |_, flags| unsafe {
-                        if let Some(owner) = error_observer.upgrade() {
-                            file_read_error_callback(flags, &owner);
-                        }
-                    }),
-                );
-                if stream.is_null() {
-                    error = *__errno_location();
-                    drop((*cf).fd.take());
-                    client_files_remove(&mut *cf);
-                } else {
-                    (*cf).event = crate::src::reactor::StreamHandle::from_ptr(stream);
-                    bufferevent_enable(stream, EV_READ as ::core::ffi::c_short);
-                    return;
+                duplicate
+            };
+            match fd {
+                Err(open_error) => error = open_error.raw_os_error().unwrap_or(::libc::EIO),
+                Ok(fd) => {
+                    cf.fd = Some(fd);
+                    let data_observer = Rc::downgrade(&transfer_owner);
+                    let error_observer = data_observer.clone();
+                    let stream = bufferevent_new(
+                        (*cf).fd.as_ref().expect("open file").as_raw_fd(),
+                        bufferevent_data_callback(move |_| unsafe {
+                            if let Some(owner) = data_observer.upgrade() {
+                                file_read_callback(&owner);
+                            }
+                        }),
+                        None,
+                        bufferevent_event_callback(move |_, flags| unsafe {
+                            if let Some(owner) = error_observer.upgrade() {
+                                file_read_error_callback(flags, &owner);
+                            }
+                        }),
+                    );
+                    if stream.is_null() {
+                        error = *__errno_location();
+                        drop((*cf).fd.take());
+                        client_files_remove(&mut *cf);
+                    } else {
+                        (*cf).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                        bufferevent_enable(stream, EV_READ as ::core::ffi::c_short);
+                        return;
+                    }
                 }
             }
         }
@@ -1272,7 +1262,7 @@ pub unsafe fn file_read_open(
     proc_send(
         peer,
         MSG_READ_DONE,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut reply as *const ::core::ffi::c_void,
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );

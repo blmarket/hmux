@@ -450,7 +450,8 @@ fn tty_start_read(terminal: &mut tty) {
     let fd = terminal.io_fd.expect("open TTY descriptor");
     let observer = terminal.client.clone();
     crate::src::reactor::task_start(&mut terminal.read_task, move || {
-        let source = reactor::io(fd)?;
+        // SAFETY: the client owns this TTY descriptor until terminal cleanup.
+        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             loop {
                 source.ready(true, false).await.expect("TTY input wait");
@@ -474,7 +475,8 @@ pub(crate) fn tty_start_write(terminal: &mut tty) {
     let fd = terminal.io_fd.expect("open TTY descriptor");
     let observer = terminal.client.clone();
     crate::src::reactor::task_start(&mut terminal.write_task, move || {
-        let source = reactor::io(fd)?;
+        // SAFETY: the client owns this TTY descriptor until terminal cleanup.
+        let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             source.ready(false, true).await.expect("TTY output wait");
             if let Some(owner) = observer.upgrade() {

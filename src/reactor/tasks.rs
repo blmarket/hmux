@@ -25,7 +25,7 @@ mod tests {
     use hmux_rt::AsyncFd as _;
     use std::cell::{Cell, RefCell};
     use std::io::{Read, Write};
-    use std::os::fd::AsRawFd;
+    use std::os::fd::{AsFd, AsRawFd};
     use std::os::unix::net::UnixStream;
     use std::rc::Rc;
     use std::time::Duration;
@@ -63,7 +63,7 @@ mod tests {
     fn moving_and_cancelling_a_wait_preserves_unread_input() {
         let (mut reader, mut writer) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
-        let fd = reader.as_raw_fd();
+        let fd = reader.as_fd();
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
         let mut task = None::<hmux_rt::mio::Task>;
@@ -146,7 +146,7 @@ mod tests {
     fn completing_write_registration_keeps_same_endpoints_read_wait_alive() {
         let (reader, mut writer) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
-        let fd = reader.as_raw_fd();
+        let fd = reader.as_fd();
         let read_done = Rc::new(Cell::new(false));
         let observed = read_done.clone();
         let mut read_task = None;
@@ -186,23 +186,24 @@ mod tests {
 
     #[test]
     fn reused_descriptor_numbers_do_not_share_an_executing_tasks_old_lease() {
-        use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
+        use std::os::fd::{FromRawFd, OwnedFd};
         let (old_reader, mut old_writer) = UnixStream::pair().unwrap();
         let (new_reader, mut new_writer) = UnixStream::pair().unwrap();
         old_reader.set_nonblocking(true).unwrap();
         new_reader.set_nonblocking(true).unwrap();
-        let fd = old_reader.into_raw_fd();
+        let fd = old_reader.as_raw_fd();
         super::super::init_runtime();
         // An executing dispatch retains its descriptor lease until it returns.
-        let old_source = super::super::io(fd).unwrap();
-        assert_eq!(unsafe { libc::close(fd) }, 0);
+        let old_source = super::super::io(old_reader.as_fd()).unwrap();
+        drop(old_reader);
         assert_eq!(unsafe { libc::dup2(new_reader.as_raw_fd(), fd) }, fd);
         let endpoint = unsafe { OwnedFd::from_raw_fd(fd) };
+        let borrowed = endpoint.as_fd();
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
         let mut task = None::<hmux_rt::mio::Task>;
         crate::src::reactor::task_start(&mut task, move || {
-            let source = super::super::io(fd)?;
+            let source = super::super::io(borrowed)?;
             let observed = observed.clone();
             Ok(async move {
                 source.ready(true, false).await.unwrap();

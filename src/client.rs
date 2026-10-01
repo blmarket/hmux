@@ -8,10 +8,9 @@ use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
 use crate::src::ffi::libc::{
     __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, close,
-    closefrom, connect, dup, environ, execl, fflush, flock, fprintf, getenv, getpid, getppid,
-    isatty, kill, memcpy, memset, open, printf, setenv, sigaction, sigemptyset, socket, stderr,
-    stdout, strerror, strlcpy, strlen, strsignal, system, tcgetattr, tcsetattr, ttyname, unlink,
-    waitpid,
+    closefrom, environ, execl, fflush, flock, fprintf, getenv, getpid, getppid, isatty, kill,
+    memcpy, memset, printf, setenv, sigaction, sigemptyset, stderr, stdout, strerror, strlen,
+    strsignal, system, tcgetattr, tcsetattr, ttyname, unlink, waitpid,
 };
 use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
@@ -26,7 +25,7 @@ use crate::src::proc::{
 use crate::src::reactor::init_runtime;
 use crate::src::server::server_start;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{socklen_t, ssize_t, uint32_t};
+use crate::src::shared::abi::{ssize_t, uint32_t};
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{client, client_files, overlay_mode_cb};
 use crate::src::shared::client::{
@@ -38,17 +37,12 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG, ENOENT};
 use crate::src::shared::event::*;
-use crate::src::shared::posix_io::{
-    O_CREAT, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG,
-};
+use crate::src::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG};
 use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, sigaction, sigaction___sigaction_handler, siginfo_t, ProcessSignal,
     SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
-};
-use crate::src::shared::socket::{
-    sa_family_t, sockaddr, sockaddr_un, __CONST_SOCKADDR_ARG, AF_UNIX, SOCK_STREAM,
 };
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
@@ -56,8 +50,13 @@ use crate::src::tmux::{
     shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
-use std::ffi::{CStr, CString};
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::ffi::{CStr, CString, OsStr};
+use std::fs::OpenOptions;
+use std::io;
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::net::UnixStream;
 
 pub const ECONNREFUSED: ::core::ffi::c_int = 111 as ::core::ffi::c_int;
 
@@ -114,15 +113,18 @@ enum ClientLock {
 
 unsafe fn client_get_lock(lockfile: *const ::core::ffi::c_char) -> ClientLock {
     log_debug(format_args!("lock file is {}", log_cstr(lockfile)));
-    let fd = open(lockfile, O_WRONLY | O_CREAT, 0o600 as ::core::ffi::c_int);
-    if fd == -1 {
-        log_debug(format_args!(
-            "open failed: {}",
-            log_cstr(strerror(*__errno_location()))
-        ));
-        return ClientLock::Unavailable;
-    }
-    let lock = OwnedFd::from_raw_fd(fd);
+    let lock = match OpenOptions::new()
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .open(OsStr::from_bytes(CStr::from_ptr(lockfile).to_bytes()))
+    {
+        Ok(file) => OwnedFd::from(file),
+        Err(error) => {
+            log_debug(format_args!("open failed: {error}"));
+            return ClientLock::Unavailable;
+        }
+    };
     if flock(lock.as_raw_fd(), LOCK_EX | LOCK_NB) == -1 {
         log_debug(format_args!(
             "flock failed: {}",
@@ -138,57 +140,32 @@ unsafe fn client_get_lock(lockfile: *const ::core::ffi::c_char) -> ClientLock {
     ClientLock::Acquired(lock)
 }
 
-unsafe fn client_connect(path: *const ::core::ffi::c_char, flags: uint64_t) -> ::core::ffi::c_int {
-    let mut sa: sockaddr_un = sockaddr_un {
-        sun_family: AF_UNIX as sa_family_t,
-        sun_path: [0; 108],
-    };
-    let size = strlcpy(sa.sun_path.as_mut_ptr(), path, sa.sun_path.len());
-    if size as usize >= sa.sun_path.len() {
-        *__errno_location() = ENAMETOOLONG;
-        return -1;
+unsafe fn client_connect(path: *const ::core::ffi::c_char, flags: uint64_t) -> io::Result<OwnedFd> {
+    let connect_path = OsStr::from_bytes(CStr::from_ptr(path).to_bytes());
+    if connect_path.as_bytes().len() >= 108 {
+        return Err(io::Error::from_raw_os_error(ENAMETOOLONG));
     }
     let mut lockfd = None;
     let mut locked = false;
     let mut lockfile = None;
     log_debug(format_args!("socket is {}", log_cstr(path)));
     loop {
-        let fd = socket(AF_UNIX, SOCK_STREAM as ::core::ffi::c_int, 0);
-        if fd == -1 {
-            let error = *__errno_location();
-            drop(lockfd);
-            *__errno_location() = error;
-            return -1;
-        }
-        let socket = OwnedFd::from_raw_fd(fd);
         log_debug(format_args!("trying connect"));
-        if connect(
-            socket.as_raw_fd(),
-            __CONST_SOCKADDR_ARG {
-                __sockaddr__: (&raw mut sa).cast(),
-            },
-            ::core::mem::size_of::<sockaddr_un>() as socklen_t,
-        ) != -1
-        {
-            drop(lockfd);
-            setblocking(socket.as_raw_fd(), 0);
-            return socket.into_raw_fd();
-        }
-        let error = *__errno_location();
-        log_debug(format_args!(
-            "connect failed: {}",
-            log_cstr(strerror(error))
-        ));
-        if (error != ECONNREFUSED && error != ENOENT)
+        let error = match UnixStream::connect(connect_path) {
+            Ok(socket) => {
+                drop(lockfd);
+                setblocking(socket.as_raw_fd(), 0);
+                return Ok(socket.into());
+            }
+            Err(error) => error,
+        };
+        log_debug(format_args!("connect failed: {error}"));
+        if !matches!(error.raw_os_error(), Some(ECONNREFUSED | ENOENT))
             || flags & CLIENT_NOSTARTSERVER as uint64_t != 0
             || flags & CLIENT_STARTSERVER as uint64_t == 0
         {
-            drop(socket);
-            drop(lockfd);
-            *__errno_location() = error;
-            return -1;
+            return Err(error);
         }
-        drop(socket);
         if !locked {
             let mut name = CStr::from_ptr(path).to_bytes().to_vec();
             name.extend_from_slice(b".lock");
@@ -208,16 +185,13 @@ unsafe fn client_connect(path: *const ::core::ffi::c_char, flags: uint64_t) -> :
             locked = true;
         } else {
             if lockfd.is_some() && unlink(path) != 0 && *__errno_location() != ENOENT {
-                let error = *__errno_location();
-                drop(lockfd);
-                *__errno_location() = error;
-                return -1;
+                return Err(io::Error::last_os_error());
             }
             // After fork each process releases its own copy of the lock.
             let fd = server_start(flags, &mut lockfd, &mut lockfile);
             drop(lockfd);
-            setblocking(fd, 0);
-            return fd;
+            setblocking(fd.as_raw_fd(), 0);
+            return Ok(fd);
         }
     }
 }
@@ -274,7 +248,6 @@ pub unsafe fn client_main(
     mut feat: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    let mut fd: ::core::ffi::c_int = 0;
     let mut i: ::core::ffi::c_int = 0;
     let mut ttynam: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut termname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -330,28 +303,27 @@ pub unsafe fn client_main(
             "flags are {}",
             log_hex(client_flags as ::core::ffi::c_ulonglong)
         ));
-        if systemd_activated() != 0 {
-            fd = server_start(flags, &mut None, &mut None);
+        let connection = if systemd_activated() != 0 {
+            Ok(server_start(flags, &mut None, &mut None))
         } else {
-            fd = client_connect(socket_path, client_flags);
-        }
-        if fd == -(1 as ::core::ffi::c_int) {
-            if *__errno_location() == ECONNREFUSED {
-                fprintf(
-                    stderr,
-                    b"no server running on %s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    socket_path,
-                );
-            } else {
-                fprintf(
-                    stderr,
-                    b"error connecting to %s (%s)\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    socket_path,
-                    strerror(*__errno_location()),
-                );
+            client_connect(socket_path, client_flags)
+        };
+        let fd = match connection {
+            Ok(fd) => fd,
+            Err(error) => {
+                if error.raw_os_error() == Some(ECONNREFUSED) {
+                    fprintf(stderr, c"no server running on %s\n".as_ptr(), socket_path);
+                } else {
+                    fprintf(
+                        stderr,
+                        c"error connecting to %s (%s)\n".as_ptr(),
+                        socket_path,
+                        strerror(error.raw_os_error().unwrap_or(::libc::EINVAL)),
+                    );
+                }
+                return 1;
             }
-            return 1 as ::core::ffi::c_int;
-        }
+        };
         // Connecting may daemonize a new server. Initialize each process's
         // runtime only after that fork.
         init_runtime();
@@ -469,7 +441,7 @@ pub unsafe fn client_main(
             if proc_send(
                 client_peer,
                 msg,
-                -(1 as ::core::ffi::c_int),
+                None,
                 data.as_ptr() as *const ::core::ffi::c_void,
                 data.len(),
             ) != 0 as ::core::ffi::c_int
@@ -486,7 +458,7 @@ pub unsafe fn client_main(
             proc_send(
                 client_peer,
                 msg,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -569,48 +541,47 @@ unsafe fn client_send_identify(
 ) {
     let mut ss: *mut *mut ::core::ffi::c_char = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut sslen: size_t = 0;
-    let mut fd: ::core::ffi::c_int = 0;
     let mut flags: uint64_t = client_flags;
     let mut pid: pid_t = 0;
     proc_send(
         client_peer,
         MSG_IDENTIFY_LONGFLAGS,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut flags as *const ::core::ffi::c_void,
         ::core::mem::size_of::<uint64_t>() as size_t,
     );
     proc_send(
         client_peer,
         MSG_IDENTIFY_LONGFLAGS,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut client_flags as *const ::core::ffi::c_void,
         ::core::mem::size_of::<uint64_t>() as size_t,
     );
     proc_send(
         client_peer,
         MSG_IDENTIFY_TERM,
-        -(1 as ::core::ffi::c_int),
+        None,
         termname.as_ptr() as *const ::core::ffi::c_void,
         termname.to_bytes_with_nul().len() as size_t,
     );
     proc_send(
         client_peer,
         MSG_IDENTIFY_FEATURES,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut feat as *const ::core::ffi::c_void,
         ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
     );
     proc_send(
         client_peer,
         MSG_IDENTIFY_TTYNAME,
-        -(1 as ::core::ffi::c_int),
+        None,
         ttynam.as_ptr() as *const ::core::ffi::c_void,
         ttynam.to_bytes_with_nul().len() as size_t,
     );
     proc_send(
         client_peer,
         MSG_IDENTIFY_CWD,
-        -(1 as ::core::ffi::c_int),
+        None,
         cwd.as_ptr() as *const ::core::ffi::c_void,
         cwd.to_bytes_with_nul().len() as size_t,
     );
@@ -618,30 +589,30 @@ unsafe fn client_send_identify(
         proc_send(
             client_peer,
             MSG_IDENTIFY_TERMINFO,
-            -(1 as ::core::ffi::c_int),
+            None,
             cap.as_ptr() as *const ::core::ffi::c_void,
             cap.as_bytes_with_nul().len() as size_t,
         );
     }
-    fd = dup(STDIN_FILENO);
-    if fd == -(1 as ::core::ffi::c_int) {
-        fatal(|out| out.write_all(b"dup failed"));
-    }
+    let fd = io::stdin()
+        .as_fd()
+        .try_clone_to_owned()
+        .unwrap_or_else(|_| fatal(|out| out.write_all(b"dup failed")));
     proc_send(
         client_peer,
         MSG_IDENTIFY_STDIN,
-        fd,
+        Some(fd),
         ::core::ptr::null::<::core::ffi::c_void>(),
         0 as size_t,
     );
-    fd = dup(STDOUT_FILENO);
-    if fd == -(1 as ::core::ffi::c_int) {
-        fatal(|out| out.write_all(b"dup failed"));
-    }
+    let fd = io::stdout()
+        .as_fd()
+        .try_clone_to_owned()
+        .unwrap_or_else(|_| fatal(|out| out.write_all(b"dup failed")));
     proc_send(
         client_peer,
         MSG_IDENTIFY_STDOUT,
-        fd,
+        Some(fd),
         ::core::ptr::null::<::core::ffi::c_void>(),
         0 as size_t,
     );
@@ -649,7 +620,7 @@ unsafe fn client_send_identify(
     proc_send(
         client_peer,
         MSG_IDENTIFY_CLIENTPID,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut pid as *const ::core::ffi::c_void,
         ::core::mem::size_of::<pid_t>() as size_t,
     );
@@ -660,7 +631,7 @@ unsafe fn client_send_identify(
             proc_send(
                 client_peer,
                 MSG_IDENTIFY_ENVIRON,
-                -(1 as ::core::ffi::c_int),
+                None,
                 *ss as *const ::core::ffi::c_void,
                 sslen,
             );
@@ -670,7 +641,7 @@ unsafe fn client_send_identify(
     proc_send(
         client_peer,
         MSG_IDENTIFY_DONE,
-        -(1 as ::core::ffi::c_int),
+        None,
         ::core::ptr::null::<::core::ffi::c_void>(),
         0 as size_t,
     );
@@ -750,7 +721,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                 proc_send(
                     client_peer,
                     MSG_EXITING,
-                    -(1 as ::core::ffi::c_int),
+                    None,
                     ::core::ptr::null::<::core::ffi::c_void>(),
                     0 as size_t,
                 );
@@ -763,7 +734,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                 proc_send(
                     client_peer,
                     MSG_EXITING,
-                    -(1 as ::core::ffi::c_int),
+                    None,
                     ::core::ptr::null::<::core::ffi::c_void>(),
                     0 as size_t,
                 );
@@ -772,7 +743,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                 proc_send(
                     client_peer,
                     MSG_RESIZE,
-                    -(1 as ::core::ffi::c_int),
+                    None,
                     ::core::ptr::null::<::core::ffi::c_void>(),
                     0 as size_t,
                 );
@@ -800,7 +771,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
                 proc_send(
                     client_peer,
                     MSG_WAKEUP,
-                    -(1 as ::core::ffi::c_int),
+                    None,
                     ::core::ptr::null::<::core::ffi::c_void>(),
                     0 as size_t,
                 );
@@ -884,7 +855,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             proc_send(
                 client_peer,
                 MSG_RESIZE,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -930,7 +901,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             proc_send(
                 client_peer,
                 MSG_EXITING,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -1022,7 +993,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             proc_send(
                 client_peer,
                 MSG_EXITING,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -1042,7 +1013,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             proc_send(
                 client_peer,
                 MSG_EXITING,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -1057,7 +1028,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             proc_send(
                 client_peer,
                 MSG_EXITING,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -1075,7 +1046,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             proc_send(
                 client_peer,
                 MSG_EXITING,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -1116,7 +1087,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             proc_send(
                 client_peer,
                 MSG_UNLOCK,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );

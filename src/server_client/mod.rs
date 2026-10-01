@@ -6,7 +6,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 use crate::src::window_pane::WindowPane as _;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::{Duration, SystemTime};
 use std::{cell::UnsafeCell, rc::Rc};
 mod api;
@@ -42,7 +42,9 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::{
     access, free, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep, ttyname,
 };
-use crate::src::file::{file_print, file_read_data, file_read_done, file_write_done, file_write_ready};
+use crate::src::file::{
+    file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
+};
 use crate::src::format::bytes::xformat;
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::format::{
@@ -723,7 +725,9 @@ use crate::src::shared::pane::{
     PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL, PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM,
     PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
 };
-use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK};
+use crate::src::shared::posix_io::{
+    _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
+};
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::screen::{
     screen, ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
@@ -995,10 +999,10 @@ unsafe fn server_client_timer(
     })
     .expect("arm timer")
 }
-unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
+unsafe fn server_client_create(fd: OwnedFd) -> ClientRef {
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
-    setblocking(fd, 0 as ::core::ffi::c_int);
+    setblocking(fd.as_raw_fd(), 0);
     let mut owner = client::new();
     c = owner.get();
     let peer_observer = std::rc::Rc::downgrade(&owner);
@@ -1447,7 +1451,7 @@ unsafe fn server_client_suspend(c_owner: &ClientRef) {
     proc_send(
         (*c).peer,
         MSG_SUSPEND,
-        -(1 as ::core::ffi::c_int),
+        None,
         ::core::ptr::null::<::core::ffi::c_void>(),
         0 as size_t,
     );
@@ -1508,13 +1512,7 @@ unsafe fn server_client_exec(c_owner: &ClientRef, mut cmd: *const ::core::ffi::c
     let mut msg = Vec::with_capacity(cmd_bytes.len() + shell_bytes.len());
     msg.extend_from_slice(cmd_bytes);
     msg.extend_from_slice(shell_bytes);
-    proc_send(
-        (*c).peer,
-        MSG_EXEC,
-        -(1 as ::core::ffi::c_int),
-        msg.as_ptr().cast(),
-        msg.len(),
-    );
+    proc_send((*c).peer, MSG_EXEC, None, msg.as_ptr().cast(), msg.len());
 }
 
 unsafe fn server_client_update_scrollbar_hover(
@@ -3583,7 +3581,7 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
             proc_send(
                 (*c).peer,
                 MSG_EXIT,
-                -(1 as ::core::ffi::c_int),
+                None,
                 data.as_ptr() as *const ::core::ffi::c_void,
                 data.len() as size_t,
             );
@@ -3592,7 +3590,7 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
             proc_send(
                 (*c).peer,
                 MSG_SHUTDOWN,
-                -(1 as ::core::ffi::c_int),
+                None,
                 ::core::ptr::null::<::core::ffi::c_void>(),
                 0 as size_t,
             );
@@ -3601,7 +3599,7 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
             proc_send(
                 (*c).peer,
                 (*c).exit_msgtype,
-                -(1 as ::core::ffi::c_int),
+                None,
                 name as *const ::core::ffi::c_void,
                 strlen(name).wrapping_add(1 as size_t),
             );
@@ -4054,7 +4052,7 @@ unsafe fn server_client_dispatch(
                 proc_send(
                     (*c).peer,
                     MSG_EXITED,
-                    -(1 as ::core::ffi::c_int),
+                    None,
                     ::core::ptr::null::<::core::ffi::c_void>(),
                     0 as size_t,
                 );
@@ -4555,7 +4553,7 @@ unsafe fn server_client_dispatch_shell(c: &client) -> ::core::ffi::c_int {
     proc_send(
         c.peer,
         MSG_SHELL,
-        -(1 as ::core::ffi::c_int),
+        None,
         shell as *const ::core::ffi::c_void,
         strlen(shell).wrapping_add(1 as size_t),
     );
@@ -4698,7 +4696,7 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, mut flags: *const ::core:
     proc_send(
         (*c).peer,
         MSG_FLAGS,
-        -(1 as ::core::ffi::c_int),
+        None,
         &raw mut (*c).flags as *const ::core::ffi::c_void,
         ::core::mem::size_of::<uint64_t>() as size_t,
     );

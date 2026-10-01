@@ -7,7 +7,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::ffi::libc::{
     __errno_location, _exit, close, closefrom, dup2, execl, fork, memcpy, open, setpgid,
-    sigfillset, sigprocmask, socketpair, strerror,
+    sigfillset, sigprocmask, strerror,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -44,10 +44,10 @@ use crate::src::shared::posix_io::{
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIG_BLOCK, SIG_SETMASK};
-use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, IntoRawFd};
+use std::os::unix::net::UnixStream;
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut self_0: refbox::Weak<cmd>,
@@ -65,7 +65,6 @@ pub(super) unsafe fn pipe_pane(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
     let had_pipe = (*wp).pipe_fd.is_some();
-    let mut pipe_fd: [::core::ffi::c_int; 2] = [0; 2];
     let mut null_fd: ::core::ffi::c_int = 0;
     let mut in_0: ::core::ffi::c_int = 0;
     let mut out: ::core::ffi::c_int = 0;
@@ -101,20 +100,13 @@ pub(super) unsafe fn pipe_pane(
         in_0 = 0 as ::core::ffi::c_int;
         out = 1 as ::core::ffi::c_int;
     }
-    if socketpair(
-        AF_UNIX,
-        SOCK_STREAM as ::core::ffi::c_int,
-        PF_UNSPEC,
-        &raw mut pipe_fd as *mut ::core::ffi::c_int,
-    ) != 0 as ::core::ffi::c_int
-    {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"socketpair error: ")?;
-            write_cstr(out, strerror(*__errno_location()))
-        });
-        return CMD_RETURN_ERROR;
-    }
-    let [parent, child] = pipe_fd.map(|fd| OwnedFd::from_raw_fd(fd));
+    let (parent, child) = match UnixStream::pair() {
+        Ok(pair) => pair,
+        Err(error) => {
+            cmdq_error(item_handle, |out| write!(out, "socketpair error: {error}"));
+            return CMD_RETURN_ERROR;
+        }
+    };
     let mut ft_owner = format_create_with_client(
         queue_client.as_ref(),
         Some(item_handle),
@@ -203,7 +195,7 @@ pub(super) unsafe fn pipe_pane(
                 ::core::ptr::null_mut::<sigset_t>(),
             );
             drop(child);
-            (*wp).pipe_fd = Some(parent);
+            (*wp).pipe_fd = Some(parent.into());
             memcpy(
                 wpo as *mut ::core::ffi::c_void,
                 &raw mut (*wp).offset as *const ::core::ffi::c_void,

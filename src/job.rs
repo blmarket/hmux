@@ -5,7 +5,7 @@ use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{environ_copy, environ_for_session, environ_push, environ_set};
 use crate::src::ffi::libc::{
     _exit, chdir, close, closefrom, dup2, execl, execvp, fork, ioctl, kill, killpg, memset, open,
-    setenv, shutdown, sigfillset, sigprocmask, socketpair,
+    setenv, shutdown, sigfillset, sigprocmask,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_bytes;
@@ -40,7 +40,6 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{
     __sigset_t, sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
-use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::terminal::*;
 use crate::src::tmux::{
     checkshell, find_home_cstr, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
@@ -48,6 +47,7 @@ use crate::src::tmux::{
 use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::net::UnixStream;
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SHUT_WR: C2RustUnnamed = 1;
@@ -173,18 +173,12 @@ pub unsafe fn job_run(
             &raw mut ws,
         );
         current_block = 224731115979188411;
-    } else if socketpair(
-        AF_UNIX,
-        SOCK_STREAM as ::core::ffi::c_int,
-        PF_UNSPEC,
-        &raw mut out as *mut ::core::ffi::c_int,
-    ) != 0 as ::core::ffi::c_int
-    {
-        current_block = 12393940290395533062;
-    } else {
-        out_owner = Some(out.map(|fd| OwnedFd::from_raw_fd(fd)));
+    } else if let Ok((parent, child)) = UnixStream::pair() {
+        out_owner = Some([OwnedFd::from(parent), OwnedFd::from(child)]);
         pid = fork() as pid_t;
         current_block = 224731115979188411;
+    } else {
+        current_block = 12393940290395533062;
     }
     match current_block {
         224731115979188411 => {
@@ -673,15 +667,11 @@ mod job_stream_tests {
             let calls = Rc::new(Cell::new(0));
             let second = job_insert(RefBox::new(idle_job()));
             let second_observer = second.clone();
-            let mut pair = [0; 2];
-            assert_eq!(
-                ::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()),
-                0
-            );
-            let fd = pair[0];
+            let (socket, remote) = UnixStream::pair().unwrap();
+            let fd = socket.as_raw_fd();
             let stream = bufferevent_new(fd, None, None, None);
             let first = job_insert(RefBox::new(job {
-                fd: Some(OwnedFd::from_raw_fd(fd)),
+                fd: Some(socket.into()),
                 event: crate::src::reactor::StreamHandle::from_ptr(stream),
                 ..idle_job()
             }));
@@ -717,7 +707,7 @@ mod job_stream_tests {
             assert!(second_observer.try_borrow_mut().is_err());
             assert!(event.ptr().is_null());
             assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
-            close(pair[1]);
+            drop(remote);
             assert!(job_snapshot().is_empty());
 
             // Update callbacks can cancel their own registry owner.

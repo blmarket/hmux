@@ -107,7 +107,8 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     if state.fd == -1 {
         return Ok(());
     }
-    let source = io(state.fd)?;
+    // SAFETY: the stream's model owner keeps this descriptor open through registration.
+    let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
     let s = state.clone();
     let task = handle().spawn(async move {
         // Each readiness delivery performs at most one 64 KiB read/write, then

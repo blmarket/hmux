@@ -11,7 +11,7 @@ mod timers;
 pub use buffer::*;
 use hmux_rt::{Handle as _, Runtime as _};
 use std::cell::RefCell;
-use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::fd::BorrowedFd;
 use std::time::Duration;
 pub use streams::*;
 pub use tasks::task_start;
@@ -40,13 +40,9 @@ fn ensure_runtime() {
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
-pub(crate) fn io(fd: i32) -> std::io::Result<hmux_rt::mio::Io> {
-    // SAFETY: duplicate retains the open file description through callback cancellation.
-    let duplicate = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
-    if duplicate < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    let lease = unsafe { OwnedFd::from_raw_fd(duplicate) };
+pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<hmux_rt::mio::Io> {
+    // Retain the open file description through callback cancellation.
+    let lease = fd.try_clone_to_owned()?;
     handle().io(lease)
 }
 pub fn init_runtime() {

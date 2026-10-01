@@ -8,9 +8,7 @@ use crate::src::compat::imsg::{
 };
 use crate::src::compat::setproctitle::setproctitle;
 use crate::src::ffi::libc::utsname;
-use crate::src::ffi::libc::{
-    close, daemon, fork, getpid, memset, sigaction, sigemptyset, socketpair, uname,
-};
+use crate::src::ffi::libc::{daemon, fork, getpid, memset, sigaction, sigemptyset, uname};
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_open, log_pointer, log_toggle};
@@ -25,12 +23,12 @@ pub use crate::src::shared::signal::{
     SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH,
     SIG_DFL,
 };
-use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::tmux::{getversion, socket_path};
 use hmux_rt::AsyncFd as _;
 use hmux_rt::{Handle as _, Signals as _};
 use std::ffi::CStr;
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
+use std::os::unix::net::UnixStream;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -117,7 +115,7 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
         proc_send(
             peer,
             MSG_VERSION,
-            -(1 as ::core::ffi::c_int),
+            None,
             ::core::ptr::null::<::core::ffi::c_void>(),
             0 as size_t,
         );
@@ -137,7 +135,7 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
         .fd
         .as_ref()
         .expect("peer socket is initialized")
-        .as_raw_fd();
+        .as_fd();
     crate::src::reactor::task_start(&mut (*peer).io_task, move || {
         let source = reactor::io(fd)?;
         Ok(async move {
@@ -156,7 +154,7 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
 pub unsafe fn proc_send(
     mut peer: *mut tmuxpeer,
     mut type_0: msgtype,
-    mut fd: ::core::ffi::c_int,
+    fd: Option<OwnedFd>,
     mut buf: *const ::core::ffi::c_void,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
@@ -175,7 +173,6 @@ pub unsafe fn proc_send(
     }) else {
         return -1;
     };
-    let fd = (fd >= 0).then(|| unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) });
     if imsg_compose(
         imsgbuf,
         type_0,
@@ -356,14 +353,15 @@ pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ff
 }
 pub unsafe fn proc_add_peer(
     mut tp: *mut tmuxproc,
-    mut fd: ::core::ffi::c_int,
+    socket: OwnedFd,
     mut dispatchcb: Box<dyn for<'a> FnMut(PeerMessage<'a>)>,
 ) -> *mut tmuxpeer {
     let mut owned_peer = Box::new(tmuxpeer::default());
     let peer: *mut tmuxpeer = &mut *owned_peer;
     (*peer).parent = tp;
     (*peer).dispatchcb = Some(dispatchcb);
-    if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, OwnedFd::from_raw_fd(fd)) {
+    let fd = socket.as_raw_fd();
+    if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, socket) {
         fatalx(|out| write!(out, "imsgbuf_init failed (errno {})", (error) as i32));
     }
     imsgbuf_allow_fdpass(&mut (*peer).ibuf);
@@ -409,40 +407,28 @@ pub unsafe fn proc_flush_peer(mut peer: *mut tmuxpeer) {
 pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
     log_toggle((*tp).name.as_ptr());
 }
-pub unsafe fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -> pid_t {
+pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
         !reactor::runtime_initialized(),
         "daemonize before initializing the runtime"
     );
-    let mut pid: pid_t = 0;
-    let mut pair: [::core::ffi::c_int; 2] = [0; 2];
-    if socketpair(
-        AF_UNIX,
-        SOCK_STREAM as ::core::ffi::c_int,
-        PF_UNSPEC,
-        &raw mut pair as *mut ::core::ffi::c_int,
-    ) != 0 as ::core::ffi::c_int
-    {
-        fatal(|out| out.write_all(b"socketpair failed"));
-    }
-    let [parent, child] = pair.map(|fd| OwnedFd::from_raw_fd(fd));
-    pid = fork() as pid_t;
+    let (parent, child) =
+        UnixStream::pair().unwrap_or_else(|_| fatal(|out| out.write_all(b"socketpair failed")));
+    let pid = fork() as pid_t;
     match pid {
         -1 => {
             fatal(|out| out.write_all(b"fork failed"));
         }
         0 => {
             drop(parent);
-            *fd = child.into_raw_fd();
             if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int {
                 fatal(|out| out.write_all(b"daemon failed"));
             }
-            return 0 as pid_t;
+            return (0, child.into());
         }
         _ => {
             drop(child);
-            *fd = parent.into_raw_fd();
-            return pid;
+            return (pid, parent.into());
         }
     };
 }
@@ -458,9 +444,33 @@ mod ownership_tests {
     use super::*;
 
     #[test]
+    fn rejected_messages_close_the_transferred_descriptor() {
+        use std::io::Read;
+        for (flags, len) in [(PEER_BAD, 0), (0, 1)] {
+            let mut peer = tmuxpeer::default();
+            peer.flags = flags;
+            let (socket, mut remote) = UnixStream::pair().unwrap();
+            remote.set_nonblocking(true).unwrap();
+            assert_eq!(
+                unsafe {
+                    proc_send(
+                        &raw mut peer,
+                        MSG_COMMAND,
+                        Some(socket.into()),
+                        std::ptr::null(),
+                        len,
+                    )
+                },
+                -1
+            );
+            assert_eq!(remote.read(&mut [0]).unwrap(), 0);
+        }
+    }
+
+    #[test]
     fn peer_readiness_switches_direction_and_dispatch_can_remove_its_peer() {
         use std::cell::{Cell, RefCell};
-        use std::os::fd::IntoRawFd;
+        use std::io::{Read, Write};
         use std::os::unix::net::UnixStream;
         use std::rc::Rc;
         use std::time::Duration;
@@ -470,8 +480,10 @@ mod ownership_tests {
             let (sender, receiver) = UnixStream::pair().unwrap();
             sender.set_nonblocking(true).unwrap();
             receiver.set_nonblocking(true).unwrap();
-            let sender_fd = sender.into_raw_fd();
-            let receiver_fd = receiver.into_raw_fd();
+            let sender_fd = sender.as_raw_fd();
+            let receiver_fd = receiver.as_raw_fd();
+            let (transferred, mut remote) = UnixStream::pair().unwrap();
+            remote.write_all(b"owned").unwrap();
             let calls = Rc::new(RefCell::new(Vec::new()));
             let sender_slot = Rc::new(Cell::new(std::ptr::null_mut()));
             let receiver_slot = Rc::new(Cell::new(std::ptr::null_mut()));
@@ -479,7 +491,7 @@ mod ownership_tests {
             let slot = sender_slot.clone();
             let sender = proc_add_peer(
                 tp,
-                sender_fd,
+                sender.into(),
                 Box::new(move |message| {
                     assert!(matches!(message, PeerMessage::Disconnected));
                     observed.borrow_mut().push("disconnected");
@@ -491,16 +503,31 @@ mod ownership_tests {
             let slot = receiver_slot.clone();
             let receiver = proc_add_peer(
                 tp,
-                receiver_fd,
+                receiver.into(),
                 Box::new(move |message| {
-                    assert!(matches!(message, PeerMessage::Message(_)));
+                    let PeerMessage::Message(message) = message else {
+                        panic!("expected a message carrying a descriptor");
+                    };
+                    let mut socket = UnixStream::from(imsg_get_fd(message).unwrap());
+                    let mut bytes = [0; 5];
+                    socket.read_exact(&mut bytes).unwrap();
+                    assert_eq!(&bytes, b"owned");
                     observed.borrow_mut().push("message");
                     proc_remove_peer(slot.get());
                 }),
             );
             receiver_slot.set(receiver);
             assert!(!(*sender).io_writable);
-            assert_eq!(proc_send(sender, MSG_COMMAND, -1, std::ptr::null(), 0), 0);
+            assert_eq!(
+                proc_send(
+                    sender,
+                    MSG_COMMAND,
+                    Some(transferred.into()),
+                    std::ptr::null(),
+                    0
+                ),
+                0
+            );
             assert!((*sender).io_writable);
 
             let expired = Rc::new(Cell::new(false));
@@ -514,6 +541,8 @@ mod ownership_tests {
             assert!(owner.peers.is_empty());
             assert_eq!(libc::fcntl(sender_fd, libc::F_GETFD), -1);
             assert_eq!(libc::fcntl(receiver_fd, libc::F_GETFD), -1);
+            remote.set_nonblocking(true).unwrap();
+            assert_eq!(remote.read(&mut [0]).unwrap(), 0);
             drop(timeout);
             proc_free(owner);
             reactor::shutdown_runtime();
@@ -579,29 +608,26 @@ mod ownership_tests {
             })
             .unwrap();
 
-            let mut pair = [0; 2];
-            assert_eq!(
-                ::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, pair.as_mut_ptr()),
-                0
-            );
-            crate::src::tmux::setblocking(pair[0], 0);
+            let (socket, remote) = UnixStream::pair().unwrap();
+            socket.set_nonblocking(true).unwrap();
+            let fd = socket.as_raw_fd();
             let capture = refbox::RefBox::new(());
             let observer = capture.downgrade();
             proc_add_peer(
                 tp,
-                pair[0],
+                socket.into(),
                 Box::new(move |_| {
                     let _keep_capture = &capture;
                     panic!("peer callback must be cancelled before freeing its owner");
                 }),
             );
             proc_free(owner);
-            assert_eq!(::libc::fcntl(pair[0], ::libc::F_GETFD), -1);
+            assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
             assert!(matches!(
                 observer.try_borrow_mut(),
                 Err(refbox::BorrowError::Dropped)
             ));
-            close(pair[1]);
+            drop(remote);
             poll_runtime();
             assert_eq!(calls.get(), 0);
             assert_eq!(std::rc::Rc::strong_count(&calls), 1);

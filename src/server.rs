@@ -1,12 +1,11 @@
 use crate::src::cmd::entries::wait_for::cmd_wait_for_flush;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::src::cmd::queue::cmdq_next;
-use crate::src::compat::systemd::systemd_create_socket;
+use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;
 use crate::src::ffi::libc::{
-    __errno_location, accept, bind, chmod, exit, fprintf, kill, killpg, listen, malloc_trim,
-    memset, sigfillset, sigprocmask, socket, stat, stderr, strerror, strlcpy, strsignal, time,
-    umask, unlink, waitpid,
+    __errno_location, chmod, exit, fprintf, kill, killpg, listen, malloc_trim, sigfillset,
+    sigprocmask, stat, stderr, strerror, strsignal, time, umask, unlink, waitpid,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::format_tidy_jobs;
@@ -26,7 +25,9 @@ use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::net::UnixListener;
 
 use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::sessions;
@@ -46,15 +47,16 @@ use hmux_rt::AsyncFd as _;
 use hmux_rt::Handle as _;
 use std::time::{Duration, SystemTime};
 
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, OsStr};
+use std::io;
 
 unsafe fn server_clear_messages() {
     message_log.clear();
 }
 
 pub use crate::src::server_client::clients;
+use crate::src::shared::abi::__mode_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__mode_t, socklen_t};
 use crate::src::shared::client::client;
 use crate::src::shared::client::*;
 use crate::src::shared::client::{
@@ -73,9 +75,7 @@ use crate::src::shared::signal::{
     __sigset_t, sigset_t, ProcessSignal, SIGCHLD, SIGCONT, SIGINT, SIGTERM, SIGTTIN, SIGTTOU,
     SIGUSR1, SIGUSR2, SIG_BLOCK, SIG_SETMASK,
 };
-use crate::src::shared::socket::{
-    sa_family_t, sockaddr, sockaddr_un, __CONST_SOCKADDR_ARG, __SOCKADDR_ARG, AF_UNIX, SOCK_STREAM,
-};
+use crate::src::shared::socket::sa_family_t;
 use crate::src::shared::time::timespec;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
@@ -108,7 +108,7 @@ pub const S_IROTH: ::core::ffi::c_int = S_IRGRP >> 3 as ::core::ffi::c_int;
 pub const S_IXOTH: ::core::ffi::c_int = S_IXGRP >> 3 as ::core::ffi::c_int;
 pub const S_IRWXO: ::core::ffi::c_int = S_IRWXG >> 3 as ::core::ffi::c_int;
 pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut tmuxproc;
-static mut server_fd: Option<OwnedFd> = None;
+static mut server_fd: Option<UnixListener> = None;
 static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
 static mut server_accept_task: Option<hmux_rt::mio::Task> = None::<hmux_rt::mio::Task>;
@@ -167,77 +167,44 @@ pub unsafe fn server_is_marked(
 pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
     return cmd_find_valid_state(&marked_pane);
 }
-pub unsafe fn server_create_socket(mut flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
-    let mut sa: sockaddr_un = sockaddr_un {
-        sun_family: 0,
-        sun_path: [0; 108],
-    };
-    let mut size: size_t = 0;
-    let mut mask: mode_t = 0;
-    let mut fd: ::core::ffi::c_int = 0;
-    let mut saved_errno: ::core::ffi::c_int = 0;
-    memset(
-        &raw mut sa as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<sockaddr_un>() as size_t,
-    );
-    sa.sun_family = AF_UNIX as sa_family_t;
-    size = strlcpy(
-        &raw mut sa.sun_path as *mut ::core::ffi::c_char,
-        socket_path,
-        ::core::mem::size_of::<[::core::ffi::c_char; 108]>() as size_t,
-    ) as size_t;
-    if size >= ::core::mem::size_of::<[::core::ffi::c_char; 108]>() as usize {
-        *__errno_location() = ENAMETOOLONG;
-    } else {
-        unlink(&raw mut sa.sun_path as *mut ::core::ffi::c_char);
-        fd = socket(
-            AF_UNIX,
-            SOCK_STREAM as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-        if fd != -1 {
-            let socket = OwnedFd::from_raw_fd(fd);
-            if flags & CLIENT_DEFAULTSOCKET as uint64_t != 0 {
-                mask = umask((S_IXUSR | S_IXGRP | S_IRWXO) as __mode_t) as mode_t;
-            } else {
-                mask = umask((S_IXUSR | S_IRWXG | S_IRWXO) as __mode_t) as mode_t;
-            }
-            if bind(
-                fd,
-                __CONST_SOCKADDR_ARG {
-                    __sockaddr__: &raw mut sa as *mut sockaddr,
-                },
-                ::core::mem::size_of::<sockaddr_un>() as socklen_t,
-            ) == -(1 as ::core::ffi::c_int)
-            {
-                saved_errno = *__errno_location();
-                umask(mask as __mode_t);
-                drop(socket);
-                *__errno_location() = saved_errno;
-            } else {
-                umask(mask as __mode_t);
-                if listen(fd, 128 as ::core::ffi::c_int) == -(1 as ::core::ffi::c_int) {
-                    saved_errno = *__errno_location();
-                    drop(socket);
-                    *__errno_location() = saved_errno;
-                } else {
-                    setblocking(fd, 0 as ::core::ffi::c_int);
-                    return Ok(socket.into_raw_fd());
-                }
-            }
-        }
-    }
-    let saved_errno = *__errno_location();
+// The compatibility systemd adapter still transfers ownership as a raw fd.
+pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
+    server_create_listener(flags).map(IntoRawFd::into_raw_fd)
+}
+
+unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CString> {
     let path = CStr::from_ptr(socket_path).to_bytes();
-    let reason = CStr::from_ptr(strerror(saved_errno)).to_bytes();
-    let mut message = Vec::with_capacity(17 + path.len() + reason.len());
-    message.extend_from_slice(b"error creating ");
-    message.extend_from_slice(path);
-    message.extend_from_slice(b" (");
-    message.extend_from_slice(reason);
-    message.push(b')');
-    Err(CString::new(message).expect("C strings contain no interior NUL"))
+    let result = (|| {
+        if path.len() >= 108 {
+            return Err(io::Error::from_raw_os_error(ENAMETOOLONG));
+        }
+        unlink(socket_path);
+        let mask = if flags & CLIENT_DEFAULTSOCKET as uint64_t != 0 {
+            umask((S_IXUSR | S_IXGRP | S_IRWXO) as __mode_t)
+        } else {
+            umask((S_IXUSR | S_IRWXG | S_IRWXO) as __mode_t)
+        };
+        let listener = UnixListener::bind(OsStr::from_bytes(path));
+        umask(mask);
+        let listener = listener?;
+        // Keep the server's explicit backlog independent of the std default.
+        if listen(listener.as_raw_fd(), 128) == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        setblocking(listener.as_raw_fd(), 0);
+        Ok(listener)
+    })();
+    result.map_err(|error: io::Error| {
+        let reason =
+            CStr::from_ptr(strerror(error.raw_os_error().unwrap_or(::libc::EINVAL))).to_bytes();
+        let mut message = Vec::with_capacity(17 + path.len() + reason.len());
+        message.extend_from_slice(b"error creating ");
+        message.extend_from_slice(path);
+        message.extend_from_slice(b" (");
+        message.extend_from_slice(reason);
+        message.push(b')');
+        CString::new(message).expect("C strings contain no interior NUL")
+    })
 }
 unsafe fn server_tidy_event() {
     let tv = Duration::from_secs(3600);
@@ -255,8 +222,8 @@ pub(crate) unsafe fn server_start(
     mut flags: uint64_t,
     lockfd: &mut Option<OwnedFd>,
     lockfile: &mut Option<CString>,
-) -> ::core::ffi::c_int {
-    let mut fd: ::core::ffi::c_int = 0;
+) -> OwnedFd {
+    let mut fd = None;
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
     let mut c: Option<ClientRef> = None;
@@ -265,14 +232,16 @@ pub(crate) unsafe fn server_start(
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     if !flags & CLIENT_NOFORK as uint64_t != 0 {
-        if proc_fork_and_daemon(&raw mut fd) != 0 as ::core::ffi::c_int {
+        let (pid, socket) = proc_fork_and_daemon();
+        if pid != 0 {
             sigprocmask(
                 SIG_SETMASK,
                 &raw mut oldset,
                 ::core::ptr::null_mut::<sigset_t>(),
             );
-            return fd;
+            return socket;
         }
+        fd = Some(socket);
     }
     server_client_flags = flags;
     reactor::init_runtime();
@@ -304,9 +273,15 @@ pub(crate) unsafe fn server_start(
     hooks_build_events();
     server_clear_messages();
     start_time = SystemTime::now();
-    match systemd_create_socket(flags as ::core::ffi::c_int) {
+    let listener = if systemd_activated() != 0 {
+        // SAFETY: the compatibility adapter transfers the activated listening socket.
+        systemd_create_socket(flags as ::core::ffi::c_int).map(|fd| UnixListener::from_raw_fd(fd))
+    } else {
+        server_create_listener(flags)
+    };
+    match listener {
         Ok(socket) => {
-            server_fd = Some(OwnedFd::from_raw_fd(socket));
+            server_fd = Some(socket);
             server_update_socket();
         }
         Err(error) => {
@@ -314,7 +289,7 @@ pub(crate) unsafe fn server_start(
             cause = Some(error);
         }
     }
-    if !flags & CLIENT_NOFORK as uint64_t != 0 {
+    if let Some(fd) = fd {
         let owner = ClientRef::create(fd);
         c = Some(owner.clone());
     } else {
@@ -501,42 +476,23 @@ pub unsafe fn server_update_socket() {
         chmod(socket_path, mode as __mode_t);
     }
 }
-unsafe fn server_accept(mut fd: ::core::ffi::c_int) {
-    let mut sa: sockaddr_storage = sockaddr_storage {
-        ss_family: 0,
-        __ss_padding: [0; 118],
-        __ss_align: 0,
-    };
-    let mut slen: socklen_t = ::core::mem::size_of::<sockaddr_storage>() as socklen_t;
-    let mut newfd: ::core::ffi::c_int = 0;
-    let mut c: Option<ClientRef> = None;
-    server_add_accept(0 as ::core::ffi::c_int);
-    newfd = accept(
-        fd,
-        __SOCKADDR_ARG {
-            __sockaddr__: &raw mut sa as *mut sockaddr,
+unsafe fn server_accept() {
+    server_add_accept(0);
+    let socket = match server_fd.as_ref().expect("server listener").accept() {
+        Ok((socket, _)) => socket,
+        Err(error) => match error.raw_os_error() {
+            Some(EAGAIN | EINTR | ECONNABORTED) => return,
+            Some(ENFILE | EMFILE) => {
+                server_add_accept(1);
+                return;
+            }
+            _ => fatal(|out| write!(out, "accept failed: {error}")),
         },
-        &raw mut slen,
-    );
-    if newfd == -(1 as ::core::ffi::c_int) {
-        if *__errno_location() == EAGAIN
-            || *__errno_location() == EINTR
-            || *__errno_location() == ECONNABORTED
-        {
-            return;
-        }
-        if *__errno_location() == ENFILE || *__errno_location() == EMFILE {
-            server_add_accept(1 as ::core::ffi::c_int);
-            return;
-        }
-        fatal(|out| out.write_all(b"accept failed"));
-    }
-    let socket = OwnedFd::from_raw_fd(newfd);
+    };
     if server_exit != 0 {
         return;
     }
-    let owner = ClientRef::create(socket.into_raw_fd());
-    c = Some(owner.clone());
+    let c = Some(ClientRef::create(socket.into()));
     if server_acl_join(c.as_ref().expect("live client")) == 0 {
         c.as_ref()
             .expect("live client")
@@ -549,13 +505,13 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     let Some(socket) = server_fd.as_ref() else {
         return;
     };
-    let fd = socket.as_raw_fd();
+    let fd = socket.as_fd();
     if timeout == 0 as ::core::ffi::c_int {
         crate::src::reactor::task_start(&mut server_accept_task, move || {
             let source = reactor::io(fd)?;
             Ok(async move {
                 source.ready(true, false).await.expect("accept wait");
-                unsafe { server_accept(fd) };
+                unsafe { server_accept() };
             })
         })
         .expect("start accept wait");
@@ -589,8 +545,8 @@ unsafe fn server_signal(sig: ProcessSignal) {
         }
         ProcessSignal::User1 => {
             drop(server_accept_task.take());
-            if let Ok(fd) = server_create_socket(server_client_flags) {
-                server_fd = Some(OwnedFd::from_raw_fd(fd));
+            if let Ok(listener) = server_create_listener(server_client_flags) {
+                server_fd = Some(listener);
                 server_update_socket();
             }
             server_add_accept(0 as ::core::ffi::c_int);

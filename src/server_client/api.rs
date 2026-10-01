@@ -16,7 +16,7 @@ use crate::src::shared::terminal::termios;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window;
 use std::cell::UnsafeCell;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, SystemTime};
 
@@ -33,7 +33,7 @@ pub enum PanDirection {
 /// explicit owner-release sites must still release their retained reference.
 pub trait Client {
     /// Create and register a protocol client, preserving the registry's owner.
-    unsafe fn create(fd: i32) -> Self
+    unsafe fn create(fd: OwnedFd) -> Self
     where
         Self: Sized;
     unsafe fn attached_count() -> u32
@@ -165,7 +165,7 @@ pub trait Client {
     unsafe fn send_message(
         &self,
         kind: crate::src::compat::imsg::msgtype,
-        fd: i32,
+        fd: Option<OwnedFd>,
         data: *const std::ffi::c_void,
         size: usize,
     ) -> i32;
@@ -337,7 +337,7 @@ pub trait Client {
 }
 
 impl Client for ClientRef {
-    unsafe fn create(fd: i32) -> Self {
+    unsafe fn create(fd: OwnedFd) -> Self {
         server_client_create(fd)
     }
 
@@ -798,12 +798,12 @@ impl Client for ClientRef {
     }
     unsafe fn send_ready(&self) {
         let peer = (*self.get()).peer;
-        proc_send(peer, MSG_READY, -1, std::ptr::null(), 0);
+        proc_send(peer, MSG_READY, None, std::ptr::null(), 0);
     }
     unsafe fn send_message(
         &self,
         kind: crate::src::compat::imsg::msgtype,
-        fd: i32,
+        fd: Option<OwnedFd>,
         data: *const std::ffi::c_void,
         size: usize,
     ) -> i32 {
@@ -1507,7 +1507,7 @@ impl Client for ClientRef {
         proc_send(
             peer,
             MSG_LOCK,
-            -1,
+            None,
             command.as_ptr().cast(),
             command.to_bytes_with_nul().len(),
         );
