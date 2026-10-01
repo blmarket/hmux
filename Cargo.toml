@@ -5,6 +5,7 @@ members = [
     "hmux-rt",
     "hmux-refbox",
 ]
+
 [package]
 name = "hmux2"
 authors = ["C2Rust"]
@@ -17,9 +18,11 @@ autobins = false
 name = "hmux2"
 path = "src/lib.rs"
 crate-type = ["rlib"]
+
 [[bin]]
 path = "src/main.rs"
 name = "hmux2"
+
 [dependencies]
 futures-core = "0.3"
 hmux-cmdparse = { path = "hmux-cmdparse" }
