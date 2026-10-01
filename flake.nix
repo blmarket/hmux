@@ -21,6 +21,7 @@
       rustNightlyFor = pkgs: pkgs.rust-bin.nightly.latest.default.override {
         extensions = [ "rust-src" "rust-analyzer" "llvm-tools-preview" ];
       };
+      agentmonFor = pkgs: pkgs.callPackage ./agentmon-tui/package.nix { };
       cargoLlvmCovFor = pkgs: pkgs.callPackage ./nix/cargo-llvm-cov.nix { };
     in
     {
@@ -58,6 +59,7 @@
           };
         in
         {
+          agentmon = agentmonFor pkgs;
           tmux-target = pkgs.callPackage ./nix/tmux-target.nix { };
           tmux = self.packages.${system}.tmux-target;
         }
@@ -65,6 +67,19 @@
           inherit hmux;
           default = hmux;
         });
+
+      apps = forAllSystems (system: {
+        agentmon = {
+          type = "app";
+          program = "${self.packages.${system}.agentmon}/bin/agentmon";
+          meta.description = "Create and monitor coding-agent runs through hmux";
+        };
+        looper = {
+          type = "app";
+          program = "${self.packages.${system}.agentmon}/bin/looper";
+          meta.description = "Run a coding agent in a loop through hmux";
+        };
+      });
 
       devShells = forAllSystems (system:
         let
@@ -74,6 +89,7 @@
           rustStable = rustStableFor pkgs;
           rustNightly = rustNightlyFor pkgs;
           cargoLlvmCov = cargoLlvmCovFor pkgs;
+          agentmon = agentmonFor pkgs;
         in
         {
           default = pkgs.mkShell ({
@@ -100,6 +116,7 @@
               pkgs.bashInteractive
               tmuxTarget
               rustNightly
+              agentmon # the `agentmon` dashboard and the `looper` loop runner
               pkgs.cargo-nextest
               cargoLlvmCov
               pkgs.gnumake
