@@ -92,6 +92,7 @@ pub struct cmdq_item {
     cancel_data: Option<Box<dyn FnOnce()>>,
     /// A foreground command owns its delayed work until dispatch or removal.
     wait_timer: Option<crate::src::reactor::Timer>,
+    file_task: Option<hmux_rt::mio::Task>,
     wait_file: std::rc::Weak<std::cell::UnsafeCell<client_file>>,
 }
 
@@ -134,6 +135,7 @@ impl cmdq_item {
             cb: Default::default(),
             cancel_data: Default::default(),
             wait_timer: None,
+            file_task: None,
             wait_file: Default::default(),
         }
     }
@@ -243,9 +245,8 @@ unsafe fn cmdq_cancel_unfired_data(owner: &std::rc::Rc<std::cell::UnsafeCell<cmd
     }
 }
 
-/// The file remains live until its terminal event, including when a local
-/// file operation schedules immediate completion. The queue item only borrows
-/// it through a weak handle while the command is waiting.
+/// Remote files are owned by their stream index. Local completion work is
+/// retained by file_task while this command waits.
 pub(crate) fn cmdq_set_wait_file(
     item: &mut cmdq_item,
     file: &std::rc::Rc<std::cell::UnsafeCell<client_file>>,
@@ -257,12 +258,21 @@ pub(crate) fn cmdq_set_wait_file(
     item.wait_file = std::rc::Rc::downgrade(file);
 }
 
+pub(crate) fn cmdq_set_file_task(item: &mut cmdq_item, task: hmux_rt::mio::Task) {
+    assert!(
+        item.file_task.is_none(),
+        "queue item already has a file task"
+    );
+    item.file_task = Some(task);
+}
+
 pub(crate) fn cmdq_clear_wait_file(
     item: &mut cmdq_item,
     file: &std::rc::Weak<std::cell::UnsafeCell<client_file>>,
 ) {
     if item.wait_file.ptr_eq(file) {
         item.wait_file = std::rc::Weak::new();
+        drop(item.file_task.take());
     }
 }
 

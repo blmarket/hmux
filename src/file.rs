@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod completion_tests;
 mod model;
 mod stream;
 use model::FileRegistration;
@@ -290,7 +292,32 @@ unsafe fn file_fire_done(owner: &Rc<UnsafeCell<client_file>>) {
     if let Some(wake) = wake {
         wake.wake();
     }
-    file_fire_done_cb(owner);
+    if matches!((*owner.get()).registration, FileRegistration::Unlinked) {
+        // Local reads have no stream index. Their waiting command owns the task,
+        // which retains the file until completion or cancellation.
+        let item = (*owner.get()).wait_item.upgrade().expect("local file wait");
+        let file = owner.clone();
+        let mut task = None;
+        crate::src::reactor::task_start(&mut task, move || {
+            Ok(async move { unsafe { file_fire_done_cb(&file) } })
+        })
+        .expect("schedule local file completion");
+        crate::src::cmd::queue::cmdq_set_file_task(&mut *item.get(), task.unwrap());
+    } else {
+        // The existing stream index owns this file. Its task only observes it.
+        let file = Rc::downgrade(owner);
+        crate::src::reactor::task_start(&mut (*owner.get()).done_task, move || {
+            Ok(async move {
+                if let Some(file) = file.upgrade() {
+                    unsafe {
+                        drop((*file.get()).done_task.take());
+                        file_fire_done_cb(&file);
+                    }
+                }
+            })
+        })
+        .expect("schedule file completion");
+    }
 }
 unsafe fn file_fire_read(file_owner: &Rc<UnsafeCell<client_file>>) {
     let cf = &mut *file_owner.get();

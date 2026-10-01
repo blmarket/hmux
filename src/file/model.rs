@@ -34,6 +34,7 @@ pub struct client_file {
     pub(super) wait_client: ClientWeak,
     pub(super) cancel_data: Option<Box<dyn FnOnce()>>,
     pub(super) completed: bool,
+    pub(super) done_task: Option<hmux_rt::mio::Task>,
     pub(super) push_task: Option<hmux_rt::mio::Task>,
     pub(super) read: super::stream::ReadState,
 }
@@ -70,6 +71,7 @@ impl client_file {
             wait_client: Default::default(),
             cancel_data: Default::default(),
             completed: Default::default(),
+            done_task: Default::default(),
             push_task: Default::default(),
             read: Default::default(),
         }
