@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use super::readiness::IoState;
 use super::signals::SignalState;
-use super::{Descriptor, Io, Signals, Sleep};
+use super::{Io, Signals, Sleep};
 
 // Bound each turn so a self-waking task cannot monopolize the host thread.
 const MAX_POLLS_PER_TURN: usize = 128;
@@ -210,13 +210,8 @@ pub struct Handle {
 impl crate::Handle for Handle {
     type Task = Task;
     type Io = Io;
-    type Descriptor = Descriptor;
     type Signals = Signals;
     type Sleep = Sleep;
-
-    fn descriptor(&self, fd: Rc<OwnedFd>) -> io::Result<Descriptor> {
-        Descriptor::new(self, fd)
-    }
 
     fn spawn<F>(&self, future: F) -> io::Result<Task>
     where
@@ -241,7 +236,7 @@ impl crate::Handle for Handle {
         Ok(Task { state })
     }
 
-    fn io(&self, fd: Rc<OwnedFd>) -> io::Result<Io> {
+    fn io(&self, fd: OwnedFd) -> io::Result<Io> {
         Io::new(&self.core, fd)
     }
     fn signals(&self, set: &[std::ffi::c_int]) -> io::Result<Signals> {

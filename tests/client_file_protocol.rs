@@ -136,6 +136,26 @@ fn exercise_files(server: &Server, client: &Path) {
         data
     );
 
+    let output = server.directory.join("output");
+    server.success(
+        client,
+        &["save-buffer", "-b", "from-stdin", output.to_str().unwrap()],
+        None,
+    );
+    assert_eq!(fs::read(&output).unwrap(), data);
+    server.success(
+        client,
+        &[
+            "save-buffer",
+            "-a",
+            "-b",
+            "from-stdin",
+            output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(fs::read(&output).unwrap(), data.repeat(2));
+
     let pane = server.success(
         client,
         &[
@@ -196,4 +216,11 @@ fn file_transfers_interoperate_with_unmodified_tmux_in_both_roles() {
     exercise_files(&hmux_server, &reference);
     let reference_server = Server::new(&reference, "tmux-server");
     exercise_files(&reference_server, hmux);
+}
+
+#[test]
+fn file_transfers_work_with_hmux_client_and_server() {
+    let hmux = Path::new(env!("CARGO_BIN_EXE_hmux2"));
+    let server = Server::new(hmux, "hmux-both");
+    exercise_files(&server, hmux);
 }

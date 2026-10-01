@@ -134,7 +134,7 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
     (*peer).io_writable = writable;
     let fd = (*peer).ibuf.fd;
     crate::src::reactor::task_start(&mut (*peer).io_task, move || {
-        let source = reactor::descriptor(fd)?;
+        let source = reactor::io(fd)?;
         Ok(async move {
             loop {
                 let (readable, writable) =

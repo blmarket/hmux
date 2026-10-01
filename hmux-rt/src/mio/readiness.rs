@@ -1,8 +1,8 @@
 use std::cell::{Cell, RefCell};
-use std::future::Future;
+use std::future::{Future, poll_fn};
 use std::io;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::rc::{Rc, Weak};
 use std::task::{Context, LocalWaker, Poll};
 
@@ -32,7 +32,8 @@ pub(crate) struct IoState {
     core: Weak<Core>,
     id: usize,
     raw: RawFd,
-    fd: RefCell<Option<Rc<OwnedFd>>>,
+    fd: RefCell<Option<OwnedFd>>,
+    registered: bool,
     read: DirectionState,
     write: DirectionState,
 }
@@ -118,6 +119,9 @@ impl IoState {
             }
         };
         *state.waiter.borrow_mut() = Some((id, context.local_waker().clone()));
+        if !self.registered {
+            return Poll::Ready(Ok((state.generation.get(), Readiness::default())));
+        }
         if let Some(ready) = state.cached.get() {
             return Poll::Ready(Ok((state.generation.get(), ready)));
         }
@@ -143,12 +147,13 @@ impl IoState {
     }
 
     pub(crate) fn close(&self, normal: bool) {
+        // Retain ownership until deregistration and waiter cleanup are complete.
         let fd = self.fd.borrow_mut().take();
         if fd.is_none() {
             return;
         }
         if let Some(core) = self.core.upgrade() {
-            if normal {
+            if normal && self.registered {
                 let error = core
                     .registry
                     .borrow()
@@ -179,8 +184,12 @@ impl Drop for IoState {
     }
 }
 
-/// Registered nonblocking byte stream implementing [`crate::AsyncRead`] and
-/// [`crate::AsyncWrite`]. Readiness and custom syscall scheduling are internal.
+/// An owned descriptor with [`crate::AsyncFd`] readiness
+/// waits and [`crate::AsyncRead`]/[`crate::AsyncWrite`] byte-stream operations.
+/// Use readiness waits with your own bounded, nonblocking syscalls for listeners,
+/// datagrams, or terminals. Regular files bypass the readiness poller and perform
+/// synchronous I/O on the runtime thread. Devices rejected by the poller can
+/// also perform immediate I/O, but cannot wait for a later readiness event.
 ///
 /// Custom operations are not part of the public byte-stream API:
 /// ```compile_fail
@@ -200,7 +209,7 @@ pub struct Io {
 }
 
 impl Io {
-    pub(crate) fn new(core: &Rc<Core>, fd: Rc<OwnedFd>) -> io::Result<Self> {
+    pub(crate) fn new(core: &Rc<Core>, fd: OwnedFd) -> io::Result<Self> {
         core.check()?;
         let raw = fd.as_raw_fd();
         if core.fds.borrow().contains_key(&raw) {
@@ -209,46 +218,112 @@ impl Io {
                 "descriptor already registered",
             ));
         }
-        // SAFETY: fcntl only queries flags on a live, leased descriptor.
+        let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+        // SAFETY: fd is owned and stat provides valid output storage.
+        if unsafe { libc::fstat(raw, stat.as_mut_ptr()) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: successful fstat initialized stat.
+        let regular = unsafe { stat.assume_init() }.st_mode & libc::S_IFMT == libc::S_IFREG;
+        // SAFETY: fcntl only queries flags on a live, owned descriptor.
         let flags = unsafe { libc::fcntl(raw, libc::F_GETFL) };
         if flags < 0 {
             return Err(io::Error::last_os_error());
         }
-        if flags & libc::O_NONBLOCK == 0 {
+        if !regular && flags & libc::O_NONBLOCK == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "descriptor must be nonblocking",
             ));
         }
         let id = core.allocate()?;
-        let result = core
-            .registry
-            .borrow()
-            .as_ref()
-            .ok_or_else(invalid)?
-            .register(
-                &mut SourceFd(&raw),
-                mio::Token(id),
-                mio::Interest::READABLE | mio::Interest::WRITABLE,
-            );
-        if let Err(error) = result {
-            return Err(if error.raw_os_error() == Some(libc::EPERM) {
-                io::Error::new(io::ErrorKind::Unsupported, error)
-            } else {
-                error
-            });
-        }
+        let registered = if regular {
+            false
+        } else {
+            let result = core
+                .registry
+                .borrow()
+                .as_ref()
+                .ok_or_else(invalid)?
+                .register(
+                    &mut SourceFd(&raw),
+                    mio::Token(id),
+                    mio::Interest::READABLE | mio::Interest::WRITABLE,
+                );
+            match result {
+                Ok(()) => true,
+                // epoll rejects immediate-I/O devices such as /dev/null.
+                Err(error) if error.raw_os_error() == Some(libc::EPERM) => false,
+                Err(error) => return Err(error),
+            }
+        };
         let state = Rc::new(IoState {
             core: Rc::downgrade(core),
             id,
             raw,
             fd: RefCell::new(Some(fd)),
+            registered,
             read: DirectionState::default(),
             write: DirectionState::default(),
         });
         core.io.borrow_mut().insert(id, Rc::downgrade(&state));
         core.fds.borrow_mut().insert(raw, id);
         Ok(Self { state })
+    }
+
+    fn probe(&self, read: bool, write: bool) -> io::Result<(bool, bool)> {
+        self.state.check()?;
+        let mut pfd = libc::pollfd {
+            fd: self.state.raw(),
+            events: (if read { libc::POLLIN } else { 0 }) | (if write { libc::POLLOUT } else { 0 }),
+            revents: 0,
+        };
+        // SAFETY: one initialized pollfd; zero timeout never blocks.
+        let result = unsafe { libc::poll(&mut pfd, 1, 0) };
+        if result < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if pfd.revents & libc::POLLNVAL != 0 {
+            return Err(io::Error::from_raw_os_error(libc::EBADF));
+        }
+        let terminal = pfd.revents & (libc::POLLERR | libc::POLLHUP) != 0;
+        let ready = (
+            read && (terminal || pfd.revents & libc::POLLIN != 0),
+            write && (terminal || pfd.revents & libc::POLLOUT != 0),
+        );
+        if ready.0 || ready.1 {
+            Ok(ready)
+        } else {
+            Err(io::ErrorKind::WouldBlock.into())
+        }
+    }
+}
+
+impl crate::AsyncFd for Io {
+    /// Wait for requested directions. The returned pair is (readable, writable).
+    /// Cancellation consumes no bytes. One waiter per direction is permitted.
+    async fn ready(&self, read: bool, write: bool) -> io::Result<(bool, bool)> {
+        if !read && !write {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        match self.probe(read, write) {
+            Err(e)
+                if e.kind() == io::ErrorKind::WouldBlock
+                    || e.kind() == io::ErrorKind::Interrupted => {}
+            result => return result,
+        }
+        let mut reader = pin!(self.read_with(|| self.probe(true, false)));
+        let mut writer = pin!(self.write_with(|| self.probe(false, true)));
+        poll_fn(|cx| {
+            if read && let Poll::Ready(result) = reader.as_mut().poll(cx) {
+                return Poll::Ready(result);
+            }
+            if write && let Poll::Ready(result) = writer.as_mut().poll(cx) {
+                return Poll::Ready(result);
+            }
+            Poll::Pending
+        })
+        .await
     }
 }
 
@@ -295,8 +370,9 @@ impl crate::AsyncWrite for Io {
 }
 
 impl Io {
-    // Internal adapter hook. The closure must perform bounded, nonblocking I/O
-    // on this descriptor, reporting WouldBlock only if no progress was made.
+    // Internal adapter hook. The closure performs one bounded operation,
+    // nonblocking except for the temporary regular-file path, and reports
+    // WouldBlock only if no progress was made.
     // Invoke business callbacks after awaiting, never inside the retry closure.
     pub(crate) fn read_with<T, F>(&self, operation: F) -> impl Future<Output = io::Result<T>>
     where
@@ -358,6 +434,15 @@ impl<T, F: FnMut() -> io::Result<T>> Future for Operation<'_, F> {
         // No runtime/state borrow crosses the caller's syscall closure.
         match (this.operation)() {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                if !this.source.state.registered {
+                    this.source
+                        .state
+                        .remove_waiter(this.direction, this.id.take());
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "descriptor cannot wait for readiness",
+                    )));
+                }
                 this.source.state.clear(this.direction, generation);
                 // Register before returning Pending. A newer event may have
                 // survived the clear; schedule another poll in that case.
@@ -405,11 +490,30 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn unregistered_operation_cannot_wait_and_releases_its_waiter() {
+        let mut runtime = super::super::Runtime::new().unwrap();
+        let file = std::fs::File::open(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")).unwrap();
+        let source = runtime.handle().io(file.into()).unwrap();
+        let mut operation = source.read_with(|| Err::<(), _>(io::ErrorKind::WouldBlock.into()));
+        assert!(
+            matches!(poll(&mut operation), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Unsupported)
+        );
+        assert!(matches!(
+            poll(&mut source.read_with(|| Ok(42))),
+            Poll::Ready(Ok(42))
+        ));
+        drop(operation);
+        drop(source);
+        // Bypassed descriptors must never be deregistered from mio.
+        tick(&mut runtime);
+    }
+
+    #[test]
     fn acknowledging_an_old_generation_preserves_a_new_notification() {
         let mut runtime = super::super::Runtime::new().unwrap();
         let (mut writer, reader) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
-        let source = runtime.handle().io(Rc::new(reader.into())).unwrap();
+        let source = runtime.handle().io(reader.into()).unwrap();
         writer.write_all(b"first").unwrap();
         runtime.poll(Some(Duration::ZERO)).unwrap();
         let old = source.state.read.generation.get();
@@ -436,10 +540,10 @@ mod tests {
     fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
         Pin::new(future).poll(&mut Context::from_waker(Waker::noop()))
     }
-    fn pair() -> (UnixStream, Rc<OwnedFd>) {
+    fn pair() -> (UnixStream, OwnedFd) {
         let (writer, reader) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
-        (writer, Rc::new(reader.into()))
+        (writer, reader.into())
     }
     #[test]
     fn interrupted_operations_yield_keep_the_waiter_and_return_errors() {
@@ -480,7 +584,7 @@ mod tests {
         let listener = UnixListener::bind(&socket_path).unwrap();
         // Unix sockets remain connectable through the bound pathname until unlink.
         listener.set_nonblocking(true).unwrap();
-        let lease = Rc::new(OwnedFd::from(listener.try_clone().unwrap()));
+        let lease = OwnedFd::from(listener.try_clone().unwrap());
         let source = runtime.handle().io(lease).unwrap();
         let mut accept = source.read_with(|| listener.accept());
         assert!(poll(&mut accept).is_pending());

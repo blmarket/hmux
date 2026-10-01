@@ -1,5 +1,5 @@
 mod api;
-use super::{descriptor, handle};
+use super::{handle, io};
 use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 pub use api::*;
@@ -107,7 +107,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     if state.fd == -1 {
         return Ok(());
     }
-    let source = descriptor(state.fd)?;
+    let source = io(state.fd)?;
     let s = state.clone();
     let task = handle().spawn(async move {
         // Each readiness delivery performs at most one 64 KiB read/write, then
@@ -278,7 +278,11 @@ pub unsafe fn bufferevent_new(
     });
     if let Err(error) = start(&s) {
         bufferevent_free(stream);
-        *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+        *libc::__errno_location() = if error.kind() == std::io::ErrorKind::Unsupported {
+            libc::EOPNOTSUPP
+        } else {
+            error.raw_os_error().unwrap_or(libc::EIO)
+        };
         return std::ptr::null_mut();
     }
     stream

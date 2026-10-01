@@ -9,7 +9,6 @@ use std::ffi::c_int;
 use std::future::Future;
 use std::io;
 use std::os::fd::OwnedFd;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// Owns and drives the runtime. Polling borrows the owner through callback
@@ -36,12 +35,8 @@ pub trait Handle: Clone + 'static {
     /// Owns a spawned future; dropping it cancels the work.
     type Task: 'static;
 
-    /// Leased descriptor supporting async reads and writes.
+    /// Owned descriptor supporting readiness waits and async byte-stream I/O.
     type Io: AsyncFd + AsyncRead + AsyncWrite + 'static;
-
-    /// Readiness bridge for nonblocking consumers, including descriptors that
-    /// the OS poller cannot register (such as regular files).
-    type Descriptor: AsyncFd + 'static;
 
     /// Signal subscription.
     type Signals: Signals + 'static;
@@ -56,12 +51,11 @@ pub trait Handle: Clone + 'static {
     where
         F: Future<Output = ()> + 'static;
 
-    /// Lease a nonblocking byte-stream descriptor.
-    fn io(&self, fd: Rc<OwnedFd>) -> io::Result<Self::Io>;
-
-    /// Lease a descriptor for non-consuming readiness waits. Regular files
-    /// bypass the poller; their actual disk I/O can still block the thread.
-    fn descriptor(&self, fd: Rc<OwnedFd>) -> io::Result<Self::Descriptor>;
+    /// Take ownership of a descriptor for readiness waits and byte-stream I/O.
+    /// Non-file descriptors must be nonblocking. Regular files may perform
+    /// synchronous I/O on the runtime thread; they bypass the readiness poller.
+    /// Construction errors close the fd.
+    fn io(&self, fd: OwnedFd) -> io::Result<Self::Io>;
 
     /// Subscribe to a nonempty set of valid, catchable signal numbers.
     fn signals(&self, set: &[c_int]) -> io::Result<Self::Signals>;
@@ -70,11 +64,12 @@ pub trait Handle: Clone + 'static {
     fn sleep_until(&self, deadline: Instant) -> Self::Sleep;
 }
 
-/// A registered nonblocking descriptor with local-waker readiness waits.
+/// An owned descriptor with local-waker readiness waits.
 ///
 /// Created through [`Handle::io`]. The descriptor is bound to its runtime, so
-/// waiting needs no runtime handle. Dropping the registration deregisters it;
-/// dropping the runtime invalidates subsequent waits.
+/// waiting needs no runtime handle. Dropping the registration deregisters and
+/// closes it; dropping the runtime closes registered descriptors and invalidates
+/// subsequent waits.
 ///
 /// Readiness consumes no data. The caller must perform nonblocking I/O and
 /// handle `WouldBlock` by waiting again. Only one pending waiter per direction

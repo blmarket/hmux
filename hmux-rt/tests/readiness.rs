@@ -1,0 +1,221 @@
+//! Non-consuming readiness waits share the byte I/O registration and cleanup.
+use hmux_rt::{AsyncFd as _, AsyncRead as _, AsyncWrite as _, Handle as _, Runtime as _, mio};
+use std::cell::Cell;
+use std::future::Future;
+use std::io::{self, Read, Write};
+use std::os::fd::{AsRawFd, RawFd};
+use std::os::unix::net::UnixStream;
+use std::pin::pin;
+use std::rc::Rc;
+use std::task::{Context, Poll, Waker};
+use std::time::Duration;
+
+fn assert_closed(raw: RawFd) {
+    // SAFETY: F_GETFD only queries the descriptor number.
+    assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
+    assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
+}
+
+#[test]
+fn cancelled_readiness_does_not_consume_input_and_rearming_needs_no_new_edge() {
+    let mut rt = mio::Runtime::new().unwrap();
+    let (mut peer, fd) = UnixStream::pair().unwrap();
+    fd.set_nonblocking(true).unwrap();
+    let source = Rc::new(rt.handle().io(fd.into()).unwrap());
+    let s = source.clone();
+    let cancelled = rt
+        .handle()
+        .spawn(async move {
+            s.ready(true, false).await.unwrap();
+        })
+        .unwrap();
+    rt.poll(Some(Duration::ZERO)).unwrap();
+    drop(cancelled);
+    peer.write_all(b"still present").unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let observed = calls.clone();
+    let task = rt
+        .handle()
+        .spawn(async move {
+            for _ in 0..2 {
+                assert_eq!(source.ready(true, false).await.unwrap(), (true, false));
+                observed.set(observed.get() + 1);
+            }
+        })
+        .unwrap();
+    rt.poll(Some(Duration::ZERO)).unwrap();
+    assert_eq!(calls.get(), 2);
+    drop(task);
+}
+
+#[test]
+fn readiness_and_byte_reads_share_one_waiter_and_cancellation_path() {
+    let mut rt = mio::Runtime::new().unwrap();
+    let (mut peer, fd) = UnixStream::pair().unwrap();
+    fd.set_nonblocking(true).unwrap();
+    let source = rt.handle().io(fd.into()).unwrap();
+    let mut context = Context::from_waker(Waker::noop());
+    let mut wait = Box::pin(source.ready(true, false));
+    assert!(wait.as_mut().poll(&mut context).is_pending());
+    let mut byte = [0; 1];
+    assert!(matches!(
+        pin!(source.read(&mut byte)).as_mut().poll(&mut context),
+        Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::AlreadyExists
+    ));
+    drop(wait);
+    peer.write_all(b"x").unwrap();
+    rt.poll(Some(Duration::ZERO)).unwrap();
+    assert!(matches!(
+        pin!(source.ready(true, false)).as_mut().poll(&mut context),
+        Poll::Ready(Ok((true, false)))
+    ));
+    assert!(matches!(
+        pin!(source.read(&mut byte)).as_mut().poll(&mut context),
+        Poll::Ready(Ok(1))
+    ));
+    assert_eq!(&byte, b"x");
+}
+
+#[test]
+fn stale_runtime_handle_rejects_io_and_closes_fd() {
+    let rt = mio::Runtime::new().unwrap();
+    let handle = rt.handle();
+    let (mut peer, fd) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    fd.set_nonblocking(true).unwrap();
+    let raw = fd.as_raw_fd();
+    drop(rt);
+    assert!(matches!(handle.io(fd.into()), Err(e) if e.kind() == io::ErrorKind::BrokenPipe));
+    assert_closed(raw);
+    assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
+}
+
+#[test]
+fn registered_descriptor_closes_on_runtime_shutdown_and_invalidates_pending_waits() {
+    let rt = mio::Runtime::new().unwrap();
+    let (mut peer, fd) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    fd.set_nonblocking(true).unwrap();
+    let source = rt.handle().io(fd.into()).unwrap();
+    let mut wait = pin!(source.ready(true, false));
+    assert!(
+        wait.as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    drop(rt);
+    assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
+    assert!(matches!(
+        wait.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe
+    ));
+}
+
+#[test]
+fn registered_descriptor_closes_on_drop() {
+    let mut rt = mio::Runtime::new().unwrap();
+    let (mut peer, fd) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    fd.set_nonblocking(true).unwrap();
+    let source = rt.handle().io(fd.into()).unwrap();
+    drop(source);
+    assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
+    // A deregistration attempted after close would report an error here.
+    rt.poll(Some(Duration::ZERO)).unwrap();
+}
+
+#[test]
+fn rejected_descriptor_is_closed() {
+    let rt = mio::Runtime::new().unwrap();
+    let (mut peer, fd) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    assert!(matches!(rt.handle().io(fd.into()), Err(e) if e.kind() == io::ErrorKind::InvalidInput));
+    assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn immediate_device_supports_readiness_and_io_and_closes() {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut rt = mio::Runtime::new().unwrap();
+    let fd = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open("/dev/null")
+        .unwrap();
+    let raw = fd.as_raw_fd();
+    let source = rt.handle().io(fd.into()).unwrap();
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(matches!(
+        pin!(source.ready(true, true)).poll(&mut context),
+        Poll::Ready(Ok((true, true)))
+    ));
+    assert!(matches!(
+        pin!(source.write(b"discard")).poll(&mut context),
+        Poll::Ready(Ok(7))
+    ));
+    assert!(matches!(
+        pin!(source.read(&mut [0; 1])).poll(&mut context),
+        Poll::Ready(Ok(0))
+    ));
+    drop(source);
+    assert_closed(raw);
+    rt.poll(Some(Duration::ZERO)).unwrap();
+}
+
+#[test]
+fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
+    use std::io::{Seek, SeekFrom};
+    let path = std::env::temp_dir().join(format!("hmux-rt-file-{}", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    file.write_all(b"input").unwrap();
+    file.seek(SeekFrom::Start(0)).unwrap();
+    let mut observer = file.try_clone().unwrap();
+    let raw = file.as_raw_fd();
+    let rt = mio::Runtime::new().unwrap();
+    // Regular files do not need O_NONBLOCK, which cannot prevent disk waits.
+    let source = rt.handle().io(file.into()).unwrap();
+    let mut context = Context::from_waker(Waker::noop());
+    let mut bytes = [0; 5];
+    drop(Box::pin(source.read(&mut bytes)));
+    drop(Box::pin(source.write(b"cancelled")));
+    assert_eq!(observer.stream_position().unwrap(), 0);
+    assert!(matches!(
+        pin!(source.ready(true, true)).poll(&mut context),
+        Poll::Ready(Ok((true, true)))
+    ));
+    assert_eq!(observer.stream_position().unwrap(), 0);
+    assert!(matches!(
+        pin!(source.read(&mut bytes)).poll(&mut context),
+        Poll::Ready(Ok(5))
+    ));
+    assert_eq!(&bytes, b"input");
+    assert!(matches!(
+        pin!(source.read(&mut bytes)).poll(&mut context),
+        Poll::Ready(Ok(0))
+    ));
+    assert!(matches!(
+        pin!(source.write(b"output")).poll(&mut context),
+        Poll::Ready(Ok(6))
+    ));
+    observer.seek(SeekFrom::Start(0)).unwrap();
+    let mut contents = Vec::new();
+    observer.read_to_end(&mut contents).unwrap();
+    assert_eq!(contents, b"inputoutput");
+    drop(rt);
+    assert_closed(raw);
+    assert!(
+        matches!(pin!(source.read(&mut bytes)).poll(&mut context), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
+    );
+    assert!(
+        matches!(pin!(source.ready(true, false)).poll(&mut context), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
+    );
+}

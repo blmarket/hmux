@@ -381,4 +381,38 @@ mod tests {
             );
         }
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn freeing_file_stream_restores_flags_and_releases_callbacks() {
+        let file = std::fs::File::open("Cargo.toml").unwrap();
+        let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_eq!(flags & libc::O_NONBLOCK, 0);
+        let capture = Rc::new(());
+        let observer = Rc::downgrade(&capture);
+        let result = unsafe {
+            new_buffer_event(
+                file.as_raw_fd(),
+                StreamOptions::default(),
+                Callbacks {
+                    read: Some(Box::new(move |_| {
+                        let _keep = &capture;
+                        panic!("disabled stream must not run callbacks");
+                    })),
+                    ..Default::default()
+                },
+            )
+        };
+        let stream = result.unwrap();
+        stream.free();
+        // Explicit cleanup restores flags and leaves the caller's fd open.
+        assert_eq!(
+            unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) },
+            flags
+        );
+        assert!(observer.upgrade().is_none());
+        super::super::super::poll_runtime_with_timeout(Some(std::time::Duration::ZERO));
+        super::super::super::shutdown_runtime();
+    }
 }

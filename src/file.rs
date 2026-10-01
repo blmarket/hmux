@@ -1009,10 +1009,14 @@ pub unsafe fn file_write_open(
                     }),
                 );
                 if stream.is_null() {
-                    fatalx(|out| out.write_all(b"out of memory"));
+                    error = *__errno_location();
+                    close(cf.fd);
+                    cf.fd = -1;
+                    client_files_remove(cf);
+                } else {
+                    cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                    bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short);
                 }
-                cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
-                bufferevent_enable(stream, EV_WRITE as ::core::ffi::c_short);
             }
         }
     }
@@ -1224,11 +1228,15 @@ pub unsafe fn file_read_open(
                     }),
                 );
                 if stream.is_null() {
-                    fatalx(|out| out.write_all(b"out of memory"));
+                    error = *__errno_location();
+                    close((*cf).fd);
+                    (*cf).fd = -1;
+                    client_files_remove(&mut *cf);
+                } else {
+                    (*cf).event = crate::src::reactor::StreamHandle::from_ptr(stream);
+                    bufferevent_enable(stream, EV_READ as ::core::ffi::c_short);
+                    return;
                 }
-                (*cf).event = crate::src::reactor::StreamHandle::from_ptr(stream);
-                bufferevent_enable(stream, EV_READ as ::core::ffi::c_short);
-                return;
             }
         }
     }

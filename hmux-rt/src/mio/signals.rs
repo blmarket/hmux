@@ -91,7 +91,7 @@ impl Signals {
         let (reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
         writer.set_nonblocking(true)?;
-        let source = Io::new(core, Rc::new(OwnedFd::from(reader)))?;
+        let source = Io::new(core, reader.into())?;
         let writer = Arc::new(OwnedFd::from(writer));
         let mut resources = Resources {
             io: source,

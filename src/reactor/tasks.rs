@@ -68,7 +68,7 @@ mod tests {
         let observed = calls.clone();
         let mut task = None::<hmux_rt::mio::Task>;
         crate::src::reactor::task_start(&mut task, move || {
-            let source = super::super::descriptor(fd)?;
+            let source = super::super::io(fd)?;
             let observed = observed.clone();
             Ok(async move {
                 source.ready(true, false).await.unwrap();
@@ -91,7 +91,7 @@ mod tests {
 
         let observed = calls.clone();
         crate::src::reactor::task_start(&mut moved, move || {
-            let source = super::super::descriptor(fd)?;
+            let source = super::super::io(fd)?;
             let observed = observed.clone();
             Ok(async move {
                 source.ready(true, false).await.unwrap();
@@ -152,7 +152,7 @@ mod tests {
         let fd = old_reader.into_raw_fd();
         super::super::init_runtime();
         // An executing dispatch retains its descriptor lease until it returns.
-        let old_source = super::super::descriptor(fd).unwrap();
+        let old_source = super::super::io(fd).unwrap();
         super::super::forget_descriptor(fd);
         assert_eq!(unsafe { libc::close(fd) }, 0);
         assert_eq!(unsafe { libc::dup2(new_reader.as_raw_fd(), fd) }, fd);
@@ -161,7 +161,7 @@ mod tests {
         let observed = calls.clone();
         let mut task = None::<hmux_rt::mio::Task>;
         crate::src::reactor::task_start(&mut task, move || {
-            let source = super::super::descriptor(fd)?;
+            let source = super::super::io(fd)?;
             let observed = observed.clone();
             Ok(async move {
                 source.ready(true, false).await.unwrap();

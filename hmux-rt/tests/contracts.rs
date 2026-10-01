@@ -5,8 +5,8 @@ use hmux_rt::mio;
 use hmux_rt::{AsyncRead, AsyncWrite, Handle, Runtime};
 use std::cell::{Cell, RefCell};
 use std::future::{Future, poll_fn};
-use std::io::{self, Write};
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::io::{self, Read, Write};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::pin::Pin;
 use std::rc::Rc;
@@ -19,10 +19,10 @@ fn tick(runtime: &mut mio::Runtime) {
 fn poll<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
     Pin::new(future).poll(&mut Context::from_waker(Waker::noop()))
 }
-fn pair() -> (UnixStream, Rc<OwnedFd>) {
+fn pair() -> (UnixStream, OwnedFd) {
     let (writer, reader) = UnixStream::pair().unwrap();
     reader.set_nonblocking(true).unwrap();
-    (writer, Rc::new(reader.into()))
+    (writer, reader.into())
 }
 
 struct Dropped(Rc<Cell<usize>>);
@@ -157,8 +157,9 @@ fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
     assert_eq!(count.get(), 1);
     tick(&mut runtime);
 
-    let (_writer, fd) = pair();
-    let source = handle.io(fd.clone()).unwrap();
+    let (mut writer, fd) = pair();
+    writer.set_nonblocking(true).unwrap();
+    let source = handle.io(fd).unwrap();
     let spy = Dropped(count.clone());
     let task = handle
         .spawn(async move {
@@ -169,9 +170,39 @@ fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
     tick(&mut runtime);
     drop(task);
     assert_eq!(count.get(), 2);
-    assert_eq!(Rc::strong_count(&fd), 1);
-    // The kernel registration has been removed, with no intervening turn.
-    let _replacement = handle.io(fd).unwrap();
+    assert_eq!(writer.read(&mut [0; 1]).unwrap(), 0);
+    // Deregistration errors are reported by the next driver turn.
+    tick(&mut runtime);
+}
+
+#[test]
+fn dropping_io_deregisters_before_closing_the_fd() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let handle = runtime.handle();
+    let (mut writer, fd) = pair();
+    let raw = fd.as_raw_fd();
+    // Keep the open file description alive so closing the registered fd alone
+    // cannot remove its kernel registration on epoll.
+    let retained = fd.try_clone().unwrap();
+    let source = handle.io(fd).unwrap();
+    drop(source);
+    // SAFETY: F_GETFD only queries the descriptor number.
+    assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
+    assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EBADF));
+    tick(&mut runtime);
+
+    // Restore the same number and open file description. Registration would
+    // fail with EEXIST on epoll if the previous registration were still present.
+    // SAFETY: retained is live and fcntl creates a new owned descriptor.
+    let duplicate = unsafe { libc::fcntl(retained.as_raw_fd(), libc::F_DUPFD_CLOEXEC, raw) };
+    assert!(duplicate >= 0, "{}", io::Error::last_os_error());
+    // SAFETY: fcntl returned a new descriptor with no other owner.
+    let fd = unsafe { OwnedFd::from_raw_fd(duplicate) };
+    assert_eq!(fd.as_raw_fd(), raw);
+    let source = handle.io(fd).unwrap();
+    writer.write_all(b"new").unwrap();
+    tick(&mut runtime);
+    assert!(matches!(poll(&mut read_bytes(&source, 3)), Poll::Ready(Ok(bytes)) if bytes == b"new"));
 }
 
 #[test]
@@ -320,7 +351,7 @@ fn read_bytes(
 fn partial_reads_retain_readiness_across_a_pause() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = runtime.handle().io(fd.clone()).unwrap();
+    let source = runtime.handle().io(fd).unwrap();
     let mut wait = read_bytes(&source, 2);
     assert!(poll(&mut wait).is_pending());
     writer.write_all(b"first").unwrap();
@@ -342,10 +373,7 @@ fn partial_reads_retain_readiness_across_a_pause() {
 fn directional_waiter_conflicts_cancellation_and_wouldblock() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = runtime.handle().io(fd.clone()).unwrap();
-    assert!(
-        matches!(runtime.handle().io(fd.clone()), Err(e) if e.kind() == io::ErrorKind::AlreadyExists)
-    );
+    let source = runtime.handle().io(fd).unwrap();
     let mut first = read_bytes(&source, 1);
     assert!(poll(&mut first).is_pending());
     assert!(
@@ -404,16 +432,19 @@ fn kernel_readiness_is_serviced_despite_a_self_waking_task() {
 fn runtime_drop_releases_resources_and_invalidates_old_leaves() {
     let runtime = mio::Runtime::new().unwrap();
     let handle = runtime.handle();
-    let (_writer, fd) = pair();
-    let source = handle.io(fd.clone()).unwrap();
+    let (mut writer, fd) = pair();
+    writer.set_nonblocking(true).unwrap();
+    let source = handle.io(fd).unwrap();
+    let mut read = read_bytes(&source, 1);
+    assert!(poll(&mut read).is_pending());
     let mut sleep = handle.sleep_until(Instant::now());
     drop(runtime);
-    assert_eq!(Rc::strong_count(&fd), 1);
+    assert_eq!(writer.read(&mut [0; 1]).unwrap(), 0);
     assert!(
         matches!(poll(&mut sleep), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
     );
     assert!(
-        matches!(poll(&mut Box::pin(source.read(&mut [0; 1]))), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
+        matches!(poll(&mut read), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
     );
     assert!(handle.spawn(async {}).is_err());
 }
@@ -433,32 +464,14 @@ fn panic_poisons_runtime_and_resets_drive_state() {
 }
 
 #[test]
-fn descriptor_eof_and_unsupported_regular_files_are_explicit() {
+fn descriptor_eof_is_explicit() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (writer, fd) = pair();
-    let source = runtime.handle().io(fd.clone()).unwrap();
+    let source = runtime.handle().io(fd).unwrap();
     drop(writer);
     tick(&mut runtime);
     assert!(matches!(
         poll(&mut Box::pin(source.read(&mut [0; 1]))),
-        Poll::Ready(Ok(_))
+        Poll::Ready(Ok(0))
     ));
-    let mut byte = 0u8;
-    assert_eq!(
-        unsafe { libc::read(fd.as_raw_fd(), (&mut byte as *mut u8).cast(), 1) },
-        0
-    );
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
-            .unwrap();
-        assert!(
-            matches!(runtime.handle().io(Rc::new(file.into())), Err(e) if e.kind() == io::ErrorKind::Unsupported)
-        );
-    }
 }

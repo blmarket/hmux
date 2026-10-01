@@ -550,7 +550,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     let fd = server_fd;
     if timeout == 0 as ::core::ffi::c_int {
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let source = reactor::descriptor(fd)?;
+            let source = reactor::io(fd)?;
             Ok(async move {
                 source.ready(true, false).await.expect("accept wait");
                 unsafe { server_accept(fd) };

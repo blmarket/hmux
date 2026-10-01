@@ -2,16 +2,16 @@
 
 use std::io;
 use std::os::fd::OwnedFd;
-use std::rc::Rc;
 
 use crate::{AsyncRead, AsyncWrite, Handle};
 
-/// An async reader for a nonblocking byte-stream descriptor, such as a socket
-/// or pipe. Datagram and message-oriented descriptors are not supported.
+/// An async reader for a byte-stream descriptor, such as a socket, pipe, or
+/// regular file. Datagram and message-oriented descriptors are not supported.
 ///
 /// Reads run only while their future is polled. Dropping a pending read consumes
-/// no bytes. The caller must keep the descriptor nonblocking and should avoid
-/// reading through other aliases. This adapter uses the runtime's local wakers.
+/// no bytes. Non-file descriptors must remain nonblocking. Regular-file I/O may
+/// block the runtime thread. Avoid reading through other aliases. This adapter
+/// uses the runtime's local wakers.
 ///
 /// A reader cannot be passed to code requiring write access:
 /// ```compile_fail
@@ -24,11 +24,11 @@ pub struct Reader<I: AsyncRead> {
 }
 
 impl<I: AsyncRead> Reader<I> {
-    /// Register a nonblocking byte stream with the runtime.
+    /// Take ownership of a byte stream through [`Handle::io`].
     ///
-    /// The descriptor's flags are not changed. Registration errors, including
-    /// an already registered descriptor, are returned to the caller.
-    pub fn new<H: Handle<Io = I>>(handle: &H, fd: Rc<OwnedFd>) -> io::Result<Self> {
+    /// The descriptor's flags are not changed. Registration errors close the
+    /// descriptor and are returned to the caller.
+    pub fn new<H: Handle<Io = I>>(handle: &H, fd: OwnedFd) -> io::Result<Self> {
         let source = handle.io(fd)?;
         Ok(Self { source })
     }
@@ -65,7 +65,7 @@ impl<I: AsyncRead> AsyncRead for Reader<I> {
     }
 }
 
-/// A write-only view of a nonblocking byte stream, such as a child's stdin pipe.
+/// A write-only view of a byte stream, such as a child's stdin pipe or a file.
 /// This wrapper implements [`AsyncWrite`] only and adds no buffering.
 /// The host supplies a writable endpoint and retains SIGPIPE policy.
 ///
@@ -80,8 +80,10 @@ pub struct Writer<I: AsyncWrite> {
 }
 
 impl<I: AsyncWrite> Writer<I> {
-    /// Register a writable nonblocking byte stream once, without changing flags.
-    pub fn new<H: Handle<Io = I>>(handle: &H, fd: Rc<OwnedFd>) -> io::Result<Self> {
+    /// Take ownership of a writable byte stream through [`Handle::io`], without
+    /// changing flags. Construction errors close the descriptor. Regular-file
+    /// writes may block the runtime thread.
+    pub fn new<H: Handle<Io = I>>(handle: &H, fd: OwnedFd) -> io::Result<Self> {
         Ok(Self {
             source: handle.io(fd)?,
         })
