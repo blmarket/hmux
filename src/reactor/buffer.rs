@@ -36,45 +36,19 @@ pub fn evbuffer_pullup(b: &mut SegmentedBuf, size: ssize_t) -> Option<&mut [u8]>
         b.pullup(count)
     }
 }
-pub unsafe fn evbuffer_read(b: &mut SegmentedBuf, fd: c_int, limit: c_int) -> c_int {
-    let count = if limit < 0 {
-        65536
-    } else {
-        (limit as usize).min(65536)
-    };
-    let mut bytes = Vec::<u8>::with_capacity(count);
-    let n = libc::read(fd, bytes.as_mut_ptr().cast(), count);
-    if n > 0 {
-        // read initialized exactly n bytes of the allocation.
-        bytes.set_len(n as usize);
-        b.put(SegmentedBuf::from(bytes));
-    }
-    n as c_int
-}
-pub unsafe fn evbuffer_write(b: &mut SegmentedBuf, fd: c_int) -> c_int {
-    let mut chunks = [libc::iovec {
-        iov_base: std::ptr::null_mut(),
-        iov_len: 0,
-    }; 64];
-    let mut count = 0;
-    let mut remaining = 65536;
-    for chunk in b.chunks().take(64) {
-        let len = chunk.len().min(remaining);
-        chunks[count] = libc::iovec {
-            iov_base: chunk.as_ptr() as *mut c_void,
-            iov_len: len,
-        };
-        count += 1;
-        remaining -= len;
-        if remaining == 0 {
+/// Copy a bounded prefix into task-owned storage before awaiting a write.
+/// The source remains queued until the write reports progress.
+pub(crate) fn buffer_prefix(b: &SegmentedBuf, limit: usize) -> Vec<u8> {
+    let count = b.remaining().min(limit);
+    let mut bytes = Vec::with_capacity(count);
+    for chunk in b.chunks() {
+        let n = chunk.len().min(count - bytes.len());
+        bytes.extend_from_slice(&chunk[..n]);
+        if bytes.len() == count {
             break;
         }
     }
-    let n = libc::writev(fd, chunks.as_ptr(), count as c_int);
-    if n > 0 {
-        b.advance(n as usize);
-    }
-    n as c_int
+    bytes
 }
 
 fn read_line(b: &mut SegmentedBuf, ending: LineEnding) -> Option<Vec<u8>> {

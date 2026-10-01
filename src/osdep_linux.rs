@@ -1,7 +1,7 @@
 use std::ffi::CString;
 
 use crate::src::compat::stdio::CFile;
-use crate::src::ffi::libc::{fgetc, fopen, ioctl, readlink, tcgetpgrp};
+use crate::src::ffi::libc::{fgetc, fopen, readlink};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::stdio::EOF;
@@ -12,10 +12,11 @@ pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
 
 pub const TIOCGSID: ::core::ffi::c_int = 0x5429 as ::core::ffi::c_int;
 pub(crate) unsafe fn osdep_get_name_cstring(fd: ::core::ffi::c_int) -> Option<CString> {
-    let pgrp = tcgetpgrp(fd) as pid_t;
-    if pgrp == -(1 as ::core::ffi::c_int) {
+    if fd < 0 {
         return None;
     }
+    let pgrp =
+        hmux_rt::unix::terminal_foreground_group(std::os::fd::BorrowedFd::borrow_raw(fd)).ok()?;
     let path = CString::new(format!("/proc/{pgrp}/cmdline")).unwrap();
     let f = fopen(
         path.as_ptr(),
@@ -45,7 +46,11 @@ pub unsafe fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_c
     let mut pgrp: pid_t = 0;
     let mut sid: pid_t = 0;
     let mut n: ssize_t = 0;
-    pgrp = tcgetpgrp(fd) as pid_t;
+    if fd < 0 {
+        return std::ptr::null_mut();
+    }
+    pgrp = hmux_rt::unix::terminal_foreground_group(std::os::fd::BorrowedFd::borrow_raw(fd))
+        .unwrap_or(-1);
     if pgrp == -(1 as ::core::ffi::c_int) {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
@@ -56,7 +61,9 @@ pub unsafe fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_c
         MAXPATHLEN as size_t,
     );
     if n == -(1 as ::core::ffi::c_int) as ssize_t
-        && ioctl(fd, TIOCGSID as ::core::ffi::c_ulong, &raw mut sid) != -(1 as ::core::ffi::c_int)
+        && hmux_rt::unix::terminal_session(std::os::fd::BorrowedFd::borrow_raw(fd))
+            .map(|value| sid = value)
+            .is_ok()
     {
         let path = CString::new(format!("/proc/{sid}/cwd")).unwrap();
         n = readlink(

@@ -15,9 +15,9 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, close, closefrom, execl, execvp, fdopen, fopen, fread, fseeko,
-    ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask,
-    strerror, strrchr, tcgetattr, tcsetattr, unlink,
+    __errno_location, _exit, chdir, execl, execvp, fdopen, fopen, fread, fseeko, ftello, fwrite,
+    getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask, strerror, strrchr,
+    unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::write_cstr;

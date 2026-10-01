@@ -12,7 +12,6 @@
 #![allow(clippy::eq_op)]
 #![allow(clippy::self_assignment)]
 #![allow(clippy::while_immutable_condition)]
-#![feature(allocator_api)]
 #![feature(extern_types)]
 
 #[macro_use]

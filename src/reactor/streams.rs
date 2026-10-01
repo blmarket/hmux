@@ -4,8 +4,8 @@ use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 pub use api::*;
 use hmux_buffer::{Buf, BufMut, SegmentedBuf};
-use hmux_rt::AsyncFd as _;
 use hmux_rt::Handle as _;
+use hmux_rt::{AsyncRead as _, AsyncWrite as _};
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_short, c_void};
 use std::future::{poll_fn, Future};
@@ -15,7 +15,7 @@ use std::task::{LocalWaker, Poll};
 pub(crate) struct StreamState {
     stream: RefCell<Option<Box<bufferevent>>>,
     fd: c_int,
-    original_flags: c_int,
+    was_nonblocking: bool,
     pid: u32,
     live: Cell<bool>,
     generation: Cell<u64>,
@@ -111,124 +111,129 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
     let s = state.clone();
     let task = handle().spawn(async move {
-        // Each readiness delivery performs at most one 64 KiB read/write, then
-        // yields. Input/output mutation wakes this same task; no callback queue.
+        enum Completion {
+            Changed,
+            Read(std::io::Result<hmux_rt::Received>),
+            Write(std::io::Result<usize>),
+        }
+        let mut prefer_write = false;
         loop {
             if !s.live.get() {
                 break;
             }
-            let stream = s
-                .stream
-                .borrow_mut()
-                .as_deref_mut()
-                .map_or(std::ptr::null_mut(), |stream| stream as *mut bufferevent);
-            let (read, write, generation) = unsafe {
-                let b = &*stream;
+            // Task-owned snapshots keep model buffers unborrowed while I/O is
+            // pending. A mutation cancels pending operations before rebuilding.
+            let (stream, count, output, write, generation) = {
+                let mut slot = s.stream.borrow_mut();
+                let b = slot.as_deref_mut().expect("live stream");
+                let count = if b.enabled & 2 == 0 {
+                    0
+                } else if b.wm_read.high == 0 {
+                    65536
+                } else {
+                    b.wm_read
+                        .high
+                        .saturating_sub(b.input.remaining())
+                        .min(65536)
+                };
+                let write =
+                    b.enabled & 4 != 0 && (b.output.has_remaining() || s.write_requested.get());
+                let output = if write {
+                    super::buffer_prefix(&b.output, 65536)
+                } else {
+                    Vec::new()
+                };
                 (
-                    b.enabled & 2 != 0
-                        && (b.wm_read.high == 0 || (*b.input).remaining() < b.wm_read.high),
-                    b.enabled & 4 != 0 && ((*b.output).has_remaining() || s.write_requested.get()),
+                    b as *mut bufferevent,
+                    count,
+                    output,
+                    write,
                     s.generation.get(),
                 )
             };
-            let readiness = {
-                let wait = async {
-                    if read || write {
-                        source.ready(read, write).await
-                    } else {
-                        std::future::pending().await
-                    }
-                };
-                let mut wait = pin!(wait);
+            let mut input = vec![0; count];
+            let buffers = [std::io::IoSlice::new(&output)];
+            let completion = {
+                let mut reader = pin!(source.read(&mut input));
+                let mut writer = pin!(source.write(&buffers, None));
                 poll_fn(|cx| {
                     *s.wake.borrow_mut() = Some(cx.local_waker().clone());
-                    if s.generation.get() != generation {
-                        return Poll::Ready(None);
+                    if !s.live.get() || s.generation.get() != generation {
+                        return Poll::Ready(Completion::Changed);
                     }
-                    wait.as_mut().poll(cx).map(Some)
+                    // Alternate priorities so a busy reader cannot starve output.
+                    for writing in [prefer_write, !prefer_write] {
+                        if writing && write {
+                            if let Poll::Ready(result) = writer.as_mut().poll(cx) {
+                                return Poll::Ready(Completion::Write(result));
+                            }
+                        } else if !writing && count > 0 {
+                            if let Poll::Ready(result) = reader.as_mut().poll(cx) {
+                                return Poll::Ready(Completion::Read(result));
+                            }
+                        }
+                    }
+                    Poll::Pending
                 })
                 .await
             };
             if !s.live.get() {
                 break;
             }
-            let Some(readiness) = readiness else {
-                continue;
-            };
-            let (readable, writable) = readiness.expect("stream readiness");
             unsafe {
-                if readable && (*stream).enabled & 2 != 0 {
-                    let high = (*stream).wm_read.high;
-                    let count = if high == 0 {
-                        65536
-                    } else {
-                        high.saturating_sub((*(*stream).input).remaining())
-                            .min(65536)
-                    };
-                    if count > 0 {
-                        let n = super::evbuffer_read(&mut (*stream).input, s.fd, count as c_int);
-                        if n > 0 {
-                            if (*(*stream).input).remaining() >= (*stream).wm_read.low {
-                                let cb = (*stream).readcb.clone();
-                                if let Some(cb) = cb {
-                                    let mut cb = cb.borrow_mut();
-                                    (*cb)(std::ptr::NonNull::new(stream).expect("live stream"));
-                                }
-                            }
-                        } else if n == 0
-                            || (libc::EAGAIN != *libc::__errno_location()
-                                && libc::EINTR != *libc::__errno_location())
-                        {
-                            (*stream).enabled &= !2;
-                            let cb = (*stream).errorcb.clone();
-                            if let Some(cb) = cb {
-                                let mut cb = cb.borrow_mut();
-                                (*cb)(
-                                    std::ptr::NonNull::new(stream).expect("live stream"),
-                                    1 | if n == 0 { 0x10 } else { 0x20 },
-                                );
-                            }
-                        }
+                let (data, error) = match completion {
+                    Completion::Changed => continue,
+                    Completion::Read(Ok(received)) if received.bytes > 0 => {
+                        // Plain byte streams discard unsolicited ancillary FDs.
+                        input.truncate(received.bytes);
+                        (*stream).input.put(SegmentedBuf::from(input));
+                        prefer_write = true;
+                        let cb = ((*stream).input.remaining() >= (*stream).wm_read.low)
+                            .then(|| (*stream).readcb.clone())
+                            .flatten();
+                        (cb, None)
                     }
-                }
-                if !s.live.get() {
-                    break;
-                }
-                if writable && (*stream).enabled & 4 != 0 {
-                    let requested = s.write_requested.replace(false);
-                    let empty = !(*(*stream).output).has_remaining();
-                    let n = if empty {
-                        0
-                    } else {
-                        super::evbuffer_write(&mut (*stream).output, s.fd)
-                    };
-                    if n > 0 || (empty && requested) {
-                        if (*(*stream).output).remaining() <= (*stream).wm_write.low {
-                            let cb = (*stream).writecb.clone();
-                            if let Some(cb) = cb {
-                                let mut cb = cb.borrow_mut();
-                                (*cb)(std::ptr::NonNull::new(stream).expect("live stream"));
-                            }
-                        }
-                    } else if n < 0
-                        && libc::EAGAIN != *libc::__errno_location()
-                        && libc::EINTR != *libc::__errno_location()
-                    {
+                    Completion::Read(result) => {
+                        (*stream).enabled &= !2;
+                        let flags = if let Err(error) = result {
+                            *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+                            1 | 0x20
+                        } else {
+                            1 | 0x10
+                        };
+                        (None, Some(flags))
+                    }
+                    Completion::Write(Ok(n)) if n > 0 || output.is_empty() => {
+                        (*stream).output.advance(n);
+                        s.write_requested.set(false);
+                        prefer_write = false;
+                        let cb = ((*stream).output.remaining() <= (*stream).wm_write.low)
+                            .then(|| (*stream).writecb.clone())
+                            .flatten();
+                        (cb, None)
+                    }
+                    Completion::Write(result) => {
                         (*stream).enabled &= !4;
-                        let cb = (*stream).errorcb.clone();
-                        if let Some(cb) = cb {
-                            let mut cb = cb.borrow_mut();
-                            (*cb)(
-                                std::ptr::NonNull::new(stream).expect("live stream"),
-                                2 | 0x20,
-                            );
-                        }
+                        *libc::__errno_location() = result
+                            .err()
+                            .and_then(|error| error.raw_os_error())
+                            .unwrap_or(libc::EIO);
+                        (None, Some(2 | 0x20))
+                    }
+                };
+                if let Some(cb) = data {
+                    (*cb.borrow_mut())(std::ptr::NonNull::new(stream).expect("live stream"));
+                } else if let Some(flags) = error {
+                    let cb = (*stream).errorcb.clone();
+                    if let Some(cb) = cb {
+                        (*cb.borrow_mut())(
+                            std::ptr::NonNull::new(stream).expect("live stream"),
+                            flags,
+                        );
                     }
                 }
             }
-            if !s.live.get() {
-                break;
-            }
+            // A callback can free this stream and cancel the executing task.
             super::yield_now().await;
         }
     })?;
@@ -242,14 +247,16 @@ pub unsafe fn bufferevent_new(
     errorcb: bufferevent_event_cb,
 ) -> *mut bufferevent {
     super::ensure_runtime();
-    let original_flags = if fd == -1 {
-        0
+    let was_nonblocking = if fd == -1 {
+        true
     } else {
-        let flags = libc::fcntl(fd, libc::F_GETFL);
-        if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
-            return std::ptr::null_mut();
+        match hmux_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), true) {
+            Ok(previous) => previous,
+            Err(error) => {
+                super::io_status(Err(error));
+                return std::ptr::null_mut();
+            }
         }
-        flags
     };
     let mut owner = Box::new(bufferevent {
         readcb,
@@ -262,7 +269,7 @@ pub unsafe fn bufferevent_new(
     let s = Rc::new(StreamState {
         stream: RefCell::new(Some(owner)),
         fd,
-        original_flags,
+        was_nonblocking,
         pid: std::process::id(),
         live: Cell::new(true),
         generation: Cell::new(0),
@@ -297,8 +304,9 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
         s.live.set(false);
         let task = s.task.borrow_mut().take();
         drop(task);
-        if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {
-            libc::fcntl(s.fd, libc::F_SETFL, s.original_flags);
+        if s.fd != -1 && s.pid == std::process::id() && !s.was_nonblocking {
+            let _ =
+                hmux_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(s.fd), false);
         }
         // Task state may still be retained by the callback that called free.
         // Detach the allocation now and release the slot borrow before capture Drop.

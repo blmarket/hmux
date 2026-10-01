@@ -18,20 +18,11 @@ mod tests;
 
 use std::ffi::OsString;
 use std::io;
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, OwnedFd, RawFd};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-/// A coalescing, pollable indication that a pane's output state changed.
-pub trait OutputWakeup: AsFd + Send + Sync {
-    /// Make the wakeup descriptor readable.
-    ///
-    /// Repeated calls may be coalesced into a single pending wakeup.
-    fn wake(&self) -> io::Result<()>;
-
-    /// Clear all pending wakeups.
-    fn clear(&self) -> io::Result<()>;
-}
+pub use hmux_rt::unix::Notify as OutputWakeup;
 
 /// The result of creating a pseudoterminal and forking the process.
 pub enum ForkOutcome {

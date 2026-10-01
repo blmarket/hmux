@@ -65,7 +65,11 @@ pub(super) fn read(raw: RawFd, buffer: &mut [u8]) -> io::Result<Received> {
     // SAFETY: readiness validation ensures the socket is live; all output
     // pointers describe exclusive, correctly aligned storage. Every retry
     // constructs fresh storage and resets the msghdr output lengths.
-    let bytes = syscall_result(unsafe { libc::recvmsg(raw, &mut msg, libc::MSG_CMSG_CLOEXEC) })?;
+    #[cfg(target_vendor = "apple")]
+    let flags = 0;
+    #[cfg(not(target_vendor = "apple"))]
+    let flags = libc::MSG_CMSG_CLOEXEC;
+    let bytes = syscall_result(unsafe { libc::recvmsg(raw, &mut msg, flags) })?;
     let mut fd = None;
     let mut excess = false;
     // SAFETY: the kernel supplied valid control headers in our buffer. Adopt
@@ -95,6 +99,15 @@ pub(super) fn read(raw: RawFd, buffer: &mut [u8]) -> io::Result<Received> {
             io::ErrorKind::InvalidData,
             "ancillary data exceeds single-FD receive capacity",
         ));
+    }
+    #[cfg(target_vendor = "apple")]
+    if let Some(fd) = &fd {
+        // macOS has no MSG_CMSG_CLOEXEC. Adopt every descriptor before changing
+        // flags so all delivered FDs close even if this operation fails.
+        // SAFETY: fd is owned and live.
+        if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
     }
     Ok(Received { bytes, fd })
 }

@@ -3,8 +3,8 @@ use crate::src::compat::imsg::PROTOCOL_VERSION;
 use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{imsg, imsgbuf};
 use crate::src::compat::imsg::{
-    imsg_compose, imsgbuf_allow_fdpass, imsgbuf_clear, imsgbuf_flush, imsgbuf_get, imsgbuf_init,
-    imsgbuf_queuelen, imsgbuf_read, imsgbuf_write,
+    imsg_compose, imsgbuf_clear, imsgbuf_get, imsgbuf_init, imsgbuf_output, imsgbuf_queuelen,
+    imsgbuf_receive, imsgbuf_written,
 };
 use crate::src::compat::setproctitle::setproctitle;
 use crate::src::ffi::libc::utsname;
@@ -24,7 +24,7 @@ pub use crate::src::shared::signal::{
     SIG_DFL,
 };
 use crate::src::tmux::{getversion, socket_path};
-use hmux_rt::AsyncFd as _;
+use hmux_rt::{AsyncRead as _, AsyncWrite as _};
 use hmux_rt::{Handle as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
@@ -55,45 +55,35 @@ unsafe fn proc_dispatch(peer: *mut tmuxpeer, message: PeerMessage<'_>) -> bool {
         false
     }
 }
-unsafe fn proc_io_ready(peer: *mut tmuxpeer, readable: bool, writable: bool) {
-    if (*peer).flags & PEER_BAD == 0 && readable {
-        if !matches!(imsgbuf_read(&mut (*peer).ibuf), Ok(1)) {
-            proc_dispatch(peer, PeerMessage::Disconnected);
-            return;
+unsafe fn proc_disconnect(peer: *mut tmuxpeer) {
+    // Cancel observers and release queued FDs before dispatch can remove the peer.
+    (*peer).flags |= PEER_BAD;
+    drop((*peer).io_task.take());
+    imsgbuf_clear(&mut (*peer).ibuf);
+    proc_dispatch(peer, PeerMessage::Disconnected);
+}
+
+unsafe fn proc_receive(peer: *mut tmuxpeer, bytes: &[u8], received: hmux_rt::Received) -> bool {
+    if received.bytes == 0
+        || imsgbuf_receive(&mut (*peer).ibuf, &bytes[..received.bytes], received.fd).is_err()
+    {
+        proc_disconnect(peer);
+        return false;
+    }
+    while let Some(mut message) = imsgbuf_get(&mut (*peer).ibuf) {
+        log_debug(format_args!(
+            "peer {} message {}",
+            log_pointer(peer.cast()),
+            message.hdr.type_0
+        ));
+        if peer_check_version(peer, &message) != 0 {
+            break;
         }
-        loop {
-            let mut imsg = match imsgbuf_get(&mut (*peer).ibuf) {
-                Ok(Some(imsg)) => imsg,
-                Ok(None) => break,
-                Err(_) => {
-                    proc_dispatch(peer, PeerMessage::Disconnected);
-                    return;
-                }
-            };
-            log_debug(format_args!(
-                "peer {} message {}",
-                log_pointer((peer) as *const ::core::ffi::c_void),
-                (imsg.hdr.type_0) as i32
-            ));
-            if peer_check_version(peer, &imsg) != 0 as ::core::ffi::c_int {
-                break;
-            } else {
-                let peer_alive = proc_dispatch(peer, PeerMessage::Message(&mut imsg));
-                if !peer_alive {
-                    return;
-                }
-            }
+        if !proc_dispatch(peer, PeerMessage::Message(&mut message)) {
+            return false;
         }
     }
-    if writable && imsgbuf_write(&mut (*peer).ibuf).is_err() {
-        proc_dispatch(peer, PeerMessage::Disconnected);
-        return;
-    }
-    if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&(*peer).ibuf) == 0 as uint32_t {
-        proc_dispatch(peer, PeerMessage::Disconnected);
-        return;
-    }
-    proc_update_io(peer);
+    true
 }
 unsafe fn proc_signal_cb(signo: ::core::ffi::c_int, tp: *mut tmuxproc) {
     (*tp)
@@ -124,25 +114,92 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
 }
 unsafe fn proc_update_io(peer: *mut tmuxpeer) {
     let writable = imsgbuf_queuelen(&(*peer).ibuf) > 0;
-    if (*peer).io_task.is_some() && (*peer).io_writable == writable {
+    if (*peer).ibuf.fd.is_none() || ((*peer).io_task.is_some() && (*peer).io_writable == writable) {
         return;
     }
     (*peer).io_writable = writable;
-    let fd = (*peer)
-        .ibuf
-        .fd
-        .as_ref()
-        .expect("peer socket is initialized")
-        .as_fd();
-    crate::src::reactor::task_start(&mut (*peer).io_task, move || {
+    let fd = (*peer).ibuf.fd.as_ref().expect("peer socket").as_fd();
+    reactor::task_start(&mut (*peer).io_task, move || {
         let source = reactor::io(fd)?;
         Ok(async move {
+            use std::future::{poll_fn, Future};
+            use std::pin::pin;
+            use std::task::Poll;
+            enum Completion {
+                Read(std::io::Result<hmux_rt::Received>),
+                Write(std::io::Result<usize>),
+            }
+            let mut prefer_write = false;
             loop {
-                let (readable, writable) =
-                    source.ready(true, writable).await.expect("peer I/O wait");
-                unsafe { proc_io_ready(peer, readable, writable) };
-                // Dispatch can remove the peer or replace this task. Yield
-                // before another wait so cancellation drops the old future.
+                let reading = unsafe { (*peer).flags & PEER_BAD == 0 };
+                let (output, raw_fd) = unsafe { imsgbuf_output(&(*peer).ibuf) };
+                if !reading && output.is_empty() {
+                    unsafe { proc_disconnect(peer) };
+                    return;
+                }
+                let mut input = vec![0; 65536];
+                let buffers = [std::io::IoSlice::new(&output)];
+                let completion = {
+                    // SAFETY: only this task drains the queue. Explicit cleanup
+                    // cancels a parked task before closing queued descriptors.
+                    // End this borrow before dispatch or draining the queue.
+                    let fd = raw_fd.map(|raw| unsafe { std::os::fd::BorrowedFd::borrow_raw(raw) });
+                    let mut reader = pin!(source.read(&mut input));
+                    let mut writer = pin!(source.write(&buffers, fd));
+                    poll_fn(|cx| {
+                        for writing in [prefer_write, !prefer_write] {
+                            if writing && !output.is_empty() {
+                                if let Poll::Ready(result) = writer.as_mut().poll(cx) {
+                                    return Poll::Ready(Completion::Write(result));
+                                }
+                            } else if !writing && reading {
+                                if let Poll::Ready(result) = reader.as_mut().poll(cx) {
+                                    return Poll::Ready(Completion::Read(result));
+                                }
+                            }
+                        }
+                        Poll::Pending
+                    })
+                    .await
+                };
+                unsafe {
+                    match completion {
+                        Completion::Read(Ok(received)) => {
+                            prefer_write = true;
+                            if !proc_receive(peer, &input, received) {
+                                return;
+                            }
+                        }
+                        Completion::Write(Ok(n)) if n > 0 => {
+                            prefer_write = false;
+                            imsgbuf_written(&mut (*peer).ibuf, n);
+                        }
+                        Completion::Write(Err(error))
+                            if error.raw_os_error() == Some(libc::ENOBUFS) =>
+                        {
+                            // This resource shortage is transient but not a
+                            // readiness transition. Retry without a busy loop.
+                            use hmux_rt::Handle as _;
+                            reactor::handle()
+                                .sleep_until(
+                                    std::time::Instant::now() + std::time::Duration::from_millis(1),
+                                )
+                                .await
+                                .ok();
+                        }
+                        _ => {
+                            proc_disconnect(peer);
+                            return;
+                        }
+                    }
+                    if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&(*peer).ibuf) == 0 {
+                        proc_disconnect(peer);
+                        return;
+                    }
+                    proc_update_io(peer);
+                }
+                // Dispatch can remove the peer or replace this task. Cancellation
+                // must take effect before the next access to the model.
                 reactor::yield_now().await;
             }
         })
@@ -261,7 +318,12 @@ pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut
     ));
     loop {
         poll_runtime();
-        if (*tp).exit != 0 || loopcb.as_mut().is_some_and(|callback| !callback()) {
+        let exiting = (*tp).exit != 0;
+        let drained = (*tp)
+            .peers
+            .iter()
+            .all(|peer| imsgbuf_queuelen(&peer.ibuf) == 0);
+        if (exiting && drained) || loopcb.as_mut().is_some_and(|callback| !callback()) {
             break;
         }
     }
@@ -270,12 +332,9 @@ pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut
         crate::src::log::log_bytes((*tp).name.as_bytes())
     ));
 }
-pub unsafe fn proc_exit(mut tp: *mut tmuxproc) {
-    for peer in (*tp).peers.iter_mut() {
-        let peer: *mut tmuxpeer = &mut **peer;
-        let _ = imsgbuf_flush(&mut (*peer).ibuf);
-    }
-    (*tp).exit = 1 as ::core::ffi::c_int;
+pub unsafe fn proc_exit(tp: *mut tmuxproc) {
+    // The loop continues driving queued writes before returning to teardown.
+    (*tp).exit = 1;
 }
 pub unsafe fn proc_set_signals(
     mut tp: *mut tmuxproc,
@@ -359,10 +418,7 @@ pub unsafe fn proc_add_peer(
     (*peer).parent = tp;
     (*peer).dispatchcb = Some(dispatchcb);
     let fd = socket.as_raw_fd();
-    if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, socket) {
-        fatalx(|out| write!(out, "imsgbuf_init failed (errno {})", { error }));
-    }
-    imsgbuf_allow_fdpass(&mut (*peer).ibuf);
+    imsgbuf_init(&mut (*peer).ibuf, socket);
     if getpeereid(fd, &raw mut (*peer).uid, &raw mut (*peer).gid) != 0 as ::core::ffi::c_int {
         (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
         (*peer).gid = -(1 as ::core::ffi::c_int) as gid_t;
@@ -399,9 +455,6 @@ unsafe fn proc_free_peer(mut owned_peer: Box<tmuxpeer>) {
 pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
     (*peer).flags |= PEER_BAD;
 }
-pub unsafe fn proc_flush_peer(mut peer: *mut tmuxpeer) {
-    let _ = imsgbuf_flush(&mut (*peer).ibuf);
-}
 pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
     log_toggle((*tp).name.as_ptr());
 }
@@ -410,8 +463,8 @@ pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
         !reactor::runtime_initialized(),
         "daemonize before initializing the runtime"
     );
-    let (parent, child) =
-        UnixStream::pair().unwrap_or_else(|_| fatal(|out| out.write_all(b"socketpair failed")));
+    let (parent, child) = hmux_rt::unix::socket_pair()
+        .unwrap_or_else(|_| fatal(|out| out.write_all(b"socketpair failed")));
     let pid = fork() as pid_t;
     match pid {
         -1 => {

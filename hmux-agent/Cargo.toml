@@ -6,6 +6,7 @@ description = "Agent detection and pane observability contracts shared by tmux-c
 license = "GPL-3.0-only"
 
 [dependencies]
+hmux-rt = { path = "../hmux-rt" }
 libc = "0.2"
 tracing = "0.1"
 

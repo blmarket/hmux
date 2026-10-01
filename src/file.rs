@@ -11,7 +11,7 @@ use crate::src::compat::imsg::*;
 use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::compat::stdio::CFile;
 use crate::src::ffi::libc::{
-    __errno_location, close, ferror, fopen, fread, fwrite, memcpy, strcmp, strlen,
+    __errno_location, ferror, fopen, fread, fwrite, memcpy, strcmp, strlen,
 };
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::proc::proc_send;
@@ -870,8 +870,10 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
     std::mem::take(&mut cf.event).free();
     if let Some(fd) = cf.fd.take() {
         // Completion must report close errors; consume ownership before closing.
-        if close(fd.into_raw_fd()) != 0 && cf.error == 0 {
-            cf.error = *__errno_location();
+        if let Err(error) = hmux_rt::unix::close(fd.into_raw_fd()) {
+            if cf.error == 0 {
+                cf.error = error.raw_os_error().unwrap_or(libc::EIO);
+            }
         }
     }
     msg.stream = cf.stream;
@@ -984,13 +986,11 @@ pub unsafe fn file_write_open(
             error = EBADF;
         } else {
             let fd = if msg.fd == -1 {
-                OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .custom_flags(msg.flags | O_NONBLOCK)
-                    .mode(0o644)
-                    .open(OsStr::from_bytes(CStr::from_ptr(path).to_bytes()))
-                    .map(OwnedFd::from)
+                hmux_rt::unix::open(
+                    CStr::from_ptr(path),
+                    libc::O_WRONLY | libc::O_CREAT | msg.flags | O_NONBLOCK,
+                    0o644,
+                )
             } else {
                 let duplicate = match msg.fd {
                     STDOUT_FILENO => io::stdout().as_fd().try_clone_to_owned(),
@@ -998,7 +998,7 @@ pub unsafe fn file_write_open(
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDOUT_FILENO || msg.fd == STDERR_FILENO) {
-                    close(msg.fd);
+                    let _ = hmux_rt::unix::close(msg.fd);
                 }
                 duplicate
             };
@@ -1196,18 +1196,14 @@ pub unsafe fn file_read_open(
             error = EBADF;
         } else {
             let fd = if msg.fd == -1 {
-                OpenOptions::new()
-                    .read(true)
-                    .custom_flags(O_NONBLOCK)
-                    .open(OsStr::from_bytes(CStr::from_ptr(path).to_bytes()))
-                    .map(OwnedFd::from)
+                hmux_rt::unix::open(CStr::from_ptr(path), libc::O_RDONLY | O_NONBLOCK, 0)
             } else {
                 let duplicate = match msg.fd {
                     STDIN_FILENO => io::stdin().as_fd().try_clone_to_owned(),
                     _ => Err(io::Error::from_raw_os_error(EBADF)),
                 };
                 if close_received != 0 && (msg.fd == STDIN_FILENO) {
-                    close(msg.fd);
+                    let _ = hmux_rt::unix::close(msg.fd);
                 }
                 duplicate
             };

@@ -5,7 +5,7 @@ use std::io;
 use std::os::fd::{OwnedFd, RawFd};
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
-use std::task::{ContextBuilder, LocalWake, LocalWaker, Waker};
+use std::task::{ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
 use std::time::{Duration, Instant};
 
 use super::readiness::IoState;
@@ -297,6 +297,59 @@ impl crate::Runtime for Runtime {
 }
 
 impl Runtime {
+    /// Drive a borrowed future to completion on this runtime.
+    ///
+    /// This is also useful for synchronous startup/teardown with an independent
+    /// runtime. It must not reenter an already borrowed runtime. Local wakeups
+    /// drive the future; ordinary Waker notifications remain inert.
+    pub fn block_on<F: Future>(&mut self, future: F) -> io::Result<F::Output> {
+        struct Wake(Cell<bool>);
+        impl LocalWake for Wake {
+            fn wake(self: Rc<Self>) {
+                self.0.set(true);
+            }
+            fn wake_by_ref(self: &Rc<Self>) {
+                self.0.set(true);
+            }
+        }
+        struct Pending<'a>(&'a Core);
+        impl Drop for Pending<'_> {
+            fn drop(&mut self) {
+                self.0.pending_tasks.set(self.0.pending_tasks.get() - 1);
+            }
+        }
+        let core = self.core.clone();
+        core.check()?;
+        let count = core
+            .pending_tasks
+            .get()
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("too many pending tasks"))?;
+        core.pending_tasks.set(count);
+        let _pending = Pending(&core);
+        let wake = Rc::new(Wake(Cell::new(true)));
+        let local = LocalWaker::from(wake.clone());
+        let mut context = ContextBuilder::from_waker(Waker::noop())
+            .local_waker(&local)
+            .build();
+        let mut future = std::pin::pin!(future);
+        loop {
+            if wake.0.replace(false) {
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    future.as_mut().poll(&mut context)
+                })) {
+                    Ok(Poll::Ready(value)) => return Ok(value),
+                    Ok(Poll::Pending) => {}
+                    Err(panic) => {
+                        core.poisoned.set(true);
+                        std::panic::resume_unwind(panic);
+                    }
+                }
+            }
+            crate::Runtime::poll(self, wake.0.get().then_some(Duration::ZERO))?;
+        }
+    }
+
     /// Collect readiness without invoking wakers, callbacks, or futures.
     fn prepare_poll(&mut self, max_wait: Option<Duration>) -> io::Result<()> {
         self.core.check()?;

@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::getsockopt;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{gid_t, socklen_t, uid_t};
 use crate::src::shared::socket::SOL_SOCKET;
@@ -17,23 +16,16 @@ pub unsafe fn getpeereid(
     mut uid: *mut uid_t,
     mut gid: *mut gid_t,
 ) -> ::core::ffi::c_int {
-    let mut uc: ucred = ucred {
-        pid: 0,
-        uid: 0,
-        gid: 0,
-    };
-    let mut len: socklen_t = ::core::mem::size_of::<ucred>() as socklen_t;
-    if getsockopt(
-        s,
-        SOL_SOCKET,
-        SO_PEERCRED,
-        &raw mut uc as *mut ::core::ffi::c_void,
-        &raw mut len,
-    ) == -(1 as ::core::ffi::c_int)
-    {
-        return -(1 as ::core::ffi::c_int);
+    if s < 0 {
+        *libc::__errno_location() = libc::EBADF;
+        return -1;
     }
-    *uid = uc.uid;
-    *gid = uc.gid;
-    0 as ::core::ffi::c_int
+    crate::src::reactor::io_status(
+        hmux_rt::unix::peer_credentials(std::os::fd::BorrowedFd::borrow_raw(s)).map(
+            |(user, group)| {
+                *uid = user;
+                *gid = group;
+            },
+        ),
+    )
 }

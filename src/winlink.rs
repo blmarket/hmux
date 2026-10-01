@@ -11,7 +11,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __ctype_b_loc, close, fnmatch, gethostname, getpid, ioctl, kill, memcpy, memset, strcasecmp,
+    __ctype_b_loc, fnmatch, gethostname, getpid, kill, memcpy, memset, strcasecmp,
 };
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;

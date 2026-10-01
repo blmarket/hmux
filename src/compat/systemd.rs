@@ -1,6 +1,4 @@
-use crate::src::ffi::libc::{
-    __errno_location, free, getpid, getppid, getsockname, strcmp, strerror,
-};
+use crate::src::ffi::libc::{__errno_location, free, getpid, getppid, strcmp, strerror};
 use crate::src::ffi::systemd::{
     sd_bus, sd_bus_error, sd_bus_message, sd_bus_slot, sd_id128, sd_id128_t,
 };
@@ -12,10 +10,10 @@ use crate::src::ffi::systemd::{
     sd_listen_fds, sd_pid_get_unit, sd_pid_get_user_slice, sd_pid_get_user_unit,
 };
 use crate::src::server::server_create_socket;
+use crate::src::shared::abi::uint32_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{socklen_t, uint32_t};
 use crate::src::shared::errno::E2BIG;
-use crate::src::shared::socket::{sockaddr, sockaddr_un, __SOCKADDR_ARG, SOCK_STREAM};
+use crate::src::shared::socket::SOCK_STREAM;
 use crate::src::tmux::socket_path;
 use std::ffi::{CStr, CString};
 use std::time::Instant;
@@ -131,11 +129,6 @@ pub unsafe fn systemd_create_socket(
 ) -> Result<::core::ffi::c_int, CString> {
     let mut fds: ::core::ffi::c_int = 0;
     let mut fd: ::core::ffi::c_int = 0;
-    let mut sa: sockaddr_un = sockaddr_un {
-        sun_family: 0,
-        sun_path: [0; 108],
-    };
-    let mut addrlen: socklen_t = ::core::mem::size_of::<sockaddr_un>() as socklen_t;
     fds = sd_listen_fds(0 as ::core::ffi::c_int);
     if fds > 1 as ::core::ffi::c_int {
         *__errno_location() = E2BIG;
@@ -150,19 +143,17 @@ pub unsafe fn systemd_create_socket(
         ) == 0
         {
             *__errno_location() = EPFNOSUPPORT;
-        } else if !(getsockname(
-            fd,
-            __SOCKADDR_ARG {
-                __sockaddr__: &raw mut sa as *mut sockaddr,
-            },
-            &raw mut addrlen,
-        ) == -(1 as ::core::ffi::c_int))
-        {
-            let path = CStr::from_ptr(sa.sun_path.as_ptr()).to_owned();
-            let path_ptr = path.as_ptr();
-            SYSTEMD_SOCKET_PATH = Some(path);
-            socket_path = path_ptr;
-            return Ok(fd);
+        } else {
+            match hmux_rt::unix::socket_path(std::os::fd::BorrowedFd::borrow_raw(fd)) {
+                Ok(path) => {
+                    let path = path.unwrap_or_default();
+                    let path_ptr = path.as_ptr();
+                    SYSTEMD_SOCKET_PATH = Some(path);
+                    socket_path = path_ptr;
+                    return Ok(fd);
+                }
+                Err(error) => *__errno_location() = error.raw_os_error().unwrap_or(libc::EIO),
+            }
         }
     } else {
         return server_create_socket(flags as uint64_t);

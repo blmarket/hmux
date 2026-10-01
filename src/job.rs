@@ -4,8 +4,7 @@ use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{environ_copy, environ_for_session, environ_push, environ_set};
 use crate::src::ffi::libc::{
-    _exit, chdir, close, closefrom, dup2, execl, execvp, fork, ioctl, kill, killpg, memset, open,
-    setenv, shutdown, sigfillset, sigprocmask,
+    _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_bytes;
@@ -170,7 +169,7 @@ pub unsafe fn job_run(
             &raw mut ws,
         );
         current_block = 224731115979188411;
-    } else if let Ok((parent, child)) = UnixStream::pair() {
+    } else if let Ok((parent, child)) = hmux_rt::unix::socket_pair() {
         out_owner = Some([OwnedFd::from(parent), OwnedFd::from(child)]);
         pid = fork() as pid_t;
         current_block = 224731115979188411;
@@ -257,16 +256,22 @@ pub unsafe fn job_run(
                 // keeps its owner for the parent-side return path.
                 drop(env_owner.take());
                 if !flags & JOB_PTY != 0 {
-                    if dup2(out[1 as ::core::ffi::c_int as usize], STDIN_FILENO)
-                        == -(1 as ::core::ffi::c_int)
+                    if hmux_rt::unix::redirect(
+                        std::os::fd::BorrowedFd::borrow_raw(out[1 as ::core::ffi::c_int as usize]),
+                        STDIN_FILENO,
+                    )
+                    .is_err()
                     {
                         _exit(1 as ::core::ffi::c_int);
                     }
                     do_close = (do_close != 0
                         && out[1 as ::core::ffi::c_int as usize] != STDIN_FILENO)
                         as ::core::ffi::c_int;
-                    if dup2(out[1 as ::core::ffi::c_int as usize], STDOUT_FILENO)
-                        == -(1 as ::core::ffi::c_int)
+                    if hmux_rt::unix::redirect(
+                        std::os::fd::BorrowedFd::borrow_raw(out[1 as ::core::ffi::c_int as usize]),
+                        STDOUT_FILENO,
+                    )
+                    .is_err()
                     {
                         _exit(1 as ::core::ffi::c_int);
                     }
@@ -274,8 +279,13 @@ pub unsafe fn job_run(
                         && out[1 as ::core::ffi::c_int as usize] != STDOUT_FILENO)
                         as ::core::ffi::c_int;
                     if flags & JOB_SHOWSTDERR != 0 {
-                        if dup2(out[1 as ::core::ffi::c_int as usize], STDERR_FILENO)
-                            == -(1 as ::core::ffi::c_int)
+                        if hmux_rt::unix::redirect(
+                            std::os::fd::BorrowedFd::borrow_raw(
+                                out[1 as ::core::ffi::c_int as usize],
+                            ),
+                            STDERR_FILENO,
+                        )
+                        .is_err()
                         {
                             _exit(1 as ::core::ffi::c_int);
                         }
@@ -283,23 +293,35 @@ pub unsafe fn job_run(
                             && out[1 as ::core::ffi::c_int as usize] != STDERR_FILENO)
                             as ::core::ffi::c_int;
                     } else {
-                        nullfd = open(_PATH_DEVNULL.as_ptr(), O_RDWR);
+                        nullfd = match hmux_rt::unix::open(
+                            CStr::from_ptr(_PATH_DEVNULL.as_ptr()),
+                            O_RDWR,
+                            0,
+                        ) {
+                            Ok(fd) => fd.into_raw_fd(),
+                            Err(error) => crate::src::reactor::io_status(Err(error)),
+                        };
                         if nullfd == -(1 as ::core::ffi::c_int) {
                             _exit(1 as ::core::ffi::c_int);
                         }
-                        if dup2(nullfd, STDERR_FILENO) == -(1 as ::core::ffi::c_int) {
+                        if hmux_rt::unix::redirect(
+                            std::os::fd::BorrowedFd::borrow_raw(nullfd),
+                            STDERR_FILENO,
+                        )
+                        .is_err()
+                        {
                             _exit(1 as ::core::ffi::c_int);
                         }
                         if nullfd != STDERR_FILENO {
-                            close(nullfd);
+                            let _ = hmux_rt::unix::close(nullfd);
                         }
                     }
                     if do_close != 0 {
-                        close(out[1 as ::core::ffi::c_int as usize]);
+                        let _ = hmux_rt::unix::close(out[1 as ::core::ffi::c_int as usize]);
                     }
-                    close(out[0 as ::core::ffi::c_int as usize]);
+                    let _ = hmux_rt::unix::close(out[0 as ::core::ffi::c_int as usize]);
                 }
-                closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
+                hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 if let Some(cmd) = cmd {
                     if flags & JOB_DEFAULTSHELL != 0 {
                         setenv(
@@ -464,11 +486,8 @@ pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if ioctl(
-        job.fd.as_ref().expect("job PTY").as_raw_fd(),
-        TIOCSWINSZ as ::core::ffi::c_ulong,
-        &ws,
-    ) == -1
+    if crate::src::shared::terminal::set_size(job.fd.as_ref().expect("job PTY").as_raw_fd(), &ws)
+        == -1
     {
         fatal(|out| out.write_all(b"ioctl failed"));
     }
@@ -508,10 +527,9 @@ unsafe fn job_write_callback(handle: &Weak<job>) {
     job_log("write", &job);
     log_debug(format_args!("job output left {}", len));
     if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
-        shutdown(
-            job.fd.as_ref().expect("job descriptor").as_raw_fd(),
-            SHUT_WR as _,
-        );
+        let _ = hmux_rt::unix::shutdown_write(std::os::fd::AsFd::as_fd(
+            job.fd.as_ref().expect("job descriptor"),
+        ));
         job.event.with_ptr(|stream| {
             bufferevent_disable(stream, EV_WRITE as _);
         });

@@ -6,8 +6,7 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, close, closefrom, dup2, execl, fork, memcpy, open, setpgid,
-    sigfillset, sigprocmask, strerror,
+    __errno_location, _exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask, strerror,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -100,7 +99,7 @@ pub(super) unsafe fn pipe_pane(
         in_0 = 0 as ::core::ffi::c_int;
         out = 1 as ::core::ffi::c_int;
     }
-    let (parent, child) = match UnixStream::pair() {
+    let (parent, child) = match hmux_rt::unix::socket_pair() {
         Ok(pair) => pair,
         Err(error) => {
             cmdq_error(item_handle, |out| write!(out, "socketpair error: {error}"));
@@ -157,28 +156,57 @@ pub(super) unsafe fn pipe_pane(
             if setpgid(0 as __pid_t, 0 as __pid_t) == -(1 as ::core::ffi::c_int) {
                 _exit(1 as ::core::ffi::c_int);
             }
-            null_fd = open(_PATH_DEVNULL.as_ptr(), O_WRONLY);
+            null_fd = match hmux_rt::unix::open(
+                std::ffi::CStr::from_ptr(_PATH_DEVNULL.as_ptr()),
+                O_WRONLY,
+                0,
+            ) {
+                Ok(fd) => fd.into_raw_fd(),
+                Err(error) => crate::src::reactor::io_status(Err(error)),
+            };
             if out != 0 {
-                if dup2(child_fd, STDIN_FILENO) == -(1 as ::core::ffi::c_int) {
+                if hmux_rt::unix::redirect(
+                    std::os::fd::BorrowedFd::borrow_raw(child_fd),
+                    STDIN_FILENO,
+                )
+                .is_err()
+                {
                     _exit(1 as ::core::ffi::c_int);
                 }
-            } else if dup2(null_fd, STDIN_FILENO) == -(1 as ::core::ffi::c_int) {
+            } else if hmux_rt::unix::redirect(
+                std::os::fd::BorrowedFd::borrow_raw(null_fd),
+                STDIN_FILENO,
+            )
+            .is_err()
+            {
                 _exit(1 as ::core::ffi::c_int);
             }
             if in_0 != 0 {
-                if dup2(child_fd, STDOUT_FILENO) == -(1 as ::core::ffi::c_int) {
+                if hmux_rt::unix::redirect(
+                    std::os::fd::BorrowedFd::borrow_raw(child_fd),
+                    STDOUT_FILENO,
+                )
+                .is_err()
+                {
                     _exit(1 as ::core::ffi::c_int);
                 }
                 if child_fd != STDOUT_FILENO {
-                    close(child_fd);
+                    let _ = hmux_rt::unix::close(child_fd);
                 }
-            } else if dup2(null_fd, STDOUT_FILENO) == -(1 as ::core::ffi::c_int) {
+            } else if hmux_rt::unix::redirect(
+                std::os::fd::BorrowedFd::borrow_raw(null_fd),
+                STDOUT_FILENO,
+            )
+            .is_err()
+            {
                 _exit(1 as ::core::ffi::c_int);
             }
-            if dup2(null_fd, STDERR_FILENO) == -(1 as ::core::ffi::c_int) {
+            if hmux_rt::unix::redirect(std::os::fd::BorrowedFd::borrow_raw(null_fd), STDERR_FILENO)
+                .is_err()
+            {
                 _exit(1 as ::core::ffi::c_int);
             }
-            closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
+            hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
             execl(
                 _PATH_BSHELL.as_ptr(),
                 b"sh\0" as *const u8 as *const ::core::ffi::c_char,

@@ -45,6 +45,18 @@ pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<hmux_rt::mio::Io> {
     let lease = fd.try_clone_to_owned()?;
     handle().io(lease)
 }
+/// Translate an owned I/O error at the remaining C-style callback boundary.
+pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
+    match result {
+        Ok(()) => 0,
+        Err(error) => {
+            unsafe {
+                *libc::__errno_location() = error.raw_os_error().unwrap_or(libc::EIO);
+            }
+            -1
+        }
+    }
+}
 pub fn init_runtime() {
     ensure_runtime();
 }

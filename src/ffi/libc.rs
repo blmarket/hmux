@@ -2,13 +2,12 @@
 
 use crate::src::shared::abi::{
     __compar_fn_t, __gid_t, __int32_t, __mode_t, __off_t, __pid_t, __uid_t, clockid_t, size_t,
-    socklen_t, speed_t, ssize_t, time_t,
+    speed_t, ssize_t, time_t,
 };
 use crate::src::shared::account::{group, passwd};
 use crate::src::shared::posix_io::{glob_t, stat};
 use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::signal::{sigaction, sigset_t};
-use crate::src::shared::socket::{__CONST_SOCKADDR_ARG, __SOCKADDR_ARG};
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::termios;
 use crate::src::shared::time::{timespec, tm};
@@ -60,19 +59,9 @@ extern "C" {
     pub fn __xpg_basename(__path: *mut ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
     pub fn _exit(__status: ::core::ffi::c_int) -> !;
     pub fn abs(__x: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    pub fn accept(
-        __fd: ::core::ffi::c_int,
-        __addr: __SOCKADDR_ARG,
-        __addr_len: *mut socklen_t,
-    ) -> ::core::ffi::c_int;
     pub fn access(
         __name: *const ::core::ffi::c_char,
         __type: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    pub fn bind(
-        __fd: ::core::ffi::c_int,
-        __addr: __CONST_SOCKADDR_ARG,
-        __len: socklen_t,
     ) -> ::core::ffi::c_int;
     pub fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
     pub fn cfgetispeed(__termios_p: *const termios) -> speed_t;
@@ -83,13 +72,6 @@ extern "C" {
     pub fn chdir(__path: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
     pub fn chmod(__file: *const ::core::ffi::c_char, __mode: __mode_t) -> ::core::ffi::c_int;
     pub fn clock_gettime(__clock_id: clockid_t, __tp: *mut timespec) -> ::core::ffi::c_int;
-    pub fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    pub fn closefrom(__lowfd: ::core::ffi::c_int);
-    pub fn connect(
-        __fd: ::core::ffi::c_int,
-        __addr: __CONST_SOCKADDR_ARG,
-        __len: socklen_t,
-    ) -> ::core::ffi::c_int;
     pub fn ctime_r(
         __timer: *const time_t,
         __buf: *mut ::core::ffi::c_char,
@@ -100,8 +82,6 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     pub type dirent;
     pub fn dirname(__path: *mut ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    pub fn dup(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    pub fn dup2(__fd: ::core::ffi::c_int, __fd2: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub static mut environ: *mut *mut ::core::ffi::c_char;
     pub fn err(_: ::core::ffi::c_int, _: *const ::core::ffi::c_char, ...);
     pub fn errx(_: ::core::ffi::c_int, _: *const ::core::ffi::c_char, ...);
@@ -116,12 +96,10 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     pub fn exit(__status: ::core::ffi::c_int) -> !;
     pub fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
-    pub fn fcntl(__fd: ::core::ffi::c_int, __cmd: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
     pub fn fdopen(__fd: ::core::ffi::c_int, __modes: *const ::core::ffi::c_char) -> *mut FILE;
     pub fn ferror(__stream: *mut FILE) -> ::core::ffi::c_int;
     pub fn fflush(__stream: *mut FILE) -> ::core::ffi::c_int;
     pub fn fgetc(__stream: *mut FILE) -> ::core::ffi::c_int;
-    pub fn flock(__fd: ::core::ffi::c_int, __operation: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn fnmatch(
         __pattern: *const ::core::ffi::c_char,
         __name: *const ::core::ffi::c_char,
@@ -168,18 +146,6 @@ extern "C" {
     pub fn getppid() -> __pid_t;
     pub fn getpwnam(__name: *const ::core::ffi::c_char) -> *mut passwd;
     pub fn getpwuid(__uid: __uid_t) -> *mut passwd;
-    pub fn getsockname(
-        __fd: ::core::ffi::c_int,
-        __addr: __SOCKADDR_ARG,
-        __len: *mut socklen_t,
-    ) -> ::core::ffi::c_int;
-    pub fn getsockopt(
-        __fd: ::core::ffi::c_int,
-        __level: ::core::ffi::c_int,
-        __optname: ::core::ffi::c_int,
-        __optval: *mut ::core::ffi::c_void,
-        __optlen: *mut socklen_t,
-    ) -> ::core::ffi::c_int;
     pub fn getuid() -> __uid_t;
     pub fn glob(
         __pattern: *const ::core::ffi::c_char,
@@ -194,15 +160,8 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     pub fn globfree(__pglob: *mut glob_t);
     pub fn gmtime_r(__timer: *const time_t, __tp: *mut tm) -> *mut tm;
-    pub fn ioctl(
-        __fd: ::core::ffi::c_int,
-        __request: ::core::ffi::c_ulong,
-        ...
-    ) -> ::core::ffi::c_int;
-    pub fn isatty(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn killpg(__pgrp: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    pub fn listen(__fd: ::core::ffi::c_int, __n: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn llabs(__x: ::core::ffi::c_longlong) -> ::core::ffi::c_longlong;
     pub fn localtime(__timer: *const time_t) -> *mut tm;
     pub fn localtime_r(__timer: *const time_t, __tp: *mut tm) -> *mut tm;
@@ -236,16 +195,6 @@ extern "C" {
     pub fn mkdir(__path: *const ::core::ffi::c_char, __mode: __mode_t) -> ::core::ffi::c_int;
     pub fn mkstemp(__template: *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
     pub fn nl_langinfo(__item: nl_item) -> *mut ::core::ffi::c_char;
-    pub fn open(
-        __file: *const ::core::ffi::c_char,
-        __oflag: ::core::ffi::c_int,
-        ...
-    ) -> ::core::ffi::c_int;
-    pub fn poll(
-        __fds: *mut pollfd,
-        __nfds: nfds_t,
-        __timeout: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
     pub fn prctl(__option: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
     pub fn printf(__format: *const ::core::ffi::c_char, ...) -> ::core::ffi::c_int;
     pub static mut program_invocation_short_name: *mut ::core::ffi::c_char;
@@ -254,25 +203,10 @@ extern "C" {
         __buf: *mut ::core::ffi::c_char,
         __len: size_t,
     ) -> ssize_t;
-    pub fn readv(
-        __fd: ::core::ffi::c_int,
-        __iovec: *const ::libc::iovec,
-        __count: ::core::ffi::c_int,
-    ) -> ssize_t;
     pub fn realpath(
         __name: *const ::core::ffi::c_char,
         __resolved: *mut ::core::ffi::c_char,
     ) -> *mut ::core::ffi::c_char;
-    pub fn recvmsg(
-        __fd: ::core::ffi::c_int,
-        __message: *mut msghdr,
-        __flags: ::core::ffi::c_int,
-    ) -> ssize_t;
-    pub fn sendmsg(
-        __fd: ::core::ffi::c_int,
-        __message: *const msghdr,
-        __flags: ::core::ffi::c_int,
-    ) -> ssize_t;
     pub fn setenv(
         __name: *const ::core::ffi::c_char,
         __value: *const ::core::ffi::c_char,
@@ -289,7 +223,6 @@ extern "C" {
         __modes: ::core::ffi::c_int,
         __n: size_t,
     ) -> ::core::ffi::c_int;
-    pub fn shutdown(__fd: ::core::ffi::c_int, __how: ::core::ffi::c_int) -> ::core::ffi::c_int;
     pub fn sigaction(
         __sig: ::core::ffi::c_int,
         __act: *const sigaction,
@@ -317,17 +250,6 @@ extern "C" {
     pub type sockaddr_iso;
     pub type sockaddr_ns;
     pub type sockaddr_x25;
-    pub fn socket(
-        __domain: ::core::ffi::c_int,
-        __type: ::core::ffi::c_int,
-        __protocol: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    pub fn socketpair(
-        __domain: ::core::ffi::c_int,
-        __type: ::core::ffi::c_int,
-        __protocol: ::core::ffi::c_int,
-        __fds: *mut ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
     pub fn sscanf(
         __s: *const ::core::ffi::c_char,
         __format: *const ::core::ffi::c_char,
@@ -430,19 +352,7 @@ extern "C" {
         __base: ::core::ffi::c_int,
     ) -> ::core::ffi::c_ulonglong;
     pub fn system(__command: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    pub fn tcflush(
-        __fd: ::core::ffi::c_int,
-        __queue_selector: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    pub fn tcgetattr(__fd: ::core::ffi::c_int, __termios_p: *mut termios) -> ::core::ffi::c_int;
-    pub fn tcgetpgrp(__fd: ::core::ffi::c_int) -> __pid_t;
-    pub fn tcsetattr(
-        __fd: ::core::ffi::c_int,
-        __optional_actions: ::core::ffi::c_int,
-        __termios_p: *const termios,
-    ) -> ::core::ffi::c_int;
     pub fn time(__timer: *mut time_t) -> time_t;
-    pub fn ttyname(__fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
     pub fn tzset();
     pub fn umask(__mask: __mode_t) -> __mode_t;
     pub fn uname(__name: *mut utsname) -> ::core::ffi::c_int;
@@ -468,16 +378,6 @@ extern "C" {
     ) -> __pid_t;
     pub fn warnx(_: *const ::core::ffi::c_char, ...);
     pub fn wctomb(__s: *mut ::core::ffi::c_char, __wchar: wchar_t) -> ::core::ffi::c_int;
-    pub fn write(
-        __fd: ::core::ffi::c_int,
-        __buf: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ssize_t;
-    pub fn writev(
-        __fd: ::core::ffi::c_int,
-        __iovec: *const ::libc::iovec,
-        __count: ::core::ffi::c_int,
-    ) -> ssize_t;
     pub fn forkpty(
         __amaster: *mut ::core::ffi::c_int,
         __name: *mut ::core::ffi::c_char,

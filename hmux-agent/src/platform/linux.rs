@@ -3,100 +3,22 @@
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::ptr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use super::{ForkOutcome, OutputWakeup, Platform, ProcessInfo};
+use super::{ForkOutcome, Platform, ProcessInfo};
 
 /// The Linux platform implementation selected by the native server.
 pub struct Linux;
 
-/// A non-blocking `eventfd` used as a coalescing readiness notification.
-pub struct EventFd(OwnedFd);
-
-impl AsFd for EventFd {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.0.as_fd()
-    }
-}
-
-impl OutputWakeup for EventFd {
-    fn wake(&self) -> io::Result<()> {
-        let value = 1u64;
-        loop {
-            let written = unsafe {
-                libc::write(
-                    self.0.as_raw_fd(),
-                    (&value as *const u64).cast(),
-                    size_of::<u64>(),
-                )
-            };
-            if written == size_of::<u64>() as isize {
-                return Ok(());
-            }
-            if written >= 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "short write to eventfd",
-                ));
-            }
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            // A saturated eventfd is already readable, which satisfies the
-            // coalescing notification contract.
-            if error.kind() == io::ErrorKind::WouldBlock {
-                return Ok(());
-            }
-            return Err(error);
-        }
-    }
-
-    fn clear(&self) -> io::Result<()> {
-        let mut value = 0u64;
-        loop {
-            let read = unsafe {
-                libc::read(
-                    self.0.as_raw_fd(),
-                    (&mut value as *mut u64).cast(),
-                    size_of::<u64>(),
-                )
-            };
-            if read == size_of::<u64>() as isize {
-                return Ok(());
-            }
-            if read >= 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "short read from eventfd",
-                ));
-            }
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            // Clearing an already-clear coalescing notification is harmless.
-            if error.kind() == io::ErrorKind::WouldBlock {
-                return Ok(());
-            }
-            return Err(error);
-        }
-    }
-}
-
 impl Platform for Linux {
-    type OutputWakeup = EventFd;
+    type OutputWakeup = hmux_rt::unix::Notification;
 
     fn new_output_wakeup() -> io::Result<Self::OutputWakeup> {
-        let fd = unsafe { libc::eventfd(1, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) };
-        if fd < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(EventFd(unsafe { OwnedFd::from_raw_fd(fd) }))
+        hmux_rt::unix::Notification::new()
     }
 
     unsafe fn fork_pty(size: libc::winsize) -> io::Result<ForkOutcome> {
@@ -115,10 +37,7 @@ impl Platform for Linux {
     }
 
     unsafe fn close_fds_from(lowest: RawFd) {
-        debug_assert!(lowest >= 0);
-        unsafe {
-            libc::close_range(lowest as libc::c_uint, libc::c_uint::MAX, 0);
-        }
+        unsafe { hmux_rt::unix::close_from(lowest) };
     }
 
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf> {
@@ -133,23 +52,15 @@ impl Platform for Linux {
                 .then(|| PathBuf::from(format!("/proc/{pid}/cwd")))
                 .and_then(|path| fs::read_link(path).ok())
         };
-        let foreground_pgrp = unsafe { libc::tcgetpgrp(pty.as_raw_fd()) };
-        read_cwd(foreground_pgrp).or_else(|| read_cwd(unsafe { libc::tcgetsid(pty.as_raw_fd()) }))
+        let foreground_pgrp = hmux_rt::unix::terminal_foreground_group(pty).unwrap_or(-1);
+        read_cwd(foreground_pgrp)
+            .or_else(|| read_cwd(hmux_rt::unix::terminal_session(pty).unwrap_or(-1)))
     }
 
     fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32> {
-        let mut credentials = unsafe { std::mem::zeroed::<libc::ucred>() };
-        let mut length = size_of::<libc::ucred>() as libc::socklen_t;
-        let status = unsafe {
-            libc::getsockopt(
-                socket.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_PEERCRED,
-                (&mut credentials as *mut libc::ucred).cast(),
-                &mut length,
-            )
-        };
-        (status == 0).then_some(credentials.uid)
+        hmux_rt::unix::peer_credentials(socket)
+            .ok()
+            .map(|(uid, _)| uid)
     }
 
     fn process_table() -> Option<Vec<ProcessInfo>> {

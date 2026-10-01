@@ -4,6 +4,7 @@
 
 pub mod mio;
 pub mod stream;
+pub mod unix;
 
 use std::ffi::c_int;
 use std::future::Future;

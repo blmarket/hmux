@@ -11,7 +11,7 @@ use crate::src::compat::imsg::*;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
-use crate::src::ffi::libc::{sscanf, strcmp, tcgetattr};
+use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::log::fatal;

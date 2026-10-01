@@ -42,7 +42,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __ctype_b_loc, fnmatch, gethostname, getpid, ioctl, kill, memcpy, memset, strcasecmp,
+    __ctype_b_loc, fnmatch, gethostname, getpid, kill, memcpy, memset, strcasecmp,
 };
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;
@@ -430,7 +430,6 @@ unsafe fn window_pane_destroy_ready(
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> ::core::ffi::c_int {
     let mut wp = wp_owner.get();
-    let mut n: ::core::ffi::c_int = 0;
     if (*wp).pipe_fd.is_some()
         && (*wp)
             .pipe_event
@@ -439,12 +438,11 @@ unsafe fn window_pane_destroy_ready(
     {
         return 0 as ::core::ffi::c_int;
     }
-    if ioctl(
-        (*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-        FIONREAD as ::core::ffi::c_ulong,
-        &raw mut n,
-    ) != -(1 as ::core::ffi::c_int)
-        && n > 0 as ::core::ffi::c_int
+    if (*wp)
+        .fd
+        .as_ref()
+        .and_then(|fd| hmux_rt::unix::bytes_available(std::os::fd::AsFd::as_fd(fd)).ok())
+        .is_some_and(|n| n > 0)
     {
         return 0 as ::core::ffi::c_int;
     }
@@ -516,11 +514,8 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     parent.release(c"window_pane_send_resize");
     ws.ws_xpixel = xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
-    if ioctl(
-        wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-        TIOCSWINSZ as ::core::ffi::c_ulong,
-        &raw mut ws,
-    ) == -(1 as ::core::ffi::c_int)
+    if crate::src::shared::terminal::set_size(wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd), &ws)
+        == -(1 as ::core::ffi::c_int)
     {
         fatal(|out| out.write_all(b"ioctl failed"));
     }

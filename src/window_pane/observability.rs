@@ -20,7 +20,7 @@ use hmux_agent::pane_class::{stringify_argv, PaneProcessProbe};
 use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::io;
-use std::os::fd::AsRawFd;
+use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
@@ -107,14 +107,14 @@ fn process_groups(pane: &window_pane) -> (Option<i32>, Option<i32>) {
     let Some(fd) = pane.fd.as_ref() else {
         return (None, None);
     };
-    unsafe {
-        let foreground = libc::tcgetpgrp(fd.as_raw_fd());
-        let session = libc::tcgetsid(fd.as_raw_fd());
-        (
-            (foreground > 0).then_some(foreground),
-            (session > 0).then_some(session),
-        )
-    }
+    (
+        hmux_rt::unix::terminal_foreground_group(fd.as_fd())
+            .ok()
+            .filter(|&pid| pid > 0),
+        hmux_rt::unix::terminal_session(fd.as_fd())
+            .ok()
+            .filter(|&pid| pid > 0),
+    )
 }
 
 impl PaneObservability for PaneView {

@@ -14,9 +14,9 @@ use crate::src::compat::getprogname::getprogname;
 use crate::src::environ::{environ_create, environ_find, environ_put, environ_set};
 use crate::src::ffi::libc::nl_item;
 use crate::src::ffi::libc::{
-    __errno_location, access, clock_gettime, environ, err, errx, exit, fcntl, fprintf, getcwd,
-    getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr,
-    stdout, strcasecmp, strcasestr, strcmp, strerror, strrchr, strsep, strstr, tzset,
+    __errno_location, access, clock_gettime, environ, err, errx, exit, fprintf, getcwd, getenv,
+    getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale, stderr, stdout,
+    strcasecmp, strcasestr, strcmp, strerror, strrchr, strsep, strstr, tzset,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
@@ -669,16 +669,9 @@ pub(crate) unsafe fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CStrin
     argv0.extend_from_slice(name);
     CString::new(argv0).expect("shell path contains no NUL")
 }
-pub unsafe fn setblocking(mut fd: ::core::ffi::c_int, mut state: ::core::ffi::c_int) {
-    let mut mode: ::core::ffi::c_int = 0;
-    mode = fcntl(fd, F_GETFL);
-    if mode != -(1 as ::core::ffi::c_int) {
-        if state == 0 {
-            mode |= O_NONBLOCK;
-        } else {
-            mode &= !O_NONBLOCK;
-        }
-        fcntl(fd, F_SETFL, mode);
+pub unsafe fn setblocking(fd: ::core::ffi::c_int, state: ::core::ffi::c_int) {
+    if fd >= 0 {
+        let _ = hmux_rt::unix::set_nonblocking(std::os::fd::BorrowedFd::borrow_raw(fd), state == 0);
     }
 }
 pub unsafe fn get_timer() -> uint64_t {

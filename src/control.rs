@@ -2,8 +2,7 @@ use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard, cmdq_new_state,
 };
-use crate::src::ffi::libc::{__errno_location, close, memset, poll, strcmp, strlen};
-use crate::src::ffi::libc::{nfds_t, pollfd};
+use crate::src::ffi::libc::{__errno_location, memset, strcmp, strlen};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
@@ -12,8 +11,7 @@ use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
-    evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_read,
-    evbuffer_readln,
+    evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
 };
 use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
@@ -858,45 +856,38 @@ pub unsafe fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
         == 0 as size_t) as ::core::ffi::c_int
 }
 pub unsafe fn control_wait_exit() {
-    let mut fd: ::core::ffi::c_int = STDIN_FILENO;
-    let mut pfd: pollfd = pollfd {
-        fd: 0,
-        events: 0,
-        revents: 0,
+    use hmux_rt::{AsyncRead as _, Handle as _, Runtime as _};
+    use std::os::fd::AsFd;
+    let stdin = std::io::stdin();
+    let fd = stdin.as_fd();
+    let Ok(was_nonblocking) = hmux_rt::unix::set_nonblocking(fd, true) else {
+        return;
     };
-    let mut n: ::core::ffi::c_int = 0;
-    let mut evb = evbuffer_new();
-    loop {
-        if let Some(line) = evbuffer_readln(&mut evb) {
-            if line[0] == 0 {
-                break;
-            }
-        } else {
-            memset(
-                &raw mut pfd as *mut ::core::ffi::c_void,
-                0 as ::core::ffi::c_int,
-                ::core::mem::size_of::<pollfd>() as size_t,
-            );
-            pfd.fd = fd;
-            pfd.events = POLLIN as ::core::ffi::c_short;
-            if poll(&raw mut pfd, 1 as nfds_t, INFTIM) == -(1 as ::core::ffi::c_int) {
-                if !(*__errno_location() == EINTR) {
-                    break;
-                }
-            } else {
-                n = evbuffer_read(&mut evb, fd, -(1 as ::core::ffi::c_int));
-                if n == 0 as ::core::ffi::c_int {
-                    break;
-                }
-                if n == -(1 as ::core::ffi::c_int)
-                    && *__errno_location() != EAGAIN
-                    && *__errno_location() != EINTR
-                {
-                    break;
+    let result = (|| -> std::io::Result<()> {
+        let mut runtime = hmux_rt::mio::Runtime::new()?;
+        let source = runtime.handle().io(fd.try_clone_to_owned()?)?;
+        runtime.block_on(async {
+            let mut buffer = evbuffer_new();
+            loop {
+                if let Some(line) = evbuffer_readln(&mut buffer) {
+                    if line[0] == 0 {
+                        return Ok(());
+                    }
+                } else {
+                    let mut bytes = vec![0; 65536];
+                    let received = source.read(&mut bytes).await?;
+                    if received.bytes == 0 {
+                        return Ok(());
+                    }
+                    bytes.truncate(received.bytes);
+                    use hmux_buffer::BufMut as _;
+                    buffer.put(hmux_buffer::SegmentedBuf::from(bytes));
                 }
             }
-        }
-    }
+        })?
+    })();
+    let _ = result;
+    let _ = hmux_rt::unix::set_nonblocking(fd, was_nonblocking);
 }
 unsafe fn control_flush_all_blocks(client: &ClientRef) {
     loop {

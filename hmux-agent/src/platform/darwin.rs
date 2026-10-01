@@ -2,25 +2,16 @@
 
 use std::ffi::{OsStr, OsString};
 use std::io;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::ptr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use super::{ForkOutcome, OutputWakeup, Platform, ProcessInfo};
+use super::{ForkOutcome, Platform, ProcessInfo};
 
 /// The macOS platform implementation selected by the native server.
 pub struct Darwin;
-
-/// A non-blocking self-pipe used as a coalescing readiness notification.
-///
-/// macOS has no `eventfd`, so the readable end stands in for it: any pending
-/// byte makes it readable, and draining every byte clears the notification.
-pub struct SelfPipe {
-    read: OwnedFd,
-    write: OwnedFd,
-}
 
 #[repr(C)]
 struct ProcFileInfo {
@@ -39,111 +30,11 @@ struct VnodeFdInfoWithPath {
 
 const PROC_PIDFDVNODEPATHINFO: libc::c_int = 2;
 
-/// Set both the non-blocking and close-on-exec flags on `fd`.
-///
-/// macOS lacks the atomic `pipe2`/`O_CLOEXEC` creation flags, so the pipe ends
-/// are configured after creation with `fcntl`.
-fn set_nonblocking_cloexec(fd: RawFd) -> io::Result<()> {
-    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-    if flags < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let descriptor_flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-    if descriptor_flags < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if unsafe { libc::fcntl(fd, libc::F_SETFD, descriptor_flags | libc::FD_CLOEXEC) } < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-impl AsFd for SelfPipe {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        // The readable end is what a consumer polls for readiness.
-        self.read.as_fd()
-    }
-}
-
-impl OutputWakeup for SelfPipe {
-    fn wake(&self) -> io::Result<()> {
-        let byte = 0u8;
-        loop {
-            let written =
-                unsafe { libc::write(self.write.as_raw_fd(), (&byte as *const u8).cast(), 1) };
-            if written == 1 {
-                return Ok(());
-            }
-            if written >= 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "short write to self-pipe",
-                ));
-            }
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            // A full self-pipe is already readable, which satisfies the
-            // coalescing notification contract.
-            if error.kind() == io::ErrorKind::WouldBlock {
-                return Ok(());
-            }
-            return Err(error);
-        }
-    }
-
-    fn clear(&self) -> io::Result<()> {
-        let mut buffer = [0u8; 64];
-        loop {
-            let read = unsafe {
-                libc::read(
-                    self.read.as_raw_fd(),
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len(),
-                )
-            };
-            if read > 0 {
-                // Keep draining: several `wake`s may have queued several bytes.
-                continue;
-            }
-            if read == 0 {
-                // The write end is still held here, so EOF cannot occur; treat a
-                // zero-length read as fully drained.
-                return Ok(());
-            }
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            // Drained: no more pending bytes.
-            if error.kind() == io::ErrorKind::WouldBlock {
-                return Ok(());
-            }
-            return Err(error);
-        }
-    }
-}
-
 impl Platform for Darwin {
-    type OutputWakeup = SelfPipe;
+    type OutputWakeup = hmux_rt::unix::Notification;
 
     fn new_output_wakeup() -> io::Result<Self::OutputWakeup> {
-        let mut fds = [0 as RawFd; 2];
-        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-        let write = unsafe { OwnedFd::from_raw_fd(fds[1]) };
-        set_nonblocking_cloexec(read.as_raw_fd())?;
-        set_nonblocking_cloexec(write.as_raw_fd())?;
-        let pipe = SelfPipe { read, write };
-        // Start signalled so a fresh subscriber performs one initial scan.
-        pipe.wake()?;
-        Ok(pipe)
+        hmux_rt::unix::Notification::new()
     }
 
     unsafe fn fork_pty(size: libc::winsize) -> io::Result<ForkOutcome> {
@@ -165,21 +56,11 @@ impl Platform for Darwin {
     }
 
     unsafe fn close_fds_from(lowest: RawFd) {
-        debug_assert!(lowest >= 0);
-        // macOS has no `close_range`; sweep up to the descriptor-table ceiling.
-        // `getdtablesize` and `close` are async-signal-safe.
-        let max = unsafe { libc::getdtablesize() };
-        let mut fd = lowest;
-        while fd < max {
-            unsafe {
-                libc::close(fd);
-            }
-            fd += 1;
-        }
+        unsafe { hmux_rt::unix::close_from(lowest) };
     }
 
     fn pane_cwd(pty: BorrowedFd<'_>) -> Option<PathBuf> {
-        let foreground_pgrp = unsafe { libc::tcgetpgrp(pty.as_raw_fd()) };
+        let foreground_pgrp = hmux_rt::unix::terminal_foreground_group(pty).unwrap_or(-1);
         if foreground_pgrp <= 0 {
             return None;
         }
@@ -188,10 +69,9 @@ impl Platform for Darwin {
     }
 
     fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32> {
-        let mut uid: libc::uid_t = 0;
-        let mut gid: libc::gid_t = 0;
-        let status = unsafe { libc::getpeereid(socket.as_raw_fd(), &mut uid, &mut gid) };
-        (status == 0).then_some(uid)
+        hmux_rt::unix::peer_credentials(socket)
+            .ok()
+            .map(|(uid, _)| uid)
     }
 
     fn process_table() -> Option<Vec<ProcessInfo>> {

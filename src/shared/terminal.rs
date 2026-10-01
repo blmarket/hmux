@@ -2,6 +2,87 @@
 
 use super::abi::{cc_t, speed_t, tcflag_t};
 
+// Adapt the translated model's termios layout at the runtime boundary. These
+// functions retain the errno/return convention until the model is migrated.
+pub(crate) unsafe fn read_attributes(fd: i32, attributes: &mut termios) -> i32 {
+    if fd < 0 {
+        *libc::__errno_location() = libc::EBADF;
+        return -1;
+    }
+    crate::src::reactor::io_status(
+        hmux_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd)).map(|native| {
+            *attributes = termios {
+                c_iflag: native.c_iflag,
+                c_oflag: native.c_oflag,
+                c_cflag: native.c_cflag,
+                c_lflag: native.c_lflag,
+                c_line: native.c_line,
+                c_cc: native.c_cc,
+                c2rust_unnamed: termios_input_speed {
+                    c_ispeed: native.c_ispeed,
+                },
+                c2rust_unnamed_0: termios_output_speed {
+                    c_ospeed: native.c_ospeed,
+                },
+            };
+        }),
+    )
+}
+
+pub(crate) unsafe fn set_attributes(fd: i32, action: i32, attributes: &termios) -> i32 {
+    if fd < 0 {
+        *libc::__errno_location() = libc::EBADF;
+        return -1;
+    }
+    let mut native: libc::termios = std::mem::zeroed();
+    native.c_iflag = attributes.c_iflag;
+    native.c_oflag = attributes.c_oflag;
+    native.c_cflag = attributes.c_cflag;
+    native.c_lflag = attributes.c_lflag;
+    native.c_line = attributes.c_line;
+    native.c_cc = attributes.c_cc;
+    native.c_ispeed = attributes.c2rust_unnamed.c_ispeed;
+    native.c_ospeed = attributes.c2rust_unnamed_0.c_ospeed;
+    crate::src::reactor::io_status(hmux_rt::unix::set_terminal_attributes(
+        std::os::fd::BorrowedFd::borrow_raw(fd),
+        action,
+        &native,
+    ))
+}
+
+pub(crate) unsafe fn read_size(fd: i32, size: &mut super::posix_terminal::winsize) -> i32 {
+    if fd < 0 {
+        *libc::__errno_location() = libc::EBADF;
+        return -1;
+    }
+    crate::src::reactor::io_status(
+        hmux_rt::unix::terminal_size(std::os::fd::BorrowedFd::borrow_raw(fd)).map(|native| {
+            *size = super::posix_terminal::winsize {
+                ws_row: native.ws_row,
+                ws_col: native.ws_col,
+                ws_xpixel: native.ws_xpixel,
+                ws_ypixel: native.ws_ypixel,
+            };
+        }),
+    )
+}
+
+pub(crate) unsafe fn set_size(fd: i32, size: &super::posix_terminal::winsize) -> i32 {
+    if fd < 0 {
+        *libc::__errno_location() = libc::EBADF;
+        return -1;
+    }
+    crate::src::reactor::io_status(hmux_rt::unix::set_terminal_size(
+        std::os::fd::BorrowedFd::borrow_raw(fd),
+        &libc::winsize {
+            ws_row: size.ws_row,
+            ws_col: size.ws_col,
+            ws_xpixel: size.ws_xpixel,
+            ws_ypixel: size.ws_ypixel,
+        },
+    ))
+}
+
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct termios {

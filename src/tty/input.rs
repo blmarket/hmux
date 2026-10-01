@@ -1,7 +1,7 @@
 //! Input storage stays in the terminal while decoding uses its contiguous bytes.
 //! Decoded events own their payload before callbacks can replace that storage.
-use crate::src::reactor::{evbuffer_pullup, evbuffer_read};
-use hmux_buffer::{Buf, SegmentedBuf};
+use crate::src::reactor::evbuffer_pullup;
+use hmux_buffer::{Buf, BufMut, SegmentedBuf};
 
 #[derive(Default)]
 pub struct TerminalInput {
@@ -15,8 +15,8 @@ impl TerminalInput {
     pub fn is_empty(&self) -> bool {
         !self.buffer.has_remaining()
     }
-    pub unsafe fn read(&mut self, fd: i32) -> i32 {
-        evbuffer_read(&mut self.buffer, fd, -1)
+    pub fn append(&mut self, bytes: Vec<u8>) {
+        self.buffer.put(SegmentedBuf::from(bytes));
     }
     /// Borrow the buffer's allocation, coalescing segments only when necessary.
     pub fn bytes(&mut self) -> &[u8] {
@@ -49,21 +49,15 @@ mod tests {
         assert!(input.bytes().is_empty());
     }
     #[test]
-    fn reads_append_to_remaining_input_and_empty_reads_preserve_storage() {
-        use std::io::Write;
-        use std::os::fd::AsRawFd;
-        let (reader, mut writer) = std::os::unix::net::UnixStream::pair().unwrap();
+    fn appends_preserve_remaining_input_and_empty_chunks_preserve_storage() {
         let mut input = TerminalInput::default();
-        writer.write_all(b"old").unwrap();
-        assert_eq!(unsafe { input.read(reader.as_raw_fd()) }, 3);
+        input.append(b"old".to_vec());
         assert_eq!(input.bytes(), b"old");
         input.drain(1);
-        writer.write_all(b"new").unwrap();
-        assert_eq!(unsafe { input.read(reader.as_raw_fd()) }, 3);
+        input.append(b"new".to_vec());
         assert_eq!(input.bytes(), b"ldnew");
-        drop(writer);
         let current = input.bytes().as_ptr();
-        assert_eq!(unsafe { input.read(reader.as_raw_fd()) }, 0);
+        input.append(Vec::new());
         assert_eq!(current, input.bytes().as_ptr());
     }
 }

@@ -20,9 +20,9 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, closefrom, execl, execvp, fdopen, fopen, fread, fseeko, ftello,
-    fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask, strerror,
-    strrchr, tcgetattr, tcsetattr, unlink,
+    __errno_location, _exit, chdir, execl, execvp, fdopen, fopen, fread, fseeko, ftello, fwrite,
+    getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask, strerror, strrchr,
+    unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::write_cstr;
@@ -716,7 +716,9 @@ pub(super) unsafe fn spawn_pane(
                         |out| write_cstr(out, actual_cwd),
                     );
                 }
-                if tcgetattr(STDIN_FILENO, &raw mut now) != 0 as ::core::ffi::c_int {
+                if crate::src::shared::terminal::read_attributes(STDIN_FILENO, &mut now)
+                    != 0 as ::core::ffi::c_int
+                {
                     _exit(1 as ::core::ffi::c_int);
                 }
                 if let Some(terminal) = session_owner.termios() {
@@ -729,11 +731,13 @@ pub(super) unsafe fn spawn_pane(
                     now.c_cc[VERASE as usize] = key as cc_t;
                 }
                 now.c_iflag |= IUTF8 as tcflag_t;
-                if tcsetattr(STDIN_FILENO, TCSANOW, &raw mut now) != 0 as ::core::ffi::c_int {
+                if crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &mut now)
+                    != 0 as ::core::ffi::c_int
+                {
                     _exit(1 as ::core::ffi::c_int);
                 }
                 proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
-                closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
+                hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 sigprocmask(
                     SIG_SETMASK,
                     &raw mut oldset,

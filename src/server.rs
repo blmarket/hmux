@@ -4,8 +4,8 @@ use crate::src::cmd::queue::cmdq_next;
 use crate::src::compat::systemd::{systemd_activated, systemd_create_socket};
 use crate::src::control_notify::control_build_events;
 use crate::src::ffi::libc::{
-    __errno_location, chmod, exit, fprintf, kill, killpg, listen, malloc_trim, sigfillset,
-    sigprocmask, stat, stderr, strerror, strsignal, time, umask, unlink, waitpid,
+    __errno_location, chmod, exit, fprintf, kill, killpg, malloc_trim, sigfillset, sigprocmask,
+    stat, stderr, strerror, strsignal, time, umask, unlink, waitpid,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::format_tidy_jobs;
@@ -43,7 +43,7 @@ use crate::src::tty::tty_create_log;
 
 use crate::src::window::{windows, Window as _};
 use crate::src::window_pane::WindowPane as _;
-use hmux_rt::AsyncFd as _;
+use hmux_rt::AsyncAccept as _;
 use hmux_rt::Handle as _;
 use std::time::{Duration, SystemTime};
 
@@ -184,14 +184,9 @@ unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CStrin
         } else {
             umask((S_IXUSR | S_IRWXG | S_IRWXO) as __mode_t)
         };
-        let listener = UnixListener::bind(OsStr::from_bytes(path));
+        let listener = hmux_rt::unix::listen(std::path::Path::new(OsStr::from_bytes(path)), 128);
         umask(mask);
         let listener = listener?;
-        // Keep the server's explicit backlog independent of the std default.
-        if listen(listener.as_raw_fd(), 128) == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        setblocking(listener.as_raw_fd(), 0);
         Ok(listener)
     })();
     result.map_err(|error: io::Error| {
@@ -475,10 +470,10 @@ pub unsafe fn server_update_socket() {
         chmod(socket_path, mode as __mode_t);
     }
 }
-unsafe fn server_accept() {
+unsafe fn server_accept(result: io::Result<OwnedFd>) {
     server_add_accept(0);
-    let socket = match server_fd.as_ref().expect("server listener").accept() {
-        Ok((socket, _)) => socket,
+    let socket = match result {
+        Ok(socket) => socket,
         Err(error) => match error.raw_os_error() {
             Some(EAGAIN | EINTR | ECONNABORTED) => return,
             Some(ENFILE | EMFILE) => {
@@ -491,7 +486,7 @@ unsafe fn server_accept() {
     if server_exit != 0 {
         return;
     }
-    let c = Some(ClientRef::create(socket.into()));
+    let c = Some(ClientRef::create(socket));
     if server_acl_join(c.as_ref().expect("live client")) == 0 {
         c.as_ref()
             .expect("live client")
@@ -504,13 +499,12 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     let Some(socket) = server_fd.as_ref() else {
         return;
     };
-    let fd = socket.as_fd();
     if timeout == 0 as ::core::ffi::c_int {
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let source = reactor::io(fd)?;
+            let source = reactor::handle().listener(socket.try_clone()?)?;
             Ok(async move {
-                source.ready(true, false).await.expect("accept wait");
-                unsafe { server_accept() };
+                let accepted = source.accept().await;
+                unsafe { server_accept(accepted) };
             })
         })
         .expect("start accept wait");

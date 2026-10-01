@@ -101,7 +101,7 @@ pub trait Client {
     unsafe fn terminal_theme_colour(&self, index: usize) -> i32;
     unsafe fn initialize_terminal(&self) -> i32;
     /// Read bytes through the owned descriptor without exposing it or the buffer.
-    unsafe fn read_terminal_input(&self) -> (usize, i32);
+    unsafe fn append_terminal_input(&self, bytes: Vec<u8>) -> usize;
     /// Terminfo construction may query Client; copy its source before starting.
     unsafe fn terminal_description_source(&self) -> (Option<CString>, Vec<CString>);
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr);
@@ -469,14 +469,12 @@ impl Client for ClientRef {
         let state = &*self.get();
         (state.term_name.clone(), state.term_caps.clone())
     }
-    unsafe fn read_terminal_input(&self) -> (usize, i32) {
+    unsafe fn append_terminal_input(&self, bytes: Vec<u8>) -> usize {
         let state = &mut *self.get();
         let input = state.tty.in_0.as_deref_mut().expect("open TTY buffer");
         let size = input.len();
-        (
-            size,
-            input.read(state.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)),
-        )
+        input.append(bytes);
+        size
     }
     unsafe fn initialize_terminal(&self) -> i32 {
         let observer = Rc::downgrade(self);
@@ -857,15 +855,15 @@ impl Client for ClientRef {
         *depth
     }
     unsafe fn capture_termios(&self) -> termios {
-        let mut result = std::mem::MaybeUninit::uninit();
-        if crate::src::ffi::libc::tcgetattr(
+        let mut result = termios::default();
+        if crate::src::shared::terminal::read_attributes(
             (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-            result.as_mut_ptr(),
+            &mut result,
         ) != 0
         {
             fatal(|out| out.write_all(b"tcgetattr failed"));
         }
-        result.assume_init()
+        result
     }
     unsafe fn name(&self) -> Option<CString> {
         (*self.get()).name.clone()
@@ -1333,9 +1331,8 @@ impl Client for ClientRef {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        (crate::src::ffi::libc::ioctl(
+        (crate::src::shared::terminal::read_size(
             (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-            crate::src::tty::TIOCGWINSZ as _,
             &mut size,
         ) != -1)
             .then_some(size)

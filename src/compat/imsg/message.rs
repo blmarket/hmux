@@ -1,7 +1,7 @@
 //! Authoritative client/server message identifiers.
 
-use super::imsg_buffer::ibufqueue;
 use crate::src::shared::abi::{pid_t, size_t, uint32_t};
+use std::collections::VecDeque;
 use std::os::fd::OwnedFd;
 pub type msgtype = ::core::ffi::c_uint;
 
@@ -79,77 +79,28 @@ pub(crate) const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 
 pub(crate) const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 
-/// An owned message buffer. Its file descriptor closes with the buffer.
-pub(super) struct OwnedIbuf {
-    pub(super) storage: Vec<u8>,
-    pub(super) max: size_t,
-    pub(super) wpos: size_t,
-    pub(super) rpos: size_t,
-    pub(super) fd: Option<OwnedFd>,
-}
-
-impl OwnedIbuf {
-    pub(super) fn size(&self) -> usize {
-        self.wpos.saturating_sub(self.rpos)
-    }
-
-    pub(super) fn unread(&self) -> &[u8] {
-        let end = self.wpos.min(self.storage.len());
-        let start = self.rpos.min(end);
-        &self.storage[start..end]
-    }
-
-    pub(super) fn skip(&mut self, len: usize) -> bool {
-        let Some(end) = self.rpos.checked_add(len) else {
-            return false;
-        };
-        if end > self.wpos {
-            return false;
-        }
-        self.rpos = end;
-        true
-    }
-
-    pub(super) fn storage_len(&self) -> usize {
-        self.storage.len()
-    }
-
-    pub(super) fn replace_owned(&mut self, bytes: Vec<u8>) {
-        self.storage = bytes;
-    }
-}
-
 pub struct imsg {
     pub hdr: imsg_hdr,
     pub data: Vec<u8>,
     pub(super) fd: Option<OwnedFd>,
 }
 
-pub(super) struct msgbuf {
-    pub(super) bufs: ibufqueue,
-    pub(super) rbufs: ibufqueue,
-    pub(super) rbuf: Vec<u8>,
-    pub(super) rpmsg: Option<Box<OwnedIbuf>>,
-    pub(super) readhdr: Option<
-        Box<
-            dyn FnMut(
-                &[u8],
-                Option<OwnedFd>,
-            ) -> Result<(Box<OwnedIbuf>, Option<OwnedFd>), ::core::ffi::c_int>,
-        >,
-    >,
-    pub(super) roff: size_t,
-    pub(super) hdrsize: size_t,
+pub(super) struct Outgoing {
+    pub(super) bytes: Vec<u8>,
+    pub(super) offset: usize,
+    pub(super) fd: Option<OwnedFd>,
 }
 
+/// Protocol storage only. Transport operations belong to the peer's runtime task.
 #[derive(Default)]
 pub(crate) struct imsgbuf {
-    pub(super) w: Option<Box<msgbuf>>,
+    pub(super) input: Vec<u8>,
+    pub(super) input_fds: VecDeque<OwnedFd>,
+    pub(super) incoming: VecDeque<imsg>,
+    pub(super) outgoing: VecDeque<Outgoing>,
     pub(super) pid: pid_t,
-    pub(super) maxsize: uint32_t,
-    /// Owns the transport socket until `imsgbuf_clear`.
+    /// Owns the socket until the peer explicitly calls imsgbuf_clear.
     pub(crate) fd: Option<OwnedFd>,
-    pub(super) flags: ::core::ffi::c_int,
 }
 
 #[derive(Copy, Clone)]

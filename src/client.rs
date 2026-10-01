@@ -7,10 +7,9 @@ use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION}
 use crate::src::compat::systemd::systemd_activated;
 use crate::src::control::control_wait_exit;
 use crate::src::ffi::libc::{
-    __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, close,
-    closefrom, environ, execl, fflush, flock, fprintf, getenv, getpid, getppid, isatty, kill,
-    memcpy, memset, printf, setenv, sigaction, sigemptyset, stderr, stdout, strerror, strlen,
-    strsignal, system, tcgetattr, tcsetattr, ttyname, unlink, waitpid,
+    __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, environ,
+    execl, fflush, fprintf, getenv, getpid, getppid, kill, memcpy, memset, printf, setenv,
+    sigaction, sigemptyset, stderr, stdout, strerror, strlen, strsignal, system, unlink, waitpid,
 };
 use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
@@ -19,8 +18,8 @@ use crate::src::file::{
 use crate::src::format::bytes::xformat_with;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_hex};
 use crate::src::proc::{
-    proc_add_peer, proc_clear_signals, proc_exit, proc_flush_peer, proc_loop, proc_send,
-    proc_set_signals, proc_start,
+    proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send, proc_set_signals,
+    proc_start,
 };
 use crate::src::reactor::init_runtime;
 use crate::src::server::server_start;
@@ -113,28 +112,28 @@ enum ClientLock {
 
 unsafe fn client_get_lock(lockfile: *const ::core::ffi::c_char) -> ClientLock {
     log_debug(format_args!("lock file is {}", log_cstr(lockfile)));
-    let lock = match OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .open(OsStr::from_bytes(CStr::from_ptr(lockfile).to_bytes()))
-    {
-        Ok(file) => OwnedFd::from(file),
+    let lock = match hmux_rt::unix::open(
+        CStr::from_ptr(lockfile),
+        libc::O_WRONLY | libc::O_CREAT,
+        0o600,
+    ) {
+        Ok(file) => file,
         Err(error) => {
             log_debug(format_args!("open failed: {error}"));
             return ClientLock::Unavailable;
         }
     };
-    if flock(lock.as_raw_fd(), LOCK_EX | LOCK_NB) == -1 {
+    if let Err(error) = hmux_rt::unix::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
         log_debug(format_args!(
             "flock failed: {}",
             log_cstr(strerror(*__errno_location()))
         ));
-        if *__errno_location() != EAGAIN {
+        if error.raw_os_error() != Some(EAGAIN) {
             return ClientLock::Acquired(lock);
         }
-        while flock(lock.as_raw_fd(), LOCK_EX) == -1 && *__errno_location() == EINTR {}
+        while hmux_rt::unix::lock(lock.as_fd(), LOCK_EX)
+            .is_err_and(|error| error.kind() == io::ErrorKind::Interrupted)
+        {}
         return ClientLock::Retry;
     }
     log_debug(format_args!("flock succeeded"));
@@ -152,11 +151,11 @@ unsafe fn client_connect(path: *const ::core::ffi::c_char, flags: uint64_t) -> i
     log_debug(format_args!("socket is {}", log_cstr(path)));
     loop {
         log_debug(format_args!("trying connect"));
-        let error = match UnixStream::connect(connect_path) {
+        let error = match hmux_rt::unix::connect(std::path::Path::new(connect_path)) {
             Ok(socket) => {
                 drop(lockfd);
                 setblocking(socket.as_raw_fd(), 0);
-                return Ok(socket.into());
+                return Ok(socket);
             }
             Err(error) => error,
         };
@@ -250,7 +249,6 @@ pub unsafe fn client_main(
 ) -> ::core::ffi::c_int {
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let mut i: ::core::ffi::c_int = 0;
-    let mut ttynam: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut termname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut ppid: pid_t = 0;
@@ -346,10 +344,9 @@ pub unsafe fn client_main(
                 CStr::as_ptr,
             );
         }
-        ttynam = ttyname(STDIN_FILENO);
-        if ttynam.is_null() {
-            ttynam = b"\0" as *const u8 as *const ::core::ffi::c_char;
-        }
+        let ttynam =
+            hmux_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
+                .unwrap_or_default();
         termname = getenv(b"TERM\0" as *const u8 as *const ::core::ffi::c_char);
         if termname.is_null() {
             termname = b"\0" as *const u8 as *const ::core::ffi::c_char;
@@ -357,7 +354,10 @@ pub unsafe fn client_main(
         if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
             fatal(|out| out.write_all(b"pledge failed"));
         }
-        if isatty(STDIN_FILENO) != 0 && *termname as ::core::ffi::c_int != '\0' as i32 {
+        if hmux_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
+            .is_ok()
+            && *termname as ::core::ffi::c_int != '\0' as i32
+        {
             match tty_term_read_list(CStr::from_ptr(termname)) {
                 Ok(read_caps) => caps = read_caps,
                 Err(cause) => {
@@ -371,12 +371,14 @@ pub unsafe fn client_main(
             }
         }
         if ptm_fd != -(1 as ::core::ffi::c_int) {
-            close(ptm_fd);
+            let _ = hmux_rt::unix::close(ptm_fd);
         }
         crate::src::tmux::free_global_options();
         drop(global_environ.take());
         if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-            if tcgetattr(STDIN_FILENO, &raw mut saved_tio) != 0 as ::core::ffi::c_int {
+            if crate::src::shared::terminal::read_attributes(STDIN_FILENO, &mut saved_tio)
+                != 0 as ::core::ffi::c_int
+            {
                 fprintf(
                     stderr,
                     b"tcgetattr failed: %s\n\0" as *const u8 as *const ::core::ffi::c_char,
@@ -384,24 +386,23 @@ pub unsafe fn client_main(
                 );
                 return 1 as ::core::ffi::c_int;
             }
-            cfmakeraw(&raw mut tio);
+            cfmakeraw(&mut tio);
             tio.c_iflag = (ICRNL | IXANY) as tcflag_t;
             tio.c_oflag = (OPOST | ONLCR) as tcflag_t;
             tio.c_cflag = (CREAD | CS8 | HUPCL) as tcflag_t;
             tio.c_cc[VMIN as usize] = 1 as cc_t;
             tio.c_cc[VTIME as usize] = 0 as cc_t;
-            cfsetispeed(&raw mut tio, cfgetispeed(&raw mut saved_tio));
-            cfsetospeed(&raw mut tio, cfgetospeed(&raw mut saved_tio));
-            tcsetattr(STDIN_FILENO, TCSANOW, &raw mut tio);
+            cfsetispeed(&mut tio, cfgetispeed(&mut saved_tio));
+            cfsetospeed(&mut tio, cfgetospeed(&mut saved_tio));
+            crate::src::shared::terminal::set_attributes(STDIN_FILENO, TCSANOW, &mut tio);
         }
         client_send_identify(
-            CStr::from_ptr(ttynam),
+            &ttynam,
             CStr::from_ptr(termname),
             &caps,
             CStr::from_ptr(cwd),
             feat,
         );
-        proc_flush_peer(client_peer);
         if msg as ::core::ffi::c_uint == MSG_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint {
             size = 0 as size_t;
             i = 0 as ::core::ffi::c_int;
@@ -469,7 +470,11 @@ pub unsafe fn client_main(
             == MSG_EXEC as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-                tcsetattr(STDOUT_FILENO, TCSAFLUSH, &raw mut saved_tio);
+                crate::src::shared::terminal::set_attributes(
+                    STDOUT_FILENO,
+                    TCSAFLUSH,
+                    &mut saved_tio,
+                );
             }
             let (shell, command) = client_exec_payload
                 .as_ref()
@@ -510,7 +515,11 @@ pub unsafe fn client_main(
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
                 printf(b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char);
                 fflush(stdout);
-                tcsetattr(STDOUT_FILENO, TCSAFLUSH, &raw mut saved_tio);
+                crate::src::shared::terminal::set_attributes(
+                    STDOUT_FILENO,
+                    TCSAFLUSH,
+                    &mut saved_tio,
+                );
             }
         } else if client_exitreason as ::core::ffi::c_uint
             != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -669,7 +678,7 @@ unsafe fn client_exec(
     setblocking(STDIN_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDERR_FILENO, 1 as ::core::ffi::c_int);
-    closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
+    hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
     execl(
         shell,
         argv0.as_ptr(),

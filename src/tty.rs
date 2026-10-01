@@ -1,5 +1,5 @@
 use crate::src::reactor::Timer;
-use hmux_rt::AsyncFd as _;
+use hmux_rt::{AsyncRead as _, AsyncWrite as _};
 // Copy a terminal field and release its component borrow before a nested output
 // operation. Writes evaluate their source before borrowing the destination.
 macro_rules! terminal_value {
@@ -25,8 +25,7 @@ pub use output::*;
 
 use crate::src::ffi::libc::__useconds_t;
 use crate::src::ffi::libc::{
-    __errno_location, abs, fcntl, getpid, ioctl, isatty, memcpy, memset, open, strcmp, strerror,
-    strlen, strncmp, tcflush, tcgetattr, tcsetattr, time, usleep, write,
+    __errno_location, abs, getpid, memcpy, memset, strcmp, strerror, strlen, strncmp, time, usleep,
 };
 use crate::src::ffi::resolv::__b64_ntop;
 use crate::src::format::bytes::write_cstr;
@@ -38,9 +37,7 @@ use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_le
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor;
-use crate::src::reactor::{
-    evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new, evbuffer_read, evbuffer_write,
-};
+use crate::src::reactor::{evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new};
 use crate::src::screen::screen_mode_display;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
@@ -154,7 +151,7 @@ pub const IEXTEN: ::core::ffi::c_int = 0o100000 as ::core::ffi::c_int;
 
 pub const TCOFLUSH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
-static mut tty_log_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
+static mut tty_log: Option<(hmux_rt::mio::Runtime, hmux_rt::mio::Io)> = None;
 static mut tty_default_style_ctx: tty_style_ctx = {
     tty_style_ctx {
         defaults: grid_default_cell,
@@ -169,16 +166,18 @@ pub unsafe fn tty_create_log() {
         &mut name,
         format_args!("tmux-out-{}.log", getpid() as ::core::ffi::c_long),
     );
-    tty_log_fd = open(
-        &raw mut name as *mut ::core::ffi::c_char,
-        O_WRONLY | O_CREAT | O_TRUNC,
-        0o644 as ::core::ffi::c_int,
-    );
-    if tty_log_fd != -(1 as ::core::ffi::c_int)
-        && fcntl(tty_log_fd, F_SETFD, FD_CLOEXEC) == -(1 as ::core::ffi::c_int)
-    {
-        fatal(|out| out.write_all(b"fcntl failed"));
-    }
+    use hmux_rt::{Handle as _, Runtime as _};
+    tty_log = (|| -> std::io::Result<_> {
+        let file = hmux_rt::unix::open(
+            CStr::from_ptr(name.as_ptr()),
+            O_WRONLY | O_CREAT | O_TRUNC,
+            0o644,
+        )?;
+        let runtime = hmux_rt::mio::Runtime::new()?;
+        let source = runtime.handle().io(file)?;
+        Ok((runtime, source))
+    })()
+    .ok();
 }
 pub unsafe fn tty_init(owner: &ClientRef) -> ::core::ffi::c_int {
     owner.initialize_terminal()
@@ -191,7 +190,9 @@ pub(crate) unsafe fn tty_initialize_component(
     fd: i32,
     observer: ClientWeak,
 ) -> i32 {
-    if isatty(fd) == 0 {
+    if fd < 0
+        || hmux_rt::unix::terminal_attributes(std::os::fd::BorrowedFd::borrow_raw(fd)).is_err()
+    {
         return -1;
     }
     tty_keys_free(terminal);
@@ -202,7 +203,7 @@ pub(crate) unsafe fn tty_initialize_component(
     terminal.bg = -1;
     terminal.fg = terminal.bg;
     terminal.mouse_last_pane = -1;
-    if tcgetattr(fd, &mut terminal.tio) != 0 {
+    if crate::src::shared::terminal::read_attributes(fd, &mut terminal.tio) != 0 {
         return -1;
     }
     0
@@ -264,26 +265,30 @@ pub unsafe fn tty_set_size(
     (*tty).xpixel = xpixel;
     (*tty).ypixel = ypixel;
 }
-unsafe fn tty_read_callback(owner: &ClientRef) {
+unsafe fn tty_read_callback(owner: &ClientRef, result: std::io::Result<Vec<u8>>) {
     let name = owner.name();
-    let (size, nread) = owner.read_terminal_input();
-    if nread == 0 || nread == -1 {
-        if nread == 0 {
-            log_debug(format_args!(
-                "{}: read closed",
-                log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr))
-            ));
-        } else {
-            log_debug(format_args!(
-                "{}: read error: {}",
-                log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
-                log_cstr(strerror(*__errno_location()))
-            ));
+    let bytes = match result {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        result => {
+            if let Err(error) = result {
+                log_debug(format_args!(
+                    "{}: read error: {}",
+                    log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+                    error
+                ));
+            } else {
+                log_debug(format_args!(
+                    "{}: read closed",
+                    log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr))
+                ));
+            }
+            drop(owner.borrow_terminal_mut().read_task.take());
+            owner.lost();
+            return;
         }
-        drop(owner.borrow_terminal_mut().read_task.take());
-        (owner).lost();
-        return;
-    }
+    };
+    let nread = bytes.len();
+    let size = owner.append_terminal_input(bytes);
     log_debug(format_args!(
         "{}: read {} bytes (already {})",
         log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
@@ -381,7 +386,7 @@ unsafe fn tty_block_maybe(terminal: &ClientRef) -> bool {
     true
 }
 
-unsafe fn tty_write_callback(owner: &ClientRef) {
+unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) {
     (|terminal: &ClientRef| {
         let size = evbuffer_get_length(
             terminal
@@ -390,18 +395,15 @@ unsafe fn tty_write_callback(owner: &ClientRef) {
                 .as_deref()
                 .expect("open TTY buffer"),
         );
-        let fd = terminal.terminal_fd();
-        let written = evbuffer_write(
+        let Ok(written) = result else { return };
+        evbuffer_drain(
             terminal
                 .borrow_terminal_mut()
                 .out
                 .as_deref_mut()
                 .expect("open TTY buffer"),
-            fd,
+            written,
         );
-        if written == -1 {
-            return;
-        }
         log_debug(format_args!(
             "{}: wrote {} bytes (of {})",
             log_cstr(
@@ -448,11 +450,15 @@ fn tty_start_read(terminal: &mut tty) {
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
             loop {
-                source.ready(true, false).await.expect("TTY input wait");
+                let mut bytes = vec![0; 65536];
+                let result = source.read(&mut bytes).await.map(|received| {
+                    bytes.truncate(received.bytes);
+                    bytes
+                });
                 let Some(owner) = observer.upgrade() else {
                     return;
                 };
-                unsafe { tty_read_callback(&owner) };
+                unsafe { tty_read_callback(&owner, result) };
                 drop(owner);
                 // Input handling can close the terminal and cancel this task.
                 reactor::yield_now().await;
@@ -468,17 +474,19 @@ pub(crate) fn tty_start_write(terminal: &mut tty) {
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");
     let observer = terminal.client.clone();
+    let bytes = reactor::buffer_prefix(terminal.out.as_deref().expect("open TTY buffer"), 65536);
     crate::src::reactor::task_start(&mut terminal.write_task, move || {
         // SAFETY: the client owns this TTY descriptor until terminal cleanup.
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
-            source.ready(false, true).await.expect("TTY output wait");
+            let buffers = [std::io::IoSlice::new(&bytes)];
+            let result = source.write(&buffers, None).await;
             if let Some(owner) = observer.upgrade() {
-                // Complete the one-shot wait before writing: the write path
-                // can schedule another wait if bytes remain in the buffer.
+                // Complete this write before dispatch: the callback can
+                // schedule another write if bytes remain in the buffer.
                 unsafe {
                     drop(owner.borrow_terminal_mut().write_task.take());
-                    tty_write_callback(&owner);
+                    tty_write_callback(&owner, result);
                 }
             }
         })
@@ -604,8 +612,11 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
                 as tcflag_t;
         tio.c_cc[VMIN as usize] = 1 as cc_t;
         tio.c_cc[VTIME as usize] = 0 as cc_t;
-        if tcsetattr(fd, TCSANOW, &raw mut tio) == 0 as ::core::ffi::c_int {
-            tcflush(fd, TCOFLUSH);
+        if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &mut tio)
+            == 0 as ::core::ffi::c_int
+        {
+            let _ =
+                hmux_rt::unix::discard_terminal(std::os::fd::BorrowedFd::borrow_raw(fd), TCOFLUSH);
         }
         if options_get_number(global_options, c"clear-on-attach") != 0 {
             tty_putcode(tty, TTYC_SMCUP);
@@ -778,12 +789,13 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
         drop(tty.borrow_terminal_mut().read_task.take());
         drop(tty.borrow_terminal_mut().write_task.take());
-        if ioctl(fd, TIOCGWINSZ as ::core::ffi::c_ulong, &raw mut ws) == -(1 as ::core::ffi::c_int)
-        {
+        if crate::src::shared::terminal::read_size(fd, &mut ws) == -(1 as ::core::ffi::c_int) {
             return;
         }
         let saved_termios = terminal_value!(tty, tio);
-        if tcsetattr(fd, TCSANOW, &saved_termios) == -(1 as ::core::ffi::c_int) {
+        if crate::src::shared::terminal::set_attributes(fd, TCSANOW, &saved_termios)
+            == -(1 as ::core::ffi::c_int)
+        {
             return;
         }
         tty_raw(
@@ -970,26 +982,54 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
     server_redraw_client(owner);
     tty_invalidate(owner);
 }
-pub(crate) unsafe fn tty_raw(fd: i32, mut s: *const ::core::ffi::c_char) {
-    let mut n: ssize_t = 0;
-    let mut slen: ssize_t = 0;
-    let mut i: u_int = 0;
-    slen = strlen(s) as ssize_t;
-    i = 0 as u_int;
-    while i < 5 as u_int {
-        n = write(fd, s as *const ::core::ffi::c_void, slen as size_t);
-        if n >= 0 as ssize_t {
-            s = s.offset(n as isize);
-            slen -= n;
-            if slen == 0 as ssize_t {
-                break;
-            }
-        } else if n == -(1 as ::core::ffi::c_int) as ssize_t && *__errno_location() != EAGAIN {
-            break;
-        }
-        usleep(100 as __useconds_t);
-        i = i.wrapping_add(1);
+pub(crate) unsafe fn tty_raw(fd: i32, text: *const ::core::ffi::c_char) {
+    use hmux_rt::{Handle as _, Runtime as _};
+    use std::future::{poll_fn, Future};
+    use std::pin::pin;
+    use std::task::Poll;
+    if fd < 0 {
+        return;
     }
+    let bytes = CStr::from_ptr(text).to_bytes();
+    let borrowed = std::os::fd::BorrowedFd::borrow_raw(fd);
+    let Ok(was_nonblocking) = hmux_rt::unix::set_nonblocking(borrowed, true) else {
+        return;
+    };
+    // Teardown is synchronous and may run inside an application callback. Use
+    // an independent driver so it never reenters the application's runtime.
+    let _ = (|| -> std::io::Result<()> {
+        let mut runtime = hmux_rt::mio::Runtime::new()?;
+        let source = runtime.handle().io(borrowed.try_clone_to_owned()?)?;
+        let stop = runtime
+            .handle()
+            .sleep_until(std::time::Instant::now() + Duration::from_micros(500));
+        runtime.block_on(async {
+            let mut stop = pin!(stop);
+            let send = async {
+                let mut left = bytes;
+                while !left.is_empty() {
+                    let count = source.write(&[std::io::IoSlice::new(left)], None).await?;
+                    if count == 0 {
+                        return Err(std::io::ErrorKind::WriteZero.into());
+                    }
+                    left = &left[count..];
+                }
+                Ok(())
+            };
+            let mut send = pin!(send);
+            poll_fn(|cx| {
+                if let Poll::Ready(result) = send.as_mut().poll(cx) {
+                    return Poll::Ready(result);
+                }
+                if let Poll::Ready(_) = stop.as_mut().poll(cx) {
+                    return Poll::Ready(Ok(()));
+                }
+                Poll::Pending
+            })
+            .await
+        })?
+    })();
+    let _ = hmux_rt::unix::set_nonblocking(borrowed, was_nonblocking);
 }
 
 pub unsafe fn tty_window_bigger(owner: &ClientRef) -> ::core::ffi::c_int {

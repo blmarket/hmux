@@ -40,7 +40,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    access, free, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep, ttyname,
+    access, free, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep,
 };
 use crate::src::file::{
     file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
@@ -1042,49 +1042,18 @@ unsafe fn server_client_create(fd: OwnedFd) -> ClientRef {
 }
 unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
     let c = owner.get();
-    let mut ttynam: *const ::core::ffi::c_char = _PATH_TTY.as_ptr();
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         return Ok(());
     }
-    if strcmp(
-        ((*c).ttyname)
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-        ttynam,
-    ) == 0 as ::core::ffi::c_int
-        || (isatty(STDIN_FILENO) != 0
-            && {
-                ttynam = ttyname(STDIN_FILENO);
-                !ttynam.is_null()
-            }
-            && strcmp(
-                ((*c).ttyname)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                ttynam,
-            ) == 0 as ::core::ffi::c_int
-            || isatty(STDOUT_FILENO) != 0
-                && {
-                    ttynam = ttyname(STDOUT_FILENO);
-                    !ttynam.is_null()
-                }
-                && strcmp(
-                    ((*c).ttyname)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    ttynam,
-                ) == 0 as ::core::ffi::c_int
-            || isatty(STDERR_FILENO) != 0
-                && {
-                    ttynam = ttyname(STDERR_FILENO);
-                    !ttynam.is_null()
-                }
-                && strcmp(
-                    ((*c).ttyname)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    ttynam,
-                ) == 0 as ::core::ffi::c_int)
+    let client_name = (*c).ttyname.as_deref();
+    if client_name == Some(c"/dev/tty")
+        || [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO]
+            .into_iter()
+            .any(|fd| {
+                hmux_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(fd))
+                    .ok()
+                    .is_some_and(|name| Some(name.as_c_str()) == client_name)
+            })
     {
         let mut message = b"can't use ".to_vec();
         message.extend_from_slice(
