@@ -176,6 +176,19 @@ mod callbacks;
 pub(crate) use callbacks::window_format_value;
 pub use callbacks::FormatValue;
 use callbacks::*;
+
+pub(crate) fn format_is_builtin(key: &CStr) -> bool {
+    format_table_get(key).is_some()
+}
+
+pub(super) unsafe fn format_plugin_pane(
+    ft: *mut format_tree,
+) -> Option<crate::src::plugin::PaneId> {
+    let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>>>::from_observer(&(*ft).wp)?;
+    let id = crate::src::plugin::PaneId(pane.id());
+    pane.release(c"plugin format context");
+    Some(id)
+}
 mod expression;
 pub use expression::format_expand_cstring;
 pub(crate) use expression::format_pretty_time_cstring;

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "hmux-agent",
     "hmux-buffer",
     "hmux-cmdparse",
     "hmux-rt",
@@ -24,6 +25,7 @@ path = "src/main.rs"
 name = "hmux2"
 
 [dependencies]
+hmux-agent = { path = "hmux-agent" }
 futures-core = "0.3"
 hmux-cmdparse = { path = "hmux-cmdparse" }
 hmux-rt = { path = "hmux-rt" }

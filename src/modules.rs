@@ -51,6 +51,7 @@ pub mod options_parse;
 pub mod options_table;
 pub mod osdep_linux;
 pub mod paste;
+pub mod plugin;
 pub mod popup;
 pub mod r#proc;
 pub mod prompt;

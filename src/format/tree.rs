@@ -224,6 +224,11 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
         };
         cb(entry.key, value.as_c_str());
     }
+    for (key, value) in crate::src::plugin::each(format_plugin_pane(ft)) {
+        if format_entry_tree_find(&(*ft).tree, &key).is_none() {
+            cb(&key, &value);
+        }
+    }
     let keys: Vec<_> = (*ft).tree.values().map(|entry| entry.key.clone()).collect();
     let mut values = Vec::new();
     for key in keys {

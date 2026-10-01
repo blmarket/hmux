@@ -272,6 +272,10 @@ pub(super) unsafe fn format_find(
                         Some(FormatValue::Time(value)) => t = value,
                         None => {}
                     }
+                } else if let Some(value) =
+                    crate::src::plugin::find(format_plugin_pane(ft), &entry_key)
+                {
+                    found = Some(value);
                 } else {
                     if !modifiers & FORMAT_TIMESTRING as uint64_t != 0 {
                         // Distinguish an absent variable from a locally removed

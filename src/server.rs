@@ -273,6 +273,7 @@ pub(crate) unsafe fn server_start(
     hooks_build_events();
     server_clear_messages();
     start_time = SystemTime::now();
+    crate::src::plugin::init();
     let listener = if systemd_activated() != 0 {
         // SAFETY: the compatibility adapter transfers the activated listening socket.
         systemd_create_socket(flags as ::core::ffi::c_int).map(|fd| UnixListener::from_raw_fd(fd))
@@ -316,6 +317,7 @@ pub(crate) unsafe fn server_start(
             );
             crate::src::proc::proc_free(process_owner);
             server_proc = std::ptr::null_mut();
+            crate::src::plugin::shutdown();
             exit(1 as ::core::ffi::c_int);
         }
     }
@@ -324,6 +326,7 @@ pub(crate) unsafe fn server_start(
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || unsafe { server_loop() == 0 };
     proc_loop(server_proc, Some(&mut loop_callback));
+    crate::src::plugin::shutdown();
     crate::src::cmd::queue::cmdq_cancel_background();
     job_kill_all();
     prompt_save_history();
