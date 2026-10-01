@@ -14,7 +14,14 @@ Do not touch ./src/compat/ unless explicitly asked.
 
 ## General software design
 
-Prefer single ownership, Drop cleanup, reconstructible state, and minimal
-abstractions - DO NOT introduce Rc unless strictly necessary.
+Generally these are preferrable design, but in some cases we should
+acknowledge. 
+
+- Prefer single ownership, Drop cleanup, reconstructible state, and minimal
+  abstractions - DO NOT introduce Rc unless strictly necessary.
+- Do not make overlapping design: When you add a new API, existing APIs should
+  not be able to support the new API. If the new API can replace existing APIs,
+  then all usages should be migrated to the new API and remove old API. For a
+  single use case, there should be no two APIs supporting it.
 
 
