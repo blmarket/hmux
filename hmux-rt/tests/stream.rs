@@ -1,9 +1,9 @@
 //! Byte-stream adapter contracts over the local runtime.
 use hmux_rt::stream::Reader;
-use hmux_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio};
+use hmux_rt::{AsyncRead, AsyncWrite, Handle, Received, Runtime, mio};
 use std::cell::RefCell;
 use std::future::Future;
-use std::io::{self, Write};
+use std::io::{self, IoSlice, Write};
 use std::os::unix::net::UnixStream;
 use std::pin::Pin;
 use std::rc::Rc;
@@ -32,7 +32,10 @@ fn chunks_drain_before_eof_and_wake_after_would_block() {
             loop {
                 let chunk = reader.read_chunk(2).await.unwrap();
                 let eof = chunk.is_none();
-                output.borrow_mut().push(chunk);
+                output.borrow_mut().push(chunk.map(|(bytes, fd)| {
+                    assert!(fd.is_none());
+                    bytes
+                }));
                 if eof {
                     break;
                 }
@@ -75,7 +78,9 @@ fn cancelling_a_pending_read_leaves_bytes_for_the_next_read() {
     // Notification has arrived, but the cancelled future never reads it.
     drop(pending);
     let mut next = Box::pin(reader.read_chunk(8));
-    assert!(matches!(poll(next.as_mut()), Poll::Ready(Ok(Some(bytes))) if bytes == b"hello"));
+    assert!(
+        matches!(poll(next.as_mut()), Poll::Ready(Ok(Some((bytes, fd)))) if bytes == b"hello" && fd.is_none())
+    );
 }
 
 #[test]
@@ -89,7 +94,7 @@ fn validates_sizes_and_propagates_runtime_shutdown() {
     );
     assert!(matches!(
         poll(Box::pin(reader.read(&mut [])).as_mut()),
-        Poll::Ready(Ok(0))
+        Poll::Ready(Ok(Received { bytes: 0, fd })) if fd.is_none()
     ));
     drop(runtime);
     assert!(
@@ -122,7 +127,7 @@ fn direct_io_reads_and_writes_can_wait_independently() {
     assert!(poll(read.as_mut()).is_pending());
     tick(&mut runtime);
     assert!(matches!(
-        poll(Box::pin(source.write(b"out")).as_mut()),
+        poll(Box::pin(source.write(&[IoSlice::new(b"out")], None)).as_mut()),
         Poll::Ready(Ok(3))
     ));
     let mut output = [0; 3];
@@ -130,11 +135,13 @@ fn direct_io_reads_and_writes_can_wait_independently() {
     assert_eq!(&output, b"out");
     peer.write_all(b"in").unwrap();
     tick(&mut runtime);
-    assert!(matches!(poll(read.as_mut()), Poll::Ready(Ok(2))));
+    assert!(
+        matches!(poll(read.as_mut()), Poll::Ready(Ok(Received { bytes: 2, fd })) if fd.is_none())
+    );
     drop(read);
     assert_eq!(&bytes[..2], b"in");
     assert!(matches!(
-        poll(Box::pin(source.write(&[])).as_mut()),
+        poll(Box::pin(source.write(&[IoSlice::new(&[])], None)).as_mut()),
         Poll::Ready(Ok(0))
     ));
 }
@@ -164,12 +171,13 @@ fn partial_writes_park_when_full_and_resume_after_drain() {
     let source = runtime.handle().io(socket.into()).unwrap();
     tick(&mut runtime);
     let payload = vec![42; 1024 * 1024];
-    let count = match poll(Box::pin(source.write(&payload)).as_mut()) {
+    let count = match poll(Box::pin(source.write(&[IoSlice::new(&payload)], None)).as_mut()) {
         Poll::Ready(Ok(n)) => n,
         _ => panic!("initial write should make progress"),
     };
     assert!(count > 0 && count < payload.len());
-    let mut write = Box::pin(source.write(&payload[count..]));
+    let buffers = [IoSlice::new(&payload[count..])];
+    let mut write = Box::pin(source.write(&buffers, None));
     assert!(poll(write.as_mut()).is_pending());
     let mut drained = vec![0; count];
     peer.read_exact(&mut drained).unwrap();
@@ -194,7 +202,7 @@ fn writer_owns_registration_and_closes_it_on_drop() {
         };
         tick(&mut runtime);
         assert!(matches!(
-            poll(Box::pin(writer.write(b"input")).as_mut()),
+            poll(Box::pin(writer.write(&[IoSlice::new(b"input")], None)).as_mut()),
             Poll::Ready(Ok(5))
         ));
         let mut bytes = [0; 5];
@@ -211,20 +219,34 @@ fn wrappers_accept_implementations_with_only_their_own_capability() {
     use hmux_rt::stream::Writer;
     struct ReadOnly;
     impl AsyncRead for ReadOnly {
-        async fn read(&self, buffer: &mut [u8]) -> io::Result<usize> {
+        async fn read(&self, buffer: &mut [u8]) -> io::Result<Received> {
             if let Some(byte) = buffer.first_mut() {
                 *byte = b'x';
-                Ok(1)
+                Ok(Received {
+                    bytes: 1,
+                    fd: None,
+                })
             } else {
-                Ok(0)
+                Ok(Received {
+                    bytes: 0,
+                    fd: None,
+                })
             }
         }
     }
     struct WriteOnly(Cell<usize>);
     impl AsyncWrite for WriteOnly {
-        async fn write(&self, buffer: &[u8]) -> io::Result<usize> {
-            self.0.set(self.0.get() + buffer.len());
-            Ok(buffer.len())
+        async fn write(
+            &self,
+            buffers: &[IoSlice<'_>],
+            fd: Option<std::os::fd::BorrowedFd<'_>>,
+        ) -> io::Result<usize> {
+            if fd.is_some() {
+                return Err(io::ErrorKind::Unsupported.into());
+            }
+            let len = buffers.iter().map(|buffer| buffer.len()).sum::<usize>();
+            self.0.set(self.0.get() + len);
+            Ok(len)
         }
     }
     use std::cell::Cell;
@@ -232,12 +254,12 @@ fn wrappers_accept_implementations_with_only_their_own_capability() {
     let mut byte = [0];
     assert!(matches!(
         poll(Box::pin(reader.read(&mut byte)).as_mut()),
-        Poll::Ready(Ok(1))
+        Poll::Ready(Ok(Received { bytes: 1, fd })) if fd.is_none()
     ));
     assert_eq!(&byte, b"x");
     let writer = Writer::from_io(WriteOnly(Cell::new(0)));
     assert!(matches!(
-        poll(Box::pin(writer.write(b"hello")).as_mut()),
+        poll(Box::pin(writer.write(&[IoSlice::new(b"hello")], None)).as_mut()),
         Poll::Ready(Ok(5))
     ));
 }

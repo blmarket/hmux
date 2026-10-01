@@ -1,5 +1,6 @@
 //! Mio-backed implementation of the local runtime contracts.
 
+mod fd_passing;
 mod readiness;
 mod runtime;
 mod signals;

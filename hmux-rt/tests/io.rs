@@ -1,0 +1,367 @@
+//! FD passing is part of ordinary I/O, including one-way adapters.
+use hmux_rt::stream::{Reader, Writer};
+use hmux_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio};
+use std::future::Future;
+use std::io::{self, IoSlice, Read, Write};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::net::UnixStream;
+use std::pin::{Pin, pin};
+use std::task::{Context, Poll, Waker};
+use std::time::Duration;
+
+fn tick(runtime: &mut mio::Runtime) {
+    runtime.poll(Some(Duration::ZERO)).unwrap();
+}
+
+fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+    future.poll(&mut Context::from_waker(Waker::noop()))
+}
+
+fn ready<T>(runtime: &mut mio::Runtime, future: impl Future<Output = T>) -> T {
+    let mut future = pin!(future);
+    for _ in 0..100 {
+        tick(runtime);
+        if let Poll::Ready(value) = poll(future.as_mut()) {
+            return value;
+        }
+    }
+    panic!("operation did not complete");
+}
+
+fn pair() -> (UnixStream, UnixStream) {
+    let (left, right) = UnixStream::pair().unwrap();
+    left.set_nonblocking(true).unwrap();
+    right.set_nonblocking(true).unwrap();
+    (left, right)
+}
+
+fn streams(runtime: &mio::Runtime) -> (mio::Io, mio::Io) {
+    let (left, right) = pair();
+    let handle = runtime.handle();
+    (
+        handle.io(left.into()).unwrap(),
+        handle.io(right.into()).unwrap(),
+    )
+}
+
+#[test]
+fn vectored_transfer_returns_an_owned_fd_and_eof() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (sender, receiver) = streams(&runtime);
+    let sender = Writer::from_io(sender);
+    let receiver = Reader::from_io(receiver);
+    let (fd, mut peer) = pair();
+    let buffers = [IoSlice::new(b"header"), IoSlice::new(b"payload")];
+    assert_eq!(
+        ready(&mut runtime, sender.write(&buffers, Some(fd.as_fd()))).unwrap(),
+        13
+    );
+    drop(fd);
+
+    let mut bytes = [0; 32];
+    let received = ready(&mut runtime, receiver.read(&mut bytes)).unwrap();
+    assert_eq!(&bytes[..received.bytes], b"headerpayload");
+    let fd = received.fd.unwrap();
+    // SAFETY: F_GETFD queries the live received descriptor.
+    assert_ne!(
+        unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
+        0
+    );
+    let mut transferred = UnixStream::from(fd);
+    transferred.write_all(b"x").unwrap();
+    let mut byte = [0];
+    peer.read_exact(&mut byte).unwrap();
+    assert_eq!(byte, *b"x");
+    drop(transferred);
+    assert_eq!(peer.read(&mut byte).unwrap(), 0);
+    drop(sender);
+    let eof = ready(&mut runtime, receiver.read(&mut bytes)).unwrap();
+    assert_eq!(eof.bytes, 0);
+    assert!(eof.fd.is_none());
+}
+
+#[test]
+fn cancelled_read_preserves_fd_and_chunk_reader_returns_it() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (sender, receiver) = streams(&runtime);
+    let mut receiver = Reader::from_io(receiver);
+    let mut pending = Box::pin(receiver.read_chunk(8));
+    assert!(poll(pending.as_mut()).is_pending());
+    let (fd, mut peer) = pair();
+    ready(
+        &mut runtime,
+        sender.write(&[IoSlice::new(b"input")], Some(fd.as_fd())),
+    )
+    .unwrap();
+    drop(fd);
+    tick(&mut runtime);
+    // Notification has arrived but the pending read has not consumed anything.
+    drop(pending);
+    let (bytes, fd) = ready(&mut runtime, receiver.read_chunk(8))
+        .unwrap()
+        .unwrap();
+    assert_eq!(bytes, b"input");
+    assert!(fd.is_some());
+    drop(fd);
+    assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+    drop(sender);
+    assert!(
+        ready(&mut runtime, receiver.read_chunk(8))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn partial_write_transfers_fd_once_and_cancelled_write_transfers_nothing() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (sender, receiver) = pair();
+    let size: libc::c_int = 4096;
+    // SAFETY: sender is live and size is a valid socket buffer size.
+    assert_eq!(
+        unsafe {
+            libc::setsockopt(
+                sender.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                (&size as *const libc::c_int).cast(),
+                size_of_val(&size) as _,
+            )
+        },
+        0
+    );
+    let sender = runtime.handle().io(sender.into()).unwrap();
+    let receiver = runtime.handle().io(receiver.into()).unwrap();
+    let payload: Vec<_> = (0..256 * 1024).map(|i| i as u8).collect();
+    let (fd, mut peer) = pair();
+    let mut written = ready(
+        &mut runtime,
+        sender.write(&[IoSlice::new(&payload)], Some(fd.as_fd())),
+    )
+    .unwrap();
+    assert!(written > 0 && written < payload.len());
+    drop(fd);
+
+    let (cancelled_fd, mut cancelled_peer) = pair();
+    let buffers = [IoSlice::new(b"cancelled")];
+    let mut pending = Box::pin(sender.write(&buffers, Some(cancelled_fd.as_fd())));
+    assert!(poll(pending.as_mut()).is_pending());
+    drop(pending);
+    drop(cancelled_fd);
+    assert_eq!(cancelled_peer.read(&mut [0]).unwrap(), 0);
+
+    let mut output = Vec::new();
+    let mut received_fd = None;
+    let mut buffer = [0; 16384];
+    loop {
+        while output.len() < written {
+            let received = ready(&mut runtime, receiver.read(&mut buffer)).unwrap();
+            assert!(received.bytes > 0);
+            output.extend_from_slice(&buffer[..received.bytes]);
+            if let Some(fd) = received.fd {
+                assert!(received_fd.replace(fd).is_none(), "FD was sent twice");
+            }
+        }
+        if written == payload.len() {
+            break;
+        }
+        // The first positive write transferred the FD, so retries omit it.
+        let count = ready(
+            &mut runtime,
+            sender.write(&[IoSlice::new(&payload[written..])], None),
+        )
+        .unwrap();
+        assert!(count > 0);
+        written += count;
+    }
+    assert_eq!(output, payload);
+    assert!(received_fd.is_some());
+    drop(received_fd);
+    assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+    assert!(poll(pin!(receiver.read(&mut buffer))).is_pending());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn truncated_ancillary_data_closes_received_fds() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (sender, receiver) = pair();
+    let enabled: libc::c_int = 1;
+    // Request credentials too, so a maximal FD batch exceeds ancillary capacity.
+    // SAFETY: receiver is live and enabled is a valid boolean socket option.
+    assert_eq!(
+        unsafe {
+            libc::setsockopt(
+                receiver.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PASSCRED,
+                (&enabled as *const libc::c_int).cast(),
+                size_of_val(&enabled) as _,
+            )
+        },
+        0
+    );
+    let sender = runtime.handle().io(sender.into()).unwrap();
+    let receiver = runtime.handle().io(receiver.into()).unwrap();
+    let (fd, mut peer) = pair();
+    ready(
+        &mut runtime,
+        sender.write(&[IoSlice::new(b"x")], &[fd.as_fd(); 253]),
+    )
+    .unwrap();
+    drop(fd);
+    let error = ready(&mut runtime, receiver.read(&mut [0; 8])).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    // Both kernel-discarded and userspace-adopted descriptors must be closed.
+    assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+}
+
+#[test]
+fn invalid_writes_and_empty_reads_do_not_consume_data_or_fds() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (sender, receiver) = streams(&runtime);
+    let (fd, mut peer) = pair();
+    for buffers in [&[][..], &[IoSlice::new(b"")][..]] {
+        let error = ready(&mut runtime, sender.write(buffers, Some(fd.as_fd()))).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    }
+    assert_eq!(ready(&mut runtime, sender.write(&[], None)).unwrap(), 0);
+    assert!(poll(pin!(receiver.read(&mut [0; 32]))).is_pending());
+    ready(
+        &mut runtime,
+        sender.write(&[IoSlice::new(b"x")], Some(fd.as_fd())),
+    )
+    .unwrap();
+    drop(fd);
+    let empty = ready(&mut runtime, receiver.read(&mut [])).unwrap();
+    assert_eq!(empty.bytes, 0);
+    assert!(empty.fd.is_none());
+    let mut byte = [0];
+    let received = ready(&mut runtime, receiver.read(&mut byte)).unwrap();
+    assert_eq!(received.bytes, 1);
+    assert_eq!(byte, *b"x");
+    assert!(received.fd.is_some());
+    drop(received);
+    assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+}
+
+#[test]
+fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (sender, receiver) = streams(&runtime);
+    drop(receiver);
+    let (fd, mut peer) = pair();
+    assert_eq!(
+        ready(
+            &mut runtime,
+            sender.write(&[IoSlice::new(b"x")], Some(fd.as_fd()))
+        )
+        .unwrap_err()
+        .kind(),
+        io::ErrorKind::BrokenPipe
+    );
+    // The failed write neither closes nor transfers the borrowed FD.
+    assert_eq!(
+        peer.read(&mut [0]).unwrap_err().kind(),
+        io::ErrorKind::WouldBlock
+    );
+    drop(fd);
+    assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+
+    let (_sender, receiver) = streams(&runtime);
+    let mut bytes = [0];
+    let mut pending = pin!(receiver.read(&mut bytes));
+    assert!(poll(pending.as_mut()).is_pending());
+    drop(runtime);
+    assert!(
+        matches!(poll(pending.as_mut()), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
+    );
+}
+
+fn nonblocking(fd: &OwnedFd) {
+    // SAFETY: fd owns a live descriptor, and fcntl only adjusts status flags.
+    let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
+    assert!(flags >= 0);
+    assert_eq!(
+        unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
+        0
+    );
+}
+
+fn pipe() -> (OwnedFd, OwnedFd) {
+    let mut fds = [-1; 2];
+    // SAFETY: fds is storage for two output descriptors.
+    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+    // SAFETY: successful pipe returned two newly owned descriptors.
+    let (reader, writer) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+    nonblocking(&reader);
+    nonblocking(&writer);
+    (writer, reader)
+}
+
+fn pty() -> (OwnedFd, OwnedFd) {
+    let (mut master, mut slave) = (-1, -1);
+    // SAFETY: valid descriptor outputs; null optional arguments request defaults.
+    assert_eq!(
+        unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        },
+        0
+    );
+    // SAFETY: openpty returned two newly owned descriptors.
+    let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+    let mut termios = std::mem::MaybeUninit::<libc::termios>::uninit();
+    // SAFETY: slave is live and termios is valid output storage.
+    assert_eq!(
+        unsafe { libc::tcgetattr(slave.as_raw_fd(), termios.as_mut_ptr()) },
+        0
+    );
+    // SAFETY: successful tcgetattr initialized termios.
+    let mut termios = unsafe { termios.assume_init() };
+    // SAFETY: initialized termios and a live PTY slave.
+    unsafe {
+        libc::cfmakeraw(&mut termios);
+        assert_eq!(
+            libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &termios),
+            0
+        );
+    }
+    nonblocking(&master);
+    nonblocking(&slave);
+    (master, slave)
+}
+
+#[test]
+fn pipes_and_ptys_use_the_same_traits_and_reject_fds_before_writing() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let fd = std::fs::File::open("/dev/null").unwrap();
+    for (writer, reader) in [pipe(), pty()] {
+        let writer = Writer::new(&runtime.handle(), writer).unwrap();
+        let reader = Reader::new(&runtime.handle(), reader).unwrap();
+        for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {
+            // Rejection must not wait for writable readiness either.
+            assert!(matches!(poll(pin!(writer.write(buffers, Some(fd.as_fd())))),
+                Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Unsupported));
+        }
+        let mut buffer = [0; 64];
+        assert!(poll(pin!(reader.read(&mut buffer))).is_pending());
+        assert_eq!(
+            ready(
+                &mut runtime,
+                writer.write(&[IoSlice::new(b"hel"), IoSlice::new(b"lo")], None)
+            )
+            .unwrap(),
+            5
+        );
+        let received = ready(&mut runtime, reader.read(&mut buffer)).unwrap();
+        assert_eq!(&buffer[..received.bytes], b"hello");
+        assert!(received.fd.is_none());
+        assert!(poll(pin!(reader.read(&mut buffer))).is_pending());
+    }
+}

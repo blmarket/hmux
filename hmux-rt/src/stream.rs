@@ -1,9 +1,9 @@
-//! One-way byte-stream capabilities backed by a single I/O registration.
+//! One-way I/O capabilities backed by a single registration, preserving FDs.
 
-use std::io;
-use std::os::fd::OwnedFd;
+use std::io::{self, IoSlice};
+use std::os::fd::{BorrowedFd, OwnedFd};
 
-use crate::{AsyncRead, AsyncWrite, Handle};
+use crate::{AsyncRead, AsyncWrite, Handle, Received};
 
 /// An async reader for a byte-stream descriptor, such as a socket, pipe, or
 /// regular file. Datagram and message-oriented descriptors are not supported.
@@ -38,11 +38,14 @@ impl<I: AsyncRead> Reader<I> {
         Self { source }
     }
 
-    /// Await an owned chunk of at most `max_bytes`, or `None` at EOF.
+    /// Await at most `max_bytes` owned bytes and an optional FD, or `None` at EOF.
     ///
     /// `max_bytes` must be nonzero. Chunks reflect individual reads, not message
     /// boundaries. No background task or read-ahead buffer is created.
-    pub async fn read_chunk(&mut self, max_bytes: usize) -> io::Result<Option<Vec<u8>>> {
+    pub async fn read_chunk(
+        &mut self,
+        max_bytes: usize,
+    ) -> io::Result<Option<(Vec<u8>, Option<OwnedFd>)>> {
         if max_bytes == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -50,24 +53,24 @@ impl<I: AsyncRead> Reader<I> {
             ));
         }
         let mut bytes = vec![0; max_bytes];
-        let count = self.source.read(&mut bytes).await?;
-        if count == 0 {
+        let received = self.source.read(&mut bytes).await?;
+        if received.bytes == 0 {
             return Ok(None);
         }
-        bytes.truncate(count);
-        Ok(Some(bytes))
+        bytes.truncate(received.bytes);
+        Ok(Some((bytes, received.fd)))
     }
 }
 
 impl<I: AsyncRead> AsyncRead for Reader<I> {
-    async fn read(&self, buffer: &mut [u8]) -> io::Result<usize> {
+    async fn read(&self, buffer: &mut [u8]) -> io::Result<Received> {
         self.source.read(buffer).await
     }
 }
 
 /// A write-only view of a byte stream, such as a child's stdin pipe or a file.
 /// This wrapper implements [`AsyncWrite`] only and adds no buffering.
-/// The host supplies a writable endpoint and retains SIGPIPE policy.
+/// FD passing and SIGPIPE behavior follow the underlying writer.
 ///
 /// A writer cannot be passed to code requiring read access:
 /// ```compile_fail
@@ -96,7 +99,7 @@ impl<I: AsyncWrite> Writer<I> {
 }
 
 impl<I: AsyncWrite> AsyncWrite for Writer<I> {
-    async fn write(&self, buffer: &[u8]) -> io::Result<usize> {
-        self.source.write(buffer).await
+    async fn write(&self, buffers: &[IoSlice<'_>], fd: Option<BorrowedFd<'_>>) -> io::Result<usize> {
+        self.source.write(buffers, fd).await
     }
 }

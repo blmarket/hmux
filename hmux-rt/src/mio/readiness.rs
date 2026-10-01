@@ -1,13 +1,16 @@
 use std::cell::{Cell, RefCell};
 use std::future::{Future, poll_fn};
-use std::io;
-use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+use std::io::{self, IoSlice};
+use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::pin::{Pin, pin};
 use std::rc::{Rc, Weak};
 use std::task::{Context, LocalWaker, Poll};
 
 use mio::unix::SourceFd;
 
+use crate::Received;
+
+use super::fd_passing;
 use super::runtime::{Core, invalid};
 #[derive(Clone, Copy)]
 pub(super) enum Direction {
@@ -186,10 +189,13 @@ impl Drop for IoState {
 
 /// An owned descriptor with [`crate::AsyncFd`] readiness
 /// waits and [`crate::AsyncRead`]/[`crate::AsyncWrite`] byte-stream operations.
+/// Unix stream sockets pass one optional FD per operation and suppress SIGPIPE.
+/// Files, pipes, and PTYs return no FDs and reject attached FDs before writing.
+/// For other descriptors the host retains SIGPIPE policy.
 /// Use readiness waits with your own bounded, nonblocking syscalls for listeners,
-/// datagrams, or terminals. Regular files bypass the readiness poller and perform
-/// synchronous I/O on the runtime thread. Devices rejected by the poller can
-/// also perform immediate I/O, but cannot wait for a later readiness event.
+/// datagrams, or terminal control. Regular files bypass the readiness poller
+/// and perform synchronous I/O on the runtime thread. Devices rejected by the
+/// poller can also perform immediate I/O, but cannot wait for a later event.
 ///
 /// Custom operations are not part of the public byte-stream API:
 /// ```compile_fail
@@ -206,6 +212,7 @@ impl Drop for IoState {
 /// ```
 pub struct Io {
     pub(crate) state: Rc<IoState>,
+    fd_passing: bool,
 }
 
 impl Io {
@@ -224,7 +231,9 @@ impl Io {
             return Err(io::Error::last_os_error());
         }
         // SAFETY: successful fstat initialized stat.
-        let regular = unsafe { stat.assume_init() }.st_mode & libc::S_IFMT == libc::S_IFREG;
+        let kind = unsafe { stat.assume_init() }.st_mode & libc::S_IFMT;
+        let regular = kind == libc::S_IFREG;
+        let fd_passing = kind == libc::S_IFSOCK && fd_passing::supported(raw)?;
         // SAFETY: fcntl only queries flags on a live, owned descriptor.
         let flags = unsafe { libc::fcntl(raw, libc::F_GETFL) };
         if flags < 0 {
@@ -268,7 +277,7 @@ impl Io {
         });
         core.io.borrow_mut().insert(id, Rc::downgrade(&state));
         core.fds.borrow_mut().insert(raw, id);
-        Ok(Self { state })
+        Ok(Self { state, fd_passing })
     }
 
     fn probe(&self, read: bool, write: bool) -> io::Result<(bool, bool)> {
@@ -328,11 +337,17 @@ impl crate::AsyncFd for Io {
 }
 
 impl crate::AsyncRead for Io {
-    async fn read(&self, buffer: &mut [u8]) -> io::Result<usize> {
+    async fn read(&self, buffer: &mut [u8]) -> io::Result<Received> {
         if buffer.is_empty() {
-            return Ok(0);
+            return Ok(Received {
+                bytes: 0,
+                fd: None,
+            });
         }
         self.read_with(|| {
+            if self.fd_passing {
+                return fd_passing::read(self.state.raw(), buffer);
+            }
             // SAFETY: readiness validation ensures the descriptor lease is live;
             // buffer is exclusively borrowed writable storage.
             let count = unsafe {
@@ -342,28 +357,49 @@ impl crate::AsyncRead for Io {
                     buffer.len().min(isize::MAX as usize),
                 )
             };
-            syscall_result(count)
+            Ok(Received {
+                bytes: syscall_result(count)?,
+                fd: None,
+            })
         })
         .await
     }
 }
 
 impl crate::AsyncWrite for Io {
-    async fn write(&self, buffer: &[u8]) -> io::Result<usize> {
-        if buffer.is_empty() {
+    async fn write(&self, buffers: &[IoSlice<'_>], fd: Option<BorrowedFd<'_>>) -> io::Result<usize> {
+        if fd.is_some() && !self.fd_passing {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "descriptor cannot pass FDs",
+            ));
+        }
+        let has_bytes = buffers.iter().any(|buffer| !buffer.is_empty());
+        if !has_bytes && fd.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "FD passing requires at least one byte",
+            ));
+        }
+        if !has_bytes {
             return Ok(0);
         }
+        let mut iov: Vec<_> = buffers
+            .iter()
+            .map(|buffer| libc::iovec {
+                iov_base: buffer.as_ptr().cast_mut().cast(),
+                iov_len: buffer.len(),
+            })
+            .collect();
+        let count = libc::c_int::try_from(iov.len())
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
         self.write_with(|| {
+            if self.fd_passing {
+                return fd_passing::write(self.state.raw(), &mut iov, fd);
+            }
             // SAFETY: readiness validation ensures the descriptor lease is live;
-            // buffer remains readable throughout the syscall.
-            let count = unsafe {
-                libc::write(
-                    self.state.raw(),
-                    buffer.as_ptr().cast(),
-                    buffer.len().min(isize::MAX as usize),
-                )
-            };
-            syscall_result(count)
+            // all buffers remain readable throughout the syscall.
+            syscall_result(unsafe { libc::writev(self.state.raw(), iov.as_ptr(), count) })
         })
         .await
     }
@@ -389,7 +425,7 @@ impl Io {
     }
 }
 
-fn syscall_result(count: isize) -> io::Result<usize> {
+pub(super) fn syscall_result(count: isize) -> io::Result<usize> {
     if count < 0 {
         Err(io::Error::last_os_error())
     } else {

@@ -1,8 +1,10 @@
 //! Non-consuming readiness waits share the byte I/O registration and cleanup.
-use hmux_rt::{AsyncFd as _, AsyncRead as _, AsyncWrite as _, Handle as _, Runtime as _, mio};
+use hmux_rt::{
+    AsyncFd as _, AsyncRead as _, AsyncWrite as _, Handle as _, Received, Runtime as _, mio,
+};
 use std::cell::Cell;
 use std::future::Future;
-use std::io::{self, Read, Write};
+use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::pin::pin;
@@ -71,7 +73,7 @@ fn readiness_and_byte_reads_share_one_waiter_and_cancellation_path() {
     ));
     assert!(matches!(
         pin!(source.read(&mut byte)).as_mut().poll(&mut context),
-        Poll::Ready(Ok(1))
+        Poll::Ready(Ok(Received { bytes: 1, fd })) if fd.is_none()
     ));
     assert_eq!(&byte, b"x");
 }
@@ -153,12 +155,12 @@ fn immediate_device_supports_readiness_and_io_and_closes() {
         Poll::Ready(Ok((true, true)))
     ));
     assert!(matches!(
-        pin!(source.write(b"discard")).poll(&mut context),
+        pin!(source.write(&[IoSlice::new(b"discard")], None)).poll(&mut context),
         Poll::Ready(Ok(7))
     ));
     assert!(matches!(
         pin!(source.read(&mut [0; 1])).poll(&mut context),
-        Poll::Ready(Ok(0))
+        Poll::Ready(Ok(Received { bytes: 0, fd })) if fd.is_none()
     ));
     drop(source);
     assert_closed(raw);
@@ -168,6 +170,7 @@ fn immediate_device_supports_readiness_and_io_and_closes() {
 #[test]
 fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
     use std::io::{Seek, SeekFrom};
+    use std::os::fd::AsFd;
     let path = std::env::temp_dir().join(format!("hmux-rt-file-{}", std::process::id()));
     let mut file = std::fs::OpenOptions::new()
         .read(true)
@@ -184,9 +187,17 @@ fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
     // Regular files do not need O_NONBLOCK, which cannot prevent disk waits.
     let source = rt.handle().io(file.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
+    let fd = std::fs::File::open("/dev/null").unwrap();
+    for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {
+        assert!(matches!(
+            pin!(source.write(buffers, Some(fd.as_fd()))).poll(&mut context),
+            Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Unsupported
+        ));
+    }
+    assert_eq!(observer.stream_position().unwrap(), 0);
     let mut bytes = [0; 5];
     drop(Box::pin(source.read(&mut bytes)));
-    drop(Box::pin(source.write(b"cancelled")));
+    drop(Box::pin(source.write(&[IoSlice::new(b"cancelled")], None)));
     assert_eq!(observer.stream_position().unwrap(), 0);
     assert!(matches!(
         pin!(source.ready(true, true)).poll(&mut context),
@@ -195,15 +206,15 @@ fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
     assert_eq!(observer.stream_position().unwrap(), 0);
     assert!(matches!(
         pin!(source.read(&mut bytes)).poll(&mut context),
-        Poll::Ready(Ok(5))
+        Poll::Ready(Ok(Received { bytes: 5, fd })) if fd.is_none()
     ));
     assert_eq!(&bytes, b"input");
     assert!(matches!(
         pin!(source.read(&mut bytes)).poll(&mut context),
-        Poll::Ready(Ok(0))
+        Poll::Ready(Ok(Received { bytes: 0, fd })) if fd.is_none()
     ));
     assert!(matches!(
-        pin!(source.write(b"output")).poll(&mut context),
+        pin!(source.write(&[IoSlice::new(b"output")], None)).poll(&mut context),
         Poll::Ready(Ok(6))
     ));
     observer.seek(SeekFrom::Start(0)).unwrap();

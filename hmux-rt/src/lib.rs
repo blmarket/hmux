@@ -7,8 +7,8 @@ pub mod stream;
 
 use std::ffi::c_int;
 use std::future::Future;
-use std::io;
-use std::os::fd::OwnedFd;
+use std::io::{self, IoSlice};
+use std::os::fd::{BorrowedFd, OwnedFd};
 use std::time::{Duration, Instant};
 
 /// Owns and drives the runtime. Polling borrows the owner through callback
@@ -35,7 +35,7 @@ pub trait Handle: Clone + 'static {
     /// Owns a spawned future; dropping it cancels the work.
     type Task: 'static;
 
-    /// Owned descriptor supporting readiness waits and async byte-stream I/O.
+    /// Owned descriptor supporting readiness waits, bytes, and optional FD passing.
     type Io: AsyncFd + AsyncRead + AsyncWrite + 'static;
 
     /// Signal subscription.
@@ -52,9 +52,12 @@ pub trait Handle: Clone + 'static {
         F: Future<Output = ()> + 'static;
 
     /// Take ownership of a descriptor for readiness waits and byte-stream I/O.
+    /// Files, pipes, PTYs, and Unix stream sockets use the same interface.
+    /// Unix streams support FD passing; ordinary descriptors return no FDs on
+    /// reads and reject writes carrying FDs with `Unsupported` before writing.
     /// Non-file descriptors must be nonblocking. Regular files may perform
     /// synchronous I/O on the runtime thread; they bypass the readiness poller.
-    /// Construction errors close the fd.
+    /// No flags are changed. Construction errors close the fd.
     fn io(&self, fd: OwnedFd) -> io::Result<Self::Io>;
 
     /// Subscribe to a nonempty set of valid, catchable signal numbers.
@@ -82,16 +85,53 @@ pub trait AsyncFd {
     -> impl Future<Output = io::Result<(bool, bool)>> + '_;
 }
 
-/// A local async byte reader.
-pub trait AsyncRead {
-    /// Read available bytes to buffer, return read bytes.
-    fn read<'a>(&'a self, buffer: &'a mut [u8]) -> impl Future<Output = io::Result<usize>> + 'a;
+/// Bytes and an optional owned file descriptor from one read operation.
+///
+/// The first `bytes` bytes of the caller's buffer contain input. This is not an
+/// application message: the FD need not belong to the first byte or message in
+/// the buffer. The caller associates the FD with a message and preserves incomplete
+/// input in receive order.
+#[derive(Debug)]
+pub struct Received {
+    /// Number of bytes read; zero means EOF when the input buffer is nonempty.
+    pub bytes: usize,
+    /// Received descriptor with close-on-exec set. `None` for descriptors
+    /// without FD-passing support. Drop closes the received FD.
+    pub fd: Option<OwnedFd>,
 }
 
-/// A local async byte writer.
+/// A local async byte reader with optional FD passing.
+pub trait AsyncRead {
+    /// Read available bytes and at most one accompanying owned FD.
+    ///
+    /// An empty buffer consumes nothing and returns zero bytes and no FDs.
+    /// Dropping a pending read consumes no input. Receiving multiple FDs or
+    /// truncated ancillary data returns `InvalidData` and closes all FDs
+    /// received by that operation. Input has been consumed in that case, so
+    /// treat it as a fatal transport error.
+    /// Only one pending reader is supported per registration. Avoid reading
+    /// through other aliases, which could discard FDs.
+    fn read<'a>(&'a self, buffer: &'a mut [u8]) -> impl Future<Output = io::Result<Received>> + 'a;
+}
+
+/// A local async byte writer with optional FD passing.
 pub trait AsyncWrite {
-    /// Write bytes, returning the number written.
-    fn write<'a>(&'a self, buffer: &'a [u8]) -> impl Future<Output = io::Result<usize>> + 'a;
+    /// Write some bytes from the buffers in order, optionally attaching one FD.
+    ///
+    /// Unsupported FD passing must return `Unsupported` before writing bytes,
+    /// even with empty buffers. An FD requires at least one byte. Empty buffers
+    /// without an FD return zero.
+    ///
+    /// A positive result transfers the attached FD, even on a partial write.
+    /// Retry remaining bytes with `None`. Errors, zero, and cancellation
+    /// of a pending write transfer neither bytes nor the FD. The FD remains owned by
+    /// the caller. Only one pending writer is supported per registration;
+    /// serialize submissions to avoid interleaving partial writes.
+    fn write<'a>(
+        &'a self,
+        buffers: &'a [IoSlice<'a>],
+        fd: Option<BorrowedFd<'a>>,
+    ) -> impl Future<Output = io::Result<usize>> + 'a;
 }
 
 /// A local signal subscription

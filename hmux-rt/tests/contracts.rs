@@ -2,10 +2,10 @@
 #![feature(local_waker)]
 
 use hmux_rt::mio;
-use hmux_rt::{AsyncRead, AsyncWrite, Handle, Runtime};
+use hmux_rt::{AsyncRead, AsyncWrite, Handle, Received, Runtime};
 use std::cell::{Cell, RefCell};
 use std::future::{Future, poll_fn};
-use std::io::{self, Read, Write};
+use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::pin::Pin;
@@ -102,7 +102,7 @@ fn readiness_wakers_can_schedule_while_the_owner_is_borrowed() {
     assert_eq!(calls.get(), 1);
     assert!(matches!(
         read.as_mut().poll(&mut context),
-        Poll::Ready(Ok(1))
+        Poll::Ready(Ok(Received { bytes: 1, fd })) if fd.is_none()
     ));
 }
 
@@ -342,7 +342,8 @@ fn read_bytes(
     Box::pin(async move {
         let mut bytes = vec![0; limit];
         let count = source.read(&mut bytes).await?;
-        bytes.truncate(count);
+        assert!(count.fd.is_none());
+        bytes.truncate(count.bytes);
         Ok(bytes)
     })
 }
@@ -384,7 +385,7 @@ fn directional_waiter_conflicts_cancellation_and_wouldblock() {
     assert!(poll(&mut replacement).is_pending());
     tick(&mut runtime);
     assert!(matches!(
-        poll(&mut Box::pin(source.write(b"w"))),
+        poll(&mut Box::pin(source.write(&[IoSlice::new(b"w")], None))),
         Poll::Ready(Ok(1))
     ));
     writer.write_all(b"x").unwrap();
@@ -472,6 +473,6 @@ fn descriptor_eof_is_explicit() {
     tick(&mut runtime);
     assert!(matches!(
         poll(&mut Box::pin(source.read(&mut [0; 1]))),
-        Poll::Ready(Ok(0))
+        Poll::Ready(Ok(Received { bytes: 0, fd })) if fd.is_none()
     ));
 }
