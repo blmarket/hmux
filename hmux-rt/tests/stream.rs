@@ -222,15 +222,9 @@ fn wrappers_accept_implementations_with_only_their_own_capability() {
         async fn read(&self, buffer: &mut [u8]) -> io::Result<Received> {
             if let Some(byte) = buffer.first_mut() {
                 *byte = b'x';
-                Ok(Received {
-                    bytes: 1,
-                    fd: None,
-                })
+                Ok(Received { bytes: 1, fd: None })
             } else {
-                Ok(Received {
-                    bytes: 0,
-                    fd: None,
-                })
+                Ok(Received { bytes: 0, fd: None })
             }
         }
     }

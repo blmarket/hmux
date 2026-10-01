@@ -99,7 +99,11 @@ impl<I: AsyncWrite> Writer<I> {
 }
 
 impl<I: AsyncWrite> AsyncWrite for Writer<I> {
-    async fn write(&self, buffers: &[IoSlice<'_>], fd: Option<BorrowedFd<'_>>) -> io::Result<usize> {
+    async fn write(
+        &self,
+        buffers: &[IoSlice<'_>],
+        fd: Option<BorrowedFd<'_>>,
+    ) -> io::Result<usize> {
         self.source.write(buffers, fd).await
     }
 }

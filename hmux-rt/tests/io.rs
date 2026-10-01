@@ -181,39 +181,88 @@ fn partial_write_transfers_fd_once_and_cancelled_write_transfers_nothing() {
     assert!(poll(pin!(receiver.read(&mut buffer))).is_pending());
 }
 
-#[cfg(target_os = "linux")]
 #[test]
-fn truncated_ancillary_data_closes_received_fds() {
+fn excess_and_truncated_fds_are_rejected_and_closed() {
+    const CONTROL_SIZE: usize =
+        unsafe { libc::CMSG_SPACE((3 * size_of::<libc::c_int>()) as _) as usize };
+    #[repr(C)]
+    union Control {
+        _align: libc::cmsghdr,
+        bytes: [u8; CONTROL_SIZE],
+    }
+
     let mut runtime = mio::Runtime::new().unwrap();
-    let (sender, receiver) = pair();
-    let enabled: libc::c_int = 1;
-    // Request credentials too, so a maximal FD batch exceeds ancillary capacity.
-    // SAFETY: receiver is live and enabled is a valid boolean socket option.
-    assert_eq!(
+    // On 64-bit Linux, two FDs fit in the padding for one without MSG_CTRUNC;
+    // three force truncation. Both cases must close every received descriptor.
+    for count in [2, 3] {
+        let (sender, receiver) = pair();
+        let receiver = runtime.handle().io(receiver.into()).unwrap();
+        let (fd, mut peer) = pair();
+        let mut control = Control {
+            bytes: [0; CONTROL_SIZE],
+        };
+        let mut byte = b'x';
+        let mut iov = libc::iovec {
+            iov_base: (&mut byte as *mut u8).cast(),
+            iov_len: 1,
+        };
+        // Bypass AsyncWrite to simulate a peer violating its single-FD contract.
+        // SAFETY: zero initializes unused msghdr fields. The initialized iov
+        // and aligned control buffer outlive sendmsg; the FD stays borrowed.
         unsafe {
-            libc::setsockopt(
-                receiver.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_PASSCRED,
-                (&enabled as *const libc::c_int).cast(),
-                size_of_val(&enabled) as _,
+            let mut msg: libc::msghdr = std::mem::zeroed();
+            msg.msg_iov = &mut iov;
+            msg.msg_iovlen = 1;
+            msg.msg_control = (&mut control as *mut Control).cast();
+            let bytes = (count * size_of::<libc::c_int>()) as _;
+            msg.msg_controllen = libc::CMSG_SPACE(bytes) as _;
+            let header = libc::CMSG_FIRSTHDR(&msg);
+            (*header).cmsg_len = libc::CMSG_LEN(bytes) as _;
+            (*header).cmsg_level = libc::SOL_SOCKET;
+            (*header).cmsg_type = libc::SCM_RIGHTS;
+            let data = libc::CMSG_DATA(header).cast::<libc::c_int>();
+            for index in 0..count {
+                data.add(index).write_unaligned(fd.as_raw_fd());
+            }
+            assert_eq!(libc::sendmsg(sender.as_raw_fd(), &msg, 0), 1);
+        }
+        drop(fd);
+        let error = ready(&mut runtime, receiver.read(&mut [0; 8])).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        // Kernel-discarded and userspace-adopted FDs must all be closed.
+        assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+    }
+}
+
+#[test]
+fn consecutive_single_fd_writes_remain_readable() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (sender, receiver) = streams(&runtime);
+    let (first, mut first_peer) = pair();
+    let (second, mut second_peer) = pair();
+    for (byte, fd) in [(b"a", &first), (b"b", &second)] {
+        assert_eq!(
+            ready(
+                &mut runtime,
+                sender.write(&[IoSlice::new(byte)], Some(fd.as_fd()))
             )
-        },
-        0
-    );
-    let sender = runtime.handle().io(sender.into()).unwrap();
-    let receiver = runtime.handle().io(receiver.into()).unwrap();
-    let (fd, mut peer) = pair();
-    ready(
-        &mut runtime,
-        sender.write(&[IoSlice::new(b"x")], &[fd.as_fd(); 253]),
-    )
-    .unwrap();
-    drop(fd);
-    let error = ready(&mut runtime, receiver.read(&mut [0; 8])).unwrap_err();
-    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-    // Both kernel-discarded and userspace-adopted descriptors must be closed.
-    assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+            .unwrap(),
+            1
+        );
+    }
+    drop((first, second));
+    for (expected, peer) in [(b'a', &mut first_peer), (b'b', &mut second_peer)] {
+        let mut bytes = [0; 16];
+        let received = ready(&mut runtime, receiver.read(&mut bytes)).unwrap();
+        assert_eq!(&bytes[..received.bytes], &[expected]);
+        let mut transferred = UnixStream::from(received.fd.unwrap());
+        transferred.write_all(&[expected]).unwrap();
+        let mut byte = [0];
+        peer.read_exact(&mut byte).unwrap();
+        assert_eq!(byte, [expected]);
+        drop(transferred);
+        assert_eq!(peer.read(&mut byte).unwrap(), 0);
+    }
 }
 
 #[test]
@@ -346,8 +395,10 @@ fn pipes_and_ptys_use_the_same_traits_and_reject_fds_before_writing() {
         let reader = Reader::new(&runtime.handle(), reader).unwrap();
         for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {
             // Rejection must not wait for writable readiness either.
-            assert!(matches!(poll(pin!(writer.write(buffers, Some(fd.as_fd())))),
-                Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Unsupported));
+            assert!(
+                matches!(poll(pin!(writer.write(buffers, Some(fd.as_fd())))),
+                Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Unsupported)
+            );
         }
         let mut buffer = [0; 64];
         assert!(poll(pin!(reader.read(&mut buffer))).is_pending());

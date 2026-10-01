@@ -339,10 +339,7 @@ impl crate::AsyncFd for Io {
 impl crate::AsyncRead for Io {
     async fn read(&self, buffer: &mut [u8]) -> io::Result<Received> {
         if buffer.is_empty() {
-            return Ok(Received {
-                bytes: 0,
-                fd: None,
-            });
+            return Ok(Received { bytes: 0, fd: None });
         }
         self.read_with(|| {
             if self.fd_passing {
@@ -367,7 +364,11 @@ impl crate::AsyncRead for Io {
 }
 
 impl crate::AsyncWrite for Io {
-    async fn write(&self, buffers: &[IoSlice<'_>], fd: Option<BorrowedFd<'_>>) -> io::Result<usize> {
+    async fn write(
+        &self,
+        buffers: &[IoSlice<'_>],
+        fd: Option<BorrowedFd<'_>>,
+    ) -> io::Result<usize> {
         if fd.is_some() && !self.fd_passing {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
