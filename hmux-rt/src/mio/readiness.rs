@@ -1,8 +1,8 @@
 use std::cell::{Cell, RefCell};
-use std::future::{Future, poll_fn};
+use std::future::Future;
 use std::io::{self, IoSlice};
 use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
-use std::pin::{Pin, pin};
+use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::task::{Context, LocalWaker, Poll};
 
@@ -42,10 +42,6 @@ pub(crate) struct IoState {
 }
 
 impl IoState {
-    pub(super) fn check(&self) -> io::Result<()> {
-        self.core.upgrade().ok_or_else(invalid)?.check()
-    }
-
     fn direction(&self, direction: Direction) -> &DirectionState {
         match direction {
             Direction::Read => &self.read,
@@ -187,15 +183,23 @@ impl Drop for IoState {
     }
 }
 
-/// An owned descriptor with [`crate::AsyncFd`] readiness
-/// waits and [`crate::AsyncRead`]/[`crate::AsyncWrite`] byte-stream operations.
+/// An owned descriptor with [`crate::AsyncRead`]/[`crate::AsyncWrite`] byte-stream
+/// operations. The runtime owns readiness, syscall retries, and cancellation.
 /// Unix stream sockets pass one optional FD per operation and suppress SIGPIPE.
 /// Files, pipes, and PTYs return no FDs and reject attached FDs before writing.
 /// For other descriptors the host retains SIGPIPE policy.
-/// Use readiness waits with your own bounded, nonblocking syscalls for listeners,
-/// datagrams, or terminal control. Regular files bypass the readiness poller
+/// Use [`super::Listener`] for accepting connections and [`crate::unix`] for
+/// descriptor and terminal control. Regular files bypass the readiness poller
 /// and perform synchronous I/O on the runtime thread. Devices rejected by the
 /// poller can also perform immediate I/O, but cannot wait for a later event.
+///
+/// Readiness is not a public operation:
+/// ```compile_fail
+/// use hmux_rt::mio::Io;
+/// fn readiness(io: &Io) {
+///     let _ = io.ready(true, false);
+/// }
+/// ```
 ///
 /// Custom operations are not part of the public byte-stream API:
 /// ```compile_fail
@@ -278,61 +282,6 @@ impl Io {
         core.io.borrow_mut().insert(id, Rc::downgrade(&state));
         core.fds.borrow_mut().insert(raw, id);
         Ok(Self { state, fd_passing })
-    }
-
-    fn probe(&self, read: bool, write: bool) -> io::Result<(bool, bool)> {
-        self.state.check()?;
-        let mut pfd = libc::pollfd {
-            fd: self.state.raw(),
-            events: (if read { libc::POLLIN } else { 0 }) | (if write { libc::POLLOUT } else { 0 }),
-            revents: 0,
-        };
-        // SAFETY: one initialized pollfd; zero timeout never blocks.
-        let result = unsafe { libc::poll(&mut pfd, 1, 0) };
-        if result < 0 {
-            return Err(io::Error::last_os_error());
-        }
-        if pfd.revents & libc::POLLNVAL != 0 {
-            return Err(io::Error::from_raw_os_error(libc::EBADF));
-        }
-        let terminal = pfd.revents & (libc::POLLERR | libc::POLLHUP) != 0;
-        let ready = (
-            read && (terminal || pfd.revents & libc::POLLIN != 0),
-            write && (terminal || pfd.revents & libc::POLLOUT != 0),
-        );
-        if ready.0 || ready.1 {
-            Ok(ready)
-        } else {
-            Err(io::ErrorKind::WouldBlock.into())
-        }
-    }
-}
-
-impl crate::AsyncFd for Io {
-    /// Wait for requested directions. The returned pair is (readable, writable).
-    /// Cancellation consumes no bytes. One waiter per direction is permitted.
-    async fn ready(&self, read: bool, write: bool) -> io::Result<(bool, bool)> {
-        if !read && !write {
-            return Err(io::ErrorKind::InvalidInput.into());
-        }
-        match self.probe(read, write) {
-            Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock
-                    || e.kind() == io::ErrorKind::Interrupted => {}
-            result => return result,
-        }
-        let mut reader = pin!(self.read_with(|| self.probe(true, false)));
-        let mut writer = pin!(self.write_with(|| self.probe(false, true)));
-        poll_fn(|cx| {
-            if read && let Poll::Ready(result) = reader.as_mut().poll(cx) {
-                return Poll::Ready(result);
-            }
-            if write && let Poll::Ready(result) = writer.as_mut().poll(cx) {
-                return Poll::Ready(result);
-            }
-            Poll::Pending
-        })
-        .await
     }
 }
 
@@ -610,28 +559,5 @@ mod tests {
             poll(&mut source.write_with(|| Ok(42))),
             Poll::Ready(Ok(42))
         ));
-    }
-
-    #[test]
-    fn accepts_connections_through_the_same_operation_api() {
-        use std::os::unix::net::UnixListener;
-        let mut runtime = super::super::Runtime::new().unwrap();
-        let socket_path =
-            std::env::temp_dir().join(format!("hmux-rt-accept-{}", std::process::id()));
-        let listener = UnixListener::bind(&socket_path).unwrap();
-        // Unix sockets remain connectable through the bound pathname until unlink.
-        listener.set_nonblocking(true).unwrap();
-        let lease = OwnedFd::from(listener.try_clone().unwrap());
-        let source = runtime.handle().io(lease).unwrap();
-        let mut accept = source.read_with(|| listener.accept());
-        assert!(poll(&mut accept).is_pending());
-        let client = UnixStream::connect(&socket_path).unwrap();
-        std::fs::remove_file(&socket_path).unwrap();
-        tick(&mut runtime);
-        assert!(matches!(
-            poll(&mut accept),
-            Poll::Ready(Ok((_connection, _address)))
-        ));
-        drop(client);
     }
 }

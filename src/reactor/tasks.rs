@@ -22,7 +22,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmux_rt::AsyncFd as _;
+    use hmux_rt::{AsyncRead as _, AsyncWrite as _};
     use std::cell::{Cell, RefCell};
     use std::io::{Read, Write};
     use std::os::fd::{AsFd, AsRawFd};
@@ -71,7 +71,7 @@ mod tests {
             let source = super::super::io(fd)?;
             let observed = observed.clone();
             Ok(async move {
-                source.ready(true, false).await.unwrap();
+                source.read(&mut [0; 1]).await.unwrap();
                 observed.set(observed.get() + 1);
             })
         })
@@ -94,16 +94,15 @@ mod tests {
             let source = super::super::io(fd)?;
             let observed = observed.clone();
             Ok(async move {
-                source.ready(true, false).await.unwrap();
+                let mut bytes = [0; 6];
+                assert_eq!(source.read(&mut bytes).await.unwrap().bytes, 6);
+                assert_eq!(&bytes, b"unread");
                 observed.set(observed.get() + 1);
             })
         })
         .unwrap();
         poll();
         assert_eq!(calls.get(), 1);
-        let mut bytes = [0; 6];
-        reader.read_exact(&mut bytes).unwrap();
-        assert_eq!(&bytes, b"unread");
         assert_eq!(Rc::strong_count(&calls), 1);
         super::super::shutdown_runtime();
     }
@@ -153,7 +152,7 @@ mod tests {
         task_start(&mut read_task, move || {
             let source = super::super::io(fd)?;
             Ok(async move {
-                source.ready(true, false).await.unwrap();
+                source.read(&mut [0; 1]).await.unwrap();
                 observed.set(true);
             })
         })
@@ -167,7 +166,13 @@ mod tests {
         task_start(&mut write_task, move || {
             let source = super::super::io(fd)?;
             Ok(async move {
-                source.ready(false, true).await.unwrap();
+                assert_eq!(
+                    source
+                        .write(&[std::io::IoSlice::new(b"x")], None)
+                        .await
+                        .unwrap(),
+                    1
+                );
                 observed.set(true);
             })
         })
@@ -206,13 +211,9 @@ mod tests {
             let source = super::super::io(borrowed)?;
             let observed = observed.clone();
             Ok(async move {
-                source.ready(true, false).await.unwrap();
-                let mut byte = 0_u8;
-                assert_eq!(
-                    unsafe { libc::read(fd, (&mut byte as *mut u8).cast(), 1) },
-                    1
-                );
-                assert_eq!(byte, b'n');
+                let mut byte = [0u8];
+                assert_eq!(source.read(&mut byte).await.unwrap().bytes, 1);
+                assert_eq!(byte, *b"n");
                 observed.set(observed.get() + 1);
             })
         })

@@ -1,7 +1,5 @@
-//! Non-consuming readiness waits share the byte I/O registration and cleanup.
-use hmux_rt::{
-    AsyncFd as _, AsyncRead as _, AsyncWrite as _, Handle as _, Received, Runtime as _, mio,
-};
+//! Byte I/O owns registration, directional waits, and descriptor cleanup.
+use hmux_rt::{AsyncRead as _, AsyncWrite as _, Handle as _, Received, Runtime as _, mio};
 use std::cell::Cell;
 use std::future::Future;
 use std::io::{self, IoSlice, Read, Write};
@@ -19,7 +17,7 @@ fn assert_closed(raw: RawFd) {
 }
 
 #[test]
-fn cancelled_readiness_does_not_consume_input_and_rearming_needs_no_new_edge() {
+fn cancelled_reads_preserve_input_and_partial_reads_need_no_new_edge() {
     let mut rt = mio::Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     fd.set_nonblocking(true).unwrap();
@@ -28,7 +26,7 @@ fn cancelled_readiness_does_not_consume_input_and_rearming_needs_no_new_edge() {
     let cancelled = rt
         .handle()
         .spawn(async move {
-            s.ready(true, false).await.unwrap();
+            s.read(&mut [0; 1]).await.unwrap();
         })
         .unwrap();
     rt.poll(Some(Duration::ZERO)).unwrap();
@@ -39,8 +37,10 @@ fn cancelled_readiness_does_not_consume_input_and_rearming_needs_no_new_edge() {
     let task = rt
         .handle()
         .spawn(async move {
-            for _ in 0..2 {
-                assert_eq!(source.ready(true, false).await.unwrap(), (true, false));
+            for expected in b"st" {
+                let mut byte = [0; 1];
+                assert_eq!(source.read(&mut byte).await.unwrap().bytes, 1);
+                assert_eq!(byte[0], *expected);
                 observed.set(observed.get() + 1);
             }
         })
@@ -51,13 +51,14 @@ fn cancelled_readiness_does_not_consume_input_and_rearming_needs_no_new_edge() {
 }
 
 #[test]
-fn readiness_and_byte_reads_share_one_waiter_and_cancellation_path() {
+fn concurrent_reads_share_one_waiter_and_cancellation_releases_it() {
     let mut rt = mio::Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     fd.set_nonblocking(true).unwrap();
     let source = rt.handle().io(fd.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
-    let mut wait = Box::pin(source.ready(true, false));
+    let mut first_buffer = [0; 1];
+    let mut wait = Box::pin(source.read(&mut first_buffer));
     assert!(wait.as_mut().poll(&mut context).is_pending());
     let mut byte = [0; 1];
     assert!(matches!(
@@ -67,10 +68,6 @@ fn readiness_and_byte_reads_share_one_waiter_and_cancellation_path() {
     drop(wait);
     peer.write_all(b"x").unwrap();
     rt.poll(Some(Duration::ZERO)).unwrap();
-    assert!(matches!(
-        pin!(source.ready(true, false)).as_mut().poll(&mut context),
-        Poll::Ready(Ok((true, false)))
-    ));
     assert!(matches!(
         pin!(source.read(&mut byte)).as_mut().poll(&mut context),
         Poll::Ready(Ok(Received { bytes: 1, fd })) if fd.is_none()
@@ -99,7 +96,8 @@ fn registered_descriptor_closes_on_runtime_shutdown_and_invalidates_pending_wait
     peer.set_nonblocking(true).unwrap();
     fd.set_nonblocking(true).unwrap();
     let source = rt.handle().io(fd.into()).unwrap();
-    let mut wait = pin!(source.ready(true, false));
+    let mut bytes = [0; 1];
+    let mut wait = pin!(source.read(&mut bytes));
     assert!(
         wait.as_mut()
             .poll(&mut Context::from_waker(Waker::noop()))
@@ -137,7 +135,7 @@ fn rejected_descriptor_is_closed() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn immediate_device_supports_readiness_and_io_and_closes() {
+fn immediate_device_supports_io_and_closes() {
     use std::os::unix::fs::OpenOptionsExt;
 
     let mut rt = mio::Runtime::new().unwrap();
@@ -150,10 +148,6 @@ fn immediate_device_supports_readiness_and_io_and_closes() {
     let raw = fd.as_raw_fd();
     let source = rt.handle().io(fd.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
-    assert!(matches!(
-        pin!(source.ready(true, true)).poll(&mut context),
-        Poll::Ready(Ok((true, true)))
-    ));
     assert!(matches!(
         pin!(source.write(&[IoSlice::new(b"discard")], None)).poll(&mut context),
         Poll::Ready(Ok(7))
@@ -200,11 +194,6 @@ fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
     drop(Box::pin(source.write(&[IoSlice::new(b"cancelled")], None)));
     assert_eq!(observer.stream_position().unwrap(), 0);
     assert!(matches!(
-        pin!(source.ready(true, true)).poll(&mut context),
-        Poll::Ready(Ok((true, true)))
-    ));
-    assert_eq!(observer.stream_position().unwrap(), 0);
-    assert!(matches!(
         pin!(source.read(&mut bytes)).poll(&mut context),
         Poll::Ready(Ok(Received { bytes: 5, fd })) if fd.is_none()
     ));
@@ -227,6 +216,6 @@ fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
         matches!(pin!(source.read(&mut bytes)).poll(&mut context), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
     );
     assert!(
-        matches!(pin!(source.ready(true, false)).poll(&mut context), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
+        matches!(pin!(source.write(&[IoSlice::new(b"closed")], None)).poll(&mut context), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
     );
 }

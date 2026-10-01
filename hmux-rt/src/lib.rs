@@ -36,8 +36,8 @@ pub trait Handle: Clone + 'static {
     /// Owns a spawned future; dropping it cancels the work.
     type Task: 'static;
 
-    /// Owned descriptor supporting readiness waits, bytes, and optional FD passing.
-    type Io: AsyncFd + AsyncRead + AsyncWrite + 'static;
+    /// Owned descriptor supporting byte-stream I/O and optional FD passing.
+    type Io: AsyncRead + AsyncWrite + 'static;
 
     /// Owns a Unix stream listener and its pending accepts.
     type Listener: AsyncAccept + 'static;
@@ -55,7 +55,7 @@ pub trait Handle: Clone + 'static {
     where
         F: Future<Output = ()> + 'static;
 
-    /// Take ownership of a descriptor for readiness waits and byte-stream I/O.
+    /// Take ownership of a descriptor for byte-stream I/O.
     /// Files, pipes, PTYs, and Unix stream sockets use the same interface.
     /// Unix streams support FD passing; ordinary descriptors return no FDs on
     /// reads and reject writes carrying FDs with `Unsupported` before writing.
@@ -82,24 +82,6 @@ pub trait Handle: Clone + 'static {
 /// already accepted sockets remain owned by their callers.
 pub trait AsyncAccept {
     fn accept(&self) -> impl Future<Output = io::Result<OwnedFd>> + '_;
-}
-
-/// An owned descriptor with local-waker readiness waits.
-///
-/// Created through [`Handle::io`]. The descriptor is bound to its runtime, so
-/// waiting needs no runtime handle. Dropping the registration deregisters and
-/// closes it; dropping the runtime closes registered descriptors and invalidates
-/// subsequent waits.
-///
-/// Readiness consumes no data. The caller must perform nonblocking I/O and
-/// handle `WouldBlock` by waiting again. Only one pending waiter per direction
-/// is supported, shared with byte reads/writes on the same registration.
-pub trait AsyncFd {
-    /// Wait for either requested direction, returning (readable, writable).
-    /// Requesting neither direction returns `InvalidInput`. Dropping a pending
-    /// wait unregisters its waiter without consuming input or output capacity.
-    fn ready(&self, read: bool, write: bool)
-    -> impl Future<Output = io::Result<(bool, bool)>> + '_;
 }
 
 /// Bytes and an optional owned file descriptor from one read operation.
