@@ -147,7 +147,8 @@ pub(crate) struct imsgbuf {
     pub(super) w: Option<Box<msgbuf>>,
     pub(super) pid: pid_t,
     pub(super) maxsize: uint32_t,
-    pub(crate) fd: ::core::ffi::c_int,
+    /// Owns the transport socket until `imsgbuf_clear`.
+    pub(crate) fd: Option<OwnedFd>,
     pub(super) flags: ::core::ffi::c_int,
 }
 

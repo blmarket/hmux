@@ -23,14 +23,11 @@ use imsg_buffer::{
     ibuf_open, ibuf_read, ibuf_set_h32, ibuf_size, ibuf_write, msgbuf_get, msgbuf_new_reader_owned,
     msgbuf_queuelen, msgbuf_read, msgbuf_write,
 };
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd, OwnedFd};
 
 const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
-pub(crate) fn imsgbuf_init(
-    imsgbuf: &mut imsgbuf,
-    fd: ::core::ffi::c_int,
-) -> Result<(), ::core::ffi::c_int> {
+pub(crate) fn imsgbuf_init(imsgbuf: &mut imsgbuf, fd: OwnedFd) -> Result<(), ::core::ffi::c_int> {
     let maxsize = MAX_IMSGSIZE as uint32_t;
     let msgbuf = msgbuf_new_reader_owned(IMSG_HEADER_SIZE, move |header, fd| {
         imsg_parse_hdr(header, maxsize, fd)
@@ -38,7 +35,7 @@ pub(crate) fn imsgbuf_init(
     imsgbuf.w = Some(msgbuf);
     imsgbuf.pid = unsafe { getpid() } as pid_t;
     imsgbuf.maxsize = maxsize;
-    imsgbuf.fd = fd;
+    imsgbuf.fd = Some(fd);
     imsgbuf.flags = 0;
     Ok(())
 }
@@ -51,20 +48,22 @@ pub(crate) fn imsgbuf_read(
     let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
         return Err(EINVAL);
     };
+    let fd = imsgbuf.fd.as_ref().ok_or(EINVAL)?.as_fd();
     if imsgbuf.flags & IMSG_ALLOW_FDPASS != 0 {
-        msgbuf_read(imsgbuf.fd, msgbuf)
+        msgbuf_read(fd, msgbuf)
     } else {
-        ibuf_read(imsgbuf.fd, msgbuf)
+        ibuf_read(fd, msgbuf)
     }
 }
 pub(crate) fn imsgbuf_write(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
     let Some(msgbuf) = imsgbuf.w.as_deref_mut() else {
         return Err(EINVAL);
     };
+    let fd = imsgbuf.fd.as_ref().ok_or(EINVAL)?.as_fd();
     if imsgbuf.flags & IMSG_ALLOW_FDPASS != 0 {
-        msgbuf_write(imsgbuf.fd, msgbuf)
+        msgbuf_write(fd, msgbuf)
     } else {
-        ibuf_write(imsgbuf.fd, msgbuf)
+        ibuf_write(fd, msgbuf)
     }
 }
 pub(crate) fn imsgbuf_flush(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_int> {
@@ -75,6 +74,7 @@ pub(crate) fn imsgbuf_flush(imsgbuf: &mut imsgbuf) -> Result<(), ::core::ffi::c_
 }
 pub(crate) fn imsgbuf_clear(imsgbuf: &mut imsgbuf) {
     imsgbuf.w = None;
+    drop(imsgbuf.fd.take());
 }
 pub(crate) fn imsgbuf_queuelen(imsgbuf: &imsgbuf) -> uint32_t {
     imsgbuf.w.as_deref().map_or(0, msgbuf_queuelen)
@@ -200,4 +200,44 @@ fn encode_imsg_hdr(hdr: imsg_hdr) -> [u8; IMSG_HEADER_SIZE] {
     bytes[8..12].copy_from_slice(&hdr.peerid.to_ne_bytes());
     bytes[12..16].copy_from_slice(&hdr.pid.to_ne_bytes());
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    #[test]
+    fn owned_transport_roundtrip_and_explicit_cleanup() {
+        for fdpass in [false, true] {
+            let (sender, receiver) = UnixStream::pair().unwrap();
+            receiver
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut tx = imsgbuf::default();
+            let mut rx = imsgbuf::default();
+            imsgbuf_init(&mut tx, sender.into()).unwrap();
+            imsgbuf_init(&mut rx, receiver.into()).unwrap();
+            if fdpass {
+                imsgbuf_allow_fdpass(&mut tx);
+                imsgbuf_allow_fdpass(&mut rx);
+            }
+            let fd = fdpass.then(|| std::fs::File::open("/dev/null").unwrap().into());
+            imsg_compose(&mut tx, MSG_COMMAND, 0, 0, fd, b"hello").unwrap();
+            imsgbuf_flush(&mut tx).unwrap();
+            assert_eq!(imsgbuf_read(&mut rx), Ok(1));
+            let mut message = imsgbuf_get(&mut rx).unwrap().unwrap();
+            assert_eq!(message.data, b"hello");
+            assert_eq!(imsg_get_fd(&mut message).is_some(), fdpass);
+
+            // Clearing closes the transport before the buffer itself is dropped.
+            imsgbuf_clear(&mut tx);
+            assert_eq!(imsgbuf_read(&mut rx), Ok(0));
+            assert_eq!(imsgbuf_read(&mut tx), Err(EINVAL));
+            assert_eq!(imsgbuf_write(&mut tx), Err(EINVAL));
+            imsgbuf_clear(&mut tx);
+            imsgbuf_clear(&mut rx);
+        }
+    }
 }

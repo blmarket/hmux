@@ -7,7 +7,7 @@ use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 use crate::src::shared::socket::SOL_SOCKET;
 use ::libc::{cmsghdr, msghdr};
 use std::collections::VecDeque;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
 pub(super) struct ibufqueue {
     bufs: VecDeque<Box<OwnedIbuf>>,
@@ -264,7 +264,7 @@ pub(super) fn msgbuf_get(msgbuf: &mut msgbuf) -> Option<Box<OwnedIbuf>> {
 }
 
 pub(super) fn ibuf_write(
-    fd: ::core::ffi::c_int,
+    fd: BorrowedFd<'_>,
     msgbuf: &mut msgbuf,
 ) -> Result<(), ::core::ffi::c_int> {
     let mut iov: [libc::iovec; 1024] = [libc::iovec {
@@ -282,7 +282,7 @@ pub(super) fn ibuf_write(
         return Ok(());
     }
     let n = loop {
-        let n = unsafe { writev(fd, iov.as_mut_ptr(), i as ::core::ffi::c_int) };
+        let n = unsafe { writev(fd.as_raw_fd(), iov.as_mut_ptr(), i as ::core::ffi::c_int) };
         if n == -1 {
             let error = unsafe { *__errno_location() };
             if error == EINTR {
@@ -300,7 +300,7 @@ pub(super) fn ibuf_write(
 }
 
 pub(super) fn msgbuf_write(
-    fd: ::core::ffi::c_int,
+    fd: BorrowedFd<'_>,
     msgbuf: &mut msgbuf,
 ) -> Result<(), ::core::ffi::c_int> {
     let mut iov: [libc::iovec; 1024] = [libc::iovec {
@@ -357,7 +357,7 @@ pub(super) fn msgbuf_write(
     }
 
     let n = loop {
-        let n = unsafe { sendmsg(fd, &mut msg, 0) };
+        let n = unsafe { sendmsg(fd.as_raw_fd(), &mut msg, 0) };
         if n == -1 {
             let error = unsafe { *__errno_location() };
             if error == EINTR {
@@ -426,7 +426,7 @@ fn ibuf_read_process(
 }
 
 pub(super) fn ibuf_read(
-    fd: ::core::ffi::c_int,
+    fd: BorrowedFd<'_>,
     msgbuf: &mut msgbuf,
 ) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     if msgbuf.rbuf.is_empty() {
@@ -437,7 +437,7 @@ pub(super) fn ibuf_read(
         iov_len: msgbuf.rbuf.len().saturating_sub(msgbuf.roff),
     };
     let n = loop {
-        let n = unsafe { readv(fd, &mut iov, 1) };
+        let n = unsafe { readv(fd.as_raw_fd(), &mut iov, 1) };
         if n == -1 {
             let error = unsafe { *__errno_location() };
             if error == EINTR {
@@ -458,7 +458,7 @@ pub(super) fn ibuf_read(
 }
 
 pub(super) fn msgbuf_read(
-    fd: ::core::ffi::c_int,
+    fd: BorrowedFd<'_>,
     msgbuf: &mut msgbuf,
 ) -> Result<::core::ffi::c_int, ::core::ffi::c_int> {
     if msgbuf.rbuf.is_empty() {
@@ -478,7 +478,7 @@ pub(super) fn msgbuf_read(
     msg.msg_controllen = IMSG_CMSG_FD_BUFFER_SIZE;
 
     let n = loop {
-        let n = unsafe { recvmsg(fd, &mut msg, 0) };
+        let n = unsafe { recvmsg(fd.as_raw_fd(), &mut msg, 0) };
         if n == -1 {
             let error = unsafe { *__errno_location() };
             if error == EINTR || error == EMSGSIZE {

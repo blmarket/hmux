@@ -30,7 +30,7 @@ use crate::src::tmux::{getversion, socket_path};
 use hmux_rt::AsyncFd as _;
 use hmux_rt::{Handle as _, Signals as _};
 use std::ffi::CStr;
-use std::os::fd::FromRawFd;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -132,7 +132,12 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
         return;
     }
     (*peer).io_writable = writable;
-    let fd = (*peer).ibuf.fd;
+    let fd = (*peer)
+        .ibuf
+        .fd
+        .as_ref()
+        .expect("peer socket is initialized")
+        .as_raw_fd();
     crate::src::reactor::task_start(&mut (*peer).io_task, move || {
         let source = reactor::io(fd)?;
         Ok(async move {
@@ -358,7 +363,7 @@ pub unsafe fn proc_add_peer(
     let peer: *mut tmuxpeer = &mut *owned_peer;
     (*peer).parent = tp;
     (*peer).dispatchcb = Some(dispatchcb);
-    if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, fd) {
+    if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, OwnedFd::from_raw_fd(fd)) {
         fatalx(|out| write!(out, "imsgbuf_init failed (errno {})", (error) as i32));
     }
     imsgbuf_allow_fdpass(&mut (*peer).ibuf);
@@ -393,7 +398,6 @@ unsafe fn proc_free_peer(mut owned_peer: Box<tmuxpeer>) {
     ));
     drop((*peer).io_task.take());
     imsgbuf_clear(&mut (*peer).ibuf);
-    close((*peer).ibuf.fd);
     drop(owned_peer);
 }
 pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
