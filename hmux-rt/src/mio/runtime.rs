@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use super::readiness::IoState;
 use super::signals::SignalState;
-use super::{Io, Signals, Sleep};
+use super::{Io, Listener, Signals, Sleep};
 
 // Bound each turn so a self-waking task cannot monopolize the host thread.
 const MAX_POLLS_PER_TURN: usize = 128;
@@ -210,6 +210,7 @@ pub struct Handle {
 impl crate::Handle for Handle {
     type Task = Task;
     type Io = Io;
+    type Listener = Listener;
     type Signals = Signals;
     type Sleep = Sleep;
 
@@ -238,6 +239,9 @@ impl crate::Handle for Handle {
 
     fn io(&self, fd: OwnedFd) -> io::Result<Io> {
         Io::new(&self.core, fd)
+    }
+    fn listener(&self, listener: std::os::unix::net::UnixListener) -> io::Result<Listener> {
+        Ok(Listener::new(Io::new(&self.core, listener.into())?))
     }
     fn signals(&self, set: &[std::ffi::c_int]) -> io::Result<Signals> {
         Signals::new(&self.core, set)

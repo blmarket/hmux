@@ -38,6 +38,9 @@ pub trait Handle: Clone + 'static {
     /// Owned descriptor supporting readiness waits, bytes, and optional FD passing.
     type Io: AsyncFd + AsyncRead + AsyncWrite + 'static;
 
+    /// Owns a Unix stream listener and its pending accepts.
+    type Listener: AsyncAccept + 'static;
+
     /// Signal subscription.
     type Signals: Signals + 'static;
 
@@ -60,11 +63,24 @@ pub trait Handle: Clone + 'static {
     /// No flags are changed. Construction errors close the fd.
     fn io(&self, fd: OwnedFd) -> io::Result<Self::Io>;
 
+    /// Take ownership of a nonblocking Unix stream listener.
+    /// Construction errors close the listener; no descriptor flags are changed.
+    fn listener(&self, listener: std::os::unix::net::UnixListener) -> io::Result<Self::Listener>;
+
     /// Subscribe to a nonempty set of valid, catchable signal numbers.
     fn signals(&self, set: &[c_int]) -> io::Result<Self::Signals>;
 
     /// Wait for one absolute monotonic deadline; drop cancels the wait.
     fn sleep_until(&self, deadline: Instant) -> Self::Sleep;
+}
+
+/// A listener whose operations return owned, nonblocking, close-on-exec sockets.
+///
+/// Only one pending accept is supported. Dropping a pending accept consumes no
+/// connection. Dropping the listener or its runtime closes the listening socket;
+/// already accepted sockets remain owned by their callers.
+pub trait AsyncAccept {
+    fn accept(&self) -> impl Future<Output = io::Result<OwnedFd>> + '_;
 }
 
 /// An owned descriptor with local-waker readiness waits.
