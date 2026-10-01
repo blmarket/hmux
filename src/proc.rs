@@ -392,7 +392,6 @@ unsafe fn proc_free_peer(mut owned_peer: Box<tmuxpeer>) {
         log_pointer((peer) as *const ::core::ffi::c_void)
     ));
     drop((*peer).io_task.take());
-    reactor::forget_descriptor((*peer).ibuf.fd);
     imsgbuf_clear(&mut (*peer).ibuf);
     close((*peer).ibuf.fd);
     drop(owned_peer);

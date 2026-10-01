@@ -143,6 +143,48 @@ mod tests {
     }
 
     #[test]
+    fn completing_write_registration_keeps_same_endpoints_read_wait_alive() {
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        reader.set_nonblocking(true).unwrap();
+        let fd = reader.as_raw_fd();
+        let read_done = Rc::new(Cell::new(false));
+        let observed = read_done.clone();
+        let mut read_task = None;
+        task_start(&mut read_task, move || {
+            let source = super::super::io(fd)?;
+            Ok(async move {
+                source.ready(true, false).await.unwrap();
+                observed.set(true);
+            })
+        })
+        .unwrap();
+        poll();
+        assert!(!read_done.get());
+
+        let write_done = Rc::new(Cell::new(false));
+        let observed = write_done.clone();
+        let mut write_task = None;
+        task_start(&mut write_task, move || {
+            let source = super::super::io(fd)?;
+            Ok(async move {
+                source.ready(false, true).await.unwrap();
+                observed.set(true);
+            })
+        })
+        .unwrap();
+        poll();
+        assert!(write_done.get());
+        drop(write_task);
+        assert!(!read_done.get());
+
+        writer.write_all(b"ready").unwrap();
+        poll();
+        assert!(read_done.get());
+        drop(read_task);
+        super::super::shutdown_runtime();
+    }
+
+    #[test]
     fn reused_descriptor_numbers_do_not_share_an_executing_tasks_old_lease() {
         use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
         let (old_reader, mut old_writer) = UnixStream::pair().unwrap();
@@ -153,7 +195,6 @@ mod tests {
         super::super::init_runtime();
         // An executing dispatch retains its descriptor lease until it returns.
         let old_source = super::super::io(fd).unwrap();
-        super::super::forget_descriptor(fd);
         assert_eq!(unsafe { libc::close(fd) }, 0);
         assert_eq!(unsafe { libc::dup2(new_reader.as_raw_fd(), fd) }, fd);
         let endpoint = unsafe { OwnedFd::from_raw_fd(fd) };

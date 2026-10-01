@@ -778,7 +778,6 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         terminal_set!(tty, flags, &=, !TTY_BLOCK);
         drop(tty.borrow_terminal_mut().read_task.take());
         drop(tty.borrow_terminal_mut().write_task.take());
-        reactor::forget_descriptor(fd);
         if ioctl(fd, TIOCGWINSZ as ::core::ffi::c_ulong, &raw mut ws) == -(1 as ::core::ffi::c_int)
         {
             return;
@@ -916,9 +915,7 @@ pub unsafe fn tty_close(owner: &ClientRef) {
         }
         drop(terminal.read_task.take());
         drop(terminal.write_task.take());
-        if let Some(fd) = terminal.io_fd.take() {
-            reactor::forget_descriptor(fd);
-        }
+        terminal.io_fd.take();
         terminal.in_0 = None;
         terminal.out = None;
         terminal.term.take()

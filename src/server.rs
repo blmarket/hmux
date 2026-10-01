@@ -588,7 +588,6 @@ unsafe fn server_signal(sig: ProcessSignal) {
         ProcessSignal::User1 => {
             drop(server_accept_task.take());
             if let Ok(fd) = server_create_socket(server_client_flags) {
-                reactor::forget_descriptor(server_fd);
                 close(server_fd);
                 server_fd = fd;
                 server_update_socket();

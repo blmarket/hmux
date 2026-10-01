@@ -294,7 +294,6 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
     let s = (*stream).state.take();
     if let Some(s) = s {
         s.live.set(false);
-        super::FDS.with(|f| f.borrow_mut().remove(&s.fd));
         let task = s.task.borrow_mut().take();
         drop(task);
         if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {

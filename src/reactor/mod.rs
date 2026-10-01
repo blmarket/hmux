@@ -2,7 +2,7 @@
 //!
 //! Streams own their buffers. Task handles own their cancellable futures;
 //! callbacks run without registry borrows. Descriptor leases are
-//! duplicated once per live endpoint and close after an executing poll finishes.
+//! owned by each task and close after an executing poll finishes.
 #![allow(clippy::missing_safety_doc)]
 mod buffer;
 mod streams;
@@ -11,9 +11,7 @@ mod timers;
 pub use buffer::*;
 use hmux_rt::{Handle as _, Runtime as _};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
-use std::rc::{Rc, Weak};
 use std::time::Duration;
 pub use streams::*;
 pub use tasks::task_start;
@@ -26,7 +24,6 @@ pub struct bufferevent_ops {
 thread_local! {
     static HOST: RefCell<Option<hmux_rt::mio::Runtime>> = const { RefCell::new(None) };
     static HANDLE: RefCell<Option<hmux_rt::mio::Handle>> = const { RefCell::new(None) };
-    static FDS: RefCell<HashMap<i32, Weak<hmux_rt::mio::Io>>> = RefCell::new(HashMap::new());
 }
 pub(crate) fn handle() -> hmux_rt::mio::Handle {
     HANDLE.with(|h| h.borrow().as_ref().expect("runtime initialized").clone())
@@ -42,31 +39,18 @@ fn ensure_runtime() {
     HANDLE.with(|h| *h.borrow_mut() = Some(runtime.handle()));
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
-pub(crate) fn io(fd: i32) -> std::io::Result<Rc<hmux_rt::mio::Io>> {
-    if let Some(source) = FDS.with(|f| f.borrow().get(&fd).and_then(Weak::upgrade)) {
-        return Ok(source);
-    }
+/// Create a task-owned registration; no raw descriptor lookup survives this call.
+pub(crate) fn io(fd: i32) -> std::io::Result<hmux_rt::mio::Io> {
     // SAFETY: duplicate retains the open file description through callback cancellation.
     let duplicate = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
     if duplicate < 0 {
         return Err(std::io::Error::last_os_error());
     }
     let lease = unsafe { OwnedFd::from_raw_fd(duplicate) };
-    let source = Rc::new(handle().io(lease)?);
-    FDS.with(|f| {
-        let mut f = f.borrow_mut();
-        f.retain(|_, value| value.strong_count() != 0);
-        f.insert(fd, Rc::downgrade(&source));
-    });
-    Ok(source)
+    handle().io(lease)
 }
 pub fn init_runtime() {
     ensure_runtime();
-}
-
-/// Forget a closing endpoint before its descriptor number can be reused.
-pub(crate) fn forget_descriptor(fd: i32) {
-    FDS.with(|fds| fds.borrow_mut().remove(&fd));
 }
 
 pub fn poll_runtime() {
@@ -90,7 +74,6 @@ pub fn shutdown_runtime() {
     let runtime = HOST.with(|h| h.borrow_mut().take());
     let Some(runtime) = runtime else { return };
     streams::clear();
-    FDS.with(|f| f.borrow_mut().clear());
     // Keep the scheduling handle accessible while destructors run.
     drop(runtime);
     HANDLE.with(|h| h.borrow_mut().take());
