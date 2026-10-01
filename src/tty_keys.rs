@@ -2239,8 +2239,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                     let mut terminal = terminal_client_owner.borrow_terminal_mut();
                     (
                         terminal.flags & TTY_TIMER != 0,
-                        terminal.flags & TTY_TIMER != 0
-                            && !terminal.key_timer.as_ref().is_some_and(Timer::is_pending),
+                        terminal.flags & TTY_TIMER != 0 && terminal.key_timer.is_none(),
                     )
                 };
                 if timer_active {

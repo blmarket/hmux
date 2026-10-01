@@ -16,7 +16,7 @@ use std::os::fd::{FromRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 pub use streams::*;
-pub use tasks::{task_is_pending, task_start};
+pub use tasks::task_start;
 pub use timers::Timer;
 
 #[repr(C)]

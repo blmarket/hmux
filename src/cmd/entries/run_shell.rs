@@ -264,12 +264,13 @@ unsafe fn cmd_run_shell_exec(
                 + Duration::from_micros((d.fract() * 1_000_000.0) as u64);
         }
     }
-    let timer = Timer::new(tv, move || unsafe { cmd_run_shell_timer(cdata) })
-        .expect("arm run-shell delay");
     if wait == 0 {
-        crate::src::cmd::queue::cmdq_background(timer);
+        crate::src::cmd::queue::cmdq_background(tv, move || unsafe { cmd_run_shell_timer(cdata) })
+            .expect("arm background run-shell delay");
         return CMD_RETURN_NORMAL;
     }
+    let timer = Timer::new(tv, move || unsafe { cmd_run_shell_timer(cdata) })
+        .expect("arm run-shell delay");
     crate::src::cmd::queue::cmdq_set_wait_timer(&mut *item, timer);
     return CMD_RETURN_WAIT;
 }

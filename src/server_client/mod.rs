@@ -3508,12 +3508,13 @@ unsafe fn server_client_click_timer(owner: &ClientRef) {
 }
 unsafe fn server_client_start_exit_timer(c: &mut client) {
     let timeout = Duration::from_secs(10);
-    if !(*c).exit_timer.as_ref().is_some_and(Timer::is_pending) {
+    if (*c).exit_timer.is_none() {
         (*c).exit_timer = Some(server_client_timer(&*c, timeout, server_client_exit_timer));
     }
 }
 unsafe fn server_client_exit_timer(owner: &ClientRef) {
     let c = owner.get();
+    drop((*c).exit_timer.take());
     if (*c).flags & (CLIENT_DEAD | CLIENT_SUSPENDED) as uint64_t != 0 {
         return;
     }
@@ -3776,11 +3777,14 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
                     )
                 ));
             }
-            if !ev.as_ref().is_some_and(Timer::is_pending) {
+            if ev.is_none() {
                 log_debug(format_args!("redraw timer started"));
                 ev = Some(
-                    Timer::new(timeout, || unsafe { server_client_redraw_timer() })
-                        .expect("arm timer"),
+                    Timer::new(timeout, || unsafe {
+                        drop(ev.take());
+                        server_client_redraw_timer();
+                    })
+                    .expect("arm timer"),
                 );
             }
             let mut cursor = window_owner.next_pane(None);
@@ -5099,6 +5103,25 @@ impl Drop for client {
 #[cfg(test)]
 mod client_timer_observer_tests {
     use super::*;
+
+    #[test]
+    fn suspended_client_releases_expired_exit_timer_and_can_start_another() {
+        unsafe {
+            let owner = client::new();
+            (*owner.get()).flags |= CLIENT_SUSPENDED as uint64_t;
+            (*owner.get()).exit_timer = Some(server_client_timer(
+                &*owner.get(),
+                Duration::ZERO,
+                server_client_exit_timer,
+            ));
+            crate::src::reactor::poll_runtime();
+            assert!((*owner.get()).exit_timer.is_none());
+            server_client_start_exit_timer(&mut *owner.get());
+            assert!((*owner.get()).exit_timer.is_some());
+            drop((*owner.get()).exit_timer.take());
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
 
     #[test]
     fn click_timer_updates_live_client_and_can_outlive_it_without_retaining_it() {

@@ -174,12 +174,7 @@ mod tests {
             (*pane.get()).fd = -1;
             (*pane.get()).pipe_fd = -1;
             let observer = Rc::downgrade(&pane);
-            let pending = || {
-                (*pane.get())
-                    .sync_timer
-                    .as_ref()
-                    .is_some_and(Timer::is_pending)
-            };
+            let pending = || (*pane.get()).sync_timer.is_some();
             pane.start_sync();
             pane.start_sync();
             assert!(pane.is_synchronized());

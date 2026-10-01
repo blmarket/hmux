@@ -608,6 +608,9 @@ unsafe fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
     });
 }
 unsafe fn monitor_timer(monitor: &refbox::Weak<monitor_set>) {
+    if let Some(mut state) = monitor_borrow(monitor) {
+        drop(state.timer.take());
+    }
     let client = monitor_client(monitor);
     if monitor_has_client(monitor) && client.is_none() {
         return;
@@ -834,7 +837,7 @@ pub unsafe fn monitor_add(
             ..monitor_item::empty()
         });
         assert!(monitor_items_insert(&mut state.items, item).is_ok());
-        if !state.timer.as_ref().is_some_and(Timer::is_pending) {
+        if state.timer.is_none() {
             let timeout = Duration::from_secs(1);
             state.timer = Some(
                 Timer::new(timeout, move || {

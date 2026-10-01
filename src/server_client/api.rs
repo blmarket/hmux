@@ -548,11 +548,7 @@ impl Client for ClientRef {
         }
     }
     unsafe fn schedule_format_cycle(&self, interval_ms: i32) {
-        if (*self.get())
-            .cycle_timer
-            .as_ref()
-            .is_some_and(Timer::is_pending)
-        {
+        if (*self.get()).cycle_timer.is_some() {
             return;
         }
         let timeout = Duration::from_millis(interval_ms.max(0) as u64);
@@ -561,6 +557,7 @@ impl Client for ClientRef {
             Timer::new(timeout, move || {
                 if let Some(owner) = observer.upgrade() {
                     let state = &mut *owner.get();
+                    drop(state.cycle_timer.take());
                     if state.message_string.is_none() && state.prompt.is_none() {
                         state.flags |= CLIENT_REDRAWSTATUS as u64;
                     }
@@ -1702,10 +1699,15 @@ mod cycle_owner_tests {
         unsafe {
             let owner = client::new();
             let observer = std::rc::Rc::downgrade(&owner);
-            owner.schedule_format_cycle(0);
-            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            crate::src::reactor::poll_runtime();
-            assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
+            for _ in 0..2 {
+                (*owner.get()).flags &= !(CLIENT_REDRAWSTATUS as uint64_t);
+                owner.schedule_format_cycle(0);
+                assert!((*owner.get()).cycle_timer.is_some());
+                assert_eq!(std::rc::Rc::strong_count(&owner), 1);
+                crate::src::reactor::poll_runtime();
+                assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
+                assert!((*owner.get()).cycle_timer.is_none());
+            }
 
             owner.schedule_format_cycle(0);
             let timer = (*owner.get()).cycle_timer.take();

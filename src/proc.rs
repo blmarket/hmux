@@ -128,7 +128,7 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
 }
 unsafe fn proc_update_io(peer: *mut tmuxpeer) {
     let writable = imsgbuf_queuelen(&(*peer).ibuf) > 0;
-    if crate::src::reactor::task_is_pending(&(*peer).io_task) && (*peer).io_writable == writable {
+    if (*peer).io_task.is_some() && (*peer).io_writable == writable {
         return;
     }
     (*peer).io_writable = writable;

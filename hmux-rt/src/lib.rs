@@ -49,9 +49,6 @@ pub trait Handle: Clone + 'static {
     /// Monotonic deadline wait.
     type Sleep: Future<Output = io::Result<()>> + 'static;
 
-    /// Whether a task is unfinished and its runtime is still usable.
-    fn task_is_pending(task: &Self::Task) -> bool;
-
     /// Schedule a local-waker future, without polling it inline. Ordinary Waker
     /// notifications are inert. The returned task
     /// owns the future and must be retained until completion or cancellation.

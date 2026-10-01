@@ -195,18 +195,6 @@ pub struct Task {
     state: Rc<TaskState>,
 }
 
-impl Task {
-    /// Whether the unfinished task can still run on its runtime.
-    fn is_pending(&self) -> bool {
-        !self.state.cancelled.get()
-            && self
-                .state
-                .core
-                .upgrade()
-                .is_some_and(|core| core.check().is_ok())
-    }
-}
-
 impl Drop for Task {
     fn drop(&mut self) {
         self.state.cancel();
@@ -225,10 +213,6 @@ impl crate::Handle for Handle {
     type Descriptor = Descriptor;
     type Signals = Signals;
     type Sleep = Sleep;
-
-    fn task_is_pending(task: &Task) -> bool {
-        task.is_pending()
-    }
 
     fn descriptor(&self, fd: Rc<OwnedFd>) -> io::Result<Descriptor> {
         Descriptor::new(self, fd)

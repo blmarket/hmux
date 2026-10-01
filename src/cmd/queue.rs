@@ -153,7 +153,8 @@ pub struct cmdq_list {
     item: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     list: std::collections::VecDeque<std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     /// Detached commands belong to the server's global queue, not a client.
-    background: Vec<crate::src::reactor::Timer>,
+    background: std::collections::BTreeMap<u64, crate::src::reactor::Timer>,
+    next_background_id: u64,
 }
 
 impl cmdq_list {
@@ -206,8 +207,24 @@ pub(crate) fn cmdq_clear_wait_timer(item: &mut cmdq_item) {
     drop(item.wait_timer.take());
 }
 
-pub(crate) unsafe fn cmdq_background(timer: crate::src::reactor::Timer) {
-    QueueTarget::Global.with_queue(|queue| queue.background.push(timer));
+pub(crate) unsafe fn cmdq_background(
+    delay: std::time::Duration,
+    callback: impl FnOnce() + 'static,
+) -> std::io::Result<()> {
+    let id = QueueTarget::Global.with_queue(|queue| {
+        let id = queue.next_background_id;
+        queue.next_background_id = id.checked_add(1).expect("background command ID overflow");
+        id
+    });
+    let timer = crate::src::reactor::Timer::new(delay, move || unsafe {
+        // Release ownership before dispatch, outside the queue borrow: the
+        // callback can schedule or cancel other background commands.
+        let timer = QueueTarget::Global.with_queue(|queue| queue.background.remove(&id));
+        drop(timer);
+        callback();
+    })?;
+    QueueTarget::Global.with_queue(|queue| queue.background.insert(id, timer));
+    Ok(())
 }
 
 /// Release detached command captures outside the queue borrow during shutdown.
@@ -325,7 +342,8 @@ pub fn cmdq_new() -> Box<cmdq_list> {
     Box::new(cmdq_list {
         item: std::rc::Weak::new(),
         list: std::collections::VecDeque::new(),
-        background: Vec::new(),
+        background: std::collections::BTreeMap::new(),
+        next_background_id: 0,
     })
 }
 
@@ -1038,14 +1056,6 @@ unsafe fn cmdq_fire_callback(
 }
 pub unsafe fn cmdq_next(owner: Option<&ClientRef>) -> u_int {
     let queue = QueueTarget::for_client(owner);
-    // Completed futures have already released their captures. Move handles out
-    // before dropping them so cancellation never reenters a borrowed queue.
-    let background = queue.with_queue(|queue| std::mem::take(&mut queue.background));
-    let pending: Vec<_> = background
-        .into_iter()
-        .filter(|timer| timer.is_pending())
-        .collect();
-    queue.with_queue(|queue| queue.background.extend(pending));
     let name = cmdq_name(owner);
     let mut items = 0;
     log_debug(format_args!(
@@ -1251,29 +1261,58 @@ mod cancellation_tests {
             let item = cmdq_get_callback_owned(c"background command", None);
             let calls = Rc::new(Cell::new(0));
             let observed = calls.clone();
-            cmdq_background(
-                crate::src::reactor::Timer::new(Duration::ZERO, move || {
-                    observed.set(observed.get() + 1);
-                })
-                .unwrap(),
-            );
+            cmdq_background(Duration::ZERO, move || {
+                observed.set(observed.get() + 1);
+            })
+            .unwrap();
             cmdq_remove(item);
             crate::src::reactor::poll_runtime();
             assert_eq!(calls.get(), 1);
             assert_eq!(Rc::strong_count(&calls), 1);
-            cmdq_next(None);
             assert!(QueueTarget::Global.with_queue(|queue| queue.background.is_empty()));
 
             let retained = calls.clone();
-            cmdq_background(
-                crate::src::reactor::Timer::new(Duration::from_secs(60), move || {
-                    retained.set(100);
-                })
-                .unwrap(),
-            );
+            cmdq_background(Duration::from_secs(60), move || {
+                retained.set(100);
+            })
+            .unwrap();
             cmdq_cancel_background();
             assert_eq!(Rc::strong_count(&calls), 1);
             assert_eq!(calls.get(), 1);
+            crate::src::reactor::shutdown_runtime();
+        }
+    }
+
+    #[test]
+    fn background_completion_can_cancel_and_schedule_other_commands() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::time::Duration;
+        unsafe {
+            let calls = Rc::new(Cell::new(0));
+            let observed = calls.clone();
+            cmdq_background(Duration::ZERO, move || {
+                assert_eq!(
+                    QueueTarget::Global.with_queue(|queue| queue.background.len()),
+                    1
+                );
+                observed.set(1);
+                cmdq_cancel_background();
+                cmdq_background(Duration::ZERO, move || {
+                    assert!(
+                        QueueTarget::Global.with_queue(|queue| queue.background.is_empty())
+                    );
+                    observed.set(observed.get() + 1);
+                })
+                .unwrap();
+            })
+            .unwrap();
+            cmdq_background(Duration::ZERO, || panic!("cancelled command must not run"))
+                .unwrap();
+            crate::src::reactor::poll_runtime();
+            assert_eq!(calls.get(), 2);
+            assert_eq!(Rc::strong_count(&calls), 1);
+            assert!(QueueTarget::Global.with_queue(|queue| queue.background.is_empty()));
             crate::src::reactor::shutdown_runtime();
         }
     }

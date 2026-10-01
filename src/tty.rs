@@ -468,7 +468,7 @@ fn tty_start_read(terminal: &mut tty) {
 }
 
 pub(crate) fn tty_start_write(terminal: &mut tty) {
-    if crate::src::reactor::task_is_pending(&terminal.write_task) {
+    if terminal.write_task.is_some() {
         return;
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");

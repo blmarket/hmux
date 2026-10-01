@@ -1662,7 +1662,7 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
     if (*pane).resize_queue.is_empty() {
         return;
     }
-    if (*pane).resize_timer.as_ref().is_some_and(Timer::is_pending) {
+    if (*pane).resize_timer.is_some() {
         return;
     }
     log_debug(format_args!(

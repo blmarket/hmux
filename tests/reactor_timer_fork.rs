@@ -17,7 +17,7 @@ fn run_callbacks() {
     let observed = deferred.clone();
     let mut task = None;
     task_start(&mut task, move || Ok(async move { observed.set(true) })).unwrap();
-    while timer.is_pending() || !deferred.get() {
+    while calls.get() == 0 || !deferred.get() {
         poll_runtime();
     }
     assert_eq!(calls.get(), 1);

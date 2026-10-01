@@ -729,7 +729,7 @@ impl Window for WindowRef {
         let state = &mut *self.get();
         let left = crate::src::names::name_time_left(state.name_time, now);
         if !left.is_zero() {
-            if !state.name_event.as_ref().is_some_and(Timer::is_pending) {
+            if state.name_event.is_none() {
                 log_debug(format_args!(
                     "@{} name timer queued ({} left)",
                     state.id,
@@ -739,6 +739,7 @@ impl Window for WindowRef {
                 state.name_event = Some(
                     Timer::new(left, move || {
                         if let Some(owner) = observer.upgrade() {
+                            drop((*owner.get()).name_event.take());
                             log_debug(format_args!("@{} name timer expired", owner.id()));
                         }
                     })
@@ -759,12 +760,13 @@ impl Window for WindowRef {
     }
     unsafe fn schedule_offset_update(&self) {
         let state = &mut *self.get();
-        if !state.offset_timer.as_ref().is_some_and(Timer::is_pending) {
+        if state.offset_timer.is_none() {
             let delay = Duration::from_micros(10_000);
             let observer = Rc::downgrade(self);
             state.offset_timer = Some(
                 Timer::new(delay, move || {
                     if let Some(window) = observer.upgrade() {
+                        drop((*window.get()).offset_timer.take());
                         crate::src::tty::tty_update_window_offset(&window);
                         window.release(c"offset update timer");
                     }
@@ -1444,28 +1446,10 @@ mod tests {
             let window = window::new();
             let observer = Rc::downgrade(&window);
             window.schedule_offset_update();
-            let deadline = (*window.get())
-                .offset_timer
-                .as_ref()
-                .and_then(Timer::deadline);
             window.schedule_offset_update();
-            assert_eq!(
-                (*window.get())
-                    .offset_timer
-                    .as_ref()
-                    .and_then(Timer::deadline),
-                deadline
-            );
-            assert!((*window.get())
-                .offset_timer
-                .as_ref()
-                .is_some_and(Timer::is_pending));
+            assert!((*window.get()).offset_timer.is_some());
             assert_eq!(Rc::strong_count(&window), 1);
-            while (*window.get())
-                .offset_timer
-                .as_ref()
-                .is_some_and(Timer::is_pending)
-            {
+            while (*window.get()).offset_timer.is_some() {
                 crate::src::reactor::poll_runtime();
             }
             assert_eq!(
@@ -1474,6 +1458,7 @@ mod tests {
                 "dispatch releases its temporary owner"
             );
             window.schedule_offset_update();
+            assert!((*window.get()).offset_timer.is_some());
             window.release(c"offset timer test");
             assert!(observer.upgrade().is_none());
             crate::src::reactor::init_runtime();
@@ -1483,38 +1468,28 @@ mod tests {
     }
 
     #[test]
-    fn automatic_name_timer_is_cancelled_when_due_and_only_observes_window() {
+    fn automatic_name_timer_releases_completed_and_cancelled_waits() {
         unsafe {
             let window = window::new();
             let observer = Rc::downgrade(&window);
             let now = Instant::now();
             assert!(window.begin_name_check(now));
             assert!(!window.begin_name_check(now + Duration::from_micros(100_000)));
-            assert!((*window.get())
-                .name_event
-                .as_ref()
-                .is_some_and(Timer::is_pending));
-            let deadline = (*window.get())
-                .name_event
-                .as_ref()
-                .and_then(Timer::deadline);
+            assert!((*window.get()).name_event.is_some());
             assert!(!window.begin_name_check(now + Duration::from_micros(200_000)));
-            assert_eq!(
-                (*window.get())
-                    .name_event
-                    .as_ref()
-                    .and_then(Timer::deadline),
-                deadline
-            );
             assert!(window.begin_name_check(now + Duration::from_micros(500_000)));
-            assert!(!(*window.get())
-                .name_event
-                .as_ref()
-                .is_some_and(Timer::is_pending));
+            assert!((*window.get()).name_event.is_none());
             assert_eq!(
                 (*window.get()).name_time,
                 Some(now + Duration::from_micros(500_000))
             );
+            for _ in 0..2 {
+                assert!(!window.begin_name_check(now + Duration::from_micros(999_999)));
+                assert!((*window.get()).name_event.is_some());
+                while (*window.get()).name_event.is_some() {
+                    crate::src::reactor::poll_runtime();
+                }
+            }
             assert_eq!(Rc::strong_count(&window), 1);
             window.release(c"automatic name timer test");
             assert!(observer.upgrade().is_none());

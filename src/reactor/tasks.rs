@@ -4,7 +4,8 @@ use hmux_rt::Handle as _;
 use std::future::Future;
 use std::io;
 
-/// Replace the owner's pending task. Dropping the runtime task cancels it.
+/// Replace the owner's task. Dropping the runtime task cancels it.
+/// Owners that use the slot to track active work must clear it on completion.
 pub fn task_start<F>(
     task: &mut Option<hmux_rt::mio::Task>,
     initialize: impl FnOnce() -> io::Result<F>,
@@ -16,11 +17,6 @@ where
     ensure_runtime();
     *task = Some(handle().spawn(initialize()?)?);
     Ok(())
-}
-
-pub fn task_is_pending(task: &Option<hmux_rt::mio::Task>) -> bool {
-    task.as_ref()
-        .is_some_and(hmux_rt::mio::Handle::task_is_pending)
 }
 
 #[cfg(test)]
@@ -59,8 +55,7 @@ mod tests {
         assert_eq!(calls.get(), 0);
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!crate::src::reactor::task_is_pending(&task));
-        assert!(!crate::src::reactor::task_is_pending(&child.borrow()));
+        assert_eq!(Rc::strong_count(&child), 1);
         super::super::shutdown_runtime();
     }
 
@@ -83,7 +78,6 @@ mod tests {
         .unwrap();
         poll();
         let mut moved = task;
-        assert!(crate::src::reactor::task_is_pending(&moved));
         drop(moved.take());
         drop(moved.take());
         writer.write_all(b"unread").unwrap();
@@ -107,7 +101,6 @@ mod tests {
         .unwrap();
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!crate::src::reactor::task_is_pending(&moved));
         let mut bytes = [0; 6];
         reader.read_exact(&mut bytes).unwrap();
         assert_eq!(&bytes, b"unread");
@@ -128,9 +121,11 @@ mod tests {
                 let slot = observer.upgrade().unwrap();
                 observed.set(1);
                 let replacement = observed.clone();
+                let observer = Rc::downgrade(&slot);
                 crate::src::reactor::task_start(&mut slot.borrow_mut(), move || {
                     let replacement = replacement.clone();
                     Ok(async move {
+                        drop(observer.upgrade().unwrap().borrow_mut().take());
                         replacement.set(2);
                     })
                 })
@@ -142,7 +137,7 @@ mod tests {
         .unwrap();
         poll();
         assert_eq!(calls.get(), 2);
-        assert!(!crate::src::reactor::task_is_pending(&slot.borrow()));
+        assert!(slot.borrow().is_none());
         assert_eq!(Rc::strong_count(&slot), 1);
         super::super::shutdown_runtime();
     }
@@ -187,7 +182,6 @@ mod tests {
         new_writer.write_all(b"n").unwrap();
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!crate::src::reactor::task_is_pending(&task));
         drop(old_source);
         drop(endpoint);
         super::super::shutdown_runtime();
@@ -222,17 +216,24 @@ mod tests {
                 Err(io::ErrorKind::InvalidInput.into())
             });
         assert!(result.is_err());
-        assert!(!crate::src::reactor::task_is_pending(&task));
+        assert!(task.is_none());
         super::super::shutdown_runtime();
     }
 
     #[test]
-    fn shutdown_invalidates_old_handles_without_cancelling_new_tasks() {
+    fn dropping_a_task_from_a_closed_runtime_does_not_cancel_new_tasks() {
+        let retained = Rc::new(());
+        let observed = retained.clone();
         let mut old = None::<hmux_rt::mio::Task>;
-        crate::src::reactor::task_start(&mut old, || Ok(std::future::pending())).unwrap();
-        assert!(crate::src::reactor::task_is_pending(&old));
+        crate::src::reactor::task_start(&mut old, move || {
+            Ok(async move {
+                let _retained = observed;
+                std::future::pending::<()>().await;
+            })
+        })
+        .unwrap();
         super::super::shutdown_runtime();
-        assert!(!crate::src::reactor::task_is_pending(&old));
+        assert_eq!(Rc::strong_count(&retained), 2);
 
         let calls = Rc::new(Cell::new(0));
         let observed = calls.clone();
@@ -245,10 +246,10 @@ mod tests {
         .unwrap();
         drop(old.take());
         drop(old);
-        assert!(crate::src::reactor::task_is_pending(&task));
+        assert_eq!(Rc::strong_count(&retained), 1);
+        assert_eq!(calls.get(), 0);
         poll();
         assert_eq!(calls.get(), 1);
-        assert!(!crate::src::reactor::task_is_pending(&task));
         super::super::shutdown_runtime();
     }
 

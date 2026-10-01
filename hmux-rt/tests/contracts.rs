@@ -33,12 +33,19 @@ impl Drop for Dropped {
 }
 
 #[test]
-fn task_handles_observe_completion_and_runtime_shutdown() {
+fn tasks_release_completed_work_and_own_pending_work_after_runtime_shutdown() {
     let mut runtime = mio::Runtime::new().unwrap();
-    let task = runtime.handle().spawn(async {}).unwrap();
-    assert!(mio::Handle::task_is_pending(&task));
+    let calls = Rc::new(Cell::new(0));
+    let observed = calls.clone();
+    let task = runtime
+        .handle()
+        .spawn(async move { observed.set(observed.get() + 1) })
+        .unwrap();
+    assert_eq!(calls.get(), 0);
     tick(&mut runtime);
-    assert!(!mio::Handle::task_is_pending(&task));
+    assert_eq!(calls.get(), 1);
+    assert_eq!(Rc::strong_count(&calls), 1);
+    drop(task);
 
     let count = Rc::new(Cell::new(0));
     let spy = Dropped(count.clone());
@@ -49,9 +56,7 @@ fn task_handles_observe_completion_and_runtime_shutdown() {
             std::future::pending::<()>().await;
         })
         .unwrap();
-    assert!(mio::Handle::task_is_pending(&pending));
     drop(runtime);
-    assert!(!mio::Handle::task_is_pending(&pending));
     assert_eq!(count.get(), 0, "the task still owns its future");
     drop(pending);
     assert_eq!(count.get(), 1);

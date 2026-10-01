@@ -70,13 +70,14 @@ pub unsafe fn alerts_reset_all() {
 }
 
 unsafe fn schedule(id: u32) {
-    if !crate::src::reactor::task_is_pending(&alerts_task) {
+    if alerts_task.is_none() {
         log_debug(format_args!("alerts check queued (by @{})", id));
         crate::src::reactor::task_start(&mut alerts_task, || {
             Ok(async {
                 loop {
                     alerts_callback();
                     if alerts_list.is_empty() {
+                        drop(alerts_task.take());
                         break;
                     }
                     crate::src::reactor::yield_now().await;
@@ -98,8 +99,23 @@ pub unsafe fn alerts_queue(owner: &WindowRef, flags: i32) {
 
 #[cfg(test)]
 mod alerts_list_tests {
-    use super::{alerts_enqueue, alerts_pop_front};
+    use super::{alerts_enqueue, alerts_list, alerts_pop_front, alerts_task, schedule};
     use std::collections::VecDeque;
+
+    #[test]
+    fn completed_dispatch_releases_its_handle_and_can_be_scheduled_again() {
+        unsafe {
+            assert!(alerts_list.is_empty());
+            for _ in 0..2 {
+                assert!(alerts_task.is_none());
+                schedule(0);
+                assert!(alerts_task.is_some());
+                crate::src::reactor::poll_runtime();
+                assert!(alerts_task.is_none());
+            }
+        }
+        crate::src::reactor::shutdown_runtime();
+    }
 
     fn run_callback<T>(queue: &mut VecDeque<T>, mut process: impl FnMut(T, &mut VecDeque<T>)) {
         loop {
