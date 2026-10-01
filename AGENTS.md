@@ -15,4 +15,6 @@ Do not touch ./src/compat/ unless explicitly asked.
 ## General software design
 
 Prefer single ownership, Drop cleanup, reconstructible state, and minimal
-abstractions.
+abstractions - DO NOT introduce Rc unless strictly necessary.
+
+
