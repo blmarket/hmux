@@ -49,7 +49,7 @@ unsafe fn cmd_find_window_exec(
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut star: *const ::core::ffi::c_char = b"*\0" as *const u8 as *const ::core::ffi::c_char;
-    let filter_value: CString;
+
     let mut C: ::core::ffi::c_int = 0;
     let mut N: ::core::ffi::c_int = 0;
     let mut T: ::core::ffi::c_int = 0;
@@ -71,7 +71,7 @@ unsafe fn cmd_find_window_exec(
         N = T;
         C = N;
     }
-    filter_value = find_window_filter(
+    let filter_value: CString = find_window_filter(
         CStr::from_ptr(s),
         CStr::from_ptr(suffix),
         CStr::from_ptr(star),
@@ -92,7 +92,7 @@ unsafe fn cmd_find_window_exec(
         Some(&mut *new_args),
     );
     drop(new_args);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 
 fn append_find_window_c_match(out: &mut Vec<u8>, suffix: &[u8], pattern: &[u8]) {

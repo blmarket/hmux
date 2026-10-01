@@ -38,7 +38,7 @@ impl InputPalette {
                 let owner = observer.upgrade()?;
                 let result = {
                     let mut palette = unsafe { owner.borrow_palette_mut() };
-                    access(&mut palette)
+                    access(palette)
                 };
                 unsafe { owner.release(c"input palette") };
                 Some(result)

@@ -338,7 +338,7 @@ unsafe fn monitor_check_pane(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
         if matches {
             let mut formats =
                 monitor_create_formats(client.as_ref(), Some(&session), link.clone(), Some(&pane));
-            let value = monitor_expand(monitor, name, &mut *formats);
+            let value = monitor_expand(monitor, name, &mut formats);
             format_free(formats);
             let Some(value) = value else { break };
             if link.is_alive() {
@@ -383,7 +383,7 @@ unsafe fn monitor_check_window(monitor: &refbox::Weak<monitor_set>, name: &CStr)
         if matches {
             let mut formats =
                 monitor_create_formats(client.as_ref(), Some(&session), link.clone(), None);
-            let value = monitor_expand(monitor, name, &mut *formats);
+            let value = monitor_expand(monitor, name, &mut formats);
             format_free(formats);
             let Some(value) = value else { break };
             if link.is_alive() {
@@ -498,7 +498,7 @@ unsafe fn monitor_check_sessions(monitor: &refbox::Weak<monitor_set>) {
         monitor_create_formats(client.as_ref(), Some(&session), refbox::Weak::new(), None);
     monitor_visit(monitor, |name, kind| {
         if kind == MONITOR_SESSION {
-            monitor_check_session(monitor, &name, &mut *formats);
+            monitor_check_session(monitor, &name, &mut formats);
         }
     });
     format_free(formats);
@@ -532,7 +532,7 @@ unsafe fn monitor_check_all_panes(monitor: &refbox::Weak<monitor_set>) {
                     monitor_check_all_panes_one(
                         monitor,
                         &name,
-                        &mut *formats,
+                        &mut formats,
                         link.clone(),
                         &pane,
                         generation,
@@ -584,7 +584,7 @@ unsafe fn monitor_check_all_windows(monitor: &refbox::Weak<monitor_set>) {
                 monitor_check_all_windows_one(
                     monitor,
                     &name,
-                    &mut *formats,
+                    &mut formats,
                     link.clone(),
                     generation,
                 );
@@ -751,14 +751,10 @@ unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
     let value_bytes = value.to_bytes();
     let mut type_0;
     let mut id = -1;
-    let Some(first_colon) = value_bytes.iter().position(|&byte| byte == b':') else {
-        return None;
-    };
+    let first_colon = value_bytes.iter().position(|&byte| byte == b':')?;
     let target_start = first_colon + 1;
     let target_bytes = &value_bytes[target_start..];
-    let Some(second_colon) = target_bytes.iter().position(|&byte| byte == b':') else {
-        return None;
-    };
+    let second_colon = target_bytes.iter().position(|&byte| byte == b':')?;
     let target_bytes = &target_bytes[..second_colon];
     let format_start = target_start + second_colon + 1;
 
@@ -1391,7 +1387,7 @@ mod ownership_tests {
             let mut second_owner = item("beta");
             let second = &raw mut *second_owner;
             let mut duplicate_owner = item("alpha");
-            let duplicate = &raw mut *duplicate_owner;
+            let _duplicate = &raw mut *duplicate_owner;
             assert!(monitor_items_insert(&mut head, first_owner).is_ok());
             assert!(monitor_items_insert(&mut head, second_owner).is_ok());
             let (existing, duplicate_owner) = monitor_items_insert(&mut head, duplicate_owner)

@@ -126,10 +126,10 @@ pub unsafe fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
     ));
 }
 pub unsafe fn utf8_build_one(mut ch: u_char) -> utf8_char {
-    return (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
+    (1 as ::core::ffi::c_int as utf8_char) << 24 as ::core::ffi::c_int
         | (1 as ::core::ffi::c_int as utf8_char).wrapping_add(1 as utf8_char)
             << 29 as ::core::ffi::c_int
-        | ch as utf8_char;
+        | ch as utf8_char
 }
 pub fn utf8_set(ud: &mut utf8_data, ch: u_char) {
     *ud = utf8_data {
@@ -669,7 +669,7 @@ mod tests {
 
     #[test]
     fn utf8_tocstr_cstring_stops_at_the_first_nul_in_a_cell_or_between_cells() {
-        unsafe {
+        {
             for parts in [
                 vec![],
                 vec![vec![b'a'], vec![0xe2, 0x82, 0xac], vec![0xff]],

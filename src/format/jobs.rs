@@ -58,11 +58,11 @@ impl JobCache {
     /// or free processes, notify clients, or return borrowed components.
     unsafe fn with_cache<R>(&self, edit: impl FnOnce(&mut format_job_tree) -> R) -> Option<R> {
         match self {
-            Self::Global => Some(edit(&mut *(&raw mut format_jobs))),
+            Self::Global => Some(edit(&mut format_jobs)),
             Self::Client(observer) => {
                 let client = observer.upgrade()?;
                 let mut cache = client.borrow_format_jobs_mut();
-                Some(edit(&mut cache))
+                Some(edit(cache))
             }
         }
     }

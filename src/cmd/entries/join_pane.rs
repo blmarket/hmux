@@ -15,12 +15,12 @@ use crate::src::layout::{
 };
 use crate::src::options::options_set_parent;
 use crate::src::resize::recalculate_sizes;
-use crate::src::window::Window as _;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_kill_window, server_redraw_session, server_redraw_window, server_redraw_window_borders,
     server_status_session, server_unzoom_window,
 };
+use crate::src::window::Window as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -297,11 +297,11 @@ unsafe fn cmd_join_pane_place(
                     )
                 });
             }
-            if owp.is_some() {
+            if let Some(owp_value) = owp.as_ref() {
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                     .insert_before(
-                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        &std::rc::Rc::downgrade(owp_value),
                         std::rc::Rc::downgrade(wp_owner),
                     );
             } else {
@@ -319,7 +319,7 @@ unsafe fn cmd_join_pane_place(
                 Some(&std::rc::Rc::downgrade(wp_owner)),
                 true,
             );
-            if owp.is_some() {
+            if let Some(owp_value) = owp.as_ref() {
                 assert!(
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
@@ -329,7 +329,7 @@ unsafe fn cmd_join_pane_place(
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                     .insert_before(
-                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        &std::rc::Rc::downgrade(owp_value),
                         std::rc::Rc::downgrade(wp_owner),
                     );
             }
@@ -373,11 +373,11 @@ unsafe fn cmd_join_pane_place(
                     .remove(&std::rc::Rc::downgrade(wp_owner)),
                 "pane is not in its stacking order"
             );
-            if owp.is_some() {
+            if let Some(owp_value) = owp.as_ref() {
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                     .insert_before(
-                        &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                        &std::rc::Rc::downgrade(owp_value),
                         std::rc::Rc::downgrade(wp_owner),
                     );
             } else {
@@ -394,11 +394,11 @@ unsafe fn cmd_join_pane_place(
                         )
                     });
                 }
-                if owp.is_some() {
+                if let Some(owp_value) = owp.as_ref() {
                     window_owner
                         .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                         .insert_before(
-                            &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                            &std::rc::Rc::downgrade(owp_value),
                             std::rc::Rc::downgrade(wp_owner),
                         );
                 } else {
@@ -469,7 +469,7 @@ unsafe fn cmd_join_pane_place(
             std::rc::Rc::clone(&window_owner),
         );
         server_redraw_window(&window_owner);
-        return CMD_RETURN_NORMAL;
+        CMD_RETURN_NORMAL
     })();
     window_owner.release(c"cmd_join_pane_place");
     result
@@ -712,10 +712,10 @@ unsafe fn cmd_join_pane_mouse_update(
         c_owner.as_ref().expect("live drag client"),
         &raw mut (*event).m,
     );
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_join_pane_mouse_move(client_owner: &ClientRef, mut m: *mut mouse_event) {
-    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let _c: Option<ClientRef> = Some(client_owner.clone());
     let mouse_pane_owner;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut y: ::core::ffi::c_int = 0;
@@ -821,11 +821,11 @@ unsafe fn cmd_join_pane_zindex(
                 )
             });
         }
-        if owp.is_some() {
+        if let Some(owp_value) = owp.as_ref() {
             window_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                 .insert_before(
-                    &std::rc::Rc::downgrade(owp.as_ref().expect("ordered pane")),
+                    &std::rc::Rc::downgrade(owp_value),
                     std::rc::Rc::downgrade(wp_owner),
                 );
         } else {
@@ -839,7 +839,7 @@ unsafe fn cmd_join_pane_zindex(
             std::rc::Rc::clone(&window_owner),
         );
         server_redraw_window(&window_owner);
-        return CMD_RETURN_NORMAL;
+        CMD_RETURN_NORMAL
     })();
     window_owner.release(c"cmd_join_pane_zindex");
     result
@@ -881,10 +881,10 @@ unsafe fn cmd_join_pane_tile(
     w_owner.invalidate_scene();
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
-    return CMD_RETURN_NORMAL;
+    server_redraw_window(w_owner);
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_join_pane_exec(
     mut self_0: refbox::Weak<cmd>,

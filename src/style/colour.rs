@@ -105,7 +105,7 @@ pub unsafe fn colour_theme_option(
     if theme as ::core::ffi::c_uint == THEME_LIGHT as ::core::ffi::c_int as ::core::ffi::c_uint {
         return colour_theme_table[n as usize].light_option.as_ptr();
     }
-    return colour_theme_table[n as usize].dark_option.as_ptr();
+    colour_theme_table[n as usize].dark_option.as_ptr()
 }
 pub unsafe fn colour_theme_terminal_colour(mut n: u_int) -> ::core::ffi::c_int {
     if n as usize
@@ -114,7 +114,7 @@ pub unsafe fn colour_theme_terminal_colour(mut n: u_int) -> ::core::ffi::c_int {
     {
         return 8 as ::core::ffi::c_int;
     }
-    return colour_theme_table[n as usize].terminal_colour;
+    colour_theme_table[n as usize].terminal_colour
 }
 unsafe fn colour_dist_sq(
     mut R: ::core::ffi::c_int,
@@ -124,7 +124,7 @@ unsafe fn colour_dist_sq(
     mut g: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    return (R - r) * (R - r) + (G - g) * (G - g) + (B - b) * (B - b);
+    (R - r) * (R - r) + (G - g) * (G - g) + (B - b) * (B - b)
 }
 unsafe fn colour_to_6cube(mut v: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if v < 48 as ::core::ffi::c_int {
@@ -133,7 +133,7 @@ unsafe fn colour_to_6cube(mut v: ::core::ffi::c_int) -> ::core::ffi::c_int {
     if v < 114 as ::core::ffi::c_int {
         return 1 as ::core::ffi::c_int;
     }
-    return (v - 35 as ::core::ffi::c_int) / 40 as ::core::ffi::c_int;
+    (v - 35 as ::core::ffi::c_int) / 40 as ::core::ffi::c_int
 }
 pub unsafe fn colour_find_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
     const q2c: [::core::ffi::c_int; 6] = [
@@ -165,10 +165,10 @@ pub unsafe fn colour_find_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::
         && cg == g as ::core::ffi::c_int
         && cb == b as ::core::ffi::c_int
     {
-        return 16 as ::core::ffi::c_int
+        return (16 as ::core::ffi::c_int
             + 36 as ::core::ffi::c_int * qr
             + 6 as ::core::ffi::c_int * qg
-            + qb
+            + qb)
             | COLOUR_FLAG_256;
     }
     grey_avg = (r as ::core::ffi::c_int + g as ::core::ffi::c_int + b as ::core::ffi::c_int)
@@ -203,13 +203,13 @@ pub unsafe fn colour_find_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::
             + 6 as ::core::ffi::c_int * qg
             + qb;
     }
-    return idx | COLOUR_FLAG_256;
+    idx | COLOUR_FLAG_256
 }
 pub unsafe fn colour_join_rgb(mut r: u_char, mut g: u_char, mut b: u_char) -> ::core::ffi::c_int {
-    return (r as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) << 16 as ::core::ffi::c_int
+    (r as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) << 16 as ::core::ffi::c_int
         | (g as ::core::ffi::c_int & 0xff as ::core::ffi::c_int) << 8 as ::core::ffi::c_int
         | b as ::core::ffi::c_int & 0xff as ::core::ffi::c_int
-        | COLOUR_FLAG_RGB;
+        | COLOUR_FLAG_RGB
 }
 pub fn colour_split_rgb(colour: i32) -> (u_char, u_char, u_char) {
     (
@@ -231,7 +231,7 @@ pub unsafe fn colour_force_rgb(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int 
     if c >= 90 as ::core::ffi::c_int && c <= 97 as ::core::ffi::c_int {
         return colour_256toRGB(8 as ::core::ffi::c_int + c - 90 as ::core::ffi::c_int);
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn colour_dim(mut c: ::core::ffi::c_int, mut dim: u_int) -> ::core::ffi::c_int {
     let mut r: u_char = 0;
@@ -260,7 +260,7 @@ pub unsafe fn colour_dim(mut c: ::core::ffi::c_int, mut dim: u_int) -> ::core::f
     b = (b as u_int)
         .wrapping_mul((100 as u_int).wrapping_sub(dim))
         .wrapping_div(100 as u_int) as u_char;
-    return colour_join_rgb(r, g, b);
+    colour_join_rgb(r, g, b)
 }
 const COLOUR_THEME_NAMES: &[&[u8]] = &[
     b"themeblack",
@@ -533,7 +533,7 @@ pub unsafe fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
             }
         }
     }
-    return THEME_UNKNOWN;
+    THEME_UNKNOWN
 }
 unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let s = input.as_ptr();
@@ -575,7 +575,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     ) == 0 as ::core::ffi::c_int
     {
         n = strtonum(
-            s.offset(::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize as isize)
+            s.add(::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize)
                 .offset(-(1 as ::core::ffi::c_int as isize)),
             0 as ::core::ffi::c_longlong,
             255 as ::core::ffi::c_longlong,
@@ -593,7 +593,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     ) == 0 as ::core::ffi::c_int
     {
         n = strtonum(
-            s.offset(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize as isize)
+            s.add(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
                 .offset(-(1 as ::core::ffi::c_int as isize)),
             0 as ::core::ffi::c_longlong,
             255 as ::core::ffi::c_longlong,
@@ -733,7 +733,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     {
         return 97 as ::core::ffi::c_int;
     }
-    return colour_byname_impl(input);
+    colour_byname_impl(input)
 }
 pub unsafe fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     const RGB_TABLE: [::core::ffi::c_int; 256] = [
@@ -994,7 +994,7 @@ pub unsafe fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
         0xe4e4e4 as ::core::ffi::c_int,
         0xeeeeee as ::core::ffi::c_int,
     ];
-    return RGB_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] | COLOUR_FLAG_RGB;
+    RGB_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] | COLOUR_FLAG_RGB
 }
 pub unsafe fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     const ANSI_TABLE: [::core::ffi::c_char; 256] = [
@@ -1255,7 +1255,7 @@ pub unsafe fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
         15 as ::core::ffi::c_int as ::core::ffi::c_char,
         15 as ::core::ffi::c_int as ::core::ffi::c_char,
     ];
-    return ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int;
+    ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int
 }
 unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
     let name = name.as_ptr();
@@ -3615,7 +3615,7 @@ unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
         }
         i = i.wrapping_add(1);
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let p = input.as_ptr();
@@ -3724,7 +3724,7 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         let copy = std::ffi::CString::new(trimmed).expect("trimmed C string contains NUL");
         colour = colour_byname_impl(&copy);
     }
-    return colour;
+    colour
 }
 pub fn colour_palette_init(p: &mut colour_palette) {
     *p = colour_palette {
@@ -3792,12 +3792,7 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
         return;
     };
     let values = crate::src::options::options_read_entry(&*oo, c"pane-colours", |entry| {
-        if crate::src::options::options_array_iter(entry)
-            .next()
-            .is_none()
-        {
-            return None;
-        }
+        crate::src::options::options_array_iter(entry).next()?;
         let mut palette = [-1; 256];
         for (index, colour) in palette.iter_mut().enumerate() {
             let key = std::ffi::CString::new(index.to_string()).unwrap();

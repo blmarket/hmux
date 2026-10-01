@@ -158,22 +158,12 @@ pub type __sighandler_t = Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+#[derive(Default)]
 pub struct sigaction {
     pub __sigaction_handler: sigaction___sigaction_handler,
     pub sa_mask: __sigset_t,
     pub sa_flags: ::core::ffi::c_int,
     pub sa_restorer: Option<unsafe extern "C" fn() -> ()>,
-}
-
-impl Default for sigaction {
-    fn default() -> Self {
-        Self {
-            __sigaction_handler: Default::default(),
-            sa_mask: Default::default(),
-            sa_flags: 0,
-            sa_restorer: None,
-        }
-    }
 }
 
 #[derive(Copy, Clone)]

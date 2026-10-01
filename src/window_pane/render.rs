@@ -369,16 +369,13 @@ pub(super) unsafe fn draw_scrollbar(
         } else {
             current_block_40 = 7828949454673616476;
         }
-        match current_block_40 {
-            7828949454673616476 => {
-                if sb_y >= slider_y && sb_y < slider_y.wrapping_add(slider_h) {
-                    gcp = &raw mut slgc;
-                } else {
-                    gcp = &raw mut gc;
-                }
-                tty_cell(client_owner, &*gcp, None);
+        if current_block_40 == 7828949454673616476 {
+            if sb_y >= slider_y && sb_y < slider_y.wrapping_add(slider_h) {
+                gcp = &raw mut slgc;
+            } else {
+                gcp = &raw mut gc;
             }
-            _ => {}
+            tty_cell(client_owner, &*gcp, None);
         }
         i = i.wrapping_add(1);
     }
@@ -395,7 +392,7 @@ pub(super) unsafe fn draw_prompt(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let _c: Option<ClientRef> = Some(client_owner.clone());
     let mut screen: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
         wp: std::rc::Weak::new(),

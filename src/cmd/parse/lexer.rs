@@ -447,7 +447,7 @@ impl<'a, 'input> Lexer<'a, 'input> {
                 name.as_ptr(),
             );
             if let Some(entry) = entry {
-                if let Some(value) = &(*entry).value {
+                if let Some(value) = &entry.value {
                     bytes.extend_from_slice(value.as_bytes());
                 }
             }
@@ -476,7 +476,7 @@ impl<'a, 'input> Lexer<'a, 'input> {
                     c"HOME".as_ptr(),
                 );
                 if let Some(entry) = entry {
-                    if let Some(home) = &(*entry).value {
+                    if let Some(home) = &entry.value {
                         if !home.is_empty() {
                             bytes.extend_from_slice(home.as_bytes());
                             return Ok(());

@@ -93,7 +93,7 @@ unsafe fn cmd_resize_pane_exec(
         let mut status: ::core::ffi::c_int = 0;
         let mut opposite: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut i: ::core::ffi::c_ulong = 0;
-        if args_has(args, 'T' as u_char) != 0 {
+        if args_has(args, b'T') != 0 {
             pane_owner.trim_history();
             return CMD_RETURN_NORMAL;
         }
@@ -187,19 +187,19 @@ unsafe fn cmd_resize_pane_exec(
                         y += 1;
                     }
                 }
-                PANE_STATUS_BOTTOM => {
+                PANE_STATUS_BOTTOM
                     if y != INT_MAX
-                        && (pane_owner.geometry().3 as u_int).wrapping_add(pane_owner.geometry().1)
+                        && (pane_owner.geometry().3 as u_int)
+                            .wrapping_add(pane_owner.geometry().1)
                             == wl
                                 .get_unchecked()
                                 .window_handle()
                                 .expect("resize window")
                                 .size()
                                 .1
-                                .wrapping_sub(1 as u_int)
-                    {
-                        y += 1;
-                    }
+                                .wrapping_sub(1 as u_int) =>
+                {
+                    y += 1;
                 }
                 _ => {}
             }
@@ -362,10 +362,10 @@ unsafe fn cmd_resize_pane_mouse_update(
         );
         return CMD_RETURN_NORMAL;
     }
-    (&std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))))
+    std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
         .redraw_active_switch(Some(pane_owner));
-    (&std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))))
-        .select_pane(&pane_owner, true);
+    std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
+        .select_pane(pane_owner, true);
     c.as_ref()
         .expect("live client")
         .borrow_terminal_mut()
@@ -377,7 +377,7 @@ unsafe fn cmd_resize_pane_mouse_update(
         c_owner.as_ref().expect("live drag client"),
         &raw mut (*event).m,
     );
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_resize_pane_mouse_resize_move_floating(
     client_owner: &ClientRef,
@@ -623,7 +623,7 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &ClientRef, mut m: *m
         }
         let cells = {
             let tree = window_owner.borrow_layout_root(crate::src::window::LayoutView::Visible);
-            let Some(root) = tree.as_deref() else {
+            let Some(root) = tree else {
                 return;
             };
             let root = (root as *const layout_cell).cast_mut();
@@ -643,8 +643,7 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &ClientRef, mut m: *m
         for id in cells {
             let direction = {
                 let tree = window_owner.borrow_layout_root(crate::src::window::LayoutView::Visible);
-                tree.as_deref()
-                    .and_then(|root| root.find(id))
+                tree.and_then(|root| root.find(id))
                     .and_then(|cell| cell.parent.as_ref())
                     .map(|parent| parent.type_0)
             };

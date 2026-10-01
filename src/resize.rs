@@ -55,7 +55,7 @@ unsafe fn clients_with_window(w_owner: &WindowRef) -> u_int {
         );
         loop_0 = registry_loop_0_owner.clone();
     }
-    return n;
+    n
 }
 unsafe fn clients_calculate_size(
     mut type_0: ::core::ffi::c_int,
@@ -80,8 +80,8 @@ unsafe fn clients_calculate_size(
         log_debug(format_args!(
             "{}: manual size {}x{}",
             "clients_calculate_size",
-            (*sx) as u32,
-            (*sy) as u32
+            { *sx },
+            { *sy }
         ));
     } else {
         *sx = UINT_MAX as u_int;
@@ -178,8 +178,8 @@ unsafe fn clients_calculate_size(
                     ),
                     (cx) as u32,
                     (cy) as u32,
-                    (*sx) as u32,
-                    (*sy) as u32
+                    { *sx },
+                    { *sy }
                 ));
             }
             registry_loop_0_owner = clients.next(
@@ -193,8 +193,8 @@ unsafe fn clients_calculate_size(
             log_debug(format_args!(
                 "{}: calculated size {}x{}",
                 "clients_calculate_size",
-                (*sx) as u32,
-                (*sy) as u32
+                { *sx },
+                { *sy }
             ));
         } else {
             log_debug(format_args!(
@@ -203,7 +203,7 @@ unsafe fn clients_calculate_size(
             ));
         }
     }
-    if w_owner.is_some() {
+    if let Some(w_owner_value) = w_owner {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
@@ -212,15 +212,13 @@ unsafe fn clients_calculate_size(
                     .as_ref()
                     .expect("current registry client")
                     .participates_in_window_sizing())
-            {
-                if !(!crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
+                && !(!crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
                     && skip_client(loop_0.as_ref().expect("live client")))
-                {
-                    registry_loop_0_owner
-                        .as_ref()
-                        .expect("current registry client")
-                        .constrain_window_size(w_owner.expect("sized window"), &mut *sx, &mut *sy);
-                }
+            {
+                registry_loop_0_owner
+                    .as_ref()
+                    .expect("current registry client")
+                    .constrain_window_size(w_owner_value, &mut *sx, &mut *sy);
             }
             registry_loop_0_owner = clients.next(
                 registry_loop_0_owner
@@ -234,8 +232,8 @@ unsafe fn clients_calculate_size(
         log_debug(format_args!(
             "{}: calculated size {}x{}",
             "clients_calculate_size",
-            (*sx) as u32,
-            (*sy) as u32
+            { *sx },
+            { *sy }
         ));
     } else {
         log_debug(format_args!(
@@ -262,7 +260,7 @@ unsafe fn clients_calculate_size(
             "clients_calculate_size"
         ));
     }
-    return (*sx != UINT_MAX && *sy != UINT_MAX) as ::core::ffi::c_int;
+    (*sx != UINT_MAX && *sy != UINT_MAX) as ::core::ffi::c_int
 }
 pub unsafe fn default_window_size(
     c_owner: Option<&ClientRef>,
@@ -290,8 +288,8 @@ pub unsafe fn default_window_size(
         log_debug(format_args!(
             "{}: using {}x{} from {}",
             "default_window_size",
-            (*sx) as u32,
-            (*sy) as u32,
+            { *sx },
+            { *sy },
             log_cstr(
                 ((c.as_ref().expect("live client").name())
                     .as_ref()
@@ -340,8 +338,8 @@ pub unsafe fn default_window_size(
             log_debug(format_args!(
                 "{}: using {}x{} from default-size",
                 "default_window_size",
-                (*sx) as u32,
-                (*sy) as u32
+                { *sx },
+                { *sy }
             ));
         }
     }
@@ -360,8 +358,8 @@ pub unsafe fn default_window_size(
     log_debug(format_args!(
         "{}: resulting size is {}x{}",
         "default_window_size",
-        (*sx) as u32,
-        (*sy) as u32
+        { *sx },
+        { *sy }
     ));
 }
 pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int) {
@@ -378,9 +376,9 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
     log_debug(format_args!(
         "{}: @{} is {}x{}",
         "recalculate_size",
-        ((w_owner).id()) as u32,
-        ((w_owner).size().0) as u32,
-        ((w_owner).size().1) as u32
+        { (w_owner).id() },
+        { (w_owner).size().0 },
+        { (w_owner).size().1 }
     ));
     (type_0, current) = w_owner.with_options_mut(|options| {
         (
@@ -425,7 +423,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         log_debug(format_args!(
             "{}: @{} no size change",
             "recalculate_size",
-            ((w_owner).id()) as u32
+            { (w_owner).id() }
         ));
         tty_update_window_offset(w_owner);
         return;
@@ -433,7 +431,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
     log_debug(format_args!(
         "{}: @{} new size {}x{}",
         "recalculate_size",
-        ((w_owner).id()) as u32,
+        { (w_owner).id() },
         (sx) as u32,
         (sy) as u32
     ));
@@ -454,13 +452,13 @@ pub unsafe fn recalculate_sizes() {
     recalculate_sizes_now(0 as ::core::ffi::c_int);
 }
 pub unsafe fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
-    let mut s: Option<SessionRef> = None;
+    let mut _s: Option<SessionRef> = None;
     let mut c: Option<ClientRef> = None;
     crate::src::shared::session::SessionRef::recalculate_attachment_status();
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.clone();
     while !c.is_none() {
-        s = c
+        _s = c
             .as_ref()
             .expect("live client")
             .attached_session()

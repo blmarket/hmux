@@ -23,7 +23,7 @@ pub unsafe fn strtonum(
         error = INVALID;
     } else {
         ll = strtoll(numstr, &raw mut ep, 10 as ::core::ffi::c_int);
-        if numstr == ep as *const ::core::ffi::c_char || *ep as ::core::ffi::c_int != '\0' as i32 {
+        if std::ptr::eq(numstr, ep) || *ep as ::core::ffi::c_int != '\0' as i32 {
             error = INVALID;
         } else if ll == LLONG_MIN && *__errno_location() == ERANGE || ll < minval {
             error = TOOSMALL;
@@ -48,5 +48,5 @@ pub unsafe fn strtonum(
     if error != 0 {
         ll = 0 as ::core::ffi::c_longlong;
     }
-    return ll;
+    ll
 }

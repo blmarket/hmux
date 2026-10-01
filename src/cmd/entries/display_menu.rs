@@ -181,7 +181,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut top: ::core::ffi::c_int = 0;
-    let mut line: u_int = 0;
+    let _line: u_int = 0;
     let mut lines: u_int = 0;
     let mut position: u_int = 0;
     let mut n: ::core::ffi::c_long = 0;
@@ -197,12 +197,12 @@ unsafe fn cmd_display_menu_get_popup_pos(
         format_add(
             ft,
             b"popup_mouse_x\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", ((*event).m.x) as u32),
+            |out| write!(out, "{}", { (*event).m.x }),
         );
         format_add(
             ft,
             b"popup_mouse_y\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", ((*event).m.y) as u32),
+            |out| write!(out, "{}", { (*event).m.y }),
         );
     }
     let (last_x, last_y) = (*target)
@@ -235,19 +235,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             format_add(
                 ft,
                 b"popup_window_status_line_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (start) as u32),
+                |out| write!(out, "{}", { start }),
             );
             if position == 0 as u_int {
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| {
-                        write!(
-                            out,
-                            "{}",
-                            (line.wrapping_add(1 as u_int).wrapping_add(h)) as u32
-                        )
-                    },
+                    |out| write!(out, "{}", { line.wrapping_add(1 as u_int).wrapping_add(h) }),
                 );
             } else {
                 format_add(
@@ -297,12 +291,12 @@ unsafe fn cmd_display_menu_get_popup_pos(
     format_add(
         ft,
         b"popup_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (w) as u32),
+        |out| write!(out, "{}", { w }),
     );
     format_add(
         ft,
         b"popup_height\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (h) as u32),
+        |out| write!(out, "{}", { h }),
     );
     n = tc
         .as_ref()
@@ -338,15 +332,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             ft,
             b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
             |out| {
-                write!(
-                    out,
-                    "{}",
-                    (tc.as_ref()
+                write!(out, "{}", {
+                    tc.as_ref()
                         .expect("live client")
                         .terminal_size()
                         .1
-                        .wrapping_sub(h)) as u32
-                )
+                        .wrapping_sub(h)
+                })
             },
         );
     } else {
@@ -379,15 +371,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
                 ft,
                 b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
                 |out| {
-                    write!(
-                        out,
-                        "{}",
-                        (tc.as_ref()
+                    write!(out, "{}", {
+                        tc.as_ref()
                             .expect("live client")
                             .terminal_size()
                             .1
-                            .wrapping_sub(h)) as u32
-                    )
+                            .wrapping_sub(h)
+                    })
                 },
             );
         } else {
@@ -403,15 +393,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
                 ft,
                 b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
                 |out| {
-                    write!(
-                        out,
-                        "{}",
-                        (tc.as_ref()
+                    write!(out, "{}", {
+                        tc.as_ref()
                             .expect("live client")
                             .terminal_size()
                             .1
-                            .wrapping_sub(1 as u_int)) as u32
-                    )
+                            .wrapping_sub(1 as u_int)
+                    })
                 },
             );
         } else {
@@ -444,15 +432,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
             ft,
             b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
             |out| {
-                write!(
-                    out,
-                    "{}",
-                    (tc.as_ref()
+                write!(out, "{}", {
+                    tc.as_ref()
                         .expect("live client")
                         .terminal_size()
                         .1
-                        .wrapping_sub(h)) as u32
-                )
+                        .wrapping_sub(h)
+                })
             },
         );
     } else {
@@ -478,7 +464,7 @@ unsafe fn cmd_display_menu_get_popup_pos(
     format_add(
         ft,
         b"popup_pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((pane_x as u_int).wrapping_sub(ox)) as u32),
+        |out| write!(out, "{}", { (pane_x as u_int).wrapping_sub(ox) }),
     );
     n = pane_x as ::core::ffi::c_long + pane_width as ::core::ffi::c_long
         - ox as ::core::ffi::c_long
@@ -546,8 +532,8 @@ unsafe fn cmd_display_menu_get_popup_pos(
         "cmd_display_menu_get_popup_pos",
         log_cstr((xp) as *const _),
         log_cstr((p.as_ptr()) as *const _),
-        (*px) as u32,
-        (w) as u32
+        { *px },
+        { w }
     ));
     yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if yp.is_null()
@@ -604,11 +590,11 @@ unsafe fn cmd_display_menu_get_popup_pos(
         "cmd_display_menu_get_popup_pos",
         log_cstr((yp) as *const _),
         log_cstr((p.as_ptr()) as *const _),
-        (*py) as u32,
-        (h) as u32
+        { *py },
+        { h }
     ));
     format_free(ft_owner);
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn cmd_display_menu_get_menu_pos(
     tc_owner: &ClientRef,
@@ -634,7 +620,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let pane = (*target).pane_handle().expect("menu target pane");
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut line: u_int = 0;
+    let _line: u_int = 0;
     let mut lines: u_int = 0;
     let mut position: u_int = 0;
     let mut n: ::core::ffi::c_long = 0;
@@ -689,18 +675,12 @@ unsafe fn cmd_display_menu_get_menu_pos(
     format_add(
         ft,
         b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (window.last_menu_position().0) as u32),
+        |out| write!(out, "{}", { window.last_menu_position().0 }),
     );
     format_add(
         ft,
         b"popup_last_y\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                (window.last_menu_position().1.wrapping_add(h)) as u32
-            )
-        },
+        |out| write!(out, "{}", { window.last_menu_position().1.wrapping_add(h) }),
     );
     lines = status_line_size(tc.as_ref().expect("live client"));
     position = s
@@ -712,25 +692,25 @@ unsafe fn cmd_display_menu_get_menu_pos(
         && lines != 0 as u_int
     {
         let index = wl.get_unchecked().idx as u_int;
-        if let Some((line, start)) =
+        if let Some((_line, start)) =
             cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
         {
             format_add(
                 ft,
                 b"popup_window_status_line_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (start.wrapping_add(ox)) as u32),
+                |out| write!(out, "{}", { start.wrapping_add(ox) }),
             );
             if position == 0 as u_int {
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", (h) as u32),
+                    |out| write!(out, "{}", { h }),
                 );
             } else {
                 format_add(
                     ft,
                     b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", (window.size().1) as u32),
+                    |out| write!(out, "{}", { window.size().1 }),
                 );
             }
         }
@@ -738,25 +718,25 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (h) as u32),
+                |out| write!(out, "{}", { h }),
             );
         } else {
             format_add(
                 ft,
                 b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (window.size().1) as u32),
+                |out| write!(out, "{}", { window.size().1 }),
             );
         }
     }
     format_add(
         ft,
         b"popup_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (w) as u32),
+        |out| write!(out, "{}", { w }),
     );
     format_add(
         ft,
         b"popup_height\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (h) as u32),
+        |out| write!(out, "{}", { h }),
     );
     n = (window.size().0 as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
         / 2 as ::core::ffi::c_long
@@ -824,7 +804,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(
                 ft,
                 b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (window.size().1.wrapping_sub(1 as u_int)) as u32),
+                |out| write!(out, "{}", { window.size().1.wrapping_sub(1 as u_int) }),
             );
         } else {
             format_add(
@@ -866,13 +846,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     format_add(
         ft,
         b"popup_pane_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                ((pane_y as u_int).wrapping_add(pane_height)) as u32
-            )
-        },
+        |out| write!(out, "{}", { (pane_y as u_int).wrapping_add(pane_height) }),
     );
     format_add(
         ft,
@@ -938,8 +912,8 @@ unsafe fn cmd_display_menu_get_menu_pos(
         "cmd_display_menu_get_menu_pos",
         log_cstr((xp) as *const _),
         log_cstr((p.as_ptr()) as *const _),
-        (*px) as u32,
-        (w) as u32
+        { *px },
+        { w }
     ));
     yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     if yp.is_null()
@@ -990,12 +964,12 @@ unsafe fn cmd_display_menu_get_menu_pos(
         "cmd_display_menu_get_menu_pos",
         log_cstr((yp) as *const _),
         log_cstr((p.as_ptr()) as *const _),
-        (*py) as u32,
-        (h) as u32
+        { *py },
+        { h }
     ));
     format_free(ft_owner);
     window.release(c"menu position");
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn cmd_display_menu_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -1349,115 +1323,112 @@ unsafe fn cmd_display_popup_exec(
     } else {
         current_block = 1345366029464561491;
     }
-    match current_block {
-        1345366029464561491 => {
-            value = args_get(&*(args), 'b' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr());
-            if args_has(args, 'B' as i32 as u_char) != 0 {
-                lines = BOX_LINES_NONE;
-                current_block = 8151474771948790331;
-            } else if !value.is_null() {
-                lines = options_find_choice(
-                    crate::src::options_table::options_table
-                        .iter()
-                        .find(|entry| entry.name == Some(c"popup-border-lines"))
-                        .expect("built-in border choice"),
-                    value,
-                    &raw mut cause,
-                ) as box_lines;
-                if let Some(cause) = cause.as_ref() {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"popup-border-lines ")?;
-                        write_cstr(out, cause.as_ptr())
-                    });
-                    current_block = 1988999557336856620;
-                } else {
-                    current_block = 8151474771948790331;
-                }
+    if current_block == 1345366029464561491 {
+        value = args_get(&*(args), 'b' as i32 as u_char)
+            .map_or(std::ptr::null(), |value| value.as_ptr());
+        if args_has(args, 'B' as i32 as u_char) != 0 {
+            lines = BOX_LINES_NONE;
+            current_block = 8151474771948790331;
+        } else if !value.is_null() {
+            lines = options_find_choice(
+                crate::src::options_table::options_table
+                    .iter()
+                    .find(|entry| entry.name == Some(c"popup-border-lines"))
+                    .expect("built-in border choice"),
+                value,
+                &raw mut cause,
+            ) as box_lines;
+            if let Some(cause) = cause.as_ref() {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"popup-border-lines ")?;
+                    write_cstr(out, cause.as_ptr())
+                });
+                current_block = 1988999557336856620;
             } else {
                 current_block = 8151474771948790331;
             }
-            match current_block {
-                1988999557336856620 => {}
-                _ => {
-                    if args_has(args, 'T' as i32 as u_char) != 0 {
-                        formatted_title = Some(format_single_from_target_cstring(
-                            item_handle,
-                            args_get(&*(args), 'T' as i32 as u_char)
-                                .map_or(std::ptr::null(), |value| value.as_ptr()),
-                        ));
-                        title = formatted_title
-                            .as_ref()
-                            .expect("formatted title was set")
-                            .as_ptr();
-                    } else {
-                        title = c"".as_ptr();
-                    }
-                    if args_has(args, 'N' as i32 as u_char) != 0 || modify == 0 {
+        } else {
+            current_block = 8151474771948790331;
+        }
+        match current_block {
+            1988999557336856620 => {}
+            _ => {
+                if args_has(args, 'T' as i32 as u_char) != 0 {
+                    formatted_title = Some(format_single_from_target_cstring(
+                        item_handle,
+                        args_get(&*(args), 'T' as i32 as u_char)
+                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    ));
+                    title = formatted_title
+                        .as_ref()
+                        .expect("formatted title was set")
+                        .as_ptr();
+                } else {
+                    title = c"".as_ptr();
+                }
+                if args_has(args, 'N' as i32 as u_char) != 0 || modify == 0 {
+                    flags = 0 as ::core::ffi::c_int;
+                }
+                if args_has(args, 'E' as i32 as u_char) > 1 as ::core::ffi::c_int {
+                    if flags == -(1 as ::core::ffi::c_int) {
                         flags = 0 as ::core::ffi::c_int;
                     }
-                    if args_has(args, 'E' as i32 as u_char) > 1 as ::core::ffi::c_int {
-                        if flags == -(1 as ::core::ffi::c_int) {
-                            flags = 0 as ::core::ffi::c_int;
-                        }
-                        flags |= POPUP_CLOSEEXITZERO;
-                    } else if args_has(args, 'E' as i32 as u_char) != 0 {
-                        if flags == -(1 as ::core::ffi::c_int) {
-                            flags = 0 as ::core::ffi::c_int;
-                        }
-                        flags |= POPUP_CLOSEEXIT;
+                    flags |= POPUP_CLOSEEXITZERO;
+                } else if args_has(args, 'E' as i32 as u_char) != 0 {
+                    if flags == -(1 as ::core::ffi::c_int) {
+                        flags = 0 as ::core::ffi::c_int;
                     }
-                    if args_has(args, 'k' as i32 as u_char) != 0 {
-                        if flags == -(1 as ::core::ffi::c_int) {
-                            flags = 0 as ::core::ffi::c_int;
-                        }
-                        flags |= POPUP_CLOSEANYKEY;
+                    flags |= POPUP_CLOSEEXIT;
+                }
+                if args_has(args, 'k' as i32 as u_char) != 0 {
+                    if flags == -(1 as ::core::ffi::c_int) {
+                        flags = 0 as ::core::ffi::c_int;
                     }
-                    if modify != 0 {
-                        popup_modify(
-                            &tc.clone().expect("live client"),
-                            title,
-                            style,
-                            border_style,
-                            lines,
-                            flags,
-                        );
-                    } else if !(popup_display(
-                        flags,
-                        lines,
-                        Some(item_handle),
-                        px,
-                        py,
-                        w,
-                        h,
-                        env.as_deref(),
-                        shellcmd,
-                        &argv_owner,
-                        cwd,
-                        title,
+                    flags |= POPUP_CLOSEANYKEY;
+                }
+                if modify != 0 {
+                    popup_modify(
                         &tc.clone().expect("live client"),
-                        s.as_ref(),
+                        title,
                         style,
                         border_style,
-                    ) != 0 as ::core::ffi::c_int)
-                    {
-                        drop(env.take());
-                        return CMD_RETURN_WAIT;
-                    }
-                    current_block = 6589043366517631393;
+                        lines,
+                        flags,
+                    );
+                } else if !(popup_display(
+                    flags,
+                    lines,
+                    Some(item_handle),
+                    px,
+                    py,
+                    w,
+                    h,
+                    env.as_deref(),
+                    shellcmd,
+                    &argv_owner,
+                    cwd,
+                    title,
+                    &tc.clone().expect("live client"),
+                    s.as_ref(),
+                    style,
+                    border_style,
+                ) != 0 as ::core::ffi::c_int)
+                {
+                    drop(env.take());
+                    return CMD_RETURN_WAIT;
                 }
+                current_block = 6589043366517631393;
             }
         }
-        _ => {}
     }
     match current_block {
         1988999557336856620 => {
             drop(env.take());
-            return CMD_RETURN_ERROR;
+            CMD_RETURN_ERROR
         }
         _ => {
             drop(env.take());
-            return CMD_RETURN_NORMAL;
+            CMD_RETURN_NORMAL
         }
-    };
+    }
 }

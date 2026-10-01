@@ -118,7 +118,7 @@ unsafe fn cmd_kill_window_exec(
             .clone(),
         1 as ::core::ffi::c_int,
     );
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_kill_window_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -207,7 +207,7 @@ unsafe fn cmd_kill_window_all(
         );
     }
     server_renumber_all();
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_kill_window_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -234,5 +234,5 @@ unsafe fn cmd_kill_window_filter(
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
     format_free(ft_owner);
-    return flag;
+    flag
 }

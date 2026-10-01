@@ -151,5 +151,5 @@ unsafe fn cmd_show_prompt_history_exec(
             write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
         });
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

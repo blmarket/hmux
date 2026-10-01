@@ -19,18 +19,11 @@ pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
 pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
 
 use super::abi::u_int;
+#[derive(Default)]
 pub struct visible_ranges {
     pub used: u_int,
     /// Owned range storage. Its length tracks the number of initialized slots.
     pub(crate) storage: Vec<visible_range>,
-}
-impl Default for visible_ranges {
-    fn default() -> Self {
-        Self {
-            used: 0,
-            storage: Vec::new(),
-        }
-    }
 }
 
 impl visible_ranges {

@@ -162,10 +162,10 @@ pub unsafe fn server_is_marked(
     {
         return 0;
     }
-    return server_check_marked();
+    server_check_marked()
 }
 pub unsafe fn server_check_marked() -> ::core::ffi::c_int {
-    return cmd_find_valid_state(&marked_pane);
+    cmd_find_valid_state(&marked_pane)
 }
 // The compatibility systemd adapter still transfers ownership as a raw fd.
 pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int, CString> {
@@ -306,10 +306,8 @@ pub(crate) unsafe fn server_start(
         drop(lockfd.take());
     }
     if let Some(cause) = cause {
-        if !c.is_none() {
-            c.as_ref()
-                .expect("live client")
-                .exit_with_message(cause, Some(1));
+        if let Some(c_value) = c.as_ref() {
+            c_value.exit_with_message(cause, Some(1));
         } else {
             fprintf(
                 stderr,
@@ -358,10 +356,8 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     if options_get_number(global_options, c"exit-empty") == 0 && server_exit == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    if options_get_number(global_options, c"exit-unattached") == 0 {
-        if sessions.has_entries() {
-            return 0 as ::core::ffi::c_int;
-        }
+    if options_get_number(global_options, c"exit-unattached") == 0 && sessions.has_entries() {
+        return 0 as ::core::ffi::c_int;
     }
     let mut registry_c_owner = clients.first();
     c = registry_c_owner.clone();
@@ -386,14 +382,14 @@ unsafe fn server_loop() -> ::core::ffi::c_int {
     if job_still_running() != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn server_send_exit() {
     let mut s: Option<SessionRef> = None;
     cmd_wait_for_flush();
     let mut registry_c_owner = clients.first();
     while let Some(client_owner) = registry_c_owner {
-        let mut c: Option<ClientRef> = Some(client_owner.clone());
+        let _c: Option<ClientRef> = Some(client_owner.clone());
         registry_c_owner = clients.next(&client_owner);
         client_owner.shutdown();
     }
@@ -407,7 +403,7 @@ unsafe fn server_send_exit() {
                 b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
             ),
         );
-        s_owner = (&sessions).after(&name);
+        s_owner = sessions.after(&name);
         s = s_owner.clone();
     }
 }
@@ -607,10 +603,8 @@ unsafe fn server_child_stopped(pid: pid_t, status: i32) {
     while let Some(window_owner) = window_cursor.take() {
         let mut pane_cursor = window_owner.next_pane(None);
         while let Some(pane_owner) = pane_cursor {
-            if pane_owner.process_id() == pid {
-                if killpg(pid as __pid_t, SIGCONT) != 0 {
-                    kill(pid as __pid_t, SIGCONT);
-                }
+            if pane_owner.process_id() == pid && killpg(pid as __pid_t, SIGCONT) != 0 {
+                kill(pid as __pid_t, SIGCONT);
             }
             pane_cursor = window_owner.next_pane(Some(&pane_owner));
         }

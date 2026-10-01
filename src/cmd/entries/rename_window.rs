@@ -68,9 +68,9 @@ unsafe fn cmd_rename_window_exec(
         options_set_number(options, c"automatic-rename".as_ptr(), 0);
     });
     server_redraw_window_borders(
-        &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
     );
-    server_status_window(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")));
+    server_status_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
     window.release(c"cmd_rename_window");
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

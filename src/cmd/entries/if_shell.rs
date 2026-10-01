@@ -88,7 +88,7 @@ unsafe fn cmd_if_shell_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let new_item_allocation;
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: Option<ClientRef> = tc_owner.clone();
+    let _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut count: u_int = args_count(args);
     let mut wait: ::core::ffi::c_int =
@@ -187,7 +187,7 @@ unsafe fn cmd_if_shell_exec(
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }
-    return CMD_RETURN_WAIT;
+    CMD_RETURN_WAIT
 }
 unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_shell_data) {
     let item_owner = cdata.item.upgrade();
@@ -261,7 +261,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
 }
 impl Drop for cmd_if_shell_data {
     fn drop(&mut self) {
-        unsafe {
+        {
             if let Some(client) = self.client.take() {
                 (client).release();
             }

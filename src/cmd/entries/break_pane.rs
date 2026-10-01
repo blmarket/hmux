@@ -126,10 +126,10 @@ unsafe fn cmd_break_pane_float(
     layout_fix_panes(w_owner, None);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
-    return CMD_RETURN_NORMAL;
+    server_redraw_window(w_owner);
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_break_pane_exec(
     mut self_0: refbox::Weak<cmd>,

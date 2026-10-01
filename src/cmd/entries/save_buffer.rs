@@ -122,24 +122,23 @@ unsafe fn cmd_save_buffer_exec(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_show_buffer_entry,
     );
-    if show_buffer {
-        if !c
+    if show_buffer
+        && (!c
             .as_ref()
             .expect("live client")
             .attached_session()
             .upgrade()
             .is_none()
-            || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
+            || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0)
+    {
+        let mut evb = evbuffer_new();
         {
-            let mut evb = evbuffer_new();
-            {
-                let buffer = pb.borrow();
-                let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-                evbuffer_add(&mut *evb, bufdata.as_ptr().cast(), bufdata.len());
-            }
-            cmdq_print_data(item_handle, &mut *evb);
-            return CMD_RETURN_NORMAL;
+            let buffer = pb.borrow();
+            let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
+            evbuffer_add(&mut evb, bufdata.as_ptr().cast(), bufdata.len());
         }
+        cmdq_print_data(item_handle, &mut evb);
+        return CMD_RETURN_NORMAL;
     }
     let expanded_path = (!show_buffer).then(|| {
         format_single_from_target_cstring(
@@ -147,7 +146,7 @@ unsafe fn cmd_save_buffer_exec(
             args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),
         )
     });
-    let dash_path = CStr::from_bytes_with_nul(b"-\0").unwrap();
+    let dash_path = c"-";
     let path: *const ::core::ffi::c_char = expanded_path
         .as_ref()
         .map_or(dash_path.as_ptr(), |path| path.as_ptr());
@@ -177,5 +176,5 @@ unsafe fn cmd_save_buffer_exec(
         })),
         item_handle,
     );
-    return CMD_RETURN_WAIT;
+    CMD_RETURN_WAIT
 }

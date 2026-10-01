@@ -124,24 +124,24 @@ unsafe fn spawn_fire_pane_created(
         wp_owner,
         0 as ::core::ffi::c_int,
     );
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_session(
-        &mut *ep,
+        &mut ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
         session_owner.expect("spawn context session"),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_int(
-        &mut *ep,
+        &mut ep,
         b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
         ((*sc).winlink_handle()).get_unchecked().idx,
     );
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*(wp)).observer.upgrade().expect("live window_pane"),
     );
@@ -152,13 +152,13 @@ unsafe fn spawn_fire_pane_created(
     };
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
         event_payload_set_string(
-            &mut *ep,
+            &mut ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, cmd.as_ptr()),
         );
     } else if (*wp).shell.is_some() {
         event_payload_set_string(
-            &mut *ep,
+            &mut ep,
             b"pane_command\0" as *const u8 as *const ::core::ffi::c_char,
             |out| {
                 write_cstr(
@@ -173,33 +173,33 @@ unsafe fn spawn_fire_pane_created(
     }
     if !cwd.is_null() {
         event_payload_set_string(
-            &mut *ep,
+            &mut ep,
             b"pane_current_path\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, cwd),
         );
     }
     if (*sc).flags & SPAWN_EMPTY != 0 {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"created_empty\0" as *const u8 as *const ::core::ffi::c_char,
             1 as ::core::ffi::c_int,
         );
     } else {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"created_empty\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
         );
     }
     if (*sc).flags & SPAWN_RESPAWN != 0 {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"created_respawn\0" as *const u8 as *const ::core::ffi::c_char,
             1 as ::core::ffi::c_int,
         );
     } else {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"created_respawn\0" as *const u8 as *const ::core::ffi::c_char,
             0 as ::core::ffi::c_int,
         );
@@ -239,7 +239,7 @@ pub(super) unsafe fn spawn_pane(
             ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
         let mut cwd: Option<CString> = None;
         let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
-        let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+        let _cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut home: *const ::core::ffi::c_char =
             find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
@@ -387,41 +387,41 @@ pub(super) unsafe fn spawn_pane(
             (*new_wp).flags &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
         } else {
             if (*sc).layout.is_none() {
-                new_pane_owner = (&std::rc::Rc::clone(
-                    &((((*sc).winlink_handle())
+                new_pane_owner = std::rc::Rc::clone(
+                    (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
                         .as_ref())
-                    .expect("live window")),
-                ))
-                    .add_pane(None, hlimit, (*sc).flags);
+                    .expect("live window"),
+                )
+                .add_pane(None, hlimit, (*sc).flags);
                 new_wp = new_pane_owner.get();
                 layout_init(
                     &std::rc::Rc::clone(
-                        &((((*sc).winlink_handle())
+                        (((*sc).winlink_handle())
                             .get_unchecked()
                             .window_handle()
                             .as_ref())
-                        .expect("live window")),
+                        .expect("live window"),
                     ),
                     &(*(new_wp)).observer.upgrade().expect("live window_pane"),
                 );
             } else {
-                new_pane_owner = (&std::rc::Rc::clone(
-                    &((((*sc).winlink_handle())
+                new_pane_owner = std::rc::Rc::clone(
+                    (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
                         .as_ref())
-                    .expect("live window")),
-                ))
-                    .add_pane(
-                        (source_pane)
-                            .as_ref()
-                            .and_then(|model| model.observer.upgrade())
-                            .as_ref(),
-                        hlimit,
-                        (*sc).flags,
-                    );
+                    .expect("live window"),
+                )
+                .add_pane(
+                    (source_pane)
+                        .as_ref()
+                        .and_then(|model| model.observer.upgrade())
+                        .as_ref(),
+                    hlimit,
+                    (*sc).flags,
+                );
                 new_wp = new_pane_owner.get();
                 if (*sc).flags & SPAWN_ZOOM != 0 {
                     layout_assign_pane(
@@ -669,14 +669,14 @@ pub(super) unsafe fn spawn_pane(
                         &(*(new_wp)).observer.upgrade().expect("live window_pane"),
                     );
                     layout_close_pane(&(*(new_wp)).observer.upgrade().expect("live window_pane"));
-                    (&std::rc::Rc::clone(
-                        &((((*sc).winlink_handle())
+                    std::rc::Rc::clone(
+                        (((*sc).winlink_handle())
                             .get_unchecked()
                             .window_handle()
                             .as_ref())
-                        .expect("live window")),
-                    ))
-                        .remove_pane(&pane_owner);
+                        .expect("live window"),
+                    )
+                    .remove_pane(&pane_owner);
                 }
                 sigprocmask(
                     SIG_SETMASK,
@@ -826,43 +826,43 @@ pub(super) unsafe fn spawn_pane(
         }
         if (*sc).flags & SPAWN_MODAL != 0 {
             original_window.begin_modal_pane(&new_pane_owner);
-            (&std::rc::Rc::clone(
-                &((((*sc).winlink_handle())
+            std::rc::Rc::clone(
+                (((*sc).winlink_handle())
                     .get_unchecked()
                     .window_handle()
                     .as_ref())
-                .expect("live window")),
-            ))
-                .redraw_active_switch(
-                    (new_wp)
-                        .as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
-                );
+                .expect("live window"),
+            )
+            .redraw_active_switch(
+                (new_wp)
+                    .as_ref()
+                    .and_then(|model| model.observer.upgrade())
+                    .as_ref(),
+            );
             if (*sc).flags & SPAWN_NONOTIFY != 0 {
-                (&std::rc::Rc::clone(
-                    &((((*sc).winlink_handle())
+                std::rc::Rc::clone(
+                    (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
                         .as_ref())
-                    .expect("live window")),
-                ))
-                    .select_pane(
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                        false,
-                    );
+                    .expect("live window"),
+                )
+                .select_pane(
+                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
+                    false,
+                );
             } else {
-                (&std::rc::Rc::clone(
-                    &((((*sc).winlink_handle())
+                std::rc::Rc::clone(
+                    (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
                         .as_ref())
-                    .expect("live window")),
-                ))
-                    .select_pane(
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                        true,
-                    );
+                    .expect("live window"),
+                )
+                .select_pane(
+                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
+                    true,
+                );
             }
         } else if (!(*sc).flags & SPAWN_DETACHED != 0
             || ((((*sc).winlink_handle())
@@ -875,40 +875,40 @@ pub(super) unsafe fn spawn_pane(
             && original_window.modal_pane().is_none()
         {
             if (*sc).flags & SPAWN_NONOTIFY != 0 {
-                (&std::rc::Rc::clone(
-                    &((((*sc).winlink_handle())
+                std::rc::Rc::clone(
+                    (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
                         .as_ref())
-                    .expect("live window")),
-                ))
-                    .select_pane(
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                        false,
-                    );
+                    .expect("live window"),
+                )
+                .select_pane(
+                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
+                    false,
+                );
             } else {
-                (&std::rc::Rc::clone(
-                    &((((*sc).winlink_handle())
+                std::rc::Rc::clone(
+                    (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
                         .as_ref())
-                    .expect("live window")),
-                ))
-                    .select_pane(
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                        true,
-                    );
+                    .expect("live window"),
+                )
+                .select_pane(
+                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
+                    true,
+                );
             }
         }
         if !(*sc).flags & SPAWN_NONOTIFY != 0 {
             events_fire_window(
                 b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
                 std::rc::Rc::clone(
-                    &((((*sc).winlink_handle())
+                    (((*sc).winlink_handle())
                         .get_unchecked()
                         .window_handle()
                         .as_ref())
-                    .expect("live window")),
+                    .expect("live window"),
                 ),
             );
         }

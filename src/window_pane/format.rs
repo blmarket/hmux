@@ -171,7 +171,7 @@ unsafe fn format_cb_start_command(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    return cmd_stringify_argv_cstring(&(*wp).argv);
+    cmd_stringify_argv_cstring(&(*wp).argv)
 }
 
 unsafe fn format_cb_start_command_list(mut ft: *mut format_tree) -> Option<CString> {
@@ -209,7 +209,7 @@ unsafe fn format_cb_start_path(mut ft: *mut format_tree) -> Option<CString> {
     if (*wp).cwd.is_none() {
         return Some(c"".to_owned());
     }
-    return (*wp).cwd.clone();
+    (*wp).cwd.clone()
 }
 
 unsafe fn format_cb_current_command(mut ft: *mut format_tree) -> Option<CString> {
@@ -248,7 +248,7 @@ unsafe fn format_cb_current_path(mut ft: *mut format_tree) -> Option<CString> {
     if cwd.is_null() {
         return None;
     }
-    return Some(CStr::from_ptr(cwd).to_owned());
+    Some(CStr::from_ptr(cwd).to_owned())
 }
 
 unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {
@@ -286,7 +286,7 @@ unsafe fn format_cb_history_bytes(mut ft: *mut format_tree) -> Option<CString> {
     value = Some(
         CString::new(format!("{}", (size) as usize)).expect("formatted numbers contain no NUL"),
     );
-    return value;
+    value
 }
 
 unsafe fn format_cb_history_all_bytes(mut ft: *mut format_tree) -> Option<CString> {
@@ -328,7 +328,7 @@ unsafe fn format_cb_history_all_bytes(mut ft: *mut format_tree) -> Option<CStrin
         ))
         .expect("formatted numbers contain no NUL"),
     );
-    return value;
+    value
 }
 
 unsafe fn format_cb_pane_tabs(mut ft: *mut format_tree) -> Option<CString> {
@@ -382,7 +382,7 @@ unsafe fn format_cb_pane_fg(mut ft: *mut format_tree) -> Option<CString> {
         return None;
     }
     gc = tty_default_colours(&(*(wp)).observer.upgrade().expect("live window_pane")).0;
-    return Some(colour_format(gc.fg));
+    Some(colour_format(gc.fg))
 }
 
 unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
@@ -398,7 +398,7 @@ unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("live window_pane"),
         ));
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_floating_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -413,7 +413,7 @@ unsafe fn format_cb_pane_floating_flag(mut ft: *mut format_tree) -> Option<CStri
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_modal_flag(ft: *mut format_tree) -> Option<CString> {
@@ -449,7 +449,7 @@ unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
         return None;
     }
     gc = tty_default_colours(&(*(wp)).observer.upgrade().expect("live window_pane")).0;
-    return Some(colour_format(gc.bg));
+    Some(colour_format(gc.bg))
 }
 
 unsafe fn format_cb_pane_in_mode(mut ft: *mut format_tree) -> Option<CString> {
@@ -479,7 +479,7 @@ unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {
     }
     value =
         Some(CString::new(format!("{}", (flag) as i32)).expect("formatted numbers contain no NUL"));
-    return value;
+    value
 }
 
 unsafe fn format_cb_pane_at_bottom(ft: *mut format_tree) -> Option<CString> {
@@ -535,7 +535,7 @@ unsafe fn format_cb_cursor_character(mut ft: *mut format_tree) -> Option<CString
             .expect("bounded character contains no NUL"),
         );
     }
-    return value;
+    value
 }
 
 unsafe fn format_cb_cursor_colour(mut ft: *mut format_tree) -> Option<CString> {
@@ -550,7 +550,7 @@ unsafe fn format_cb_cursor_colour(mut ft: *mut format_tree) -> Option<CString> {
     if (*(*wp).screen_ptr()).ccolour != -(1 as ::core::ffi::c_int) {
         return Some(colour_format((*(*wp).screen_ptr()).ccolour));
     }
-    return Some(colour_format((*(*wp).screen_ptr()).default_ccolour));
+    Some(colour_format((*(*wp).screen_ptr()).default_ccolour))
 }
 
 unsafe fn format_cb_alternate_on(mut ft: *mut format_tree) -> Option<CString> {
@@ -564,7 +564,7 @@ unsafe fn format_cb_alternate_on(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_alternate_saved_x(mut ft: *mut format_tree) -> Option<CString> {
@@ -578,7 +578,7 @@ unsafe fn format_cb_alternate_saved_x(mut ft: *mut format_tree) -> Option<CStrin
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_alternate_saved_y(mut ft: *mut format_tree) -> Option<CString> {
@@ -592,7 +592,7 @@ unsafe fn format_cb_alternate_saved_y(mut ft: *mut format_tree) -> Option<CStrin
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_bracket_paste_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -606,7 +606,7 @@ unsafe fn format_cb_bracket_paste_flag(mut ft: *mut format_tree) -> Option<CStri
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_cursor_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -620,7 +620,7 @@ unsafe fn format_cb_cursor_flag(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_cursor_shape(mut ft: *mut format_tree) -> Option<CString> {
@@ -644,7 +644,7 @@ unsafe fn format_cb_cursor_shape(mut ft: *mut format_tree) -> Option<CString> {
             }
         }
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_cursor_very_visible(mut ft: *mut format_tree) -> Option<CString> {
@@ -658,7 +658,7 @@ unsafe fn format_cb_cursor_very_visible(mut ft: *mut format_tree) -> Option<CStr
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_cursor_x(mut ft: *mut format_tree) -> Option<CString> {
@@ -672,7 +672,7 @@ unsafe fn format_cb_cursor_x(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_cursor_y(mut ft: *mut format_tree) -> Option<CString> {
@@ -686,7 +686,7 @@ unsafe fn format_cb_cursor_y(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_cursor_blinking(mut ft: *mut format_tree) -> Option<CString> {
@@ -700,7 +700,7 @@ unsafe fn format_cb_cursor_blinking(mut ft: *mut format_tree) -> Option<CString>
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_history_added(mut ft: *mut format_tree) -> Option<CString> {
@@ -717,7 +717,7 @@ unsafe fn format_cb_history_added(mut ft: *mut format_tree) -> Option<CString> {
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_history_collected(mut ft: *mut format_tree) -> Option<CString> {
@@ -732,7 +732,7 @@ unsafe fn format_cb_history_collected(mut ft: *mut format_tree) -> Option<CStrin
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_history_generation(mut ft: *mut format_tree) -> Option<CString> {
@@ -747,7 +747,7 @@ unsafe fn format_cb_history_generation(mut ft: *mut format_tree) -> Option<CStri
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_history_limit(mut ft: *mut format_tree) -> Option<CString> {
@@ -761,7 +761,7 @@ unsafe fn format_cb_history_limit(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_history_size(mut ft: *mut format_tree) -> Option<CString> {
@@ -775,7 +775,7 @@ unsafe fn format_cb_history_size(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_insert_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -789,7 +789,7 @@ unsafe fn format_cb_insert_flag(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_keypad_cursor_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -803,7 +803,7 @@ unsafe fn format_cb_keypad_cursor_flag(mut ft: *mut format_tree) -> Option<CStri
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_keypad_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -817,7 +817,7 @@ unsafe fn format_cb_keypad_flag(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_mouse_all_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -831,7 +831,7 @@ unsafe fn format_cb_mouse_all_flag(mut ft: *mut format_tree) -> Option<CString> 
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_mouse_any_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -845,7 +845,7 @@ unsafe fn format_cb_mouse_any_flag(mut ft: *mut format_tree) -> Option<CString> 
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_mouse_button_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -859,7 +859,7 @@ unsafe fn format_cb_mouse_button_flag(mut ft: *mut format_tree) -> Option<CStrin
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_mouse_sgr_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -873,7 +873,7 @@ unsafe fn format_cb_mouse_sgr_flag(mut ft: *mut format_tree) -> Option<CString> 
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_mouse_standard_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -887,7 +887,7 @@ unsafe fn format_cb_mouse_standard_flag(mut ft: *mut format_tree) -> Option<CStr
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_mouse_utf8_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -901,7 +901,7 @@ unsafe fn format_cb_mouse_utf8_flag(mut ft: *mut format_tree) -> Option<CString>
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_origin_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -915,7 +915,7 @@ unsafe fn format_cb_origin_flag(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_synchronized_output_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -929,7 +929,7 @@ unsafe fn format_cb_synchronized_output_flag(mut ft: *mut format_tree) -> Option
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_private_modes(mut ft: *mut format_tree) -> Option<CString> {
@@ -1007,21 +1007,20 @@ unsafe fn format_cb_pane_private_modes(mut ft: *mut format_tree) -> Option<CStri
         < (::core::mem::size_of::<[C2RustUnnamed_43; 14]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_43>() as usize)
     {
-        if !(!mode & table[i as usize].mode != 0) {
-            if !(table[i as usize].mode == MODE_CURSOR_BLINKING
+        if !(!mode & table[i as usize].mode != 0)
+            && !(table[i as usize].mode == MODE_CURSOR_BLINKING
                 && !mode & MODE_CURSOR_BLINKING_SET != 0)
-            {
-                if !value.is_empty() {
-                    value.push(',');
-                }
-                write!(&mut value, "{}", table[i as usize].number)
-                    .expect("writing to a String cannot fail");
+        {
+            if !value.is_empty() {
+                value.push(',');
             }
+            write!(&mut value, "{}", table[i as usize].number)
+                .expect("writing to a String cannot fail");
         }
         i = i.wrapping_add(1);
     }
     let value = std::ffi::CString::new(value).expect("mode numbers have no NUL bytes");
-    return Some(value);
+    Some(value)
 }
 
 unsafe fn format_cb_pane_active(mut ft: *mut format_tree) -> Option<CString> {
@@ -1040,7 +1039,7 @@ unsafe fn format_cb_pane_active(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_at_left(mut ft: *mut format_tree) -> Option<CString> {
@@ -1054,7 +1053,7 @@ unsafe fn format_cb_pane_at_left(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_at_right(mut ft: *mut format_tree) -> Option<CString> {
@@ -1072,7 +1071,7 @@ unsafe fn format_cb_pane_at_right(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_bottom(mut ft: *mut format_tree) -> Option<CString> {
@@ -1090,7 +1089,7 @@ unsafe fn format_cb_pane_bottom(mut ft: *mut format_tree) -> Option<CString> {
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_dead(mut ft: *mut format_tree) -> Option<CString> {
@@ -1105,7 +1104,7 @@ unsafe fn format_cb_pane_dead(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_dead_signal(mut ft: *mut format_tree) -> Option<CString> {
@@ -1127,7 +1126,7 @@ unsafe fn format_cb_pane_dead_signal(mut ft: *mut format_tree) -> Option<CString
         }
         return None;
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_dead_status(mut ft: *mut format_tree) -> Option<CString> {
@@ -1151,7 +1150,7 @@ unsafe fn format_cb_pane_dead_status(mut ft: *mut format_tree) -> Option<CString
         }
         return None;
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_dead_time(mut ft: *mut format_tree) -> Option<time_t> {
@@ -1166,7 +1165,7 @@ unsafe fn format_cb_pane_dead_time(mut ft: *mut format_tree) -> Option<time_t> {
         }
         return None;
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_last_output_time(mut ft: *mut format_tree) -> Option<time_t> {
@@ -1178,7 +1177,7 @@ unsafe fn format_cb_pane_last_output_time(mut ft: *mut format_tree) -> Option<ti
     if !wp.is_null() && (*wp).last_output_time != 0 as time_t {
         return Some((*wp).last_output_time as __time_t as time_t);
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_output_generation(mut ft: *mut format_tree) -> Option<CString> {
@@ -1193,7 +1192,7 @@ unsafe fn format_cb_pane_output_generation(mut ft: *mut format_tree) -> Option<C
             CString::new(format!("{}", (value) as u64)).expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_last_prompt_time(mut ft: *mut format_tree) -> Option<time_t> {
@@ -1205,7 +1204,7 @@ unsafe fn format_cb_pane_last_prompt_time(mut ft: *mut format_tree) -> Option<ti
     if !wp.is_null() && (*wp).last_prompt_time != 0 as time_t {
         return Some((*wp).last_prompt_time as __time_t as time_t);
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_command_start_time(mut ft: *mut format_tree) -> Option<time_t> {
@@ -1217,7 +1216,7 @@ unsafe fn format_cb_pane_command_start_time(mut ft: *mut format_tree) -> Option<
     if !wp.is_null() && (*wp).cmd_start_time != 0 as time_t {
         return Some((*wp).cmd_start_time as __time_t as time_t);
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_command_end_time(mut ft: *mut format_tree) -> Option<time_t> {
@@ -1229,7 +1228,7 @@ unsafe fn format_cb_pane_command_end_time(mut ft: *mut format_tree) -> Option<ti
     if !wp.is_null() && (*wp).cmd_end_time != 0 as time_t {
         return Some((*wp).cmd_end_time as __time_t as time_t);
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_command_running(mut ft: *mut format_tree) -> Option<CString> {
@@ -1247,7 +1246,7 @@ unsafe fn format_cb_pane_command_running(mut ft: *mut format_tree) -> Option<CSt
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_command_duration(mut ft: *mut format_tree) -> Option<CString> {
@@ -1268,13 +1267,13 @@ unsafe fn format_cb_pane_command_duration(mut ft: *mut format_tree) -> Option<CS
     if end < (*wp).cmd_start_time {
         end = (*wp).cmd_start_time;
     }
-    return Some(
+    Some(
         CString::new(format!(
             "{}",
             ((end - (*wp).cmd_start_time) as ::core::ffi::c_longlong) as i64
         ))
         .expect("formatted numbers contain no NUL"),
-    );
+    )
 }
 
 unsafe fn format_cb_pane_command_status(mut ft: *mut format_tree) -> Option<CString> {
@@ -1289,7 +1288,7 @@ unsafe fn format_cb_pane_command_status(mut ft: *mut format_tree) -> Option<CStr
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_height(mut ft: *mut format_tree) -> Option<CString> {
@@ -1303,7 +1302,7 @@ unsafe fn format_cb_pane_height(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_id(mut ft: *mut format_tree) -> Option<CString> {
@@ -1317,7 +1316,7 @@ unsafe fn format_cb_pane_id(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_index(mut ft: *mut format_tree) -> Option<CString> {
@@ -1337,7 +1336,7 @@ unsafe fn format_cb_pane_index(mut ft: *mut format_tree) -> Option<CString> {
             CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_input_off(mut ft: *mut format_tree) -> Option<CString> {
@@ -1351,7 +1350,7 @@ unsafe fn format_cb_pane_input_off(mut ft: *mut format_tree) -> Option<CString> 
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_unseen_changes(mut ft: *mut format_tree) -> Option<CString> {
@@ -1365,7 +1364,7 @@ unsafe fn format_cb_pane_unseen_changes(mut ft: *mut format_tree) -> Option<CStr
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> Option<CString> {
@@ -1386,7 +1385,7 @@ unsafe fn format_cb_pane_key_mode(mut ft: *mut format_tree) -> Option<CString> {
             }
         }
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_last(ft: *mut format_tree) -> Option<CString> {
@@ -1414,7 +1413,7 @@ unsafe fn format_cb_pane_left(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_marked(mut ft: *mut format_tree) -> Option<CString> {
@@ -1434,7 +1433,7 @@ unsafe fn format_cb_pane_marked(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_marked_set(mut ft: *mut format_tree) -> Option<CString> {
@@ -1448,7 +1447,7 @@ unsafe fn format_cb_pane_marked_set(mut ft: *mut format_tree) -> Option<CString>
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_mode(mut ft: *mut format_tree) -> Option<CString> {
@@ -1471,7 +1470,7 @@ unsafe fn format_cb_pane_path(mut ft: *mut format_tree) -> Option<CString> {
                 .unwrap_or_else(|| c"".to_owned()),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_pid(mut ft: *mut format_tree) -> Option<CString> {
@@ -1488,7 +1487,7 @@ unsafe fn format_cb_pane_pid(mut ft: *mut format_tree) -> Option<CString> {
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_pipe(mut ft: *mut format_tree) -> Option<CString> {
@@ -1502,7 +1501,7 @@ unsafe fn format_cb_pane_pipe(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_pipe_pid(mut ft: *mut format_tree) -> Option<CString> {
@@ -1520,7 +1519,7 @@ unsafe fn format_cb_pane_pipe_pid(mut ft: *mut format_tree) -> Option<CString> {
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return value;
+    value
 }
 
 unsafe fn format_cb_pane_pb_progress(mut ft: *mut format_tree) -> Option<CString> {
@@ -1538,7 +1537,7 @@ unsafe fn format_cb_pane_pb_progress(mut ft: *mut format_tree) -> Option<CString
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return value;
+    value
 }
 
 unsafe fn format_cb_pane_pb_state(mut ft: *mut format_tree) -> Option<CString> {
@@ -1566,7 +1565,7 @@ unsafe fn format_cb_pane_pb_state(mut ft: *mut format_tree) -> Option<CString> {
             _ => {}
         }
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_right(mut ft: *mut format_tree) -> Option<CString> {
@@ -1584,7 +1583,7 @@ unsafe fn format_cb_pane_right(mut ft: *mut format_tree) -> Option<CString> {
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_search_string(mut ft: *mut format_tree) -> Option<CString> {
@@ -1598,7 +1597,7 @@ unsafe fn format_cb_pane_search_string(mut ft: *mut format_tree) -> Option<CStri
         }
         return (*format_pane).searchstr.clone();
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_synchronized(mut ft: *mut format_tree) -> Option<CString> {
@@ -1617,7 +1616,7 @@ unsafe fn format_cb_pane_synchronized(mut ft: *mut format_tree) -> Option<CStrin
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_title(mut ft: *mut format_tree) -> Option<CString> {
@@ -1628,7 +1627,7 @@ unsafe fn format_cb_pane_title(mut ft: *mut format_tree) -> Option<CString> {
     if !format_pane.is_null() {
         return Some((*format_pane).base.title.clone());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_top(mut ft: *mut format_tree) -> Option<CString> {
@@ -1642,7 +1641,7 @@ unsafe fn format_cb_pane_top(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_tty(mut ft: *mut format_tree) -> Option<CString> {
@@ -1655,7 +1654,7 @@ unsafe fn format_cb_pane_tty(mut ft: *mut format_tree) -> Option<CString> {
             CStr::from_ptr(&raw mut (*format_pane).tty as *mut ::core::ffi::c_char).to_owned(),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_unzoomed_height(ft: *mut format_tree) -> Option<CString> {
@@ -1679,7 +1678,7 @@ unsafe fn format_cb_pane_width(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_x(mut ft: *mut format_tree) -> Option<CString> {
@@ -1693,7 +1692,7 @@ unsafe fn format_cb_pane_x(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_y(mut ft: *mut format_tree) -> Option<CString> {
@@ -1707,7 +1706,7 @@ unsafe fn format_cb_pane_y(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_z(mut ft: *mut format_tree) -> Option<CString> {
@@ -1727,7 +1726,7 @@ unsafe fn format_cb_pane_z(mut ft: *mut format_tree) -> Option<CString> {
             CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_pane_zoomed_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -1742,7 +1741,7 @@ unsafe fn format_cb_pane_zoomed_flag(mut ft: *mut format_tree) -> Option<CString
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_scroll_region_lower(mut ft: *mut format_tree) -> Option<CString> {
@@ -1756,7 +1755,7 @@ unsafe fn format_cb_scroll_region_lower(mut ft: *mut format_tree) -> Option<CStr
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CString> {
@@ -1770,7 +1769,7 @@ unsafe fn format_cb_scroll_region_upper(mut ft: *mut format_tree) -> Option<CStr
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_wrap_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -1784,7 +1783,7 @@ unsafe fn format_cb_wrap_flag(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn mouse_value(

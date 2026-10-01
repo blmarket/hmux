@@ -85,11 +85,9 @@ unsafe fn proc_io_ready(peer: *mut tmuxpeer, readable: bool, writable: bool) {
             }
         }
     }
-    if writable {
-        if imsgbuf_write(&mut (*peer).ibuf).is_err() {
-            proc_dispatch(peer, PeerMessage::Disconnected);
-            return;
-        }
+    if writable && imsgbuf_write(&mut (*peer).ibuf).is_err() {
+        proc_dispatch(peer, PeerMessage::Disconnected);
+        return;
     }
     if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&(*peer).ibuf) == 0 as uint32_t {
         proc_dispatch(peer, PeerMessage::Disconnected);
@@ -122,7 +120,7 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
         (*peer).flags |= PEER_BAD;
         return -(1 as ::core::ffi::c_int);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn proc_update_io(peer: *mut tmuxpeer) {
     let writable = imsgbuf_queuelen(&(*peer).ibuf) > 0;
@@ -166,7 +164,7 @@ pub unsafe fn proc_send(
         "sending message {} to peer {} ({} bytes)",
         (type_0 as ::core::ffi::c_uint) as i32,
         log_pointer((peer) as *const ::core::ffi::c_void),
-        (len) as usize
+        { len }
     ));
     let Some(data) = (len == 0).then_some(&[][..]).or_else(|| {
         (!buf.is_null()).then(|| unsafe { std::slice::from_raw_parts(buf.cast::<u8>(), len) })
@@ -186,7 +184,7 @@ pub unsafe fn proc_send(
         return -(1 as ::core::ffi::c_int);
     }
     proc_update_io(peer);
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> {
     let mut u: utsname = utsname {
@@ -217,7 +215,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
         getpid() as ::core::ffi::c_long,
         log_cstr(getversion().as_ptr()),
         log_cstr((socket_path) as *const _),
-        (PROTOCOL_VERSION) as i32
+        { PROTOCOL_VERSION }
     ));
     log_debug(format_args!(
         "on {} {} {}",
@@ -362,7 +360,7 @@ pub unsafe fn proc_add_peer(
     (*peer).dispatchcb = Some(dispatchcb);
     let fd = socket.as_raw_fd();
     if let Err(error) = imsgbuf_init(&mut (*peer).ibuf, socket) {
-        fatalx(|out| write!(out, "imsgbuf_init failed (errno {})", (error) as i32));
+        fatalx(|out| write!(out, "imsgbuf_init failed (errno {})", { error }));
     }
     imsgbuf_allow_fdpass(&mut (*peer).ibuf);
     if getpeereid(fd, &raw mut (*peer).uid, &raw mut (*peer).gid) != 0 as ::core::ffi::c_int {
@@ -372,11 +370,11 @@ pub unsafe fn proc_add_peer(
     log_debug(format_args!(
         "add peer {}: {}",
         log_pointer((peer) as *const ::core::ffi::c_void),
-        (fd) as i32
+        { fd }
     ));
     (*tp).peers.push(owned_peer);
     proc_update_io(peer);
-    return peer;
+    peer
 }
 pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
     let peers = &mut (*(*peer).parent).peers;
@@ -424,19 +422,19 @@ pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
             if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int {
                 fatal(|out| out.write_all(b"daemon failed"));
             }
-            return (0, child.into());
+            (0, child.into())
         }
         _ => {
             drop(child);
-            return (pid, parent.into());
+            (pid, parent.into())
         }
-    };
+    }
 }
 pub unsafe fn proc_get_peer_uid(mut peer: *mut tmuxpeer) -> uid_t {
-    return (*peer).uid;
+    (*peer).uid
 }
 pub unsafe fn proc_get_peer_gid(mut peer: *mut tmuxpeer) -> gid_t {
-    return (*peer).gid;
+    (*peer).gid
 }
 
 #[cfg(test)]

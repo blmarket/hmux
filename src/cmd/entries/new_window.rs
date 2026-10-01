@@ -283,7 +283,7 @@ unsafe fn cmd_new_window_exec(
             )
         });
         drop(sc.environ.take());
-        return CMD_RETURN_ERROR;
+        CMD_RETURN_ERROR
     } else {
         if args_has(args, 'd' as i32 as u_char) == 0
             || new_wl == s.as_ref().expect("live session").current_winlink()
@@ -320,6 +320,6 @@ unsafe fn cmd_new_window_exec(
             out.write_all(b"after-new-window")
         });
         drop(sc.environ.take());
-        return CMD_RETURN_NORMAL;
-    };
+        CMD_RETURN_NORMAL
+    }
 }

@@ -106,7 +106,7 @@ pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
     ) == 0 as ::core::ffi::c_int
     {
         name = name
-            .offset(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize as isize)
+            .add(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
             .offset(-(1 as ::core::ffi::c_int as isize));
     }
     while *name as ::core::ffi::c_int == ' ' as i32 || *name as ::core::ffi::c_int == '-' as i32 {
@@ -118,7 +118,7 @@ pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
     }
     if *name as ::core::ffi::c_int != '\0' as i32 {
         ptr = name
-            .offset(strlen(name) as isize)
+            .add(strlen(name))
             .offset(-(1 as ::core::ffi::c_int as isize));
         while ptr > name
             && *(*__ctype_b_loc()).offset(*ptr as u_char as ::core::ffi::c_int as isize)

@@ -158,7 +158,7 @@ unsafe fn options_map_name(mut name: *const ::core::ffi::c_char) -> *const ::cor
         }
         map = map.offset(1);
     }
-    return name;
+    name
 }
 unsafe fn options_parent_table_entry(
     oo: *mut options,
@@ -326,7 +326,7 @@ pub unsafe fn options_empty(
     if definition.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         (*o).value = options_value::Array(options_array_storage::default());
     }
-    return o;
+    o
 }
 pub unsafe fn options_default(
     mut oo: *mut options,
@@ -391,7 +391,7 @@ pub unsafe fn options_default(
             (*ov) = options_value::Number((*oe).default_num);
         }
     }
-    return o;
+    o
 }
 /// Format a built-in default for Rust callers. The exported C API keeps its
 /// libc-owned return value below.
@@ -437,7 +437,7 @@ unsafe fn options_add(
     });
     o = &raw mut *owned;
     (*oo).tree.insert(owned.name.as_bytes().to_vec(), owned);
-    return o;
+    o
 }
 unsafe fn options_remove(mut o: *mut options_entry) {
     let mut oo: *mut options = (*o).owner;
@@ -484,10 +484,10 @@ pub unsafe fn options_hook_fired(mut o: *mut options_entry) {
     (*o).fire_time = current_time;
 }
 pub unsafe fn options_get_fire_count(mut o: *mut options_entry) -> u_int {
-    return (*o).fire_count;
+    (*o).fire_count
 }
 pub unsafe fn options_get_fire_time(mut o: *mut options_entry) -> time_t {
-    return (*o).fire_time;
+    (*o).fire_time
 }
 pub fn options_table_entry(o: &options_entry) -> Option<&'static options_table_entry> {
     o.tableentry
@@ -517,7 +517,7 @@ unsafe fn options_array_new(
         .array_storage()
         .entries
         .insert(options_array_index(CStr::from_ptr(key)), owner);
-    return a;
+    a
 }
 unsafe fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
     options_value_free(&raw mut (*a).value);
@@ -648,14 +648,11 @@ pub unsafe fn options_array_set(
             CStr::from_ptr(value),
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
-        match pr.status as ::core::ffi::c_uint {
-            0 => {
-                if !cause.is_null() {
-                    *cause = pr.error;
-                }
-                return -(1 as ::core::ffi::c_int);
+        if pr.status as ::core::ffi::c_uint == 0 {
+            if !cause.is_null() {
+                *cause = pr.error;
             }
-            1 | _ => {}
+            return -(1 as ::core::ffi::c_int);
         }
         a = options_array_item(o, new_key.as_ptr());
         if a.is_null() {
@@ -723,7 +720,7 @@ pub unsafe fn options_array_set(
     if !cause.is_null() {
         store_options_cause!(cause, CString::new(b"wrong array type".to_vec()).unwrap());
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn options_array_assign(
     mut o: *mut options_entry,
@@ -802,7 +799,7 @@ pub unsafe fn options_array_assign(
             return -(1 as ::core::ffi::c_int);
         }
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub fn options_array_iter(
     o: &options_entry,
@@ -836,7 +833,7 @@ pub fn options_array_item_value_mut(a: &mut options_array_item) -> &mut options_
     &mut a.value
 }
 pub unsafe fn options_is_array(mut o: *mut options_entry) -> ::core::ffi::c_int {
-    return (!(*o)
+    (!(*o)
         .tableentry_ptr()
         .map_or(std::ptr::null(), |entry| {
             entry as *const crate::src::shared::options::options_table_entry
@@ -847,10 +844,10 @@ pub unsafe fn options_is_array(mut o: *mut options_entry) -> ::core::ffi::c_int 
         }))
         .flags
             & OPTIONS_TABLE_IS_ARRAY
-            != 0) as ::core::ffi::c_int;
+            != 0) as ::core::ffi::c_int
 }
 pub unsafe fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int {
-    return ((*o)
+    ((*o)
         .tableentry_ptr()
         .map_or(std::ptr::null(), |entry| {
             entry as *const crate::src::shared::options::options_table_entry
@@ -861,7 +858,7 @@ pub unsafe fn options_is_string(mut o: *mut options_entry) -> ::core::ffi::c_int
         }))
         .type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint)
-        as ::core::ffi::c_int;
+        as ::core::ffi::c_int
 }
 pub(crate) unsafe fn options_to_string(
     o: *mut options_entry,
@@ -1135,7 +1132,7 @@ pub unsafe fn options_set_string(
     }
     set_scalar_string(&mut *o, value);
     (*o).cached = 0 as ::core::ffi::c_int;
-    return o;
+    o
 }
 pub unsafe fn options_set_number(
     mut oo: *mut options,
@@ -1197,7 +1194,7 @@ pub unsafe fn options_set_number(
         });
     }
     (*o).value = options_value::Number(value);
-    return o;
+    o
 }
 pub unsafe fn options_set_command(
     mut oo: *mut options,
@@ -1239,7 +1236,7 @@ pub unsafe fn options_set_command(
         });
     }
     (*o).value = options_value::Command(OptionCommand(value));
-    return o;
+    o
 }
 pub unsafe fn options_scope_from_name(
     args: *mut args,
@@ -1437,7 +1434,7 @@ unsafe fn options_from_string_check(
         );
         return -(1 as ::core::ffi::c_int);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn options_from_string_flag(
     mut oo: *mut options,
@@ -1473,7 +1470,7 @@ unsafe fn options_from_string_flag(
         return -(1 as ::core::ffi::c_int);
     }
     options_set_number(oo, name, flag as ::core::ffi::c_longlong);
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn options_find_choice(
     mut oe: *const options_table_entry,
@@ -1494,7 +1491,7 @@ pub unsafe fn options_find_choice(
         );
         return -(1 as ::core::ffi::c_int);
     }
-    return choice;
+    choice
 }
 unsafe fn options_from_string_choice(
     mut oe: *const options_table_entry,
@@ -1516,7 +1513,7 @@ unsafe fn options_from_string_choice(
         }
     }
     options_set_number(oo, name, choice as ::core::ffi::c_longlong);
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn options_from_string(
     mut oo: *mut options,
@@ -1529,7 +1526,7 @@ pub unsafe fn options_from_string(
     let mut type_0: options_table_type = OPTIONS_TABLE_STRING;
     let mut number: ::core::ffi::c_longlong = 0;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut new: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let _new: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut key: key_code = 0;
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     if !oe.is_null() {
@@ -1639,7 +1636,7 @@ pub unsafe fn options_from_string(
         }
         _ => {}
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     let mut loop_0: Option<ClientRef> = None;
@@ -1749,7 +1746,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut registry_loop_0_owner = clients.first();
         loop_0 = registry_loop_0_owner.clone();
         while !loop_0.is_none() {
-            (&loop_0.clone().expect("live client")).set_key_table(None);
+            loop_0.clone().expect("live client").set_key_table(None);
             registry_loop_0_owner = clients.next(
                 registry_loop_0_owner
                     .as_ref()
@@ -1998,7 +1995,7 @@ pub unsafe fn options_remove_or_default(
     {
         return -(1 as ::core::ffi::c_int);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 
 #[cfg(test)]

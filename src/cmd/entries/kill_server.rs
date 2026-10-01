@@ -65,5 +65,5 @@ unsafe fn cmd_kill_server_exec(
     ) {
         kill(getpid(), SIGTERM);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

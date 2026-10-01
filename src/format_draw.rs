@@ -58,7 +58,7 @@ unsafe fn format_is_type(mut fr: *mut format_range, mut sy: *mut style) -> ::cor
         }
         _ => {}
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn format_update_ranges(
     mut frs: *mut format_ranges,
@@ -893,9 +893,8 @@ unsafe fn format_leading_hashes(
     if (*n).wrapping_rem(2 as u_int) == 0 as u_int {
         return cp.offset(*n as isize);
     }
-    return cp
-        .offset(*n as isize)
-        .offset(-(1 as ::core::ffi::c_int as isize));
+    cp.offset(*n as isize)
+        .offset(-(1 as ::core::ffi::c_int as isize))
 }
 unsafe fn format_draw_many(mut ctx: *mut screen_write_ctx, mut sy: *mut style, mut n: u_int) {
     let mut ch: ::core::ffi::c_char = '#' as i32 as ::core::ffi::c_char;
@@ -1089,7 +1088,7 @@ pub unsafe fn format_draw(
         screen_init(&mut s[i as usize], size as u_int, 1 as u_int, 0 as u_int);
         screen_write_start(
             &mut ctx[i as usize],
-            (&raw mut s as *mut screen).offset(i as isize) as *mut screen,
+            (&raw mut s as *mut screen).offset(i as isize),
         );
         screen_write_clearendofline(&mut ctx[i as usize], current_default.bg as u_int);
         width[i as usize] = 0 as u_int;
@@ -1119,8 +1118,7 @@ pub unsafe fn format_draw(
                 }
                 width[current as usize] = width[current as usize].wrapping_add(n);
                 format_draw_many(
-                    (&raw mut ctx as *mut screen_write_ctx).offset(current as isize)
-                        as *mut screen_write_ctx,
+                    (&raw mut ctx as *mut screen_write_ctx).offset(current as isize),
                     &raw mut sy,
                     n,
                 );
@@ -1134,8 +1132,7 @@ pub unsafe fn format_draw(
                     continue;
                 }
                 format_draw_many(
-                    (&raw mut ctx as *mut screen_write_ctx).offset(current as isize)
-                        as *mut screen_write_ctx,
+                    (&raw mut ctx as *mut screen_write_ctx).offset(current as isize),
                     &raw mut sy,
                     n.wrapping_div(2 as u_int),
                 );
@@ -1291,11 +1288,11 @@ pub unsafe fn format_draw(
                             current = LIST;
                         }
                         2 => {
-                            if !(list_state != 0 as ::core::ffi::c_int) {
-                                if focus_start == -(1 as ::core::ffi::c_int) {
-                                    focus_start = s[LIST as ::core::ffi::c_int as usize].cx
-                                        as ::core::ffi::c_int;
-                                }
+                            if !(list_state != 0 as ::core::ffi::c_int)
+                                && focus_start == -(1 as ::core::ffi::c_int)
+                            {
+                                focus_start =
+                                    s[LIST as ::core::ffi::c_int as usize].cx as ::core::ffi::c_int;
                             }
                         }
                         0 => {
@@ -1319,33 +1316,30 @@ pub unsafe fn format_draw(
                             current = map[sy.align as usize] as C2RustUnnamed_39;
                         }
                         3 => {
-                            if !(list_state != 0 as ::core::ffi::c_int) {
-                                if !(s[LIST_LEFT as ::core::ffi::c_int as usize].cx != 0 as u_int) {
-                                    fr = None;
-                                    if focus_start != -(1 as ::core::ffi::c_int)
-                                        && focus_end == -(1 as ::core::ffi::c_int)
-                                    {
-                                        focus_end = -(1 as ::core::ffi::c_int);
-                                        focus_start = focus_end;
-                                    }
-                                    current = LIST_LEFT;
+                            if !(list_state != 0 as ::core::ffi::c_int)
+                                && !(s[LIST_LEFT as ::core::ffi::c_int as usize].cx != 0 as u_int)
+                            {
+                                fr = None;
+                                if focus_start != -(1 as ::core::ffi::c_int)
+                                    && focus_end == -(1 as ::core::ffi::c_int)
+                                {
+                                    focus_end = -(1 as ::core::ffi::c_int);
+                                    focus_start = focus_end;
                                 }
+                                current = LIST_LEFT;
                             }
                         }
-                        4 => {
-                            if !(list_state != 0 as ::core::ffi::c_int) {
-                                if !(s[LIST_RIGHT as ::core::ffi::c_int as usize].cx != 0 as u_int)
-                                {
-                                    fr = None;
-                                    if focus_start != -(1 as ::core::ffi::c_int)
-                                        && focus_end == -(1 as ::core::ffi::c_int)
-                                    {
-                                        focus_end = -(1 as ::core::ffi::c_int);
-                                        focus_start = focus_end;
-                                    }
-                                    current = LIST_RIGHT;
-                                }
+                        4 if !(list_state != 0 as ::core::ffi::c_int)
+                            && !(s[LIST_RIGHT as ::core::ffi::c_int as usize].cx != 0 as u_int) =>
+                        {
+                            fr = None;
+                            if focus_start != -(1 as ::core::ffi::c_int)
+                                && focus_end == -(1 as ::core::ffi::c_int)
+                            {
+                                focus_end = -(1 as ::core::ffi::c_int);
+                                focus_start = focus_end;
                             }
+                            current = LIST_RIGHT;
                         }
                         _ => {}
                     }
@@ -1394,273 +1388,229 @@ pub unsafe fn format_draw(
             }
         }
     }
-    match current_block {
-        1830138855519935310 => {
-            fr = None;
+    if current_block == 1830138855519935310 {
+        fr = None;
+        i = 0 as u_int;
+        while i < TOTAL as ::core::ffi::c_int as u_int {
+            screen_write_stop(&mut ctx[i as usize]);
+            log_debug(format_args!(
+                "{}: width {} is {}",
+                "format_draw",
+                log_cstr((names[i as usize]) as *const _),
+                (width[i as usize]) as u32
+            ));
+            i = i.wrapping_add(1);
+        }
+        if focus_start != -(1 as ::core::ffi::c_int) && focus_end != -(1 as ::core::ffi::c_int) {
+            log_debug(format_args!(
+                "{}: focus {}-{}",
+                "format_draw",
+                (focus_start) as i32,
+                (focus_end) as i32
+            ));
+        }
+        for fr in &frs {
+            log_debug(format_args!(
+                "{}: range {}|{} is {} {}-{}",
+                "format_draw",
+                (fr.type_0 as ::core::ffi::c_uint) as i32,
+                { fr.argument },
+                log_cstr((names[fr.index as usize]) as *const _),
+                { fr.start },
+                { fr.end }
+            ));
+        }
+        if fill != -(1 as ::core::ffi::c_int) {
+            memcpy(
+                &raw mut gc as *mut ::core::ffi::c_void,
+                &raw const grid_default_cell as *const ::core::ffi::c_void,
+                ::core::mem::size_of::<grid_cell>() as size_t,
+            );
+            gc.bg = fill;
             i = 0 as u_int;
-            while i < TOTAL as ::core::ffi::c_int as u_int {
-                screen_write_stop(&mut ctx[i as usize]);
-                log_debug(format_args!(
-                    "{}: width {} is {}",
-                    "format_draw",
-                    log_cstr((names[i as usize]) as *const _),
-                    (width[i as usize]) as u32
-                ));
+            while i < available {
+                screen_write_putc(&mut *octx, &gc, ' ' as i32 as u_char);
                 i = i.wrapping_add(1);
             }
-            if focus_start != -(1 as ::core::ffi::c_int) && focus_end != -(1 as ::core::ffi::c_int)
-            {
-                log_debug(format_args!(
-                    "{}: focus {}-{}",
-                    "format_draw",
-                    (focus_start) as i32,
-                    (focus_end) as i32
-                ));
-            }
-            for fr in &frs {
-                log_debug(format_args!(
-                    "{}: range {}|{} is {} {}-{}",
-                    "format_draw",
-                    (fr.type_0 as ::core::ffi::c_uint) as i32,
-                    (fr.argument) as u32,
-                    log_cstr((names[fr.index as usize]) as *const _),
-                    (fr.start) as u32,
-                    (fr.end) as u32
-                ));
-            }
-            if fill != -(1 as ::core::ffi::c_int) {
-                memcpy(
-                    &raw mut gc as *mut ::core::ffi::c_void,
-                    &raw const grid_default_cell as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
+        }
+        match list_align as ::core::ffi::c_uint {
+            0 => {
+                format_draw_none(
+                    octx,
+                    available,
+                    ocx,
+                    ocy,
+                    (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen)
+                        .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize),
+                    &raw mut frs,
                 );
-                gc.bg = fill;
-                i = 0 as u_int;
-                while i < available {
-                    screen_write_putc(&mut *octx, &gc, ' ' as i32 as u_char);
-                    i = i.wrapping_add(1);
-                }
             }
-            match list_align as ::core::ffi::c_uint {
-                0 => {
-                    format_draw_none(
-                        octx,
-                        available,
-                        ocx,
-                        ocy,
-                        (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        &raw mut frs,
-                    );
-                }
+            1 => {
+                format_draw_left(
+                    octx,
+                    available,
+                    ocx,
+                    ocy,
+                    (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen)
+                        .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize),
+                    focus_start,
+                    focus_end,
+                    &raw mut frs,
+                );
+            }
+            2 => {
+                format_draw_centre(
+                    octx,
+                    available,
+                    ocx,
+                    ocy,
+                    (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen)
+                        .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize),
+                    focus_start,
+                    focus_end,
+                    &raw mut frs,
+                );
+            }
+            3 => {
+                format_draw_right(
+                    octx,
+                    available,
+                    ocx,
+                    ocy,
+                    (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen)
+                        .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize),
+                    focus_start,
+                    focus_end,
+                    &raw mut frs,
+                );
+            }
+            4 => {
+                format_draw_absolute_centre(
+                    octx,
+                    available,
+                    ocx,
+                    ocy,
+                    (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen)
+                        .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(LIST_RIGHT as ::core::ffi::c_int as isize),
+                    (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize),
+                    focus_start,
+                    focus_end,
+                    &raw mut frs,
+                );
+            }
+            _ => {}
+        }
+        for range in &frs {
+            let mut owned = Box::new(style_range {
+                type_0: range.type_0,
+                argument: range.argument,
+                string: [0; 16],
+                start: range.start,
+                end: range.end,
+            });
+            strlcpy(
+                &raw mut owned.string as *mut ::core::ffi::c_char,
+                range.string.as_ptr(),
+                ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
+            );
+            match owned.type_0 as ::core::ffi::c_uint {
                 1 => {
-                    format_draw_left(
-                        octx,
-                        available,
-                        ocx,
-                        ocy,
-                        (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(LIST_RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        focus_start,
-                        focus_end,
-                        &raw mut frs,
-                    );
+                    log_debug(format_args!(
+                        "{}: range left at {}-{}",
+                        "format_draw",
+                        { owned.start },
+                        { owned.end }
+                    ));
                 }
                 2 => {
-                    format_draw_centre(
-                        octx,
-                        available,
-                        ocx,
-                        ocy,
-                        (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(LIST_RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        focus_start,
-                        focus_end,
-                        &raw mut frs,
-                    );
+                    log_debug(format_args!(
+                        "{}: range right at {}-{}",
+                        "format_draw",
+                        { owned.start },
+                        { owned.end }
+                    ));
                 }
                 3 => {
-                    format_draw_right(
-                        octx,
-                        available,
-                        ocx,
-                        ocy,
-                        (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(LIST_RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        focus_start,
-                        focus_end,
-                        &raw mut frs,
-                    );
+                    log_debug(format_args!(
+                        "{}: range pane|%{} at {}-{}",
+                        "format_draw",
+                        { owned.argument },
+                        { owned.start },
+                        { owned.end }
+                    ));
                 }
                 4 => {
-                    format_draw_absolute_centre(
-                        octx,
-                        available,
-                        ocx,
-                        ocy,
-                        (&raw mut s as *mut screen).offset(LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(ABSOLUTE_CENTRE as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(LIST_LEFT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen)
-                            .offset(LIST_RIGHT as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        (&raw mut s as *mut screen).offset(AFTER as ::core::ffi::c_int as isize)
-                            as *mut screen,
-                        focus_start,
-                        focus_end,
-                        &raw mut frs,
-                    );
+                    log_debug(format_args!(
+                        "{}: range window|{} at {}-{}",
+                        "format_draw",
+                        { owned.argument },
+                        { owned.start },
+                        { owned.end }
+                    ));
+                }
+                5 => {
+                    log_debug(format_args!(
+                        "{}: range session|${} at {}-{}",
+                        "format_draw",
+                        { owned.argument },
+                        { owned.start },
+                        { owned.end }
+                    ));
+                }
+                6 => {
+                    log_debug(format_args!(
+                        "{}: range user|{} at {}-{}",
+                        "format_draw",
+                        { owned.argument },
+                        { owned.start },
+                        { owned.end }
+                    ));
+                }
+                7 => {
+                    log_debug(format_args!(
+                        "{}: range control|{} at {}-{}",
+                        "format_draw",
+                        { owned.argument },
+                        { owned.start },
+                        { owned.end }
+                    ));
                 }
                 _ => {}
             }
-            for range in &frs {
-                let mut owned = Box::new(style_range {
-                    type_0: range.type_0,
-                    argument: range.argument,
-                    string: [0; 16],
-                    start: range.start,
-                    end: range.end,
-                });
-                strlcpy(
-                    &raw mut owned.string as *mut ::core::ffi::c_char,
-                    range.string.as_ptr(),
-                    ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-                );
-                match owned.type_0 as ::core::ffi::c_uint {
-                    1 => {
-                        log_debug(format_args!(
-                            "{}: range left at {}-{}",
-                            "format_draw",
-                            (owned.start) as u32,
-                            (owned.end) as u32
-                        ));
-                    }
-                    2 => {
-                        log_debug(format_args!(
-                            "{}: range right at {}-{}",
-                            "format_draw",
-                            (owned.start) as u32,
-                            (owned.end) as u32
-                        ));
-                    }
-                    3 => {
-                        log_debug(format_args!(
-                            "{}: range pane|%{} at {}-{}",
-                            "format_draw",
-                            (owned.argument) as u32,
-                            (owned.start) as u32,
-                            (owned.end) as u32
-                        ));
-                    }
-                    4 => {
-                        log_debug(format_args!(
-                            "{}: range window|{} at {}-{}",
-                            "format_draw",
-                            (owned.argument) as u32,
-                            (owned.start) as u32,
-                            (owned.end) as u32
-                        ));
-                    }
-                    5 => {
-                        log_debug(format_args!(
-                            "{}: range session|${} at {}-{}",
-                            "format_draw",
-                            (owned.argument) as u32,
-                            (owned.start) as u32,
-                            (owned.end) as u32
-                        ));
-                    }
-                    6 => {
-                        log_debug(format_args!(
-                            "{}: range user|{} at {}-{}",
-                            "format_draw",
-                            (owned.argument) as u32,
-                            (owned.start) as u32,
-                            (owned.end) as u32
-                        ));
-                    }
-                    7 => {
-                        log_debug(format_args!(
-                            "{}: range control|{} at {}-{}",
-                            "format_draw",
-                            (owned.argument) as u32,
-                            (owned.start) as u32,
-                            (owned.end) as u32
-                        ));
-                    }
-                    0 | _ => {}
-                }
-                if !srs.is_null() {
-                    (*srs).push(owned);
-                }
+            if !srs.is_null() {
+                (*srs).push(owned);
             }
         }
-        _ => {}
     }
     i = 0 as u_int;
     while i < TOTAL as ::core::ffi::c_int as u_int {
@@ -1729,7 +1679,7 @@ pub unsafe fn format_width(mut expanded: *const ::core::ffi::c_char) -> u_int {
             }
         }
     }
-    return width;
+    width
 }
 pub(crate) unsafe fn format_trim_left_bytes(expanded: &CStr, mut limit: u_int) -> Vec<u8> {
     let mut out = Vec::<u8>::new();

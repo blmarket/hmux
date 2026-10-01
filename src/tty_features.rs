@@ -242,11 +242,10 @@ pub unsafe fn tty_parse_features(
             break;
         }
         remove = (*next as ::core::ffi::c_int != '\0' as i32
-            && *next.offset(strlen(next).wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
+            && *next.add(strlen(next).wrapping_sub(1 as size_t)) as ::core::ffi::c_int
                 == '@' as i32) as ::core::ffi::c_int;
         if remove != 0 {
-            *next.offset(strlen(next).wrapping_sub(1 as size_t) as isize) =
-                '\0' as i32 as ::core::ffi::c_char;
+            *next.add(strlen(next).wrapping_sub(1 as size_t)) = '\0' as i32 as ::core::ffi::c_char;
         }
         i = 0 as u_int;
         while (i as usize) < tty_features.len() {
@@ -292,7 +291,7 @@ pub unsafe fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
             if !names.is_empty() {
                 names.push(b',');
             }
-            names.extend_from_slice((**feature).name.to_bytes());
+            names.extend_from_slice(feature.name.to_bytes());
         }
     }
     CString::new(names).expect("feature names contain no NUL")
@@ -343,7 +342,7 @@ pub unsafe fn tty_feature_present(
             return 0 as ::core::ffi::c_int;
         }
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 /// Applying capability strings is component-only; Client flag publication is
 /// left to the caller after releasing its terminal component guard.

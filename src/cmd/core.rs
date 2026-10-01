@@ -112,7 +112,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static cmd_table: [&'static cmd_entry; 92] = {
+pub static cmd_table: [&cmd_entry; 92] = {
     [
         &cmd_attach_session_entry,
         &cmd_bind_key_entry,
@@ -209,7 +209,7 @@ pub static cmd_table: [&'static cmd_entry; 92] = {
     ]
 };
 static mut cmd_list_next_group: u_int = 1 as u_int;
-pub unsafe fn cmd_log_argv(argv: &Vec<CString>, prefix: &CStr) {
+pub unsafe fn cmd_log_argv(argv: &[CString], prefix: &CStr) {
     for (i, arg) in argv.iter().enumerate() {
         log_debug(format_args!(
             "{}: argv[{}]={}",
@@ -223,7 +223,7 @@ pub(crate) fn cmd_append_argv(argv: &mut Vec<CString>, arg: &CStr) {
     argv.push(arg.to_owned());
 }
 pub unsafe fn cmd_pack_argv(
-    argv: &Vec<CString>,
+    argv: &[CString],
     mut buf: *mut ::core::ffi::c_char,
     mut len: size_t,
 ) -> ::core::ffi::c_int {
@@ -240,14 +240,14 @@ pub unsafe fn cmd_pack_argv(
             return -(1 as ::core::ffi::c_int);
         }
         arglen = argv[i as usize].as_bytes_with_nul().len() as size_t;
-        buf = buf.offset(arglen as isize);
+        buf = buf.add(arglen);
         len = len.wrapping_sub(arglen);
         i += 1;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 
-pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &Vec<CString>) -> Option<CString> {
+pub(crate) unsafe fn cmd_stringify_argv_cstring(argv: &[CString]) -> Option<CString> {
     let mut bytes = Vec::new();
     for (i, argument) in argv.iter().enumerate() {
         let escaped = args_escape_cstring(argument);
@@ -275,13 +275,13 @@ pub fn cmd_get_args_mut(cmd: &mut cmd) -> Option<&mut args> {
     cmd.args.as_deref_mut()
 }
 pub unsafe fn cmd_get_group(mut cmd: refbox::Weak<cmd>) -> u_int {
-    return cmd.get_unchecked().group;
+    cmd.get_unchecked().group
 }
 pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u32) {
     (cmd.file.as_deref(), cmd.line)
 }
 pub unsafe fn cmd_get_parse_flags(mut cmd: refbox::Weak<cmd>) -> ::core::ffi::c_int {
-    return cmd.get_unchecked().parse_flags;
+    cmd.get_unchecked().parse_flags
 }
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
@@ -433,7 +433,7 @@ pub unsafe fn cmd_parse(
         command.parse_flags = parse_flags;
         command.line = line;
     }
-    return Ok(cmd);
+    Ok(cmd)
 }
 pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
     let new_cmd = cmd_new_owned(cmd.entry, cmd.file.as_deref());
@@ -447,7 +447,7 @@ pub unsafe fn cmd_copy(cmd: &cmd, argv: &Vec<CString>) -> refbox::RefBox<cmd> {
         ));
         copy.line = cmd.line;
     }
-    return new_cmd;
+    new_cmd
 }
 pub unsafe fn cmd_print(cmd: &cmd) -> CString {
     cmd_print_cstring(cmd)
@@ -594,7 +594,7 @@ pub unsafe fn cmd_list_all_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
             return 0 as ::core::ffi::c_int;
         }
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
     let mut flag: ::core::ffi::c_int = CMD_STARTSERVER;
@@ -604,7 +604,7 @@ pub unsafe fn cmd_list_any_have(cmdlist: &cmd_list) -> ::core::ffi::c_int {
             return 1 as ::core::ffi::c_int;
         }
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_mouse_at(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -657,7 +657,7 @@ pub unsafe fn cmd_mouse_window(
     if let Some(sp) = sp {
         *sp = Some(session_owner);
     }
-    return wl;
+    wl
 }
 pub unsafe fn cmd_mouse_pane(
     mut m: *mut mouse_event,

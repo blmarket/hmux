@@ -34,7 +34,7 @@ use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
 use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
-use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
+use crate::src::input::{input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
 use crate::src::layout::{
     layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_init,
@@ -110,7 +110,7 @@ use crate::src::shared::limits::{INT_MAX, UINT_MAX};
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
-    pane_history_first, pane_history_push, pane_history_remove, window_pane, window_pane_history,
+    pane_history_first, pane_history_push, pane_history_remove, window_pane_history,
     window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
 };
 use crate::src::shared::pane::{
@@ -295,19 +295,19 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, mut old_name: *const ::core::
         &(*(w)).observer.upgrade().expect("live window"),
         0 as ::core::ffi::c_int,
     );
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*(w)).observer.upgrade().expect("live window"),
     );
     event_payload_set_string(
-        &mut *ep,
+        &mut ep,
         b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, old_name),
     );
     event_payload_set_string(
-        &mut *ep,
+        &mut ep,
         b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, (*w).name.as_ptr().cast_mut()),
     );
@@ -349,12 +349,12 @@ unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option<Win
     if !errstr.is_null() {
         return None;
     }
-    return window_find_by_id(id);
+    window_find_by_id(id)
 }
 unsafe fn window_find_by_id(id: u_int) -> Option<WindowRef> {
     let mut w = window::default();
     w.id = id;
-    return windows_find(&windows, &w);
+    windows_find(&windows, &w)
 }
 unsafe fn window_update_activity(w_owner: &WindowRef) {
     let mut w = w_owner.get();
@@ -426,11 +426,11 @@ unsafe fn window_create(
     log_debug(format_args!(
         "{}: @{} create {}x{} ({}x{})",
         "window_create",
-        ((*w).id) as u32,
-        (sx) as u32,
-        (sy) as u32,
-        ((*w).xpixel) as u32,
-        ((*w).ypixel) as u32
+        { (*w).id },
+        { sx },
+        { sy },
+        { (*w).xpixel },
+        { (*w).ypixel }
     ));
     owner
 }
@@ -438,7 +438,7 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     let mut w = w_owner.get();
     assert_eq!((*w).lifecycle, WindowLifecycle::Live);
     (*w).lifecycle = WindowLifecycle::Destroying;
-    log_debug(format_args!("window @{} destroyed", ((*w).id) as u32));
+    log_debug(format_args!("window @{} destroyed", { (*w).id }));
     // The releasing owner keeps weak parent links upgradeable throughout cleanup.
     // Restore layout links without scheduling resize events for dying panes.
     window_unzoom_internal(w_owner, 0, false);
@@ -462,7 +462,7 @@ unsafe fn window_add_ref(w_owner: &WindowRef, from: *const ::core::ffi::c_char) 
     let owner = Rc::clone(w_owner);
     log_debug(format_args!(
         "retain window @{} ({})",
-        ((*w).id) as u32,
+        { (*w).id },
         log_cstr((from) as *const _)
     ));
     owner
@@ -488,7 +488,7 @@ unsafe fn window_prepare_release(w_owner: &WindowRef, from: *const ::core::ffi::
     }
     log_debug(format_args!(
         "release window @{} ({})",
-        ((*w).id) as u32,
+        { (*w).id },
         log_cstr((from) as *const _)
     ));
 }
@@ -522,19 +522,23 @@ unsafe fn window_resize(
     log_debug(format_args!(
         "{}: @{} resize {}x{} ({}x{})",
         "window_resize",
-        ((*w).id) as u32,
-        (sx) as u32,
-        (sy) as u32,
-        (if xpixel == -(1 as ::core::ffi::c_int) {
-            (*w).xpixel
-        } else {
-            xpixel as u_int
-        }) as u32,
-        (if ypixel == -(1 as ::core::ffi::c_int) {
-            (*w).ypixel
-        } else {
-            ypixel as u_int
-        }) as u32
+        { (*w).id },
+        { sx },
+        { sy },
+        {
+            if xpixel == -(1 as ::core::ffi::c_int) {
+                (*w).xpixel
+            } else {
+                xpixel as u_int
+            }
+        },
+        {
+            if ypixel == -(1 as ::core::ffi::c_int) {
+                (*w).ypixel
+            } else {
+                ypixel as u_int
+            }
+        }
     ));
     (*w).sx = sx;
     (*w).sy = sy;
@@ -544,7 +548,7 @@ unsafe fn window_resize(
             sx,
             sy,
         );
-        server_redraw_window(&(w_owner));
+        server_redraw_window(w_owner);
     }
     if xpixel != -(1 as ::core::ffi::c_int) {
         (*w).xpixel = xpixel as u_int;
@@ -598,7 +602,7 @@ unsafe fn window_set_active_pane(
         window_update_focus(Some(window));
     }
     tty_update_window_offset(window);
-    server_redraw_window(&(window));
+    server_redraw_window(window);
     if notify != 0 {
         if let Some(active) = window.active_pane() {
             window_fire_pane_changed(window, &active, previous.as_ref());
@@ -611,7 +615,7 @@ unsafe fn window_pane_get_palette(
     mut c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let Some(pane) = wp_owner else { return -1 };
-    colour_palette_get(Some(&*pane.borrow_palette()), c)
+    colour_palette_get(Some(pane.borrow_palette()), c)
 }
 unsafe fn window_redraw_active_switch(
     window: &WindowRef,
@@ -666,10 +670,10 @@ unsafe fn window_get_active_at(
         for candidate in (*w).z_index.snapshot() {
             if !(!candidate.is_visible() || candidate.is_floating()) {
                 (xoff, yoff, sx, sy) = candidate.outer_geometry();
-                if !((x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx)) {
-                    if y as ::core::ffi::c_int == yoff - 1 as ::core::ffi::c_int {
-                        return Some(candidate);
-                    }
+                if !((x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx))
+                    && y as ::core::ffi::c_int == yoff - 1 as ::core::ffi::c_int
+                {
+                    return Some(candidate);
                 }
             }
         }
@@ -699,10 +703,8 @@ unsafe fn window_get_active_at(
             {
                 if (x as ::core::ffi::c_int) < xoff
                     || x as ::core::ffi::c_int >= xoff + sx as ::core::ffi::c_int
-                {
-                    current_block_15 = 12349973810996921269;
-                } else if (y as ::core::ffi::c_int) < yoff
-                    || y as ::core::ffi::c_int >= yoff + sy as ::core::ffi::c_int
+                    || ((y as ::core::ffi::c_int) < yoff
+                        || y as ::core::ffi::c_int >= yoff + sy as ::core::ffi::c_int)
                 {
                     current_block_15 = 12349973810996921269;
                 } else {
@@ -710,10 +712,8 @@ unsafe fn window_get_active_at(
                 }
             } else if (x as ::core::ffi::c_int) < xoff - 1 as ::core::ffi::c_int
                 || x > (xoff as u_int).wrapping_add(sx)
-            {
-                current_block_15 = 12349973810996921269;
-            } else if (y as ::core::ffi::c_int) < yoff - 1 as ::core::ffi::c_int
-                || y > (yoff as u_int).wrapping_add(sy)
+                || ((y as ::core::ffi::c_int) < yoff - 1 as ::core::ffi::c_int
+                    || y > (yoff as u_int).wrapping_add(sy))
             {
                 current_block_15 = 12349973810996921269;
             } else {
@@ -725,7 +725,7 @@ unsafe fn window_get_active_at(
             }
         }
     }
-    return None;
+    None
 }
 unsafe fn window_find_string(
     window_owner: &WindowRef,
@@ -788,7 +788,7 @@ unsafe fn window_find_string(
     } else {
         return None;
     }
-    return window_get_active_at(window_owner, x, y);
+    window_get_active_at(window_owner, x, y)
 }
 unsafe fn window_zoom(pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
     let window = pane.window_observer().upgrade().expect("zoom pane window");
@@ -949,7 +949,7 @@ unsafe fn window_push_zoom(
     log_debug(format_args!(
         "{}: @{} {}",
         "window_push_zoom",
-        ((*w).id) as u32,
+        { (*w).id },
         (flag != 0 && (*w).flags & WINDOW_ZOOMED != 0) as ::core::ffi::c_int
     ));
     if flag != 0 && (always != 0 || (*w).flags & WINDOW_ZOOMED != 0) {
@@ -964,8 +964,8 @@ unsafe fn window_push_zoom(
     } else {
         (*w).was_zoomed = std::rc::Weak::new();
     }
-    return (window_unzoom(w_owner, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int)
-        as ::core::ffi::c_int;
+    (window_unzoom(w_owner, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int)
+        as ::core::ffi::c_int
 }
 unsafe fn window_pop_zoom(w_owner: &WindowRef) -> ::core::ffi::c_int {
     let mut w = w_owner.get();
@@ -973,7 +973,7 @@ unsafe fn window_pop_zoom(w_owner: &WindowRef) -> ::core::ffi::c_int {
     log_debug(format_args!(
         "{}: @{} {}",
         "window_pop_zoom",
-        ((*w).id) as u32,
+        { (*w).id },
         ((*w).flags & WINDOW_WASZOOMED != 0) as ::core::ffi::c_int
     ));
     if (*w).flags & WINDOW_WASZOOMED != 0 {
@@ -996,7 +996,7 @@ unsafe fn window_pop_zoom(w_owner: &WindowRef) -> ::core::ffi::c_int {
             return (window_zoom(&owner) == 0) as ::core::ffi::c_int;
         }
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn window_add_pane(
     window: &WindowRef,
@@ -1352,5 +1352,4 @@ mod zoom_teardown_tests {
     fn dropping_the_last_owner_without_explicit_release_is_rejected() {
         drop(window::new());
     }
-
 }

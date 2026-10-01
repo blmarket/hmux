@@ -34,7 +34,7 @@ pub(super) unsafe fn value(
         b"client_session" => owner.attached_session().upgrade()?.name(),
         b"client_last_session" => {
             let previous = owner.previous_session();
-            (&sessions).resolve(&previous)?.name()
+            sessions.resolve(&previous)?.name()
         }
         b"client_control_mode" => boolean(owner.is_control()),
         b"client_readonly" => boolean(owner.is_read_only()),
@@ -88,7 +88,7 @@ pub(super) unsafe fn value(
         b"client_termfeatures" => tty_get_features((*owner.get()).term_features),
         b"client_termname" => (*owner.get()).term_name.clone()?,
         b"client_termtype" => (*owner.get()).term_type.clone().unwrap_or_default(),
-        b"client_theme" => match (*owner.get()).theme as u32 {
+        b"client_theme" => match (*owner.get()).theme {
             1 => c"light".to_owned(),
             2 => c"dark".to_owned(),
             _ => return None,
@@ -105,7 +105,7 @@ pub(super) unsafe fn value(
                 b"client_cell_width" => number(tty.xpixel),
                 b"client_cell_height" => number(tty.ypixel),
                 _ => {
-                    let term = &*tty_term_owner_ptr(&tty.term).expect("terminal description");
+                    let term = tty_term_owner_ptr(&tty.term).expect("terminal description");
                     let colours = if term.flags & TERM_RGBCOLOURS != 0 {
                         16777216
                     } else if term.flags & TERM_256COLOURS != 0 {

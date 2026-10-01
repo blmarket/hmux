@@ -43,7 +43,7 @@ unsafe fn tty_draw_line_clear(
     if !client.clips_terminal_output()
         && wrapped == 0
         && nx >= 10 as u_int
-        && tty_fake_bce(&*client.borrow_terminal(), defaults, bg) == 0
+        && tty_fake_bce(client.borrow_terminal(), defaults, bg) == 0
     {
         if px.wrapping_add(nx) >= terminal_value!(client, sx)
             && tty_term_has(terminal_term(client), TTYC_EL) != 0
@@ -78,9 +78,9 @@ fn tty_draw_line_get_empty(gc: &grid_cell, last: &grid_cell, mut nx: u_int) -> u
     let mut empty: u_int = 0 as u_int;
     if gc.data.width as u_int > nx {
         empty = nx;
-    } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-        empty = 1 as u_int;
-    } else if gc.data.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
+    } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0
+        || (gc.data.width as ::core::ffi::c_int == 0 as ::core::ffi::c_int)
+    {
         empty = 1 as u_int;
     } else if gc.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
         empty = 0 as u_int;
@@ -98,7 +98,7 @@ fn tty_draw_line_get_empty(gc: &grid_cell, last: &grid_cell, mut nx: u_int) -> u
             empty = 1 as u_int;
         }
     }
-    return empty;
+    empty
 }
 pub unsafe fn tty_draw_line(
     client: &ClientRef,
@@ -180,11 +180,11 @@ pub unsafe fn tty_draw_line(
     log_debug(format_args!(
         "{}: px={} py={} nx={} atx={} aty={}",
         "tty_draw_line",
-        (px) as u32,
-        (py) as u32,
-        (nx) as u32,
-        (atx) as u32,
-        (aty) as u32
+        { px },
+        { py },
+        { nx },
+        { atx },
+        { aty }
     ));
     if atx >= terminal_value!(client, sx) {
         return;
@@ -195,7 +195,7 @@ pub unsafe fn tty_draw_line(
     if nx == 0 as u_int {
         return;
     }
-    cellsize = (*grid_get_line(gd, gd.hsize.wrapping_add(py))).cellsize as u_int;
+    cellsize = grid_get_line(gd, gd.hsize.wrapping_add(py)).cellsize as u_int;
     if s.grid().sx > cellsize {
         ex = cellsize;
     } else {
@@ -204,14 +204,14 @@ pub unsafe fn tty_draw_line(
     log_debug(format_args!(
         "{}: drawing {}-{},{} (end {}) at {},{}; defaults: fg={}, bg={}",
         "tty_draw_line",
-        (px) as u32,
-        (px.wrapping_add(nx)) as u32,
-        (py) as u32,
+        { px },
+        { px.wrapping_add(nx) },
+        { py },
         (ex) as u32,
-        (atx) as u32,
-        (aty) as u32,
-        (defaults.fg) as i32,
-        (defaults.bg) as i32
+        { atx },
+        { aty },
+        { defaults.fg },
+        { defaults.bg }
     ));
     flags = terminal_value!(client, flags) & TTY_NOCURSOR;
     terminal_set!(client, flags, |=, TTY_NOCURSOR);
@@ -270,153 +270,148 @@ pub unsafe fn tty_draw_line(
     } else {
         current_block = 16799951812150840583;
     }
-    match current_block {
-        16799951812150840583 => {
-            if py != 0 as u_int
-                && atx == 0 as u_int
-                && terminal_value!(client, cx) >= terminal_value!(client, sx)
-                && nx == terminal_value!(client, sx)
-            {
-                let gl = grid_get_line(gd, gd.hsize.wrapping_add(py).wrapping_sub(1 as u_int));
-                if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
-                    wrapped = 1 as ::core::ffi::c_int;
-                }
-            }
-            i = 0 as u_int;
-            last_i = i;
-            len = 0 as size_t;
-            width = 0 as u_int;
-            current_state = TTY_DRAW_LINE_FIRST;
-            loop {
-                let mut gcp: &grid_cell;
-                if i == nx {
-                    empty = 0 as ::core::ffi::c_int;
-                    next_state = TTY_DRAW_LINE_DONE;
-                    gcp = &grid_default_cell;
-                } else {
-                    if i > nx {
-                        fatalx(|out| {
-                            write!(out, "position {} > width {}", (i) as u32, (nx) as u32)
-                        });
-                    }
-                    if px >= ex || i >= ex.wrapping_sub(px) {
-                        empty = nx.wrapping_sub(i) as ::core::ffi::c_int;
-                        gcp = &grid_default_cell;
-                    } else {
-                        grid_view_get_cell(gd, px.wrapping_add(i), py, &mut gc);
-                        empty = tty_draw_line_get_empty(&gc, &last, nx.wrapping_sub(i))
-                            as ::core::ffi::c_int;
-                        if empty != 0 as ::core::ffi::c_int {
-                            gcp = &gc;
-                        } else {
-                            converted =
-                                tty_check_codeset(client.flags() & CLIENT_UTF8 as u64 != 0, &gc);
-                            gcp = &converted;
-                            if gcp.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
-                                ngc = *gcp;
-                                if let Some(selected) = screen_select_cell(s, gcp) {
-                                    ngc = selected;
-                                    gcp = &ngc;
-                                }
-                            }
-                        }
-                    }
-                    if empty != 0 as ::core::ffi::c_int {
-                        next_state = TTY_DRAW_LINE_EMPTY;
-                    } else if current_state as ::core::ffi::c_uint
-                        == TTY_DRAW_LINE_FIRST as ::core::ffi::c_int as ::core::ffi::c_uint
-                    {
-                        next_state = TTY_DRAW_LINE_SAME;
-                    } else if grid_cells_look_equal(gcp, &last) {
-                        if gcp.data.size as usize
-                            > (::core::mem::size_of::<[::core::ffi::c_char; 1000]>() as usize)
-                                .wrapping_sub(len as usize)
-                        {
-                            next_state = TTY_DRAW_LINE_FLUSH;
-                        } else {
-                            next_state = TTY_DRAW_LINE_SAME;
-                        }
-                    } else if current_state as ::core::ffi::c_uint
-                        == TTY_DRAW_LINE_NEW1 as ::core::ffi::c_int as ::core::ffi::c_uint
-                    {
-                        next_state = TTY_DRAW_LINE_NEW2;
-                    } else {
-                        next_state = TTY_DRAW_LINE_NEW1;
-                    }
-                }
-                if log_get_level() != 0 as ::core::ffi::c_int {
-                    log_debug(format_args!(
-                        "{}: cell {} empty {}, bg {}; state: current {}, next {}",
-                        "tty_draw_line",
-                        (px.wrapping_add(i)) as u32,
-                        (empty) as u32,
-                        (gcp.bg) as u32,
-                        TTY_DRAW_LINE_STATES[current_state as usize],
-                        TTY_DRAW_LINE_STATES[next_state as usize]
-                    ));
-                }
-                if next_state as ::core::ffi::c_uint != current_state as ::core::ffi::c_uint {
-                    if current_state as ::core::ffi::c_uint
-                        == TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
-                    {
-                        tty_attributes(client, &last, Some(style_ctx));
-                        tty_draw_line_clear(
-                            client,
-                            atx.wrapping_add(last_i),
-                            aty,
-                            i.wrapping_sub(last_i),
-                            defaults,
-                            last.bg as u_int,
-                            wrapped,
-                        );
-                        wrapped = 0 as ::core::ffi::c_int;
-                    } else if next_state as ::core::ffi::c_uint
-                        != TTY_DRAW_LINE_SAME as ::core::ffi::c_int as ::core::ffi::c_uint
-                        && len != 0 as size_t
-                    {
-                        tty_attributes(client, &last, Some(style_ctx));
-                        if atx.wrapping_add(i).wrapping_sub(width) != 0 as u_int || wrapped == 0 {
-                            tty_cursor(client, atx.wrapping_add(i).wrapping_sub(width), aty);
-                        }
-                        if !(last.attr as ::core::ffi::c_int) & GRID_ATTR_CHARSET != 0 {
-                            tty_putn(client, &buf[..len], width);
-                        } else {
-                            j = 0 as u_int;
-                            while (j as size_t) < len {
-                                tty_putc(client, buf[j as usize] as u_char);
-                                j = j.wrapping_add(1);
-                            }
-                        }
-                        len = 0 as size_t;
-                        width = 0 as u_int;
-                        wrapped = 0 as ::core::ffi::c_int;
-                    }
-                    last_i = i;
-                }
-                if next_state as ::core::ffi::c_uint
-                    != TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    let data = &gcp.data;
-                    let size = data.size as usize;
-                    buf[len..len + size].copy_from_slice(&data.data[..size]);
-                    len += size;
-                    width = width.wrapping_add(data.width as u_int);
-                }
-                if next_state as ::core::ffi::c_uint
-                    == TTY_DRAW_LINE_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    break;
-                }
-                current_state = next_state;
-                last = *gcp;
-                if empty != 0 as ::core::ffi::c_int {
-                    i = i.wrapping_add(empty as u_int);
-                } else {
-                    i = i.wrapping_add(gcp.data.width as u_int);
-                }
+    if current_block == 16799951812150840583 {
+        if py != 0 as u_int
+            && atx == 0 as u_int
+            && terminal_value!(client, cx) >= terminal_value!(client, sx)
+            && nx == terminal_value!(client, sx)
+        {
+            let gl = grid_get_line(gd, gd.hsize.wrapping_add(py).wrapping_sub(1 as u_int));
+            if gl.flags as ::core::ffi::c_int & GRID_LINE_WRAPPED != 0 {
+                wrapped = 1 as ::core::ffi::c_int;
             }
         }
-        _ => {}
+        i = 0 as u_int;
+        last_i = i;
+        len = 0 as size_t;
+        width = 0 as u_int;
+        current_state = TTY_DRAW_LINE_FIRST;
+        loop {
+            let mut gcp: &grid_cell;
+            if i == nx {
+                empty = 0 as ::core::ffi::c_int;
+                next_state = TTY_DRAW_LINE_DONE;
+                gcp = &grid_default_cell;
+            } else {
+                if i > nx {
+                    fatalx(|out| write!(out, "position {} > width {}", (i) as u32, { nx }));
+                }
+                if px >= ex || i >= ex.wrapping_sub(px) {
+                    empty = nx.wrapping_sub(i) as ::core::ffi::c_int;
+                    gcp = &grid_default_cell;
+                } else {
+                    grid_view_get_cell(gd, px.wrapping_add(i), py, &mut gc);
+                    empty = tty_draw_line_get_empty(&gc, &last, nx.wrapping_sub(i))
+                        as ::core::ffi::c_int;
+                    if empty != 0 as ::core::ffi::c_int {
+                        gcp = &gc;
+                    } else {
+                        converted =
+                            tty_check_codeset(client.flags() & CLIENT_UTF8 as u64 != 0, &gc);
+                        gcp = &converted;
+                        if gcp.flags as ::core::ffi::c_int & GRID_FLAG_SELECTED != 0 {
+                            ngc = *gcp;
+                            if let Some(selected) = screen_select_cell(s, gcp) {
+                                ngc = selected;
+                                gcp = &ngc;
+                            }
+                        }
+                    }
+                }
+                if empty != 0 as ::core::ffi::c_int {
+                    next_state = TTY_DRAW_LINE_EMPTY;
+                } else if current_state as ::core::ffi::c_uint
+                    == TTY_DRAW_LINE_FIRST as ::core::ffi::c_int as ::core::ffi::c_uint
+                {
+                    next_state = TTY_DRAW_LINE_SAME;
+                } else if grid_cells_look_equal(gcp, &last) {
+                    if gcp.data.size as usize
+                        > (::core::mem::size_of::<[::core::ffi::c_char; 1000]>() as usize)
+                            .wrapping_sub(len as usize)
+                    {
+                        next_state = TTY_DRAW_LINE_FLUSH;
+                    } else {
+                        next_state = TTY_DRAW_LINE_SAME;
+                    }
+                } else if current_state as ::core::ffi::c_uint
+                    == TTY_DRAW_LINE_NEW1 as ::core::ffi::c_int as ::core::ffi::c_uint
+                {
+                    next_state = TTY_DRAW_LINE_NEW2;
+                } else {
+                    next_state = TTY_DRAW_LINE_NEW1;
+                }
+            }
+            if log_get_level() != 0 as ::core::ffi::c_int {
+                log_debug(format_args!(
+                    "{}: cell {} empty {}, bg {}; state: current {}, next {}",
+                    "tty_draw_line",
+                    (px.wrapping_add(i)) as u32,
+                    (empty) as u32,
+                    (gcp.bg) as u32,
+                    TTY_DRAW_LINE_STATES[current_state as usize],
+                    TTY_DRAW_LINE_STATES[next_state as usize]
+                ));
+            }
+            if next_state as ::core::ffi::c_uint != current_state as ::core::ffi::c_uint {
+                if current_state as ::core::ffi::c_uint
+                    == TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
+                {
+                    tty_attributes(client, &last, Some(style_ctx));
+                    tty_draw_line_clear(
+                        client,
+                        atx.wrapping_add(last_i),
+                        aty,
+                        i.wrapping_sub(last_i),
+                        defaults,
+                        last.bg as u_int,
+                        wrapped,
+                    );
+                    wrapped = 0 as ::core::ffi::c_int;
+                } else if next_state as ::core::ffi::c_uint
+                    != TTY_DRAW_LINE_SAME as ::core::ffi::c_int as ::core::ffi::c_uint
+                    && len != 0 as size_t
+                {
+                    tty_attributes(client, &last, Some(style_ctx));
+                    if atx.wrapping_add(i).wrapping_sub(width) != 0 as u_int || wrapped == 0 {
+                        tty_cursor(client, atx.wrapping_add(i).wrapping_sub(width), aty);
+                    }
+                    if !(last.attr as ::core::ffi::c_int) & GRID_ATTR_CHARSET != 0 {
+                        tty_putn(client, &buf[..len], width);
+                    } else {
+                        j = 0 as u_int;
+                        while (j as size_t) < len {
+                            tty_putc(client, buf[j as usize] as u_char);
+                            j = j.wrapping_add(1);
+                        }
+                    }
+                    len = 0 as size_t;
+                    width = 0 as u_int;
+                    wrapped = 0 as ::core::ffi::c_int;
+                }
+                last_i = i;
+            }
+            if next_state as ::core::ffi::c_uint
+                != TTY_DRAW_LINE_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                let data = &gcp.data;
+                let size = data.size as usize;
+                buf[len..len + size].copy_from_slice(&data.data[..size]);
+                len += size;
+                width = width.wrapping_add(data.width as u_int);
+            }
+            if next_state as ::core::ffi::c_uint
+                == TTY_DRAW_LINE_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                break;
+            }
+            current_state = next_state;
+            last = *gcp;
+            if empty != 0 as ::core::ffi::c_int {
+                i = i.wrapping_add(empty as u_int);
+            } else {
+                i = i.wrapping_add(gcp.data.width as u_int);
+            }
+        }
     }
     terminal_set!(client, flags, =, terminal_value!(client, flags) & !TTY_NOCURSOR | flags);
     tty_update_mode(client, terminal_value!(client, mode), Some(s.into()));

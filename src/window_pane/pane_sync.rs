@@ -154,7 +154,7 @@ unsafe fn flush_dirty(pane: &Rc<UnsafeCell<window_pane>>) {
     log_debug(format_args!(
         "{}: %{} had {} dirty lines",
         "screen_write_flush_dirty",
-        ((*wp).id) as u32,
+        { (*wp).id },
         (lines) as u32
     ));
     screen_write_stop(&mut ctx);

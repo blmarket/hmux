@@ -8,23 +8,23 @@ use crate::src::window::*;
 use std::os::fd::AsRawFd;
 use std::time::Duration;
 mod api;
-#[cfg(test)]
-mod resize_tests;
-#[cfg(test)]
-mod storage_tests;
 mod border;
 mod capture;
-mod mode_visuals;
-mod render;
 mod format;
 mod input;
 mod keys;
 mod lifecycle;
+mod mode_visuals;
 mod model;
 mod mouse;
 mod process;
+mod render;
+#[cfg(test)]
+mod resize_tests;
 mod sort;
 mod spawning;
+#[cfg(test)]
+mod storage_tests;
 pub(crate) use format::format_without_pane;
 pub use model::window_pane;
 mod pane_sync;
@@ -284,42 +284,42 @@ unsafe fn window_fire_pane_moved(
     };
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         Rc::clone(wp_owner),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(new_w_owner)),
+        std::rc::Rc::clone(new_w_owner),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(old_w_owner)),
+        std::rc::Rc::clone(old_w_owner),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(new_w_owner)),
+        std::rc::Rc::clone(new_w_owner),
     );
     if old_idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"old_window_index\0" as *const u8 as *const ::core::ffi::c_char,
             old_idx,
         );
     }
     if new_idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             new_idx,
         );
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"new_window_index\0" as *const u8 as *const ::core::ffi::c_char,
             new_idx,
         );
@@ -352,33 +352,33 @@ unsafe fn window_fire_pane_mode_changed(
         &(*(wp)).observer.upgrade().expect("live window_pane"),
         0 as ::core::ffi::c_int,
     );
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if !current.is_null() {
         event_payload_set_string(
-            &mut *ep,
+            &mut ep,
             b"current_mode\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, current),
         );
     }
     if !previous.is_null() {
         event_payload_set_string(
-            &mut *ep,
+            &mut ep,
             b"previous_mode\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, previous),
         );
     }
     event_payload_set_int(
-        &mut *ep,
+        &mut ep,
         b"mode_entered\0" as *const u8 as *const ::core::ffi::c_char,
         entered,
     );
@@ -406,19 +406,19 @@ unsafe fn window_fire_pane_prompt(
         &(*(wp)).observer.upgrade().expect("live window_pane"),
         0 as ::core::ffi::c_int,
     );
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_string(
-        &mut *ep,
+        &mut ep,
         b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
         |out| out.write_all(type_string.to_bytes()),
     );
@@ -433,7 +433,7 @@ unsafe fn window_pane_destroy_ready(
     if (*wp).pipe_fd.is_some()
         && (*wp)
             .pipe_event
-            .with_ptr(|event| unsafe { evbuffer_get_length(&*(*event).output) != 0 as size_t })
+            .with_ptr(|event| unsafe { evbuffer_get_length(&(*event).output) != 0 as size_t })
             .unwrap_or(false)
     {
         return 0 as ::core::ffi::c_int;
@@ -456,7 +456,7 @@ unsafe fn window_pane_destroy_ready(
     if (*wp).editor.is_some() && !(*wp).flags & PANE_STATUSREADY != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_add_ref(
@@ -467,7 +467,7 @@ unsafe fn window_pane_add_ref(
     let owner = Rc::clone(wp_owner);
     log_debug(format_args!(
         "retain pane %{} ({})",
-        ((*wp).id) as u32,
+        { (*wp).id },
         log_cstr((from) as *const _)
     ));
     owner
@@ -480,7 +480,7 @@ unsafe fn window_pane_remove_ref(
     let wp = owner.get();
     log_debug(format_args!(
         "release pane %{} ({})",
-        ((*wp).id) as u32,
+        { (*wp).id },
         log_cstr((from) as *const _)
     ));
     drop(owner);
@@ -493,15 +493,15 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if (*wp).fd.is_none() {
+    if wp.fd.is_none() {
         return;
     }
     log_debug(format_args!(
         "{}: %{} resize to {},{}",
         "window_pane_send_resize",
-        ((*wp).id) as u32,
-        (sx) as u32,
-        (sy) as u32
+        { wp.id },
+        { sx },
+        { sy }
     ));
     memset(
         &raw mut ws as *mut ::core::ffi::c_void,
@@ -516,7 +516,7 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     ws.ws_xpixel = xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
     if ioctl(
-        (*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+        wp.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
         TIOCSWINSZ as ::core::ffi::c_ulong,
         &raw mut ws,
     ) == -(1 as ::core::ffi::c_int)
@@ -571,7 +571,7 @@ unsafe fn window_pane_contains(
             return 0 as ::core::ffi::c_int;
         }
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_update_focus(wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>) {
@@ -634,7 +634,7 @@ unsafe fn window_pane_printable_flags(
         .ptr_eq(&Rc::downgrade(wp_owner))
     {
         let fresh12 = pos;
-        pos = pos + 1;
+        pos += 1;
         flags[fresh12 as usize] = '*' as i32 as ::core::ffi::c_char;
     }
     if window
@@ -642,22 +642,22 @@ unsafe fn window_pane_printable_flags(
         .is_some_and(|pane| Rc::ptr_eq(&pane, wp_owner))
     {
         let fresh13 = pos;
-        pos = pos + 1;
+        pos += 1;
         flags[fresh13 as usize] = '-' as i32 as ::core::ffi::c_char;
     }
     if (*wp).flags & PANE_ZOOMED != 0 {
         let fresh14 = pos;
-        pos = pos + 1;
+        pos += 1;
         flags[fresh14 as usize] = 'Z' as i32 as ::core::ffi::c_char;
     }
     if window_pane_is_floating(&*wp) != 0 {
         let fresh15 = pos;
-        pos = pos + 1;
+        pos += 1;
         flags[fresh15 as usize] = 'F' as i32 as ::core::ffi::c_char;
     }
     if (*wp).flags & PANE_FLOATOVERZOOM != 0 {
         let fresh16 = pos;
-        pos = pos + 1;
+        pos += 1;
         flags[fresh16 as usize] = 'A' as i32 as ::core::ffi::c_char;
     }
     if window
@@ -665,7 +665,7 @@ unsafe fn window_pane_printable_flags(
         .is_some_and(|pane| Rc::ptr_eq(&pane, wp_owner))
     {
         let fresh17 = pos;
-        pos = pos + 1;
+        pos += 1;
         flags[fresh17 as usize] = 'O' as i32 as ::core::ffi::c_char;
     }
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
@@ -959,7 +959,7 @@ unsafe fn window_pane_create(
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
     let owner = window_pane::new();
     wp = owner.get();
-    (*wp).window = std::rc::Rc::downgrade(&(w_owner)).clone();
+    (*wp).window = std::rc::Rc::downgrade(w_owner).clone();
     (*wp).options = Some(crate::src::options::options_create_owned(Some(
         crate::src::options::OptionsScope::Window(Rc::downgrade(w_owner)),
     )));
@@ -1010,7 +1010,7 @@ unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window_pan
     let item_owner = std::mem::take(&mut (*wp).wait_item).upgrade();
     let Some(item_owner) = item_owner else { return };
     let item = item_owner.get();
-    let mut c: Option<ClientRef> = None;
+    let _c: Option<ClientRef> = None;
     let mut retval: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if (*wp).flags & PANE_STATUSREADY != 0 {
         if (*wp).status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
@@ -1050,7 +1050,8 @@ unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         } else {
             PaneScreenSource::Mode((*wp).active_mode_entry())
         };
-        (*wme.get_unchecked().mode)
+        wme.get_unchecked()
+            .mode
             .free
             .expect("non-null function pointer")(wme);
         drop(entry);
@@ -1063,15 +1064,15 @@ unsafe fn window_pane_scrollbar_timer(owner: &Rc<std::cell::UnsafeCell<window_pa
 }
 
 unsafe fn window_pane_scrollbar_auto_hide(wp: &window_pane) -> ::core::ffi::c_int {
-    return (((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
+    (((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
         == PANE_SCROLLBARS_MODAL
         || ((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
-            == PANE_SCROLLBARS_AUTOHIDE) as ::core::ffi::c_int;
+            == PANE_SCROLLBARS_AUTOHIDE) as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_scrollbar_overlay_visible(wp: &window_pane) -> ::core::ffi::c_int {
-    return (window_pane_scrollbar_overlay(wp) != 0 && window_pane_scrollbar_visible(wp) != 0)
-        as ::core::ffi::c_int;
+    (window_pane_scrollbar_overlay(wp) != 0 && window_pane_scrollbar_visible(wp) != 0)
+        as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_scrollbar_redraw(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -1095,7 +1096,7 @@ unsafe fn window_pane_scrollbar_redraw_visibility(
         .expect("pane window")
         .invalidate_scene();
     (*wp).flags |= PANE_REDRAW;
-    server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+    server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
 }
 
 unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -1134,7 +1135,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
 
 unsafe fn window_pane_free(wp_value: &mut window_pane) {
     let wp: *mut window_pane = wp_value as *mut _;
-    log_debug(format_args!("pane %{} freed", ((*wp).id) as u32));
+    log_debug(format_args!("pane %{} freed", { (*wp).id }));
     // Logical pane destruction normally takes this first. Also keep direct
     // owner destruction safe: parser timers and sync state precede screens.
     if let Some(input) = (*wp).ictx.take() {
@@ -1173,7 +1174,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
     if has_pipe {
         let data = input
             .with_ptr(|event| unsafe {
-                pane_output_data(&mut *(*event).input, base, &pipe_offset).to_vec()
+                pane_output_data(&mut (*event).input, base, &pipe_offset).to_vec()
             })
             .unwrap_or_default();
         let new_size = data.len();
@@ -1186,11 +1187,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
             );
         }
     }
-    log_debug(format_args!(
-        "%{} has {} bytes",
-        ((*wp).id) as u32,
-        (size) as usize
-    ));
+    log_debug(format_args!("%{} has {} bytes", { (*wp).id }, { size }));
     let mut registry_c_owner = clients.first();
     while let Some(client) = registry_c_owner {
         client.control_write_output(owner);
@@ -1204,7 +1201,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
 
 unsafe fn window_pane_error_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
     let wp = owner.get();
-    log_debug(format_args!("%{} error", ((*wp).id) as u32));
+    log_debug(format_args!("%{} error", { (*wp).id }));
     (*wp).flags |= PANE_EXITED;
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(owner, 1);
@@ -1285,15 +1282,16 @@ unsafe fn window_pane_resize(
     log_debug(format_args!(
         "{}: %{} resize {}x{}",
         "window_pane_resize",
-        ((*wp).id) as u32,
-        (sx) as u32,
-        (sy) as u32
+        { (*wp).id },
+        { sx },
+        { sy }
     ));
     let reflow = (*wp).base.saved_grid.is_none() as ::core::ffi::c_int;
     screen_resize(&mut (*wp).base, sx, sy, reflow);
     wme = (*wp).active_mode_entry();
-    if wme.is_alive() && (*wme.get_unchecked().mode).resize.is_some() {
-        (*wme.get_unchecked().mode)
+    if wme.is_alive() && wme.get_unchecked().mode.resize.is_some() {
+        wme.get_unchecked()
+            .mode
             .resize
             .expect("non-null function pointer")(wme, sx, sy);
     }
@@ -1303,34 +1301,34 @@ unsafe fn window_pane_resize(
         &(*(wp)).observer.upgrade().expect("live window_pane"),
         0 as ::core::ffi::c_int,
     );
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"width\0" as *const u8 as *const ::core::ffi::c_char,
         sx,
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"height\0" as *const u8 as *const ::core::ffi::c_char,
         sy,
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
         old_sx,
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
         old_sy,
     );
@@ -1351,7 +1349,7 @@ unsafe fn window_pane_set_mode(
     let wp = pane_owner.get();
     let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
     let mode_screen: *mut screen;
-    let mut name: *const ::core::ffi::c_char = (*mode).name.as_ptr();
+    let mut name: *const ::core::ffi::c_char = mode.name.as_ptr();
     let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if let Some(active) = (*wp).active_mode() {
         if std::ptr::eq(active, mode) {
@@ -1372,7 +1370,9 @@ unsafe fn window_pane_set_mode(
     if existing.is_alive() {
         wme = existing.clone();
         window_pane_mode_promote(&mut *(wp), wme.clone());
-        mode_screen = (*wme.get_unchecked().mode)
+        mode_screen = wme
+            .get_unchecked()
+            .mode
             .display_screen
             .expect("mode display screen getter")(wme.clone());
     } else {
@@ -1388,7 +1388,8 @@ unsafe fn window_pane_set_mode(
         });
         wme = window_pane_mode_insert_front(&mut *wp, entry);
         mode_screen =
-            (*wme.get_unchecked().mode)
+            wme.get_unchecked()
+                .mode
                 .init
                 .expect("non-null function pointer")(wme.clone(), item_handle, fs, args);
         if mode_screen.is_null() {
@@ -1408,11 +1409,11 @@ unsafe fn window_pane_set_mode(
     (*wp).screen_source = PaneScreenSource::Mode((*wp).active_mode_entry());
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(
-        &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        &std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
         None,
     );
-    server_redraw_window_borders(&(((*wp).window_handle().as_ref()).expect("live window")));
-    server_status_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+    server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
+    server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
         b"pane-mode-entered\0" as *const u8 as *const ::core::ffi::c_char,
         &(*(wp)).observer.upgrade().expect("live window_pane"),
@@ -1427,7 +1428,7 @@ unsafe fn window_pane_set_mode(
         name,
         1 as ::core::ffi::c_int,
     );
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -1441,7 +1442,7 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         return;
     }
     wme = (*wp).active_mode_entry();
-    p = (*wme.get_unchecked().mode).name.as_ptr();
+    p = wme.get_unchecked().mode.name.as_ptr();
     kill_0 = wme.get_unchecked().kill;
     let entry =
         window_pane_mode_remove(&mut *(wp), wme.clone()).expect("mode entry is owned by pane");
@@ -1451,7 +1452,8 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     } else {
         PaneScreenSource::Mode((*wp).active_mode_entry())
     };
-    (*wme.get_unchecked().mode)
+    wme.get_unchecked()
+        .mode
         .free
         .expect("non-null function pointer")(wme);
     drop(entry);
@@ -1468,11 +1470,12 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         log_debug(format_args!(
             "{}: next mode is {}",
             "window_pane_reset_mode",
-            crate::src::log::log_bytes((*next.get_unchecked().mode).name.to_bytes())
+            crate::src::log::log_bytes(next.get_unchecked().mode.name.to_bytes())
         ));
         assert!(!(*wp).screen_ptr().is_null(), "restored mode has a screen");
-        if (*next.get_unchecked().mode).resize.is_some() {
-            (*next.get_unchecked().mode)
+        if next.get_unchecked().mode.resize.is_some() {
+            next.get_unchecked()
+                .mode
                 .resize
                 .expect("non-null function pointer")(next.clone(), (*wp).sx, (*wp).sy);
         }
@@ -1480,15 +1483,15 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     name = if !next.is_alive() {
         ::core::ptr::null::<::core::ffi::c_char>()
     } else {
-        (*next.get_unchecked().mode).name.as_ptr()
+        next.get_unchecked().mode.name.as_ptr()
     };
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
     layout_fix_panes(
-        &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        &std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
         None,
     );
-    server_redraw_window_borders(&(((*wp).window_handle().as_ref()).expect("live window")));
-    server_status_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+    server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
+    server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
         b"pane-mode-exited\0" as *const u8 as *const ::core::ffi::c_char,
         &(*(wp)).observer.upgrade().expect("live window_pane"),
@@ -1732,10 +1735,8 @@ unsafe fn window_pane_prompt_key(
     if wp.is_null() {
         return result;
     }
-    if !wpp.is_empty() {
-        if (*wp).prompt_data == wpp {
-            wpp.try_borrow_mut().expect("live prompt callback record").c = Weak::new();
-        }
+    if !wpp.is_empty() && (*wp).prompt_data == wpp {
+        wpp.try_borrow_mut().expect("live prompt callback record").c = Weak::new();
     }
     if (*wp)
         .prompt
@@ -1755,7 +1756,7 @@ unsafe fn window_pane_prompt_key(
     {
         (*wp).flags |= PANE_REDRAW;
     }
-    return result;
+    result
 }
 
 unsafe fn window_pane_copy_paste(
@@ -1888,7 +1889,7 @@ unsafe fn window_pane_key(
         {
             return 0 as ::core::ffi::c_int;
         }
-        if let (Some(callback), Some(client)) = ((*wme.get_unchecked().mode).key, client_owner) {
+        if let (Some(callback), Some(client)) = (wme.get_unchecked().mode.key, client_owner) {
             key &= !KEYC_MASK_FLAGS;
             callback(wme, client, wl, key, m);
         }
@@ -1918,7 +1919,7 @@ unsafe fn window_pane_key(
     {
         window_pane_copy_key(pane_owner, key);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_is_visible(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
@@ -2014,7 +2015,7 @@ unsafe fn window_pane_search(
     if i == grid.sy {
         return 0 as u_int;
     }
-    return i.wrapping_add(1 as u_int);
+    i.wrapping_add(1 as u_int)
 }
 
 unsafe fn window_pane_choose_best(
@@ -2070,7 +2071,7 @@ unsafe fn window_pane_find_up(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, height) = window.size();
+    let (_width, height) = window.size();
     status = window.pane_border_status();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff;
@@ -2090,20 +2091,17 @@ unsafe fn window_pane_find_up(
     for candidate in window.pane_snapshot() {
         next = candidate.get();
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) {
-            if !(yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge) {
-                end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if xoff < left && end > right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if xoff >= left && xoff <= right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= left && end <= right {
-                    found = 1 as ::core::ffi::c_int;
-                }
-                if !(found == 0) {
-                    list.push(candidate);
-                }
+        if !(next == wp) && !(yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge) {
+            end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+            found = 0 as ::core::ffi::c_int;
+            if xoff < left && end > right
+                || (xoff >= left && xoff <= right)
+                || (end >= left && end <= right)
+            {
+                found = 1 as ::core::ffi::c_int;
+            }
+            if !(found == 0) {
+                list.push(candidate);
             }
         }
     }
@@ -2128,7 +2126,7 @@ unsafe fn window_pane_find_down(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, height) = window.size();
+    let (_width, height) = window.size();
     status = window.pane_border_status();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
@@ -2148,20 +2146,17 @@ unsafe fn window_pane_find_down(
     for candidate in window.pane_snapshot() {
         next = candidate.get();
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) {
-            if !(yoff != edge) {
-                end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if xoff < left && end > right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if xoff >= left && xoff <= right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= left && end <= right {
-                    found = 1 as ::core::ffi::c_int;
-                }
-                if !(found == 0) {
-                    list.push(candidate);
-                }
+        if !(next == wp) && !(yoff != edge) {
+            end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+            found = 0 as ::core::ffi::c_int;
+            if xoff < left && end > right
+                || (xoff >= left && xoff <= right)
+                || (end >= left && end <= right)
+            {
+                found = 1 as ::core::ffi::c_int;
+            }
+            if !(found == 0) {
+                list.push(candidate);
             }
         }
     }
@@ -2185,7 +2180,7 @@ unsafe fn window_pane_find_left(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, height) = window.size();
+    let (width, _height) = window.size();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff;
     if edge == 0 as ::core::ffi::c_int {
@@ -2196,20 +2191,17 @@ unsafe fn window_pane_find_left(
     for candidate in window.pane_snapshot() {
         next = candidate.get();
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) {
-            if !(xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge) {
-                end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if yoff < top && end > bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if yoff >= top && yoff <= bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= top && end <= bottom {
-                    found = 1 as ::core::ffi::c_int;
-                }
-                if !(found == 0) {
-                    list.push(candidate);
-                }
+        if !(next == wp) && !(xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge) {
+            end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+            found = 0 as ::core::ffi::c_int;
+            if yoff < top && end > bottom
+                || (yoff >= top && yoff <= bottom)
+                || (end >= top && end <= bottom)
+            {
+                found = 1 as ::core::ffi::c_int;
+            }
+            if !(found == 0) {
+                list.push(candidate);
             }
         }
     }
@@ -2233,7 +2225,7 @@ unsafe fn window_pane_find_right(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, height) = window.size();
+    let (width, _height) = window.size();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if edge >= width as ::core::ffi::c_int {
@@ -2244,20 +2236,17 @@ unsafe fn window_pane_find_right(
     for candidate in window.pane_snapshot() {
         next = candidate.get();
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) {
-            if !(xoff != edge) {
-                end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if yoff < top && end > bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if yoff >= top && yoff <= bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= top && end <= bottom {
-                    found = 1 as ::core::ffi::c_int;
-                }
-                if !(found == 0) {
-                    list.push(candidate);
-                }
+        if !(next == wp) && !(xoff != edge) {
+            end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
+            found = 0 as ::core::ffi::c_int;
+            if yoff < top && end > bottom
+                || (yoff >= top && yoff <= bottom)
+                || (end >= top && end <= bottom)
+            {
+                found = 1 as ::core::ffi::c_int;
+            }
+            if !(found == 0) {
+                list.push(candidate);
             }
         }
     }
@@ -2371,7 +2360,7 @@ unsafe fn window_pane_update_used_data(
     let used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
     let Some(available) = (*wp)
         .event
-        .with_ptr(|event| unsafe { evbuffer_get_length(&*(*event).input) })
+        .with_ptr(|event| unsafe { evbuffer_get_length(&(*event).input) })
     else {
         return;
     };
@@ -2398,7 +2387,7 @@ unsafe fn window_pane_mode(wp: &window_pane) -> ::core::ffi::c_int {
             return 2 as ::core::ffi::c_int;
         }
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int {
@@ -2425,15 +2414,15 @@ unsafe fn window_pane_scrollbar_reserve(wp: &window_pane) -> ::core::ffi::c_int 
     if window_pane_show_scrollbar(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return (((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
-        == PANE_SCROLLBARS_ALWAYS) as ::core::ffi::c_int;
+    (((wp.window_handle().as_ref()).expect("live window")).scrollbar_mode()
+        == PANE_SCROLLBARS_ALWAYS) as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_scrollbar_overlay(wp: &window_pane) -> ::core::ffi::c_int {
     if window_pane_show_scrollbar(wp) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return window_pane_scrollbar_auto_hide(wp);
+    window_pane_scrollbar_auto_hide(wp)
 }
 
 unsafe fn window_pane_scrollbar_visible(wp: &window_pane) -> ::core::ffi::c_int {
@@ -2443,7 +2432,7 @@ unsafe fn window_pane_scrollbar_visible(wp: &window_pane) -> ::core::ffi::c_int 
     if window_pane_scrollbar_auto_hide(wp) == 0 {
         return 1 as ::core::ffi::c_int;
     }
-    return wp.sb_auto_visible;
+    wp.sb_auto_visible
 }
 
 unsafe fn window_pane_scrollbar_start_timer(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -2528,7 +2517,7 @@ unsafe fn window_pane_get_bg(
             c = defaults.bg;
         }
     }
-    return c;
+    c
 }
 
 unsafe fn window_get_bg_client(
@@ -2541,8 +2530,7 @@ unsafe fn window_get_bg_client(
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
             != 0)
-        {
-            if !(loop_0
+            && !(loop_0
                 .as_ref()
                 .expect("live client")
                 .attached_session()
@@ -2555,16 +2543,13 @@ unsafe fn window_get_bg_client(
                     .upgrade()
                     .expect("live session")
                     .contains_window(&std::rc::Rc::clone(
-                        &(((*wp).window_handle().as_ref()).expect("live window")),
+                        ((*wp).window_handle().as_ref()).expect("live window"),
                     )) as i32)
                     == 0)
-            {
-                if !(loop_0.as_ref().expect("live client").borrow_terminal().bg
-                    == -(1 as ::core::ffi::c_int))
-                {
-                    return loop_0.as_ref().expect("live client").borrow_terminal().bg;
-                }
-            }
+            && !(loop_0.as_ref().expect("live client").borrow_terminal().bg
+                == -(1 as ::core::ffi::c_int))
+        {
+            return loop_0.as_ref().expect("live client").borrow_terminal().bg;
         }
         registry_loop_0_owner = clients.next(
             registry_loop_0_owner
@@ -2573,7 +2558,7 @@ unsafe fn window_get_bg_client(
         );
         loop_0 = registry_loop_0_owner.clone();
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 
 unsafe fn window_pane_get_bg_control_client(
@@ -2603,8 +2588,7 @@ unsafe fn window_pane_get_fg(
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
             != 0)
-        {
-            if !(loop_0
+            && !(loop_0
                 .as_ref()
                 .expect("live client")
                 .attached_session()
@@ -2617,16 +2601,13 @@ unsafe fn window_pane_get_fg(
                     .upgrade()
                     .expect("live session")
                     .contains_window(&std::rc::Rc::clone(
-                        &(((*wp).window_handle().as_ref()).expect("live window")),
+                        ((*wp).window_handle().as_ref()).expect("live window"),
                     )) as i32)
                     == 0)
-            {
-                if !(loop_0.as_ref().expect("live client").borrow_terminal().fg
-                    == -(1 as ::core::ffi::c_int))
-                {
-                    return loop_0.as_ref().expect("live client").borrow_terminal().fg;
-                }
-            }
+            && !(loop_0.as_ref().expect("live client").borrow_terminal().fg
+                == -(1 as ::core::ffi::c_int))
+        {
+            return loop_0.as_ref().expect("live client").borrow_terminal().fg;
         }
         registry_loop_0_owner = clients.next(
             registry_loop_0_owner
@@ -2635,7 +2616,7 @@ unsafe fn window_pane_get_fg(
         );
         loop_0 = registry_loop_0_owner.clone();
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 
 unsafe fn window_pane_get_fg_control_client(
@@ -2671,8 +2652,7 @@ unsafe fn window_pane_get_theme(
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
             != 0)
-        {
-            if !(loop_0
+            && !(loop_0
                 .as_ref()
                 .expect("live client")
                 .attached_session()
@@ -2686,17 +2666,15 @@ unsafe fn window_pane_get_theme(
                     .expect("live session")
                     .contains_window(&window) as i32)
                     == 0)
-            {
-                match loop_0.as_ref().expect("live client").terminal_theme() as ::core::ffi::c_uint
-                {
-                    1 => {
-                        found_light = 1 as ::core::ffi::c_int;
-                    }
-                    2 => {
-                        found_dark = 1 as ::core::ffi::c_int;
-                    }
-                    0 | _ => {}
+        {
+            match loop_0.as_ref().expect("live client").terminal_theme() as ::core::ffi::c_uint {
+                1 => {
+                    found_light = 1 as ::core::ffi::c_int;
                 }
+                2 => {
+                    found_dark = 1 as ::core::ffi::c_int;
+                }
+                _ => {}
             }
         }
         registry_loop_0_owner = clients.next(
@@ -2713,7 +2691,7 @@ unsafe fn window_pane_get_theme(
     if found_light != 0 && found_dark == 0 {
         return THEME_LIGHT;
     }
-    return colour_totheme(window_pane_get_bg(wp_owner.expect("pane checked above")));
+    colour_totheme(window_pane_get_bg(wp_owner.expect("pane checked above")))
 }
 
 unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -2743,7 +2721,7 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
             log_debug(format_args!(
                 "{}: %{} light theme",
                 "window_pane_send_theme_update",
-                ((*wp).id) as u32
+                { (*wp).id }
             ));
             let _ = (*wp).event.with_ptr(|event| unsafe {
                 bufferevent_write(
@@ -2758,7 +2736,7 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
             log_debug(format_args!(
                 "{}: %{} dark theme",
                 "window_pane_send_theme_update",
-                ((*wp).id) as u32
+                { (*wp).id }
             ));
             let _ = (*wp).event.with_ptr(|event| unsafe {
                 bufferevent_write(
@@ -2773,7 +2751,7 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
             log_debug(format_args!(
                 "{}: %{} unknown theme",
                 "window_pane_send_theme_update",
-                ((*wp).id) as u32
+                { (*wp).id }
             ));
         }
         _ => {}
@@ -3019,7 +2997,7 @@ mod pane_stream_lifecycle_tests {
             assert!(stale_stream.is_alive());
             let callback = (*pane)
                 .event
-                .with_ptr(|event| unsafe { Rc::downgrade((*event).readcb.as_ref().unwrap()) })
+                .with_ptr(|event| Rc::downgrade((*event).readcb.as_ref().unwrap()))
                 .unwrap();
 
             window_pane_tree_insert(&mut all_window_panes, pane_owner);

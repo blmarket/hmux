@@ -176,7 +176,7 @@ unsafe fn cmd_refresh_client_control_client_size(
     }
     tc.as_ref().expect("live client").set_control_size(x, y);
     recalculate_sizes_now(1 as ::core::ffi::c_int);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 // The pane prefix needs its own terminator for scanf. The suffix borrows the
 // original argument; neither scanf nor tty_keys_colours retains its pointer.
@@ -314,16 +314,20 @@ unsafe fn cmd_refresh_client_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'F' as i32 as u_char) != 0 {
-        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(
-            args_get(&*(args), 'F' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
-        ));
+        tc.clone()
+            .expect("live client")
+            .parse_flags(std::ffi::CStr::from_ptr(
+                args_get(&*(args), 'F' as i32 as u_char)
+                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+            ));
     }
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        (&tc.clone().expect("live client")).parse_flags(std::ffi::CStr::from_ptr(
-            args_get(&*(args), 'f' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
-        ));
+        tc.clone()
+            .expect("live client")
+            .parse_flags(std::ffi::CStr::from_ptr(
+                args_get(&*(args), 'f' as i32 as u_char)
+                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+            ));
     }
     if args_has(args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(
@@ -371,7 +375,7 @@ unsafe fn cmd_refresh_client_exec(
         return CMD_RETURN_NORMAL;
     }
     cmdq_error(item_handle, |out| out.write_all(b"not a control client"));
-    return CMD_RETURN_ERROR;
+    CMD_RETURN_ERROR
 }
 
 #[cfg(test)]

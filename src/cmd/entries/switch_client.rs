@@ -196,7 +196,7 @@ unsafe fn cmd_switch_client_exec(
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'l' as i32 as u_char) != 0 {
-        selected_session = (&crate::src::session::sessions)
+        selected_session = crate::src::session::sessions
             .resolve(&tc.as_ref().expect("live client").previous_session());
         s = selected_session.clone();
         if s.is_none() {
@@ -259,9 +259,9 @@ unsafe fn cmd_switch_client_exec(
             .expect("target session")
             .update_environment(&source);
     }
-    (&tc.clone().expect("live client")).set_session(s.as_ref());
+    tc.clone().expect("live client").set_session(s.as_ref());
     if !cmdq_get_flags(&*(item)) & CMDQ_STATE_REPEAT != 0 {
-        (&tc.clone().expect("live client")).set_key_table(None);
+        tc.clone().expect("live client").set_key_table(None);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

@@ -78,9 +78,7 @@ pub unsafe fn evbuffer_write(b: &mut SegmentedBuf, fd: c_int) -> c_int {
 }
 
 fn read_line(b: &mut SegmentedBuf, ending: LineEnding) -> Option<Vec<u8>> {
-    let Some(mut line) = b.read_line(ending) else {
-        return None;
-    };
+    let mut line = b.read_line(ending)?;
     line.push(0);
 
     Some(line)

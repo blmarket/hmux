@@ -100,7 +100,7 @@ fn args_type_to_string(kind: args_type) -> &'static CStr {
 }
 unsafe fn args_value_for_log<'a>(value: &'a ArgumentValue<'_>) -> Cow<'a, CStr> {
     match value.type_0() as ::core::ffi::c_uint {
-        0 => Cow::Borrowed(CStr::from_bytes_with_nul_unchecked(b"\0")),
+        0 => Cow::Borrowed(c""),
         1 => Cow::Borrowed(value.as_string().expect("string argument")),
         2 => Cow::Owned(cmd_list_print_cstring(
             &value.as_commands().expect("command argument").borrow(),
@@ -308,10 +308,10 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
                 return args_value::string(source.to_owned());
             }
             let mut expanded = cmd_template_replace_cstring(source, argv[0].as_c_str(), 1);
-            for i in 1..argv.len() {
+            for (i, argument) in argv.iter().enumerate().skip(1) {
                 expanded = cmd_template_replace_cstring(
                     expanded.as_c_str(),
-                    argv[i].as_c_str(),
+                    argument.as_c_str(),
                     (i + 1) as ::core::ffi::c_int,
                 );
             }
@@ -321,7 +321,7 @@ unsafe fn args_copy_copy_value(from: &args_value, argv: &Vec<CString>) -> args_v
             &from.as_commands().expect("command argument").borrow(),
             argv,
         )),
-        0 | _ => args_value::empty(),
+        _ => args_value::empty(),
     }
 }
 pub unsafe fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
@@ -335,7 +335,7 @@ pub unsafe fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
         } else {
             for value in &entry.values {
                 args_set_value(
-                    &mut *new_args,
+                    &mut new_args,
                     entry.flag,
                     Some(args_copy_copy_value(value, argv)),
                     0,
@@ -344,7 +344,7 @@ pub unsafe fn args_copy(args: &args, argv: &Vec<CString>) -> Box<args> {
         }
     }
     for value in &args.values {
-        args_push_positional_owned(&mut *new_args, args_copy_copy_value(value, argv));
+        args_push_positional_owned(&mut new_args, args_copy_copy_value(value, argv));
     }
     new_args
 }
@@ -383,7 +383,7 @@ unsafe fn args_print_add_value(buf: &mut Vec<u8>, value: &args_value) {
             let expanded = args_escape_cstring(value.as_string().expect("string argument"));
             buf.extend_from_slice(expanded.as_bytes());
         }
-        0 | _ => {}
+        _ => {}
     }
 }
 pub unsafe fn args_print(args: &args) -> CString {
@@ -764,7 +764,7 @@ mod ownership_tests {
 }
 
 pub unsafe fn args_count(mut args: *mut args) -> u_int {
-    return (*args).values.len() as u_int;
+    (*args).values.len() as u_int
 }
 pub fn args_string(args: &mut args, idx: u_int) -> Option<&CStr> {
     if idx >= (args.values.len() as u_int) {
@@ -825,7 +825,8 @@ pub unsafe fn args_make_commands_prepare(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut state = Box::new(args_command_state::empty());
-    let command = if let Some(value) = (&(*args).values).get(idx as usize) {
+    let values = &(*args).values;
+    let command = if let Some(value) = values.get(idx as usize) {
         if let Some(commands) = value.as_commands() {
             state.cmdlist = Some(commands.clone());
             return state;
@@ -867,7 +868,7 @@ pub unsafe fn args_make_commands_prepare(
         .map_or_else(std::rc::Weak::new, Rc::downgrade);
     state.client = tc_owner;
     cmd_find_copy_state(&raw mut state.pi.fs, target);
-    return state;
+    state
 }
 pub unsafe fn args_make_commands(
     state: &mut args_command_state,
@@ -932,7 +933,7 @@ pub(crate) unsafe fn args_make_commands_get_command_cstring(state: &args_command
         let Some(first) = cmd_list_first(&commands) else {
             return CString::new(Vec::new()).expect("empty command name has no NUL");
         };
-        return (*first.entry).name.to_owned();
+        return first.entry.name.to_owned();
     }
     let command = state
         .cmd

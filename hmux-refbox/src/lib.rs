@@ -366,7 +366,7 @@ impl<T: ?Sized> RefBox<T> {
     /// Ensure there are no other references to `T`.
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
         // SAFETY: the caller must uphold the safety requirements
-        unsafe { self.ptr.as_ref().data_mut() }
+        unsafe { &mut *self.ptr.as_ref().data.get() }
     }
 
     /// Returns a raw pointer to `T`.
@@ -667,7 +667,7 @@ impl<T: ?Sized> Weak<T> {
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
         assert!(self.is_alive(), "RefBox Weak access requires a live owner");
         // SAFETY: the caller must uphold the safety requirements
-        unsafe { self.ptr.as_ref().data_mut() }
+        unsafe { &mut *self.ptr.as_ref().data.get() }
     }
 
     /// Returns a raw pointer to `T`.
@@ -778,7 +778,7 @@ impl<'ptr, T: ?Sized> DerefMut for Borrow<'ptr, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: There can only ever be one `Borrow` to the same
         // data, so we're sure there are no other references.
-        unsafe { self.heap.data_mut() }
+        unsafe { &mut *self.heap.data.get() }
     }
 }
 
@@ -1248,7 +1248,7 @@ mod tests {
     /// and the pointer size is 16 bits.
     #[test]
     #[cfg(feature = "cyclic_stable")]
-    #[cfg(any(target_pointer_width = "16"))]
+    #[cfg(target_pointer_width = "16")]
     fn heap_overhead_cyclic_stable_16bit() {
         let layout = std::alloc::Layout::new::<RefBoxHeap<()>>();
         assert_eq!(layout.size(), 12);
@@ -1258,7 +1258,7 @@ mod tests {
     /// and the pointer size is 32 bits.
     #[test]
     #[cfg(feature = "cyclic_stable")]
-    #[cfg(any(target_pointer_width = "32"))]
+    #[cfg(target_pointer_width = "32")]
     fn heap_overhead_cyclic_stable_32bit() {
         let layout = std::alloc::Layout::new::<RefBoxHeap<()>>();
         assert_eq!(layout.size(), 16);
@@ -1268,7 +1268,7 @@ mod tests {
     /// and the pointer size is 64 bits.
     #[test]
     #[cfg(feature = "cyclic_stable")]
-    #[cfg(any(target_pointer_width = "64"))]
+    #[cfg(target_pointer_width = "64")]
     fn heap_overhead_cyclic_stable_64bit() {
         let layout = std::alloc::Layout::new::<RefBoxHeap<()>>();
         assert_eq!(layout.size(), 24);

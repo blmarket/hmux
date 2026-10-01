@@ -206,11 +206,11 @@ unsafe fn cmd_display_message_exec(
         && tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
     {
         let mut evb = evbuffer_new();
-        evbuffer_add_formatted(&mut *evb, |out| {
+        evbuffer_add_formatted(&mut evb, |out| {
             out.write_all(b"%message ")?;
             write_cstr(out, msg.as_ptr())
         });
-        ClientRef::print_to(tc_owner.as_ref(), (0 as ::core::ffi::c_int) != 0, &mut *evb);
+        ClientRef::print_to(tc_owner.as_ref(), (0 as ::core::ffi::c_int) != 0, &mut evb);
     } else if !tc.is_none() {
         status_message_set(
             tc.as_ref(),
@@ -223,5 +223,5 @@ unsafe fn cmd_display_message_exec(
     }
     drop(msg);
     format_free(ft_owner);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

@@ -86,3 +86,9 @@ impl message_list {
         self.entries.iter().rev()
     }
 }
+
+impl Default for message_list {
+    fn default() -> Self {
+        Self::new()
+    }
+}

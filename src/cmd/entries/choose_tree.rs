@@ -193,7 +193,7 @@ unsafe fn cmd_choose_tree_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let wp = (*target).pane_handle();
-    let mode: &'static window_mode;
+
     let mut order: sort_order = SORT_ACTIVITY;
     order = sort_order_from_string(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
@@ -204,14 +204,14 @@ unsafe fn cmd_choose_tree_exec(
         cmdq_error(item_handle, |out| out.write_all(b"invalid sort order"));
         return CMD_RETURN_ERROR;
     }
-    if std::ptr::eq(
+    let mode: &'static window_mode = if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_choose_buffer_entry,
     ) {
         if paste_is_empty() != 0 {
             return CMD_RETURN_NORMAL;
         }
-        mode = &window_buffer_mode;
+        &window_buffer_mode
     } else if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_choose_client_entry,
@@ -219,25 +219,25 @@ unsafe fn cmd_choose_tree_exec(
         if ClientRef::attached_count() == 0 as u_int {
             return CMD_RETURN_NORMAL;
         }
-        mode = &window_client_mode;
+        &window_client_mode
     } else if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_customize_mode_entry,
     ) {
-        mode = &window_customize_mode;
+        &window_customize_mode
     } else if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_switch_mode_entry,
     ) {
-        mode = &window_switch_mode;
+        &window_switch_mode
     } else if std::ptr::eq(
         cmd_get_entry(self_0.get_unchecked()),
         &cmd_display_panes_entry,
     ) {
-        mode = &window_panes_mode;
+        &window_panes_mode
     } else {
-        mode = &window_tree_mode;
-    }
+        &window_tree_mode
+    };
     wp.as_ref().expect("mode target pane").set_mode(
         None,
         mode,
@@ -245,5 +245,5 @@ unsafe fn cmd_choose_tree_exec(
         Some(&mut *target),
         Some(&mut *args),
     );
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

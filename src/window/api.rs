@@ -1081,7 +1081,7 @@ impl Window for WindowRef {
     ) -> Result<(), CString> {
         assert!((-1..=1).contains(&cycle), "layout cycle direction");
         if self.unzoom(true) == 0 {
-            server_redraw_window(&(self));
+            server_redraw_window(self);
         }
         let new_layout = self.layout_string(LayoutView::Visible, legacy_format);
         let old_layout = window_replace_old_layout(self, new_layout);
@@ -1096,7 +1096,7 @@ impl Window for WindowRef {
             );
             layout_spread_out(pane);
         } else {
-            let requested = name.or_else(|| {
+            let requested = name.or({
                 if restore_previous {
                     old_layout.as_deref()
                 } else {
@@ -1128,7 +1128,7 @@ impl Window for WindowRef {
             }
         }
         recalculate_sizes();
-        server_redraw_window(&(self));
+        server_redraw_window(self);
         events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
         Ok(())
     }
@@ -1209,29 +1209,29 @@ unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut
     };
     let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         (*(w)).observer.upgrade().expect("live window"),
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"width\0" as *const u8 as *const ::core::ffi::c_char,
         (*w).sx,
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"height\0" as *const u8 as *const ::core::ffi::c_char,
         (*w).sy,
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
         old_sx,
     );
     event_payload_set_uint(
-        &mut *ep,
+        &mut ep,
         b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
         old_sy,
     );
@@ -1297,9 +1297,9 @@ unsafe fn resize_window(
     log_debug(format_args!(
         "{}: @{} resized to {}x{}; layout {}x{}",
         "resize_window",
-        ((*w).id) as u32,
-        (sx) as u32,
-        (sy) as u32,
+        { (*w).id },
+        { sx },
+        { sy },
         ((*(*w)
             .layout_root_ptr()
             .map_or(std::ptr::null_mut(), |root| root))
@@ -1317,7 +1317,7 @@ unsafe fn resize_window(
         }
     }
     tty_update_window_offset(&(*(w)).observer.upgrade().expect("live window"));
-    server_redraw_window(&(w_owner));
+    server_redraw_window(w_owner);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
         (*(w)).observer.upgrade().expect("live window"),
@@ -1496,5 +1496,4 @@ mod tests {
             crate::src::reactor::shutdown_runtime();
         }
     }
-
 }

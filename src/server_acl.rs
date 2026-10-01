@@ -101,7 +101,7 @@ unsafe fn server_acl_check(c: &ClientRef) -> *mut server_acl_entry {
     if uid == -(1 as ::core::ffi::c_int) as uid_t {
         return ::core::ptr::null_mut::<server_acl_entry>();
     }
-    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), uid as id_t, 0);
+    entry = server_acl_entry_find(&server_acl_entries, uid as id_t, 0);
     if !entry.is_null() {
         return entry;
     }
@@ -109,11 +109,7 @@ unsafe fn server_acl_check(c: &ClientRef) -> *mut server_acl_entry {
     if gid == -(1 as ::core::ffi::c_int) as gid_t {
         return ::core::ptr::null_mut::<server_acl_entry>();
     }
-    return server_acl_entry_find(
-        &*(&raw mut server_acl_entries),
-        gid as id_t,
-        SERVER_ACL_IS_GROUP,
-    );
+    server_acl_entry_find(&server_acl_entries, gid as id_t, SERVER_ACL_IS_GROUP)
 }
 unsafe fn server_acl_update() {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
@@ -141,15 +137,15 @@ unsafe fn server_acl_update() {
     }
 }
 pub unsafe fn server_acl_init() {
-    server_acl_entries_clear(&mut *(&raw mut server_acl_entries));
+    server_acl_entries_clear(&mut server_acl_entries);
     if getuid() != 0 as __uid_t {
         server_acl_allow(0 as id_t, 0 as ::core::ffi::c_int);
     }
     server_acl_allow(getuid() as id_t, 0 as ::core::ffi::c_int);
 }
 pub unsafe fn server_acl_find(mut id: id_t, mut flags: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return (server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags)
-        != NULL as *mut server_acl_entry) as ::core::ffi::c_int;
+    (server_acl_entry_find(&server_acl_entries, id, flags) != NULL as *mut server_acl_entry)
+        as ::core::ffi::c_int
 }
 pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let mut loop_0: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
@@ -158,7 +154,7 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: ::core::ffi::c_char = 0;
     let mut current_block_12: u64;
-    loop_0 = server_acl_entries_minmax(&*(&raw mut server_acl_entries));
+    loop_0 = server_acl_entries_minmax(&server_acl_entries);
     while !loop_0.is_null() {
         if !(*loop_0).flags & SERVER_ACL_IS_GROUP != 0 {
             if (*loop_0).id == 0 as id_t {
@@ -183,35 +179,32 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell
             type_0 = 'G' as i32 as ::core::ffi::c_char;
             current_block_12 = 11050875288958768710;
         }
-        match current_block_12 {
-            11050875288958768710 => {
-                if (*loop_0).flags & SERVER_ACL_READONLY != 0 {
-                    cmdq_print(item_handle, |out| {
-                        write_cstr(out, name)?;
-                        out.write_all(b" (")?;
-                        out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
-                        out.write_all(b",R)")
-                    });
-                } else {
-                    cmdq_print(item_handle, |out| {
-                        write_cstr(out, name)?;
-                        out.write_all(b" (")?;
-                        out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
-                        out.write_all(b",W)")
-                    });
-                }
+        if current_block_12 == 11050875288958768710 {
+            if (*loop_0).flags & SERVER_ACL_READONLY != 0 {
+                cmdq_print(item_handle, |out| {
+                    write_cstr(out, name)?;
+                    out.write_all(b" (")?;
+                    out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
+                    out.write_all(b",R)")
+                });
+            } else {
+                cmdq_print(item_handle, |out| {
+                    write_cstr(out, name)?;
+                    out.write_all(b" (")?;
+                    out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
+                    out.write_all(b",W)")
+                });
             }
-            _ => {}
         }
-        loop_0 = server_acl_entries_next(&*(&raw mut server_acl_entries), &*loop_0);
+        loop_0 = server_acl_entries_next(&server_acl_entries, &*loop_0);
     }
 }
 pub unsafe fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    entry = server_acl_entry_find(&server_acl_entries, id, flags);
     if entry.is_null() {
         server_acl_entries_insert(
-            &mut *(&raw mut server_acl_entries),
+            &mut server_acl_entries,
             Box::new(server_acl_entry {
                 id,
                 flags: flags & SERVER_ACL_IS_GROUP,
@@ -221,7 +214,7 @@ pub unsafe fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::c_int) {
 }
 pub unsafe fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    entry = server_acl_entry_find(&server_acl_entries, id, flags);
     if !entry.is_null() {
         server_acl_entries_remove(&raw mut server_acl_entries, entry);
         server_acl_update();
@@ -229,7 +222,7 @@ pub unsafe fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c_int) {
 }
 pub unsafe fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    entry = server_acl_entry_find(&server_acl_entries, id, flags);
     if entry.is_null() {
         return;
     }
@@ -238,7 +231,7 @@ pub unsafe fn server_acl_allow_write(mut id: id_t, mut flags: ::core::ffi::c_int
 }
 pub unsafe fn server_acl_deny_write(mut id: id_t, mut flags: ::core::ffi::c_int) {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    entry = server_acl_entry_find(&*(&raw mut server_acl_entries), id, flags);
+    entry = server_acl_entry_find(&server_acl_entries, id, flags);
     if entry.is_null() {
         return;
     }
@@ -254,5 +247,5 @@ pub unsafe fn server_acl_join(c: &ClientRef) -> ::core::ffi::c_int {
     if (*entry).flags & SERVER_ACL_READONLY != 0 {
         c.update_flags(CLIENT_READONLY as u64, 0);
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }

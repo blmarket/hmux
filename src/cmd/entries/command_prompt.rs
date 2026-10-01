@@ -269,7 +269,7 @@ unsafe fn cmd_command_prompt_exec(
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }
-    return CMD_RETURN_WAIT;
+    CMD_RETURN_WAIT
 }
 unsafe fn cmd_command_prompt_callback(
     c_owner: Option<&ClientRef>,
@@ -385,7 +385,7 @@ unsafe fn cmd_command_prompt_callback(
                 .expect("live command queue item"),
         );
     }
-    return PROMPT_CLOSE;
+    PROMPT_CLOSE
 }
 impl cmd_command_prompt_cdata {
     fn into_callback(mut self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {

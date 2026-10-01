@@ -88,17 +88,17 @@ pub unsafe fn layout_set_lookup(mut name: *const ::core::ffi::c_char) -> ::core:
         }
         i = i.wrapping_add(1);
     }
-    return matched;
+    matched
 }
 pub unsafe fn layout_set_select(w_owner: &WindowRef, mut layout: u_int) -> u_int {
     if layout as usize
         > (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-            .wrapping_sub(1 as usize)
+            .wrapping_sub(1_usize)
     {
         layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-            .wrapping_sub(1 as usize) as u_int;
+            .wrapping_sub(1_usize) as u_int;
     }
     if layout_sets[layout as usize].arrange.is_some() {
         layout_sets[layout as usize]
@@ -106,7 +106,7 @@ pub unsafe fn layout_set_select(w_owner: &WindowRef, mut layout: u_int) -> u_int
             .expect("non-null function pointer")(w_owner);
     }
     w_owner.remember_layout_preset(layout as i32);
-    return layout;
+    layout
 }
 pub unsafe fn layout_set_next(w_owner: &WindowRef) -> u_int {
     let mut layout: u_int = 0;
@@ -117,7 +117,7 @@ pub unsafe fn layout_set_next(w_owner: &WindowRef) -> u_int {
         if layout as usize
             > (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
                 .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-                .wrapping_sub(1 as usize)
+                .wrapping_sub(1_usize)
         {
             layout = 0 as u_int;
         }
@@ -128,20 +128,20 @@ pub unsafe fn layout_set_next(w_owner: &WindowRef) -> u_int {
             .expect("non-null function pointer")(w_owner);
     }
     w_owner.remember_layout_preset(layout as i32);
-    return layout;
+    layout
 }
 pub unsafe fn layout_set_previous(w_owner: &WindowRef) -> u_int {
     let mut layout: u_int = 0;
     if w_owner.last_layout_preset() == -(1 as ::core::ffi::c_int) {
         layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-            .wrapping_sub(1 as usize) as u_int;
+            .wrapping_sub(1_usize) as u_int;
     } else {
         layout = w_owner.last_layout_preset() as u_int;
         if layout == 0 as u_int {
             layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
                 .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-                .wrapping_sub(1 as usize) as u_int;
+                .wrapping_sub(1_usize) as u_int;
         } else {
             layout = layout.wrapping_sub(1);
         }
@@ -152,7 +152,7 @@ pub unsafe fn layout_set_previous(w_owner: &WindowRef) -> u_int {
             .expect("non-null function pointer")(w_owner);
     }
     w_owner.remember_layout_preset(layout as i32);
-    return layout;
+    layout
 }
 // Detached leaves remain owned throughout preset reconstruction. Resolve their
 // IDs here rather than reaching through Pane into the Window's old tree.
@@ -281,9 +281,9 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
+    server_redraw_window(w_owner);
 }
 unsafe fn layout_set_even_h(w_owner: &WindowRef) {
     layout_set_even(w_owner, LAYOUT_LEFTRIGHT);
@@ -500,9 +500,9 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
+    server_redraw_window(w_owner);
 }
 unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
     {
@@ -692,9 +692,9 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
+    server_redraw_window(w_owner);
 }
 unsafe fn layout_set_main_v(w_owner: &WindowRef) {
     {
@@ -884,9 +884,9 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
+    server_redraw_window(w_owner);
 }
 unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
     {
@@ -1076,9 +1076,9 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
+    server_redraw_window(w_owner);
 }
 unsafe fn layout_set_tiled(w_owner: &WindowRef) {
     {
@@ -1294,7 +1294,7 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(w_owner)),
+        std::rc::Rc::clone(w_owner),
     );
-    server_redraw_window(&(w_owner));
+    server_redraw_window(w_owner);
 }

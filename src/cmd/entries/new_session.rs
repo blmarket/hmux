@@ -251,593 +251,558 @@ unsafe fn cmd_new_session_exec(
     } else {
         current_block = 10043043949733653460;
     }
-    match current_block {
-        10043043949733653460 => {
-            if args_has(args, 'A' as i32 as u_char) != 0 {
-                if !sname.is_null() {
-                    as_0 = crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(
-                        sname,
-                    ));
-                } else {
-                    as_0 = (*target).session_handle();
-                }
-                if !as_0.is_none() {
-                    retval = cmd_attach_session(
-                        item_handle,
-                        (as_0.as_ref().expect("live session").name())
-                            .as_ptr()
-                            .cast_mut(),
-                        args_has(args, 'D' as i32 as u_char),
-                        args_has(args, 'X' as i32 as u_char),
-                        0 as ::core::ffi::c_int,
-                        args_get(&*(args), 'c' as i32 as u_char)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                        args_has(args, 'E' as i32 as u_char),
-                        args_get(&*(args), 'f' as i32 as u_char)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                    );
-                    return retval;
-                }
-            }
-            if !sname.is_null()
-                && crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname))
-                    .is_some()
-            {
-                cmdq_error(item_handle, |out| {
-                    out.write_all(b"duplicate session: ")?;
-                    write_cstr(out, sname)
-                });
+    if current_block == 10043043949733653460 {
+        if args_has(args, 'A' as i32 as u_char) != 0 {
+            if !sname.is_null() {
+                as_0 =
+                    crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname));
             } else {
-                group = args_get(&*(args), 't' as i32 as u_char)
-                    .map_or(std::ptr::null(), |value| value.as_ptr());
-                if !group.is_null() {
-                    groupwith_owner = (*target).s.upgrade();
-                    groupwith = groupwith_owner.clone();
-                    if groupwith.is_none() {
-                        sg = session_group_find(group);
-                    } else {
-                        sg = crate::src::session::session_group_for(
-                            &groupwith
-                                .as_ref()
-                                .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
-                        );
-                    }
-                    if !sg.is_null() {
-                        prefix = Some((*sg).name.clone());
-                        current_block = 6717214610478484138;
-                    } else if !groupwith.is_none() {
-                        prefix = Some(groupwith.as_ref().expect("live session").name().clone());
-                        current_block = 6717214610478484138;
-                    } else if !check_name(CStr::from_ptr(group)) {
-                        cmdq_error(item_handle, |out| {
-                            out.write_all(b"invalid session group name: ")?;
-                            write_cstr(out, group)
-                        });
-                        current_block = 5193972633326621385;
-                    } else {
-                        prefix = Some(utf8_stravis_cstring(
-                            CStr::from_ptr(group),
-                            VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
-                        ));
-                        current_block = 6717214610478484138;
-                    }
+                as_0 = (*target).session_handle();
+            }
+            if let Some(as_0_value) = as_0.as_ref() {
+                retval = cmd_attach_session(
+                    item_handle,
+                    (as_0_value.name()).as_ptr().cast_mut(),
+                    args_has(args, 'D' as i32 as u_char),
+                    args_has(args, 'X' as i32 as u_char),
+                    0 as ::core::ffi::c_int,
+                    args_get(&*(args), 'c' as i32 as u_char)
+                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    args_has(args, 'E' as i32 as u_char),
+                    args_get(&*(args), 'f' as i32 as u_char)
+                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                );
+                return retval;
+            }
+        }
+        if !sname.is_null()
+            && crate::src::shared::session::SessionRef::find(std::ffi::CStr::from_ptr(sname))
+                .is_some()
+        {
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"duplicate session: ")?;
+                write_cstr(out, sname)
+            });
+        } else {
+            group = args_get(&*(args), 't' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr());
+            if !group.is_null() {
+                groupwith_owner = (*target).s.upgrade();
+                groupwith = groupwith_owner.clone();
+                if groupwith.is_none() {
+                    sg = session_group_find(group);
                 } else {
+                    sg = crate::src::session::session_group_for(
+                        &groupwith
+                            .as_ref()
+                            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade),
+                    );
+                }
+                if !sg.is_null() {
+                    prefix = Some((*sg).name.clone());
+                    current_block = 6717214610478484138;
+                } else if let Some(groupwith_value) = groupwith.as_ref() {
+                    prefix = Some(groupwith_value.name().clone());
+                    current_block = 6717214610478484138;
+                } else if !check_name(CStr::from_ptr(group)) {
+                    cmdq_error(item_handle, |out| {
+                        out.write_all(b"invalid session group name: ")?;
+                        write_cstr(out, group)
+                    });
+                    current_block = 5193972633326621385;
+                } else {
+                    prefix = Some(utf8_stravis_cstring(
+                        CStr::from_ptr(group),
+                        VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
+                    ));
                     current_block = 6717214610478484138;
                 }
-                match current_block {
-                    5193972633326621385 => {}
-                    _ => {
-                        detached = args_has(args, 'd' as i32 as u_char);
-                        if c.is_none() {
-                            detached = 1 as ::core::ffi::c_int;
-                        } else if c.as_ref().expect("live client").flags()
-                            & CLIENT_CONTROL as uint64_t
-                            != 0
-                        {
-                            is_control = 1 as ::core::ffi::c_int;
-                        }
-                        already_attached = 0 as ::core::ffi::c_int;
-                        if !c.is_none()
-                            && !c
-                                .as_ref()
-                                .expect("live client")
-                                .attached_session()
-                                .upgrade()
-                                .is_none()
-                        {
-                            already_attached = 1 as ::core::ffi::c_int;
-                        }
-                        tmp = args_get(&*(args), 'c' as i32 as u_char)
+            } else {
+                current_block = 6717214610478484138;
+            }
+            match current_block {
+                5193972633326621385 => {}
+                _ => {
+                    detached = args_has(args, 'd' as i32 as u_char);
+                    if c.is_none() {
+                        detached = 1 as ::core::ffi::c_int;
+                    } else if c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t
+                        != 0
+                    {
+                        is_control = 1 as ::core::ffi::c_int;
+                    }
+                    already_attached = 0 as ::core::ffi::c_int;
+                    if !c.is_none()
+                        && !c
+                            .as_ref()
+                            .expect("live client")
+                            .attached_session()
+                            .upgrade()
+                            .is_none()
+                    {
+                        already_attached = 1 as ::core::ffi::c_int;
+                    }
+                    tmp = args_get(&*(args), 'c' as i32 as u_char)
+                        .map_or(std::ptr::null(), |value| value.as_ptr());
+                    if !tmp.is_null() {
+                        formatted_cwd = Some(format_single_cstring(
+                            Some(item_handle),
+                            tmp,
+                            c.as_ref(),
+                            None,
+                            (refbox::Weak::new()).clone(),
+                            None,
+                        ));
+                        cwd = formatted_cwd
+                            .as_ref()
+                            .expect("formatted cwd was just set")
+                            .as_ptr();
+                    } else {
+                        // session_create copies this borrowed cwd into session.
+                        formatted_cwd = ClientRef::working_directory(c.as_ref(), None);
+                        cwd = formatted_cwd
+                            .as_ref()
                             .map_or(std::ptr::null(), |value| value.as_ptr());
-                        if !tmp.is_null() {
-                            formatted_cwd = Some(format_single_cstring(
-                                Some(item_handle),
-                                tmp,
-                                c.as_ref(),
-                                None,
-                                (refbox::Weak::new()).clone(),
-                                None,
-                            ));
-                            cwd = formatted_cwd
-                                .as_ref()
-                                .expect("formatted cwd was just set")
-                                .as_ptr();
+                    }
+                    if detached == 0
+                        && already_attached == 0
+                        && c.as_ref().expect("live client").has_input_fd()
+                        && !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t
+                            != 0
+                    {
+                        if queue_client_ptr.as_ref().expect("live client").is_nested() {
+                            cmdq_error(item_handle, |out| {
+                                out.write_all(
+                                    b"sessions should be nested with care, unset $TMUX to force",
+                                )
+                            });
+                            current_block = 5193972633326621385;
                         } else {
-                            // session_create copies this borrowed cwd into session.
-                            formatted_cwd = ClientRef::working_directory(c.as_ref(), None);
-                            cwd = formatted_cwd
-                                .as_ref()
-                                .map_or(std::ptr::null(), |value| value.as_ptr());
-                        }
-                        if detached == 0
-                            && already_attached == 0
-                            && c.as_ref().expect("live client").has_input_fd()
-                            && !c.as_ref().expect("live client").flags()
-                                & CLIENT_CONTROL as uint64_t
-                                != 0
-                        {
-                            if queue_client_ptr.as_ref().expect("live client").is_nested() {
-                                cmdq_error(item_handle, |out| {
-                                    out.write_all(b"sessions should be nested with care, unset $TMUX to force")
-                                });
-                                current_block = 5193972633326621385;
-                            } else {
-                                tio = c.as_ref().expect("live client").capture_termios();
-                                tiop = &raw mut tio;
-                                current_block = 6545907279487748450;
-                            }
-                        } else {
-                            tiop = ::core::ptr::null_mut::<termios>();
+                            tio = c.as_ref().expect("live client").capture_termios();
+                            tiop = &raw mut tio;
                             current_block = 6545907279487748450;
                         }
-                        match current_block {
-                            5193972633326621385 => {}
-                            _ => {
-                                if detached == 0 && already_attached == 0 {
-                                    if let Err(open_error) =
-                                        (c_owner.as_ref().expect("terminal client")).open_terminal()
-                                    {
-                                        cmdq_error(item_handle, |out| {
-                                            out.write_all(b"open terminal failed: ")?;
-                                            out.write_all(open_error.as_bytes())
-                                        });
-                                        current_block = 5193972633326621385;
-                                    } else {
-                                        current_block = 5181772461570869434;
-                                    }
+                    } else {
+                        tiop = ::core::ptr::null_mut::<termios>();
+                        current_block = 6545907279487748450;
+                    }
+                    match current_block {
+                        5193972633326621385 => {}
+                        _ => {
+                            if detached == 0 && already_attached == 0 {
+                                if let Err(open_error) =
+                                    (c_owner.as_ref().expect("terminal client")).open_terminal()
+                                {
+                                    cmdq_error(item_handle, |out| {
+                                        out.write_all(b"open terminal failed: ")?;
+                                        out.write_all(open_error.as_bytes())
+                                    });
+                                    current_block = 5193972633326621385;
                                 } else {
                                     current_block = 5181772461570869434;
                                 }
-                                match current_block {
-                                    5193972633326621385 => {}
-                                    _ => {
-                                        if args_has(args, 'x' as i32 as u_char) != 0 {
-                                            tmp = args_get(&*(args), 'x' as i32 as u_char)
-                                                .map_or(std::ptr::null(), |value| value.as_ptr());
-                                            if strcmp(
-                                                tmp,
-                                                b"-\0" as *const u8 as *const ::core::ffi::c_char,
-                                            ) == 0 as ::core::ffi::c_int
-                                            {
-                                                if !c.is_none() {
-                                                    dsx = c
-                                                        .as_ref()
-                                                        .expect("live client")
-                                                        .terminal_size()
-                                                        .0;
-                                                } else {
-                                                    dsx = 80 as u_int;
-                                                }
-                                                current_block = 5873035170358615968;
+                            } else {
+                                current_block = 5181772461570869434;
+                            }
+                            match current_block {
+                                5193972633326621385 => {}
+                                _ => {
+                                    if args_has(args, 'x' as i32 as u_char) != 0 {
+                                        tmp = args_get(&*(args), 'x' as i32 as u_char)
+                                            .map_or(std::ptr::null(), |value| value.as_ptr());
+                                        if strcmp(
+                                            tmp,
+                                            b"-\0" as *const u8 as *const ::core::ffi::c_char,
+                                        ) == 0 as ::core::ffi::c_int
+                                        {
+                                            if let Some(c_value) = c.as_ref() {
+                                                dsx = c_value.terminal_size().0;
                                             } else {
-                                                dsx = strtonum(
-                                                    tmp,
-                                                    1 as ::core::ffi::c_longlong,
-                                                    USHRT_MAX as ::core::ffi::c_longlong,
-                                                    &raw mut errstr,
-                                                )
-                                                    as u_int;
-                                                if !errstr.is_null() {
-                                                    cmdq_error(item_handle, |out| {
-                                                        out.write_all(b"width ")?;
-                                                        write_cstr(out, errstr)
-                                                    });
-                                                    current_block = 5193972633326621385;
-                                                } else {
-                                                    current_block = 5873035170358615968;
-                                                }
+                                                dsx = 80 as u_int;
                                             }
-                                        } else {
-                                            dsx = 80 as u_int;
                                             current_block = 5873035170358615968;
+                                        } else {
+                                            dsx = strtonum(
+                                                tmp,
+                                                1 as ::core::ffi::c_longlong,
+                                                USHRT_MAX as ::core::ffi::c_longlong,
+                                                &raw mut errstr,
+                                            )
+                                                as u_int;
+                                            if !errstr.is_null() {
+                                                cmdq_error(item_handle, |out| {
+                                                    out.write_all(b"width ")?;
+                                                    write_cstr(out, errstr)
+                                                });
+                                                current_block = 5193972633326621385;
+                                            } else {
+                                                current_block = 5873035170358615968;
+                                            }
                                         }
-                                        match current_block {
-                                            5193972633326621385 => {}
-                                            _ => {
-                                                if args_has(args, 'y' as i32 as u_char) != 0 {
-                                                    tmp = args_get(&*(args), 'y' as i32 as u_char)
-                                                        .map_or(std::ptr::null(), |value| {
-                                                            value.as_ptr()
-                                                        });
-                                                    if strcmp(
-                                                        tmp,
-                                                        b"-\0" as *const u8
-                                                            as *const ::core::ffi::c_char,
-                                                    ) == 0 as ::core::ffi::c_int
-                                                    {
-                                                        if !c.is_none() {
-                                                            dsy = c
-                                                                .as_ref()
-                                                                .expect("live client")
-                                                                .terminal_size()
-                                                                .1;
-                                                        } else {
-                                                            dsy = 24 as u_int;
-                                                        }
-                                                        current_block = 15855550149339537395;
+                                    } else {
+                                        dsx = 80 as u_int;
+                                        current_block = 5873035170358615968;
+                                    }
+                                    match current_block {
+                                        5193972633326621385 => {}
+                                        _ => {
+                                            if args_has(args, 'y' as i32 as u_char) != 0 {
+                                                tmp = args_get(&*(args), 'y' as i32 as u_char)
+                                                    .map_or(std::ptr::null(), |value| {
+                                                        value.as_ptr()
+                                                    });
+                                                if strcmp(
+                                                    tmp,
+                                                    b"-\0" as *const u8
+                                                        as *const ::core::ffi::c_char,
+                                                ) == 0 as ::core::ffi::c_int
+                                                {
+                                                    if let Some(c_value) = c.as_ref() {
+                                                        dsy = c_value.terminal_size().1;
                                                     } else {
-                                                        dsy = strtonum(
-                                                            tmp,
-                                                            1 as ::core::ffi::c_longlong,
-                                                            USHRT_MAX as ::core::ffi::c_longlong,
-                                                            &raw mut errstr,
-                                                        )
-                                                            as u_int;
-                                                        if !errstr.is_null() {
-                                                            cmdq_error(item_handle, |out| {
-                                                                out.write_all(b"height ")?;
-                                                                write_cstr(out, errstr)
-                                                            });
-                                                            current_block = 5193972633326621385;
-                                                        } else {
-                                                            current_block = 15855550149339537395;
-                                                        }
+                                                        dsy = 24 as u_int;
                                                     }
-                                                } else {
-                                                    dsy = 24 as u_int;
                                                     current_block = 15855550149339537395;
+                                                } else {
+                                                    dsy = strtonum(
+                                                        tmp,
+                                                        1 as ::core::ffi::c_longlong,
+                                                        USHRT_MAX as ::core::ffi::c_longlong,
+                                                        &raw mut errstr,
+                                                    )
+                                                        as u_int;
+                                                    if !errstr.is_null() {
+                                                        cmdq_error(item_handle, |out| {
+                                                            out.write_all(b"height ")?;
+                                                            write_cstr(out, errstr)
+                                                        });
+                                                        current_block = 5193972633326621385;
+                                                    } else {
+                                                        current_block = 15855550149339537395;
+                                                    }
                                                 }
-                                                match current_block {
-                                                    5193972633326621385 => {}
-                                                    _ => {
-                                                        if detached == 0 && is_control == 0 {
-                                                            sx = c
-                                                                .as_ref()
-                                                                .expect("live client")
-                                                                .terminal_size()
-                                                                .0;
-                                                            sy = c
-                                                                .as_ref()
-                                                                .expect("live client")
-                                                                .terminal_size()
-                                                                .1;
-                                                            if sy > 0 as u_int
-                                                                && options_get_number(
-                                                                    global_s_options,
-                                                                    c"status",
-                                                                ) != 0
-                                                            {
-                                                                sy = sy.wrapping_sub(1);
-                                                            }
-                                                        } else {
-                                                            let default_size = options_get_string(
+                                            } else {
+                                                dsy = 24 as u_int;
+                                                current_block = 15855550149339537395;
+                                            }
+                                            match current_block {
+                                                5193972633326621385 => {}
+                                                _ => {
+                                                    if detached == 0 && is_control == 0 {
+                                                        sx = c
+                                                            .as_ref()
+                                                            .expect("live client")
+                                                            .terminal_size()
+                                                            .0;
+                                                        sy = c
+                                                            .as_ref()
+                                                            .expect("live client")
+                                                            .terminal_size()
+                                                            .1;
+                                                        if sy > 0 as u_int
+                                                            && options_get_number(
                                                                 global_s_options,
-                                                                b"default-size\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                            );
-                                                            tmp = default_size.as_ptr();
-                                                            if sscanf(
-                                                                tmp,
-                                                                b"%ux%u\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                &raw mut sx,
-                                                                &raw mut sy,
-                                                            ) != 2 as ::core::ffi::c_int
+                                                                c"status",
+                                                            ) != 0
+                                                        {
+                                                            sy = sy.wrapping_sub(1);
+                                                        }
+                                                    } else {
+                                                        let default_size = options_get_string(
+                                                            global_s_options,
+                                                            b"default-size\0" as *const u8
+                                                                as *const ::core::ffi::c_char,
+                                                        );
+                                                        tmp = default_size.as_ptr();
+                                                        if sscanf(
+                                                            tmp,
+                                                            b"%ux%u\0" as *const u8
+                                                                as *const ::core::ffi::c_char,
+                                                            &raw mut sx,
+                                                            &raw mut sy,
+                                                        ) != 2 as ::core::ffi::c_int
+                                                        {
+                                                            sx = dsx;
+                                                            sy = dsy;
+                                                        } else {
+                                                            if args_has(args, 'x' as i32 as u_char)
+                                                                != 0
                                                             {
                                                                 sx = dsx;
-                                                                sy = dsy;
-                                                            } else {
-                                                                if args_has(
-                                                                    args,
-                                                                    'x' as i32 as u_char,
-                                                                ) != 0
-                                                                {
-                                                                    sx = dsx;
-                                                                }
-                                                                if args_has(
-                                                                    args,
-                                                                    'y' as i32 as u_char,
-                                                                ) != 0
-                                                                {
-                                                                    sy = dsy;
-                                                                }
-                                                            }
-                                                        }
-                                                        if sx == 0 as u_int {
-                                                            sx = 1 as u_int;
-                                                        }
-                                                        if sy == 0 as u_int {
-                                                            sy = 1 as u_int;
-                                                        }
-                                                        oo = Some(crate::src::options::options_create_owned(Some(crate::src::options::OptionsScope::GlobalSession)));
-                                                        if args_has(args, 'x' as i32 as u_char) != 0
-                                                            || args_has(args, 'y' as i32 as u_char)
-                                                                != 0
-                                                        {
-                                                            if args_has(args, 'x' as i32 as u_char)
-                                                                == 0
-                                                            {
-                                                                dsx = sx;
                                                             }
                                                             if args_has(args, 'y' as i32 as u_char)
-                                                                == 0
+                                                                != 0
                                                             {
-                                                                dsy = sy;
+                                                                sy = dsy;
                                                             }
-                                                            options_set_string(
-                                                                &mut **oo
-                                                                    .as_mut()
-                                                                    .expect("new session options"),
-                                                                b"default-size\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                0 as ::core::ffi::c_int,
-                                                                |out| {
-                                                                    write!(
-                                                                        out,
-                                                                        "{}x{}",
-                                                                        (dsx) as u32,
-                                                                        (dsy) as u32
-                                                                    )
-                                                                },
-                                                            );
                                                         }
-                                                        env = Some(environ_create());
-                                                        if !c.is_none()
-                                                            && args_has(args, 'E' as i32 as u_char)
-                                                                == 0
+                                                    }
+                                                    if sx == 0 as u_int {
+                                                        sx = 1 as u_int;
+                                                    }
+                                                    if sy == 0 as u_int {
+                                                        sy = 1 as u_int;
+                                                    }
+                                                    oo = Some(crate::src::options::options_create_owned(Some(crate::src::options::OptionsScope::GlobalSession)));
+                                                    if args_has(args, 'x' as i32 as u_char) != 0
+                                                        || args_has(args, 'y' as i32 as u_char) != 0
+                                                    {
+                                                        if args_has(args, 'x' as i32 as u_char) == 0
                                                         {
-                                                            let client_environment = c
-                                                                .as_ref()
-                                                                .expect("live client")
-                                                                .with_environment(|env| {
-                                                                    env.expect("client environment")
-                                                                        .clone()
-                                                                });
-                                                            environ_update(
-                                                                global_s_options,
-                                                                &client_environment,
-                                                                env.as_deref_mut()
-                                                                    .expect("new environment"),
-                                                            );
+                                                            dsx = sx;
                                                         }
-                                                        for av in args_flag_values(
-                                                            &*args,
-                                                            'e' as i32 as u_char,
-                                                        ) {
-                                                            environ_put(
-                                                                env.as_deref_mut()
-                                                                    .expect("environment"),
-                                                                av.string_ptr(),
-                                                                0 as ::core::ffi::c_int,
-                                                            );
-                                                        }
-                                                        let session_owner = crate::src::shared::session::SessionRef::create(prefix.as_deref(), (!sname.is_null())
-                                                                .then(|| CStr::from_ptr(sname)), CStr::from_ptr(cwd), env.take()
-                                                                .expect("new session environment"), oo.take(), tiop.as_ref());
-                                                        s = Some(session_owner.clone());
-                                                        sc.item = (*item).observer.clone();
-                                                        sc.s =
-                                                            std::rc::Rc::downgrade(&session_owner);
-                                                        if detached == 0 {
-                                                            sc.tc = c_owner.as_ref().map_or_else(
-                                                                std::rc::Weak::new,
-                                                                std::rc::Rc::downgrade,
-                                                            );
-                                                        }
-                                                        sc.name = (!wname.is_null()).then(|| {
-                                                            CStr::from_ptr(wname).to_owned()
-                                                        });
-                                                        argv_owner = args_to_vector(&*args);
-                                                        sc.argv = argv_owner;
-                                                        sc.idx = -(1 as ::core::ffi::c_int);
-                                                        sc.cwd = args_get(
-                                                            &*(args),
-                                                            'c' as i32 as u_char,
-                                                        )
-                                                        .map(CStr::to_owned);
-                                                        sc.flags = 0 as ::core::ffi::c_int;
-                                                        if !spawn_window(
-                                                            &mut sc,
-                                                            &mut cause,
-                                                        )
-                                                        .is_alive()
+                                                        if args_has(args, 'y' as i32 as u_char) == 0
                                                         {
-                                                            (&s.clone().expect("live session")).destroy((0 as ::core::ffi::c_int) != 0, std::ffi::CStr::from_ptr(b"cmd_new_session_exec\0"
-                                                                    as *const u8
-                                                                    as *const ::core::ffi::c_char));
-                                                            cmdq_error(item_handle, |out| {
-                                                                out.write_all(
-                                                                    b"create window failed: ",
-                                                                )?;
-                                                                write_cstr(
+                                                            dsy = sy;
+                                                        }
+                                                        options_set_string(
+                                                            &mut **oo
+                                                                .as_mut()
+                                                                .expect("new session options"),
+                                                            b"default-size\0" as *const u8
+                                                                as *const ::core::ffi::c_char,
+                                                            0 as ::core::ffi::c_int,
+                                                            |out| {
+                                                                write!(
                                                                     out,
-                                                                    cause.as_ref().map_or(
-                                                                        ::core::ptr::null(),
-                                                                        |value| value.as_ptr(),
-                                                                    ),
+                                                                    "{}x{}",
+                                                                    (dsx) as u32,
+                                                                    (dsy) as u32
                                                                 )
+                                                            },
+                                                        );
+                                                    }
+                                                    env = Some(environ_create());
+                                                    if !c.is_none()
+                                                        && args_has(args, 'E' as i32 as u_char) == 0
+                                                    {
+                                                        let client_environment = c
+                                                            .as_ref()
+                                                            .expect("live client")
+                                                            .with_environment(|env| {
+                                                                env.expect("client environment")
+                                                                    .clone()
                                                             });
-                                                        } else {
-                                                            if !group.is_null() {
-                                                                if sg.is_null() {
-                                                                    if !groupwith.is_none() {
-                                                                        sg = session_group_new(
-                                                                            (groupwith
-                                                                                .as_ref()
-                                                                                .expect(
-                                                                                    "live session",
-                                                                                )
-                                                                                .name())
+                                                        environ_update(
+                                                            global_s_options,
+                                                            &client_environment,
+                                                            env.as_deref_mut()
+                                                                .expect("new environment"),
+                                                        );
+                                                    }
+                                                    for av in args_flag_values(
+                                                        &*args,
+                                                        'e' as i32 as u_char,
+                                                    ) {
+                                                        environ_put(
+                                                            env.as_deref_mut()
+                                                                .expect("environment"),
+                                                            av.string_ptr(),
+                                                            0 as ::core::ffi::c_int,
+                                                        );
+                                                    }
+                                                    let session_owner = crate::src::shared::session::SessionRef::create(prefix.as_deref(), (!sname.is_null())
+                                                            .then(|| CStr::from_ptr(sname)), CStr::from_ptr(cwd), env.take()
+                                                            .expect("new session environment"), oo.take(), tiop.as_ref());
+                                                    s = Some(session_owner.clone());
+                                                    sc.item = (*item).observer.clone();
+                                                    sc.s = std::rc::Rc::downgrade(&session_owner);
+                                                    if detached == 0 {
+                                                        sc.tc = c_owner.as_ref().map_or_else(
+                                                            std::rc::Weak::new,
+                                                            std::rc::Rc::downgrade,
+                                                        );
+                                                    }
+                                                    sc.name = (!wname.is_null())
+                                                        .then(|| CStr::from_ptr(wname).to_owned());
+                                                    argv_owner = args_to_vector(&*args);
+                                                    sc.argv = argv_owner;
+                                                    sc.idx = -(1 as ::core::ffi::c_int);
+                                                    sc.cwd =
+                                                        args_get(&*(args), 'c' as i32 as u_char)
+                                                            .map(CStr::to_owned);
+                                                    sc.flags = 0 as ::core::ffi::c_int;
+                                                    if !spawn_window(&mut sc, &mut cause).is_alive()
+                                                    {
+                                                        s.clone().expect("live session").destroy(
+                                                            (0 as ::core::ffi::c_int) != 0,
+                                                            std::ffi::CStr::from_ptr(
+                                                                b"cmd_new_session_exec\0"
+                                                                    as *const u8
+                                                                    as *const ::core::ffi::c_char,
+                                                            ),
+                                                        );
+                                                        cmdq_error(item_handle, |out| {
+                                                            out.write_all(
+                                                                b"create window failed: ",
+                                                            )?;
+                                                            write_cstr(
+                                                                out,
+                                                                cause.as_ref().map_or(
+                                                                    ::core::ptr::null(),
+                                                                    |value| value.as_ptr(),
+                                                                ),
+                                                            )
+                                                        });
+                                                    } else {
+                                                        if !group.is_null() {
+                                                            if sg.is_null() {
+                                                                if let Some(groupwith_value) =
+                                                                    groupwith.as_ref()
+                                                                {
+                                                                    sg = session_group_new(
+                                                                        (groupwith_value.name())
                                                                             .as_ptr()
                                                                             .cast_mut(),
-                                                                        );
-                                                                        session_group_add(
-                                                                            sg, groupwith_owner.as_ref().expect("retained group session"),
-                                                                        );
-                                                                    } else {
-                                                                        sg = session_group_new(
-                                                                            group,
-                                                                        );
-                                                                    }
+                                                                    );
+                                                                    session_group_add(
+                                                                        sg, groupwith_owner.as_ref().expect("retained group session"),
+                                                                    );
+                                                                } else {
+                                                                    sg = session_group_new(group);
                                                                 }
-                                                                session_group_add(
-                                                                    sg,
-                                                                    &session_owner,
+                                                            }
+                                                            session_group_add(sg, &session_owner);
+                                                            session_group_synchronize_to(
+                                                                &s.clone().expect("live session"),
+                                                            );
+                                                            s.clone()
+                                                                .expect("live session")
+                                                                .select_index(
+                                                                    (s.as_ref()
+                                                                        .expect("live session")
+                                                                        .with_winlinks(|links| {
+                                                                            winlinks_minmax(
+                                                                                links, RB_NEGINF,
+                                                                            )
+                                                                        }))
+                                                                    .get_unchecked()
+                                                                    .idx,
                                                                 );
-                                                                session_group_synchronize_to(
-                                                                    &s.clone()
-                                                                        .expect("live session"),
-                                                                );
-                                                                (&s.clone().expect("live session"))
-                                                                    .select_index(
-                                                                        (s.as_ref()
-                                                                            .expect("live session")
-                                                                            .with_winlinks(
-                                                                                |links| {
-                                                                                    winlinks_minmax(
-                                                                                        links,
-                                                                                        RB_NEGINF,
-                                                                                    )
+                                                        }
+                                                        events_fire_session(
+                                                            b"session-created\0" as *const u8
+                                                                as *const ::core::ffi::c_char,
+                                                            s.clone().expect("live session"),
+                                                        );
+                                                        if detached == 0 {
+                                                            if args_has(args, 'f' as i32 as u_char)
+                                                                != 0
+                                                            {
+                                                                c.clone()
+                                                                    .expect("live client")
+                                                                    .parse_flags(
+                                                                        std::ffi::CStr::from_ptr(
+                                                                            args_get(
+                                                                                &*(args),
+                                                                                'f' as i32
+                                                                                    as u_char,
+                                                                            )
+                                                                            .map_or(
+                                                                                std::ptr::null(),
+                                                                                |value| {
+                                                                                    value.as_ptr()
                                                                                 },
-                                                                            ))
-                                                                        .get_unchecked()
-                                                                        .idx,
+                                                                            ),
+                                                                        ),
                                                                     );
                                                             }
-                                                            events_fire_session(
-                                                                b"session-created\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                s.clone().expect("live session"),
-                                                            );
-                                                            if detached == 0 {
-                                                                if args_has(
-                                                                    args,
-                                                                    'f' as i32 as u_char,
-                                                                ) != 0
-                                                                {
-                                                                    (&c.clone()
-                                                                            .expect("live client")).parse_flags(std::ffi::CStr::from_ptr(args_get(
-                                                                            &*(args),
-                                                                            'f' as i32 as u_char,
-                                                                        )
-                                                                        .map_or(
-                                                                            std::ptr::null(),
-                                                                            |value| value.as_ptr(),
-                                                                        )));
-                                                                }
-                                                                if already_attached == 0 {
-                                                                    if !c
-                                                                        .as_ref()
-                                                                        .expect("live client")
-                                                                        .flags()
-                                                                        & CLIENT_CONTROL as uint64_t
-                                                                        != 0
-                                                                    {
-                                                                        c.as_ref()
-                                                                            .expect("live client")
-                                                                            .send_ready();
-                                                                    }
-                                                                } else if !c
+                                                            if already_attached == 0 {
+                                                                if !c
                                                                     .as_ref()
                                                                     .expect("live client")
-                                                                    .attached_session()
-                                                                    .upgrade()
-                                                                    .is_none()
+                                                                    .flags()
+                                                                    & CLIENT_CONTROL as uint64_t
+                                                                    != 0
                                                                 {
                                                                     c.as_ref()
                                                                         .expect("live client")
-                                                                        .remember_session();
+                                                                        .send_ready();
                                                                 }
-                                                                (&c.clone().expect("live client"))
-                                                                    .set_session(s.as_ref());
-                                                                if !cmdq_get_flags(&*(item))
-                                                                    & CMDQ_STATE_REPEAT
-                                                                    != 0
-                                                                {
-                                                                    (&c.clone()
-                                                                        .expect("live client"))
-                                                                        .set_key_table(None);
-                                                                }
-                                                            }
-                                                            if args_has(args, 'P' as i32 as u_char)
-                                                                != 0
+                                                            } else if !c
+                                                                .as_ref()
+                                                                .expect("live client")
+                                                                .attached_session()
+                                                                .upgrade()
+                                                                .is_none()
                                                             {
-                                                                template = args_get(
-                                                                    &*(args),
-                                                                    'F' as i32 as u_char,
-                                                                )
-                                                                .map_or(std::ptr::null(), |value| {
-                                                                    value.as_ptr()
-                                                                });
-                                                                if template.is_null() {
-                                                                    template = NEW_SESSION_TEMPLATE
-                                                                        .as_ptr();
-                                                                }
-                                                                let cp = format_single_cstring(
-                                                                    Some(item_handle),
-                                                                    template,
-                                                                    c.as_ref(),
-                                                                    s.as_ref(),
-                                                                    (s.as_ref()
-                                                                        .expect("live session")
-                                                                        .current_winlink())
-                                                                    .clone(),
-                                                                    None,
-                                                                );
-                                                                cmdq_print(item_handle, |out| {
-                                                                    out.write_all(cp.as_bytes())
-                                                                });
-                                                            }
-                                                            if detached == 0 {
                                                                 c.as_ref()
                                                                     .expect("live client")
-                                                                    .update_flags(
-                                                                        CLIENT_ATTACHED as uint64_t,
-                                                                        0,
-                                                                    );
+                                                                    .remember_session();
                                                             }
-                                                            if args_has(args, 'd' as i32 as u_char)
-                                                                == 0
+                                                            c.clone()
+                                                                .expect("live client")
+                                                                .set_session(s.as_ref());
+                                                            if !cmdq_get_flags(&*(item))
+                                                                & CMDQ_STATE_REPEAT
+                                                                != 0
                                                             {
-                                                                cmd_find_from_session(
-                                                                    &mut *current
-                                                                        .current
-                                                                        .borrow_mut(),
-                                                                    &s.clone()
-                                                                        .expect("live session"),
-                                                                    0 as ::core::ffi::c_int,
-                                                                );
+                                                                c.clone()
+                                                                    .expect("live client")
+                                                                    .set_key_table(None);
                                                             }
+                                                        }
+                                                        if args_has(args, 'P' as i32 as u_char) != 0
+                                                        {
+                                                            template = args_get(
+                                                                &*(args),
+                                                                'F' as i32 as u_char,
+                                                            )
+                                                            .map_or(std::ptr::null(), |value| {
+                                                                value.as_ptr()
+                                                            });
+                                                            if template.is_null() {
+                                                                template =
+                                                                    NEW_SESSION_TEMPLATE.as_ptr();
+                                                            }
+                                                            let cp = format_single_cstring(
+                                                                Some(item_handle),
+                                                                template,
+                                                                c.as_ref(),
+                                                                s.as_ref(),
+                                                                (s.as_ref()
+                                                                    .expect("live session")
+                                                                    .current_winlink())
+                                                                .clone(),
+                                                                None,
+                                                            );
+                                                            cmdq_print(item_handle, |out| {
+                                                                out.write_all(cp.as_bytes())
+                                                            });
+                                                        }
+                                                        if detached == 0 {
+                                                            c.as_ref()
+                                                                .expect("live client")
+                                                                .update_flags(
+                                                                    CLIENT_ATTACHED as uint64_t,
+                                                                    0,
+                                                                );
+                                                        }
+                                                        if args_has(args, 'd' as i32 as u_char) == 0
+                                                        {
                                                             cmd_find_from_session(
-                                                                &raw mut fs,
+                                                                &mut *current.current.borrow_mut(),
                                                                 &s.clone().expect("live session"),
                                                                 0 as ::core::ffi::c_int,
                                                             );
-                                                            cmdq_insert_hook(
-                                                                s.as_ref(),
-                                                                item_handle,
-                                                                &raw mut fs,
-                                                                |out| {
-                                                                    out.write_all(
-                                                                        b"after-new-session",
-                                                                    )
-                                                                },
-                                                            );
-                                                            if cfg_finished != 0 {
-                                                                cfg_show_causes(s.as_ref());
-                                                            }
-                                                            return CMD_RETURN_NORMAL;
                                                         }
+                                                        cmd_find_from_session(
+                                                            &raw mut fs,
+                                                            &s.clone().expect("live session"),
+                                                            0 as ::core::ffi::c_int,
+                                                        );
+                                                        cmdq_insert_hook(
+                                                            s.as_ref(),
+                                                            item_handle,
+                                                            &raw mut fs,
+                                                            |out| {
+                                                                out.write_all(b"after-new-session")
+                                                            },
+                                                        );
+                                                        if cfg_finished != 0 {
+                                                            cfg_show_causes(s.as_ref());
+                                                        }
+                                                        return CMD_RETURN_NORMAL;
                                                     }
                                                 }
                                             }
@@ -850,7 +815,6 @@ unsafe fn cmd_new_session_exec(
                 }
             }
         }
-        _ => {}
     }
-    return CMD_RETURN_ERROR;
+    CMD_RETURN_ERROR
 }

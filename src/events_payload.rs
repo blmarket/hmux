@@ -10,7 +10,6 @@ use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
-use crate::src::window::Window as _;
 use crate::src::session::Session as _;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -28,6 +27,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{window, winlink};
+use crate::src::window::Window as _;
 use crate::src::window::{winlink_find_by_index, Window};
 use crate::src::{server_client::Client, session::Session, window::WindowPane};
 use hmux_buffer::SegmentedBuf;
@@ -316,19 +316,15 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBu
         }
         1 => {
             evbuffer_add_formatted(evb, |out| {
-                write!(
-                    out,
-                    "{}",
-                    (epi.value.time() as ::core::ffi::c_longlong) as i64
-                )
+                write!(out, "{}", { epi.value.time() as ::core::ffi::c_longlong })
             });
         }
         2 => {
-            evbuffer_add_formatted(evb, |out| write!(out, "{}", (epi.value.number()) as i32));
+            evbuffer_add_formatted(evb, |out| write!(out, "{}", { epi.value.number() }));
         }
         3 => {
             evbuffer_add_formatted(evb, |out| {
-                write!(out, "{}", (epi.value.unsigned_number()) as u32)
+                write!(out, "{}", { epi.value.unsigned_number() })
             });
         }
         4 => {
@@ -344,17 +340,13 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBu
             });
         }
         5 => {
-            evbuffer_add_formatted(evb, |out| {
-                write!(out, "${}", epi.value.session().id() as u32)
-            });
+            evbuffer_add_formatted(evb, |out| write!(out, "${}", { epi.value.session().id() }));
         }
         6 => {
-            evbuffer_add_formatted(evb, |out| {
-                write!(out, "@{}", epi.value.window().id() as u32)
-            });
+            evbuffer_add_formatted(evb, |out| write!(out, "@{}", { epi.value.window().id() }));
         }
         7 => {
-            evbuffer_add_formatted(evb, |out| write!(out, "%{}", epi.value.pane().id() as u32));
+            evbuffer_add_formatted(evb, |out| write!(out, "%{}", { epi.value.pane().id() }));
         }
         8 => {
             evbuffer_add_formatted(evb, |out| {
@@ -374,7 +366,7 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBu
 pub(crate) unsafe fn event_payload_item_print_owned(epi: &event_payload_item) -> Vec<u8> {
     let mut size: size_t = 0;
     let mut evb = evbuffer_new();
-    event_payload_add_item(epi, &mut *evb);
+    event_payload_add_item(epi, &mut evb);
     size = evbuffer_get_length(&evb);
     let mut value = Vec::with_capacity(size + 1);
     value.extend_from_slice(evbuffer_pullup(&mut evb, -1).unwrap_or_default());
@@ -394,7 +386,7 @@ pub unsafe fn event_payload_add_formats(
         prefix = b"\0" as *const u8 as *const ::core::ffi::c_char;
     }
     let prefix = CStr::from_ptr(prefix).to_bytes();
-    for epi in event_payload_items(&*ep) {
+    for epi in event_payload_items(ep) {
         let key = epi.name.as_ptr();
         if !(*key as ::core::ffi::c_int == '_' as i32) {
             let value = event_payload_item_print_owned(epi);
@@ -439,20 +431,20 @@ pub unsafe fn event_payload_log(
     let mut evb = evbuffer_new();
     for epi in event_payload_items(ep) {
         if evbuffer_get_length(&evb) != 0 as size_t {
-            evbuffer_add_formatted(&mut *evb, |out| out.write_all(b", "));
+            evbuffer_add_formatted(&mut evb, |out| out.write_all(b", "));
         }
-        evbuffer_add_formatted(&mut *evb, |out| {
+        evbuffer_add_formatted(&mut evb, |out| {
             write_cstr(out, epi.name.as_ptr())?;
             out.write_all(b"=")
         });
-        event_payload_add_item(epi, &mut *evb);
+        event_payload_add_item(epi, &mut evb);
     }
 
     log_debug(format_args!(
         "{}{}",
         log_cstr((prefix.as_ptr()) as *const _),
         log_cstr_n(
-            (evbuffer_pullup(&mut *evb, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
+            (evbuffer_pullup(&mut evb, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                 as *mut ::core::ffi::c_char) as *const _,
             evbuffer_get_length(&evb) as ::core::ffi::c_int
         )
@@ -563,5 +555,4 @@ mod tests {
             assert_eq!(item.name.as_bytes(), b"alpha");
         }
     }
-
 }

@@ -130,7 +130,7 @@ unsafe fn cmd_send_keys_inject_key(
         return std::rc::Rc::downgrade(item_handle);
     }
     wme = pane.mode_entry();
-    if !wme.is_alive() || (*wme.get_unchecked().mode).key_table.is_none() {
+    if !wme.is_alive() || wme.get_unchecked().mode.key_table.is_none() {
         if (*target).pane_handle().expect("key target pane").key(
             tc_owner.as_ref(),
             wl.clone(),
@@ -143,7 +143,9 @@ unsafe fn cmd_send_keys_inject_key(
         return std::rc::Rc::downgrade(item_handle);
     }
     let table = key_bindings_get_table(
-        std::ffi::CStr::from_ptr((*wme.get_unchecked().mode)
+        std::ffi::CStr::from_ptr(wme
+            .get_unchecked()
+            .mode
             .key_table
             .expect("non-null function pointer")(wme)),
         1 as ::core::ffi::c_int,
@@ -159,7 +161,7 @@ unsafe fn cmd_send_keys_inject_key(
             target,
         );
     }
-    return after;
+    after
 }
 unsafe fn cmd_send_keys_inject_string(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -223,16 +225,12 @@ unsafe fn cmd_send_keys_inject_string(
                 key = uc as key_code;
                 current_block_20 = 12147880666119273379;
             }
-            match current_block_20 {
-                12147880666119273379 => {
-                    after =
-                        cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
-                }
-                _ => {}
+            if current_block_20 == 12147880666119273379 {
+                after = cmd_send_keys_inject_key(item_handle, after.upgrade().as_ref(), args, key);
             }
         }
     }
-    return after;
+    after
 }
 unsafe fn cmd_send_keys_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -282,7 +280,7 @@ unsafe fn cmd_send_keys_exec(
             }
         };
         if !!wme.is_alive() && (args_has(args, 'X' as i32 as u_char) != 0 || count == 0 as u_int) {
-            if (*wme.get_unchecked().mode).command.is_none() {
+            if wme.get_unchecked().mode.command.is_none() {
                 cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
                 return CMD_RETURN_ERROR;
             }
@@ -290,14 +288,15 @@ unsafe fn cmd_send_keys_exec(
         }
     }
     if args_has(args, 'X' as i32 as u_char) != 0 {
-        if !wme.is_alive() || (*wme.get_unchecked().mode).command.is_none() {
+        if !wme.is_alive() || wme.get_unchecked().mode.command.is_none() {
             cmdq_error(item_handle, |out| out.write_all(b"not in a mode"));
             return CMD_RETURN_ERROR;
         }
         if (*m).valid == 0 {
             m = ::core::ptr::null_mut::<mouse_event>();
         }
-        (*wme.get_unchecked().mode)
+        wme.get_unchecked()
+            .mode
             .command
             .expect("non-null function pointer")(
             wme,
@@ -381,5 +380,5 @@ unsafe fn cmd_send_keys_exec(
         }
         np = np.wrapping_sub(1);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

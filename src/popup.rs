@@ -452,7 +452,7 @@ unsafe fn popup_draw(c_owner: &ClientRef, popup: &PopupGuard) {
         scrolled: 0,
         bg: 0,
     };
-    let mut i: u_int = 0;
+    let _i: u_int = 0;
     let mut px: u_int = (*pd).px;
     let mut py: u_int = (*pd).py;
     let mut defaults: grid_cell = grid_cell {
@@ -798,7 +798,7 @@ unsafe fn popup_key(c_owner: &ClientRef, popup: &PopupGuard, event: *mut key_eve
         }
         input_key(&raw mut (*pd).s, job_get_event(&(*pd).job), (*event).key);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn popup_job_update_cb(job: &refbox::Weak<job>, popup: &PopupGuard) {
     let pd = popup.as_ptr();
@@ -957,7 +957,7 @@ pub unsafe fn popup_modify(
         (*pd).flags = flags;
     }
     c_owner.request_redraw(CLIENT_ALLREDRAWFLAGS as u64);
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn popup_display(
     mut flags: ::core::ffi::c_int,
@@ -969,7 +969,7 @@ pub unsafe fn popup_display(
     mut sy: u_int,
     env: Option<&environ>,
     mut shellcmd: *const ::core::ffi::c_char,
-    argv: &Vec<CString>,
+    argv: &[CString],
     mut cwd: *const ::core::ffi::c_char,
     mut title: *const ::core::ffi::c_char,
     c_owner: &ClientRef,
@@ -1187,5 +1187,5 @@ pub unsafe fn popup_display(
     c_owner.set_overlay(Overlay::popup(
         owner, check_cb, mode_cb, draw_cb, key_cb, resize_cb,
     ));
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }

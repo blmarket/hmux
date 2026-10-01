@@ -697,7 +697,7 @@ impl Client for ClientRef {
         crate::src::control::control_reset_offsets(self);
         {
             let mut state = self.borrow_control_mut().expect("control client state");
-            crate::src::control::control_clear_remaining(&mut state);
+            crate::src::control::control_clear_remaining(state);
         }
         drop((*self.get()).control_state.take());
     }
@@ -712,7 +712,7 @@ impl Client for ClientRef {
         }
         let size = control
             .write_event
-            .with_ptr(|stream| crate::src::reactor::evbuffer_get_length(&*(*stream).output))
+            .with_ptr(|stream| crate::src::reactor::evbuffer_get_length(&(*stream).output))
             .unwrap_or(0)
             .wrapping_add(control.queued_reply_bytes)
             .wrapping_add(added);
@@ -946,7 +946,7 @@ impl Client for ClientRef {
         let link = session.current_winlink();
         link.get_unchecked()
             .window_handle()
-            .is_some_and(|owner| Rc::ptr_eq(&owner, window))
+            .is_some_and(|owner| Rc::ptr_eq(owner, window))
     }
 
     unsafe fn participates_in_window_sizing(&self) -> bool {
@@ -1100,7 +1100,7 @@ impl Client for ClientRef {
 
     unsafe fn cwd(&self, fallback: Option<&SessionRef>) -> Option<CString> {
         if cfg_finished == 0 {
-            if let Some(startup) = (&cfg_client).upgrade() {
+            if let Some(startup) = cfg_client.upgrade() {
                 return (*startup.get()).cwd.clone();
             }
         }
@@ -1493,7 +1493,7 @@ impl Client for ClientRef {
         tty_stop_tty(self);
         for code in [TTYC_SMCUP, TTYC_CLEAR, TTYC_E3] {
             let output = crate::src::tty_term::tty_term_string(
-                &*tty_term_owner_ptr(&(*self.get()).tty.term).expect("terminal description"),
+                tty_term_owner_ptr(&(*self.get()).tty.term).expect("terminal description"),
                 code,
             )
             .to_owned();

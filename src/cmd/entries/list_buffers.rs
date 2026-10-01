@@ -104,5 +104,5 @@ unsafe fn cmd_list_buffers_exec(
         }
         format_free(ft_owner);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

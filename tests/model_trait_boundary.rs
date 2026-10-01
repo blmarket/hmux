@@ -645,8 +645,10 @@ fn model_traits_do_not_return_raw_components_or_whole_models() {
                 struct Output;
                 impl<'ast> Visit<'ast> for Output {
                     fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
-                        assert!(matches!(&*ty.elem, Type::Path(path) if path.path.is_ident("layout_cell")),
-                            "raw component in model trait result");
+                        assert!(
+                            matches!(&*ty.elem, Type::Path(path) if path.path.is_ident("layout_cell")),
+                            "raw component in model trait result"
+                        );
                     }
                     fn visit_type_reference(&mut self, ty: &'ast syn::TypeReference) {
                         assert!(

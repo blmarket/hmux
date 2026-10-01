@@ -299,324 +299,246 @@ static tty_acs_reverse3: [tty_acs_reverse_entry; 32] = [
         key: 'n' as i32 as u_char,
     },
 ];
-static tty_acs_double_borders_list: [utf8_data; 13] = unsafe {
+static tty_acs_double_borders_list: [utf8_data; 13] = {
     [
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 0 as u_char,
             width: 0 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x91\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x91\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x90\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x90\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x94\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x94\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x97\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x97\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x9A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x9A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x9D\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x9D\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xA6\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xA6\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xA9\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xA9\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xA3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xA3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xAC\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xAC\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xC2\xB7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xC2\xB7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 2 as u_char,
             width: 1 as u_char,
         },
     ]
 };
-static tty_acs_heavy_borders_list: [utf8_data; 13] = unsafe {
+static tty_acs_heavy_borders_list: [utf8_data; 13] = {
     [
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 0 as u_char,
             width: 0 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x83\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x83\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x81\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x81\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x8F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x8F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x93\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x93\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x97\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x97\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x9B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x9B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\xB3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\xB3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\xBB\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\xBB\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\xA3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\xA3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\xAB\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\xAB\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x8B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x8B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xC2\xB7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xC2\xB7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 2 as u_char,
             width: 1 as u_char,
         },
     ]
 };
-static tty_acs_rounded_borders_list: [utf8_data; 13] = unsafe {
+static tty_acs_rounded_borders_list: [utf8_data; 13] = {
     [
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 0 as u_char,
             width: 0 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x82\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x82\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x80\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x80\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xAD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xAD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xAE\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xAE\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xB0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xB0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\xAF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\xAF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\xB3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\xB3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\xBB\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\xBB\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\x9C\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\x9C\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x94\xA4\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x94\xA4\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xE2\x95\x8B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xE2\x95\x8B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
         },
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xC2\xB7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xC2\xB7\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 0 as u_char,
             size: 2 as u_char,
             width: 1 as u_char,

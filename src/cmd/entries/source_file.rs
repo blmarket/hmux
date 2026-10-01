@@ -197,9 +197,7 @@ unsafe fn cmd_source_file_done(
     error: ::core::ffi::c_int,
     buffer: &mut SegmentedBuf,
 ) -> Option<Box<cmd_source_file_data>> {
-    let Some(item_owner) = cdata.item.upgrade() else {
-        return None;
-    };
+    let item_owner = cdata.item.upgrade()?;
     let item = item_owner.get();
     let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
     // Progress does not coalesce the buffer; only complete files are parsed.
@@ -303,11 +301,9 @@ unsafe fn cmd_source_file_exec(
             return CMD_RETURN_ERROR;
         }
         cmd_source_file_depth = cmd_source_file_depth.wrapping_add(1);
-        log_debug(format_args!(
-            "{}: depth now {}",
-            "cmd_source_file_exec",
-            (cmd_source_file_depth) as u32
-        ));
+        log_debug(format_args!("{}: depth now {}", "cmd_source_file_exec", {
+            cmd_source_file_depth
+        }));
     } else {
         let Some(depth) = c
             .as_ref()
@@ -417,5 +413,5 @@ unsafe fn cmd_source_file_exec(
         cmd_source_file_complete(cdata);
     }
     drop(cwd);
-    return retval;
+    retval
 }

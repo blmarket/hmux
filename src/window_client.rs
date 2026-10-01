@@ -294,31 +294,28 @@ unsafe fn window_client_build(
         } else {
             current_block_21 = 12147880666119273379;
         }
-        match current_block_21 {
-            12147880666119273379 => {
-                let text = format_single_cstring(
-                    None,
-                    (*data).format.as_ptr(),
-                    c.as_ref(),
-                    None,
-                    (refbox::Weak::new()).clone(),
-                    None,
-                );
-                mode_tree_add(
-                    &mut *(*data).tree_owner().get(),
-                    None,
-                    ModeTreeItemData::Client(item_handle.clone()),
-                    std::rc::Rc::as_ptr(c.as_ref().expect("live client")) as uint64_t,
-                    c.as_ref()
-                        .expect("live client")
-                        .name()
-                        .as_deref()
-                        .expect("attached client has a name"),
-                    Some(&text),
-                    -(1 as ::core::ffi::c_int),
-                );
-            }
-            _ => {}
+        if current_block_21 == 12147880666119273379 {
+            let text = format_single_cstring(
+                None,
+                (*data).format.as_ptr(),
+                c.as_ref(),
+                None,
+                (refbox::Weak::new()).clone(),
+                None,
+            );
+            mode_tree_add(
+                &mut *(*data).tree_owner().get(),
+                None,
+                ModeTreeItemData::Client(item_handle.clone()),
+                std::rc::Rc::as_ptr(c.as_ref().expect("live client")) as uint64_t,
+                c.as_ref()
+                    .expect("live client")
+                    .name()
+                    .as_deref()
+                    .expect("attached client has a name"),
+                Some(&text),
+                -(1 as ::core::ffi::c_int),
+            );
         }
         i = i.wrapping_add(1);
     }
@@ -361,15 +358,14 @@ unsafe fn window_client_draw_info(
     let mut ft_owner =
         format_create_defaults(None, Some(c), None, (refbox::Weak::new()).clone(), None);
     ft = &raw mut *ft_owner;
-    if {
-        c.borrow_terminal()
-            .term
-            .as_deref()
-            .expect("terminal description")
-            .flags
-            & TERM_INVALIDMS
-            != 0
-    } {
+    if c.borrow_terminal()
+        .term
+        .as_deref()
+        .expect("terminal description")
+        .flags
+        & TERM_INVALIDMS
+        != 0
+    {
         format_add(
             ft,
             b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,
@@ -632,15 +628,15 @@ unsafe fn window_client_get_key(
     format_add(
         ft,
         b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (line) as u32),
+        |out| write!(out, "{}", { line }),
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft_owner);
-    return key;
+    key
 }
 fn window_client_sort(sort_crit: &mut sort_criteria) {
-    unsafe {
+    {
         sort_crit.order_seq = &window_client_order_seq;
         if sort_crit.order as ::core::ffi::c_uint
             == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -649,7 +645,7 @@ fn window_client_sort(sort_crit: &mut sort_criteria) {
         }
     }
 }
-static window_client_help_lines: &[&'static CStr] = &[
+static window_client_help_lines: &[&CStr] = &[
     c"#[fg=themelightgrey]          i #[#{E:tree-mode-border-style},acs]x#[default] Toggle info view",
     c"#[fg=themelightgrey]      Enter #[#{E:tree-mode-border-style},acs]x#[default] Choose selected %1",
     c"#[fg=themelightgrey]          d #[#{E:tree-mode-border-style},acs]x#[default] Detach selected %1",
@@ -761,7 +757,7 @@ unsafe fn window_client_init(
     }
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-    return s;
+    s
 }
 unsafe fn window_client_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
     let Some(data) = wme

@@ -191,8 +191,7 @@ pub unsafe fn style_parse(
         }
         end = strcspn(in_0, &raw const delimiters as *const ::core::ffi::c_char) as size_t;
         if end
-            > (::core::mem::size_of::<[::core::ffi::c_char; 256]>() as usize)
-                .wrapping_sub(1 as usize)
+            > (::core::mem::size_of::<[::core::ffi::c_char; 256]>() as usize).wrapping_sub(1_usize)
         {
             current_block = 6605876559004397942;
             break;
@@ -716,22 +715,22 @@ pub unsafe fn style_parse(
             }
             (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int | value) as u_short;
         }
-        in_0 = in_0.offset(end.wrapping_add(strspn(
-            in_0.offset(end as isize),
+        in_0 = in_0.add(end.wrapping_add(strspn(
+            in_0.add(end),
             &raw const delimiters as *const ::core::ffi::c_char,
-        ) as size_t) as isize);
+        ) as size_t));
         if !(*in_0 as ::core::ffi::c_int != '\0' as i32) {
             current_block = 5832582820025303349;
             break;
         }
     }
     match current_block {
-        5832582820025303349 => return 0 as ::core::ffi::c_int,
+        5832582820025303349 => 0 as ::core::ffi::c_int,
         _ => {
             style_copy(sy, &raw mut saved);
-            return -(1 as ::core::ffi::c_int);
+            -(1 as ::core::ffi::c_int)
         }
-    };
+    }
 }
 pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     let mut gc: *mut grid_cell = &raw mut (*sy).gc;
@@ -761,7 +760,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         {
             tmp = b"right-marker\0" as *const u8 as *const ::core::ffi::c_char;
         }
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"list=")?;
             out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
@@ -820,7 +819,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
             );
             tmp = &raw mut b as *mut ::core::ffi::c_char;
         }
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"range=")?;
             out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
@@ -847,7 +846,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         {
             tmp = b"absolute-centre\0" as *const u8 as *const ::core::ffi::c_char;
         }
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"align=")?;
             out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
@@ -870,14 +869,14 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         {
             tmp = b"set-default\0" as *const u8 as *const ::core::ffi::c_char;
         }
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(std::ffi::CStr::from_ptr(tmp).to_bytes())
         });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).fill != 8 as ::core::ffi::c_int {
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"fill=")?;
             out.write_all(colour_format((*sy).fill).to_bytes())
@@ -885,14 +884,14 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).dim != 0 as ::core::ffi::c_int {
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
-            write!(out, "dim={}%", ((*sy).dim) as i32)
+            write!(out, "dim={}%", { (*sy).dim })
         });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).fg != 8 as ::core::ffi::c_int {
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"fg=")?;
             out.write_all(colour_format((*gc).fg).to_bytes())
@@ -900,7 +899,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).bg != 8 as ::core::ffi::c_int {
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"bg=")?;
             out.write_all(colour_format((*gc).bg).to_bytes())
@@ -908,7 +907,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).us != 8 as ::core::ffi::c_int {
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"us=")?;
             out.write_all(colour_format((*gc).us).to_bytes())
@@ -916,7 +915,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*gc).attr as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(attributes_format((*gc).attr as ::core::ffi::c_int).to_bytes())
         });
@@ -924,12 +923,12 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     }
     if (*sy).width >= 0 as ::core::ffi::c_int {
         if (*sy).width_percentage != 0 {
-            off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            off += xformat_with(&mut (&mut s)[off as usize..], |out| {
                 out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
                 write!(out, "width={}%", ((*sy).width) as u32)
             });
         } else {
-            off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+            off += xformat_with(&mut (&mut s)[off as usize..], |out| {
                 out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
                 write!(out, "width={}", ((*sy).width) as u32)
             });
@@ -937,14 +936,14 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if (*sy).pad >= 0 as ::core::ffi::c_int {
-        off += xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        off += xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             write!(out, "pad={}", ((*sy).pad) as u32)
         });
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
     if let Some(uri) = style_link(&*sy) {
-        xformat_with(&mut (&mut *(&raw mut s))[off as usize..], |out| {
+        xformat_with(&mut (&mut s)[off as usize..], |out| {
             out.write_all(std::ffi::CStr::from_ptr(comma).to_bytes())?;
             out.write_all(b"link=")?;
             out.write_all(uri.uri.as_bytes())
@@ -954,7 +953,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     if *(&raw mut s as *mut ::core::ffi::c_char) as ::core::ffi::c_int == '\0' as i32 {
         return b"default\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    return &raw mut s as *mut ::core::ffi::c_char;
+    &raw mut s as *mut ::core::ffi::c_char
 }
 /// Copy link data before callers insert it into a table, which may evict the source.
 pub fn style_link(sy: &style) -> Option<Box<hyperlinks_uri>> {
@@ -1026,7 +1025,7 @@ pub unsafe fn style_parse_colour(
     } else {
         (*sy).gc.fg = c;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn style_set(mut sy: *mut style, mut gc: *const grid_cell) {
     memcpy(
@@ -1052,8 +1051,8 @@ pub unsafe fn style_set_scrollbar_style_from_option(
     mut oo: *mut options,
 ) {
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let _o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+    let _s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     style_set(sb_style, &raw const grid_default_cell);
     oe = crate::src::options::options_read_entry(&*oo, c"pane-scrollbars-style", |entry| {
         entry.tableentry
@@ -1125,11 +1124,11 @@ pub unsafe fn style_ranges_get_range(mut srs: *mut style_ranges, mut x: u_int) -
     }
     for range in (*srs).as_slice() {
         let sr = range.as_ref();
-        if x >= (*sr).start && x < (*sr).end {
+        if x >= sr.start && x < sr.end {
             return sr as *const style_range as *mut style_range;
         }
     }
-    return ::core::ptr::null_mut::<style_range>();
+    ::core::ptr::null_mut::<style_range>()
 }
 
 #[cfg(test)]

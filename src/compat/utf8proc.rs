@@ -14,7 +14,7 @@ pub unsafe fn utf8proc_wcwidth(mut wc: wchar_t) -> ::core::ffi::c_int {
     if cat == UTF8PROC_CATEGORY_CO as ::core::ffi::c_int {
         return 1 as ::core::ffi::c_int;
     }
-    return utf8proc_charwidth(wc as utf8proc_int32_t);
+    utf8proc_charwidth(wc as utf8proc_int32_t)
 }
 pub unsafe fn utf8proc_wctomb(
     mut s: *mut ::core::ffi::c_char,
@@ -26,6 +26,5 @@ pub unsafe fn utf8proc_wctomb(
     if !utf8proc_codepoint_valid(wc as utf8proc_int32_t) {
         return -(1 as ::core::ffi::c_int);
     }
-    return utf8proc_encode_char(wc as utf8proc_int32_t, s as *mut utf8proc_uint8_t)
-        as ::core::ffi::c_int;
+    utf8proc_encode_char(wc as utf8proc_int32_t, s as *mut utf8proc_uint8_t) as ::core::ffi::c_int
 }

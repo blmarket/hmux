@@ -33,9 +33,9 @@ pub struct paste_name_tree {
 }
 
 thread_local! {
-    static paste_next_index: RefCell<u_int> = RefCell::new(0);
-    static paste_next_order: RefCell<u_int> = RefCell::new(0);
-    static paste_num_automatic: RefCell<u_int> = RefCell::new(0);
+    static paste_next_index: RefCell<u_int> = const { RefCell::new(0) };
+    static paste_next_order: RefCell<u_int> = const { RefCell::new(0) };
+    static paste_num_automatic: RefCell<u_int> = const { RefCell::new(0) };
     static paste_by_name: RefCell<paste_name_tree> = RefCell::new(paste_name_tree::default());
     static paste_by_time: RefCell<paste_time_tree> = RefCell::new(paste_time_tree::default());
 }
@@ -212,7 +212,7 @@ unsafe fn paste_fire_event(
     let mut ep = event_payload_create();
     // Finish reading the buffer before dispatch: listeners may look up,
     // replace, or rename buffers synchronously.
-    event_payload_set_string(&mut *ep, c"paste_buffer".as_ptr(), write);
+    event_payload_set_string(&mut ep, c"paste_buffer".as_ptr(), write);
     events_fire(name.as_ptr(), ep);
 }
 

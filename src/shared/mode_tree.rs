@@ -113,7 +113,6 @@ impl Default for mode_tree_data {
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
-
 pub struct mode_tree_prompt {
     /// Taken at logical cleanup before dropping the callback record.
     pub mtd: Option<Rc<UnsafeCell<mode_tree_data>>>,

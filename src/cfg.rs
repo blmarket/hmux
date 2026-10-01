@@ -65,7 +65,7 @@ unsafe fn cfg_client_done() -> cmd_retval {
     if cfg_finished == 0 {
         return CMD_RETURN_WAIT;
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cfg_done() -> cmd_retval {
     if cfg_finished != 0 {
@@ -73,11 +73,11 @@ unsafe fn cfg_done() -> cmd_retval {
     }
     cfg_finished = 1 as ::core::ffi::c_int;
     cfg_show_causes(None);
-    if let Some(item) = std::mem::take(&mut *(&raw mut cfg_item)).upgrade() {
+    if let Some(item) = std::mem::take(&mut cfg_item).upgrade() {
         cmdq_continue(&item);
     }
     prompt_load_history();
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 pub unsafe fn start_cfg() {
     let mut c: Option<ClientRef> = None;
@@ -190,7 +190,7 @@ pub unsafe fn load_cfg(
 
     drop(pr.cmdlist.take());
 
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn load_cfg_from_buffer(
     mut buf: *const ::core::ffi::c_void,
@@ -219,7 +219,7 @@ pub unsafe fn load_cfg_from_buffer(
         },
     };
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
-    let state;
+
     if let Some(new_item) = new_item.as_deref_mut() {
         *new_item = std::rc::Weak::new();
     }
@@ -247,18 +247,18 @@ pub unsafe fn load_cfg_from_buffer(
         drop(pr.cmdlist.take());
         return 0 as ::core::ffi::c_int;
     }
-    if !item.is_null() {
-        state = cmdq_copy_state(
+    let state = if !item.is_null() {
+        cmdq_copy_state(
             cmdq_get_state(&*item).expect("command queue state"),
             current,
-        );
+        )
     } else {
-        state = cmdq_new_state(
+        cmdq_new_state(
             ::core::ptr::null_mut::<cmd_find_state>(),
             ::core::ptr::null_mut::<key_event>(),
             0 as ::core::ffi::c_int,
-        );
-    }
+        )
+    };
     cmdq_add_format(
         &state,
         c"current_file",
@@ -279,7 +279,7 @@ pub unsafe fn load_cfg_from_buffer(
     if let Some(new_item) = new_item {
         *new_item = last;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn cfg_add_cause(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
     let msg = format_message_with(write);
@@ -349,7 +349,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
                     .attached_session()
                     .upgrade();
             } else {
-                let mut s_owner = (&sessions).first();
+                let mut s_owner = sessions.first();
                 s = s_owner;
             }
         }

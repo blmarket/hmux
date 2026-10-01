@@ -451,7 +451,7 @@ impl Session for SessionRef {
     }
     unsafe fn with_environment_mut<R>(&self, edit: impl FnOnce(&mut environ) -> R) -> R {
         let mut environment = self.borrow_environment_mut().expect("session environment");
-        edit(&mut environment)
+        edit(environment)
     }
     unsafe fn set_cwd(&self, cwd: Option<CString>) {
         session_set_cwd(&mut *self.get(), cwd);

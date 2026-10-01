@@ -128,10 +128,10 @@ pub fn environ_copy(src: &environ, dst: &mut environ) {
     dst.copy_from(src);
 }
 
-pub unsafe fn environ_find<'a>(
-    env: &'a environ,
+pub unsafe fn environ_find(
+    env: &environ,
     name: *const ::core::ffi::c_char,
-) -> Option<&'a environ_entry> {
+) -> Option<&environ_entry> {
     env.find(CStr::from_ptr(name))
 }
 
@@ -210,13 +210,13 @@ pub unsafe fn environ_push(env: &environ) {
     environ = seed;
     let seed_owner = ProcessEnvironmentSeed(seed);
     for envent in environ_iter(env) {
-        if !(*envent).value.is_none()
-            && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
-            && !(*envent).flags & ENVIRON_HIDDEN != 0
+        if !envent.value.is_none()
+            && *envent.name.as_ptr() as ::core::ffi::c_int != '\0' as i32
+            && !envent.flags & ENVIRON_HIDDEN != 0
         {
             setenv(
-                ((*envent).name).as_ptr().cast_mut(),
-                ((*envent).value)
+                (envent.name).as_ptr().cast_mut(),
+                (envent.value)
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                 1 as ::core::ffi::c_int,
@@ -231,15 +231,13 @@ pub unsafe fn environ_log(
 ) {
     let prefix = format_message_with(write);
     for envent in environ_iter(env) {
-        if !(*envent).value.is_none()
-            && *(*envent).name.as_ptr() as ::core::ffi::c_int != '\0' as i32
-        {
+        if !envent.value.is_none() && *envent.name.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
             log_debug(format_args!(
                 "{}{}={}",
                 log_cstr((prefix.as_ptr()) as *const _),
-                log_cstr((((*envent).name).as_ptr().cast_mut()) as *const _),
+                log_cstr(((envent.name).as_ptr().cast_mut()) as *const _),
                 log_cstr(
-                    (((*envent).value)
+                    ((envent.value)
                         .as_ref()
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                         as *const _
@@ -252,7 +250,7 @@ pub unsafe fn environ_for_session(
     s_owner: Option<&SessionRef>,
     mut no_TERM: ::core::ffi::c_int,
 ) -> Box<environ> {
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let _value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_int = 0;
     let mut env = environ_create();
     environ_copy(
@@ -319,5 +317,5 @@ pub unsafe fn environ_for_session(
             )
         },
     );
-    return env;
+    env
 }

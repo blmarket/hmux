@@ -1243,7 +1243,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_co
         log_debug(format_args!(
             "replacing key {}: 0x{:x} ({})",
             log_cstr((s) as *const _),
-            (key) as u64,
+            { key },
             crate::src::log::log_bytes(key_string.as_bytes())
         ));
         tk.key = key;
@@ -1251,7 +1251,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_co
         log_debug(format_args!(
             "new key {}: 0x{:x} ({})",
             log_cstr((s) as *const _),
-            (key) as u64,
+            { key },
             crate::src::log::log_bytes(key_string.as_bytes())
         ));
         tty_keys_add1(&mut (*tty).key_tree, bytes, key);
@@ -1287,8 +1287,8 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
+    let _o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+    let _ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut copy: [::core::ffi::c_char; 16] = [0; 16];
     let mut key: key_code = 0;
     tty_keys_free(tty);
@@ -1297,8 +1297,8 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         < (::core::mem::size_of::<[tty_default_key_xterm; 30]>() as usize)
             .wrapping_div(::core::mem::size_of::<tty_default_key_xterm>() as usize)
     {
-        tdkx = (&raw const tty_default_xterm_keys as *const tty_default_key_xterm)
-            .offset(i as isize) as *const tty_default_key_xterm;
+        tdkx =
+            (&raw const tty_default_xterm_keys as *const tty_default_key_xterm).offset(i as isize);
         j = 2 as u_int;
         while (j as usize)
             < (::core::mem::size_of::<[key_code; 10]>() as usize)
@@ -1324,8 +1324,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         < (::core::mem::size_of::<[tty_default_key_raw; 102]>() as usize)
             .wrapping_div(::core::mem::size_of::<tty_default_key_raw>() as usize)
     {
-        tdkr = (&raw const tty_default_raw_keys as *const tty_default_key_raw).offset(i as isize)
-            as *const tty_default_key_raw;
+        tdkr = (&raw const tty_default_raw_keys as *const tty_default_key_raw).offset(i as isize);
         s = (*tdkr).string.as_ptr();
         if *s as ::core::ffi::c_int != '\0' as i32 {
             tty_keys_add(tty, s, (*tdkr).key);
@@ -1337,8 +1336,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         < (::core::mem::size_of::<[tty_default_key_code; 136]>() as usize)
             .wrapping_div(::core::mem::size_of::<tty_default_key_code>() as usize)
     {
-        tdkc = (&raw const tty_default_code_keys as *const tty_default_key_code).offset(i as isize)
-            as *const tty_default_key_code;
+        tdkc = (&raw const tty_default_code_keys as *const tty_default_key_code).offset(i as isize);
         s = tty_term_string(
             &*(tty_term_owner_ptr(&(*tty).term).map_or(std::ptr::null(), |term| term)),
             (*tdkc).code,
@@ -1445,9 +1443,9 @@ unsafe fn tty_keys_next1(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        (len) as usize,
+        { len },
         log_cstr_n((buf) as *const _, len as ::core::ffi::c_int),
-        (expired) as i32
+        { expired }
     ));
     *size = 0;
     let bytes = if len == 0 {
@@ -1455,7 +1453,7 @@ unsafe fn tty_keys_next1(
     } else {
         std::slice::from_raw_parts(buf.cast::<u8>(), len)
     };
-    if let Some(tk) = tty_keys_find1((*tty).key_tree.as_deref(), bytes, &mut *size)
+    if let Some(tk) = tty_keys_find1(tty.key_tree.as_deref(), bytes, &mut *size)
         .filter(|tk| tk.key != KEYC_UNKNOWN as key_code)
     {
         let mut current = Some(tk);
@@ -1468,7 +1466,7 @@ unsafe fn tty_keys_next1(
                         .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                         as *const _
                 ),
-                log_hex((node.key) as u64)
+                log_hex(node.key)
             ));
             current = node.next.as_deref();
         }
@@ -1513,11 +1511,11 @@ unsafe fn tty_keys_next1(
                 (&raw mut ud.data as *mut u_char) as *const _,
                 ud.size as ::core::ffi::c_int
             ),
-            log_hex((*key) as u64)
+            log_hex(*key)
         ));
         return 0 as ::core::ffi::c_int;
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn tty_keys_winsz(
     terminal_client_owner: &ClientRef,
@@ -1531,8 +1529,8 @@ unsafe fn tty_keys_winsz(
     let mut sy: u_int = 0;
     let mut xpixel: u_int = 0;
     let mut ypixel: u_int = 0;
-    let mut char_x: u_int = 0;
-    let mut char_y: u_int = 0;
+    let _char_x: u_int = 0;
+    let _char_y: u_int = 0;
     *size = 0 as size_t;
     if terminal_client_owner.borrow_terminal().flags & TTY_WINSIZEQUERY == 0 {
         return -(1 as ::core::ffi::c_int);
@@ -1551,15 +1549,14 @@ unsafe fn tty_keys_winsz(
     }
     end = 2 as size_t;
     while end < len && end != ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as usize {
-        if *buf.offset(end as isize) as ::core::ffi::c_int == 't' as i32 {
+        if *buf.add(end) as ::core::ffi::c_int == 't' as i32 {
             break;
         }
-        if *(*__ctype_b_loc())
-            .offset(*buf.offset(end as isize) as u_char as ::core::ffi::c_int as isize)
+        if *(*__ctype_b_loc()).offset(*buf.add(end) as u_char as ::core::ffi::c_int as isize)
             as ::core::ffi::c_int
             & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
             == 0
-            && *buf.offset(end as isize) as ::core::ffi::c_int != ';' as i32
+            && *buf.add(end) as ::core::ffi::c_int != ';' as i32
         {
             break;
         }
@@ -1569,7 +1566,7 @@ unsafe fn tty_keys_winsz(
         return 1 as ::core::ffi::c_int;
     }
     if end == ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as usize
-        || *buf.offset(end as isize) as ::core::ffi::c_int != 't' as i32
+        || *buf.add(end) as ::core::ffi::c_int != 't' as i32
     {
         return -(1 as ::core::ffi::c_int);
     }
@@ -1613,7 +1610,7 @@ unsafe fn tty_keys_winsz(
                 0
             };
         }
-        tty_invalidate(&terminal_client_owner);
+        tty_invalidate(terminal_client_owner);
         terminal_client_owner.borrow_terminal_mut().flags &= !TTY_WINSIZEQUERY;
         *size = end.wrapping_add(1 as size_t);
         return 0 as ::core::ffi::c_int;
@@ -1628,7 +1625,7 @@ unsafe fn tty_keys_winsz(
         ),
         log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
     ));
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut current_block: u64;
@@ -1705,315 +1702,318 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
             current_block = 1917311967535052937;
         }
     }
-    match current_block {
-        1917311967535052937 => {
-            match tty_keys_sync(terminal_client_owner, buf, len, &raw mut size) {
-                0 => {
-                    key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-                    current_block = 5025795842197473417;
-                }
-                -1 => {
-                    current_block = 4166486009154926805;
-                }
-                1 => {
-                    current_block = 16977559109335092698;
-                }
-                _ => {
-                    current_block = 4166486009154926805;
-                }
+    if current_block == 1917311967535052937 {
+        match tty_keys_sync(terminal_client_owner, buf, len, &raw mut size) {
+            0 => {
+                key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+                current_block = 5025795842197473417;
             }
-            match current_block {
-                5025795842197473417 => {}
-                16977559109335092698 => {}
-                _ => {
-                    match tty_keys_device_attributes(terminal_client_owner, buf, len, &raw mut size)
-                    {
-                        0 => {
-                            key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-                            current_block = 5025795842197473417;
-                        }
-                        -1 => {
-                            current_block = 15652330335145281839;
-                        }
-                        1 => {
-                            current_block = 16977559109335092698;
-                        }
-                        _ => {
-                            current_block = 15652330335145281839;
-                        }
+            -1 => {
+                current_block = 4166486009154926805;
+            }
+            1 => {
+                current_block = 16977559109335092698;
+            }
+            _ => {
+                current_block = 4166486009154926805;
+            }
+        }
+        match current_block {
+            5025795842197473417 => {}
+            16977559109335092698 => {}
+            _ => {
+                match tty_keys_device_attributes(terminal_client_owner, buf, len, &raw mut size) {
+                    0 => {
+                        key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+                        current_block = 5025795842197473417;
                     }
-                    match current_block {
-                        5025795842197473417 => {}
-                        16977559109335092698 => {}
-                        _ => {
-                            match tty_keys_device_attributes2(
-                                terminal_client_owner,
-                                buf,
-                                len,
-                                &raw mut size,
-                            ) {
-                                0 => {
-                                    key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-                                    current_block = 5025795842197473417;
-                                }
-                                -1 => {
-                                    current_block = 224731115979188411;
-                                }
-                                1 => {
-                                    current_block = 16977559109335092698;
-                                }
-                                _ => {
-                                    current_block = 224731115979188411;
-                                }
+                    -1 => {
+                        current_block = 15652330335145281839;
+                    }
+                    1 => {
+                        current_block = 16977559109335092698;
+                    }
+                    _ => {
+                        current_block = 15652330335145281839;
+                    }
+                }
+                match current_block {
+                    5025795842197473417 => {}
+                    16977559109335092698 => {}
+                    _ => {
+                        match tty_keys_device_attributes2(
+                            terminal_client_owner,
+                            buf,
+                            len,
+                            &raw mut size,
+                        ) {
+                            0 => {
+                                key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+                                current_block = 5025795842197473417;
                             }
-                            match current_block {
-                                5025795842197473417 => {}
-                                16977559109335092698 => {}
-                                _ => {
-                                    match tty_keys_extended_device_attributes(
-                                        terminal_client_owner,
-                                        buf,
-                                        len,
-                                        &raw mut size,
-                                    ) {
-                                        0 => {
-                                            key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-                                            current_block = 5025795842197473417;
-                                        }
-                                        -1 => {
-                                            current_block = 17478428563724192186;
-                                        }
-                                        1 => {
-                                            current_block = 16977559109335092698;
-                                        }
-                                        _ => {
-                                            current_block = 17478428563724192186;
-                                        }
+                            -1 => {
+                                current_block = 224731115979188411;
+                            }
+                            1 => {
+                                current_block = 16977559109335092698;
+                            }
+                            _ => {
+                                current_block = 224731115979188411;
+                            }
+                        }
+                        match current_block {
+                            5025795842197473417 => {}
+                            16977559109335092698 => {}
+                            _ => {
+                                match tty_keys_extended_device_attributes(
+                                    terminal_client_owner,
+                                    buf,
+                                    len,
+                                    &raw mut size,
+                                ) {
+                                    0 => {
+                                        key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+                                        current_block = 5025795842197473417;
                                     }
-                                    match current_block {
-                                        5025795842197473417 => {}
-                                        16977559109335092698 => {}
-                                        _ => {
-                                            match {
-                                                let mut terminal =
-                                                    terminal_client_owner.borrow_terminal_mut();
-                                                let tty { flags, fg, bg, .. } = &mut *terminal;
-                                                tty_keys_colours(
-                                                    flags,
-                                                    Some(
-                                                        diagnostic_name
-                                                            .as_deref()
-                                                            .unwrap_or(c"(null)"),
-                                                    ),
+                                    -1 => {
+                                        current_block = 17478428563724192186;
+                                    }
+                                    1 => {
+                                        current_block = 16977559109335092698;
+                                    }
+                                    _ => {
+                                        current_block = 17478428563724192186;
+                                    }
+                                }
+                                match current_block {
+                                    5025795842197473417 => {}
+                                    16977559109335092698 => {}
+                                    _ => {
+                                        let res = {
+                                            let mut terminal =
+                                                terminal_client_owner.borrow_terminal_mut();
+                                            let tty { flags, fg, bg, .. } = &mut *terminal;
+                                            tty_keys_colours(
+                                                flags,
+                                                Some(
+                                                    diagnostic_name.as_deref().unwrap_or(c"(null)"),
+                                                ),
+                                                buf,
+                                                len,
+                                                &raw mut size,
+                                                fg,
+                                                bg,
+                                            )
+                                        };
+                                        match res {
+                                            0 => {
+                                                key = KEYC_UNKNOWN as ::core::ffi::c_ulong
+                                                    as key_code;
+                                                if terminal_client_owner.borrow_terminal().bg != bg
+                                                {
+                                                    if let Some(client) =
+                                                        Some(&terminal_client_owner)
+                                                    {
+                                                        client.update_theme_colours();
+                                                    };
+                                                }
+                                                if let Some(session) = terminal_client_owner
+                                                    .attached_session()
+                                                    .upgrade()
+                                                {
+                                                    session.theme_changed();
+                                                }
+                                                current_block = 5025795842197473417;
+                                            }
+                                            -1 => {
+                                                current_block = 1538046216550696469;
+                                            }
+                                            1 => {
+                                                if terminal_client_owner.borrow_terminal().bg != bg
+                                                {
+                                                    if let Some(client) =
+                                                        Some(&terminal_client_owner)
+                                                    {
+                                                        client.update_theme_colours();
+                                                    };
+                                                }
+                                                if let Some(session) = terminal_client_owner
+                                                    .attached_session()
+                                                    .upgrade()
+                                                {
+                                                    session.theme_changed();
+                                                }
+                                                current_block = 16977559109335092698;
+                                            }
+                                            _ => {
+                                                current_block = 1538046216550696469;
+                                            }
+                                        }
+                                        match current_block {
+                                            16977559109335092698 => {}
+                                            5025795842197473417 => {}
+                                            _ => {
+                                                match tty_keys_palette(
                                                     buf,
                                                     len,
                                                     &raw mut size,
-                                                    fg,
-                                                    bg,
-                                                )
-                                            } {
-                                                0 => {
-                                                    key = KEYC_UNKNOWN as ::core::ffi::c_ulong
-                                                        as key_code;
-                                                    if terminal_client_owner.borrow_terminal().bg
-                                                        != bg
-                                                    {
-                                                        if let Some(client) =
-                                                            Some(&terminal_client_owner)
-                                                        {
-                                                            client.update_theme_colours();
+                                                    &mut palette_reply,
+                                                ) {
+                                                    0 => {
+                                                        key = KEYC_UNKNOWN as ::core::ffi::c_ulong
+                                                            as key_code;
+                                                        current_block = 5025795842197473417;
+                                                    }
+                                                    -1 => {
+                                                        current_block = 1836292691772056875;
+                                                    }
+                                                    1 => {
+                                                        current_block = 16977559109335092698;
+                                                    }
+                                                    _ => {
+                                                        current_block = 1836292691772056875;
+                                                    }
+                                                }
+                                                match current_block {
+                                                    5025795842197473417 => {}
+                                                    16977559109335092698 => {}
+                                                    _ => {
+                                                        let res = {
+                                                            let mut terminal =
+                                                                terminal_client_owner
+                                                                    .borrow_terminal_mut();
+                                                            tty_keys_mouse(
+                                                                &mut *terminal,
+                                                                diagnostic_name.as_deref(),
+                                                                buf,
+                                                                len,
+                                                                &raw mut size,
+                                                                &raw mut m,
+                                                            )
                                                         };
-                                                    }
-                                                    if let Some(session) = terminal_client_owner
-                                                        .attached_session()
-                                                        .upgrade()
-                                                    {
-                                                        session.theme_changed();
-                                                    }
-                                                    current_block = 5025795842197473417;
-                                                }
-                                                -1 => {
-                                                    current_block = 1538046216550696469;
-                                                }
-                                                1 => {
-                                                    if terminal_client_owner.borrow_terminal().bg
-                                                        != bg
-                                                    {
-                                                        if let Some(client) =
-                                                            Some(&terminal_client_owner)
-                                                        {
-                                                            client.update_theme_colours();
-                                                        };
-                                                    }
-                                                    if let Some(session) = terminal_client_owner
-                                                        .attached_session()
-                                                        .upgrade()
-                                                    {
-                                                        session.theme_changed();
-                                                    }
-                                                    current_block = 16977559109335092698;
-                                                }
-                                                _ => {
-                                                    current_block = 1538046216550696469;
-                                                }
-                                            }
-                                            match current_block {
-                                                16977559109335092698 => {}
-                                                5025795842197473417 => {}
-                                                _ => {
-                                                    match tty_keys_palette(
-                                                        buf,
-                                                        len,
-                                                        &raw mut size,
-                                                        &mut palette_reply,
-                                                    ) {
-                                                        0 => {
-                                                            key = KEYC_UNKNOWN
-                                                                as ::core::ffi::c_ulong
-                                                                as key_code;
-                                                            current_block = 5025795842197473417;
-                                                        }
-                                                        -1 => {
-                                                            current_block = 1836292691772056875;
-                                                        }
-                                                        1 => {
-                                                            current_block = 16977559109335092698;
-                                                        }
-                                                        _ => {
-                                                            current_block = 1836292691772056875;
-                                                        }
-                                                    }
-                                                    match current_block {
-                                                        5025795842197473417 => {}
-                                                        16977559109335092698 => {}
-                                                        _ => {
-                                                            match {
-                                                                let mut terminal =
-                                                                    terminal_client_owner
-                                                                        .borrow_terminal_mut();
-                                                                tty_keys_mouse(
-                                                                    &mut *terminal,
-                                                                    diagnostic_name.as_deref(),
-                                                                    buf,
-                                                                    len,
-                                                                    &raw mut size,
-                                                                    &raw mut m,
-                                                                )
-                                                            } {
-                                                                0 => {
-                                                                    key = KEYC_MOUSE
-                                                                        as ::core::ffi::c_ulong
-                                                                        as key_code;
-                                                                    current_block =
-                                                                        5025795842197473417;
-                                                                }
-                                                                -1 => {
-                                                                    current_block =
-                                                                        17784502470059252271;
-                                                                }
-                                                                -2 => {
-                                                                    key = KEYC_MOUSE
-                                                                        as ::core::ffi::c_ulong
-                                                                        as key_code;
-                                                                    log_debug(format_args!(
-                                                                        "{}: discard key {} {}",
-                                                                        log_cstr(
-                                                                            ((terminal_client_owner.name())
-                                                                                .as_ref()
-                                                                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                                                                                as *const _
-                                                                        ),
-                                                                        log_cstr_n((buf) as *const _, size as ::core::ffi::c_int),
-                                                                        log_hex((key) as u64)
-                                                                    ));
-                                                                    terminal_client_owner
-                                                                        .borrow_terminal_mut()
-                                                                        .in_0
-                                                                        .as_deref_mut()
-                                                                        .expect("open TTY buffer")
-                                                                        .drain(size);
-                                                                    return 1 as ::core::ffi::c_int;
-                                                                }
-                                                                1 => {
-                                                                    current_block =
-                                                                        16977559109335092698;
-                                                                }
-                                                                _ => {
-                                                                    current_block =
-                                                                        17784502470059252271;
-                                                                }
+                                                        match res {
+                                                            0 => {
+                                                                key = KEYC_MOUSE
+                                                                    as ::core::ffi::c_ulong
+                                                                    as key_code;
+                                                                current_block = 5025795842197473417;
                                                             }
-                                                            match current_block {
-                                                                5025795842197473417 => {}
-                                                                16977559109335092698 => {}
-                                                                _ => {
-                                                                    match {
-                                                                        let terminal =
-                                                                            terminal_client_owner
-                                                                                .borrow_terminal();
-                                                                        tty_keys_extended_key(
-                                                                            &*terminal,
-                                                                            diagnostic_name
-                                                                                .as_deref(),
+                                                            -1 => {
+                                                                current_block =
+                                                                    17784502470059252271;
+                                                            }
+                                                            -2 => {
+                                                                key = KEYC_MOUSE
+                                                                    as ::core::ffi::c_ulong
+                                                                    as key_code;
+                                                                log_debug(format_args!(
+                                                                    "{}: discard key {} {}",
+                                                                    log_cstr(
+                                                                        ((terminal_client_owner
+                                                                            .name())
+                                                                        .as_ref()
+                                                                        .map_or(
+                                                                            ::core::ptr::null_mut(),
+                                                                            |value| value
+                                                                                .as_ptr()
+                                                                                .cast_mut()
+                                                                        ))
+                                                                            as *const _
+                                                                    ),
+                                                                    log_cstr_n(
+                                                                        (buf) as *const _,
+                                                                        size as ::core::ffi::c_int
+                                                                    ),
+                                                                    log_hex((key) as u64)
+                                                                ));
+                                                                terminal_client_owner
+                                                                    .borrow_terminal_mut()
+                                                                    .in_0
+                                                                    .as_deref_mut()
+                                                                    .expect("open TTY buffer")
+                                                                    .drain(size);
+                                                                return 1 as ::core::ffi::c_int;
+                                                            }
+                                                            1 => {
+                                                                current_block =
+                                                                    16977559109335092698;
+                                                            }
+                                                            _ => {
+                                                                current_block =
+                                                                    17784502470059252271;
+                                                            }
+                                                        }
+                                                        match current_block {
+                                                            5025795842197473417 => {}
+                                                            16977559109335092698 => {}
+                                                            _ => {
+                                                                let res = {
+                                                                    let terminal =
+                                                                        terminal_client_owner
+                                                                            .borrow_terminal();
+                                                                    tty_keys_extended_key(
+                                                                        terminal,
+                                                                        diagnostic_name.as_deref(),
+                                                                        buf,
+                                                                        len,
+                                                                        &raw mut size,
+                                                                        &raw mut key,
+                                                                    )
+                                                                };
+                                                                match res {
+                                                                    0 => {
+                                                                        current_block =
+                                                                            5025795842197473417;
+                                                                    }
+                                                                    -1 => {
+                                                                        current_block =
+                                                                            3938820862080741272;
+                                                                    }
+                                                                    1 => {
+                                                                        current_block =
+                                                                            16977559109335092698;
+                                                                    }
+                                                                    _ => {
+                                                                        current_block =
+                                                                            3938820862080741272;
+                                                                    }
+                                                                }
+                                                                match current_block {
+                                                                    5025795842197473417 => {}
+                                                                    16977559109335092698 => {}
+                                                                    _ => {
+                                                                        match tty_keys_winsz(
+                                                                            terminal_client_owner,
                                                                             buf,
                                                                             len,
                                                                             &raw mut size,
-                                                                            &raw mut key,
-                                                                        )
-                                                                    } {
-                                                                        0 => {
-                                                                            current_block =
-                                                                                5025795842197473417;
-                                                                        }
-                                                                        -1 => {
-                                                                            current_block =
-                                                                                3938820862080741272;
-                                                                        }
-                                                                        1 => {
-                                                                            current_block = 16977559109335092698;
-                                                                        }
-                                                                        _ => {
-                                                                            current_block =
-                                                                                3938820862080741272;
-                                                                        }
-                                                                    }
-                                                                    match current_block {
-                                                                        5025795842197473417 => {}
-                                                                        16977559109335092698 => {}
-                                                                        _ => {
-                                                                            match tty_keys_winsz(
-                                                                                &terminal_client_owner,
-                                                                                buf,
-                                                                                len,
-                                                                                &raw mut size,
-                                                                            ) {
-                                                                                0 => {
-                                                                                    current_block = 1414802762261447502;
-                                                                                    match current_block {
-                                                                                        14661562966503102838 => {
-                                                                                            current_block = 16977559109335092698;
-                                                                                        }
-                                                                                        _ => {
-                                                                                            key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-                                                                                            current_block = 5025795842197473417;
-                                                                                        }
+                                                                        ) {
+                                                                            0 => {
+                                                                                current_block = 1414802762261447502;
+                                                                                match current_block {
+                                                                                    14661562966503102838 => {
+                                                                                        current_block = 16977559109335092698;
+                                                                                    }
+                                                                                    _ => {
+                                                                                        key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+                                                                                        current_block = 5025795842197473417;
                                                                                     }
                                                                                 }
-                                                                                1 => {
-                                                                                    current_block = 14661562966503102838;
-                                                                                    match current_block {
-                                                                                        14661562966503102838 => {
-                                                                                            current_block = 16977559109335092698;
-                                                                                        }
-                                                                                        _ => {
-                                                                                            key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-                                                                                            current_block = 5025795842197473417;
-                                                                                        }
+                                                                            }
+                                                                            1 => {
+                                                                                current_block = 14661562966503102838;
+                                                                                match current_block {
+                                                                                    14661562966503102838 => {
+                                                                                        current_block = 16977559109335092698;
+                                                                                    }
+                                                                                    _ => {
+                                                                                        key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+                                                                                        current_block = 5025795842197473417;
                                                                                     }
                                                                                 }
-                                                                                -1 | _ => {
-                                                                                    current_block = 12077302897653652224;
-                                                                                }
+                                                                            }
+                                                                            _ => {
+                                                                                current_block = 12077302897653652224;
                                                                             }
                                                                         }
                                                                     }
@@ -2032,13 +2032,12 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 }
             }
         }
-        _ => {}
     }
     loop {
         match current_block {
             12077302897653652224 => {
                 n = tty_keys_next1(
-                    &*terminal_client_owner.borrow_terminal(),
+                    terminal_client_owner.borrow_terminal(),
                     diagnostic_name.as_deref(),
                     buf,
                     len,
@@ -2056,7 +2055,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 }
                 if *buf as ::core::ffi::c_int == '\u{1b}' as i32 && len > 1 as size_t {
                     n = tty_keys_next1(
-                        &*terminal_client_owner.borrow_terminal(),
+                        terminal_client_owner.borrow_terminal(),
                         diagnostic_name.as_deref(),
                         buf.offset(1 as ::core::ffi::c_int as isize),
                         len.wrapping_sub(1 as size_t),
@@ -2200,7 +2199,7 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 }
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     terminal_client_owner.update_flags(0, CLIENT_FOCUSED as u64);
-                    tty_keys_update_focus(&terminal_client_owner);
+                    tty_keys_update_focus(terminal_client_owner);
                     events_fire_client(
                         b"client-focus-out\0" as *const u8 as *const ::core::ffi::c_char,
                         terminal_client_owner.clone(),
@@ -2211,10 +2210,10 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         b"client-focus-in\0" as *const u8 as *const ::core::ffi::c_char,
                         terminal_client_owner.clone(),
                     );
-                    tty_keys_update_focus(&terminal_client_owner);
+                    tty_keys_update_focus(terminal_client_owner);
                 }
                 if let Some(event) = event {
-                    (&terminal_client_owner).handle_key(event);
+                    terminal_client_owner.handle_key(event);
                 }
                 terminal_client_owner
                     .borrow_terminal_mut()
@@ -2384,15 +2383,14 @@ unsafe fn tty_keys_extended_key(
     }
     end = 2 as size_t;
     while end < len && end != ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as usize {
-        if *buf.offset(end as isize) as ::core::ffi::c_int == '~' as i32 {
+        if *buf.add(end) as ::core::ffi::c_int == '~' as i32 {
             break;
         }
-        if *(*__ctype_b_loc())
-            .offset(*buf.offset(end as isize) as u_char as ::core::ffi::c_int as isize)
+        if *(*__ctype_b_loc()).offset(*buf.add(end) as u_char as ::core::ffi::c_int as isize)
             as ::core::ffi::c_int
             & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
             == 0
-            && *buf.offset(end as isize) as ::core::ffi::c_int != ';' as i32
+            && *buf.add(end) as ::core::ffi::c_int != ';' as i32
         {
             break;
         }
@@ -2402,8 +2400,8 @@ unsafe fn tty_keys_extended_key(
         return 1 as ::core::ffi::c_int;
     }
     if end == ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as usize
-        || *buf.offset(end as isize) as ::core::ffi::c_int != '~' as i32
-            && *buf.offset(end as isize) as ::core::ffi::c_int != 'u' as i32
+        || *buf.add(end) as ::core::ffi::c_int != '~' as i32
+            && *buf.add(end) as ::core::ffi::c_int != 'u' as i32
     {
         return -(1 as ::core::ffi::c_int);
     }
@@ -2413,7 +2411,7 @@ unsafe fn tty_keys_extended_key(
         end.wrapping_sub(2 as size_t),
     );
     tmp[end.wrapping_sub(2 as size_t) as usize] = '\0' as i32 as ::core::ffi::c_char;
-    if *buf.offset(end as isize) as ::core::ffi::c_int == '~' as i32 {
+    if *buf.add(end) as ::core::ffi::c_int == '~' as i32 {
         if sscanf(
             &raw mut tmp as *mut ::core::ffi::c_char,
             b"27;%u;%u\0" as *const u8 as *const ::core::ffi::c_char,
@@ -2433,7 +2431,7 @@ unsafe fn tty_keys_extended_key(
         return -(1 as ::core::ffi::c_int);
     }
     *size = end.wrapping_add(1 as size_t);
-    bspace = (*tty).tio.c_cc[VERASE as usize];
+    bspace = tty.tio.c_cc[VERASE as usize];
     if bspace as ::core::ffi::c_int != _POSIX_VDISABLE && number == bspace as u_int {
         nkey = KEYC_BSPACE as ::core::ffi::c_ulong as key_code;
     } else {
@@ -2500,7 +2498,7 @@ unsafe fn tty_keys_extended_key(
         ));
     }
     *key = nkey;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn tty_keys_mouse(
     tty: &mut tty,
@@ -2544,7 +2542,7 @@ unsafe fn tty_keys_mouse(
             }
             let fresh0 = *size;
             *size = (*size).wrapping_add(1);
-            ch = *buf.offset(fresh0 as isize) as u_char;
+            ch = *buf.add(fresh0) as u_char;
             if i == 0 as u_int {
                 b = ch as u_int;
             } else if i == 1 as u_int {
@@ -2581,7 +2579,7 @@ unsafe fn tty_keys_mouse(
             }
             let fresh1 = *size;
             *size = (*size).wrapping_add(1);
-            ch = *buf.offset(fresh1 as isize) as u_char;
+            ch = *buf.add(fresh1) as u_char;
             if ch as ::core::ffi::c_int == ';' as i32 {
                 break;
             }
@@ -2598,7 +2596,7 @@ unsafe fn tty_keys_mouse(
             }
             let fresh2 = *size;
             *size = (*size).wrapping_add(1);
-            ch = *buf.offset(fresh2 as isize) as u_char;
+            ch = *buf.add(fresh2) as u_char;
             if ch as ::core::ffi::c_int == ';' as i32 {
                 break;
             }
@@ -2615,7 +2613,7 @@ unsafe fn tty_keys_mouse(
             }
             let fresh3 = *size;
             *size = (*size).wrapping_add(1);
-            ch = *buf.offset(fresh3 as isize) as u_char;
+            ch = *buf.add(fresh3) as u_char;
             if ch as ::core::ffi::c_int == 'M' as i32 || ch as ::core::ffi::c_int == 'm' as i32 {
                 break;
             }
@@ -2655,18 +2653,18 @@ unsafe fn tty_keys_mouse(
     } else {
         return -(1 as ::core::ffi::c_int);
     }
-    (*m).lx = (*tty).mouse_last_x;
+    (*m).lx = tty.mouse_last_x;
     (*m).x = x;
-    (*m).ly = (*tty).mouse_last_y;
+    (*m).ly = tty.mouse_last_y;
     (*m).y = y;
-    (*m).lb = (*tty).mouse_last_b;
+    (*m).lb = tty.mouse_last_b;
     (*m).b = b;
     (*m).sgr_type = sgr_type as u_int;
     (*m).sgr_b = sgr_b;
-    (*tty).mouse_last_x = x;
-    (*tty).mouse_last_y = y;
-    (*tty).mouse_last_b = b;
-    return 0 as ::core::ffi::c_int;
+    tty.mouse_last_x = x;
+    tty.mouse_last_y = y;
+    tty.mouse_last_b = b;
+    0 as ::core::ffi::c_int
 }
 unsafe fn tty_keys_clipboard(
     mut buf: *const ::core::ffi::c_char,
@@ -2712,13 +2710,12 @@ unsafe fn tty_keys_clipboard(
     }
     end = 5 as size_t;
     while end < len {
-        if *buf.offset(end as isize) as ::core::ffi::c_int == '\u{7}' as i32 {
+        if *buf.add(end) as ::core::ffi::c_int == '\u{7}' as i32 {
             terminator = 1 as size_t;
             break;
         } else if end > 5 as size_t
-            && *buf.offset(end.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-                == '\u{1b}' as i32
-            && *buf.offset(end as isize) as ::core::ffi::c_int == '\\' as i32
+            && *buf.add(end.wrapping_sub(1 as size_t)) as ::core::ffi::c_int == '\u{1b}' as i32
+            && *buf.add(end) as ::core::ffi::c_int == '\\' as i32
         {
             terminator = 2 as size_t;
             break;
@@ -2777,7 +2774,7 @@ unsafe fn tty_keys_clipboard(
         )
     ));
     *reply = Some(input_request_clipboard_data { data: out, clip });
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn tty_keys_device_attributes(
     terminal_client_owner: &ClientRef,
@@ -2891,52 +2888,49 @@ unsafe fn tty_keys_device_attributes(
             break;
         }
     }
-    match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
-        61..=65 => {
-            i = 1 as u_int;
-            while i < n {
-                log_debug(format_args!(
-                    "{}: DA feature: {}",
-                    log_cstr(
-                        ((terminal_client_owner.name())
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
-                    ),
-                    p[i as usize] as ::core::ffi::c_int
-                ));
-                if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
-                    tty_parse_client_features(
-                        &terminal_client_owner,
-                        b"sixel\0" as *const u8 as *const ::core::ffi::c_char,
-                        b",\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
-                }
-                if p[i as usize] as ::core::ffi::c_int == 21 as ::core::ffi::c_int {
-                    tty_parse_client_features(
-                        &terminal_client_owner,
-                        b"margins\0" as *const u8 as *const ::core::ffi::c_char,
-                        b",\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
-                }
-                if p[i as usize] as ::core::ffi::c_int == 28 as ::core::ffi::c_int {
-                    tty_parse_client_features(
-                        &terminal_client_owner,
-                        b"rectfill\0" as *const u8 as *const ::core::ffi::c_char,
-                        b",\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
-                }
-                if p[i as usize] as ::core::ffi::c_int == 52 as ::core::ffi::c_int {
-                    tty_parse_client_features(
-                        &terminal_client_owner,
-                        b"clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-                        b",\0" as *const u8 as *const ::core::ffi::c_char,
-                    );
-                }
-                i = i.wrapping_add(1);
+    if let 61..=65 = p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
+        i = 1 as u_int;
+        while i < n {
+            log_debug(format_args!(
+                "{}: DA feature: {}",
+                log_cstr(
+                    ((terminal_client_owner.name())
+                        .as_ref()
+                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
+                        as *const _
+                ),
+                p[i as usize] as ::core::ffi::c_int
+            ));
+            if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
+                tty_parse_client_features(
+                    terminal_client_owner,
+                    b"sixel\0" as *const u8 as *const ::core::ffi::c_char,
+                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                );
             }
+            if p[i as usize] as ::core::ffi::c_int == 21 as ::core::ffi::c_int {
+                tty_parse_client_features(
+                    terminal_client_owner,
+                    b"margins\0" as *const u8 as *const ::core::ffi::c_char,
+                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                );
+            }
+            if p[i as usize] as ::core::ffi::c_int == 28 as ::core::ffi::c_int {
+                tty_parse_client_features(
+                    terminal_client_owner,
+                    b"rectfill\0" as *const u8 as *const ::core::ffi::c_char,
+                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                );
+            }
+            if p[i as usize] as ::core::ffi::c_int == 52 as ::core::ffi::c_int {
+                tty_parse_client_features(
+                    terminal_client_owner,
+                    b"clipboard\0" as *const u8 as *const ::core::ffi::c_char,
+                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                );
+            }
+            i = i.wrapping_add(1);
         }
-        _ => {}
     }
     log_debug(format_args!(
         "{}: received primary DA {}",
@@ -2948,9 +2942,9 @@ unsafe fn tty_keys_device_attributes(
         ),
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
-    tty_update_features(&terminal_client_owner);
+    tty_update_features(terminal_client_owner);
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn tty_keys_sync(
     terminal_client_owner: &ClientRef,
@@ -2966,13 +2960,11 @@ unsafe fn tty_keys_sync(
         return -(1 as ::core::ffi::c_int);
     }
     i = 0 as size_t;
-    while i < (::core::mem::size_of::<[::core::ffi::c_char; 9]>() as usize).wrapping_sub(1 as usize)
-    {
+    while i < (::core::mem::size_of::<[::core::ffi::c_char; 9]>() as usize).wrapping_sub(1_usize) {
         if i == len {
             return 1 as ::core::ffi::c_int;
         }
-        if *buf.offset(i as isize) as ::core::ffi::c_int != prefix[i as usize] as ::core::ffi::c_int
-        {
+        if *buf.add(i) as ::core::ffi::c_int != prefix[i as usize] as ::core::ffi::c_int {
             return -(1 as ::core::ffi::c_int);
         }
         i = i.wrapping_add(1);
@@ -2980,20 +2972,20 @@ unsafe fn tty_keys_sync(
     if i == len {
         return 1 as ::core::ffi::c_int;
     }
-    if (*buf.offset(i as isize) as ::core::ffi::c_int) < '0' as i32
-        || *buf.offset(i as isize) as ::core::ffi::c_int > '4' as i32
+    if (*buf.add(i) as ::core::ffi::c_int) < '0' as i32
+        || *buf.add(i) as ::core::ffi::c_int > '4' as i32
     {
         return -(1 as ::core::ffi::c_int);
     }
     let fresh4 = i;
     i = i.wrapping_add(1);
-    status = *buf.offset(fresh4 as isize) as ::core::ffi::c_int - '0' as i32;
+    status = *buf.add(fresh4) as ::core::ffi::c_int - '0' as i32;
     if i == len {
         return 1 as ::core::ffi::c_int;
     }
     let fresh5 = i;
     i = i.wrapping_add(1);
-    if *buf.offset(fresh5 as isize) as ::core::ffi::c_int != '$' as i32 {
+    if *buf.add(fresh5) as ::core::ffi::c_int != '$' as i32 {
         return -(1 as ::core::ffi::c_int);
     }
     if i == len {
@@ -3001,7 +2993,7 @@ unsafe fn tty_keys_sync(
     }
     let fresh6 = i;
     i = i.wrapping_add(1);
-    if *buf.offset(fresh6 as isize) as ::core::ffi::c_int != 'y' as i32 {
+    if *buf.add(fresh6) as ::core::ffi::c_int != 'y' as i32 {
         return -(1 as ::core::ffi::c_int);
     }
     *size = i;
@@ -3010,11 +3002,11 @@ unsafe fn tty_keys_sync(
         || status == 3 as ::core::ffi::c_int
     {
         tty_parse_client_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"sync\0" as *const u8 as *const ::core::ffi::c_char,
             b",\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        tty_update_features(&terminal_client_owner);
+        tty_update_features(terminal_client_owner);
     }
     log_debug(format_args!(
         "{}: received DECRPM {}",
@@ -3027,7 +3019,7 @@ unsafe fn tty_keys_sync(
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVESYNC;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn tty_keys_device_attributes2(
     terminal_client_owner: &ClientRef,
@@ -3144,19 +3136,19 @@ unsafe fn tty_keys_device_attributes2(
     match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
         77 => {
             tty_default_features(
-                &terminal_client_owner,
+                terminal_client_owner,
                 b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
         84 => {
             tty_default_features(
-                &terminal_client_owner,
+                terminal_client_owner,
                 b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
         85 => {
             tty_default_features(
-                &terminal_client_owner,
+                terminal_client_owner,
                 b"rxvt-unicode\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
@@ -3172,9 +3164,9 @@ unsafe fn tty_keys_device_attributes2(
         ),
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
-    tty_update_features(&terminal_client_owner);
+    tty_update_features(terminal_client_owner);
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEDA2;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn tty_keys_extended_device_attributes(
     terminal_client_owner: &ClientRef,
@@ -3214,7 +3206,7 @@ unsafe fn tty_keys_extended_device_attributes(
     }
     i = 0 as u_int;
     while (i as usize)
-        < (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1 as usize)
+        < (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1_usize)
     {
         if (4 as u_int).wrapping_add(i) as size_t == len {
             return 1 as ::core::ffi::c_int;
@@ -3231,7 +3223,7 @@ unsafe fn tty_keys_extended_device_attributes(
         i = i.wrapping_add(1);
     }
     if i as usize
-        == (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1 as usize)
+        == (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1_usize)
     {
         return -(1 as ::core::ffi::c_int);
     }
@@ -3247,7 +3239,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else if strncmp(
@@ -3257,7 +3249,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else if strncmp(
@@ -3267,7 +3259,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"XTerm\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else if strncmp(
@@ -3277,7 +3269,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else if strncmp(
@@ -3287,7 +3279,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"foot\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else if strncmp(
@@ -3297,7 +3289,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else if strncmp(
@@ -3307,7 +3299,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"ghostty\0" as *const u8 as *const ::core::ffi::c_char,
         );
     } else if strncmp(
@@ -3317,7 +3309,7 @@ unsafe fn tty_keys_extended_device_attributes(
     ) == 0 as ::core::ffi::c_int
     {
         tty_default_features(
-            &terminal_client_owner,
+            terminal_client_owner,
             b"Rio\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
@@ -3332,9 +3324,9 @@ unsafe fn tty_keys_extended_device_attributes(
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
     terminal_client_owner.record_terminal_type(CStr::from_ptr(tmp.as_ptr()));
-    tty_update_features(&terminal_client_owner);
+    tty_update_features(terminal_client_owner);
     terminal_client_owner.borrow_terminal_mut().flags |= TTY_HAVEXDA;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn tty_keys_colours(
     flags: &mut i32,
@@ -3383,7 +3375,7 @@ pub unsafe fn tty_keys_colours(
     }
     i = 0 as u_int;
     while (i as usize)
-        < (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1 as usize)
+        < (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1_usize)
     {
         if (5 as u_int).wrapping_add(i) as size_t == len {
             return 1 as ::core::ffi::c_int;
@@ -3405,7 +3397,7 @@ pub unsafe fn tty_keys_colours(
         i = i.wrapping_add(1);
     }
     if i as usize
-        == (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1 as usize)
+        == (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1_usize)
     {
         return -(1 as ::core::ffi::c_int);
     }
@@ -3455,7 +3447,7 @@ pub unsafe fn tty_keys_colours(
         *bg = n;
         *flags &= !TTY_WAITBG;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn tty_keys_palette(
     mut buf: *const ::core::ffi::c_char,
@@ -3495,7 +3487,7 @@ unsafe fn tty_keys_palette(
     }
     i = 0 as u_int;
     while (i as usize)
-        < (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1 as usize)
+        < (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1_usize)
     {
         if (4 as u_int).wrapping_add(i) as size_t == len {
             return 1 as ::core::ffi::c_int;
@@ -3517,7 +3509,7 @@ unsafe fn tty_keys_palette(
         i = i.wrapping_add(1);
     }
     if i as usize
-        == (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1 as usize)
+        == (::core::mem::size_of::<[::core::ffi::c_char; 128]>() as usize).wrapping_sub(1_usize)
     {
         return -(1 as ::core::ffi::c_int);
     }
@@ -3550,7 +3542,7 @@ unsafe fn tty_keys_palette(
     }
     pd.idx = idx;
     *reply = Some(pd);
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 
 #[cfg(test)]

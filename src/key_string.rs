@@ -22,11 +22,11 @@ pub struct C2RustUnnamed_1 {
 }
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
+    if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
         __c
-    };
+    }
 }
 pub const MB_LEN_MAX: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 static key_string_table: [C2RustUnnamed_1; 1379] = [

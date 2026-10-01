@@ -56,10 +56,10 @@ unsafe fn cmd_show_environment_print(
 ) {
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    if args_has(args, 'h' as i32 as u_char) == 0 && (*envent).flags & ENVIRON_HIDDEN != 0 {
+    if args_has(args, 'h' as i32 as u_char) == 0 && envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
-    if args_has(args, 'h' as i32 as u_char) != 0 && !(*envent).flags & ENVIRON_HIDDEN != 0 {
+    if args_has(args, 'h' as i32 as u_char) != 0 && !envent.flags & ENVIRON_HIDDEN != 0 {
         return;
     }
     if args_has(args, 's' as i32 as u_char) == 0 {
@@ -103,24 +103,22 @@ unsafe fn cmd_show_environment_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let env: environ;
+
     let mut envent: Option<&environ_entry> = None;
     let mut tflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char =
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     tflag =
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if !tflag.is_null() {
-        if (*target).session_handle().is_none() {
-            cmdq_error(item_handle, |out| {
-                out.write_all(b"no such session: ")?;
-                write_cstr(out, tflag)
-            });
-            return CMD_RETURN_ERROR;
-        }
+    if !tflag.is_null() && (*target).session_handle().is_none() {
+        cmdq_error(item_handle, |out| {
+            out.write_all(b"no such session: ")?;
+            write_cstr(out, tflag)
+        });
+        return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'g' as i32 as u_char) != 0 {
-        env = global_environ.as_deref().expect("environment").clone();
+    let env: environ = if args_has(args, 'g' as i32 as u_char) != 0 {
+        global_environ.as_deref().expect("environment").clone()
     } else {
         if (*target).session_handle().is_none() {
             tflag = args_get(&*(args), 't' as i32 as u_char)
@@ -136,8 +134,8 @@ unsafe fn cmd_show_environment_exec(
             return CMD_RETURN_ERROR;
         }
         let session = (*target).session_handle().expect("target session");
-        env = session.borrow_environment().expect("environment").clone();
-    }
+        session.borrow_environment().expect("environment").clone()
+    };
     if !name.is_null() {
         envent = environ_find(&env, name);
         if envent.is_none() {
@@ -154,7 +152,7 @@ unsafe fn cmd_show_environment_exec(
         let envent = entry;
         cmd_show_environment_print(self_0.clone(), item_handle, envent);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 
 #[cfg(test)]

@@ -105,7 +105,7 @@ unsafe fn cmd_swap_pane_exec(
             cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;
         }
-        if (&std::rc::Rc::clone(&(dst_window_owner)))
+        if std::rc::Rc::clone(&(dst_window_owner))
             .push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0)
             != 0
         {
@@ -212,7 +212,7 @@ unsafe fn cmd_swap_pane_exec(
             if args_has(args, 'd' as i32 as u_char) == 0 {
                 if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
                     src_window_owner.select_pane(&dst_pane_owner, true);
-                    (&std::rc::Rc::clone(&(dst_window_owner))).select_pane(&src_pane_owner, true);
+                    std::rc::Rc::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);
                 } else {
                     src_window_owner.select_pane(&dst_pane_owner, true);
                 }
@@ -227,16 +227,16 @@ unsafe fn cmd_swap_pane_exec(
                     .active_pane()
                     .is_some_and(|pane| Rc::ptr_eq(&pane, &dst_pane_owner))
                 {
-                    (&std::rc::Rc::clone(&(dst_window_owner))).select_pane(&src_pane_owner, true);
+                    std::rc::Rc::clone(&(dst_window_owner)).select_pane(&src_pane_owner, true);
                 }
             }
             if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
                 crate::src::shared::pane::pane_history_remove(
-                    &mut src_window_owner.borrow_pane_history_mut(),
+                    src_window_owner.borrow_pane_history_mut(),
                     &Rc::downgrade(&src_pane_owner),
                 );
                 crate::src::shared::pane::pane_history_remove(
-                    &mut dst_window_owner.borrow_pane_history_mut(),
+                    dst_window_owner.borrow_pane_history_mut(),
                     &Rc::downgrade(&dst_pane_owner),
                 );
                 src_pane_owner.refresh_palette();
@@ -277,11 +277,11 @@ unsafe fn cmd_swap_pane_exec(
             server_redraw_window(&src_window_owner);
         }
         if !Rc::ptr_eq(&src_window_owner, &dst_window_owner)
-            && (&std::rc::Rc::clone(&(dst_window_owner))).pop_zoom() != 0
+            && std::rc::Rc::clone(&(dst_window_owner)).pop_zoom() != 0
         {
             server_redraw_window(&(dst_window_owner));
         }
-        return CMD_RETURN_NORMAL;
+        CMD_RETURN_NORMAL
     })();
     src_window_owner.release(c"cmd_swap_pane_exec");
     dst_window_owner.release(c"cmd_swap_pane_exec");

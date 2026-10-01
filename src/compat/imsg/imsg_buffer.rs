@@ -357,7 +357,7 @@ pub(super) fn msgbuf_write(
     }
 
     let n = loop {
-        let n = unsafe { sendmsg(fd.as_raw_fd(), &mut msg, 0) };
+        let n = unsafe { sendmsg(fd.as_raw_fd(), &msg, 0) };
         if n == -1 {
             let error = unsafe { *__errno_location() };
             if error == EINTR {
@@ -437,7 +437,7 @@ pub(super) fn ibuf_read(
         iov_len: msgbuf.rbuf.len().saturating_sub(msgbuf.roff),
     };
     let n = loop {
-        let n = unsafe { readv(fd.as_raw_fd(), &mut iov, 1) };
+        let n = unsafe { readv(fd.as_raw_fd(), &iov, 1) };
         if n == -1 {
             let error = unsafe { *__errno_location() };
             if error == EINTR {

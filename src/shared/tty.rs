@@ -477,7 +477,7 @@ impl PaletteSource {
             Self::Pane(observer) => {
                 let owner = observer.upgrade();
                 let palette = owner.as_ref().map(|pane| pane.borrow_palette());
-                read(palette.as_deref())
+                read(palette)
             }
             Self::Popup(palette) => match palette.try_borrow_mut() {
                 Ok(borrowed) => read(Some(&borrowed)),

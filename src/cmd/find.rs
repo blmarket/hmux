@@ -303,7 +303,7 @@ unsafe fn cmd_find_get_window(
             if (*fs).window_handle().is_none() {
                 return -(1 as ::core::ffi::c_int);
             }
-            return cmd_find_best_session_with_window(fs);
+            cmd_find_best_session_with_window(fs)
         })();
         if let Some(window) = window_owner {
             window.release(c"cmd_find_get_window");
@@ -328,7 +328,7 @@ unsafe fn cmd_find_get_window(
         }
         return 0 as ::core::ffi::c_int;
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn cmd_find_get_window_with_session(
     mut fs: *mut cmd_find_state,
@@ -366,7 +366,7 @@ unsafe fn cmd_find_get_window_with_session(
             {
                 return -(1 as ::core::ffi::c_int);
             }
-            return cmd_find_best_winlink_with_window(fs);
+            cmd_find_best_winlink_with_window(fs)
         })();
         if let Some(window) = window_owner {
             window.release(c"cmd_find_get_window_with_session");
@@ -578,7 +578,7 @@ unsafe fn cmd_find_get_window_with_session(
         (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
         return 0 as ::core::ffi::c_int;
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn cmd_find_get_pane(
     mut fs: *mut cmd_find_state,
@@ -619,7 +619,7 @@ unsafe fn cmd_find_get_pane(
         );
         return 0 as ::core::ffi::c_int;
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn cmd_find_get_pane_with_session(
     mut fs: *mut cmd_find_state,
@@ -651,7 +651,7 @@ unsafe fn cmd_find_get_pane_with_session(
     );
     (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-    return cmd_find_get_pane_with_window(fs, pane);
+    cmd_find_get_pane_with_window(fs, pane)
 }
 unsafe fn cmd_find_get_pane_with_window(
     mut fs: *mut cmd_find_state,
@@ -805,7 +805,7 @@ unsafe fn cmd_find_get_pane_with_window(
     if !(*fs).pane_handle().is_none() {
         return 0 as ::core::ffi::c_int;
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 pub unsafe fn cmd_find_clear_state(mut fs: *mut cmd_find_state, mut flags: ::core::ffi::c_int) {
     *fs = cmd_find_state {
@@ -829,7 +829,7 @@ pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
     let Ok(wl) = fs.wl.try_borrow_mut() else {
         return 0;
     };
-    if (&sessions).resolve(&fs.s).is_none()
+    if sessions.resolve(&fs.s).is_none()
         || !wl
             .window_handle()
             .is_some_and(|window| std::rc::Rc::ptr_eq(window, &w))
@@ -863,7 +863,7 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
         log_debug(format_args!(
             "{}: s=${} {}",
             log_cstr((prefix) as *const _),
-            ((*fs).session_handle().expect("live session").id()) as u32,
+            { (*fs).session_handle().expect("live session").id() },
             log_cstr(
                 (((*fs).session_handle().expect("live session").name())
                     .as_ptr()
@@ -882,7 +882,7 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
                 (*fs).winlink_handle().get_unchecked().window_handle(),
                 (*fs).window_handle().as_ref(),
             ) as ::core::ffi::c_int,
-            ((((*fs).window_handle().as_ref()).expect("live window")).id()) as u32,
+            { (((*fs).window_handle().as_ref()).expect("live window")).id() },
             crate::src::log::log_bytes(
                 (*fs)
                     .window_handle()
@@ -907,7 +907,7 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
         log_debug(format_args!(
             "{}: idx={}",
             log_cstr((prefix) as *const _),
-            ((*fs).idx) as i32
+            { (*fs).idx }
         ));
     } else {
         log_debug(format_args!("{}: idx=none", log_cstr((prefix) as *const _)));
@@ -970,7 +970,7 @@ pub unsafe fn cmd_find_from_session_window(
         b"cmd_find_from_session_window\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
     );
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_window(
     mut fs: *mut cmd_find_state,
@@ -992,7 +992,7 @@ pub unsafe fn cmd_find_from_window(
         b"cmd_find_from_window\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
     );
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_winlink_pane(
     mut fs: *mut cmd_find_state,
@@ -1053,7 +1053,7 @@ pub unsafe fn cmd_find_from_nothing(
         b"cmd_find_from_nothing\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
     );
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_mouse(
     mut fs: *mut cmd_find_state,
@@ -1082,7 +1082,7 @@ pub unsafe fn cmd_find_from_mouse(
         b"cmd_find_from_mouse\0" as *const u8 as *const ::core::ffi::c_char,
         fs,
     );
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_client(
     mut fs: *mut cmd_find_state,
@@ -1090,7 +1090,7 @@ pub unsafe fn cmd_find_from_client(
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = c_owner.cloned();
-    let inside_pane_owner;
+
     if c.is_none() {
         return cmd_find_from_nothing(fs, flags);
     }
@@ -1151,7 +1151,7 @@ pub unsafe fn cmd_find_from_client(
         return 0 as ::core::ffi::c_int;
     }
     cmd_find_clear_state(fs, flags);
-    inside_pane_owner = cmd_find_inside_pane(c_owner);
+    let inside_pane_owner = cmd_find_inside_pane(c_owner);
 
     if let Some(pane) = inside_pane_owner.as_ref() {
         (*fs).w = pane.window_observer();
@@ -1174,7 +1174,7 @@ pub unsafe fn cmd_find_from_client(
             return 0 as ::core::ffi::c_int;
         }
     }
-    return cmd_find_from_nothing(fs, flags);
+    cmd_find_from_nothing(fs, flags)
 }
 pub unsafe fn cmd_find_target(
     mut fs: *mut cmd_find_state,
@@ -1304,7 +1304,7 @@ pub unsafe fn cmd_find_target(
     let mut current_context: Option<cmd_find_state> = None;
     cmd_find_clear_state(fs, flags);
     if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
-        current_context = Some((&marked_pane).clone());
+        current_context = Some(marked_pane.clone());
         log_debug(format_args!(
             "{}: current is marked pane",
             "cmd_find_target"
@@ -1331,376 +1331,322 @@ pub unsafe fn cmd_find_target(
         }
         current_block = 5193823237153215208;
     }
-    match current_block {
-        1836292691772056875 => {
-            let current_context = current_context.as_ref().expect("selected current target");
-            if cmd_find_valid_state(current_context) == 0 {
-                fatalx(|out| out.write_all(b"invalid current find state"));
-            }
-            if target.is_null() || *target as ::core::ffi::c_int == '\0' as i32 {
-                current_block = 6284300254771030961;
-            } else if strcmp(target, b"@\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-                || strcmp(
-                    target,
-                    b"{active}\0" as *const u8 as *const ::core::ffi::c_char,
-                ) == 0 as ::core::ffi::c_int
-                || strcmp(
-                    target,
-                    b"{current}\0" as *const u8 as *const ::core::ffi::c_char,
-                ) == 0 as ::core::ffi::c_int
+    if current_block == 1836292691772056875 {
+        let current_context = current_context.as_ref().expect("selected current target");
+        if cmd_find_valid_state(current_context) == 0 {
+            fatalx(|out| out.write_all(b"invalid current find state"));
+        }
+        if target.is_null() || *target as ::core::ffi::c_int == '\0' as i32 {
+            current_block = 6284300254771030961;
+        } else if strcmp(target, b"@\0" as *const u8 as *const ::core::ffi::c_char)
+            == 0 as ::core::ffi::c_int
+            || strcmp(
+                target,
+                b"{active}\0" as *const u8 as *const ::core::ffi::c_char,
+            ) == 0 as ::core::ffi::c_int
+            || strcmp(
+                target,
+                b"{current}\0" as *const u8 as *const ::core::ffi::c_char,
+            ) == 0 as ::core::ffi::c_int
+        {
+            c = queue_client_ptr;
+            if c.is_none()
+                || c.as_ref()
+                    .expect("live client")
+                    .attached_session()
+                    .upgrade()
+                    .is_none()
             {
-                c = queue_client_ptr;
-                if c.is_none()
-                    || c.as_ref()
+                cmdq_error(item_handle.expect("command queue item"), |out| {
+                    out.write_all(b"no current client")
+                });
+                current_block = 5193823237153215208;
+            } else {
+                (*fs).set_wl(
+                    (c.as_ref()
                         .expect("live client")
                         .attached_session()
                         .upgrade()
-                        .is_none()
+                        .expect("live session")
+                        .current_winlink())
+                    .clone(),
+                );
+                (*fs).set_wp(
+                    ((((c
+                        .as_ref()
+                        .expect("live client")
+                        .attached_session()
+                        .upgrade()
+                        .expect("live session")
+                        .current_winlink())
+                    .get_unchecked()
+                    .window_handle()
+                    .as_ref())
+                    .expect("live window"))
+                    .active_pane())
+                    .as_ref(),
+                );
+                (*fs).set_w(
+                    (c.as_ref()
+                        .expect("live client")
+                        .attached_session()
+                        .upgrade()
+                        .expect("live session")
+                        .current_winlink())
+                    .get_unchecked()
+                    .window_handle(),
+                );
+                current_block = 15319680530019787978;
+            }
+        } else if strcmp(target, b"=\0" as *const u8 as *const ::core::ffi::c_char)
+            == 0 as ::core::ffi::c_int
+            || strcmp(
+                target,
+                b"{mouse}\0" as *const u8 as *const ::core::ffi::c_char,
+            ) == 0 as ::core::ffi::c_int
+        {
+            m = &raw mut queue_event.m;
+            let mut current_block_56: u64;
+            match type_0 as ::core::ffi::c_uint {
+                0 => {
+                    {
+                        let mut wl = refbox::Weak::new();
+                        let mut mouse_session_owner = None;
+                        mouse_pane_owner =
+                            cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
+                        (*fs).set_s(mouse_session_owner.as_ref());
+                        (*fs).set_wl(wl.clone());
+                        (*fs).set_wp(mouse_pane_owner.as_ref());
+                    }
+                    if !(*fs).pane_handle().is_none() {
+                        (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
+                        current_block_56 = 7343950298149844727;
+                    } else {
+                        current_block_56 = 2308649987175926278;
+                    }
+                }
+                1 | 2 => {
+                    current_block_56 = 2308649987175926278;
+                }
+                _ => {
+                    current_block_56 = 7343950298149844727;
+                }
+            }
+            if current_block_56 == 2308649987175926278 {
                 {
-                    cmdq_error(item_handle.expect("command queue item"), |out| {
-                        out.write_all(b"no current client")
-                    });
-                    current_block = 5193823237153215208;
-                } else {
+                    let mut mouse_session_owner = None;
+                    let wl = cmd_mouse_window(m, Some(&mut mouse_session_owner));
+                    (*fs).set_s(mouse_session_owner.as_ref());
+                    (*fs).set_wl(wl.clone());
+                }
+                if !(*fs).winlink_handle().is_alive() && !(*fs).session_handle().is_none() {
                     (*fs).set_wl(
-                        (c.as_ref()
-                            .expect("live client")
-                            .attached_session()
-                            .upgrade()
+                        ((*fs)
+                            .session_handle()
                             .expect("live session")
                             .current_winlink())
                         .clone(),
                     );
+                }
+                if (*fs).winlink_handle().is_alive() {
+                    (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
                     (*fs).set_wp(
-                        ((((c
-                            .as_ref()
-                            .expect("live client")
-                            .attached_session()
-                            .upgrade()
-                            .expect("live session")
-                            .current_winlink())
-                        .get_unchecked()
-                        .window_handle()
-                        .as_ref())
-                        .expect("live window"))
-                        .active_pane())
-                        .as_ref(),
+                        ((((*fs).window_handle().as_ref()).expect("live window")).active_pane())
+                            .as_ref(),
                     );
-                    (*fs).set_w(
-                        (c.as_ref()
-                            .expect("live client")
-                            .attached_session()
-                            .upgrade()
-                            .expect("live session")
-                            .current_winlink())
-                        .get_unchecked()
-                        .window_handle(),
-                    );
-                    current_block = 15319680530019787978;
                 }
-            } else if strcmp(target, b"=\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-                || strcmp(
-                    target,
-                    b"{mouse}\0" as *const u8 as *const ::core::ffi::c_char,
-                ) == 0 as ::core::ffi::c_int
-            {
-                m = &raw mut queue_event.m;
-                let mut current_block_56: u64;
+            }
+            if (*fs).pane_handle().is_none() {
+                if !flags & CMD_FIND_QUIET != 0 {
+                    cmdq_error(item_handle.expect("command queue item"), |out| {
+                        out.write_all(b"no mouse target")
+                    });
+                }
+                current_block = 5193823237153215208;
+            } else {
+                current_block = 15319680530019787978;
+            }
+        } else if strcmp(target, b"~\0" as *const u8 as *const ::core::ffi::c_char)
+            == 0 as ::core::ffi::c_int
+            || strcmp(
+                target,
+                b"{marked}\0" as *const u8 as *const ::core::ffi::c_char,
+            ) == 0 as ::core::ffi::c_int
+        {
+            if server_check_marked() == 0 {
+                if !flags & CMD_FIND_QUIET != 0 {
+                    cmdq_error(item_handle.expect("command queue item"), |out| {
+                        out.write_all(b"no marked target")
+                    });
+                }
+                current_block = 5193823237153215208;
+            } else {
+                cmd_find_copy_state(fs, &raw const marked_pane);
+                current_block = 15319680530019787978;
+            }
+        } else {
+            copy_owned = CStr::from_ptr(target).to_bytes_with_nul().to_vec();
+            copy = copy_owned.as_mut_ptr().cast();
+            colon = strchr(copy, ':' as i32);
+            if !colon.is_null() {
+                let fresh0 = colon;
+                colon = colon.offset(1);
+                *fresh0 = '\0' as i32 as ::core::ffi::c_char;
+            }
+            if colon.is_null() {
+                period = strchr(copy, '.' as i32);
+            } else {
+                period = strchr(colon, '.' as i32);
+            }
+            if !period.is_null() {
+                let fresh1 = period;
+                period = period.offset(1);
+                *fresh1 = '\0' as i32 as ::core::ffi::c_char;
+            }
+            pane = ::core::ptr::null::<::core::ffi::c_char>();
+            window = pane;
+            session = window;
+            if !colon.is_null() && !period.is_null() {
+                session = copy;
+                window = colon;
+                window_only = 1 as ::core::ffi::c_int;
+                pane = period;
+                pane_only = 1 as ::core::ffi::c_int;
+            } else if !colon.is_null() && period.is_null() {
+                session = copy;
+                window = colon;
+                window_only = 1 as ::core::ffi::c_int;
+            } else if colon.is_null() && !period.is_null() {
+                window = copy;
+                pane = period;
+                pane_only = 1 as ::core::ffi::c_int;
+            } else if *copy as ::core::ffi::c_int == '$' as i32 {
+                session = copy;
+            } else if *copy as ::core::ffi::c_int == '@' as i32 {
+                window = copy;
+            } else if *copy as ::core::ffi::c_int == '%' as i32 {
+                pane = copy;
+            } else {
                 match type_0 as ::core::ffi::c_uint {
+                    2 => {
+                        session = copy;
+                    }
+                    1 => {
+                        window = copy;
+                    }
                     0 => {
-                        {
-                            let mut wl = refbox::Weak::new();
-                            let mut mouse_session_owner = None;
-                            mouse_pane_owner =
-                                cmd_mouse_pane(m, Some(&mut mouse_session_owner), &raw mut wl);
-                            (*fs).set_s(mouse_session_owner.as_ref());
-                            (*fs).set_wl(wl.clone());
-                            (*fs).set_wp(mouse_pane_owner.as_ref());
-                        }
-                        if !(*fs).pane_handle().is_none() {
-                            (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-                            current_block_56 = 7343950298149844727;
-                        } else {
-                            current_block_56 = 2308649987175926278;
-                        }
-                    }
-                    1 | 2 => {
-                        current_block_56 = 2308649987175926278;
-                    }
-                    _ => {
-                        current_block_56 = 7343950298149844727;
-                    }
-                }
-                match current_block_56 {
-                    2308649987175926278 => {
-                        {
-                            let mut mouse_session_owner = None;
-                            let wl = cmd_mouse_window(m, Some(&mut mouse_session_owner));
-                            (*fs).set_s(mouse_session_owner.as_ref());
-                            (*fs).set_wl(wl.clone());
-                        }
-                        if !(*fs).winlink_handle().is_alive() && !(*fs).session_handle().is_none() {
-                            (*fs).set_wl(
-                                ((*fs)
-                                    .session_handle()
-                                    .expect("live session")
-                                    .current_winlink())
-                                .clone(),
-                            );
-                        }
-                        if (*fs).winlink_handle().is_alive() {
-                            (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-                            (*fs).set_wp(
-                                ((((*fs).window_handle().as_ref()).expect("live window"))
-                                    .active_pane())
-                                .as_ref(),
-                            );
-                        }
+                        pane = copy;
                     }
                     _ => {}
                 }
-                if (*fs).pane_handle().is_none() {
-                    if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item_handle.expect("command queue item"), |out| {
-                            out.write_all(b"no mouse target")
-                        });
-                    }
-                    current_block = 5193823237153215208;
-                } else {
-                    current_block = 15319680530019787978;
-                }
-            } else if strcmp(target, b"~\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-                || strcmp(
-                    target,
-                    b"{marked}\0" as *const u8 as *const ::core::ffi::c_char,
-                ) == 0 as ::core::ffi::c_int
-            {
-                if server_check_marked() == 0 {
-                    if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item_handle.expect("command queue item"), |out| {
-                            out.write_all(b"no marked target")
-                        });
-                    }
-                    current_block = 5193823237153215208;
-                } else {
-                    cmd_find_copy_state(fs, &raw const marked_pane);
-                    current_block = 15319680530019787978;
-                }
-            } else {
-                copy_owned = CStr::from_ptr(target).to_bytes_with_nul().to_vec();
-                copy = copy_owned.as_mut_ptr().cast();
-                colon = strchr(copy, ':' as i32);
-                if !colon.is_null() {
-                    let fresh0 = colon;
-                    colon = colon.offset(1);
-                    *fresh0 = '\0' as i32 as ::core::ffi::c_char;
-                }
-                if colon.is_null() {
-                    period = strchr(copy, '.' as i32);
-                } else {
-                    period = strchr(colon, '.' as i32);
-                }
-                if !period.is_null() {
-                    let fresh1 = period;
-                    period = period.offset(1);
-                    *fresh1 = '\0' as i32 as ::core::ffi::c_char;
-                }
+            }
+            if !session.is_null() && *session as ::core::ffi::c_int == '=' as i32 {
+                session = session.offset(1);
+                (*fs).flags |= CMD_FIND_EXACT_SESSION;
+            }
+            if !window.is_null() && *window as ::core::ffi::c_int == '=' as i32 {
+                window = window.offset(1);
+                (*fs).flags |= CMD_FIND_EXACT_WINDOW;
+            }
+            if !session.is_null() && *session as ::core::ffi::c_int == '\0' as i32 {
+                session = ::core::ptr::null::<::core::ffi::c_char>();
+            }
+            if !window.is_null() && *window as ::core::ffi::c_int == '\0' as i32 {
+                window = ::core::ptr::null::<::core::ffi::c_char>();
+            }
+            if !pane.is_null() && *pane as ::core::ffi::c_int == '\0' as i32 {
                 pane = ::core::ptr::null::<::core::ffi::c_char>();
-                window = pane;
-                session = window;
-                if !colon.is_null() && !period.is_null() {
-                    session = copy;
-                    window = colon;
-                    window_only = 1 as ::core::ffi::c_int;
-                    pane = period;
-                    pane_only = 1 as ::core::ffi::c_int;
-                } else if !colon.is_null() && period.is_null() {
-                    session = copy;
-                    window = colon;
-                    window_only = 1 as ::core::ffi::c_int;
-                } else if colon.is_null() && !period.is_null() {
-                    window = copy;
-                    pane = period;
-                    pane_only = 1 as ::core::ffi::c_int;
-                } else if *copy as ::core::ffi::c_int == '$' as i32 {
-                    session = copy;
-                } else if *copy as ::core::ffi::c_int == '@' as i32 {
-                    window = copy;
-                } else if *copy as ::core::ffi::c_int == '%' as i32 {
-                    pane = copy;
-                } else {
-                    match type_0 as ::core::ffi::c_uint {
-                        2 => {
-                            session = copy;
-                        }
-                        1 => {
-                            window = copy;
-                        }
-                        0 => {
-                            pane = copy;
-                        }
-                        _ => {}
-                    }
-                }
-                if !session.is_null() && *session as ::core::ffi::c_int == '=' as i32 {
-                    session = session.offset(1);
-                    (*fs).flags |= CMD_FIND_EXACT_SESSION;
-                }
-                if !window.is_null() && *window as ::core::ffi::c_int == '=' as i32 {
-                    window = window.offset(1);
-                    (*fs).flags |= CMD_FIND_EXACT_WINDOW;
-                }
-                if !session.is_null() && *session as ::core::ffi::c_int == '\0' as i32 {
-                    session = ::core::ptr::null::<::core::ffi::c_char>();
-                }
-                if !window.is_null() && *window as ::core::ffi::c_int == '\0' as i32 {
-                    window = ::core::ptr::null::<::core::ffi::c_char>();
-                }
-                if !pane.is_null() && *pane as ::core::ffi::c_int == '\0' as i32 {
-                    pane = ::core::ptr::null::<::core::ffi::c_char>();
-                }
-                if !window.is_null() {
-                    window =
-                        cmd_find_map_table(cmd_find_window_table, CStr::from_ptr(window)).as_ptr();
-                }
-                if !pane.is_null() {
-                    pane = cmd_find_map_table(cmd_find_pane_table, CStr::from_ptr(pane)).as_ptr();
-                }
-                if !session.is_null() || !window.is_null() || !pane.is_null() {
-                    log_debug(format_args!(
-                        "{}: target {} is {}{}{}{}{}{}",
-                        "cmd_find_target",
-                        log_cstr((target) as *const _),
-                        log_cstr(
-                            (if session.is_null() {
-                                b"\0" as *const u8 as *const ::core::ffi::c_char
-                            } else {
-                                b"session \0" as *const u8 as *const ::core::ffi::c_char
-                            }) as *const _
-                        ),
-                        log_cstr(
-                            (if session.is_null() {
-                                b"\0" as *const u8 as *const ::core::ffi::c_char
-                            } else {
-                                session
-                            }) as *const _
-                        ),
-                        log_cstr(
-                            (if window.is_null() {
-                                b"\0" as *const u8 as *const ::core::ffi::c_char
-                            } else {
-                                b"window \0" as *const u8 as *const ::core::ffi::c_char
-                            }) as *const _
-                        ),
-                        log_cstr(
-                            (if window.is_null() {
-                                b"\0" as *const u8 as *const ::core::ffi::c_char
-                            } else {
-                                window
-                            }) as *const _
-                        ),
-                        log_cstr(
-                            (if pane.is_null() {
-                                b"\0" as *const u8 as *const ::core::ffi::c_char
-                            } else {
-                                b"pane \0" as *const u8 as *const ::core::ffi::c_char
-                            }) as *const _
-                        ),
-                        log_cstr(
-                            (if pane.is_null() {
-                                b"\0" as *const u8 as *const ::core::ffi::c_char
-                            } else {
-                                pane
-                            }) as *const _
-                        )
-                    ));
-                }
-                if !pane.is_null() && flags & CMD_FIND_WINDOW_INDEX != 0 {
-                    if !flags & CMD_FIND_QUIET != 0 {
-                        cmdq_error(item_handle.expect("command queue item"), |out| {
-                            out.write_all(b"can't specify pane here")
-                        });
-                    }
-                    current_block = 5193823237153215208;
-                } else {
-                    if !session.is_null() {
-                        if cmd_find_get_session(fs, session) != 0 as ::core::ffi::c_int {
-                            if !flags & CMD_FIND_QUIET != 0 {
-                                cmdq_error(item_handle.expect("command queue item"), |out| {
-                                    out.write_all(b"can't find session: ")?;
-                                    write_cstr(out, session)
-                                });
-                            }
-                            current_block = 5193823237153215208;
-                        } else if window.is_null() && pane.is_null() {
-                            (*fs).set_wl(
-                                ((*fs)
-                                    .session_handle()
-                                    .expect("live session")
-                                    .current_winlink())
-                                .clone(),
-                            );
-                            (*fs).idx = -(1 as ::core::ffi::c_int);
-                            (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-                            (*fs).set_wp(
-                                ((((*fs).window_handle().as_ref()).expect("live window"))
-                                    .active_pane())
-                                .as_ref(),
-                            );
-                            current_block = 15319680530019787978;
-                        } else if !window.is_null() && pane.is_null() {
-                            if cmd_find_get_window_with_session(fs, window)
-                                != 0 as ::core::ffi::c_int
-                            {
-                                current_block = 2743676411188200708;
-                            } else {
-                                if (*fs).winlink_handle().is_alive() {
-                                    (*fs).set_wp(
-                                        (((((*fs).winlink_handle())
-                                            .get_unchecked()
-                                            .window_handle()
-                                            .as_ref())
-                                        .expect("live window"))
-                                        .active_pane())
-                                        .as_ref(),
-                                    );
-                                }
-                                current_block = 15319680530019787978;
-                            }
-                        } else if window.is_null() && !pane.is_null() {
-                            if cmd_find_get_pane_with_session(fs, pane) != 0 as ::core::ffi::c_int {
-                                current_block = 14917847580669770662;
-                            } else {
-                                current_block = 15319680530019787978;
-                            }
-                        } else if cmd_find_get_window_with_session(fs, window)
-                            != 0 as ::core::ffi::c_int
-                        {
-                            current_block = 2743676411188200708;
-                        } else if cmd_find_get_pane_with_window(fs, pane) != 0 as ::core::ffi::c_int
-                        {
-                            current_block = 14917847580669770662;
+            }
+            if !window.is_null() {
+                window = cmd_find_map_table(cmd_find_window_table, CStr::from_ptr(window)).as_ptr();
+            }
+            if !pane.is_null() {
+                pane = cmd_find_map_table(cmd_find_pane_table, CStr::from_ptr(pane)).as_ptr();
+            }
+            if !session.is_null() || !window.is_null() || !pane.is_null() {
+                log_debug(format_args!(
+                    "{}: target {} is {}{}{}{}{}{}",
+                    "cmd_find_target",
+                    log_cstr((target) as *const _),
+                    log_cstr(
+                        (if session.is_null() {
+                            b"\0" as *const u8 as *const ::core::ffi::c_char
                         } else {
-                            current_block = 15319680530019787978;
-                        }
-                    } else if !window.is_null() && !pane.is_null() {
-                        if cmd_find_get_window(fs, window, window_only, current_context)
-                            != 0 as ::core::ffi::c_int
-                        {
-                            current_block = 2743676411188200708;
-                        } else if cmd_find_get_pane_with_window(fs, pane) != 0 as ::core::ffi::c_int
-                        {
-                            current_block = 14917847580669770662;
+                            b"session \0" as *const u8 as *const ::core::ffi::c_char
+                        }) as *const _
+                    ),
+                    log_cstr(
+                        (if session.is_null() {
+                            b"\0" as *const u8 as *const ::core::ffi::c_char
                         } else {
-                            current_block = 15319680530019787978;
+                            session
+                        }) as *const _
+                    ),
+                    log_cstr(
+                        (if window.is_null() {
+                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                        } else {
+                            b"window \0" as *const u8 as *const ::core::ffi::c_char
+                        }) as *const _
+                    ),
+                    log_cstr(
+                        (if window.is_null() {
+                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                        } else {
+                            window
+                        }) as *const _
+                    ),
+                    log_cstr(
+                        (if pane.is_null() {
+                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                        } else {
+                            b"pane \0" as *const u8 as *const ::core::ffi::c_char
+                        }) as *const _
+                    ),
+                    log_cstr(
+                        (if pane.is_null() {
+                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                        } else {
+                            pane
+                        }) as *const _
+                    )
+                ));
+            }
+            if !pane.is_null() && flags & CMD_FIND_WINDOW_INDEX != 0 {
+                if !flags & CMD_FIND_QUIET != 0 {
+                    cmdq_error(item_handle.expect("command queue item"), |out| {
+                        out.write_all(b"can't specify pane here")
+                    });
+                }
+                current_block = 5193823237153215208;
+            } else {
+                if !session.is_null() {
+                    if cmd_find_get_session(fs, session) != 0 as ::core::ffi::c_int {
+                        if !flags & CMD_FIND_QUIET != 0 {
+                            cmdq_error(item_handle.expect("command queue item"), |out| {
+                                out.write_all(b"can't find session: ")?;
+                                write_cstr(out, session)
+                            });
                         }
+                        current_block = 5193823237153215208;
+                    } else if window.is_null() && pane.is_null() {
+                        (*fs).set_wl(
+                            ((*fs)
+                                .session_handle()
+                                .expect("live session")
+                                .current_winlink())
+                            .clone(),
+                        );
+                        (*fs).idx = -(1 as ::core::ffi::c_int);
+                        (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
+                        (*fs).set_wp(
+                            ((((*fs).window_handle().as_ref()).expect("live window"))
+                                .active_pane())
+                            .as_ref(),
+                        );
+                        current_block = 15319680530019787978;
                     } else if !window.is_null() && pane.is_null() {
-                        if cmd_find_get_window(fs, window, window_only, current_context)
-                            != 0 as ::core::ffi::c_int
-                        {
+                        if cmd_find_get_window_with_session(fs, window) != 0 as ::core::ffi::c_int {
                             current_block = 2743676411188200708;
                         } else {
                             if (*fs).winlink_handle().is_alive() {
@@ -1717,79 +1663,112 @@ pub unsafe fn cmd_find_target(
                             current_block = 15319680530019787978;
                         }
                     } else if window.is_null() && !pane.is_null() {
-                        if cmd_find_get_pane(fs, pane, pane_only, current_context)
-                            != 0 as ::core::ffi::c_int
-                        {
+                        if cmd_find_get_pane_with_session(fs, pane) != 0 as ::core::ffi::c_int {
                             current_block = 14917847580669770662;
                         } else {
                             current_block = 15319680530019787978;
                         }
+                    } else if cmd_find_get_window_with_session(fs, window)
+                        != 0 as ::core::ffi::c_int
+                    {
+                        current_block = 2743676411188200708;
+                    } else if cmd_find_get_pane_with_window(fs, pane) != 0 as ::core::ffi::c_int {
+                        current_block = 14917847580669770662;
                     } else {
-                        current_block = 6284300254771030961;
+                        current_block = 15319680530019787978;
                     }
-                    match current_block {
-                        5193823237153215208 => {}
-                        15319680530019787978 => {}
-                        6284300254771030961 => {}
-                        _ => {
-                            match current_block {
-                                2743676411188200708 => {
-                                    if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(
-                                            item_handle.expect("command queue item"),
-                                            |out| {
-                                                out.write_all(b"can't find window: ")?;
-                                                write_cstr(out, window)
-                                            },
-                                        );
-                                    }
-                                }
-                                _ => {
-                                    if !flags & CMD_FIND_QUIET != 0 {
-                                        cmdq_error(
-                                            item_handle.expect("command queue item"),
-                                            |out| {
-                                                out.write_all(b"can't find pane: ")?;
-                                                write_cstr(out, pane)
-                                            },
-                                        );
-                                    }
-                                }
-                            }
-                            current_block = 5193823237153215208;
+                } else if !window.is_null() && !pane.is_null() {
+                    if cmd_find_get_window(fs, window, window_only, current_context)
+                        != 0 as ::core::ffi::c_int
+                    {
+                        current_block = 2743676411188200708;
+                    } else if cmd_find_get_pane_with_window(fs, pane) != 0 as ::core::ffi::c_int {
+                        current_block = 14917847580669770662;
+                    } else {
+                        current_block = 15319680530019787978;
+                    }
+                } else if !window.is_null() && pane.is_null() {
+                    if cmd_find_get_window(fs, window, window_only, current_context)
+                        != 0 as ::core::ffi::c_int
+                    {
+                        current_block = 2743676411188200708;
+                    } else {
+                        if (*fs).winlink_handle().is_alive() {
+                            (*fs).set_wp(
+                                (((((*fs).winlink_handle())
+                                    .get_unchecked()
+                                    .window_handle()
+                                    .as_ref())
+                                .expect("live window"))
+                                .active_pane())
+                                .as_ref(),
+                            );
                         }
+                        current_block = 15319680530019787978;
                     }
+                } else if window.is_null() && !pane.is_null() {
+                    if cmd_find_get_pane(fs, pane, pane_only, current_context)
+                        != 0 as ::core::ffi::c_int
+                    {
+                        current_block = 14917847580669770662;
+                    } else {
+                        current_block = 15319680530019787978;
+                    }
+                } else {
+                    current_block = 6284300254771030961;
                 }
-            }
-            match current_block {
-                5193823237153215208 => {}
-                _ => {
-                    match current_block {
-                        6284300254771030961 => {
-                            cmd_find_copy_state(fs, std::ptr::from_ref(current_context));
-                            if flags & CMD_FIND_WINDOW_INDEX != 0 {
-                                (*fs).idx = -(1 as ::core::ffi::c_int);
+                match current_block {
+                    5193823237153215208 => {}
+                    15319680530019787978 => {}
+                    6284300254771030961 => {}
+                    _ => {
+                        match current_block {
+                            2743676411188200708 => {
+                                if !flags & CMD_FIND_QUIET != 0 {
+                                    cmdq_error(item_handle.expect("command queue item"), |out| {
+                                        out.write_all(b"can't find window: ")?;
+                                        write_cstr(out, window)
+                                    });
+                                }
+                            }
+                            _ => {
+                                if !flags & CMD_FIND_QUIET != 0 {
+                                    cmdq_error(item_handle.expect("command queue item"), |out| {
+                                        out.write_all(b"can't find pane: ")?;
+                                        write_cstr(out, pane)
+                                    });
+                                }
                             }
                         }
-                        _ => {}
+                        current_block = 5193823237153215208;
                     }
-                    cmd_find_log_state(
-                        b"cmd_find_target\0" as *const u8 as *const ::core::ffi::c_char,
-                        fs,
-                    );
-                    drop(copy_owned);
-                    return 0 as ::core::ffi::c_int;
                 }
             }
         }
-        _ => {}
+        match current_block {
+            5193823237153215208 => {}
+            _ => {
+                if current_block == 6284300254771030961 {
+                    cmd_find_copy_state(fs, std::ptr::from_ref(current_context));
+                    if flags & CMD_FIND_WINDOW_INDEX != 0 {
+                        (*fs).idx = -(1 as ::core::ffi::c_int);
+                    }
+                }
+                cmd_find_log_state(
+                    b"cmd_find_target\0" as *const u8 as *const ::core::ffi::c_char,
+                    fs,
+                );
+                drop(copy_owned);
+                return 0 as ::core::ffi::c_int;
+            }
+        }
     }
     log_debug(format_args!("{}: error", "cmd_find_target"));
     drop(copy_owned);
     if flags & CMD_FIND_CANFAIL != 0 {
         return 0 as ::core::ffi::c_int;
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn cmd_find_current_client(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
@@ -1857,7 +1836,7 @@ unsafe fn cmd_find_current_client(
                 .map_or(std::ptr::null(), |owner| std::rc::Rc::as_ptr(owner).cast())
         )
     ));
-    return found;
+    found
 }
 pub unsafe fn cmd_find_client(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,

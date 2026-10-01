@@ -47,7 +47,7 @@ unsafe fn cmd_set_environment_exec(
     let mut args: *mut args =
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
-    let session;
+
     let mut name: *const ::core::ffi::c_char =
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -73,7 +73,7 @@ unsafe fn cmd_set_environment_exec(
         value = expanded.as_ref().expect("expanded value was set").as_ptr();
     }
     let global = args_has(args, b'g') != 0;
-    session = (*target).session_handle();
+    let session = (*target).session_handle();
     if !global && session.is_none() {
         if let Some(target) = args_get(&*args, b't') {
             cmdq_error(item_handle, |out| {

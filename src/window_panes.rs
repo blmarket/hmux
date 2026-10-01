@@ -317,7 +317,7 @@ unsafe fn window_panes_get_geometry(
     *yp = y;
     *sxp = sx;
     *syp = sy;
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn window_panes_get_border_cell(
     mut data: *mut window_panes_modedata,
@@ -368,13 +368,13 @@ unsafe fn window_panes_map_x(mut x: u_int, mut osx: u_int, mut dsx: u_int) -> ::
     if osx <= dsx {
         return x as ::core::ffi::c_int;
     }
-    return x.wrapping_mul(dsx).wrapping_div(osx) as ::core::ffi::c_int;
+    x.wrapping_mul(dsx).wrapping_div(osx) as ::core::ffi::c_int
 }
 unsafe fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::core::ffi::c_int {
     if osy <= dsy {
         return y as ::core::ffi::c_int;
     }
-    return y.wrapping_mul(dsy).wrapping_div(osy) as ::core::ffi::c_int;
+    y.wrapping_mul(dsy).wrapping_div(osy) as ::core::ffi::c_int
 }
 unsafe fn window_panes_next_tiled_cell(mut lc: *mut layout_cell) -> *mut layout_cell {
     let mut next: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
@@ -385,7 +385,7 @@ unsafe fn window_panes_next_tiled_cell(mut lc: *mut layout_cell) -> *mut layout_
         }
         next = layout_cell_next(next);
     }
-    return ::core::ptr::null_mut::<layout_cell>();
+    ::core::ptr::null_mut::<layout_cell>()
 }
 unsafe fn window_panes_mark_border(
     mut map: *mut u_char,
@@ -396,7 +396,7 @@ unsafe fn window_panes_mark_border(
     mut mask: u_char,
 ) {
     if x < dsx && y < dsy {
-        let ref mut fresh0 = *map.offset(y.wrapping_mul(dsx).wrapping_add(x) as isize);
+        let fresh0 = &mut *map.offset(y.wrapping_mul(dsx).wrapping_add(x) as isize);
         *fresh0 = (*fresh0 as ::core::ffi::c_int | mask as ::core::ffi::c_int) as u_char;
     }
 }
@@ -619,7 +619,7 @@ unsafe fn window_panes_get_floating_borders(
         osy,
         dsy,
     );
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn window_panes_clip_floating_pane(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -677,7 +677,7 @@ unsafe fn window_panes_clip_floating_pane(
     *yp = by as u_int;
     *sxp = (bx2 - bx + 1 as ::core::ffi::c_int) as u_int;
     *syp = (by2 - by + 1 as ::core::ffi::c_int) as u_int;
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn window_panes_border_cell_type(mut mask: u_char) -> ::core::ffi::c_int {
     match mask as ::core::ffi::c_int {
@@ -698,15 +698,15 @@ unsafe fn window_panes_border_cell_type(mut mask: u_char) -> ::core::ffi::c_int 
         }
         _ => {}
     }
-    return 12 as ::core::ffi::c_int;
+    12 as ::core::ffi::c_int
 }
 unsafe fn window_panes_border_has_horizontal(mut mask: u_char) -> ::core::ffi::c_int {
-    return (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_L | WINDOW_PANES_BORDER_R)
-        != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+    (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_L | WINDOW_PANES_BORDER_R)
+        != 0 as ::core::ffi::c_int) as ::core::ffi::c_int
 }
 unsafe fn window_panes_border_has_vertical(mut mask: u_char) -> ::core::ffi::c_int {
-    return (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_U | WINDOW_PANES_BORDER_D)
-        != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+    (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_U | WINDOW_PANES_BORDER_D)
+        != 0 as ::core::ffi::c_int) as ::core::ffi::c_int
 }
 unsafe fn window_panes_mark_border_joins_cell(
     mut map: *mut u_char,
@@ -912,7 +912,7 @@ unsafe fn window_panes_draw_borders(
         };
         // These legacy tree walkers only read cells. Their local pointers end
         // here, before Window queries and screen writes can reenter.
-        let cell = (&*root as *const layout_cell).cast_mut();
+        let cell = (root as *const layout_cell).cast_mut();
         window_panes_mark_borders_cell(map.as_mut_ptr(), cell, osx, osy, dsx, dsy);
     }
     window_panes_mark_pane_status_borders(map.as_mut_ptr(), w_owner, osx, osy, dsx, dsy);
@@ -921,7 +921,7 @@ unsafe fn window_panes_draw_borders(
         else {
             return;
         };
-        let cell = (&*root as *const layout_cell).cast_mut();
+        let cell = (root as *const layout_cell).cast_mut();
         window_panes_mark_border_joins_cell(map.as_mut_ptr(), cell, osx, osy, dsx, dsy);
     }
     yy = 0 as u_int;
@@ -1303,7 +1303,7 @@ unsafe fn window_panes_draw_number(
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut format: u_int = 0;
-    len = xformat(&mut buf, format_args!("{}", pane as u32)) as size_t;
+    len = xformat(&mut buf, format_args!("{}", { pane })) as size_t;
     if pane > 9 as u_int && pane < 35 as u_int {
         llen = xformat_with(&mut lbuf, |out| {
             out.write_all(&[
@@ -1320,10 +1320,8 @@ unsafe fn window_panes_draw_number(
     if window_panes_get_source(data, &raw mut wl, &mut source_session_owner).is_some() {
         s = source_session_owner.clone();
     }
-    if !s.is_none() {
-        if !wl.is_alive() {
-            wl = s.as_ref().expect("live session").current_winlink();
-        }
+    if !s.is_none() && !wl.is_alive() {
+        wl = s.as_ref().expect("live session").current_winlink();
     }
     let window = wp_owner
         .window_observer()
@@ -1485,7 +1483,7 @@ unsafe fn window_panes_draw_pane(
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
         return;
     };
-    let mut pane: u_int = 0;
+    let _pane: u_int = 0;
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut sx: u_int = 0;
@@ -1812,7 +1810,7 @@ unsafe fn window_panes_init(
         );
     }
     window_panes_draw_screen(wme.clone());
-    return &raw mut (*data).screen;
+    &raw mut (*data).screen
 }
 unsafe fn window_panes_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
     let data = wme
@@ -1858,7 +1856,7 @@ unsafe fn window_panes_free(mut wme: refbox::Weak<window_mode_entry>) {
     drop((*data).state.take());
     window_panes_free_areas(data);
     if let Some(mut preview) = (*data).preview.take() {
-        screen_free(&mut *preview);
+        screen_free(&mut preview);
     }
     screen_free(&mut (*data).screen);
     drop(wme.get_mut_unchecked().boxed_data.take());
@@ -1910,13 +1908,13 @@ unsafe fn window_panes_find_pane(
     mut y: u_int,
 ) -> Option<Rc<UnsafeCell<window_pane>>> {
     for area in (*data).areas.iter().rev() {
-        if !(x < area.x || x >= area.x.wrapping_add(area.sx)) {
-            if !(y < area.y || y >= area.y.wrapping_add(area.sy)) {
-                return Rc::<UnsafeCell<window_pane>>::find_by_id(area.id);
-            }
+        if !(x < area.x || x >= area.x.wrapping_add(area.sx))
+            && !(y < area.y || y >= area.y.wrapping_add(area.sy))
+        {
+            return Rc::<UnsafeCell<window_pane>>::find_by_id(area.id);
         }
     }
-    return None;
+    None
 }
 unsafe fn window_panes_key_pane(
     mut data: *mut window_panes_modedata,
@@ -1953,7 +1951,7 @@ unsafe fn window_panes_key_pane(
     if let Some(owner) = source_session_owner {
         drop(owner);
     }
-    return result;
+    result
 }
 unsafe fn window_panes_get_target(
     mut wme: refbox::Weak<window_mode_entry>,
@@ -1994,7 +1992,7 @@ unsafe fn window_panes_get_target(
         }
         return window_panes_find_pane(data, x, y);
     }
-    return window_panes_key_pane(data, key);
+    window_panes_key_pane(data, key)
 }
 unsafe fn window_panes_key(
     mut wme: refbox::Weak<window_mode_entry>,
@@ -2036,13 +2034,13 @@ unsafe fn window_panes_key(
         .expect("live display-panes window")
         .is_zoomed()
     {
-        (&std::rc::Rc::clone(
+        std::rc::Rc::clone(
             &mode_pane_owner
                 .window_observer()
                 .upgrade()
                 .expect("live pane parent"),
-        ))
-            .unzoom(true);
+        )
+        .unzoom(true);
     }
     window_panes_run_command(
         data,

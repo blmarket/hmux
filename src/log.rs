@@ -21,7 +21,7 @@ static mut log_file: Option<CFile> = None;
 static mut log_level: ::core::ffi::c_int = 0;
 
 unsafe fn log_file_ptr() -> *mut FILE {
-    (*(&raw const log_file))
+    log_file
         .as_ref()
         .map_or(::core::ptr::null_mut::<FILE>(), CFile::as_ptr)
 }
@@ -29,7 +29,7 @@ pub unsafe fn log_add_level() {
     log_level += 1;
 }
 pub unsafe fn log_get_level() -> ::core::ffi::c_int {
-    return log_level;
+    log_level
 }
 pub unsafe fn log_open(mut name: *const ::core::ffi::c_char) {
     if log_level == 0 as ::core::ffi::c_int {

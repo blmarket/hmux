@@ -204,7 +204,7 @@ pub fn screen_set_title(
         return 0 as ::core::ffi::c_int;
     };
     s.title = new_title;
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 pub fn screen_set_path(s: &mut screen, path: &CStr) -> ::core::ffi::c_int {
     let untrusted: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -212,7 +212,7 @@ pub fn screen_set_path(s: &mut screen, path: &CStr) -> ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     };
     s.path = Some(new_path);
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 pub unsafe fn screen_push_title(s: &mut screen) {
     log_debug(format_args!(
@@ -266,12 +266,12 @@ pub unsafe fn screen_resize_cursor(
     log_debug(format_args!(
         "{}: new size {}x{}, now {}x{} (cursor {},{} = {},{})",
         "screen_resize_cursor",
-        (sx) as u32,
-        (sy) as u32,
-        (s.grid().sx) as u32,
-        (s.grid().sy) as u32,
-        (s.cx) as u32,
-        (s.cy) as u32,
+        { sx },
+        { sy },
+        { s.grid().sx },
+        { s.grid().sy },
+        { s.cx },
+        { s.cy },
         (cx) as u32,
         (cy) as u32
     ));
@@ -303,8 +303,8 @@ pub unsafe fn screen_resize_cursor(
     log_debug(format_args!(
         "{}: cursor finished at {},{} = {},{}",
         "screen_resize_cursor",
-        (s.cx) as u32,
-        (s.cy) as u32,
+        { s.cx },
+        { s.cy },
         (cx) as u32,
         (cy) as u32
     ));
@@ -524,12 +524,10 @@ pub fn screen_check_selection(s: &screen, px: u_int, py: u_int) -> ::core::ffi::
             }
         }
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 pub fn screen_select_cell(s: &screen, src: &grid_cell) -> Option<grid_cell> {
-    let Some(selection) = s.sel.as_ref() else {
-        return None;
-    };
+    let selection = s.sel.as_ref()?;
     if selection.hidden != 0 {
         return None;
     }
@@ -564,8 +562,8 @@ unsafe fn screen_reflow(
         log_debug(format_args!(
             "{}: cursor {},{} is {},{}",
             "screen_reflow",
-            cx as u32,
-            cy as u32,
+            { cx },
+            { cy },
             (wx) as u32,
             (wy) as u32
         ));
@@ -575,7 +573,9 @@ unsafe fn screen_reflow(
         (cx, cy) = grid_unwrap_position(s.grid(), wx, wy);
         log_debug(format_args!(
             "{}: new cursor is {},{}",
-            "screen_reflow", cx as u32, cy as u32
+            "screen_reflow",
+            { cx },
+            { cy }
         ));
     } else {
         cx = 0 as u_int;
@@ -613,7 +613,7 @@ pub unsafe fn screen_alternate_on(
     grid_view_clear(s.grid_mut(), 0 as u_int, 0 as u_int, sx, sy, 8 as u_int);
     s.saved_flags = s.grid().flags;
     s.grid_mut().flags &= !GRID_HISTORY;
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 pub unsafe fn screen_alternate_off(
     s: &mut screen,
@@ -665,7 +665,7 @@ pub unsafe fn screen_alternate_off(
     if s.cy > s.grid().sy.wrapping_sub(1 as u_int) {
         s.cy = s.grid().sy.wrapping_sub(1 as u_int);
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 struct ScreenModeNames(i32);
 
@@ -740,7 +740,7 @@ pub unsafe fn screen_print(
     's_28: while y < (*s).grid().hsize.wrapping_add((*s).grid().sy) {
         if !(line >= 0 as ::core::ffi::c_int && y != line as u_int) {
             n = snprintf(
-                buf.offset(last as isize),
+                buf.add(last),
                 len.wrapping_sub(last),
                 b"%.4d \"\0" as *const u8 as *const ::core::ffi::c_char,
                 y,
@@ -749,10 +749,10 @@ pub unsafe fn screen_print(
                 break;
             }
             last = last.wrapping_add(n as size_t);
-            gl = (*s).grid_mut().linedata.as_mut_ptr().offset(y as isize) as *mut grid_line;
+            gl = (*s).grid_mut().linedata.as_mut_ptr().offset(y as isize);
             x = 0 as u_int;
             while x < (*gl).cellused as u_int {
-                gce = (*gl).celldata.as_mut_ptr().offset(x as isize) as *mut grid_cell_entry;
+                gce = (*gl).celldata.as_mut_ptr().offset(x as isize);
                 if !((*gce).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
                     if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
                         if last.wrapping_add(2 as size_t) >= len {
@@ -760,15 +760,14 @@ pub unsafe fn screen_print(
                         }
                         let fresh1 = last;
                         last = last.wrapping_add(1);
-                        *buf.offset(fresh1 as isize) =
-                            (*gce).c2rust_unnamed.data.data as ::core::ffi::c_char;
+                        *buf.add(fresh1) = (*gce).c2rust_unnamed.data.data as ::core::ffi::c_char;
                     } else if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
                         if last.wrapping_add(2 as size_t) >= len {
                             break 's_28;
                         }
                         let fresh2 = last;
                         last = last.wrapping_add(1);
-                        *buf.offset(fresh2 as isize) = '\t' as i32 as ::core::ffi::c_char;
+                        *buf.add(fresh2) = '\t' as i32 as ::core::ffi::c_char;
                     } else if (*gce).flags as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
                         if let Some(text) = tty_acs_get(None, true, (*gce).c2rust_unnamed.data.data)
                         {
@@ -783,7 +782,7 @@ pub unsafe fn screen_print(
                             break 's_28;
                         }
                         memcpy(
-                            buf.offset(last as isize) as *mut ::core::ffi::c_void,
+                            buf.add(last) as *mut ::core::ffi::c_void,
                             acs as *const ::core::ffi::c_void,
                             n as size_t,
                         );
@@ -806,7 +805,7 @@ pub unsafe fn screen_print(
                                 break 's_28;
                             }
                             memcpy(
-                                buf.offset(last as isize) as *mut ::core::ffi::c_void,
+                                buf.add(last) as *mut ::core::ffi::c_void,
                                 &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
                                 ud.size as size_t,
                             );
@@ -821,13 +820,13 @@ pub unsafe fn screen_print(
             }
             let fresh3 = last;
             last = last.wrapping_add(1);
-            *buf.offset(fresh3 as isize) = '"' as i32 as ::core::ffi::c_char;
+            *buf.add(fresh3) = '"' as i32 as ::core::ffi::c_char;
             let fresh4 = last;
             last = last.wrapping_add(1);
-            *buf.offset(fresh4 as isize) = '\n' as i32 as ::core::ffi::c_char;
+            *buf.add(fresh4) = '\n' as i32 as ::core::ffi::c_char;
         }
         y = y.wrapping_add(1);
     }
-    *buf.offset(last as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return buf;
+    *buf.add(last) = '\0' as i32 as ::core::ffi::c_char;
+    buf
 }

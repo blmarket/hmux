@@ -111,7 +111,7 @@ unsafe fn cmd_respawn_window_exec(
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;
     }
-    server_redraw_window(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")));
+    server_redraw_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
     drop(sc.environ.take());
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

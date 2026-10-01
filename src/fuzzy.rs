@@ -51,7 +51,7 @@ fn fuzzy_align(mut align: style_align) -> style_align {
     {
         return STYLE_ALIGN_LEFT;
     }
-    return align;
+    align
 }
 fn fuzzy_add(cs: &mut Vec<fuzzy_char>, a: style_align, ud: &utf8_data, widths: &mut [u_int; 5]) {
     cs.push(fuzzy_char {
@@ -172,7 +172,7 @@ unsafe fn fuzzy_scan(text: &CStr, widths: &mut [u_int; 5]) -> Vec<fuzzy_char> {
             fuzzy_add(&mut cs, current, &ud, widths);
         }
     }
-    return cs;
+    cs
 }
 fn fuzzy_column(
     fc: &fuzzy_char,
@@ -422,7 +422,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
     let mut best: Vec<u8>;
     let mut tok: Vec<utf8_data>;
     let mut mask: Vec<bitstr_t>;
-    let ncs: u_int;
+
     let mut i: u_int = 0;
     let mut j: u_int = 0;
     let mut widths: [u_int; 5] = [0; 5];
@@ -451,7 +451,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
     }
     let fold = !pattern.iter().any(u8::is_ascii_uppercase);
     cs = fuzzy_scan(text, &mut widths);
-    ncs = cs.len() as u_int;
+    let ncs: u_int = cs.len() as u_int;
     matched = vec![0; ncs.max(1) as usize];
     best = vec![0; ncs.max(1) as usize];
     tok = vec![
@@ -527,8 +527,8 @@ pub(crate) unsafe fn fuzzy_match_owned(
             if let Some(column) = fuzzy_column(&cs[i as usize], &start, &src, &vis) {
                 j = 0 as u_int;
                 while j < cs[i as usize].width && column.wrapping_add(j) < width {
-                    let ref mut fresh0 =
-                        mask[(column.wrapping_add(j) >> 3 as ::core::ffi::c_int) as usize];
+                    let fresh0 =
+                        &mut mask[(column.wrapping_add(j) >> 3 as ::core::ffi::c_int) as usize];
                     *fresh0 = (*fresh0 as ::core::ffi::c_int
                         | (1 as ::core::ffi::c_int) << (column.wrapping_add(j) & 0x7 as u_int))
                         as bitstr_t;
@@ -541,7 +541,7 @@ pub(crate) unsafe fn fuzzy_match_owned(
     drop(best);
     drop(matched);
     drop(cs);
-    if let Some(score) = score.as_deref_mut() {
+    if let Some(score) = score {
         *score = if bestscore < 0 as ::core::ffi::c_int {
             0 as u_int
         } else {

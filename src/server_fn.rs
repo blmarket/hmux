@@ -262,7 +262,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
                 server_renumber_session(s.as_ref().expect("live session"));
             }
         }
-        s_owner = (&sessions).after(&name);
+        s_owner = sessions.after(&name);
         s = s_owner.clone();
     }
     recalculate_sizes();
@@ -284,7 +284,7 @@ pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
         );
         if !sg.is_null() {
             for session_owner in crate::src::session::session_group_members(sg) {
-                (&session_owner).renumber_windows();
+                session_owner.renumber_windows();
             }
         } else {
             (s.as_ref().expect("live session")).renumber_windows();
@@ -341,10 +341,8 @@ pub unsafe fn server_link_window(
             return Err(std::ffi::CString::new(format!("same index: {dstidx}"))
                 .expect("numeric diagnostic contains no NUL"));
         }
-        if killflag != 0 {
-            if dst_owner.remove_replaced_window(dstwl.clone()) {
-                selectflag = 1;
-            }
+        if killflag != 0 && dst_owner.remove_replaced_window(dstwl.clone()) {
+            selectflag = 1;
         }
     }
     if dstidx == -(1 as ::core::ffi::c_int) {
@@ -603,7 +601,7 @@ pub unsafe fn server_check_unattached() {
                         }
                     }
                 }
-                1 | _ => {
+                _ => {
                     current_block_4 = 13109137661213826276;
                     match current_block_4 {
                         11000743977270914936 => {
@@ -646,12 +644,12 @@ pub unsafe fn server_check_unattached() {
                 }
             }
         }
-        s_owner = (&sessions).after(&name);
+        s_owner = sessions.after(&name);
         s = s_owner.clone();
     }
 }
 pub unsafe fn server_unzoom_window(w_owner: &WindowRef) {
     if w_owner.unzoom(true) == 0 as ::core::ffi::c_int {
-        server_redraw_window(&(w_owner));
+        server_redraw_window(w_owner);
     }
 }

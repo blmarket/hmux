@@ -150,22 +150,6 @@ impl<T: ?Sized> RefBoxHeap<T> {
         unsafe { &*self.data.get() }
     }
 
-    /// Returns a unique reference to the data.
-    ///
-    /// # Safety
-    ///
-    /// 1. Ensure there are no other references to `T`.
-    /// 2. Ensure `T` is initialized.
-    /// 3. Ensure `T` is not dropped.
-    #[inline]
-    pub(crate) unsafe fn data_mut(&self) -> &mut T {
-        // SAFETY: this goes through UnsafeCell, and its documentation
-        // states it is allowed to have a shared reference to the cell and
-        // a mutable reference to the content of the cell simultaneously, as
-        // long as there are no other references to the content of the cell.
-        unsafe { &mut *self.data.get() }
-    }
-
     /// Runs the destructor of the data.
     ///
     /// # Safety
@@ -350,11 +334,9 @@ pub(crate) unsafe fn drop_weak<T: ?Sized>(heap: NonNull<RefBoxHeap<T>>) {
 
     // If there are no more references and the owner is dropped,
     // the data needs to be deallocated.
-    if refcount == 0 {
-        if unsafe { &(*heap.as_ptr()).inner }.status() == Status::Dropped {
-            // SAFETY: there are no more references to the heap part.
-            unsafe { dealloc_heap(heap) };
-        }
+    if refcount == 0 && unsafe { &(*heap.as_ptr()).inner }.status() == Status::Dropped {
+        // SAFETY: there are no more references to the heap part.
+        unsafe { dealloc_heap(heap) };
     }
 }
 

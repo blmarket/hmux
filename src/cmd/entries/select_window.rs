@@ -246,5 +246,5 @@ unsafe fn cmd_select_window_exec(
             .set_latest_client(c.as_ref());
     }
     recalculate_sizes();
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

@@ -92,14 +92,14 @@ unsafe fn cmd_list_panes_exec(
             0 as ::core::ffi::c_int,
         );
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_list_panes_server(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
     let mut s: Option<SessionRef> = None;
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     s = s_owner.clone();
     while !s.is_none() {
         cmd_list_panes_session(
@@ -196,7 +196,7 @@ unsafe fn cmd_list_panes_window(
         format_add(
             ft,
             b"line\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as u32),
+            |out| write!(out, "{}", { n }),
         );
         format_defaults(ft, c.as_ref(), Some(s_owner), wl.clone(), Some(pane));
         if !filter.is_null() {

@@ -64,7 +64,7 @@ unsafe fn cmd_server_access_deny(
         return CMD_RETURN_ERROR;
     }
     server_acl_deny(id, flags);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_server_access_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -157,11 +157,11 @@ unsafe fn cmd_server_access_exec(
             return CMD_RETURN_ERROR;
         }
         server_acl_allow(id, flags);
-    } else if args_has(args, 'r' as i32 as u_char) != 0 || args_has(args, 'w' as i32 as u_char) != 0
+    } else if (args_has(args, 'r' as i32 as u_char) != 0
+        || args_has(args, 'w' as i32 as u_char) != 0)
+        && server_acl_find(id, flags) == 0
     {
-        if server_acl_find(id, flags) == 0 {
-            server_acl_allow(id, flags);
-        }
+        server_acl_allow(id, flags);
     }
     if args_has(args, 'w' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
@@ -189,5 +189,5 @@ unsafe fn cmd_server_access_exec(
         server_acl_deny_write(id, flags);
         return CMD_RETURN_NORMAL;
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

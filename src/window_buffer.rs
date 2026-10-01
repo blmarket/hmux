@@ -404,15 +404,15 @@ unsafe fn window_buffer_get_key(
     format_add(
         ft,
         b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (line) as u32),
+        |out| write!(out, "{}", { line }),
     );
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft_owner);
-    return key;
+    key
 }
 fn window_buffer_sort(sort_crit: &mut sort_criteria) {
-    unsafe {
+    {
         sort_crit.order_seq = &window_buffer_order_seq;
         if sort_crit.order as ::core::ffi::c_uint
             == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -421,7 +421,7 @@ fn window_buffer_sort(sort_crit: &mut sort_criteria) {
         }
     }
 }
-static window_buffer_help_lines: &[&'static CStr] = &[
+static window_buffer_help_lines: &[&CStr] = &[
     c"#[fg=themelightgrey]      Enter #[#{E:tree-mode-border-style},acs]x#[default] Paste selected %1",
     c"#[fg=themelightgrey]          p #[#{E:tree-mode-border-style},acs]x#[default] Paste selected %1",
     c"#[fg=themelightgrey]          P #[#{E:tree-mode-border-style},acs]x#[default] Paste tagged %1s",
@@ -531,7 +531,7 @@ unsafe fn window_buffer_init(
     );
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
-    return s;
+    s
 }
 unsafe fn window_buffer_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
     let Some(data) = wme

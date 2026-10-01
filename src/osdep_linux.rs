@@ -69,5 +69,5 @@ pub unsafe fn osdep_get_cwd(mut fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_c
         target[n as usize] = '\0' as i32 as ::core::ffi::c_char;
         return &raw mut target as *mut ::core::ffi::c_char;
     }
-    return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    ::core::ptr::null_mut::<::core::ffi::c_char>()
 }

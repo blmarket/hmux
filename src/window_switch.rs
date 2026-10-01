@@ -258,7 +258,7 @@ unsafe fn window_switch_visible(mut data: *mut window_switch_modedata) -> u_int 
     if sy <= 1 as u_int {
         return 0 as u_int;
     }
-    return sy.wrapping_sub(1 as u_int);
+    sy.wrapping_sub(1 as u_int)
 }
 unsafe fn window_switch_set_current(mut data: *mut window_switch_modedata, mut current: u_int) {
     let mut visible: u_int = window_switch_visible(data);
@@ -535,7 +535,7 @@ unsafe fn window_switch_init(
     window_switch_build(data);
     prompt_incremental_start(&prompt);
     window_switch_draw_screen(wme.clone());
-    return s;
+    s
 }
 unsafe fn window_switch_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
     let data = wme
@@ -605,28 +605,21 @@ unsafe fn window_switch_run_command(
     match (*item).type_0 as ::core::ffi::c_uint {
         0 => {
             s = crate::src::shared::session::SessionRef::find_by_id((*item).session as u_int);
-            if !s.is_none() {
+            if let Some(s_value) = s.as_ref() {
                 let mut bytes = Vec::from(b"=".as_slice());
-                bytes.extend_from_slice(s.as_ref().expect("live session").name().as_bytes());
+                bytes.extend_from_slice(s_value.name().as_bytes());
                 bytes.push(b':');
                 target = Some(CString::new(bytes).expect("session target contains no NUL"));
-                cmd_find_from_session(
-                    &raw mut fs,
-                    s.as_ref().expect("live session"),
-                    0 as ::core::ffi::c_int,
-                );
+                cmd_find_from_session(&raw mut fs, s_value, 0 as ::core::ffi::c_int);
             }
         }
         1 => {
             s = crate::src::shared::session::SessionRef::find_by_id((*item).session as u_int);
-            if !s.is_none() {
-                wl = s
-                    .as_ref()
-                    .expect("live session")
-                    .with_winlinks(|links| winlink_find_by_index(links, (*item).winlink));
+            if let Some(s_value) = s.as_ref() {
+                wl = s_value.with_winlinks(|links| winlink_find_by_index(links, (*item).winlink));
                 if !s.is_none() && wl.is_alive() {
                     let mut bytes = Vec::from(b"=".as_slice());
-                    bytes.extend_from_slice(s.as_ref().expect("live session").name().as_bytes());
+                    bytes.extend_from_slice(s_value.name().as_bytes());
                     bytes.push(b':');
                     bytes.extend_from_slice((wl.get_unchecked().idx as u32).to_string().as_bytes());
                     bytes.push(b'.');
@@ -673,7 +666,7 @@ unsafe fn window_switch_run_command(
             }
         }
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn window_switch_prompt_callback(
     mode: refbox::Weak<window_mode_entry>,
@@ -698,7 +691,7 @@ unsafe fn window_switch_prompt_callback(
     window_switch_build(data);
     (*data).current = 0 as u_int;
     (*data).offset = 0 as u_int;
-    return PROMPT_CONTINUE;
+    PROMPT_CONTINUE
 }
 unsafe fn window_switch_key(
     mut wme: refbox::Weak<window_mode_entry>,

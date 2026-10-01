@@ -165,9 +165,7 @@ unsafe fn cmd_split_window_exec(
         let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
         let mut lines: pane_lines = PANE_LINES_SINGLE;
         let mut count: u_int = args_count(args);
-        if (&std::rc::Rc::clone(
-            &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-        ))
+        if std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
             .active_pane_over_zoom()
             != 0
         {
@@ -180,10 +178,10 @@ unsafe fn cmd_split_window_exec(
                 restore_zoom = 0 as ::core::ffi::c_int;
             }
             if restore_zoom == 0 {
-                (&std::rc::Rc::clone(
-                    &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-                ))
-                    .unzoom(true);
+                std::rc::Rc::clone(
+                    (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
+                )
+                .unzoom(true);
             }
             is_floating = original_pane.is_floating() as i32;
             flags |= SPAWN_SPLIT;
@@ -202,10 +200,11 @@ unsafe fn cmd_split_window_exec(
                 return CMD_RETURN_ERROR;
             }
         }
-        if args_has(args, 'M' as i32 as u_char) != 0 && is_floating != 0 {
-            if event.is_null() || (*event).m.valid == 0 || tc.is_none() {
-                return CMD_RETURN_NORMAL;
-            }
+        if args_has(args, 'M' as i32 as u_char) != 0
+            && is_floating != 0
+            && (event.is_null() || (*event).m.valid == 0 || tc.is_none())
+        {
+            return CMD_RETURN_NORMAL;
         }
         if is_floating != 0 {
             flags |= SPAWN_FLOATING;
@@ -323,11 +322,11 @@ unsafe fn cmd_split_window_exec(
             });
         } else {
             let new_pane = spawned_pane.as_ref().expect("spawned pane");
-            let modal = args_has(args, 'O' as u_char) != 0;
+            let modal = args_has(args, b'O') != 0;
             new_pane.configure_modal(
-                modal && args_has(args, 'K' as u_char) != 0,
-                modal && args_has(args, 'C' as u_char) != 0,
-                modal && args_has(args, 'D' as u_char) != 0,
+                modal && args_has(args, b'K') != 0,
+                modal && args_has(args, b'C') != 0,
+                modal && args_has(args, b'D') != 0,
             );
             style = args_get(&*(args), 's' as i32 as u_char)
                 .map_or(std::ptr::null(), |value| value.as_ptr());
@@ -477,14 +476,14 @@ unsafe fn cmd_split_window_exec(
                                             new_pane,
                                             0 as ::core::ffi::c_int,
                                         );
-                                        event_payload_set_target(&mut *ep, &fs);
+                                        event_payload_set_target(&mut ep, &fs);
                                         event_payload_set_pane(
-                                            &mut *ep,
+                                            &mut ep,
                                             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
                                             std::rc::Rc::clone(new_pane),
                                         );
                                         event_payload_set_window(
-                                            &mut *ep,
+                                            &mut ep,
                                             b"window\0" as *const u8 as *const ::core::ffi::c_char,
                                             new_pane
                                                 .window_observer()
@@ -492,7 +491,7 @@ unsafe fn cmd_split_window_exec(
                                                 .expect("spawned pane window"),
                                         );
                                         event_payload_set_string(
-                                            &mut *ep,
+                                            &mut ep,
                                             b"new_title\0" as *const u8
                                                 as *const ::core::ffi::c_char,
                                             |out| write_cstr(out, title.as_ptr()),
@@ -531,11 +530,9 @@ unsafe fn cmd_split_window_exec(
                                                     0 as ::core::ffi::c_int,
                                                 );
                                             }
-                                            if restore_zoom != 0 {
-                                                original_window.pop_zoom();
-                                                server_redraw_window(&original_window);
-                                            } else if !flags & SPAWN_FLOATING != 0
-                                                && args_has(args, 'O' as i32 as u_char) == 0
+                                            if restore_zoom != 0
+                                                || (!flags & SPAWN_FLOATING != 0
+                                                    && args_has(args, 'O' as i32 as u_char) == 0)
                                             {
                                                 original_window.pop_zoom();
                                                 server_redraw_window(&original_window);
@@ -638,7 +635,7 @@ unsafe fn cmd_split_window_exec(
     result
 }
 unsafe fn cmd_split_window_mouse_resize(client_owner: &ClientRef, mut m: *mut mouse_event) {
-    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let _c: Option<ClientRef> = Some(client_owner.clone());
     let mut lines: pane_lines = PANE_LINES_SINGLE;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;

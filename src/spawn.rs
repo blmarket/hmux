@@ -112,9 +112,9 @@ impl spawn_editor_state {
             .expect("editor identity exhausted");
         Box::new(spawn_editor_state {
             id: crate::src::shared::spawn::EditorId(id),
-            path: path,
+            path,
             pid: 0,
-            cb: cb,
+            cb,
         })
     }
 }
@@ -147,14 +147,14 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
             &mut tmp,
             format_args!(
                 "wl={} wp0=%{}",
-                (wl.get_unchecked().idx) as i32,
+                { wl.get_unchecked().idx },
                 wp0_owner.as_ref().unwrap().id()
             ),
         );
     } else if wl.is_alive() {
         xformat(
             &mut tmp,
-            format_args!("wl={} wp0=none", (wl.get_unchecked().idx) as i32),
+            format_args!("wl={} wp0=none", { wl.get_unchecked().idx }),
         );
     } else if wp0_owner.is_some() {
         xformat(
@@ -169,7 +169,7 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
         log_cstr((from) as *const _),
         session_owner.id(),
         log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _),
-        ((*sc).idx) as i32
+        { (*sc).idx }
     ));
 }
 
@@ -289,7 +289,7 @@ pub unsafe fn spawn_get_editor_pid(mut es: *mut spawn_editor_state) -> pid_t {
     if es.is_null() {
         return -(1 as pid_t);
     }
-    return (*es).pid;
+    (*es).pid
 }
 pub unsafe fn spawn_editor_finish(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     wp_owner.finish_editing();
@@ -328,9 +328,7 @@ pub(crate) unsafe fn spawn_editor(
     write: impl FnOnce(&CFile) -> bool,
     mut cb: spawn_finish_edit_cb,
 ) -> Option<crate::src::shared::spawn::EditorHandle> {
-    let Some(session_owner) = client_owner.attached_session().upgrade() else {
-        return None;
-    };
+    let session_owner = client_owner.attached_session().upgrade()?;
     let mut es: *mut spawn_editor_state = ::core::ptr::null_mut::<spawn_editor_state>();
     let mut sc: spawn_context = spawn_context {
         item: std::rc::Weak::new(),
@@ -412,13 +410,11 @@ pub(crate) unsafe fn spawn_editor(
             .1
             .wrapping_div(2 as u_int)
             .wrapping_sub(lg.sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int;
-        (&std::rc::Rc::clone(
-            &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-        ))
+        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
             .push_zoom(false, true);
         let layout_id = layout_floating_pane(
             &std::rc::Rc::clone(
-                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+                (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
             ),
             None,
             &raw mut lg,
@@ -444,15 +440,11 @@ pub(crate) unsafe fn spawn_editor(
         sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;
         let spawned_pane = spawn_pane(&raw mut sc, &raw mut cause);
         let Some(pane) = spawned_pane else {
-            (&std::rc::Rc::clone(
-                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-            ))
+            std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
                 .pop_zoom();
             return None;
         };
-        (&std::rc::Rc::clone(
-            &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-        ))
+        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
             .pop_zoom();
         Some(pane.install_editor(owner))
     })();

@@ -96,7 +96,7 @@ pub unsafe fn write_cstr_n(
     precision: c_int,
 ) -> io::Result<()> {
     let bytes = if value.is_null() {
-        if precision >= 0 && precision < 6 {
+        if (0..6).contains(&precision) {
             b"".as_slice()
         } else {
             b"(null)".as_slice()

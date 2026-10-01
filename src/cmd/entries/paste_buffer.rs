@@ -89,5 +89,5 @@ unsafe fn cmd_paste_buffer_exec(
     if args_has(args, 'd' as i32 as u_char) != 0 {
         paste_free(&pb);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

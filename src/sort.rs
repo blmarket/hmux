@@ -104,7 +104,7 @@ unsafe fn sort_winlink_cmp(
 ) -> Ordering {
     let a = wla.get_unchecked().window_handle().expect("linked window");
     let b = wlb.get_unchecked().window_handle().expect("linked window");
-    let mut result = match sort_crit.order as u32 {
+    let mut result = match sort_crit.order {
         2 => wla.get_unchecked().idx - wlb.get_unchecked().idx,
         1 => {
             let (a, b) = (a.creation_time(), b.creation_time());
@@ -152,7 +152,7 @@ unsafe fn sort_key_binding_cmp(
                     .map_or(::core::ptr::null(), |s| s.as_ptr()),
             ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
         }
-        0 | 1 | 5 | 6 | 7 | 8 | _ => {}
+        _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
         result = (strcasecmp(
@@ -164,7 +164,7 @@ unsafe fn sort_key_binding_cmp(
                 .map_or(::core::ptr::null(), |s| s.as_ptr()),
         ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     }
-    return sort_ordering(result, sort_crit.reversed);
+    sort_ordering(result, sort_crit.reversed)
 }
 pub unsafe fn sort_next_order(sort_crit: *mut sort_criteria) {
     let criteria = &mut *sort_crit;
@@ -231,7 +231,7 @@ pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> s
             return SORT_Z;
         }
     }
-    return SORT_END;
+    SORT_END
 }
 pub unsafe fn sort_order_to_string(mut order: sort_order) -> *const ::core::ffi::c_char {
     if order as ::core::ffi::c_uint == SORT_ACTIVITY as ::core::ffi::c_int as ::core::ffi::c_uint {
@@ -258,7 +258,7 @@ pub unsafe fn sort_order_to_string(mut order: sort_order) -> *const ::core::ffi:
     if order as ::core::ffi::c_uint == SORT_Z as ::core::ffi::c_int as ::core::ffi::c_uint {
         return b"z\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    return ::core::ptr::null::<::core::ffi::c_char>();
+    ::core::ptr::null::<::core::ffi::c_char>()
 }
 pub unsafe fn sort_would_window_tree_swap(
     mut sort_crit: *mut sort_criteria,
@@ -270,8 +270,8 @@ pub unsafe fn sort_would_window_tree_swap(
     {
         return 0 as ::core::ffi::c_int;
     }
-    return (sort_winlink_cmp((wla).clone(), (wlb).clone(), &*sort_crit) != Ordering::Equal)
-        as ::core::ffi::c_int;
+    (sort_winlink_cmp((wla).clone(), (wlb).clone(), &*sort_crit) != Ordering::Equal)
+        as ::core::ffi::c_int
 }
 pub fn sort_get_buffers(sort_crit: &sort_criteria) -> Vec<PasteBufferRef> {
     let mut buffers = Vec::new();
@@ -321,7 +321,7 @@ pub unsafe fn sort_get_panes_window(
 }
 pub unsafe fn sort_get_winlinks(sort_crit: *mut sort_criteria) -> Vec<refbox::Weak<winlink>> {
     let mut links = Vec::new();
-    let mut s_owner = (&sessions).first();
+    let mut s_owner = sessions.first();
     while s_owner.is_some() {
         let mut wl = s_owner
             .as_ref()

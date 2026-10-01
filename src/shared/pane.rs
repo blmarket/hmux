@@ -84,7 +84,6 @@ pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int
 pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
-
 pub struct window_pane_prompt {
     pub wp_id: u_int,
     pub c: ClientWeak,
@@ -130,9 +129,7 @@ impl window_panes {
         pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     ) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
         let storage = &self.storage;
-        let Some(position) = storage.iter().position(|weak| weak.ptr_eq(pane)) else {
-            return None;
-        };
+        let position = storage.iter().position(|weak| weak.ptr_eq(pane))?;
         storage
             .get(position + 1)
             .map(|weak| weak.upgrade().expect("live pane in ordering"))

@@ -3,7 +3,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::terminal::*;
 pub unsafe fn getptmfd() -> ::core::ffi::c_int {
-    return 2147483647 as ::core::ffi::c_int;
+    2147483647 as ::core::ffi::c_int
 }
 pub unsafe fn fdforkpty(
     _ptmfd: ::core::ffi::c_int,
@@ -12,5 +12,5 @@ pub unsafe fn fdforkpty(
     mut tio: *mut termios,
     mut ws: *mut winsize,
 ) -> pid_t {
-    return forkpty(master, name, tio, ws) as pid_t;
+    forkpty(master, name, tio, ws) as pid_t
 }

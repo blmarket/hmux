@@ -39,7 +39,7 @@ pub(super) unsafe fn in_scrollbar_area(
         end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
         start = end - total as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     }
-    return (px >= start && px <= end) as ::core::ffi::c_int;
+    (px >= start && px <= end) as ::core::ffi::c_int
 }
 
 pub(super) unsafe fn mouse_location(
@@ -184,54 +184,50 @@ unsafe fn mouse_location_in(
             let (border_sx, border_sy, border_xoff, border_yoff) = border_pane.geometry();
             let border_scrollbar = &border_pane;
             examined = Some(border_pane.clone());
-            if !(!border_pane.is_visible()) {
-                if !(border_pane.is_floating()
+            if !(!border_pane.is_visible())
+                && !(border_pane.is_floating()
                     && border_pane.pane_lines() as ::core::ffi::c_uint
                         == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
+            {
+                if border_scrollbar.scrollbar_reserved() {
+                    sb_w = border_scrollbar.scrollbar_width();
+                    sb_pad = border_scrollbar.scrollbar_pad();
+                } else {
+                    sb_w = 0 as ::core::ffi::c_int;
+                    sb_pad = 0 as ::core::ffi::c_int;
+                }
+                bdr_top = border_yoff - 1 as ::core::ffi::c_int;
+                bdr_bottom = (border_yoff as u_int).wrapping_add(border_sy) as ::core::ffi::c_int;
+                bdr_left = border_xoff - 1 as ::core::ffi::c_int;
+                if position == PANE_SCROLLBARS_LEFT {
+                    bdr_left -= sb_pad + sb_w;
+                    bdr_right =
+                        (border_xoff as u_int).wrapping_add(border_sx) as ::core::ffi::c_int;
+                } else {
+                    bdr_right = (border_xoff as u_int)
+                        .wrapping_add(border_sx)
+                        .wrapping_add(sb_pad as u_int)
+                        .wrapping_add(sb_w as u_int)
+                        as ::core::ffi::c_int;
+                }
+                if py >= border_yoff - 1 as ::core::ffi::c_int
+                    && py <= border_yoff + border_sy as ::core::ffi::c_int
                 {
-                    if border_scrollbar.scrollbar_reserved() {
-                        sb_w = border_scrollbar.scrollbar_width();
-                        sb_pad = border_scrollbar.scrollbar_pad();
-                    } else {
-                        sb_w = 0 as ::core::ffi::c_int;
-                        sb_pad = 0 as ::core::ffi::c_int;
+                    if px == bdr_right {
+                        break;
                     }
-                    bdr_top = border_yoff - 1 as ::core::ffi::c_int;
+                    if pane_owner.is_floating() && px == bdr_left {
+                        break;
+                    }
+                }
+                if px >= bdr_left && px <= border_xoff + border_sx as ::core::ffi::c_int {
                     bdr_bottom =
                         (border_yoff as u_int).wrapping_add(border_sy) as ::core::ffi::c_int;
-                    bdr_left = border_xoff - 1 as ::core::ffi::c_int;
-                    if position == PANE_SCROLLBARS_LEFT {
-                        bdr_left -= sb_pad + sb_w;
-                        bdr_right =
-                            (border_xoff as u_int).wrapping_add(border_sx) as ::core::ffi::c_int;
-                    } else {
-                        bdr_right = (border_xoff as u_int)
-                            .wrapping_add(border_sx)
-                            .wrapping_add(sb_pad as u_int)
-                            .wrapping_add(sb_w as u_int)
-                            as ::core::ffi::c_int;
+                    if py == bdr_bottom {
+                        break;
                     }
-                    if py >= border_yoff - 1 as ::core::ffi::c_int
-                        && py <= border_yoff + border_sy as ::core::ffi::c_int
-                    {
-                        if px == bdr_right {
-                            break;
-                        }
-                        if pane_owner.is_floating() {
-                            if px == bdr_left {
-                                break;
-                            }
-                        }
-                    }
-                    if px >= bdr_left && px <= border_xoff + border_sx as ::core::ffi::c_int {
-                        bdr_bottom =
-                            (border_yoff as u_int).wrapping_add(border_sy) as ::core::ffi::c_int;
-                        if py == bdr_bottom {
-                            break;
-                        }
-                        if py == bdr_top {
-                            break;
-                        }
+                    if py == bdr_top {
+                        break;
                     }
                 }
             }
@@ -241,5 +237,5 @@ unsafe fn mouse_location_in(
             return KEYC_MOUSE_LOCATION_BORDER;
         }
     }
-    return KEYC_MOUSE_LOCATION_NOWHERE;
+    KEYC_MOUSE_LOCATION_NOWHERE
 }

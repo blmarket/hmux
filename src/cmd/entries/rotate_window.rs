@@ -127,25 +127,24 @@ unsafe fn cmd_rotate_window_exec(
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window_owner = (*target).w.upgrade().expect("live rotation window");
-    let result = (|| {
-        window_owner.push_zoom(false, (args_has(args, 'Z' as u_char)) != 0);
-        let selected_pane = cmd_rotate_window_panes(
-            &window_owner,
-            args_has(args, 'D' as u_char) != 0,
-            |pane, sx, sy| pane.resize(sx, sy),
-        );
-        (&std::rc::Rc::clone(&(window_owner))).select_pane(&selected_pane, true);
+    let result = {
+        window_owner.push_zoom(false, (args_has(args, b'Z')) != 0);
+        let selected_pane =
+            cmd_rotate_window_panes(&window_owner, args_has(args, b'D') != 0, |pane, sx, sy| {
+                pane.resize(sx, sy)
+            });
+        std::rc::Rc::clone(&(window_owner)).select_pane(&selected_pane, true);
         cmd_find_from_winlink_pane(
             &mut *current.current.borrow_mut(),
             wl.clone(),
             &selected_pane,
             0 as ::core::ffi::c_int,
         );
-        (&std::rc::Rc::clone(&(window_owner))).pop_zoom();
+        std::rc::Rc::clone(&(window_owner)).pop_zoom();
         window_owner.invalidate_scene();
         server_redraw_window(&(window_owner));
-        return CMD_RETURN_NORMAL;
-    })();
+        CMD_RETURN_NORMAL
+    };
     window_owner.release(c"cmd_rotate_window_exec");
     result
 }

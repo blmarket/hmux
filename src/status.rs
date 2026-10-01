@@ -164,7 +164,7 @@ pub unsafe fn status_prompt_line_at(c: &ClientRef) -> u_int {
     if line >= lines {
         return lines.wrapping_sub(1 as u_int);
     }
-    return line;
+    line
 }
 pub unsafe fn status_get_range(c: &ClientRef, x: u_int, y: u_int) -> Option<style_range> {
     c.borrow_status()
@@ -235,7 +235,7 @@ pub unsafe fn status_free(status: &mut status_line) {
     }
     drop((*sl).timer.take());
     if let Some(mut active) = (*sl).active.take() {
-        screen_free(&mut *active);
+        screen_free(&mut active);
     }
     screen_free(&mut (*sl).screen);
 }
@@ -279,8 +279,8 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut changed: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut fg: ::core::ffi::c_int = 0;
     let mut bg: ::core::ffi::c_int = 0;
-    let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
+    let _o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
+    let _ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     log_debug(format_args!("{} enter", "status_redraw"));
     if c_owner.borrow_status().active.is_some() {
@@ -432,7 +432,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         (force) as i32,
         (changed) as i32
     ));
-    return (force != 0 || changed != 0) as ::core::ffi::c_int;
+    (force != 0 || changed != 0) as ::core::ffi::c_int
 }
 fn status_message_escape(s: &CStr) -> CString {
     let source = s.to_bytes();
@@ -605,7 +605,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     format_add(
         ft,
         b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (0 as ::core::ffi::c_int) as i32),
+        |out| write!(out, "{}", { 0 as ::core::ffi::c_int }),
     );
     msgfmt_session_value = Some(
         s.as_ref()
@@ -652,12 +652,12 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     );
     screen_write_stop(&mut ctx);
     let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
-    drop(status);
+    let _ = status;
     screen_free(&mut old_screen);
     i32::from(changed)
 }
 unsafe fn status_prompt_accept(c_owner: &ClientRef) -> cmd_retval {
-    let mut c: Option<ClientRef> = Some(c_owner.clone());
+    let _c: Option<ClientRef> = Some(c_owner.clone());
     if c_owner.prompt_observer().is_alive() {
         status_prompt_key(
             c_owner,
@@ -665,7 +665,7 @@ unsafe fn status_prompt_accept(c_owner: &ClientRef) -> cmd_retval {
             ::core::ptr::null_mut::<mouse_event>(),
         );
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 pub unsafe fn status_prompt_set(
     c_owner: &ClientRef,
@@ -768,7 +768,7 @@ unsafe fn status_prompt_screen_line(c: &ClientRef) -> u_int {
     if n <= height {
         return height.wrapping_sub(n);
     }
-    return height.wrapping_sub(1 as u_int);
+    height.wrapping_sub(1 as u_int)
 }
 pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
@@ -839,7 +839,7 @@ pub unsafe fn status_prompt_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     drop(prompt);
     screen_write_stop(&mut ctx);
     let changed = grid_compare((*sl).active_screen().grid(), old_screen.grid()) != 0;
-    drop(status);
+    let _ = status;
     screen_free(&mut old_screen);
     i32::from(changed)
 }
@@ -903,5 +903,5 @@ pub unsafe fn status_prompt_key(
     if closed {
         status_prompt_clear(c_owner);
     }
-    return result;
+    result
 }

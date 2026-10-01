@@ -125,7 +125,7 @@ pub const REDRAW_ALL: ::core::ffi::c_int = 0x7fffffff as ::core::ffi::c_int;
 pub const REDRAW_START_ISOLATE: &std::ffi::CStr = c"\u{2066}";
 pub const REDRAW_END_ISOLATE: &std::ffi::CStr = c"\u{2069}";
 thread_local! {
-    static REDRAW_CELLS: RefCell<Vec<redraw_build_cell>> = RefCell::new(Vec::new());
+    static REDRAW_CELLS: RefCell<Vec<redraw_build_cell>> = const { RefCell::new(Vec::new()) };
 }
 
 // Each scene build owns its scratch cells until it has copied them into spans.
@@ -181,10 +181,10 @@ unsafe fn redraw_get_window_offset(c: &ClientRef) -> tty_window_view {
 }
 unsafe fn redraw_set_context(c: &ClientRef, bctx: &mut redraw_build_ctx) {
     let view = redraw_get_window_offset(c);
-    (*bctx).ox = view.ox;
-    (*bctx).oy = view.oy;
-    (*bctx).sx = view.sx;
-    (*bctx).sy = view.sy;
+    bctx.ox = view.ox;
+    bctx.oy = view.oy;
+    bctx.sx = view.sx;
+    bctx.sy = view.sy;
     bctx.ind = bctx
         .w
         .with_options_mut(|options| options_get_number(options, c"pane-border-indicators"))
@@ -234,7 +234,7 @@ unsafe fn redraw_window_to_scene(
     }
     *x = sx as u_int;
     *y = sy as u_int;
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn redraw_pane_to_scene(
     mut bctx: *mut redraw_build_ctx,
@@ -272,7 +272,7 @@ unsafe fn redraw_pane_to_scene(
             return 0 as ::core::ffi::c_int;
         }
     }
-    return redraw_window_to_scene(bctx, wx, wy, x, y);
+    redraw_window_to_scene(bctx, wx, wy, x, y)
 }
 unsafe fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::core::ffi::c_int {
     match mask {
@@ -289,7 +289,7 @@ unsafe fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::core::ffi::c_i
         12 | REDRAW_BORDER_U | REDRAW_BORDER_D => return 1 as ::core::ffi::c_int,
         _ => {}
     }
-    return 12 as ::core::ffi::c_int;
+    12 as ::core::ffi::c_int
 }
 unsafe fn redraw_check_two_pane_colours(w: &WindowRef) -> Option<layout_type> {
     let cells: Vec<_> = w
@@ -980,11 +980,11 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        (window_owner.id()) as u32,
-        (bctx.sx) as u32,
-        (bctx.sy) as u32,
-        (bctx.ox) as u32,
-        (bctx.oy) as u32,
+        { window_owner.id() },
+        { bctx.sx },
+        { bctx.sy },
+        { bctx.ox },
+        { bctx.oy },
         window_owner.scene_generation() as ::core::ffi::c_ulonglong
     ));
     redraw_build_cells(&raw mut bctx, &mut cells.0);
@@ -1043,10 +1043,10 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        (window_owner.id()) as u32
+        { window_owner.id() }
     ));
     window_owner.release(c"redraw scene build");
-    return Some(scene);
+    Some(scene)
 }
 
 pub unsafe fn redraw_invalidate_all_scenes() {
@@ -1241,7 +1241,7 @@ unsafe fn redraw_draw_border_span(
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let _c: Option<ClientRef> = Some(client_owner.clone());
     let Some(window_owner) = scene.w.upgrade() else {
         return;
     };
@@ -1408,7 +1408,7 @@ unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, m
     let Some(client_owner) = scene.c.upgrade() else {
         return;
     };
-    let mut c: Option<ClientRef> = Some(client_owner.clone());
+    let _c: Option<ClientRef> = Some(client_owner.clone());
     let mut ranges = visible_ranges::default();
     let mut i: u_int = 0;
     let mut x: u_int = 0;
@@ -1551,7 +1551,7 @@ unsafe fn redraw_pane_status_line(
         return 0 as ::core::ffi::c_int;
     }
     *line = (wy as u_int).wrapping_sub(scene.oy);
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn redraw_pane_status_width<'scene>(
     dctx: &mut redraw_draw_ctx<'scene>,
@@ -1674,12 +1674,14 @@ unsafe fn redraw_draw(
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                     as *const _
             ),
-            ((((s.as_ref().expect("live session").current_winlink())
-                .get_unchecked()
-                .window_handle()
-                .as_ref())
-            .expect("live window"))
-            .id()) as u32,
+            {
+                (((s.as_ref().expect("live session").current_winlink())
+                    .get_unchecked()
+                    .window_handle()
+                    .as_ref())
+                .expect("live window"))
+                .id()
+            },
             log_cstr(redraw_flags_to_string(flags).as_ptr())
         ));
     }
@@ -1709,7 +1711,7 @@ unsafe fn redraw_draw_scene(
     let mut i: u_int = 0;
     let mut y: u_int = 0;
     let mut lines: u_int = 0;
-    let mut j: u_int = 0;
+    let _j: u_int = 0;
     let mut redraw: ::core::ffi::c_int = 0;
     let Some(mut dctx) = redraw_set_draw_context(scene) else {
         window_owner.release(c"unavailable redraw context");
@@ -1731,7 +1733,7 @@ unsafe fn redraw_draw_scene(
                 redraw_pane_status_width(&mut dctx, &pane_owner)
             {
                 if width != 0
-                    && pane_owner.make_status(&client_owner, width, status_spans, first_status_span)
+                    && pane_owner.make_status(client_owner, width, status_spans, first_status_span)
                 {
                     pane_owner.set_new_status(true);
                     redraw = 1 as ::core::ffi::c_int;
@@ -1840,7 +1842,7 @@ unsafe fn redraw_draw_scene(
                 .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
                 as *const _
         ),
-        ((window_owner).id()) as u32
+        { (window_owner).id() }
     ));
     window_owner.release(c"redraw scene");
 }
@@ -1864,18 +1866,17 @@ pub fn redraw_get_status_border_cell_type(
         let span = entries[index].as_ref();
         if !(span.data.kind() as ::core::ffi::c_uint
             != REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint)
+            && span.data.status().wp.ptr_eq(pane_observer)
         {
-            if span.data.status().wp.ptr_eq(pane_observer) {
-                start = span.data.status().offset;
-                end = start.wrapping_add(span.width);
-                if x >= start && x < end {
-                    *span_index = index;
-                    return span.data.status().cell_type;
-                }
-                if start > x {
-                    *span_index = index;
-                    break;
-                }
+            start = span.data.status().offset;
+            end = start.wrapping_add(span.width);
+            if x >= start && x < end {
+                *span_index = index;
+                return span.data.status().cell_type;
+            }
+            if start > x {
+                *span_index = index;
+                break;
             }
         }
         index += 1;
@@ -1883,7 +1884,7 @@ pub fn redraw_get_status_border_cell_type(
     if index == entries.len() {
         *span_index = entries.len();
     }
-    return 2 as ::core::ffi::c_int;
+    2 as ::core::ffi::c_int
 }
 pub unsafe fn redraw_screen(client_owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());

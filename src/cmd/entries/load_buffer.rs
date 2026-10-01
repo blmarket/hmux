@@ -182,7 +182,7 @@ unsafe fn cmd_load_buffer_exec(
         item_handle,
         None,
     );
-    return CMD_RETURN_WAIT;
+    CMD_RETURN_WAIT
 }
 
 #[cfg(test)]

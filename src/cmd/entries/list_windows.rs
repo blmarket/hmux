@@ -149,5 +149,5 @@ unsafe fn cmd_list_windows_exec(
         format_free(ft_owner);
         i = i.wrapping_add(1);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

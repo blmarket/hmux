@@ -123,5 +123,5 @@ unsafe fn cmd_swap_window_exec(
         server_redraw_session_group(dst.as_ref().expect("live session"));
     }
     recalculate_sizes();
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

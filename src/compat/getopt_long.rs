@@ -58,7 +58,7 @@ unsafe fn gcd(mut a: ::core::ffi::c_int, mut b: ::core::ffi::c_int) -> ::core::f
         b = c;
         c = a % b;
     }
-    return b;
+    b
 }
 unsafe fn permute_args(
     mut panonopt_start: ::core::ffi::c_int,
@@ -91,9 +91,9 @@ unsafe fn permute_args(
                 pos += nopts;
             }
             swap = *nargv.offset(pos as isize);
-            let ref mut fresh3 = *(nargv as *mut *mut ::core::ffi::c_char).offset(pos as isize);
+            let fresh3 = &mut *(nargv as *mut *mut ::core::ffi::c_char).offset(pos as isize);
             *fresh3 = *nargv.offset(cstart as isize);
-            let ref mut fresh4 = *(nargv as *mut *mut ::core::ffi::c_char).offset(cstart as isize);
+            let fresh4 = &mut *(nargv as *mut *mut ::core::ffi::c_char).offset(cstart as isize);
             *fresh4 = swap;
             j += 1;
         }
@@ -178,7 +178,7 @@ unsafe fn parse_long_options(
                 BSDoptarg = has_equal;
             } else if (*long_options.offset(match_0 as isize)).has_arg == required_argument {
                 let fresh2 = BSDoptind;
-                BSDoptind = BSDoptind + 1;
+                BSDoptind += 1;
                 BSDoptarg = *nargv.offset(fresh2 as isize);
             }
         }
@@ -223,10 +223,10 @@ unsafe fn parse_long_options(
     if !(*long_options.offset(match_0 as isize)).flag.is_null() {
         *(*long_options.offset(match_0 as isize)).flag =
             (*long_options.offset(match_0 as isize)).val;
-        return 0 as ::core::ffi::c_int;
+        0 as ::core::ffi::c_int
     } else {
-        return (*long_options.offset(match_0 as isize)).val;
-    };
+        (*long_options.offset(match_0 as isize)).val
+    }
 }
 unsafe fn getopt_internal(
     mut nargc: ::core::ffi::c_int,
@@ -287,7 +287,7 @@ unsafe fn getopt_internal(
             place = EMSG;
             if flags & FLAG_ALLARGS != 0 {
                 let fresh0 = BSDoptind;
-                BSDoptind = BSDoptind + 1;
+                BSDoptind += 1;
                 BSDoptarg = *nargv.offset(fresh0 as isize);
                 return 1 as ::core::ffi::c_int;
             }
@@ -424,19 +424,19 @@ unsafe fn getopt_internal(
         place = EMSG;
         BSDoptind += 1;
     }
-    return optchar;
+    optchar
 }
 pub unsafe fn BSDgetopt(
     mut nargc: ::core::ffi::c_int,
     mut nargv: *const *mut ::core::ffi::c_char,
     mut options: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    return getopt_internal(
+    getopt_internal(
         nargc,
         nargv,
         options,
         ::core::ptr::null::<option>(),
         ::core::ptr::null_mut::<::core::ffi::c_int>(),
         0 as ::core::ffi::c_int,
-    );
+    )
 }

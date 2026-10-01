@@ -157,12 +157,12 @@ pub unsafe fn menu_add_item(
 pub unsafe fn menu_create(title: &CStr) -> Box<menu> {
     let title = title.to_owned();
     let width = format_width(title.as_ptr());
-    let owner = Box::new(menu {
-        title: title,
+
+    Box::new(menu {
+        title,
         items: Vec::new(),
-        width: width,
-    });
-    owner
+        width,
+    })
 }
 unsafe fn menu_reapply_styles(md: &mut menu_data) {
     let Some(window) = md.w.upgrade() else {
@@ -926,5 +926,4 @@ mod tests {
         assert_eq!(calls.get(), 1);
         assert!(!observer.is_alive());
     }
-
 }

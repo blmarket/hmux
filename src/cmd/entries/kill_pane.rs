@@ -72,7 +72,7 @@ unsafe fn cmd_kill_pane_exec(
         return CMD_RETURN_ERROR;
     };
     server_kill_pane(&pane_owner);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_kill_pane_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -84,7 +84,7 @@ unsafe fn cmd_kill_pane_all(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let target_pane = (*target).pane_handle().expect("kill target pane");
     server_unzoom_window(&std::rc::Rc::clone(
-        &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
     ));
     let mut cursor = wl
         .get_unchecked()
@@ -111,14 +111,12 @@ unsafe fn cmd_kill_pane_all(
         {
             ClientRef::forget_pane(&pane_owner);
             layout_close_pane(&pane_owner);
-            (&std::rc::Rc::clone(
-                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
-            ))
+            std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
                 .remove_pane(&pane_owner);
         }
     }
-    server_redraw_window(&((wl.get_unchecked().window_handle().as_ref()).expect("live window")));
-    return CMD_RETURN_NORMAL;
+    server_redraw_window((wl.get_unchecked().window_handle().as_ref()).expect("live window"));
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_kill_pane_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -146,5 +144,5 @@ unsafe fn cmd_kill_pane_filter(
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
     format_free(ft_owner);
-    return flag;
+    flag
 }

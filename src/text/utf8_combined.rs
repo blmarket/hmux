@@ -86,14 +86,14 @@ pub unsafe fn utf8_should_combine(with: &utf8_data, add: &utf8_data) -> ::core::
         | 128588 | 128589 | 128590 | 128591 | 128692 | 128693 | 128694 | 129318 | 129335
         | 129336 | 129337 | 129341 | 129342 | 129461 | 129462 | 129464 | 129465 | 129485
         | 129486 | 129487 | 129489 | 129490 | 129491 | 129492 | 129493 | 129494 | 129495
-        | 129496 | 129497 | 129498 | 129499 | 129500 | 129501 | 129502 | 129503 => {
-            if w >= 0x1f3fb as wchar_t && w <= 0x1f3ff as wchar_t {
-                return 1 as ::core::ffi::c_int;
-            }
+        | 129496 | 129497 | 129498 | 129499 | 129500 | 129501 | 129502 | 129503
+            if w >= 0x1f3fb as wchar_t && w <= 0x1f3ff as wchar_t =>
+        {
+            return 1 as ::core::ffi::c_int;
         }
         _ => {}
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 fn hanguljamo_get_subclass(s: &[u_char; 3]) -> hanguljamo_subclass {
     match s[0] as ::core::ffi::c_int {
@@ -189,7 +189,7 @@ fn hanguljamo_get_subclass(s: &[u_char; 3]) -> hanguljamo_subclass {
         }
         _ => {}
     }
-    return HANGULJAMO_SUBCLASS_NOT_HANGULJAMO;
+    HANGULJAMO_SUBCLASS_NOT_HANGULJAMO
 }
 fn hanguljamo_get_class(s: &[u_char; 3]) -> hanguljamo_class {
     match hanguljamo_get_subclass(s) as ::core::ffi::c_uint {
@@ -199,7 +199,7 @@ fn hanguljamo_get_class(s: &[u_char; 3]) -> hanguljamo_class {
         0 => return HANGULJAMO_CLASS_NOT_HANGULJAMO,
         _ => {}
     }
-    return HANGULJAMO_CLASS_NOT_HANGULJAMO;
+    HANGULJAMO_CLASS_NOT_HANGULJAMO
 }
 fn hanguljamo_last_three(ud: &utf8_data) -> Option<&[u_char; 3]> {
     let size = ud.size as usize;
@@ -238,7 +238,7 @@ pub fn hanguljamo_check_state(p_ud: &utf8_data, ud: &utf8_data) -> hanguljamo_st
         0 => return HANGULJAMO_STATE_NOT_HANGULJAMO,
         _ => {}
     }
-    return HANGULJAMO_STATE_NOT_HANGULJAMO;
+    HANGULJAMO_STATE_NOT_HANGULJAMO
 }
 
 #[cfg(test)]

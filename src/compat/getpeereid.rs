@@ -35,5 +35,5 @@ pub unsafe fn getpeereid(
     }
     *uid = uc.uid;
     *gid = uc.gid;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }

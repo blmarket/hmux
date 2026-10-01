@@ -29,13 +29,11 @@ pub fn session_groups_find(head: &session_groups, elm: &session_group) -> *mut s
 }
 impl session_group {
     pub fn new(name: &std::ffi::CStr) -> Box<Self> {
-        let mut owner = Box::new(session_group {
+        Box::new(session_group {
             name: name.to_owned(),
             owner: refbox::Weak::new(),
             members: Vec::new(),
-        });
-
-        owner
+        })
     }
 
     pub fn node_ptr(&self) -> *mut session_group {

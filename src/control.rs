@@ -69,11 +69,7 @@ pub const CONTROL_IGNORE_FLAGS: ::core::ffi::c_int =
 
 impl control_block {
     fn new(line: Option<CString>, size: size_t) -> refbox::RefBox<Self> {
-        refbox::RefBox::new(control_block {
-            size: size,
-            line: line,
-            t: 0,
-        })
+        refbox::RefBox::new(control_block { size, line, t: 0 })
     }
 }
 
@@ -428,7 +424,7 @@ pub unsafe fn control_pane_offset<'a>(
     }
     *off = (cs
         .write_event
-        .with_ptr(|stream| unsafe { evbuffer_get_length(&*(*stream).output) })
+        .with_ptr(|stream| unsafe { evbuffer_get_length(&(*stream).output) })
         .unwrap_or(0)
         >= CONTROL_BUFFER_LOW as size_t) as ::core::ffi::c_int;
     Some(&mut cp.offset)
@@ -517,7 +513,7 @@ unsafe fn control_write_line(c_owner: &ClientRef, line: CString) {
             return;
         };
         let stream = cs.write_event.clone();
-        if !control_first_block(&cs).is_alive() {
+        if !control_first_block(cs).is_alive() {
             log_debug(format_args!(
                 "control_write_line: {}: writing line: {}",
                 log_cstr(name),
@@ -525,7 +521,7 @@ unsafe fn control_write_line(c_owner: &ClientRef, line: CString) {
             ));
             (stream, Some(line))
         } else {
-            let cb = control_add_block(&mut cs, control_block::new(Some(line), 0));
+            let cb = control_add_block(cs, control_block::new(Some(line), 0));
             cs.queued_reply_bytes = cs.queued_reply_bytes.wrapping_add(size);
             cb.try_borrow_mut().expect("live control block").t = get_timer();
             log_debug(format_args!(
@@ -666,7 +662,7 @@ unsafe fn control_check_age(
                 .get_mut(&pane)
                 .expect("indexed control pane")
                 .flags |= CONTROL_PANE_PAUSED;
-            control_discard_pane(&mut state, pane);
+            control_discard_pane(state, pane);
         }
         control_notify_write(client, |out| write!(out, "%pause %{}", window_pane.id()));
     } else {
@@ -791,7 +787,7 @@ unsafe fn control_error(
         b"error\0" as *const u8 as *const ::core::ffi::c_char,
         1 as ::core::ffi::c_int,
     );
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn control_error_callback(owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(owner.clone());
@@ -836,19 +832,16 @@ unsafe fn control_read_callback(owner: &ClientRef) {
                 ::core::ptr::null_mut::<key_event>(),
                 CMDQ_STATE_CONTROL,
             );
-            match cmd_parse_and_append(
+            if let Err(error) = cmd_parse_and_append(
                 CStr::from_ptr(line.as_ptr().cast::<::core::ffi::c_char>()),
                 Some(owner),
                 Some(&state),
             ) {
-                Err(error) => {
-                    let error_item_allocation = cmdq_get_callback_owned(
-                        c"control_error",
-                        Some(Box::new(move |item| unsafe { control_error(item, error) })),
-                    );
-                    cmdq_append(Some(owner), error_item_allocation);
-                }
-                Ok(_) => {}
+                let error_item_allocation = cmdq_get_callback_owned(
+                    c"control_error",
+                    Some(Box::new(move |item| unsafe { control_error(item, error) })),
+                );
+                cmdq_append(Some(owner), error_item_allocation);
             }
         }
     }
@@ -859,11 +852,10 @@ pub unsafe fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
     if control_first_block(cs).is_alive() {
         return 0 as ::core::ffi::c_int;
     }
-    return (cs
-        .write_event
-        .with_ptr(|stream| unsafe { evbuffer_get_length(&*(*stream).output) })
+    (cs.write_event
+        .with_ptr(|stream| unsafe { evbuffer_get_length(&(*stream).output) })
         .unwrap_or(0)
-        == 0 as size_t) as ::core::ffi::c_int;
+        == 0 as size_t) as ::core::ffi::c_int
 }
 pub unsafe fn control_wait_exit() {
     let mut fd: ::core::ffi::c_int = STDIN_FILENO;
@@ -875,7 +867,7 @@ pub unsafe fn control_wait_exit() {
     let mut n: ::core::ffi::c_int = 0;
     let mut evb = evbuffer_new();
     loop {
-        if let Some(line) = evbuffer_readln(&mut *evb) {
+        if let Some(line) = evbuffer_readln(&mut evb) {
             if line[0] == 0 {
                 break;
             }
@@ -892,7 +884,7 @@ pub unsafe fn control_wait_exit() {
                     break;
                 }
             } else {
-                n = evbuffer_read(&mut *evb, fd, -(1 as ::core::ffi::c_int));
+                n = evbuffer_read(&mut evb, fd, -(1 as ::core::ffi::c_int));
                 if n == 0 as ::core::ffi::c_int {
                     break;
                 }
@@ -910,7 +902,7 @@ unsafe fn control_flush_all_blocks(client: &ClientRef) {
     loop {
         let (block, line, stream) = {
             let state = client.borrow_control_mut().expect("control client state");
-            let block = control_first_block(&state);
+            let block = control_first_block(state);
             if !block.is_alive() {
                 break;
             }
@@ -935,7 +927,7 @@ unsafe fn control_flush_all_blocks(client: &ClientRef) {
             break;
         };
         let mut state = client.borrow_control_mut().expect("control client state");
-        control_free_block(&mut state, &block);
+        control_free_block(state, &block);
     }
 }
 unsafe fn control_append_data(
@@ -958,17 +950,14 @@ unsafe fn control_append_data(
             & CLIENT_CONTROL_PAUSEAFTER
             != 0
         {
-            evbuffer_add_formatted(&mut *message, |out| {
-                write!(
-                    out,
-                    "%extended-output %{} {} : ",
-                    (wp_owner.id()) as u32,
-                    (age as ::core::ffi::c_ulonglong) as u64
-                )
+            evbuffer_add_formatted(&mut message, |out| {
+                write!(out, "%extended-output %{} {} : ", { wp_owner.id() }, {
+                    age as ::core::ffi::c_ulonglong
+                })
             });
         } else {
-            evbuffer_add_formatted(&mut *message, |out| {
-                write!(out, "%output %{} ", (wp_owner.id()) as u32)
+            evbuffer_add_formatted(&mut message, |out| {
+                write!(out, "%output %{} ", { wp_owner.id() })
             });
         }
         message
@@ -978,12 +967,9 @@ unsafe fn control_append_data(
     new_data = data.as_ptr().cast_mut();
     if new_size < size {
         fatalx(|out| {
-            write!(
-                out,
-                "not enough data: {} < {}",
-                (new_size) as usize,
-                (size) as usize
-            )
+            write!(out, "not enough data: {} < {}", (new_size) as usize, {
+                size
+            })
         });
     }
     i = 0 as u_int;
@@ -991,7 +977,7 @@ unsafe fn control_append_data(
         if (*new_data.offset(i as isize) as ::core::ffi::c_int) < ' ' as i32
             || *new_data.offset(i as isize) as ::core::ffi::c_int == '\\' as i32
         {
-            evbuffer_add_formatted(&mut *message, |out| {
+            evbuffer_add_formatted(&mut message, |out| {
                 write!(
                     out,
                     "\\{:03o}",
@@ -1009,15 +995,15 @@ unsafe fn control_append_data(
                 i = i.wrapping_add(1);
             }
             evbuffer_add(
-                &mut *message,
-                new_data.offset(start as isize) as *const ::core::ffi::c_void,
+                &mut message,
+                new_data.add(start) as *const ::core::ffi::c_void,
                 (i as size_t).wrapping_sub(start).wrapping_add(1 as size_t),
             );
         }
         i = i.wrapping_add(1);
     }
     wp_owner.advance_output(offset, size);
-    return message;
+    message
 }
 unsafe fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>) {
     let mut c: Option<ClientRef> = Some(c_owner.clone());
@@ -1032,13 +1018,13 @@ unsafe fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>
                 as *const _
         ),
         log_cstr_n(
-            (evbuffer_pullup(&mut *message, -1)
+            (evbuffer_pullup(&mut message, -1)
                 .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())) as *const _,
             evbuffer_get_length(&message) as ::core::ffi::c_int
         )
     ));
     evbuffer_add(
-        &mut *message,
+        &mut message,
         b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
         1 as size_t,
     );
@@ -1049,7 +1035,7 @@ unsafe fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>
             .write_event
             .clone()
     };
-    let _ = stream.with_ptr(|stream| unsafe { bufferevent_write_buffer(stream, &mut *message) });
+    let _ = stream.with_ptr(|stream| unsafe { bufferevent_write_buffer(stream, &mut message) });
 }
 unsafe fn control_write_pending(client: &ClientRef, pane: u_int, limit: size_t) -> i32 {
     let now = get_timer();
@@ -1057,7 +1043,7 @@ unsafe fn control_write_pending(client: &ClientRef, pane: u_int, limit: size_t) 
     if owner.as_ref().is_none_or(|pane| !pane.has_tty()) {
         {
             let mut state = client.borrow_control_mut().expect("control client state");
-            control_discard_pane(&mut state, pane);
+            control_discard_pane(state, pane);
         }
         control_flush_all_blocks(client);
         return 0;
@@ -1171,7 +1157,7 @@ unsafe fn control_write_callback(owner: &ClientRef) {
             };
             let Some(buffered) = state
                 .write_event
-                .with_ptr(|stream| evbuffer_get_length(&*(*stream).output))
+                .with_ptr(|stream| evbuffer_get_length(&(*stream).output))
             else {
                 return;
             };
@@ -1198,7 +1184,7 @@ unsafe fn control_write_callback(owner: &ClientRef) {
                 };
                 let Some(buffered) = state
                     .write_event
-                    .with_ptr(|stream| evbuffer_get_length(&*(*stream).output))
+                    .with_ptr(|stream| evbuffer_get_length(&(*stream).output))
                 else {
                     return;
                 };
@@ -1229,7 +1215,7 @@ unsafe fn control_write_callback(owner: &ClientRef) {
         };
         state.write_event.clone()
     };
-    if stream.with_ptr(|stream| evbuffer_get_length(&*(*stream).output)) == Some(0) {
+    if stream.with_ptr(|stream| evbuffer_get_length(&(*stream).output)) == Some(0) {
         let _ = stream.with_ptr(|stream| bufferevent_disable(stream, EV_WRITE as i16));
     }
 }
@@ -1354,7 +1340,7 @@ pub unsafe fn control_ready(c: &ClientRef) {
 }
 pub unsafe fn control_discard(c: &ClientRef) {
     let mut state = c.borrow_control_mut().expect("control client state");
-    control_discard_pane_output(&mut state);
+    control_discard_pane_output(state);
 }
 
 /// Component-only work: no Client access and no synchronous model callbacks.
@@ -1409,7 +1395,11 @@ pub unsafe fn control_add_sub(
 ) {
     let subscriptions = {
         let state = c_owner.borrow_control_mut().expect("control client state");
-        state.subs.as_ref().expect("control subscriptions").downgrade()
+        state
+            .subs
+            .as_ref()
+            .expect("control subscriptions")
+            .downgrade()
     };
     // The Client owns the monitor; only its weak observer leaves this borrow.
     monitor_add(
@@ -1424,7 +1414,11 @@ pub unsafe fn control_add_sub(
 pub unsafe fn control_remove_sub(c_owner: &ClientRef, mut name: *const ::core::ffi::c_char) {
     let subscriptions = {
         let state = c_owner.borrow_control_mut().expect("control client state");
-        state.subs.as_ref().expect("control subscriptions").downgrade()
+        state
+            .subs
+            .as_ref()
+            .expect("control subscriptions")
+            .downgrade()
     };
     monitor_remove(&subscriptions, name);
 }

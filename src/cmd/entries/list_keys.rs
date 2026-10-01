@@ -329,7 +329,7 @@ unsafe fn cmd_list_keys_exec(
         |out| write!(out, "{}", (cmd_list_keys_get_table_width(&bindings)) as u32),
     );
     for &bd in &bindings {
-        cmd_list_keys_format_add_key_binding(ft, &*bd, &prefix);
+        cmd_list_keys_format_add_key_binding(ft, bd, &prefix);
         let line = format_expand_cstring(ft, template);
         if single != 0
             && !tc.is_none()
@@ -351,5 +351,5 @@ unsafe fn cmd_list_keys_exec(
         }
     }
     format_free(ft_owner);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

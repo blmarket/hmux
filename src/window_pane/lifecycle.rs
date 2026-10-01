@@ -103,20 +103,20 @@ unsafe fn server_fire_pane_exit(
     }
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"exit_status\0" as *const u8 as *const ::core::ffi::c_char,
             (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int,
         );
@@ -126,13 +126,13 @@ unsafe fn server_fire_pane_exit(
         > 0 as ::core::ffi::c_int
     {
         event_payload_set_string(
-            &mut *ep,
+            &mut ep,
             b"exit_signal\0" as *const u8 as *const ::core::ffi::c_char,
             |out| write_cstr(out, signame),
         );
     }
     event_payload_set_int(
-        &mut *ep,
+        &mut ep,
         b"exit_success\0" as *const u8 as *const ::core::ffi::c_char,
         (status == 0 as ::core::ffi::c_int) as ::core::ffi::c_int,
     );
@@ -149,14 +149,14 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
         recalculate_sizes();
     } else {
         window_owner.release(c"server_kill_pane");
-        (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))))
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
             .push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
         ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
         layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-        (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))))
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
             .remove_pane(pane_owner);
-        (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window")))).pop_zoom();
-        server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")).pop_zoom();
+        server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
     };
 }
 pub(super) unsafe fn finish_process(
@@ -229,7 +229,7 @@ pub(super) unsafe fn finish_process(
         1 | 3 => {
             current_block_37 = 2300157484894416861;
         }
-        0 | _ => {
+        _ => {
             current_block_37 = 3275366147856559585;
         }
     }
@@ -307,22 +307,22 @@ pub(super) unsafe fn finish_process(
             &(*(wp)).observer.upgrade().expect("live window_pane"),
         );
     }
-    (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))))
+    std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
     ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
     layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-    (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))))
+    std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .remove_pane(pane_owner);
     if window_owner.next_pane(None).is_none() {
         server_kill_window(
-            std::rc::Rc::downgrade(&(((*wp).window_handle().as_ref()).expect("live window")))
+            std::rc::Rc::downgrade(((*wp).window_handle().as_ref()).expect("live window"))
                 .upgrade()
                 .expect("live pane window"),
             1,
         );
     } else {
-        (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window")))).pop_zoom();
-        server_redraw_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")).pop_zoom();
+        server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
     };
     window_owner.release(c"server_destroy_pane");
 }

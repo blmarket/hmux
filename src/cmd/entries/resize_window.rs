@@ -162,7 +162,7 @@ unsafe fn cmd_resize_window_exec(
         }
         window_owner.set_manual_size(sx, sy);
         recalculate_size(&window_owner, 1 as ::core::ffi::c_int);
-        return CMD_RETURN_NORMAL;
+        CMD_RETURN_NORMAL
     })();
     window_owner.release(c"resize window command");
     result

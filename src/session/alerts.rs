@@ -39,7 +39,7 @@ unsafe fn alerts_action_applies(
     if action == ALERT_OTHER {
         return (wl != (*s).current_winlink()) as ::core::ffi::c_int;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 
 pub(super) unsafe fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int {
@@ -47,7 +47,7 @@ pub(super) unsafe fn alerts_check_all(w_owner: &WindowRef) -> ::core::ffi::c_int
     alerts = alerts_check_bell(w_owner);
     alerts |= alerts_check_activity(w_owner);
     alerts |= alerts_check_silence(w_owner);
-    return alerts;
+    alerts
 }
 
 unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
@@ -93,7 +93,7 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
     }
-    return 0x1 as ::core::ffi::c_int;
+    0x1 as ::core::ffi::c_int
 }
 
 unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
@@ -141,7 +141,7 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
     }
-    return 0x2 as ::core::ffi::c_int;
+    0x2 as ::core::ffi::c_int
 }
 
 unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
@@ -191,7 +191,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
     }
-    return 0x4 as ::core::ffi::c_int;
+    0x4 as ::core::ffi::c_int
 }
 
 unsafe fn alerts_set_message(

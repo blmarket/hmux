@@ -155,8 +155,8 @@ impl layout_cell {
 pub type layout_cells = Vec<Box<layout_cell>>;
 
 #[inline]
-fn layout_cell_ptr(cell: &Box<layout_cell>) -> *mut layout_cell {
-    &**cell as *const layout_cell as *mut layout_cell
+fn layout_cell_ptr(cell: &layout_cell) -> *mut layout_cell {
+    cell as *const layout_cell as *mut layout_cell
 }
 
 #[inline]
@@ -164,7 +164,7 @@ pub fn layout_cells_first(parent: &layout_cell) -> *mut layout_cell {
     parent
         .cells
         .first()
-        .map(layout_cell_ptr)
+        .map(|cell| layout_cell_ptr(cell))
         .unwrap_or(std::ptr::null_mut())
 }
 
@@ -173,7 +173,7 @@ pub fn layout_cells_last(parent: &layout_cell) -> *mut layout_cell {
     parent
         .cells
         .last()
-        .map(layout_cell_ptr)
+        .map(|cell| layout_cell_ptr(cell))
         .unwrap_or(std::ptr::null_mut())
 }
 
@@ -184,7 +184,7 @@ pub unsafe fn layout_cell_next(cell: *mut layout_cell) -> *mut layout_cell {
     }
     let children = &(*(*cell).parent).cells;
     let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
-    let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
+    let index = if children.get(index).map(|cell| layout_cell_ptr(cell)) == Some(cell) {
         Some(index)
     } else {
         children
@@ -192,7 +192,7 @@ pub unsafe fn layout_cell_next(cell: *mut layout_cell) -> *mut layout_cell {
             .position(|child| layout_cell_ptr(child) == cell)
     };
     index
-        .and_then(|index| children.get(index + 1).map(layout_cell_ptr))
+        .and_then(|index| children.get(index + 1).map(|cell| layout_cell_ptr(cell)))
         .unwrap_or(std::ptr::null_mut())
 }
 
@@ -203,7 +203,7 @@ pub unsafe fn layout_cell_prev(cell: *mut layout_cell) -> *mut layout_cell {
     }
     let children = &(*(*cell).parent).cells;
     let index = (*cell).sibling_index.min(children.len().saturating_sub(1));
-    let index = if children.get(index).map(layout_cell_ptr) == Some(cell) {
+    let index = if children.get(index).map(|cell| layout_cell_ptr(cell)) == Some(cell) {
         Some(index)
     } else {
         children
@@ -214,7 +214,7 @@ pub unsafe fn layout_cell_prev(cell: *mut layout_cell) -> *mut layout_cell {
         .and_then(|index| {
             index
                 .checked_sub(1)
-                .and_then(|prev| children.get(prev).map(layout_cell_ptr))
+                .and_then(|prev| children.get(prev).map(|cell| layout_cell_ptr(cell)))
         })
         .unwrap_or(std::ptr::null_mut())
 }
@@ -226,7 +226,7 @@ pub unsafe fn layout_cells_remove(
 ) -> Option<Box<layout_cell>> {
     let children = &mut (*parent).cells;
     let hinted = (*child).sibling_index;
-    let index = if children.get(hinted).map(layout_cell_ptr) == Some(child) {
+    let index = if children.get(hinted).map(|cell| layout_cell_ptr(cell)) == Some(child) {
         Some(hinted)
     } else {
         children

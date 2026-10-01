@@ -122,19 +122,16 @@ unsafe fn cmd_bind_key_exec(
             ::core::ptr::null_mut::<cmd_parse_input>(),
         );
     }
-    match pr.status as ::core::ffi::c_uint {
-        0 => {
-            cmdq_error(item_handle, |out| {
-                write_cstr(
-                    out,
-                    pr.error
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-                )
-            });
-            return CMD_RETURN_ERROR;
-        }
-        1 | _ => {}
+    if pr.status as ::core::ffi::c_uint == 0 {
+        cmdq_error(item_handle, |out| {
+            write_cstr(
+                out,
+                pr.error
+                    .as_ref()
+                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
+            )
+        });
+        return CMD_RETURN_ERROR;
     }
     key_bindings_add(
         CStr::from_ptr(tablename),
@@ -146,5 +143,5 @@ unsafe fn cmd_bind_key_exec(
         repeat,
         pr.take_cmdlist(),
     );
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

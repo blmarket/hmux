@@ -119,5 +119,5 @@ unsafe fn cmd_respawn_pane_exec(
     server_redraw_window_borders(&window);
     server_status_window(&window);
     window.release(c"respawn pane status");
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

@@ -124,8 +124,7 @@ impl Drop for SystemdBusResources {
     }
 }
 pub unsafe fn systemd_activated() -> ::core::ffi::c_int {
-    return (sd_listen_fds(0 as ::core::ffi::c_int) >= 1 as ::core::ffi::c_int)
-        as ::core::ffi::c_int;
+    (sd_listen_fds(0 as ::core::ffi::c_int) >= 1 as ::core::ffi::c_int) as ::core::ffi::c_int
 }
 pub unsafe fn systemd_create_socket(
     mut flags: ::core::ffi::c_int,
@@ -199,7 +198,7 @@ unsafe extern "C" fn job_removed_handler(
     if strcmp(path, watch_path.as_ptr()) == 0 as ::core::ffi::c_int {
         (*watch).done = 1 as ::core::ffi::c_int;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CString>) {
     let mut current_block: u64;

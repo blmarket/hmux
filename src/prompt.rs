@@ -412,7 +412,7 @@ unsafe fn prompt_redraw_character(
         gc.data = utf8_copy(ud);
     }
     screen_write_cell(ctx, gc);
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn prompt_redraw_quote(
     pr: &prompt,
@@ -437,7 +437,7 @@ unsafe fn prompt_redraw_quote(
         utf8_set(&mut ud, '^' as i32 as u_char);
         return prompt_redraw_character(ctx, offset, pw, w, gc, &ud);
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn prompt_draw_complete(
     pr: &prompt,
@@ -516,7 +516,7 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
             |out| out.write_all(b"0"),
         );
     }
-    return owner;
+    owner
 }
 unsafe fn prompt_expand1(pr: &prompt, mut ft: *mut format_tree) -> CString {
     let prompt = format_expand_time_cstring(ft, pr.string.as_ptr());
@@ -691,7 +691,7 @@ unsafe fn prompt_mouse_complete(
             return PROMPT_KEY_HANDLED;
         }
     }
-    return PROMPT_KEY_HANDLED;
+    PROMPT_KEY_HANDLED
 }
 pub(crate) struct PreparedPromptDraw {
     layout: prompt_layout,
@@ -788,7 +788,7 @@ pub(crate) unsafe fn prompt_draw_prepared(
         if pl.label_width != 0 as u_int {
             format_draw(
                 ctx,
-                &mut gc,
+                &gc,
                 pl.label_width,
                 expanded.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
@@ -946,7 +946,7 @@ pub unsafe fn prompt_mouse(
     if let Some(redraw) = redraw {
         *redraw = 1 as ::core::ffi::c_int;
     }
-    return PROMPT_KEY_HANDLED;
+    PROMPT_KEY_HANDLED
 }
 fn prompt_in_list(separators: &CStr, cell: &utf8_data) -> ::core::ffi::c_int {
     // strchr also matches the terminator when the cell contains a literal NUL.
@@ -1668,7 +1668,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             });
         }
     }
-    return list;
+    list
 }
 fn prompt_complete_prefix(list: &[CString]) -> CString {
     let first = list

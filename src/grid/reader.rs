@@ -10,7 +10,7 @@ pub fn grid_reader_get_cursor(gr: &grid_reader<'_>) -> (u_int, u_int) {
     (gr.cx, gr.cy)
 }
 pub unsafe fn grid_reader_line_length(gr: &grid_reader<'_>) -> u_int {
-    return grid_line_length(gr.gd, gr.cy);
+    grid_line_length(gr.gd, gr.cy)
 }
 pub unsafe fn grid_reader_cursor_right(
     gr: &mut grid_reader<'_>,
@@ -197,10 +197,10 @@ unsafe fn grid_reader_handle_wrap(
             *xx = grid_reader_line_length(gr);
         }
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 pub unsafe fn grid_reader_in_set(gr: &grid_reader<'_>, set: &CStr) -> ::core::ffi::c_int {
-    return grid_in_set(gr.gd, gr.cx, gr.cy, set);
+    grid_in_set(gr.gd, gr.cx, gr.cy, set)
 }
 pub unsafe fn grid_reader_cursor_next_word(gr: &mut grid_reader<'_>, separators: &CStr) {
     let mut xx: u_int = 0;
@@ -408,7 +408,7 @@ pub unsafe fn grid_reader_cursor_jump(
         px = 0 as u_int;
         py = py.wrapping_add(1);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn grid_reader_cursor_jump_back(
     gr: &mut grid_reader<'_>,
@@ -459,7 +459,7 @@ pub unsafe fn grid_reader_cursor_jump_back(
         xx = grid_line_length(gr.gd, py.wrapping_sub(2 as u_int));
         py = py.wrapping_sub(1);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn grid_reader_cursor_back_to_indentation(gr: &mut grid_reader<'_>) {
     let mut gc: grid_cell = grid_cell {

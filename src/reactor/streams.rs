@@ -166,7 +166,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                             .min(65536)
                     };
                     if count > 0 {
-                        let n = super::evbuffer_read(&mut *(*stream).input, s.fd, count as c_int);
+                        let n = super::evbuffer_read(&mut (*stream).input, s.fd, count as c_int);
                         if n > 0 {
                             if (*(*stream).input).remaining() >= (*stream).wm_read.low {
                                 let cb = (*stream).readcb.clone();
@@ -200,7 +200,7 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
                     let n = if empty {
                         0
                     } else {
-                        super::evbuffer_write(&mut *(*stream).output, s.fd)
+                        super::evbuffer_write(&mut (*stream).output, s.fd)
                     };
                     if n > 0 || (empty && requested) {
                         if (*(*stream).output).remaining() <= (*stream).wm_write.low {

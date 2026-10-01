@@ -156,7 +156,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
         }
         wl = winlinks_next(wl.get_unchecked());
     }
-    return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
+    Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned())
 }
 
 unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> {
@@ -215,7 +215,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
         }
         wl = winlinks_next(wl.get_unchecked());
     }
-    return Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned());
+    Some(CStr::from_ptr(&raw mut alerts as *mut ::core::ffi::c_char).to_owned())
 }
 
 unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
@@ -254,7 +254,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         );
         wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
-    return Some(CStr::from_ptr(&raw mut result as *mut ::core::ffi::c_char).to_owned());
+    Some(CStr::from_ptr(&raw mut result as *mut ::core::ffi::c_char).to_owned())
 }
 
 unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CString> {
@@ -361,7 +361,7 @@ unsafe fn format_cb_session_active(mut ft: *mut format_tree) -> Option<CString> 
     {
         return Some(c"1".to_owned());
     }
-    return Some(c"0".to_owned());
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -379,7 +379,7 @@ unsafe fn format_cb_session_activity_flag(mut ft: *mut format_tree) -> Option<CS
             return Some(c"0".to_owned());
         }
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -397,7 +397,7 @@ unsafe fn format_cb_session_bell_flag(mut ft: *mut format_tree) -> Option<CStrin
             return Some(c"0".to_owned());
         }
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
@@ -415,7 +415,7 @@ unsafe fn format_cb_session_silence_flag(mut ft: *mut format_tree) -> Option<CSt
             return Some(c"0".to_owned());
         }
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_attached(mut ft: *mut format_tree) -> Option<CString> {
@@ -429,7 +429,7 @@ unsafe fn format_cb_session_attached(mut ft: *mut format_tree) -> Option<CString
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_format(mut ft: *mut format_tree) -> Option<CString> {
@@ -438,7 +438,7 @@ unsafe fn format_cb_session_format(mut ft: *mut format_tree) -> Option<CString> 
     {
         return Some(c"1".to_owned());
     }
-    return Some(c"0".to_owned());
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
@@ -453,7 +453,7 @@ unsafe fn format_cb_session_group(mut ft: *mut format_tree) -> Option<CString> {
     } {
         return Some((*sg).name.clone());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_group_attached(mut ft: *mut format_tree) -> Option<CString> {
@@ -471,7 +471,7 @@ unsafe fn format_cb_session_group_attached(mut ft: *mut format_tree) -> Option<C
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_group_many_attached(mut ft: *mut format_tree) -> Option<CString> {
@@ -489,7 +489,7 @@ unsafe fn format_cb_session_group_many_attached(mut ft: *mut format_tree) -> Opt
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_group_size(mut ft: *mut format_tree) -> Option<CString> {
@@ -507,7 +507,7 @@ unsafe fn format_cb_session_group_size(mut ft: *mut format_tree) -> Option<CStri
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_grouped(mut ft: *mut format_tree) -> Option<CString> {
@@ -521,7 +521,7 @@ unsafe fn format_cb_session_grouped(mut ft: *mut format_tree) -> Option<CString>
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_id(mut ft: *mut format_tree) -> Option<CString> {
@@ -535,7 +535,7 @@ unsafe fn format_cb_session_id(mut ft: *mut format_tree) -> Option<CString> {
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_many_attached(mut ft: *mut format_tree) -> Option<CString> {
@@ -549,7 +549,7 @@ unsafe fn format_cb_session_many_attached(mut ft: *mut format_tree) -> Option<CS
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_marked(mut ft: *mut format_tree) -> Option<CString> {
@@ -569,7 +569,7 @@ unsafe fn format_cb_session_marked(mut ft: *mut format_tree) -> Option<CString> 
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_name(mut ft: *mut format_tree) -> Option<CString> {
@@ -580,7 +580,7 @@ unsafe fn format_cb_session_name(mut ft: *mut format_tree) -> Option<CString> {
     if !format_session.is_null() {
         return Some((*format_session).name.clone());
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_path(mut ft: *mut format_tree) -> Option<CString> {
@@ -596,7 +596,7 @@ unsafe fn format_cb_session_path(mut ft: *mut format_tree) -> Option<CString> {
                 .to_owned(),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_windows(mut ft: *mut format_tree) -> Option<CString> {
@@ -613,7 +613,7 @@ unsafe fn format_cb_session_windows(mut ft: *mut format_tree) -> Option<CString>
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_activity(mut ft: *mut format_tree) -> Option<time_t> {
@@ -626,7 +626,7 @@ unsafe fn format_cb_session_activity(mut ft: *mut format_tree) -> Option<time_t>
             (*format_session).activity_time,
         ));
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_created(mut ft: *mut format_tree) -> Option<time_t> {
@@ -639,7 +639,7 @@ unsafe fn format_cb_session_created(mut ft: *mut format_tree) -> Option<time_t> 
             (*format_session).creation_time,
         ));
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_session_last_attached(mut ft: *mut format_tree) -> Option<time_t> {
@@ -652,7 +652,7 @@ unsafe fn format_cb_session_last_attached(mut ft: *mut format_tree) -> Option<ti
             (*format_session).last_attached_time,
         ));
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CString> {
@@ -669,7 +669,7 @@ unsafe fn format_cb_active_window_index(mut ft: *mut format_tree) -> Option<CStr
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_last_window_index(mut ft: *mut format_tree) -> Option<CString> {
@@ -685,7 +685,7 @@ unsafe fn format_cb_last_window_index(mut ft: *mut format_tree) -> Option<CStrin
                 .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 
 unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CString> {
@@ -712,7 +712,7 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
     }
     value =
         Some(CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"));
-    return value;
+    value
 }
 
 #[cfg(test)]

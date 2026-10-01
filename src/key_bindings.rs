@@ -169,7 +169,7 @@ pub unsafe fn key_bindings_remove_table(name: &CStr) {
         c = registry_c_owner.clone();
         while !c.is_none() {
             if c.as_ref().expect("live client").uses_key_table(&owner) {
-                (&c.clone().expect("live client")).set_key_table(None);
+                c.clone().expect("live client").set_key_table(None);
             }
             registry_c_owner =
                 clients.next(registry_c_owner.as_ref().expect("current registry client"));
@@ -546,7 +546,7 @@ unsafe fn key_bindings_read_only(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) -> cmd_retval {
     cmdq_error(item_handle, |out| out.write_all(b"client is read-only"));
-    return CMD_RETURN_ERROR;
+    CMD_RETURN_ERROR
 }
 pub unsafe fn key_bindings_dispatch(
     bd: KeyBindingCommand,

@@ -71,7 +71,7 @@ pub(crate) unsafe fn window_render_fill_cell(
     format_add(
         ft,
         b"is_outside\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", ((!inside) as ::core::ffi::c_int) as i32),
+        |out| write!(out, "{}", { (!inside) as ::core::ffi::c_int }),
     );
     let value =
         w_owner.with_options_mut(|options| options_get_string(options, c"fill-character".as_ptr()));

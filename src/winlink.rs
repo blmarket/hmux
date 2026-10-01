@@ -209,7 +209,7 @@ pub unsafe fn winlink_find_by_window(wwl: &winlinks, w_owner: &WindowRef) -> ref
         }
         wl = winlinks_next(wl.get_unchecked());
     }
-    return refbox::Weak::new();
+    refbox::Weak::new()
 }
 
 pub unsafe fn winlink_find_by_index(
@@ -227,7 +227,7 @@ pub unsafe fn winlink_find_by_index(
         fatalx(|out| out.write_all(b"bad index"));
     }
     wl.idx = idx;
-    return winlinks_find(wwl, &wl);
+    winlinks_find(wwl, &wl)
 }
 
 pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox::Weak<winlink> {
@@ -245,7 +245,7 @@ pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, mut id: u_int) -> refbox
         }
         wl = winlinks_next(wl.get_unchecked());
     }
-    return refbox::Weak::new();
+    refbox::Weak::new()
 }
 
 unsafe fn winlink_next_index(
@@ -267,7 +267,7 @@ unsafe fn winlink_next_index(
             break;
         }
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 
 pub fn winlink_count(wwl: &winlinks) -> u_int {
@@ -318,7 +318,7 @@ pub unsafe fn winlink_add(
         }
     }
     wl.get_mut_unchecked().owner = observer;
-    return wl;
+    wl
 }
 
 // Keep the field published through the close notification. Its callback can
@@ -375,11 +375,11 @@ pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: refbox::Weak<winlin
 }
 
 pub unsafe fn winlink_next(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
-    return winlinks_next(wl.get_unchecked());
+    winlinks_next(wl.get_unchecked())
 }
 
 pub unsafe fn winlink_previous(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
-    return winlinks_prev(wl.get_unchecked());
+    winlinks_prev(wl.get_unchecked())
 }
 
 pub unsafe fn winlink_next_by_number(
@@ -398,7 +398,7 @@ pub unsafe fn winlink_next_by_number(
         }
         n -= 1;
     }
-    return wl;
+    wl
 }
 
 pub unsafe fn winlink_previous_by_number(
@@ -417,7 +417,7 @@ pub unsafe fn winlink_previous_by_number(
         }
         n -= 1;
     }
-    return wl;
+    wl
 }
 
 /// Borrow the owner through the existing window index. The raw pointer remains
@@ -498,8 +498,8 @@ pub fn winlink_stack_indices(stack: &winlink_stack) -> Vec<::core::ffi::c_int> {
     let storage = &stack;
     storage
         .iter()
-        .filter_map(|link| match link.try_access_mut(|node| node.idx) {
-            Ok(idx) => Some(idx),
+        .map(|link| match link.try_access_mut(|node| node.idx) {
+            Ok(idx) => idx,
             Err(refbox::BorrowError::Dropped) => {
                 panic!("visited winlink owner was dropped before observer teardown")
             }

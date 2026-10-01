@@ -126,9 +126,7 @@ unsafe fn sessions_remove(head: &mut sessions, elm: &SessionRef) -> Option<Sessi
     Some(session)
 }
 fn sessions_minmax(head: &sessions) -> Option<SessionRef> {
-    let Some(owner) = head.storage.as_ref() else {
-        return None;
-    };
+    let owner = head.storage.as_ref()?;
     let map = owner
         .try_borrow_mut()
         .expect("session index already borrowed");
@@ -138,9 +136,7 @@ fn sessions_minmax(head: &sessions) -> Option<SessionRef> {
 /// Resume a potentially destructive walk using a saved name and the live index.
 /// The named session and any of its successors may already have been removed.
 fn sessions_after(head: &sessions, name: &[u8]) -> Option<SessionRef> {
-    let Some(owner) = head.storage.as_ref() else {
-        return None;
-    };
+    let owner = head.storage.as_ref()?;
     let map = owner
         .try_borrow_mut()
         .expect("session index already borrowed");
@@ -200,7 +196,7 @@ unsafe fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
     if !errstr.is_null() {
         return None;
     }
-    return session_find_by_id(id);
+    session_find_by_id(id)
 }
 unsafe fn session_find_by_id(mut id: u_int) -> Option<SessionRef> {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
@@ -217,7 +213,7 @@ unsafe fn session_find_by_id(mut id: u_int) -> Option<SessionRef> {
             .as_ref()
             .map_or(std::ptr::null_mut(), |owner| owner.get());
     }
-    return None;
+    None
 }
 unsafe fn session_create(
     prefix: Option<&CStr>,
@@ -266,7 +262,7 @@ unsafe fn session_create(
     log_debug(format_args!(
         "new session {} ${}",
         log_bytes((*s).name.as_bytes()),
-        ((*s).id) as u32
+        { (*s).id }
     ));
     (*s).creation_time = SystemTime::now();
     let created = (*s).creation_time;
@@ -444,7 +440,7 @@ unsafe fn session_attach(
             .expect("numeric diagnostic contains no NUL"));
     }
     wl.get_mut_unchecked().session = (*s).observer.clone();
-    winlink_set_window(wl.clone(), &window_owner);
+    winlink_set_window(wl.clone(), window_owner);
     events_fire_winlink(
         b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
         wl.clone(),
@@ -477,7 +473,7 @@ unsafe fn session_detach(
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_remove(&raw mut (*s).windows, wl.clone());
     session_group_synchronize_from(s_owner);
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn session_is_linked(s: Option<&SessionRef>, w: &WindowRef) -> ::core::ffi::c_int {
     let group = session_group_for(&s.map_or_else(std::rc::Weak::new, Rc::downgrade));
@@ -495,7 +491,7 @@ unsafe fn session_next_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winl
         }
         wl = winlink_next(wl.clone());
     }
-    return wl;
+    wl
 }
 unsafe fn session_next(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let s = s_owner.get();
@@ -517,7 +513,7 @@ unsafe fn session_next(s_owner: &SessionRef, mut alert: ::core::ffi::c_int) -> :
             return -(1 as ::core::ffi::c_int);
         }
     }
-    return session_set_current(s_owner, wl.clone());
+    session_set_current(s_owner, wl.clone())
 }
 unsafe fn session_previous_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<winlink> {
     while wl.is_alive() {
@@ -526,7 +522,7 @@ unsafe fn session_previous_alert(mut wl: refbox::Weak<winlink>) -> refbox::Weak<
         }
         wl = winlink_previous(wl.clone());
     }
-    return wl;
+    wl
 }
 unsafe fn session_previous(
     s_owner: &SessionRef,
@@ -551,14 +547,14 @@ unsafe fn session_previous(
             return -(1 as ::core::ffi::c_int);
         }
     }
-    return session_set_current(s_owner, wl.clone());
+    session_set_current(s_owner, wl.clone())
 }
 unsafe fn session_select(s_owner: &SessionRef, mut idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
     let s = s_owner.get();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     wl = winlink_find_by_index(&(*s).windows, idx);
-    return session_set_current(s_owner, wl.clone());
+    session_set_current(s_owner, wl.clone())
 }
 unsafe fn session_last(s_owner: &SessionRef) -> ::core::ffi::c_int {
     let wl = s_owner.last_winlink();
@@ -587,42 +583,42 @@ unsafe fn session_fire_window_changed(
     };
     let mut ep = event_payload_create();
     cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_session(
-        &mut *ep,
+        &mut ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
         (*(s)).observer.upgrade().expect("live session"),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_int(
-        &mut *ep,
+        &mut ep,
         b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
         wl.get_unchecked().idx,
     );
     event_payload_set_int(
-        &mut *ep,
+        &mut ep,
         b"new_window_index\0" as *const u8 as *const ::core::ffi::c_char,
         wl.get_unchecked().idx,
     );
     if old.is_alive() {
         event_payload_set_window(
-            &mut *ep,
+            &mut ep,
             b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
             std::rc::Rc::clone(
-                &((old.get_unchecked().window_handle().as_ref()).expect("live window")),
+                (old.get_unchecked().window_handle().as_ref()).expect("live window"),
             ),
         );
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"old_window_index\0" as *const u8 as *const ::core::ffi::c_char,
             old.get_unchecked().idx,
         );
@@ -659,13 +655,13 @@ unsafe fn session_set_current(
         );
     }
     winlink_clear_flags(wl.clone());
-    (&std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))))
+    (&std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")))
         .update_activity();
     tty_update_window_offset(&std::rc::Rc::clone(
-        &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+        (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
     ));
     session_fire_window_changed(s_owner, wl.clone(), (old).clone());
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn session_group_contains(target: Option<&session>) -> *mut session_group {
     let Some(target) = target else {
@@ -786,7 +782,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         winlink_set_window(
             (wl_new).clone(),
             &std::rc::Rc::clone(
-                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+                (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
             ),
         );
         wl_new.get_mut_unchecked().flags |= wl.get_unchecked().flags & WINLINK_ALERTFLAGS;
@@ -812,7 +808,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
         wl_new = winlink_find_by_window(
             &(*s).windows,
             &std::rc::Rc::clone(
-                &((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
+                (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
             ),
         );
         if wl_new.is_alive() {

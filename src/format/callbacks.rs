@@ -29,7 +29,7 @@ unsafe fn format_cb_host(_ft: *mut format_tree) -> Option<CString> {
     {
         return Some(c"".to_owned());
     }
-    return Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned());
+    Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned())
 }
 unsafe fn format_cb_host_short(_ft: *mut format_tree) -> Option<CString> {
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
@@ -45,7 +45,7 @@ unsafe fn format_cb_host_short(_ft: *mut format_tree) -> Option<CString> {
     if !cp.is_null() {
         *cp = '\0' as i32 as ::core::ffi::c_char;
     }
-    return Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned());
+    Some(CStr::from_ptr(&raw mut host as *mut ::core::ffi::c_char).to_owned())
 }
 unsafe fn format_cb_pid(_ft: *mut format_tree) -> Option<CString> {
     let mut value = None;
@@ -56,7 +56,7 @@ unsafe fn format_cb_pid(_ft: *mut format_tree) -> Option<CString> {
         ))
         .expect("formatted numbers contain no NUL"),
     );
-    return value;
+    value
 }
 unsafe fn format_cb_session_attached_list(ft: *mut format_tree) -> Option<CString> {
     match (*ft)
@@ -101,9 +101,11 @@ unsafe fn format_cb_session_stack(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_stack_index(ft: *mut format_tree) -> Option<CString> {
     let link = (*ft).winlink_handle();
     let owner = link.try_borrow_mut().ok()?.session.upgrade()?;
-    let mut context = format_tree::default();
-    context.s = Rc::downgrade(&owner);
-    context.wl = link;
+    let mut context = format_tree {
+        s: Rc::downgrade(&owner),
+        wl: link,
+        ..Default::default()
+    };
     match owner.format_value(c"window_stack_index", &mut context)? {
         FormatValue::String(value) => Some(value),
         FormatValue::Time(_) => unreachable!("window_stack_index is a string builtin"),
@@ -398,7 +400,7 @@ unsafe fn format_cb_mouse_status_line(mut ft: *mut format_tree) -> Option<CStrin
     }
     value =
         Some(CString::new(format!("{}", (y) as u32)).expect("formatted numbers contain no NUL"));
-    return value;
+    value
 }
 unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
@@ -451,7 +453,7 @@ unsafe fn format_cb_mouse_status_range(mut ft: *mut format_tree) -> Option<CStri
         }
         _ => {}
     }
-    return None;
+    None
 }
 unsafe fn format_cb_alternate_on(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"alternate_on", ft)
@@ -781,9 +783,9 @@ unsafe fn format_cb_mouse_x(ft: *mut format_tree) -> Option<CString> {
         .is_some_and(|client| client.terminal_started())
     {
         let mouse = &(*ft).m;
-        let coordinate = if mouse.statusat == 0 && mouse.y < mouse.statuslines {
-            Some(mouse.x)
-        } else if mouse.statusat > 0 && mouse.y >= mouse.statusat as u32 {
+        let coordinate = if mouse.statusat == 0 && mouse.y < mouse.statuslines
+            || (mouse.statusat > 0 && mouse.y >= mouse.statusat as u32)
+        {
             Some(mouse.x)
         } else {
             None
@@ -822,10 +824,10 @@ unsafe fn format_cb_mouse_y(ft: *mut format_tree) -> Option<CString> {
     None
 }
 unsafe fn format_cb_next_session_id(_ft: *mut format_tree) -> Option<CString> {
-    return Some(
+    Some(
         CString::new(format!("${}", SessionRef::next_id()))
             .expect("formatted numbers contain no NUL"),
-    );
+    )
 }
 unsafe fn format_cb_origin_flag(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"origin_flag", ft)
@@ -890,7 +892,7 @@ unsafe fn format_cb_pane_format(mut ft: *mut format_tree) -> Option<CString> {
     {
         return Some(c"1".to_owned());
     }
-    return Some(c"0".to_owned());
+    Some(c"0".to_owned())
 }
 unsafe fn format_cb_pane_height(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_height", ft)
@@ -1001,9 +1003,7 @@ unsafe fn format_cb_server_sessions(_ft: *mut format_tree) -> Option<CString> {
         s_owner = s.as_ref().expect("live session").next_session();
         s = s_owner.clone();
     }
-    return Some(
-        CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),
-    );
+    Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_session_active(ft: *mut format_tree) -> Option<CString> {
     match (*ft)
@@ -1061,7 +1061,7 @@ unsafe fn format_cb_session_format(mut ft: *mut format_tree) -> Option<CString> 
     {
         return Some(c"1".to_owned());
     }
-    return Some(c"0".to_owned());
+    Some(c"0".to_owned())
 }
 unsafe fn format_cb_session_group(ft: *mut format_tree) -> Option<CString> {
     match (*ft)
@@ -1162,13 +1162,13 @@ unsafe fn format_cb_session_windows(ft: *mut format_tree) -> Option<CString> {
     }
 }
 unsafe fn format_cb_socket_path(_ft: *mut format_tree) -> Option<CString> {
-    return Some(CStr::from_ptr(socket_path).to_owned());
+    Some(CStr::from_ptr(socket_path).to_owned())
 }
 unsafe fn format_cb_version(_ft: *mut format_tree) -> Option<CString> {
-    return Some(getversion().to_owned());
+    Some(getversion().to_owned())
 }
 unsafe fn format_cb_sixel_support(_ft: *mut format_tree) -> Option<CString> {
-    return Some(c"0".to_owned());
+    Some(c"0".to_owned())
 }
 unsafe fn format_cb_active_window_index(ft: *mut format_tree) -> Option<CString> {
     match (*ft)
@@ -1198,7 +1198,7 @@ unsafe fn format_cb_window_active(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_activity_flag(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
@@ -1207,7 +1207,7 @@ unsafe fn format_cb_window_activity_flag(mut ft: *mut format_tree) -> Option<CSt
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_bell_flag(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
@@ -1216,7 +1216,7 @@ unsafe fn format_cb_window_bell_flag(mut ft: *mut format_tree) -> Option<CString
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_bigger(ft: *mut format_tree) -> Option<CString> {
     let format_client_owner = (*ft).c.upgrade();
@@ -1251,7 +1251,7 @@ unsafe fn format_cb_window_end_flag(mut ft: *mut format_tree) -> Option<CString>
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
@@ -1260,7 +1260,7 @@ unsafe fn format_cb_window_flags(mut ft: *mut format_tree) -> Option<CString> {
             true,
         ));
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_format(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).type_0 as ::core::ffi::c_uint
@@ -1268,7 +1268,7 @@ unsafe fn format_cb_window_format(mut ft: *mut format_tree) -> Option<CString> {
     {
         return Some(c"1".to_owned());
     }
-    return Some(c"0".to_owned());
+    Some(c"0".to_owned())
 }
 unsafe fn format_cb_window_height(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
@@ -1301,14 +1301,13 @@ unsafe fn format_cb_window_id(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_window_index(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
         return Some(
-            CString::new(format!(
-                "{}",
-                (((*ft).winlink_handle()).get_unchecked().idx) as i32
-            ))
+            CString::new(format!("{}", {
+                ((*ft).winlink_handle()).get_unchecked().idx
+            }))
             .expect("formatted numbers contain no NUL"),
         );
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
@@ -1318,7 +1317,7 @@ unsafe fn format_cb_window_last_flag(mut ft: *mut format_tree) -> Option<CString
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
@@ -1349,7 +1348,7 @@ unsafe fn format_cb_window_linked(mut ft: *mut format_tree) -> Option<CString> {
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<CString> {
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
@@ -1382,22 +1381,18 @@ unsafe fn format_cb_window_linked_sessions(mut ft: *mut format_tree) -> Option<C
             s_owner.as_ref().expect("registered session"),
         ))
         .is_null()
-        {
-            if s_owner
+            && s_owner
                 .as_ref()
                 .expect("registered session")
                 .with_winlinks(|links| winlink_find_by_window(links, &window).is_alive())
-            {
-                n = n.wrapping_add(1);
-            }
+        {
+            n = n.wrapping_add(1);
         }
         s_owner = s.as_ref().expect("live session").next_session();
         s = s_owner.clone();
     }
     window.release(c"format linked sessions");
-    return Some(
-        CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"),
-    );
+    Some(CString::new(format!("{}", (n) as u32)).expect("formatted numbers contain no NUL"))
 }
 unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
@@ -1406,7 +1401,7 @@ unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CStri
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_modal_pane(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
@@ -1455,7 +1450,7 @@ unsafe fn format_cb_window_raw_flags(mut ft: *mut format_tree) -> Option<CString
             false,
         ));
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_silence_flag(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
@@ -1464,7 +1459,7 @@ unsafe fn format_cb_window_silence_flag(mut ft: *mut format_tree) -> Option<CStr
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_start_flag(mut ft: *mut format_tree) -> Option<CString> {
     if (*ft).winlink_handle().is_alive() {
@@ -1476,7 +1471,7 @@ unsafe fn format_cb_window_start_flag(mut ft: *mut format_tree) -> Option<CStrin
         }
         return Some(c"0".to_owned());
     }
-    return None;
+    None
 }
 unsafe fn format_cb_window_width(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
@@ -1563,7 +1558,7 @@ unsafe fn format_cb_session_last_attached(ft: *mut format_tree) -> Option<time_t
     }
 }
 unsafe fn format_cb_start_time(_ft: *mut format_tree) -> Option<time_t> {
-    return Some(crate::src::shared::time::unix_seconds(start_time));
+    Some(crate::src::shared::time::unix_seconds(start_time))
 }
 unsafe fn format_cb_window_activity(ft: *mut format_tree) -> Option<time_t> {
     let window = (*ft).w.upgrade()?;
@@ -1573,37 +1568,37 @@ unsafe fn format_cb_window_activity(ft: *mut format_tree) -> Option<time_t> {
 }
 
 unsafe fn format_cb_buffer_mode_format(_ft: *mut format_tree) -> Option<CString> {
-    return Some(
+    Some(
         window_buffer_mode
             .default_format
             .expect("mode default format")
             .to_owned(),
-    );
+    )
 }
 unsafe fn format_cb_client_mode_format(_ft: *mut format_tree) -> Option<CString> {
-    return Some(
+    Some(
         window_client_mode
             .default_format
             .expect("mode default format")
             .to_owned(),
-    );
+    )
 }
 unsafe fn format_cb_tree_mode_format(_ft: *mut format_tree) -> Option<CString> {
-    return Some(
+    Some(
         window_tree_mode
             .default_format
             .expect("mode default format")
             .to_owned(),
-    );
+    )
 }
 unsafe fn format_cb_uid(_ft: *mut format_tree) -> Option<CString> {
-    return Some(
+    Some(
         CString::new(format!(
             "{}",
             (getuid() as ::core::ffi::c_long) as ::core::ffi::c_long
         ))
         .expect("formatted numbers contain no NUL"),
-    );
+    )
 }
 unsafe fn format_cb_user(_ft: *mut format_tree) -> Option<CString> {
     // Preserve retry-on-failure and process-lifetime caching without a leaked

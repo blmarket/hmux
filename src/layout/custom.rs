@@ -99,7 +99,7 @@ unsafe fn layout_parse_remove_cctx(
         (*pctx).cctxs.swap_remove(i);
         return 0 as ::core::ffi::c_int;
     }
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn layout_find_bottomright(mut lc: *mut layout_cell) -> *mut layout_cell {
     if (*lc).type_0 as ::core::ffi::c_uint
@@ -108,7 +108,7 @@ unsafe fn layout_find_bottomright(mut lc: *mut layout_cell) -> *mut layout_cell 
         return lc;
     }
     lc = layout_cells_last(&*lc);
-    return layout_find_bottomright(lc);
+    layout_find_bottomright(lc)
 }
 fn layout_checksum(layout: &[u8]) -> u_short {
     layout.iter().fold(0u16, |checksum, &byte| {
@@ -288,9 +288,9 @@ unsafe fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
                 return 0 as ::core::ffi::c_int;
             }
         }
-        2 | _ => {}
+        _ => {}
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 pub unsafe fn layout_parse(
     w_owner: &WindowRef,
@@ -392,7 +392,7 @@ pub unsafe fn layout_parse(
                             lcchild = layout_cell_next(lcchild);
                         }
                     }
-                    2 | _ => {}
+                    _ => {}
                 }
                 if (*lc).type_0 as ::core::ffi::c_uint
                     != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -445,7 +445,7 @@ pub unsafe fn layout_parse(
                         // must precede assigning the panes into the replacement.
                         drop(tree.take());
                         *tree = candidate.take();
-                        layout_assign(&panes, &mut tree, &mut pctx, &mut floating);
+                        layout_assign(&panes, tree, &mut pctx, &mut floating);
                         assert!(floating.is_empty());
                     }
                     lc = std::ptr::null_mut();
@@ -461,7 +461,7 @@ pub unsafe fn layout_parse(
                     {
                         let tree =
                             w_owner.borrow_layout_root(crate::src::window::LayoutView::Visible);
-                        if let Some(root) = tree.as_deref() {
+                        if let Some(root) = tree {
                             layout_print_cell(
                                 (root as *const layout_cell).cast_mut(),
                                 c"layout_parse".as_ptr(),
@@ -472,7 +472,7 @@ pub unsafe fn layout_parse(
                     if pctx.version == 1 as int64_t {
                         events_fire_window(
                             b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-                            std::rc::Rc::clone(&(w_owner)),
+                            std::rc::Rc::clone(w_owner),
                         );
                     }
                     layout_parse_free_ctx(&raw mut pctx);
@@ -483,13 +483,13 @@ pub unsafe fn layout_parse(
     }
     drop(candidate);
     layout_parse_free_ctx(&raw mut pctx);
-    return -(1 as ::core::ffi::c_int);
+    -(1 as ::core::ffi::c_int)
 }
 unsafe fn layout_assign_from_ctx(
     panes: &[std::rc::Rc<std::cell::UnsafeCell<window_pane>>],
     mut pctx: *mut layout_parse_ctx,
 ) {
-    (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
+    (*pctx).cctxs.sort_unstable_by_key(|a| a.index);
     assert!(
         panes.len() >= (*pctx).cctxs.len(),
         "layout requires enough live panes"
@@ -511,7 +511,6 @@ unsafe fn layout_assign_fallback_tiled(
             if let Some(owner) = panes.find(|owner| owner.layout_identity(false).is_none()) {
                 layout_make_leaf(lc, &owner);
             }
-            return;
         }
         0 | 1 => {
             lcchild = layout_cells_first(&*lc);
@@ -519,10 +518,9 @@ unsafe fn layout_assign_fallback_tiled(
                 layout_assign_fallback_tiled(panes, lcchild);
                 lcchild = layout_cell_next(lcchild);
             }
-            return;
         }
         _ => {}
-    };
+    }
 }
 unsafe fn layout_assign_fallback(
     panes: &[std::rc::Rc<std::cell::UnsafeCell<window_pane>>],
@@ -644,10 +642,10 @@ unsafe fn layout_construct_cell(
         }
     }
     let mut lc = layout_create_cell();
-    (*lc).g.sx = sx;
-    (*lc).g.sy = sy;
-    (*lc).g.xoff = xoff;
-    (*lc).g.yoff = yoff;
+    lc.g.sx = sx;
+    lc.g.sy = sy;
+    lc.g.xoff = xoff;
+    lc.g.yoff = yoff;
     Some(lc)
 }
 unsafe fn layout_construct_v1(
@@ -889,7 +887,7 @@ unsafe fn layout_construct(
             return -(1 as ::core::ffi::c_int);
         }
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn layout_parse_apply_ctx(w_owner: &WindowRef, restored: &mut [layout_parse_cell_ctx]) {
     for pane_owner in w_owner.stacking_snapshot() {
@@ -902,7 +900,7 @@ unsafe fn layout_parse_apply_ctx(w_owner: &WindowRef, restored: &mut [layout_par
             );
         }
     }
-    restored.sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
+    restored.sort_unstable_by_key(|a| std::cmp::Reverse(a.zindex));
     for cctx in restored.iter() {
         let Some(pane_owner) = (*cctx.lc).wp.upgrade() else {
             continue;
@@ -922,22 +920,21 @@ unsafe fn layout_parse_apply_ctx(w_owner: &WindowRef, restored: &mut [layout_par
         }
     }
     w_owner.borrow_pane_history_mut().clear();
-    restored.sort_unstable_by(|a, b| b.last.cmp(&a.last));
+    restored.sort_unstable_by_key(|a| std::cmp::Reverse(a.last));
     for cctx in restored.iter() {
         let Some(pane_owner) = (*cctx.lc).wp.upgrade() else {
             continue;
         };
         if !(cctx.last < 0 as ::core::ffi::c_int || cctx.active == 1 as ::core::ffi::c_int) {
             crate::src::shared::pane::pane_history_push(
-                &mut w_owner.borrow_pane_history_mut(),
+                w_owner.borrow_pane_history_mut(),
                 std::rc::Rc::downgrade(&pane_owner),
             );
         }
     }
-
 }
 unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::core::ffi::c_int {
-    (*pctx).cctxs.sort_unstable_by(|a, b| a.index.cmp(&b.index));
+    (*pctx).cctxs.sort_unstable_by_key(|a| a.index);
     if (*pctx)
         .cctxs
         .windows(2)
@@ -951,7 +948,7 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
     }
     (*pctx)
         .cctxs
-        .sort_unstable_by(|a, b| b.zindex.cmp(&a.zindex));
+        .sort_unstable_by_key(|a| std::cmp::Reverse(a.zindex));
     let n = (*pctx)
         .cctxs
         .iter()
@@ -967,7 +964,9 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
         );
         return 0 as ::core::ffi::c_int;
     }
-    (*pctx).cctxs.sort_unstable_by(|a, b| b.last.cmp(&a.last));
+    (*pctx)
+        .cctxs
+        .sort_unstable_by_key(|a| std::cmp::Reverse(a.last));
     let n = (*pctx)
         .cctxs
         .iter()
@@ -983,7 +982,7 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
         );
         return 0 as ::core::ffi::c_int;
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 
 #[cfg(test)]

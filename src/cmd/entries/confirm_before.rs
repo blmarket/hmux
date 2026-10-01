@@ -141,7 +141,7 @@ unsafe fn cmd_confirm_before_exec(
     if wait == 0 {
         return CMD_RETURN_NORMAL;
     }
-    return CMD_RETURN_WAIT;
+    CMD_RETURN_WAIT
 }
 unsafe fn cmd_confirm_before_callback(
     c_owner: &ClientRef,
@@ -191,7 +191,7 @@ unsafe fn cmd_confirm_before_callback(
                 .expect("live command queue item"),
         );
     }
-    return PROMPT_CLOSE;
+    PROMPT_CLOSE
 }
 impl cmd_confirm_before_data {
     fn into_callback(self: Box<Self>) -> crate::src::shared::status::status_prompt_input_cb {

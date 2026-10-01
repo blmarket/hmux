@@ -2051,11 +2051,9 @@ static input_state_consume_st_table: [input_transition; 8] = {
 static mut input_buffer_size: size_t = INPUT_BUF_DEFAULT_SIZE as size_t;
 unsafe fn input_stop_utf8(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-    static mut rc: utf8_data = unsafe {
+    static mut rc: utf8_data = {
         utf8_data {
-            data: ::core::mem::transmute::<[u8; 32], [u_char; 32]>(
-                *b"\xEF\xBF\xBD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            ),
+            data: *b"\xEF\xBF\xBD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
             have: 3 as u_char,
             size: 3 as u_char,
             width: 1 as u_char,
@@ -2082,19 +2080,19 @@ unsafe fn input_fire_pane_title_changed(
     };
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_string(
-        &mut *ep,
+        &mut ep,
         b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, title),
     );
@@ -2107,7 +2105,7 @@ unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
     log_debug(format_args!(
         "{}: {} expired",
         "input_ground_timer_callback",
-        crate::src::log::log_bytes((*(*ictx).state).name.to_bytes())
+        crate::src::log::log_bytes((*ictx).state.name.to_bytes())
     ));
     input_reset(ictx, 0 as ::core::ffi::c_int);
 }
@@ -2237,12 +2235,12 @@ pub fn input_pending(ictx: &mut input_ctx) -> &mut SegmentedBuf {
     &mut ictx.since_ground
 }
 unsafe fn input_set_state(mut ictx: *mut input_ctx, state: &'static input_state) {
-    if (*(*ictx).state).exit.is_some() {
-        (*(*ictx).state).exit.expect("non-null function pointer")(ictx);
+    if (*ictx).state.exit.is_some() {
+        (*ictx).state.exit.expect("non-null function pointer")(ictx);
     }
     (*ictx).state = state;
-    if (*(*ictx).state).enter.is_some() {
-        (*(*ictx).state).enter.expect("non-null function pointer")(ictx);
+    if (*ictx).state.enter.is_some() {
+        (*ictx).state.enter.expect("non-null function pointer")(ictx);
     }
 }
 unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len: size_t) {
@@ -2267,11 +2265,16 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
             fatalx(|out| out.write_all(b"no transition from state"));
         };
         state = Some((*ictx).state);
-        if (*itr).handler != Some(input_print) {
+        if !itr.handler.is_some_and(|handler| {
+            std::ptr::fn_addr_eq(
+                handler,
+                input_print as unsafe fn(*mut input_ctx) -> ::core::ffi::c_int,
+            )
+        }) {
             screen_write_collect_end(&mut *sctx);
         }
-        if (*itr).handler.is_some()
-            && (*itr).handler.expect("non-null function pointer")(ictx) != 0 as ::core::ffi::c_int
+        if itr.handler.is_some()
+            && itr.handler.expect("non-null function pointer")(ictx) != 0 as ::core::ffi::c_int
         {
             continue;
         }
@@ -2280,7 +2283,7 @@ unsafe fn input_parse(mut ictx: *mut input_ctx, mut buf: *const u_char, mut len:
         }
         if !std::ptr::eq((*ictx).state, &input_state_ground) {
             evbuffer_add(
-                &mut *(*ictx).since_ground,
+                &mut (*ictx).since_ground,
                 &raw mut (*ictx).ch as *const ::core::ffi::c_void,
                 1 as size_t,
             );
@@ -2299,7 +2302,7 @@ pub(super) unsafe fn input_parse_pane(wp_owner: &std::rc::Rc<std::cell::UnsafeCe
     // Parsing fires callbacks; release the input-buffer borrow before dispatch.
     let data = stream
         .with_ptr(|event| unsafe {
-            window_pane_get_new_data(&mut *(*event).input, base, &offset).to_vec()
+            window_pane_get_new_data(&mut (*event).input, base, &offset).to_vec()
         })
         .unwrap_or_default();
     new_size = data.len();
@@ -2325,8 +2328,7 @@ pub(super) unsafe fn input_parse_buffer(
         return;
     }
     (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
-    (&std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))))
-        .update_activity();
+    (&std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))).update_activity();
     if !(*wp).flags & PANE_ACTIVITY != 0 {
         (*wp).flags |= PANE_ACTIVITY;
         events_fire_pane(
@@ -2350,9 +2352,9 @@ pub(super) unsafe fn input_parse_buffer(
     log_debug(format_args!(
         "{}: %{} {}, {} bytes: {}",
         "input_parse_buffer",
-        ((*wp).id) as u32,
-        crate::src::log::log_bytes((*(*ictx).state).name.to_bytes()),
-        (len) as usize,
+        { (*wp).id },
+        crate::src::log::log_bytes((*ictx).state.name.to_bytes()),
+        { len },
         log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
     ));
     input_parse(ictx, buf, len);
@@ -2384,8 +2386,7 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     if (*ictx).param_len == 0 as size_t {
         return 0 as ::core::ffi::c_int;
     }
-    ip = (&raw mut (*ictx).param_list as *mut input_param).offset(0 as ::core::ffi::c_int as isize)
-        as *mut input_param;
+    ip = (&raw mut (*ictx).param_list as *mut input_param).offset(0 as ::core::ffi::c_int as isize);
     ptr = &raw mut (*ictx).param_buf as *mut u_char as *mut ::core::ffi::c_char;
     loop {
         out = strsep(
@@ -2412,7 +2413,7 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         }
         (*ictx).param_list_len = (*ictx).param_list_len.wrapping_add(1);
         ip = (&raw mut (*ictx).param_list as *mut input_param)
-            .offset((*ictx).param_list_len as isize) as *mut input_param;
+            .offset((*ictx).param_list_len as isize);
         if (*ictx).param_list_len as usize
             == (::core::mem::size_of::<[input_param; 24]>() as usize)
                 .wrapping_div(::core::mem::size_of::<input_param>() as usize)
@@ -2422,8 +2423,7 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     }
     i = 0 as u_int;
     while i < (*ictx).param_list_len {
-        ip = (&raw mut (*ictx).param_list as *mut input_param).offset(i as isize)
-            as *mut input_param;
+        ip = (&raw mut (*ictx).param_list as *mut input_param).offset(i as isize);
         match &*ip {
             input_param::Missing => log_debug(format_args!("parameter {}: missing", (i) as u32)),
             input_param::String(value) => {
@@ -2433,15 +2433,15 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     log_cstr((value.as_ptr()) as *const _)
                 ));
             }
-            input_param::Number(value) => log_debug(format_args!(
-                "parameter {}: number {}",
-                (i) as u32,
-                (*value) as i32
-            )),
+            input_param::Number(value) => {
+                log_debug(format_args!("parameter {}: number {}", (i) as u32, {
+                    *value
+                }))
+            }
         }
         i = i.wrapping_add(1);
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_get(
     mut ictx: *mut input_ctx,
@@ -2454,8 +2454,7 @@ unsafe fn input_get(
     if validx >= (*ictx).param_list_len {
         return defval;
     }
-    ip = (&raw mut (*ictx).param_list as *mut input_param).offset(validx as isize)
-        as *mut input_param;
+    ip = (&raw mut (*ictx).param_list as *mut input_param).offset(validx as isize);
     retval = match &*ip {
         input_param::Missing => return defval,
         input_param::String(_) => return -1,
@@ -2464,7 +2463,7 @@ unsafe fn input_get(
     if retval < minval {
         return minval;
     }
-    return retval;
+    retval
 }
 unsafe fn input_send_reply(mut ictx: *mut input_ctx, mut reply: *const ::core::ffi::c_char) {
     if (*ictx).event.is_alive() {
@@ -2506,8 +2505,8 @@ unsafe fn input_clear(mut ictx: *mut input_ctx) {
 unsafe fn input_ground(mut ictx: *mut input_ctx) {
     drop((*ictx).ground_timer.take());
     evbuffer_drain(
-        &mut *(*ictx).since_ground,
-        evbuffer_get_length(&*(*ictx).since_ground),
+        &mut (*ictx).since_ground,
+        evbuffer_get_length(&(*ictx).since_ground),
     );
     (*ictx).shrink_buffer();
 }
@@ -2533,33 +2532,31 @@ unsafe fn input_print(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).flags |= INPUT_LAST;
     (*ictx).cell.cell.attr =
         ((*ictx).cell.cell.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_intermediate(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    if (*ictx).interm_len
-        == (::core::mem::size_of::<[u_char; 4]>() as usize).wrapping_sub(1 as usize)
+    if (*ictx).interm_len == (::core::mem::size_of::<[u_char; 4]>() as usize).wrapping_sub(1_usize)
     {
         (*ictx).flags |= INPUT_DISCARD;
     } else {
         let fresh15 = (*ictx).interm_len;
         (*ictx).interm_len = (*ictx).interm_len.wrapping_add(1);
-        (*ictx).interm_buf[fresh15 as usize] = (*ictx).ch as u_char;
-        (*ictx).interm_buf[(*ictx).interm_len as usize] = '\0' as i32 as u_char;
+        (*ictx).interm_buf[fresh15] = (*ictx).ch as u_char;
+        (*ictx).interm_buf[(*ictx).interm_len] = '\0' as i32 as u_char;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_parameter(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
-    if (*ictx).param_len
-        == (::core::mem::size_of::<[u_char; 64]>() as usize).wrapping_sub(1 as usize)
+    if (*ictx).param_len == (::core::mem::size_of::<[u_char; 64]>() as usize).wrapping_sub(1_usize)
     {
         (*ictx).flags |= INPUT_DISCARD;
     } else {
         let fresh14 = (*ictx).param_len;
         (*ictx).param_len = (*ictx).param_len.wrapping_add(1);
-        (*ictx).param_buf[fresh14 as usize] = (*ictx).ch as u_char;
-        (*ictx).param_buf[(*ictx).param_len as usize] = '\0' as i32 as u_char;
+        (*ictx).param_buf[fresh14] = (*ictx).ch as u_char;
+        (*ictx).param_buf[(*ictx).param_len] = '\0' as i32 as u_char;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_input(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut available: size_t = 0;
@@ -2576,7 +2573,7 @@ unsafe fn input_input(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     (*ictx).input_len = (*ictx).input_len.wrapping_add(1);
     (&mut (*ictx).input_buf)[fresh1] = (*ictx).ch as u_char;
     (&mut (*ictx).input_buf)[(*ictx).input_len] = '\0' as i32 as u_char;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
@@ -2633,7 +2630,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                     (*(wp)).observer.upgrade().expect("live window_pane"),
                 );
                 alerts_queue(
-                    &std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+                    &std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
                     WINDOW_BELL,
                 );
             }
@@ -2705,7 +2702,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         }
     }
     (*ictx).flags &= !INPUT_LAST;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -2791,10 +2788,10 @@ unsafe fn input_esc_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         12 => {
             (*ictx).cell.g1set = 0 as ::core::ffi::c_int;
         }
-        14 | _ => {}
+        _ => {}
     }
     (*ictx).flags &= !INPUT_LAST;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
@@ -2852,7 +2849,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             if !(n == -(1 as ::core::ffi::c_int)) {
                 while cx > 0 as u_int && {
                     let fresh10 = n;
-                    n = n - 1;
+                    n -= 1;
                     fresh10 > 0 as ::core::ffi::c_int
                 } {
                     loop {
@@ -3098,16 +3095,14 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             }
         }
         15 => {
-            match input_get(
+            if input_get(
                 ictx,
                 0 as u_int,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
-            ) {
-                996 => {
-                    input_report_current_theme(ictx);
-                }
-                _ => {}
+            ) == 996
+            {
+                input_report_current_theme(ictx);
             }
         }
         24 => {
@@ -3297,12 +3292,9 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
                 }
                 6 => {
                     input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
-                        write!(
-                            out,
-                            "\x1B[{};{}R",
-                            ((*s).cy.wrapping_add(1 as u_int)) as u32,
-                            ((*s).cx.wrapping_add(1 as u_int)) as u32
-                        )
+                        write!(out, "\x1B[{};{}R", { (*s).cy.wrapping_add(1 as u_int) }, {
+                            (*s).cx.wrapping_add(1 as u_int)
+                        })
                     });
                 }
                 _ => {
@@ -3571,7 +3563,7 @@ unsafe fn input_csi_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         _ => {}
     }
     (*ictx).flags &= !INPUT_LAST;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_csi_dispatch_rm(mut ictx: *mut input_ctx) {
     let mut sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
@@ -3894,7 +3886,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 } else {
                     let (xpixel, ypixel) = window_owner.as_ref().unwrap().cell_size();
                     input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
-                        write!(out, "\x1B[6;{};{}t", (ypixel) as u32, (xpixel) as u32)
+                        write!(out, "\x1B[6;{};{}t", { ypixel }, { xpixel })
                     });
                     current_block_25 = 980989089337379490;
                 }
@@ -3962,20 +3954,17 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                 current_block_25 = 980989089337379490;
             }
         }
-        match current_block_25 {
-            8019652857213515700 => {
-                m += 1;
-                if input_get(
-                    ictx,
-                    m as u_int,
-                    0 as ::core::ffi::c_int,
-                    -(1 as ::core::ffi::c_int),
-                ) == -(1 as ::core::ffi::c_int)
-                {
-                    break;
-                }
+        if current_block_25 == 8019652857213515700 {
+            m += 1;
+            if input_get(
+                ictx,
+                m as u_int,
+                0 as ::core::ffi::c_int,
+                -(1 as ::core::ffi::c_int),
+            ) == -(1 as ::core::ffi::c_int)
+            {
+                break;
             }
-            _ => {}
         }
         m += 1;
     }
@@ -4002,7 +3991,7 @@ unsafe fn input_csi_dispatch_sgr_256_do(
     } else if fgbg == 58 as ::core::ffi::c_int {
         (*gc).us = c | COLOUR_FLAG_256;
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn input_csi_dispatch_sgr_256(
     mut ictx: *mut input_ctx,
@@ -4044,7 +4033,7 @@ unsafe fn input_csi_dispatch_sgr_rgb_do(
     } else if fgbg == 58 as ::core::ffi::c_int {
         (*gc).us = colour_join_rgb(r as u_char, g as u_char, b as u_char);
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn input_csi_dispatch_sgr_rgb(
     mut ictx: *mut input_ctx,
@@ -4206,14 +4195,12 @@ unsafe fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
                 }
             }
         }
-        5 => {
-            if !(n < 3 as u_int) {
-                input_csi_dispatch_sgr_256_do(
-                    ictx,
-                    p[0 as ::core::ffi::c_int as usize],
-                    p[2 as ::core::ffi::c_int as usize],
-                );
-            }
+        5 if !(n < 3 as u_int) => {
+            input_csi_dispatch_sgr_256_do(
+                ictx,
+                p[0 as ::core::ffi::c_int as usize],
+                p[2 as ::core::ffi::c_int as usize],
+            );
         }
         _ => {}
     };
@@ -4438,7 +4425,7 @@ unsafe fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
 unsafe fn input_end_bel(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     log_debug(format_args!("{}", "input_end_bel"));
     (*ictx).input_end = INPUT_END_BEL;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_enter_dcs(mut ictx: *mut input_ctx) {
     log_debug(format_args!("{}", "input_enter_dcs"));
@@ -4467,7 +4454,7 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
             out.write_all(b"\x1BP0$r\x1B\\")
         });
-        return 0 as ::core::ffi::c_int;
+        0 as ::core::ffi::c_int
     } else {
         if (*s).cstyle as ::core::ffi::c_uint
             == SCREEN_CURSOR_BLOCK as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -4527,8 +4514,8 @@ unsafe fn input_handle_decrqss(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         input_reply(ictx, 1 as ::core::ffi::c_int, |out| {
             write!(out, "\x1BP1$r q{} q\x1B\\", (ps) as i32)
         });
-        return 0 as ::core::ffi::c_int;
-    };
+        0 as ::core::ffi::c_int
+    }
 }
 unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let input_pane_owner = (*ictx).wp.upgrade();
@@ -4543,7 +4530,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     let prefix: [::core::ffi::c_char; 6] =
         ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"tmux;\0");
     let prefixlen: u_int = (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
-        .wrapping_sub(1 as usize) as u_int;
+        .wrapping_sub(1_usize) as u_int;
     let mut allow_passthrough: ::core::ffi::c_longlong = 0 as ::core::ffi::c_longlong;
     if wp.is_null() {
         oo = global_w_options;
@@ -4560,12 +4547,10 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     }
     if (*ictx).interm_len == 1 as size_t
         && (*ictx).interm_buf[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int == '$' as i32
+        && len >= 1 as size_t
+        && *buf.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == 'q' as i32
     {
-        if len >= 1 as size_t
-            && *buf.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == 'q' as i32
-        {
-            return input_handle_decrqss(ictx);
-        }
+        return input_handle_decrqss(ictx);
     }
     allow_passthrough = options_get_number(oo, c"allow-passthrough");
     if allow_passthrough == 0 {
@@ -4589,7 +4574,7 @@ unsafe fn input_dcs_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             (allow_passthrough == 2 as ::core::ffi::c_longlong) as ::core::ffi::c_int,
         );
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_enter_osc(mut ictx: *mut input_ctx) {
     log_debug(format_args!("{}", "input_enter_osc"));
@@ -4663,9 +4648,9 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                     p as *const ::core::ffi::c_char,
                 );
                 server_redraw_window_borders(
-                    &(((*wp).window_handle().as_ref()).expect("live window")),
+                    ((*wp).window_handle().as_ref()).expect("live window"),
                 );
-                server_status_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+                server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
             }
         }
         4 => {
@@ -4676,9 +4661,9 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                 && screen_set_path(&mut *(*sctx).screen_ptr(), CStr::from_ptr(p.cast())) != 0
             {
                 server_redraw_window_borders(
-                    &(((*wp).window_handle().as_ref()).expect("live window")),
+                    ((*wp).window_handle().as_ref()).expect("live window"),
                 );
-                server_status_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+                server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
             }
         }
         8 => {
@@ -4759,8 +4744,8 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
             &(*(wp)).observer.upgrade().expect("live window_pane"),
             (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
         );
-        server_redraw_window_borders(&(((*wp).window_handle().as_ref()).expect("live window")));
-        server_status_window(&(((*wp).window_handle().as_ref()).expect("live window")));
+        server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
+        server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     }
 }
 unsafe fn input_enter_rename(mut ictx: *mut input_ctx) {
@@ -4830,7 +4815,7 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             input_stop_utf8(ictx);
             return 0 as ::core::ffi::c_int;
         }
-        1 | _ => {}
+        _ => {}
     }
     (*ictx).utf8started = 0 as ::core::ffi::c_int;
     log_debug(format_args!(
@@ -4847,7 +4832,7 @@ unsafe fn input_top_bit_set(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     screen_write_collect_add(&mut *sctx, &(*ictx).cell.cell);
     (*ictx).last = utf8_copy(&(*ictx).cell.cell.data);
     (*ictx).flags |= INPUT_LAST;
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_osc_colour_reply(
     mut ictx: *mut input_ctx,
@@ -4879,8 +4864,8 @@ unsafe fn input_osc_colour_reply(
             write!(
                 out,
                 "\x1B]{};{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}",
-                (n) as u32,
-                (idx) as i32,
+                { n },
+                { idx },
                 (r as ::core::ffi::c_int) as u8,
                 (r as ::core::ffi::c_int) as u8,
                 (g as ::core::ffi::c_int) as u8,
@@ -4895,7 +4880,7 @@ unsafe fn input_osc_colour_reply(
             write!(
                 out,
                 "\x1B]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}",
-                (n) as u32,
+                { n },
                 (r as ::core::ffi::c_int) as u8,
                 (r as ::core::ffi::c_int) as u8,
                 (g as ::core::ffi::c_int) as u8,
@@ -4920,10 +4905,9 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
         idx = strtol(s, &raw mut next, 10 as ::core::ffi::c_int);
         let fresh9 = next;
         next = next.offset(1);
-        if *fresh9 as ::core::ffi::c_int != ';' as i32 {
-            bad = 1 as ::core::ffi::c_int;
-            break;
-        } else if idx < 0 as ::core::ffi::c_long || idx >= 256 as ::core::ffi::c_long {
+        if *fresh9 as ::core::ffi::c_int != ';' as i32
+            || (idx < 0 as ::core::ffi::c_long || idx >= 256 as ::core::ffi::c_long)
+        {
             bad = 1 as ::core::ffi::c_int;
             break;
         } else {
@@ -5027,31 +5011,29 @@ unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
         start = end.offset(1 as ::core::ffi::c_int as isize);
     }
     match current_block {
-        10886091980245723256 => {
-            if !(end.is_null() || *end as ::core::ffi::c_int != ';' as i32) {
-                uri = end.offset(1 as ::core::ffi::c_int as isize);
-                if *uri as ::core::ffi::c_int == '\0' as i32 {
-                    (*gc).link = 0 as u_int;
-                    return;
-                }
-                let id_ptr = id.as_ref().map_or(std::ptr::null(), |id| id.as_ptr());
-                (*gc).link = hyperlinks_put(hl, CStr::from_ptr(uri), id.as_deref());
-                if id.is_none() {
-                    log_debug(format_args!(
-                        "hyperlink (anonymous) {} = {}",
-                        log_cstr((uri) as *const _),
-                        ((*gc).link) as u32
-                    ));
-                } else {
-                    log_debug(format_args!(
-                        "hyperlink (id={}) {} = {}",
-                        log_cstr((id_ptr) as *const _),
-                        log_cstr((uri) as *const _),
-                        ((*gc).link) as u32
-                    ));
-                }
+        10886091980245723256 if !(end.is_null() || *end as ::core::ffi::c_int != ';' as i32) => {
+            uri = end.offset(1 as ::core::ffi::c_int as isize);
+            if *uri as ::core::ffi::c_int == '\0' as i32 {
+                (*gc).link = 0 as u_int;
                 return;
             }
+            let id_ptr = id.as_ref().map_or(std::ptr::null(), |id| id.as_ptr());
+            (*gc).link = hyperlinks_put(hl, CStr::from_ptr(uri), id.as_deref());
+            if id.is_none() {
+                log_debug(format_args!(
+                    "hyperlink (anonymous) {} = {}",
+                    log_cstr((uri) as *const _),
+                    { (*gc).link }
+                ));
+            } else {
+                log_debug(format_args!(
+                    "hyperlink (id={}) {} = {}",
+                    log_cstr((id_ptr) as *const _),
+                    log_cstr((uri) as *const _),
+                    { (*gc).link }
+                ));
+            }
+            return;
         }
         _ => {}
     }
@@ -5069,9 +5051,9 @@ unsafe fn input_set_progress_bar(
     screen_set_progress_bar(&mut *(*ictx).ctx.screen_ptr(), state, p);
     if !input_pane.is_null() {
         server_redraw_window_borders(
-            &(((*input_pane).window_handle().as_ref()).expect("live window")),
+            ((*input_pane).window_handle().as_ref()).expect("live window"),
         );
-        server_status_window(&(((*input_pane).window_handle().as_ref()).expect("live window")));
+        server_status_window(((*input_pane).window_handle().as_ref()).expect("live window"));
     }
 }
 unsafe fn input_osc_9(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
@@ -5344,7 +5326,7 @@ unsafe fn input_osc_133_exit_status(p: *const ::core::ffi::c_char) -> ::core::ff
     if !errstr.is_null() {
         return 255 as ::core::ffi::c_int;
     }
-    return status as ::core::ffi::c_int;
+    status as ::core::ffi::c_int
 }
 
 #[cfg(test)]
@@ -5394,48 +5376,48 @@ unsafe fn input_fire_command_event(
     let mut tend: time_t = (*wp).cmd_end_time;
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     if !fs.session_handle().is_none() {
         event_payload_set_session(
-            &mut *ep,
+            &mut ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             fs.session_handle().expect("live session"),
         );
     }
     if fs.winlink_handle().is_alive() {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (fs.winlink_handle()).get_unchecked().idx,
         );
     }
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&(((*wp).window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         (*(wp)).observer.upgrade().expect("live window_pane"),
     );
     if (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"command_status\0" as *const u8 as *const ::core::ffi::c_char,
             (*wp).cmd_status,
         );
     }
     if tstart != 0 as time_t {
         event_payload_set_time(
-            &mut *ep,
+            &mut ep,
             b"command_start_time\0" as *const u8 as *const ::core::ffi::c_char,
             tstart,
         );
     }
     if tend != 0 as time_t {
         event_payload_set_time(
-            &mut *ep,
+            &mut ep,
             b"command_end_time\0" as *const u8 as *const ::core::ffi::c_char,
             tend,
         );
@@ -5451,7 +5433,7 @@ unsafe fn input_fire_command_event(
         }
         end -= tstart;
         event_payload_set_uint(
-            &mut *ep,
+            &mut ep,
             b"command_duration\0" as *const u8 as *const ::core::ffi::c_char,
             end as u_int,
         );
@@ -5716,10 +5698,9 @@ unsafe fn input_osc_104(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
     s = copy.as_mut_ptr().cast();
     while *s as ::core::ffi::c_int != '\0' as i32 {
         idx = strtol(s, &raw mut s, 10 as ::core::ffi::c_int);
-        if *s as ::core::ffi::c_int != '\0' as i32 && *s as ::core::ffi::c_int != ';' as i32 {
-            bad = 1 as ::core::ffi::c_int;
-            break;
-        } else if idx < 0 as ::core::ffi::c_long || idx >= 256 as ::core::ffi::c_long {
+        if *s as ::core::ffi::c_int != '\0' as i32 && *s as ::core::ffi::c_int != ';' as i32
+            || (idx < 0 as ::core::ffi::c_long || idx >= 256 as ::core::ffi::c_long)
+        {
             bad = 1 as ::core::ffi::c_int;
             break;
         } else {
@@ -5863,7 +5844,7 @@ unsafe fn input_make_request(
         input_start_request_timer(ictx);
     }
     input_ctx_requests(ictx).push_back(owner);
-    return ir;
+    ir
 }
 pub(crate) unsafe fn input_free_request(mut ir: *mut input_request) {
     let mut ictx: *mut input_ctx = (*ir).ictx;
@@ -5905,8 +5886,7 @@ unsafe fn input_add_request(
     while !loop_0.is_none() {
         if !(loop_0.as_ref().expect("live client").flags() & CLIENT_UNATTACHEDFLAGS as uint64_t
             != 0)
-        {
-            if !(loop_0
+            && !(loop_0
                 .as_ref()
                 .expect("live client")
                 .attached_session()
@@ -5920,17 +5900,12 @@ unsafe fn input_add_request(
                     .expect("live session")
                     .contains_window(&window) as i32)
                     == 0)
-            {
-                if loop_0.as_ref().expect("live client").terminal_started() {
-                    if c.is_none() {
-                        c = loop_0;
-                    } else if loop_0.as_ref().expect("live client").activity_time()
-                        > c.as_ref().expect("live client").activity_time()
-                    {
-                        c = loop_0;
-                    }
-                }
-            }
+            && loop_0.as_ref().expect("live client").terminal_started()
+            && (c.is_none()
+                || (loop_0.as_ref().expect("live client").activity_time()
+                    > c.as_ref().expect("live client").activity_time()))
+        {
+            c = loop_0;
         }
         registry_loop_0_owner = clients.next(
             registry_loop_0_owner
@@ -5952,7 +5927,7 @@ unsafe fn input_add_request(
         .observe_input_request(&mut *ir);
     match type_0 as ::core::ffi::c_uint {
         0 => {
-            xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", idx as i32));
+            xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", { idx }));
             c.as_ref()
                 .expect("live client")
                 .write_terminal(std::ffi::CStr::from_ptr(s.as_ptr()).to_bytes());
@@ -5972,9 +5947,9 @@ unsafe fn input_add_request(
                 client.write_terminal(query.to_bytes());
             }
         }
-        2 | _ => {}
+        _ => {}
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn input_request_palette_reply(ir: *mut input_request, pd: &input_request_palette_data) {
     input_osc_colour_reply(

@@ -93,11 +93,11 @@ pub const MODE_TREE_PREVIEW_NORMAL: mode_tree_preview = 1;
 pub const MODE_TREE_PREVIEW_OFF: mode_tree_preview = 0;
 #[inline]
 unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
+    if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
         *(*__ctype_tolower_loc()).offset(__c as isize) as ::core::ffi::c_int
     } else {
         __c
-    };
+    }
 }
 pub const UINT64_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
 static mode_tree_menu_items: [menu_item<'static>; 4] = [
@@ -122,7 +122,7 @@ static mode_tree_menu_items: [menu_item<'static>; 4] = [
         command: None,
     },
 ];
-static mode_tree_help_start: &[&'static CStr] = &[
+static mode_tree_help_start: &[&CStr] = &[
     c"#[fg=themelightgrey]      Up, k #[#{E:tree-mode-border-style},acs]x#[default] Move cursor up",
     c"#[fg=themelightgrey]    Down, j #[#{E:tree-mode-border-style},acs]x#[default] Move cursor down",
     c"#[fg=themelightgrey]          g #[#{E:tree-mode-border-style},acs]x#[default] Go to top",
@@ -144,7 +144,7 @@ static mode_tree_help_start: &[&'static CStr] = &[
     c"#[fg=themelightgrey]          r #[#{E:tree-mode-border-style},acs]x#[default] Reverse sort order",
     c"#[fg=themelightgrey]          v #[#{E:tree-mode-border-style},acs]x#[default] Toggle preview",
 ];
-static mode_tree_help_end: &[&'static CStr] =
+static mode_tree_help_end: &[&CStr] =
     &[c"#[fg=themelightgrey]  q, Escape #[#{E:tree-mode-border-style},acs]x#[default] Exit mode"];
 pub const MODE_TREE_HELP_DEFAULT_WIDTH: ::core::ffi::c_int = 39 as ::core::ffi::c_int;
 unsafe fn mode_tree_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
@@ -152,7 +152,7 @@ unsafe fn mode_tree_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::core:
         if *ptr as ::core::ffi::c_int
             != ({
                 let mut __res: ::core::ffi::c_int = 0;
-                if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
+                if ::core::mem::size_of::<u_char>() as usize > 1_usize {
                     if 0 != 0 {
                         let mut __c: ::core::ffi::c_int = *ptr as u_char as ::core::ffi::c_int;
                         __res = (if __c < -(128 as ::core::ffi::c_int)
@@ -177,7 +177,7 @@ unsafe fn mode_tree_is_lowercase(mut ptr: *const ::core::ffi::c_char) -> ::core:
         }
         ptr = ptr.offset(1);
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 fn mode_tree_find_item(list: &mode_tree_list, tag: uint64_t) -> Option<ModeTreeItemRef> {
     for item in &list.items {
@@ -370,7 +370,7 @@ pub fn mode_tree_down(
             mtd.offset = mtd.offset.wrapping_add(1);
         }
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn mode_tree_swap(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, direction: i32) {
     let (mut callback, current, other, mut sort, swap_with) = {
@@ -465,7 +465,7 @@ fn mode_tree_get_tag(mtd: &mode_tree_data, tag: uint64_t) -> Option<u_int> {
 }
 pub unsafe fn mode_tree_expand(tree_owner: &Rc<UnsafeCell<mode_tree_data>>, tag: uint64_t) {
     let mtd = &*tree_owner.get();
-    let Some(index) = mode_tree_get_tag(&*mtd, tag) else {
+    let Some(index) = mode_tree_get_tag(mtd, tag) else {
         return;
     };
     let item = (&mtd.lines)[index as usize].item.clone();
@@ -501,7 +501,7 @@ pub fn mode_tree_set_current(mtd: &mut mode_tree_data, mut tag: uint64_t) -> ::c
             mtd.offset = 0 as u_int;
         }
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub fn mode_tree_count_tagged(mtd: &mode_tree_data) -> u_int {
     mtd.lines
@@ -587,7 +587,7 @@ pub unsafe fn mode_tree_start(
     *s = &raw mut mtd.screen;
     screen_init(&mut **s, pane_sx, pane_sy, 0 as u_int);
     (**s).mode &= !MODE_CURSOR;
-    return owner;
+    owner
 }
 pub unsafe fn mode_tree_zoom(
     tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>,
@@ -994,10 +994,10 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     i = 0 as u_int;
     while i < mode_tree_line_count(&*mtd) {
         let mti = (&(*mtd).lines)[i as usize].item.borrow();
-        if !(mti.key == KEYC_NONE as ::core::ffi::c_ulong as key_code) {
-            if mti.keylen as ::core::ffi::c_int + 3 as ::core::ffi::c_int > keylen {
-                keylen = mti.keylen.wrapping_add(3 as size_t) as ::core::ffi::c_int;
-            }
+        if !(mti.key == KEYC_NONE as ::core::ffi::c_ulong as key_code)
+            && mti.keylen as ::core::ffi::c_int + 3 as ::core::ffi::c_int > keylen
+        {
+            keylen = mti.keylen.wrapping_add(3 as size_t) as ::core::ffi::c_int;
         }
         i = i.wrapping_add(1);
     }
@@ -1323,7 +1323,8 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
             );
             let mut label_bytes = b" ".to_vec();
             mode_tree_append_printf_string(&mut label_bytes, Some(mti.name.as_c_str()));
-            if !(&(*mtd).sort_crit.order_seq).is_empty() {
+            let order_seq = &(*mtd).sort_crit.order_seq;
+            if !order_seq.is_empty() {
                 label_bytes.extend_from_slice(b" (sort: ");
                 let order = sort_order_to_string((*mtd).sort_crit.order);
                 let order = if order.is_null() {
@@ -1354,10 +1355,10 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                 screen_write_puts(&mut ctx, &box_gc, |out| write_cstr(out, label.as_ptr()));
                 if (*mtd).no_matches != 0 {
                     n = (::core::mem::size_of::<[::core::ffi::c_char; 11]>() as usize)
-                        .wrapping_sub(1 as usize) as size_t;
+                        .wrapping_sub(1_usize) as size_t;
                 } else {
                     n = (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize)
-                        .wrapping_sub(1 as usize) as size_t;
+                        .wrapping_sub(1_usize) as size_t;
                 }
                 if (*mtd).filter.is_some()
                     && w.wrapping_sub(2 as u_int) as size_t
@@ -1537,7 +1538,7 @@ pub unsafe fn mode_tree_set_prompt(
         return;
     };
     let session_owner = client_owner.and_then(|client| client.attached_session().upgrade());
-    let s = session_owner.clone();
+    let _s = session_owner.clone();
     let mut pd = prompt_create_data::default();
     mode_tree_clear_prompt(&tree);
     let mtp = refbox::RefBox::new(mode_tree_prompt {
@@ -1752,7 +1753,7 @@ unsafe fn mode_tree_search_callback(
     {
         return PROMPT_CONTINUE;
     }
-    return PROMPT_CLOSE;
+    PROMPT_CLOSE
 }
 unsafe fn mode_tree_filter_callback(
     tree_owner: &Rc<UnsafeCell<mode_tree_data>>,
@@ -1779,7 +1780,7 @@ unsafe fn mode_tree_filter_callback(
     {
         return PROMPT_CONTINUE;
     }
-    return PROMPT_CLOSE;
+    PROMPT_CLOSE
 }
 unsafe fn mode_tree_clear_filter(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let mtd = &mut *tree_owner.get();
@@ -1843,7 +1844,7 @@ unsafe fn mode_tree_display_menu(
     };
     let items: &[menu_item<'_>];
     let mut line: u_int = 0;
-    if mtd.offset.wrapping_add(y) > mode_tree_line_count(&*mtd).wrapping_sub(1 as u_int) {
+    if mtd.offset.wrapping_add(y) > mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
         line = mtd.current;
     } else {
         line = mtd.offset.wrapping_add(y);
@@ -1862,17 +1863,8 @@ unsafe fn mode_tree_display_menu(
     menu_add_items(&mut menu, items, Some(client_owner));
     drop(title);
     let client = Rc::downgrade(client_owner);
-    if x >= (*menu)
-        .width
-        .wrapping_add(4 as u_int)
-        .wrapping_div(2 as u_int)
-    {
-        x = x.wrapping_sub(
-            (*menu)
-                .width
-                .wrapping_add(4 as u_int)
-                .wrapping_div(2 as u_int),
-        );
+    if x >= menu.width.wrapping_add(4 as u_int).wrapping_div(2 as u_int) {
+        x = x.wrapping_sub(menu.width.wrapping_add(4 as u_int).wrapping_div(2 as u_int));
     } else {
         x = 0 as u_int;
     }
@@ -2133,10 +2125,8 @@ pub unsafe fn mode_tree_key(
             *key = KEYC_NONE;
             return 0;
         }
-        if !mtp.is_empty() {
-            if (*mtd).prompt_data == mtp {
-                mtp.try_borrow_mut().expect("live prompt callback record").c = Weak::new();
-            }
+        if !mtp.is_empty() && (*mtd).prompt_data == mtp {
+            mtp.try_borrow_mut().expect("live prompt callback record").c = Weak::new();
         }
         if (*mtd)
             .prompt
@@ -2461,7 +2451,7 @@ pub unsafe fn mode_tree_key(
         }
         _ => {}
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 pub unsafe fn mode_tree_run_command(
     client_owner: Option<&ClientRef>,

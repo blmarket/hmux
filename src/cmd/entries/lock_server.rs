@@ -104,5 +104,5 @@ unsafe fn cmd_lock_server_exec(
         server_lock_client(tc_owner.as_ref().expect("lock target client"));
     }
     recalculate_sizes();
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

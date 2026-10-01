@@ -124,7 +124,7 @@ unsafe fn cmd_show_messages_exec(
         format_add(
             ft,
             b"message_number\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (msg.msg_num) as u32),
+            |out| write!(out, "{}", { msg.msg_num }),
         );
         let msg_time = msg.msg_time;
         format_add_time(
@@ -136,5 +136,5 @@ unsafe fn cmd_show_messages_exec(
         cmdq_print(item_handle, |out| write_cstr(out, s.as_ptr()));
     }
     format_free(ft_owner);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

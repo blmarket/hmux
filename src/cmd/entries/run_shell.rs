@@ -164,7 +164,7 @@ unsafe fn cmd_run_shell_exec(
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
     let tc_owner = cmdq_get_target_client((item).as_ref());
-    let mut tc: Option<ClientRef> = tc_owner.clone();
+    let _tc: Option<ClientRef> = tc_owner.clone();
     let mut s: Option<SessionRef> = (*target).session_handle();
     let pane_owner = (*target).pane_handle();
     let mut delay: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -269,10 +269,10 @@ unsafe fn cmd_run_shell_exec(
             .expect("arm background run-shell delay");
         return CMD_RETURN_NORMAL;
     }
-    let timer = Timer::new(tv, move || unsafe { cmd_run_shell_timer(cdata) })
-        .expect("arm run-shell delay");
+    let timer =
+        Timer::new(tv, move || unsafe { cmd_run_shell_timer(cdata) }).expect("arm run-shell delay");
     crate::src::cmd::queue::cmdq_set_wait_timer(&mut *item, timer);
-    return CMD_RETURN_WAIT;
+    CMD_RETURN_WAIT
 }
 unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
     let item_owner = cdata.item.upgrade();
@@ -420,7 +420,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     let mut event = evbuffer_new();
     if !completion.output.is_empty() {
         evbuffer_add(
-            &mut *event,
+            &mut event,
             completion.output.as_ptr().cast(),
             completion.output.len(),
         );
@@ -428,7 +428,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     let item = item_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let cmd = (*cdata)
+    let cmd = cdata
         .cmd
         .as_ref()
         .expect("run-shell callback requires a command")
@@ -436,10 +436,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     let mut msg: Option<CString> = None;
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
-    loop {
-        let Some(line) = evbuffer_readln(&mut *event) else {
-            break;
-        };
+    while let Some(line) = evbuffer_readln(&mut event) {
         cmd_run_shell_print(cdata, line.as_ptr().cast());
     }
     size = evbuffer_get_length(&event);

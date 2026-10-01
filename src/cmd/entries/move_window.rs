@@ -106,7 +106,10 @@ unsafe fn cmd_move_window_exec(
         {
             return CMD_RETURN_ERROR;
         }
-        (&target.session_handle().expect("live session")).renumber_windows();
+        target
+            .session_handle()
+            .expect("live session")
+            .renumber_windows();
         recalculate_sizes();
         server_status_session(&target.session_handle().expect("live session"));
         return CMD_RETURN_NORMAL;
@@ -172,5 +175,5 @@ unsafe fn cmd_move_window_exec(
         (src.as_ref().expect("live session")).renumber_windows();
     }
     recalculate_sizes();
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

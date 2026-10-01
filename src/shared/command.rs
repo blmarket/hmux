@@ -29,7 +29,7 @@ pub fn unpack_argv(buffer: &mut [u8], argc: ::core::ffi::c_int) -> Result<Vec<CS
     if argc == 0 {
         return Ok(Vec::new());
     }
-    if argc < 0 || argc > 1000 || buffer.is_empty() {
+    if !(0..=1000).contains(&argc) || buffer.is_empty() {
         return Err(());
     }
     *buffer.last_mut().expect("nonempty buffer") = 0;
@@ -91,16 +91,16 @@ pub const CMD_READONLY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_FIND_WINDOW_INDEX: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_CLIENT_TFLAG: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const CMD_TARGET_PANE_USAGE: &'static std::ffi::CStr = c"[-t target-pane]";
+pub const CMD_TARGET_PANE_USAGE: &std::ffi::CStr = c"[-t target-pane]";
 pub const CMD_FIND_CANFAIL: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CMD_TARGET_CLIENT_USAGE: &'static std::ffi::CStr = c"[-t target-client]";
+pub const CMD_TARGET_CLIENT_USAGE: &std::ffi::CStr = c"[-t target-client]";
 pub const CMD_CLIENT_CFLAG: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const CMD_CLIENT_CANFAIL: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const CMD_FIND_QUIET: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMD_FIND_DEFAULT_MARKED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const CMD_FIND_EXACT_SESSION: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const CMD_FIND_EXACT_WINDOW: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const CMD_TARGET_SESSION_USAGE: &'static std::ffi::CStr = c"[-t target-session]";
+pub const CMD_TARGET_SESSION_USAGE: &std::ffi::CStr = c"[-t target-session]";
 pub const CMD_PARSE_NOALIAS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_PARSE_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const CMD_PARSE_ONEGROUP: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
@@ -109,8 +109,8 @@ pub const CMDQ_STATE_CONTROL: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const CMDQ_STATE_NOHOOKS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMDQ_FIRED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const CMDQ_WAITING: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const CMD_BUFFER_USAGE: &'static std::ffi::CStr = c"[-b buffer-name]";
-pub const CMD_TARGET_WINDOW_USAGE: &'static std::ffi::CStr = c"[-t target-window]";
+pub const CMD_BUFFER_USAGE: &std::ffi::CStr = c"[-b buffer-name]";
+pub const CMD_TARGET_WINDOW_USAGE: &std::ffi::CStr = c"[-t target-window]";
 pub const CMD_SOURCE_FILE_DEPTH_LIMIT: ::core::ffi::c_int = 50 as ::core::ffi::c_int;
 
 #[cfg(test)]

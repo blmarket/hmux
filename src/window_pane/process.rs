@@ -142,7 +142,7 @@ pub(super) unsafe fn pipe_pane(
                 out.write_all(b"fork error: ")?;
                 write_cstr(out, strerror(*__errno_location()))
             });
-            return CMD_RETURN_ERROR;
+            CMD_RETURN_ERROR
         }
         0 => {
             proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
@@ -240,9 +240,9 @@ pub(super) unsafe fn pipe_pane(
                     bufferevent_enable(event, EV_READ as ::core::ffi::c_short);
                 });
             }
-            return CMD_RETURN_NORMAL;
+            CMD_RETURN_NORMAL
         }
-    };
+    }
 }
 unsafe fn cmd_pipe_pane_read_callback(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -262,7 +262,7 @@ unsafe fn cmd_pipe_pane_read_callback(
         })
         .unwrap_or_default();
     let available = data.len();
-    log_debug(format_args!("%{} pipe read {}", id, (available) as usize));
+    log_debug(format_args!("%{} pipe read {}", id, { available }));
     let _ = output.with_ptr(|event| unsafe {
         bufferevent_write(event, data.as_ptr().cast(), available);
     });
@@ -277,7 +277,7 @@ unsafe fn cmd_pipe_pane_write_callback(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     let wp = pane_owner.get();
-    log_debug(format_args!("%{} pipe empty", ((*wp).id) as u32));
+    log_debug(format_args!("%{} pipe empty", { (*wp).id }));
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
@@ -286,7 +286,7 @@ unsafe fn cmd_pipe_pane_error_callback(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     let wp = pane_owner.get();
-    log_debug(format_args!("%{} pipe error", ((*wp).id) as u32));
+    log_debug(format_args!("%{} pipe error", { (*wp).id }));
     std::mem::take(&mut (*wp).pipe_event).free();
     drop((*wp).pipe_fd.take());
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
@@ -345,7 +345,7 @@ mod pipe_stream_tests {
             assert_eq!(
                 (*wp)
                     .event
-                    .with_ptr(|event| unsafe { evbuffer_get_length(&(*event).output) }),
+                    .with_ptr(|event| evbuffer_get_length(&(*event).output)),
                 Some(bytes.len())
             );
             assert_eq!(evbuffer_get_length(&(*pipe).input), 0);

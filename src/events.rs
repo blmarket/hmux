@@ -31,7 +31,7 @@ static mut events_next_sink_id: u64 = 0;
 unsafe fn events_free_dead() {
     loop {
         let removed = {
-            let sinks = &mut *(&raw mut events_sinks);
+            let sinks = &mut events_sinks;
             sinks
                 .iter()
                 .position(|sink| sink.dead != 0)
@@ -50,12 +50,12 @@ pub unsafe fn events_add_sink(name: &CStr, cb: events_cb) -> EventSinkId {
     let owner = Box::new(events_sink {
         id,
         name: name.to_owned(),
-        cb: cb,
+        cb,
         dead: 0,
         generation: events_generation,
     });
 
-    (&mut *(&raw mut events_sinks)).push(owner);
+    events_sinks.push(owner);
     id
 }
 pub unsafe fn events_remove_sink(id: EventSinkId) {
@@ -63,7 +63,7 @@ pub unsafe fn events_remove_sink(id: EventSinkId) {
         return;
     }
     let removed = {
-        let sinks = &mut *(&raw mut events_sinks);
+        let sinks = &mut events_sinks;
         let Some(index) = sinks.iter().position(|sink| sink.id == id) else {
             return;
         };
@@ -82,7 +82,7 @@ pub unsafe fn events_remove_sink(id: EventSinkId) {
 pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<event_payload>) {
     let mut generation: u_int = events_generation;
     event_payload_set_string(
-        &mut *ep,
+        &mut ep,
         b"event\0" as *const u8 as *const ::core::ffi::c_char,
         |out| write_cstr(out, name),
     );
@@ -99,9 +99,9 @@ pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<even
     }
     events_dispatching = events_dispatching.wrapping_add(1);
     let mut index = 0;
-    while index < (&*(&raw const events_sinks)).len() {
+    while index < events_sinks.len() {
         let callback = {
-            let sinks = &*(&raw const events_sinks);
+            let sinks = &events_sinks;
             let sink = &sinks[index];
             if sink.dead == 0
                 && sink.generation <= generation
@@ -114,7 +114,7 @@ pub unsafe fn events_fire(mut name: *const ::core::ffi::c_char, mut ep: Box<even
         };
         index += 1;
         if let Some(callback) = callback {
-            callback(CStr::from_ptr(name), &mut *ep);
+            callback(CStr::from_ptr(name), &mut ep);
         }
     }
     events_dispatching = events_dispatching.wrapping_sub(1);
@@ -134,38 +134,38 @@ pub unsafe fn events_fire_client(mut name: *const ::core::ffi::c_char, owner: Cl
     };
     let mut ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, Some(&owner), 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
-    event_payload_set_client(&mut *ep, owner);
+    event_payload_set_target(&mut ep, &fs);
+    event_payload_set_client(&mut ep, owner);
     if !fs.session_handle().is_none() {
         event_payload_set_session(
-            &mut *ep,
+            &mut ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             fs.session_handle().expect("live session"),
         );
     }
     if !fs.window_handle().is_none() {
         event_payload_set_window(
-            &mut *ep,
+            &mut ep,
             b"window\0" as *const u8 as *const ::core::ffi::c_char,
-            std::rc::Rc::clone(&((fs.window_handle().as_ref()).expect("live window"))),
+            std::rc::Rc::clone((fs.window_handle().as_ref()).expect("live window")),
         );
     }
     if fs.winlink_handle().is_alive() {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             (fs.winlink_handle()).get_unchecked().idx,
         );
     } else if fs.idx != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
-            &mut *ep,
+            &mut ep,
             b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
             fs.idx,
         );
     }
     if !fs.pane_handle().is_none() {
         event_payload_set_pane(
-            &mut *ep,
+            &mut ep,
             b"pane\0" as *const u8 as *const ::core::ffi::c_char,
             fs.pane_handle().expect("event pane"),
         );
@@ -184,10 +184,10 @@ pub unsafe fn events_fire_session(mut name: *const ::core::ffi::c_char, owner: S
     let mut ep = event_payload_create();
     if owner.is_registered() {
         cmd_find_from_session(&raw mut fs, &owner, 0 as ::core::ffi::c_int);
-        event_payload_set_target(&mut *ep, &fs);
+        event_payload_set_target(&mut ep, &fs);
     }
     event_payload_set_session(
-        &mut *ep,
+        &mut ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
         owner,
     );
@@ -208,9 +208,9 @@ pub unsafe fn events_fire_window(mut name: *const ::core::ffi::c_char, owner: Wi
         &std::rc::Rc::clone(&(owner)),
         0 as ::core::ffi::c_int,
     );
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         owner,
     );
@@ -230,18 +230,18 @@ pub unsafe fn events_fire_pane(
     };
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, &owner, 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     let window = owner
         .window_observer()
         .upgrade()
         .expect("event pane parent");
     event_payload_set_pane(
-        &mut *ep,
+        &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
         owner,
     );
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
         window,
     );
@@ -261,21 +261,21 @@ pub unsafe fn events_fire_winlink(
     };
     let mut ep = event_payload_create();
     cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
-    event_payload_set_target(&mut *ep, &fs);
+    event_payload_set_target(&mut ep, &fs);
     if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
         event_payload_set_session(
-            &mut *ep,
+            &mut ep,
             b"session\0" as *const u8 as *const ::core::ffi::c_char,
             session_owner.clone(),
         );
     }
     event_payload_set_window(
-        &mut *ep,
+        &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(&((wl.get_unchecked().window_handle().as_ref()).expect("live window"))),
+        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_int(
-        &mut *ep,
+        &mut ep,
         b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
         wl.get_unchecked().idx,
     );

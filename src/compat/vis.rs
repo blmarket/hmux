@@ -855,73 +855,70 @@ pub unsafe fn vis(
     } else {
         current_block = 15345278821338558188;
     }
-    match current_block {
-        15345278821338558188 => {
-            if c & 0o177 as ::core::ffi::c_int == ' ' as i32
-                || flag & VIS_OCTAL != 0
-                || flag & VIS_GLOB != 0
-                    && (c == '*' as i32 || c == '?' as i32 || c == '[' as i32 || c == '#' as i32)
+    if current_block == 15345278821338558188 {
+        if c & 0o177 as ::core::ffi::c_int == ' ' as i32
+            || flag & VIS_OCTAL != 0
+            || flag & VIS_GLOB != 0
+                && (c == '*' as i32 || c == '?' as i32 || c == '[' as i32 || c == '#' as i32)
+        {
+            let fresh22 = dst;
+            dst = dst.offset(1);
+            *fresh22 = '\\' as i32 as ::core::ffi::c_char;
+            let fresh23 = dst;
+            dst = dst.offset(1);
+            *fresh23 = ((c as u_char as ::core::ffi::c_int >> 6 as ::core::ffi::c_int
+                & 0o7 as ::core::ffi::c_int)
+                + '0' as i32) as ::core::ffi::c_char;
+            let fresh24 = dst;
+            dst = dst.offset(1);
+            *fresh24 = ((c as u_char as ::core::ffi::c_int >> 3 as ::core::ffi::c_int
+                & 0o7 as ::core::ffi::c_int)
+                + '0' as i32) as ::core::ffi::c_char;
+            let fresh25 = dst;
+            dst = dst.offset(1);
+            *fresh25 = ((c as u_char as ::core::ffi::c_int & 0o7 as ::core::ffi::c_int)
+                + '0' as i32) as ::core::ffi::c_char;
+        } else {
+            if flag & VIS_NOSLASH == 0 as ::core::ffi::c_int {
+                let fresh26 = dst;
+                dst = dst.offset(1);
+                *fresh26 = '\\' as i32 as ::core::ffi::c_char;
+            }
+            if c & 0o200 as ::core::ffi::c_int != 0 {
+                c &= 0o177 as ::core::ffi::c_int;
+                let fresh27 = dst;
+                dst = dst.offset(1);
+                *fresh27 = 'M' as i32 as ::core::ffi::c_char;
+            }
+            if *(*__ctype_b_loc()).offset(c as u_char as ::core::ffi::c_int as isize)
+                as ::core::ffi::c_int
+                & _IScntrl as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
+                != 0
             {
-                let fresh22 = dst;
+                let fresh28 = dst;
                 dst = dst.offset(1);
-                *fresh22 = '\\' as i32 as ::core::ffi::c_char;
-                let fresh23 = dst;
-                dst = dst.offset(1);
-                *fresh23 = ((c as u_char as ::core::ffi::c_int >> 6 as ::core::ffi::c_int
-                    & 0o7 as ::core::ffi::c_int)
-                    + '0' as i32) as ::core::ffi::c_char;
-                let fresh24 = dst;
-                dst = dst.offset(1);
-                *fresh24 = ((c as u_char as ::core::ffi::c_int >> 3 as ::core::ffi::c_int
-                    & 0o7 as ::core::ffi::c_int)
-                    + '0' as i32) as ::core::ffi::c_char;
-                let fresh25 = dst;
-                dst = dst.offset(1);
-                *fresh25 = ((c as u_char as ::core::ffi::c_int & 0o7 as ::core::ffi::c_int)
-                    + '0' as i32) as ::core::ffi::c_char;
-            } else {
-                if flag & VIS_NOSLASH == 0 as ::core::ffi::c_int {
-                    let fresh26 = dst;
+                *fresh28 = '^' as i32 as ::core::ffi::c_char;
+                if c == 0o177 as ::core::ffi::c_int {
+                    let fresh29 = dst;
                     dst = dst.offset(1);
-                    *fresh26 = '\\' as i32 as ::core::ffi::c_char;
-                }
-                if c & 0o200 as ::core::ffi::c_int != 0 {
-                    c &= 0o177 as ::core::ffi::c_int;
-                    let fresh27 = dst;
-                    dst = dst.offset(1);
-                    *fresh27 = 'M' as i32 as ::core::ffi::c_char;
-                }
-                if *(*__ctype_b_loc()).offset(c as u_char as ::core::ffi::c_int as isize)
-                    as ::core::ffi::c_int
-                    & _IScntrl as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                    != 0
-                {
-                    let fresh28 = dst;
-                    dst = dst.offset(1);
-                    *fresh28 = '^' as i32 as ::core::ffi::c_char;
-                    if c == 0o177 as ::core::ffi::c_int {
-                        let fresh29 = dst;
-                        dst = dst.offset(1);
-                        *fresh29 = '?' as i32 as ::core::ffi::c_char;
-                    } else {
-                        let fresh30 = dst;
-                        dst = dst.offset(1);
-                        *fresh30 = (c + '@' as i32) as ::core::ffi::c_char;
-                    }
+                    *fresh29 = '?' as i32 as ::core::ffi::c_char;
                 } else {
-                    let fresh31 = dst;
+                    let fresh30 = dst;
                     dst = dst.offset(1);
-                    *fresh31 = '-' as i32 as ::core::ffi::c_char;
-                    let fresh32 = dst;
-                    dst = dst.offset(1);
-                    *fresh32 = c as ::core::ffi::c_char;
+                    *fresh30 = (c + '@' as i32) as ::core::ffi::c_char;
                 }
+            } else {
+                let fresh31 = dst;
+                dst = dst.offset(1);
+                *fresh31 = '-' as i32 as ::core::ffi::c_char;
+                let fresh32 = dst;
+                dst = dst.offset(1);
+                *fresh32 = c as ::core::ffi::c_char;
             }
         }
-        _ => {}
     }
     *dst = '\0' as i32 as ::core::ffi::c_char;
-    return dst;
+    dst
 }
 pub unsafe fn strvis(
     mut dst: *mut ::core::ffi::c_char,
@@ -945,7 +942,7 @@ pub unsafe fn strvis(
         );
     }
     *dst = '\0' as i32 as ::core::ffi::c_char;
-    return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
+    dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int
 }
 pub unsafe fn strnvis(
     mut dst: *mut ::core::ffi::c_char,
@@ -960,9 +957,7 @@ pub unsafe fn strnvis(
     let mut i: ::core::ffi::c_int = 0;
     i = 0 as ::core::ffi::c_int;
     start = dst;
-    end = start
-        .offset(siz as isize)
-        .offset(-(1 as ::core::ffi::c_int as isize));
+    end = start.add(siz).offset(-(1 as ::core::ffi::c_int as isize));
     loop {
         c = *src as ::core::ffi::c_int;
         if !(c != 0 && dst < end) {
@@ -1053,7 +1048,7 @@ pub unsafe fn strnvis(
             );
         }
     }
-    return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
+    dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int
 }
 /// Escape a borrowed C string into Rust-owned storage, preserving `stravis` byte rules.
 pub(crate) fn stravis_cstring(src: &std::ffi::CStr, flag: ::core::ffi::c_int) -> std::ffi::CString {

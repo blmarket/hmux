@@ -118,5 +118,5 @@ unsafe fn cmd_unbind_key_exec(
         tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
     }
     key_bindings_remove(std::ffi::CStr::from_ptr(tablename), key);
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

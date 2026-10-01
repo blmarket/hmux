@@ -6,7 +6,6 @@
     unused_assignments,
     unused_mut
 )]
-#![feature(extern_types, raw_ref_op)]
 use crate::src::cfg::{cfg_quiet, cfg_set_files};
 use crate::src::client::client_main;
 use crate::src::compat::fdforkpty::getptmfd;
@@ -404,15 +403,15 @@ static mut global_s_options_owner: Option<Box<options>> = None;
 static mut global_w_options_owner: Option<Box<options>> = None;
 
 pub(crate) unsafe fn free_global_options() {
-    if let Some(owner) = (*(&raw mut global_options_owner)).take() {
+    if let Some(owner) = global_options_owner.take() {
         crate::src::options::options_free(owner);
         global_options = std::ptr::null_mut();
     }
-    if let Some(owner) = (*(&raw mut global_s_options_owner)).take() {
+    if let Some(owner) = global_s_options_owner.take() {
         crate::src::options::options_free(owner);
         global_s_options = std::ptr::null_mut();
     }
-    if let Some(owner) = (*(&raw mut global_w_options_owner)).take() {
+    if let Some(owner) = global_w_options_owner.take() {
         crate::src::options::options_free(owner);
         global_w_options = std::ptr::null_mut();
     }
@@ -447,7 +446,7 @@ unsafe fn getshell() -> *const ::core::ffi::c_char {
     if !pw.is_null() && checkshell((*pw).pw_shell) != 0 {
         return (*pw).pw_shell;
     }
-    return b"/bin/sh\0" as *const u8 as *const ::core::ffi::c_char;
+    b"/bin/sh\0" as *const u8 as *const ::core::ffi::c_char
 }
 pub unsafe fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     if shell.is_null() || *shell as ::core::ffi::c_int != '/' as i32 {
@@ -459,7 +458,7 @@ pub unsafe fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::
     if access(shell, X_OK) != 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    return 1 as ::core::ffi::c_int;
+    1 as ::core::ffi::c_int
 }
 unsafe fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut progname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -477,7 +476,7 @@ unsafe fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int 
     if strcmp(ptr, progname) == 0 as ::core::ffi::c_int {
         return 1 as ::core::ffi::c_int;
     }
-    return 0 as ::core::ffi::c_int;
+    0 as ::core::ffi::c_int
 }
 unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
     let mut value: Option<&environ_entry> = None;
@@ -496,9 +495,7 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
             global_environ.as_deref().expect("environment"),
             name.as_ptr(),
         );
-        if value.is_none() {
-            return None;
-        }
+        value?;
         // On glibc, the previous `%s` rendered a cleared environment value
         // as `(null)`. Keep that behavior if this entry has no value.
         let mut expanded = if value.unwrap().value.is_none() {
@@ -628,35 +625,35 @@ unsafe fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
         && *__errno_location() != EEXIST
     {
         let error = CStr::from_ptr(strerror(*__errno_location()));
-        return Err(make_label_cause(&[
+        Err(make_label_cause(&[
             b"couldn't create directory ",
             base.to_bytes(),
             b" (",
             error.to_bytes(),
             b")",
-        ]));
+        ]))
     } else if lstat(base.as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
         let error = CStr::from_ptr(strerror(*__errno_location()));
-        return Err(make_label_cause(&[
+        Err(make_label_cause(&[
             b"couldn't read directory ",
             base.to_bytes(),
             b" (",
             error.to_bytes(),
             b")",
-        ]));
+        ]))
     } else if !(sb.st_mode & __S_IFMT as __mode_t == 0o40000 as __mode_t) {
-        return Err(make_label_cause(&[base.to_bytes(), b" is not a directory"]));
+        Err(make_label_cause(&[base.to_bytes(), b" is not a directory"]))
     } else if sb.st_uid != uid || sb.st_mode & TMUX_SOCK_PERM as __mode_t != 0 as __mode_t {
-        return Err(make_label_cause(&[
+        Err(make_label_cause(&[
             b"directory ",
             base.to_bytes(),
             b" has unsafe permissions",
-        ]));
+        ]))
     } else {
         let mut path = base.into_bytes();
         path.push(b'/');
         path.extend_from_slice(label.unwrap_or(c"default").to_bytes());
-        return Ok(CString::new(path).expect("socket label path contains no NUL"));
+        Ok(CString::new(path).expect("socket label path contains no NUL"))
     }
 }
 pub(crate) unsafe fn shell_argv0_cstring(shell: &CStr, is_login: bool) -> CString {
@@ -692,12 +689,12 @@ pub unsafe fn get_timer() -> uint64_t {
     if clock_gettime(CLOCK_MONOTONIC, &raw mut ts) != 0 as ::core::ffi::c_int {
         clock_gettime(CLOCK_REALTIME, &raw mut ts);
     }
-    return (ts.tv_sec as ::core::ffi::c_ulonglong)
+    (ts.tv_sec as ::core::ffi::c_ulonglong)
         .wrapping_mul(1000 as ::core::ffi::c_ulonglong)
         .wrapping_add(
             (ts.tv_nsec as ::core::ffi::c_ulonglong)
                 .wrapping_div(1000000 as ::core::ffi::c_ulonglong),
-        ) as uint64_t;
+        ) as uint64_t
 }
 /// Escape a validated name once before moving it into its Rust owner.
 pub fn clean_name_cstring(name: &CStr, untrusted: ::core::ffi::c_int) -> Option<CString> {
@@ -722,8 +719,8 @@ pub fn check_name(name: &CStr) -> bool {
 }
 pub unsafe fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 11] = [0; 11];
-    xformat(&mut *(&raw mut s), format_args!("{}", signo as i32));
-    return &raw mut s as *mut ::core::ffi::c_char;
+    xformat(&mut s, format_args!("{}", { signo }));
+    &raw mut s as *mut ::core::ffi::c_char
 }
 pub unsafe fn find_cwd() -> *const ::core::ffi::c_char {
     let mut resolved1: [::core::ffi::c_char; 4096] = [0; 4096];
@@ -760,7 +757,7 @@ pub unsafe fn find_cwd() -> *const ::core::ffi::c_char {
     {
         return &raw mut cwd as *mut ::core::ffi::c_char;
     }
-    return pwd;
+    pwd
 }
 /// Return the cached home directory as a borrowed C string. A missing result
 /// is retried on the next call, matching the old null-sentinel cache behavior.
@@ -787,7 +784,7 @@ pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
 pub fn getversion() -> &'static CStr {
     c"next-3.9"
 }
-unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
+unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     let mut argc = ::core::ffi::c_int::try_from(args.len()).expect("argv length exceeds c_int");
     let mut argv_view: Vec<_> = args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
     argv_view.push(::core::ptr::null_mut());
@@ -984,11 +981,11 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
         }
     }
     global_options_owner = Some(options_create(None));
-    global_options = (*(&raw mut global_options_owner)).as_deref_mut().unwrap();
+    global_options = global_options_owner.as_deref_mut().unwrap();
     global_s_options_owner = Some(options_create(None));
-    global_s_options = (*(&raw mut global_s_options_owner)).as_deref_mut().unwrap();
+    global_s_options = global_s_options_owner.as_deref_mut().unwrap();
     global_w_options_owner = Some(options_create(None));
-    global_w_options = (*(&raw mut global_w_options_owner)).as_deref_mut().unwrap();
+    global_w_options = global_w_options_owner.as_deref_mut().unwrap();
     oe = &raw const options_table as *const options_table_entry;
     while !(*oe).name_ptr().is_null() {
         if (*oe).scope & OPTIONS_TABLE_SERVER != 0 {
@@ -1053,7 +1050,7 @@ unsafe fn main_0(args: &Vec<CString>) -> ::core::ffi::c_int {
         }
     }
     if path.is_none() {
-        path = Some(match make_label(label.as_deref()) {
+        path = Some(match make_label(label) {
             Ok(path) => path,
             Err(cause) => {
                 fprintf(

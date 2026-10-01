@@ -134,5 +134,5 @@ unsafe fn cmd_list_clients_exec(
         }
         i = i.wrapping_add(1);
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

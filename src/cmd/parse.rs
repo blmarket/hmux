@@ -96,7 +96,7 @@ pub fn cmd_parse_error_uppercase_first(error: &mut Option<CString>) {
     };
     let mut bytes = cause.as_bytes_with_nul().to_vec();
     if let Some(first) = bytes.first_mut() {
-        *first = unsafe { libc::toupper(*first as u8 as libc::c_int) as u8 };
+        *first = unsafe { libc::toupper(*first as libc::c_int) as u8 };
     }
     *cause = CString::from_vec_with_nul(bytes).expect("cause remains NUL terminated");
 }
@@ -117,7 +117,7 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_l
                 .expect("live command queue item"),
             |out| {
                 write_cstr(out, (*pi).file_ptr())?;
-                write!(out, ":{}: ", ((*pi).line) as u32)?;
+                write!(out, ":{}: ", { (*pi).line })?;
                 out.write_all(s.as_bytes())
             },
         );
@@ -128,7 +128,7 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_l
                 .upgrade()
                 .expect("live command queue item"),
             |out| {
-                write!(out, "{}: ", ((*pi).line) as u32)?;
+                write!(out, "{}: ", { (*pi).line })?;
                 out.write_all(s.as_bytes())
             },
         );
@@ -160,8 +160,8 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             let pi = &mut *session.input;
             let client_owner = pi.c.upgrade();
             let mut fs: cmd_find_state = Default::default();
-            let fsp = if cmd_find_valid_state(&(*pi).fs) != 0 {
-                &raw mut (*pi).fs
+            let fsp = if cmd_find_valid_state(&pi.fs) != 0 {
+                &raw mut pi.fs
             } else {
                 cmd_find_from_client(&raw mut fs, client_owner.as_ref(), 0);
                 &raw mut fs
@@ -485,7 +485,7 @@ pub unsafe fn cmd_parse_from_file(
         }
     };
     cmd_parse_build_commands(&mut cmds, &mut *pi, &mut pr);
-    return pr;
+    pr
 }
 pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
@@ -507,11 +507,11 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
         pi = &raw mut input;
     }
     (*pi).flags |= CMD_PARSE_ONEGROUP;
-    return cmd_parse_from_buffer(
+    cmd_parse_from_buffer(
         s.as_ptr() as *const ::core::ffi::c_void,
         s.to_bytes().len() as size_t,
         pi,
-    );
+    )
 }
 pub unsafe fn cmd_parse_and_append(
     s: &CStr,
@@ -571,7 +571,7 @@ pub unsafe fn cmd_parse_from_buffer(
         }
     };
     cmd_parse_build_commands(&mut cmds, &mut *pi, &mut pr);
-    return pr;
+    pr
 }
 /// Parse argv while borrowing its strings for the duration of the parser call.
 pub unsafe fn cmd_parse_from_argv(argv: &[CString]) -> cmd_parse_result {

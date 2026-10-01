@@ -135,7 +135,7 @@ unsafe fn cmd_capture_pane_cell(s: &screen, xx: u_int, yy: u_int) -> CString {
         link: 0,
     };
     let mut flags: u_int = 0;
-    grid_get_cell(&*gd, xx, yy, &mut gc);
+    grid_get_cell(gd, xx, yy, &mut gc);
     let bytes = &gc.data.data[..gc.data.size as usize];
     let source = &bytes[..bytes
         .iter()
@@ -205,19 +205,13 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
     let mut p: [::core::ffi::c_char; 11] = [0; 11];
     let mut yy: u_int = 0;
     let mut xx: u_int = 0;
-    let mut total: u_int = (*gd).hsize.wrapping_add((*gd).sy);
-    let header = format!(
-        "G {}x{} ({}/{})\n",
-        (*gd).sx,
-        (*gd).sy,
-        (*gd).hsize,
-        (*gd).hlimit
-    );
+    let mut total: u_int = gd.hsize.wrapping_add(gd.sy);
+    let header = format!("G {}x{} ({}/{})\n", gd.sx, gd.sy, gd.hsize, gd.hlimit);
     cmd_capture_pane_append(&mut buf, header.as_bytes());
     yy = 0 as u_int;
     while yy < total {
-        let gl = grid_get_line(&*gd, yy);
-        if yy < (*gd).hsize {
+        let gl = grid_get_line(gd, yy);
+        if yy < gd.hsize {
             snprintf(
                 &raw mut p as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
@@ -228,7 +222,7 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
                 &raw mut p as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
                 b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-                yy.wrapping_sub((*gd).hsize),
+                yy.wrapping_sub(gd.hsize),
             );
         }
         let od = &gl.osc133_data;
@@ -262,7 +256,7 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
         row.push(b'\n');
         cmd_capture_pane_append(&mut buf, &row);
         xx = 0 as u_int;
-        while xx < (*gd).sx {
+        while xx < gd.sx {
             let cell = cmd_capture_pane_cell(s, xx, yy);
             cmd_capture_pane_append(&mut buf, cell.as_bytes());
             xx = xx.wrapping_add(1);
@@ -336,21 +330,19 @@ unsafe fn cmd_capture_pane_hyperlinks(
     i = 0 as u_int;
     while i < gl.cellused as u_int {
         grid_get_cell(gd, i, py, &mut gc);
-        if !(gc.link == 0 as u_int) {
-            if !links.contains(&gc.link) {
-                if let Some(link) = hyperlinks_get(
-                    s.hyperlinks.as_ref().expect("screen hyperlink table"),
-                    gc.link,
-                ) {
-                    if links.len() == gd.sx as usize {
-                        break;
-                    }
-                    links.push(gc.link);
-                    if !line.is_empty() {
-                        cmd_capture_pane_append(&mut line, b" ");
-                    }
-                    cmd_capture_pane_append(&mut line, link.uri.as_bytes());
+        if !(gc.link == 0 as u_int) && !links.contains(&gc.link) {
+            if let Some(link) = hyperlinks_get(
+                s.hyperlinks.as_ref().expect("screen hyperlink table"),
+                gc.link,
+            ) {
+                if links.len() == gd.sx as usize {
+                    break;
                 }
+                links.push(gc.link);
+                if !line.is_empty() {
+                    cmd_capture_pane_append(&mut line, b" ");
+                }
+                cmd_capture_pane_append(&mut line, link.uri.as_bytes());
             }
         }
         i = i.wrapping_add(1);
@@ -380,8 +372,8 @@ unsafe fn cmd_capture_pane_history(
     let mut buf = Vec::new();
     let mut b: [::core::ffi::c_char; 64] = [0; 64];
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let _Sflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let _Eflag: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     sx = wp.base.grid().sx;
     let (gd, s) = if args_has(args, b'a') != 0 {
         let Some(saved) = wp.base.saved_grid.as_deref() else {
@@ -451,7 +443,7 @@ unsafe fn cmd_capture_pane_history(
                 if n >= 0 as ::core::ffi::c_int {
                     cmd_capture_pane_append(
                         &mut buf,
-                        &std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
+                        std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
                     );
                 }
             }
@@ -465,7 +457,7 @@ unsafe fn cmd_capture_pane_history(
                 if n >= 0 as ::core::ffi::c_int {
                     cmd_capture_pane_append(
                         &mut buf,
-                        &std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
+                        std::slice::from_raw_parts(b.as_ptr().cast(), n as usize),
                     );
                 }
             }

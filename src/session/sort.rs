@@ -8,7 +8,7 @@ unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria
     let mut result: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     match sort_crit.order as ::core::ffi::c_uint {
         2 => {
-            result = (*sa).id.wrapping_sub((*sb).id) as ::core::ffi::c_int;
+            result = sa.id.wrapping_sub(sb.id) as ::core::ffi::c_int;
         }
         1 => {
             result = sa.creation_time.cmp(&sb.creation_time) as i32;
@@ -17,20 +17,14 @@ unsafe fn sort_session_cmp(sa: &session, sb: &session, sort_crit: &sort_criteria
             result = sb.activity_time.cmp(&sa.activity_time) as i32;
         }
         4 => {
-            result = strcmp(
-                ((*sa).name).as_ptr().cast_mut(),
-                ((*sb).name).as_ptr().cast_mut(),
-            );
+            result = strcmp((sa.name).as_ptr().cast_mut(), (sb.name).as_ptr().cast_mut());
         }
-        3 | 5 | 6 | 7 | 8 | _ => {}
+        _ => {}
     }
     if result == 0 as ::core::ffi::c_int {
-        result = strcmp(
-            ((*sa).name).as_ptr().cast_mut(),
-            ((*sb).name).as_ptr().cast_mut(),
-        );
+        result = strcmp((sa.name).as_ptr().cast_mut(), (sb.name).as_ptr().cast_mut());
     }
-    return sort_ordering(result, sort_crit.reversed);
+    sort_ordering(result, sort_crit.reversed)
 }
 pub(super) unsafe fn sort_get_sessions(sort_crit: &sort_criteria) -> Vec<SessionRef> {
     let mut sessions_sorted = Vec::new();

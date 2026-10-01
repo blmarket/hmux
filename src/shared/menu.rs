@@ -14,7 +14,6 @@ use std::ffi::CStr;
 use std::rc::Weak;
 
 /// Windows own menus; redraw scenes only observe them.
-
 /// A borrowed menu definition. An empty name denotes a separator.
 #[derive(Copy, Clone)]
 pub struct menu_item<'a> {

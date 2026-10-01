@@ -301,8 +301,8 @@ const format_lower: [Option<&CStr>; 26] = [
 ];
 #[inline]
 unsafe fn format_logging(mut ft: *mut format_tree) -> ::core::ffi::c_int {
-    return (log_get_level() != 0 as ::core::ffi::c_int || (*ft).flags & FORMAT_VERBOSE != 0)
-        as ::core::ffi::c_int;
+    (log_get_level() != 0 as ::core::ffi::c_int || (*ft).flags & FORMAT_VERBOSE != 0)
+        as ::core::ffi::c_int
 }
 unsafe fn format_log1(
     mut es: *mut format_expand_state,
@@ -375,20 +375,20 @@ pub unsafe fn format_create_defaults(
     }
     let ft = &raw mut *owner;
     format_defaults(ft, c_owner, s_owner, wl.clone(), wp_owner);
-    return owner;
+    owner
 }
 pub unsafe fn format_create_from_state(
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     c_owner: Option<&ClientRef>,
     fs: &cmd_find_state,
 ) -> Box<format_tree> {
-    return format_create_defaults(
+    format_create_defaults(
         item_handle,
         c_owner,
         fs.s.upgrade().as_ref(),
         (fs.winlink_handle()).clone(),
         fs.wp.upgrade().as_ref(),
-    );
+    )
 }
 pub unsafe fn format_create_from_target(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -396,11 +396,11 @@ pub unsafe fn format_create_from_target(
     let item = item_handle.get();
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    return format_create_from_state(
+    format_create_from_state(
         Some(item_handle),
         tc.as_ref(),
         &*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item),
-    );
+    )
 }
 pub unsafe fn format_defaults(
     mut ft: *mut format_tree,
@@ -511,7 +511,7 @@ unsafe fn format_defaults_session(mut ft: *mut format_tree, s_owner: &SessionRef
     (*ft).s = std::rc::Rc::downgrade(s_owner);
 }
 unsafe fn format_defaults_client(mut ft: *mut format_tree, c_owner: &ClientRef) {
-    let mut c: Option<ClientRef> = Some(c_owner.clone());
+    let _c: Option<ClientRef> = Some(c_owner.clone());
     if (*ft).s.upgrade().is_none() {
         (*ft).s = c_owner.attached_session();
     }
@@ -640,7 +640,7 @@ pub(crate) unsafe fn format_grid_word_cstring(
         });
         s = Some(utf8_tocstr_cstring(&ud));
     }
-    return s;
+    s
 }
 pub unsafe fn format_grid_line(gd: &grid, y: u_int) -> Option<CString> {
     format_grid_line_cstring(gd, y)
@@ -687,7 +687,7 @@ pub(crate) unsafe fn format_grid_line_cstring(gd: &grid, mut y: u_int) -> Option
         s = Some(utf8_tocstr_cstring(&ud));
         drop(ud);
     }
-    return s;
+    s
 }
 pub(crate) unsafe fn format_grid_hyperlink_cstring(
     gd: &grid,

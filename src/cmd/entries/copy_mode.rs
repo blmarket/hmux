@@ -177,5 +177,5 @@ unsafe fn cmd_copy_mode_exec(
         );
         return CMD_RETURN_NORMAL;
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

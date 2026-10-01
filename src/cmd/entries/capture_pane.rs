@@ -74,7 +74,7 @@ unsafe fn cmd_capture_pane_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    let pane_owner = (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item))
+    let pane_owner = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)
         .wp
         .upgrade()
         .expect("capture target pane");
@@ -115,7 +115,7 @@ unsafe fn cmd_capture_pane_exec(
                 write_cstr_n(
                     out,
                     buf.as_ptr().cast::<::core::ffi::c_char>(),
-                    (len as ::core::ffi::c_int) as i32,
+                    len as ::core::ffi::c_int,
                 )
             });
         } else {
@@ -144,5 +144,5 @@ unsafe fn cmd_capture_pane_exec(
             return CMD_RETURN_ERROR;
         }
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }

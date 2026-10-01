@@ -88,7 +88,7 @@ unsafe fn cmd_kill_session_exec(
     } {
         for session_owner in crate::src::session::session_group_members(sg) {
             server_destroy_session(&session_owner);
-            (&session_owner).destroy(
+            session_owner.destroy(
                 (1 as ::core::ffi::c_int) != 0,
                 std::ffi::CStr::from_ptr(
                     b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
@@ -97,14 +97,14 @@ unsafe fn cmd_kill_session_exec(
         }
     } else {
         server_destroy_session(&source);
-        (&source).destroy(
+        source.destroy(
             (1 as ::core::ffi::c_int) != 0,
             std::ffi::CStr::from_ptr(
                 b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
             ),
         );
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_kill_session_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -114,30 +114,29 @@ unsafe fn cmd_kill_session_all(
     let mut s: Option<SessionRef> =
         (*crate::src::cmd::queue::cmdq_get_target_mut(&mut *item)).session_handle();
     let mut sloop: Option<SessionRef> = None;
-    let mut sloop_owner = (&sessions).first();
+    let mut sloop_owner = sessions.first();
     sloop = sloop_owner.clone();
     while !sloop.is_none() {
         let name = sloop.as_ref().expect("live session").name().into_bytes();
-        if !(crate::src::shared::rc::same(sloop.as_ref(), s.as_ref())) {
-            if !(cmd_kill_session_filter(
+        if !(crate::src::shared::rc::same(sloop.as_ref(), s.as_ref()))
+            && !(cmd_kill_session_filter(
                 item_handle,
                 sloop.as_ref().expect("live session"),
                 filter,
             ) == 0)
-            {
-                server_destroy_session(sloop_owner.as_ref().expect("registered session"));
-                (sloop_owner.as_ref().expect("registered session")).destroy(
-                    (1 as ::core::ffi::c_int) != 0,
-                    std::ffi::CStr::from_ptr(
-                        b"cmd_kill_session_all\0" as *const u8 as *const ::core::ffi::c_char,
-                    ),
-                );
-            }
+        {
+            server_destroy_session(sloop_owner.as_ref().expect("registered session"));
+            (sloop_owner.as_ref().expect("registered session")).destroy(
+                (1 as ::core::ffi::c_int) != 0,
+                std::ffi::CStr::from_ptr(
+                    b"cmd_kill_session_all\0" as *const u8 as *const ::core::ffi::c_char,
+                ),
+            );
         }
-        sloop_owner = (&sessions).after(&name);
+        sloop_owner = sessions.after(&name);
         sloop = sloop_owner.clone();
     }
-    return CMD_RETURN_NORMAL;
+    CMD_RETURN_NORMAL
 }
 unsafe fn cmd_kill_session_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -163,5 +162,5 @@ unsafe fn cmd_kill_session_filter(
     let expanded = format_expand_cstring(ft, filter);
     flag = format_true(expanded.as_ptr());
     format_free(ft_owner);
-    return flag;
+    flag
 }

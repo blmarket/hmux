@@ -37,7 +37,7 @@ pub unsafe fn unvis(
                 return 0 as ::core::ffi::c_int;
             }
             *cp = c;
-            return 1 as ::core::ffi::c_int;
+            1 as ::core::ffi::c_int
         }
         S_START => {
             match c as ::core::ffi::c_int {
@@ -116,7 +116,7 @@ pub unsafe fn unvis(
                 _ => {}
             }
             *astate = S_GROUND;
-            return -(1 as ::core::ffi::c_int);
+            -(1 as ::core::ffi::c_int)
         }
         S_META => {
             if c as ::core::ffi::c_int == '-' as i32 {
@@ -127,12 +127,12 @@ pub unsafe fn unvis(
                 *astate = S_GROUND;
                 return -(1 as ::core::ffi::c_int);
             }
-            return 0 as ::core::ffi::c_int;
+            0 as ::core::ffi::c_int
         }
         S_META1 => {
             *astate = S_GROUND;
             *cp = (*cp as ::core::ffi::c_int | c as ::core::ffi::c_int) as ::core::ffi::c_char;
-            return 1 as ::core::ffi::c_int;
+            1 as ::core::ffi::c_int
         }
         S_CTRL => {
             if c as ::core::ffi::c_int == '?' as i32 {
@@ -144,7 +144,7 @@ pub unsafe fn unvis(
                     as ::core::ffi::c_char;
             }
             *astate = S_GROUND;
-            return 1 as ::core::ffi::c_int;
+            1 as ::core::ffi::c_int
         }
         S_OCTAL2 => {
             if c as u_char as ::core::ffi::c_int >= '0' as i32
@@ -157,7 +157,7 @@ pub unsafe fn unvis(
                 return 0 as ::core::ffi::c_int;
             }
             *astate = S_GROUND;
-            return 2 as ::core::ffi::c_int;
+            2 as ::core::ffi::c_int
         }
         S_OCTAL3 => {
             *astate = S_GROUND;
@@ -169,13 +169,13 @@ pub unsafe fn unvis(
                     as ::core::ffi::c_char;
                 return 1 as ::core::ffi::c_int;
             }
-            return 2 as ::core::ffi::c_int;
+            2 as ::core::ffi::c_int
         }
         _ => {
             *astate = S_GROUND;
-            return -(1 as ::core::ffi::c_int);
+            -(1 as ::core::ffi::c_int)
         }
-    };
+    }
 }
 pub unsafe fn strunvis(
     mut dst: *mut ::core::ffi::c_char,
@@ -214,5 +214,5 @@ pub unsafe fn strunvis(
         dst = dst.offset(1);
     }
     *dst = '\0' as i32 as ::core::ffi::c_char;
-    return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
+    dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int
 }

@@ -692,7 +692,7 @@ unsafe fn window_clock_init(
     screen_init(&mut *s, pane_sx, pane_sy, 0 as u_int);
     (*s).mode &= !MODE_CURSOR;
     window_clock_draw_screen(wme.clone());
-    return s;
+    s
 }
 unsafe fn window_clock_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut screen {
     let data = wme
@@ -913,28 +913,25 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             x = x.wrapping_add(6 as u_int);
             current_block_56 = 11913429853522160501;
         }
-        match current_block_56 {
-            2543120759711851213 => {
-                j = 0 as u_int;
-                while j < 5 as u_int {
-                    i = 0 as u_int;
-                    while i < 5 as u_int {
-                        screen_write_cursormove(
-                            &mut ctx,
-                            x.wrapping_add(i) as ::core::ffi::c_int,
-                            y.wrapping_add(j) as ::core::ffi::c_int,
-                            0 as ::core::ffi::c_int,
-                        );
-                        if window_clock_table[idx as usize][j as usize][i as usize] != 0 {
-                            screen_write_putc(&mut ctx, &gc, '#' as i32 as u_char);
-                        }
-                        i = i.wrapping_add(1);
+        if current_block_56 == 2543120759711851213 {
+            j = 0 as u_int;
+            while j < 5 as u_int {
+                i = 0 as u_int;
+                while i < 5 as u_int {
+                    screen_write_cursormove(
+                        &mut ctx,
+                        x.wrapping_add(i) as ::core::ffi::c_int,
+                        y.wrapping_add(j) as ::core::ffi::c_int,
+                        0 as ::core::ffi::c_int,
+                    );
+                    if window_clock_table[idx as usize][j as usize][i as usize] != 0 {
+                        screen_write_putc(&mut ctx, &gc, '#' as i32 as u_char);
                     }
-                    j = j.wrapping_add(1);
+                    i = i.wrapping_add(1);
                 }
-                x = x.wrapping_add(6 as u_int);
+                j = j.wrapping_add(1);
             }
-            _ => {}
+            x = x.wrapping_add(6 as u_int);
         }
         ptr = ptr.offset(1);
     }

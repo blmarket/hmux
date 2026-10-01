@@ -698,7 +698,7 @@ unsafe fn grid_string_cells_fg(gc: &grid_cell, values: &mut [i32; 64]) -> usize 
         values[0] = match colour {
             0..=7 => colour + 30,
             8 => 39,
-            90..=97 => colour + 0,
+            90..=97 => colour,
             _ => return 0,
         };
         1
@@ -1274,7 +1274,7 @@ pub unsafe fn grid_line_length(gd: &grid, mut py: u_int) -> u_int {
         }
         px = px.wrapping_sub(1);
     }
-    return px;
+    px
 }
 pub unsafe fn grid_line_limit(gd: &grid, mut py: u_int) -> u_int {
     let mut gc: grid_cell = grid_cell {
@@ -1304,7 +1304,7 @@ pub unsafe fn grid_line_limit(gd: &grid, mut py: u_int) -> u_int {
         }
         px = px.wrapping_sub(1);
     }
-    return px;
+    px
 }
 pub unsafe fn grid_in_set(
     gd: &grid,
@@ -1377,7 +1377,7 @@ pub unsafe fn grid_in_set(
             gc.data.width as ::core::ffi::c_int
         };
     }
-    return utf8_cstrhas(set, &gc.data) as ::core::ffi::c_int;
+    utf8_cstrhas(set, &gc.data) as ::core::ffi::c_int
 }
 struct GridFlagNames {
     flags: i32,

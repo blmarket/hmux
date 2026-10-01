@@ -116,6 +116,7 @@ unsafe fn client_get_lock(lockfile: *const ::core::ffi::c_char) -> ClientLock {
     let lock = match OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(false)
         .mode(0o600)
         .open(OsStr::from_bytes(CStr::from_ptr(lockfile).to_bytes()))
     {
@@ -200,7 +201,7 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
     match client_exitreason as ::core::ffi::c_uint {
         1 => {
             if let Some(session) = client_exitsession.as_ref() {
-                xformat_with(&mut *(&raw mut msg), |out| {
+                xformat_with(&mut msg, |out| {
                     out.write_all(b"detached (from session ")?;
                     out.write_all(session.as_bytes())?;
                     out.write_all(b")")
@@ -211,7 +212,7 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
         }
         2 => {
             if let Some(session) = client_exitsession.as_ref() {
-                xformat_with(&mut *(&raw mut msg), |out| {
+                xformat_with(&mut msg, |out| {
                     out.write_all(b"detached and SIGHUP (from session ")?;
                     out.write_all(session.as_bytes())?;
                     out.write_all(b")")
@@ -233,9 +234,9 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
                 .as_ref()
                 .map_or(::core::ptr::null(), |message| message.as_ptr().cast());
         }
-        0 | _ => {}
+        _ => {}
     }
-    return b"unknown reason\0" as *const u8 as *const ::core::ffi::c_char;
+    b"unknown reason\0" as *const u8 as *const ::core::ffi::c_char
 }
 unsafe fn client_exit() {
     if file_write_left(&client_files) == 0 {
@@ -243,7 +244,7 @@ unsafe fn client_exit() {
     }
 }
 pub unsafe fn client_main(
-    argv: &Vec<CString>,
+    argv: &[CString],
     mut flags: uint64_t,
     mut feat: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -525,7 +526,7 @@ pub unsafe fn client_main(
         setblocking(STDERR_FILENO, 1 as ::core::ffi::c_int);
         client_exitmessage.take();
         client_exitsession.take();
-        return client_exitval;
+        client_exitval
     })();
     crate::src::proc::proc_free(process_owner);
     client_peer = std::ptr::null_mut();
@@ -822,7 +823,7 @@ unsafe fn client_dispatch_exit_message(mut data: *mut ::core::ffi::c_char, mut d
             .wrapping_sub(
                 ::core::mem::size_of::<::core::ffi::c_int>() as usize as ::core::ffi::c_ulong
             ) as size_t as size_t;
-        data = data.offset(::core::mem::size_of::<::core::ffi::c_int>() as usize as isize);
+        data = data.add(::core::mem::size_of::<::core::ffi::c_int>() as usize);
         let mut message = ::core::slice::from_raw_parts(data.cast::<u8>(), datalen).to_vec();
         *message.last_mut().unwrap() = 0;
         client_exitmessage = Some(message);
@@ -943,10 +944,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             proc_exit(client_proc);
         }
         _ => {
-            log_debug(format_args!(
-                "unknown message type {}",
-                (imsg.hdr.type_0) as u32
-            ));
+            log_debug(format_args!("unknown message type {}", { imsg.hdr.type_0 }));
         }
     };
 }
@@ -1093,10 +1091,7 @@ unsafe fn client_dispatch_attached(imsg: &mut imsg) {
             );
         }
         _ => {
-            log_debug(format_args!(
-                "unknown message type {}",
-                (imsg.hdr.type_0) as u32
-            ));
+            log_debug(format_args!("unknown message type {}", { imsg.hdr.type_0 }));
         }
     };
 }
