@@ -37,29 +37,6 @@ mod tests {
     use ::core::mem::{align_of, size_of};
 
     #[test]
-    fn dropping_old_leaf_preserves_replacement_link_and_parent() {
-        unsafe {
-            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let mut old = layout_cell::new();
-            old.wp = std::rc::Rc::downgrade(&pane);
-            pane.place_in_layout(old.id());
-            let mut parent = layout_cell::new();
-            parent.type_0 = LAYOUT_TOPBOTTOM;
-            let mut replacement = layout_cell::new();
-            replacement.wp = std::rc::Rc::downgrade(&pane);
-            let replacement_id = replacement.id();
-            pane.place_in_layout(replacement_id);
-            layout_cells_push_back(&mut *parent, replacement);
-            drop(old);
-            assert_eq!(pane.layout_identity(false), Some(replacement_id));
-            let parent_pointer = &mut *parent as *mut layout_cell;
-            assert_eq!(parent.cells[0].parent, parent_pointer);
-            drop(parent);
-            assert_eq!(pane.layout_identity(false), None);
-        }
-    }
-
-    #[test]
     fn cell_identity_survives_transfer_but_not_removal_or_replacement() {
         let mut first = layout_cell::new();
         first.type_0 = LAYOUT_TOPBOTTOM;

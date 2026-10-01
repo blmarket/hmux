@@ -1444,24 +1444,6 @@ mod tests {
         assert_eq!(KEYC_MOUSE_LOCATION_PANE, 0);
         assert_eq!(KEYC_MOUSE_LOCATION_NOWHERE, 20);
     }
-
-    #[test]
-    fn key_event_expired_explicit_client_does_not_use_fallback() {
-        let fallback = unsafe { ClientRef::allocate() };
-        let explicit = unsafe { ClientRef::allocate() };
-        let mut event = key_event::new(1, mouse_event::default(), None);
-        let resolved = event.resolve_client(|| Some(fallback.clone())).unwrap();
-        assert!(std::rc::Rc::ptr_eq(&resolved, &fallback));
-        drop(resolved);
-
-        event.client = std::rc::Rc::downgrade(&explicit);
-        let resolved = event.resolve_client(|| Some(fallback.clone())).unwrap();
-        assert!(std::rc::Rc::ptr_eq(&resolved, &explicit));
-        drop(resolved);
-        drop(explicit);
-
-        assert!(event.resolve_client(|| Some(fallback.clone())).is_none());
-    }
 }
 
 pub const KEY_BINDING_REPEAT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;

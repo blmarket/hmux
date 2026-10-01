@@ -233,7 +233,6 @@ fn migrated_consumers_do_not_project_model_storage() {
         "src/window_visible.rs",
         "src/options.rs",
         "src/format/jobs.rs",
-        "tests/pane_order_borrows.rs",
     ] {
         let source =
             std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap();

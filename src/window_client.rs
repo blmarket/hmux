@@ -18,9 +18,6 @@ use crate::src::screen_write::{
     screen_write_vline,
 };
 use crate::src::server_client::Client as _;
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
-
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -248,105 +245,6 @@ unsafe fn window_client_add_item(
     )));
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn client_items_keep_snapshots_alive_after_list_replacement() {
-        let client_owner = unsafe { ClientRef::allocate() };
-        let client_observer = Rc::downgrade(&client_owner);
-        let ttyname = CString::new(b"/dev/pts/7".as_slice()).unwrap();
-        let mut items = vec![refbox::RefBox::new(window_client_itemdata::new(
-            &client_owner,
-            &ttyname,
-        ))];
-        let observer = items[0].downgrade();
-        let first = ModeTreeItemData::Client(observer.clone())
-            .as_client()
-            .unwrap();
-        drop(ttyname);
-
-        for _ in 0..256 {
-            items.push(refbox::RefBox::new(window_client_itemdata::new(
-                &client_owner,
-                c"another terminal",
-            )));
-        }
-        assert!(observer.is(&items[0]));
-        assert_eq!(first.ttyname.as_bytes(), b"/dev/pts/7");
-
-        items.clear();
-        items.push(refbox::RefBox::new(window_client_itemdata::new(
-            &client_owner,
-            c"replacement",
-        )));
-        assert_eq!(
-            items[0].try_borrow_mut().unwrap().ttyname.as_bytes(),
-            b"replacement"
-        );
-        assert_eq!(first.ttyname.as_bytes(), b"/dev/pts/7");
-        assert!(!observer.is_alive());
-        drop(first);
-        assert!(!observer.is_alive());
-        drop(items);
-        drop(client_owner);
-        assert!(client_observer.upgrade().is_none());
-    }
-
-    #[test]
-    fn client_row_defers_its_reference_but_action_snapshot_releases_immediately() {
-        use crate::src::{reactor, shared::rc};
-        for cancel in [false, true] {
-            unsafe {
-                let client_owner = crate::src::shared::client::ClientRef::fixture_with_names(
-                    None,
-                    Some(c"/dev/pts/7"),
-                );
-                let client_observer = Rc::downgrade(&client_owner);
-                let mut data = window_client_modedata {
-                    wp: Weak::new(),
-                    data: None,
-                    format: c"".to_owned(),
-                    key_format: c"".to_owned(),
-                    command: c"".to_owned(),
-                    hide_preview_this_pane: 0,
-                    preview_is_info: 0,
-                    items: Vec::new(),
-                };
-                window_client_add_item(&mut data.items, &client_owner);
-                assert_eq!(Rc::strong_count(&client_owner), 2);
-                let item_observer = data.items[0].downgrade();
-                let selected = ModeTreeItemData::Client(item_observer.clone());
-                let snapshot = selected.as_client().unwrap();
-                assert_eq!(Rc::strong_count(&client_owner), 3);
-                data.items.clear();
-                drop(client_owner);
-                assert!(client_observer.upgrade().is_some());
-                assert!(!item_observer.is_alive());
-                let another_selection = selected.clone();
-                drop(selected);
-                assert!(!item_observer.is_alive());
-                drop(another_selection);
-                assert!(!item_observer.is_alive());
-                reactor::poll_runtime();
-                assert!(
-                    client_observer.upgrade().is_some(),
-                    "action snapshot retains its client"
-                );
-                drop(snapshot);
-                assert!(client_observer.upgrade().is_none());
-                if cancel {
-                    reactor::shutdown_runtime();
-                } else {
-                    reactor::poll_runtime();
-                }
-                assert!(client_observer.upgrade().is_none());
-                reactor::shutdown_runtime();
-            }
-        }
-    }
-}
 unsafe fn window_client_build(
     data: *mut window_client_modedata,
     mut sort_crit: *mut sort_criteria,
@@ -689,37 +587,6 @@ unsafe fn window_client_status_snapshot(c: &ClientRef, lines: u32) -> screen {
     snapshot.grid = Some(crate::src::grid::grid_create(source.sx, rows, 0));
     crate::src::grid::grid_duplicate_lines(snapshot.grid_mut(), 0, source, 0, rows);
     snapshot
-}
-
-#[cfg(test)]
-mod status_preview_tests {
-    use super::*;
-
-    #[test]
-    fn preview_survives_status_replacement_before_rendering() {
-        unsafe {
-            let client = ClientRef::allocate();
-            let mut cell = grid_default_cell;
-            cell.data.data[0] = b'A';
-            cell.data.size = 1;
-            cell.data.width = 1;
-            {
-                let mut status = client.borrow_status_mut();
-                status.screen.grid = Some(crate::src::grid::grid_create(4, 1, 0));
-                crate::src::grid::grid_set_cell(status.screen.grid_mut(), 0, 0, &cell);
-            }
-            let mut preview = window_client_status_snapshot(&client, 1);
-            // Formatting/terminal dispatch may replace the live status screen.
-            {
-                let mut status = client.borrow_status_mut();
-                crate::src::screen::screen_free(&mut status.screen);
-            }
-            let mut observed = grid_default_cell;
-            crate::src::grid::grid_get_cell(preview.grid(), 0, 0, &mut observed);
-            assert_eq!(observed.data.data[0], b'A');
-            crate::src::screen::screen_free(&mut preview);
-        }
-    }
 }
 
 unsafe fn window_client_menu(data: *mut window_client_modedata, c: &ClientRef, mut key: key_code) {

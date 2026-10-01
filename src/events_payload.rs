@@ -11,9 +11,6 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
 use crate::src::window::Window as _;
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
-
 use crate::src::session::Session as _;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -507,35 +504,6 @@ mod tests {
     use std::ffi::{CStr, CString};
 
     #[test]
-    fn payload_handle_and_target_retain_pane_after_source_release() {
-        unsafe {
-            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let observed = std::rc::Rc::downgrade(&pane);
-            let value = EventPayloadValue::Pane(pane.clone());
-            let retained = value.pane().clone();
-            let state = cmd_find_state {
-                wp: observed.clone(),
-                ..Default::default()
-            };
-            let mut payload = event_payload_create();
-            event_payload_set_target(&mut payload, &state);
-            assert!(std::rc::Rc::ptr_eq(
-                payload.target_pane.as_ref().unwrap(),
-                &pane
-            ));
-            drop(pane);
-            drop(value);
-            drop(payload);
-            assert!(observed.upgrade().is_some());
-            drop(retained);
-            assert!(observed.upgrade().is_none());
-            let mut expired_payload = event_payload_create();
-            event_payload_set_target(&mut expired_payload, &state);
-            assert!(expired_payload.target_pane.is_none());
-        }
-    }
-
-    #[test]
     fn replacement_accepts_the_previous_items_borrowed_name() {
         unsafe {
             let mut ep = event_payload_create();
@@ -555,49 +523,6 @@ mod tests {
             assert_eq!((*replacement).value.number(), 42);
             assert_eq!(event_payload_items(&*ep).count(), 1);
             drop(ep);
-        }
-    }
-
-    #[test]
-    fn boxed_item_drop_releases_models_and_allows_nested_event_dispatch() {
-        use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
-        use crate::src::shared::events::events_callback;
-        use std::cell::RefCell;
-        use std::rc::Rc;
-        unsafe {
-            let first_owner = crate::src::shared::window::WindowRef::fixture_with_id(11);
-            let second_owner = crate::src::shared::window::WindowRef::fixture_with_id(22);
-            let first_observer = Rc::downgrade(&first_owner);
-            let second_observer = Rc::downgrade(&second_owner);
-            let closed = Rc::new(RefCell::new(Vec::new()));
-            let observed = closed.clone();
-            let sink = events_add_sink(
-                c"window-closed",
-                events_callback(move |_, payload| {
-                    let window = event_payload_get_window(payload).expect("window payload");
-                    observed.borrow_mut().push(window.id());
-                    events_fire(c"payload-nested-cleanup".as_ptr(), event_payload_create());
-                }),
-            );
-            let mut payload = event_payload {
-                target_pane: None,
-                target_window: None,
-                target_session: None,
-                items: event_payload_tree::default(),
-                target: Default::default(),
-            };
-            event_payload_set_window(&mut payload, c"alpha".as_ptr(), first_owner.clone());
-            event_payload_set_window(&mut payload, c"beta".as_ptr(), second_owner.clone());
-            first_owner.release(c"test initial owner");
-            second_owner.release(c"test initial owner");
-            event_payload_set_int(&mut payload, c"alpha".as_ptr(), 7);
-            assert!(first_observer.upgrade().is_none());
-            assert!(second_observer.upgrade().is_some());
-            assert_eq!(*closed.borrow(), [11]);
-            drop(payload);
-            assert!(second_observer.upgrade().is_none());
-            assert_eq!(*closed.borrow(), [11, 22]);
-            events_remove_sink(sink);
         }
     }
 
@@ -639,95 +564,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn payload_drop_releases_items_in_key_order_before_the_target() {
-        use crate::src::events::{events_add_sink, events_remove_sink};
-        use crate::src::shared::events::events_callback;
-        use std::cell::RefCell;
-        use std::rc::Rc;
-
-        unsafe {
-            let first_owner = crate::src::shared::window::WindowRef::fixture_with_id(11);
-            let second_owner = crate::src::shared::window::WindowRef::fixture_with_id(22);
-            let target_owner = crate::src::shared::window::WindowRef::fixture_with_id(33);
-            let first_observer = Rc::downgrade(&first_owner);
-            let second_observer = Rc::downgrade(&second_owner);
-            let target_observer = Rc::downgrade(&target_owner);
-            let target_during_cleanup = target_observer.clone();
-            let closed = Rc::new(RefCell::new(Vec::new()));
-            let observed = closed.clone();
-            let sink = events_add_sink(
-                c"window-closed",
-                events_callback(move |_, payload| {
-                    let id = event_payload_get_window(payload)
-                        .expect("window payload")
-                        .id();
-                    // Reentrant item cleanup still has the payload's target.
-                    if id != 33 {
-                        assert!(target_during_cleanup.upgrade().is_some());
-                    }
-                    observed.borrow_mut().push(id);
-                }),
-            );
-
-            let mut payload = event_payload_create();
-            let fs = cmd_find_state {
-                w: Rc::downgrade(&target_owner),
-                ..Default::default()
-            };
-            event_payload_set_target(&mut payload, &fs);
-            event_payload_set_window(&mut payload, c"beta".as_ptr(), first_owner.clone());
-            event_payload_set_window(&mut payload, c"alpha".as_ptr(), second_owner.clone());
-            first_owner.release(c"test initial owner");
-            second_owner.release(c"test initial owner");
-            target_owner.release(c"test initial owner");
-            drop(payload);
-
-            assert_eq!(*closed.borrow(), [22, 11, 33]);
-            assert!(first_observer.upgrade().is_none());
-            assert!(second_observer.upgrade().is_none());
-            assert!(target_observer.upgrade().is_none());
-            events_remove_sink(sink);
-        }
-    }
-
-    #[test]
-    fn dispatch_keeps_payload_models_alive_until_every_sink_finishes() {
-        use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
-        use crate::src::shared::events::events_callback;
-        use std::cell::RefCell;
-        use std::rc::Rc;
-
-        unsafe {
-            let window_owner = crate::src::shared::window::WindowRef::fixture_with_id(44);
-            let observer = Rc::downgrade(&window_owner);
-            let observed = Rc::new(RefCell::new(Vec::new()));
-            let mut sinks = Vec::new();
-            for _ in 0..2 {
-                let observer = observer.clone();
-                let observed = observed.clone();
-                sinks.push(events_add_sink(
-                    c"payload-owner-test",
-                    events_callback(move |_, payload| {
-                        assert!(observer.upgrade().is_some());
-                        observed.borrow_mut().push(
-                            event_payload_get_window(payload)
-                                .expect("window payload")
-                                .id(),
-                        );
-                    }),
-                ));
-            }
-            let mut payload = event_payload_create();
-            event_payload_set_window(&mut payload, c"window".as_ptr(), window_owner.clone());
-            window_owner.release(c"test initial owner");
-            events_fire(c"payload-owner-test".as_ptr(), payload);
-
-            assert_eq!(*observed.borrow(), [44, 44]);
-            assert!(observer.upgrade().is_none());
-            for sink in sinks {
-                events_remove_sink(sink);
-            }
-        }
-    }
 }

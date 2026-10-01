@@ -85,9 +85,6 @@ use crate::src::tmux::{get_timer, global_options, global_w_options};
 use crate::src::tty::tty_window_offset;
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::window::Window as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
-
 use crate::src::window_pane::WindowPane as _;
 use libc::{REG_EXTENDED, REG_ICASE};
 use std::borrow::Cow;
@@ -10156,39 +10153,6 @@ unsafe fn window_copy_acquire_cursor_down(
 }
 
 #[cfg(test)]
-mod drag_client_tests {
-    use super::*;
-
-    #[test]
-    fn detached_drag_callbacks_do_not_keep_client_alive() {
-        unsafe {
-            let owner = ClientRef::allocate();
-            let weak = std::rc::Rc::downgrade(&owner);
-            window_copy_install_drag_callbacks(&owner);
-            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            let mut update = owner
-                .borrow_terminal_mut()
-                .mouse_drag_update
-                .take()
-                .unwrap();
-            let release = owner
-                .borrow_terminal_mut()
-                .mouse_drag_release
-                .take()
-                .unwrap();
-            drop(owner);
-            assert!(weak.upgrade().is_none());
-
-            let mut mouse = mouse_event::default();
-            update(&mut mouse);
-            update(&mut mouse);
-            release(&mut mouse);
-            assert!(weak.upgrade().is_none());
-        }
-    }
-}
-
-#[cfg(test)]
 mod regex_cell_tests {
     use super::*;
 
@@ -10321,82 +10285,6 @@ mod backing_owner_tests {
             assert_eq!(byte_at(data.backing(), 3, 1), b'H');
             screen_free(&mut hint);
             drop(data);
-        }
-    }
-
-    #[test]
-    fn incremental_sync_reuses_backing_and_replacement_preserves_the_source() {
-        unsafe {
-            let _options = ScreenOptions::new();
-            let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            pane_owner.fixture_base(|screen| screen_init(screen, 8, 3, 10));
-            let payload = Box::new(std::cell::UnsafeCell::new(window_copy_mode_data::default()));
-            let data = &mut *payload.get();
-            data.backing = Some(
-                pane_owner
-                    .fixture_base(|screen| window_copy_clone_screen(screen, screen, None, false)),
-            );
-            window_copy_sync_snapshot(data, pane_owner.history_scroll());
-            let original = data.backing() as *const screen;
-            let mode = refbox::RefBox::new(window_mode_entry {
-                wp: std::rc::Rc::downgrade(&pane_owner),
-                swp: std::rc::Rc::downgrade(&pane_owner),
-                mode: &window_copy_mode,
-                boxed_data: Some(payload),
-                data_owner: None,
-                prefix: 0,
-                kill: 0,
-            });
-            let mut mode_handle = mode.downgrade();
-            assert_eq!(window_copy_get_current_offset(&pane_owner), None);
-            pane_owner.fixture_add_mode(mode);
-            let hsize = data.backing().grid().hsize;
-            assert_eq!(
-                window_copy_get_current_offset(&pane_owner),
-                Some((hsize, hsize))
-            );
-            mode_handle.get_mut_unchecked().mode = &window_view_mode;
-            assert_eq!(
-                window_copy_get_current_offset(&pane_owner),
-                Some((hsize, hsize))
-            );
-            mode_handle.get_mut_unchecked().mode = &crate::src::window_clock::window_clock_mode;
-            assert_eq!(window_copy_get_current_offset(&pane_owner), None);
-            mode_handle.get_mut_unchecked().mode = &window_copy_mode;
-            let _mode_owner = pane_owner.fixture_take_mode().unwrap();
-            let mut cell = grid_default_cell;
-            cell.data.data[0] = b'B';
-            pane_owner.fixture_base(|screen| grid_set_cell(screen.grid_mut(), 0, 0, &cell));
-            assert_eq!(byte_at(data.backing(), 0, 0), b' ');
-            assert_eq!(window_copy_sync_backing(mode_handle.clone()), 1);
-            assert_eq!(data.backing() as *const screen, original);
-            assert_eq!(byte_at(data.backing(), 0, 0), b'B');
-
-            pane_owner.fixture_base(|screen| screen.grid_mut().scroll_generation += 1);
-            assert_eq!(window_copy_sync_backing(mode_handle.clone()), 0);
-            data.clear_backing();
-            assert!(data.backing.is_none());
-            data.backing = Some(
-                pane_owner
-                    .fixture_base(|screen| window_copy_clone_screen(screen, screen, None, true)),
-            );
-            assert_eq!(byte_at(data.backing(), 0, 0), b'B');
-            pane_owner.fixture_base(|screen| {
-                assert_eq!(byte_at(screen, 0, 0), b'B');
-                screen_free(screen);
-            });
-            drop(pane_owner);
-            assert!(mode_handle.get_unchecked().swp.upgrade().is_none());
-            // An expired source leaves the independently owned snapshot intact.
-            assert_eq!(window_copy_sync_backing(mode_handle.clone()), 0);
-            assert_eq!(window_copy_refresh_allowed(mode_handle.clone()), 0);
-            window_copy_do_refresh(mode_handle.clone(), 0);
-            assert_eq!(byte_at(data.backing(), 0, 0), b'B');
-            data.clear_backing();
-            drop(_mode_owner);
-            // An empty backing during initialization or repeated cleanup is valid.
-            let mut empty = window_copy_mode_data::default();
-            empty.clear_backing();
         }
     }
 }

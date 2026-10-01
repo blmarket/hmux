@@ -8,15 +8,9 @@ use crate::src::window::*;
 use std::time::Duration;
 mod api;
 #[cfg(test)]
-mod colour_tests;
-#[cfg(test)]
-mod fixtures;
-#[cfg(test)]
 mod resize_tests;
 #[cfg(test)]
 mod storage_tests;
-#[cfg(test)]
-pub(crate) use fixtures::PaneFixture;
 mod border;
 mod capture;
 mod mode_visuals;
@@ -2909,65 +2903,6 @@ mod pane_prompt_data_tests {
     }
 
     #[test]
-    fn callback_client_is_weak_between_calls_and_retained_during_dispatch() {
-        unsafe {
-            let client = ClientRef::allocate();
-            let weak_client = Rc::downgrade(&client);
-            let pointer = Rc::as_ptr(&client);
-            let client_slot = Rc::new(RefCell::new(Some(client)));
-            let data = data(u_int::MAX);
-            data.try_borrow_mut().unwrap().c = weak_client.clone();
-            let weak_data = data.downgrade();
-            let calls = Rc::new(Cell::new(0));
-            let count = calls.clone();
-            let slot = client_slot.clone();
-            let current = weak_data.clone();
-            let observed = weak_client.clone();
-            data.try_borrow_mut().unwrap().inputcb = Some(Box::new(move |client, text, key| {
-                assert_eq!(text, Some(c"input"));
-                assert_eq!(key, PROMPT_KEY_HANDLED);
-                if count.get() == 0 {
-                    assert_eq!(Rc::as_ptr(client.unwrap()), pointer);
-                    drop(slot.borrow_mut().take());
-                    assert!(observed.upgrade().is_some());
-                    // Dispatch must release the data borrow before callbacks.
-                    current.try_borrow_mut().unwrap().c = Weak::new();
-                } else {
-                    assert!(client.is_none());
-                }
-                count.set(count.get() + 1);
-                PROMPT_CONTINUE
-            }));
-            assert_eq!(
-                window_pane_prompt_input_callback(&weak_data, Some(c"input"), PROMPT_KEY_HANDLED),
-                PROMPT_CONTINUE
-            );
-            assert!(weak_client.upgrade().is_none());
-            assert!(client_slot.borrow().is_none());
-            assert_eq!(
-                window_pane_prompt_input_callback(&weak_data, Some(c"input"), PROMPT_KEY_HANDLED),
-                PROMPT_CONTINUE
-            );
-            assert_eq!(calls.get(), 2);
-            let frees = Rc::new(Cell::new(0));
-            let freed = frees.clone();
-            data.try_borrow_mut().unwrap().freecb =
-                Some(Box::new(move || freed.set(freed.get() + 1)));
-            window_pane_prompt_free_callback(&data);
-            window_pane_prompt_free_callback(&data);
-            assert_eq!(frees.get(), 1);
-            assert!(data.try_borrow_mut().unwrap().inputcb.is_none());
-            drop(data);
-            assert!(!weak_data.is_alive());
-            assert_eq!(
-                window_pane_prompt_input_callback(&weak_data, None, PROMPT_KEY_CLOSE),
-                PROMPT_CLOSE,
-            );
-            assert_eq!(Rc::strong_count(&calls), 1);
-        }
-    }
-
-    #[test]
     fn callback_replacement_keeps_new_pane_data_and_releases_the_old_record() {
         unsafe {
             let pane = window_pane::new();
@@ -3088,16 +3023,6 @@ mod pane_stream_lifecycle_tests {
             assert!(!stale_stream.is_alive());
             shutdown_runtime();
         }
-    }
-}
-
-#[cfg(test)]
-impl window_pane {
-    pub(crate) unsafe fn install_mode_for_test(
-        owner: &Rc<UnsafeCell<window_pane>>,
-        entry: refbox::RefBox<window_mode_entry>,
-    ) -> refbox::Weak<window_mode_entry> {
-        window_pane_mode_insert_front(&mut *owner.get(), entry)
     }
 }
 

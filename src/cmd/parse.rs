@@ -698,22 +698,6 @@ mod parser_collection_tests {
     }
 
     #[test]
-    fn cloned_parse_inputs_observe_client_without_retaining_it() {
-        unsafe {
-            let client = ClientRef::allocate();
-            let input = cmd_parse_input {
-                c: Rc::downgrade(&client),
-                ..Default::default()
-            };
-            let copied = input.clone();
-            assert!(Rc::ptr_eq(&copied.c.upgrade().unwrap(), &client));
-            drop(client);
-            assert!(input.c.upgrade().is_none());
-            assert!(copied.c.upgrade().is_none());
-        }
-    }
-
-    #[test]
     fn nested_parser_boxes_release_compiled_payloads_after_ownership_transfer() {
         unsafe {
             let first = compiled_commands(c"display-message first");

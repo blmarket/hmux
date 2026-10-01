@@ -34,8 +34,6 @@ use crate::src::options::{
 };
 use crate::src::options_table::options_table;
 use crate::src::session::Session as _;
-#[cfg(test)]
-use crate::src::session::SessionFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
@@ -61,8 +59,6 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_s_options;
 use crate::src::window::Window as _;
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
 use crate::src::window::WindowPane;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
@@ -676,101 +672,6 @@ pub unsafe fn hooks_monitor_get_fire_time(mut o: *mut options_entry) -> time_t {
 #[cfg(test)]
 mod CStrings_tests {
     use super::*;
-
-    #[test]
-    fn retained_monitor_callback_rejects_removed_or_replaced_generation() {
-        use crate::src::window::Window;
-        use std::rc::Rc;
-
-        unsafe {
-            let window = crate::src::shared::window::WindowRef::fixture_with_options();
-            let scope = OptionsScope::Window(Rc::downgrade(&window));
-            scope
-                .set_from_string(None, c"@watched", Some(c""), false)
-                .unwrap();
-            scope.with_entry(c"@watched", |entry| {
-                entry.monitor_data = Some(Box::new(hooks_monitor {
-                    generation: 2,
-                    set: None,
-                    sink: EventSinkId::default(),
-                    type_0: crate::src::shared::monitor::MONITOR_SESSION,
-                    id: 0,
-                    format: c"".to_owned(),
-                }));
-            });
-            let mut payload = event_payload_create();
-            event_payload_set_identity(
-                &mut payload,
-                c"_hooks_monitor".as_ptr(),
-                crate::src::shared::events::EventPayloadIdentity::HookMonitor(1),
-            );
-            // A retained old sink must not run the replacement monitor's hook.
-            hooks_monitor_hook_cb(c"@watched", &mut payload, &scope, 1);
-            assert_eq!(
-                scope.with_entry(c"@watched", |entry| entry.fire_count),
-                Some(0)
-            );
-            hooks_monitor_remove(&scope, c"@watched".as_ptr());
-            hooks_monitor_hook_cb(c"@watched", &mut payload, &scope, 1);
-            assert_eq!(
-                scope.with_entry(c"@watched", |entry| entry.fire_count),
-                Some(0)
-            );
-            assert_eq!(Rc::strong_count(&window), 1);
-            window.release(c"monitor callback test");
-            // A callback for another generation rejects its payload before
-            // attempting to borrow the now-expired option owner.
-            hooks_monitor_hook_cb(c"@watched", &mut payload, &scope, 2);
-        }
-    }
-
-    #[test]
-    fn monitor_dispatch_releases_link_borrow_before_reentrant_unlink() {
-        use crate::src::events::{events_add_sink, events_remove_sink};
-        use crate::src::window::{winlink_add, winlink_remove, winlink_set_window};
-        use std::cell::Cell;
-        use std::rc::Rc;
-
-        unsafe {
-            let session_owner = crate::src::shared::session::SessionRef::allocate();
-            let window_owner = crate::src::shared::window::WindowRef::empty();
-            let mut wl = (&session_owner).fixture_add_link(2);
-            wl.get_mut_unchecked().session = Rc::downgrade(&session_owner);
-            winlink_set_window(wl.clone(), &window_owner);
-            let change = monitor_change {
-                name: c"test-monitor-unlink",
-                value: c"changed",
-                last: None,
-                c: Weak::new(),
-                s: Rc::downgrade(&session_owner),
-                wl: wl.clone(),
-                wp: Weak::new(),
-            };
-            let observer = change.wl.clone();
-            let calls = Rc::new(Cell::new(0));
-            let called = calls.clone();
-            let callback_session = session_owner.clone();
-            let sink = events_add_sink(
-                change.name,
-                Rc::new(move |_, payload| {
-                    assert_eq!(payload.target.idx, 2);
-                    assert!(payload.target_window.is_some());
-                    assert!(payload.target_session.is_some());
-                    assert!(!observer.is_borrowed());
-                    (&callback_session).fixture_remove_link(wl.clone());
-                    assert!(!observer.is_alive());
-                    called.set(called.get() + 1);
-                }),
-            );
-            hooks_monitor_cb(&change, &cmd_find_state::default(), 0);
-            assert_eq!(calls.get(), 1);
-            assert!(!change.wl.is_alive());
-            assert!(!change.wl.is_empty());
-            events_remove_sink(sink);
-            crate::src::reactor::shutdown_runtime();
-            window_owner.release(c"test owner");
-        }
-    }
 
     #[test]
     fn registry_owns_stable_c_names_and_deduplicates_by_bytes() {

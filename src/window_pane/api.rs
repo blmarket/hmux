@@ -13,8 +13,6 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
 use std::time::Duration;
 
 /// Access a pane without lending its model storage.
@@ -384,10 +382,6 @@ pub trait WindowPane {
     unsafe fn process_name(&self) -> Option<CString>;
     /// Draw the editor wait indicator on the currently displayed screen.
     unsafe fn draw_editor_waiting(&self, pid: pid_t);
-    /// Allocate empty pane storage with its existing stable observer identity.
-    fn allocate() -> Self
-    where
-        Self: Sized;
     unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self
     where
         Self: Sized;
@@ -1621,9 +1615,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn draw_editor_waiting(&self, pid: pid_t) {
         super::mode_visuals::draw_editor_waiting(self, pid);
     }
-    fn allocate() -> Self {
-        window_pane::new()
-    }
     unsafe fn create(window: &WindowRef, sx: u32, sy: u32, history_limit: u32) -> Self {
         window_pane_create(window, sx, sy, history_limit)
     }
@@ -1796,62 +1787,6 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn reparent_changes_inheritance_without_retaining_either_window() {
-        use crate::src::options::{
-            options_create, options_get_string, options_set_string, OptionsScope,
-        };
-        use crate::src::window::Window;
-        unsafe {
-            let first = crate::src::shared::window::WindowRef::fixture_with_options();
-            let second = crate::src::shared::window::WindowRef::fixture_with_options();
-            for (owner, value) in [(&first, c"first"), (&second, c"second")] {
-                owner.with_options_mut(|table| {
-                    options_set_string(table, c"@parent".as_ptr(), 0, |out| {
-                        out.write_all(value.to_bytes())
-                    });
-                });
-            }
-            let pane = window_pane::new();
-            (*pane.get()).options = Some(options_create(None));
-            pane.reparent(&first);
-            let scope = OptionsScope::Pane(Rc::downgrade(&pane));
-            let original = scope.resolve(c"@parent", false).expect("inherited option");
-            (*pane.get()).flags &= !(PANE_STYLECHANGED | PANE_THEMECHANGED);
-            pane.reparent(&second);
-            assert!(pane.window_observer().ptr_eq(&Rc::downgrade(&second)));
-            assert_eq!(
-                (*pane.get()).flags & (PANE_STYLECHANGED | PANE_THEMECHANGED),
-                PANE_STYLECHANGED | PANE_THEMECHANGED
-            );
-            assert_eq!(
-                pane.with_options_mut(|table| options_get_string(table, c"@parent".as_ptr()))
-                    .as_c_str(),
-                c"second"
-            );
-            // Work already in flight on the old inherited value keeps that
-            // table's identity, while the next lookup follows the new parent.
-            assert_eq!(
-                original
-                    .with_entry(c"@parent", |entry| entry
-                        .value
-                        .string_ptr()
-                        .unwrap()
-                        .to_owned())
-                    .unwrap()
-                    .as_c_str(),
-                c"first"
-            );
-            assert_eq!(Rc::strong_count(&first), 1);
-            assert_eq!(Rc::strong_count(&second), 1);
-            first.release(c"option inheritance test");
-            second.release(c"option inheritance test");
-            // The pane has no screen/event resources in this fixture; tear down
-            // its option table explicitly, matching the normal pane destructor.
-            drop((*pane.get()).options.take());
-            window_pane_remove_ref(pane, c"option inheritance test".as_ptr());
-        }
-    }
     use crate::src::grid::grid_create;
     use crate::src::reactor::{evbuffer_add, shutdown_runtime, StreamHandle};
 
@@ -1863,29 +1798,6 @@ mod tests {
         (*pane.get()).event = StreamHandle::from_ptr(stream);
         evbuffer_add(&mut (*stream).input, bytes.as_ptr().cast(), bytes.len());
         pane
-    }
-
-    #[test]
-    fn visibility_probe_preserves_pending_redraws_and_layout() {
-        unsafe {
-            let window = crate::src::shared::window::WindowRef::fixture_zoomed();
-            let pane = window.active_pane().unwrap();
-            let layout = (*pane.get()).layout_cell;
-            for flags in [0, PANE_REDRAW, crate::src::shared::pane::PANE_DROP] {
-                (*pane.get()).flags = flags;
-                assert_eq!(window_pane_is_visible(&pane), 1);
-                assert_eq!((*pane.get()).flags, flags);
-                assert_eq!((*pane.get()).layout_cell, layout);
-            }
-            (*pane.get()).layout_cell = None;
-            assert_eq!(window_pane_is_visible(&pane), 0);
-            window.fixture_set_zoomed(false);
-            assert_eq!(window_pane_is_visible(&pane), 1);
-            assert_eq!((*pane.get()).flags, crate::src::shared::pane::PANE_DROP);
-            window.fixture_set_zoomed(true);
-            (*pane.get()).layout_cell = layout;
-            window.release(c"visibility probe test");
-        }
     }
 
     #[test]

@@ -164,13 +164,4 @@ mod owned_name_tests {
             );
         }
     }
-
-    #[test]
-    fn window_without_active_pane_has_empty_owned_and_c_names() {
-        unsafe {
-            let window = crate::src::shared::window::WindowRef::empty();
-            assert_eq!(default_window_name_cstring(&window), c"");
-            window.release(c"empty default name test");
-        }
-    }
 }

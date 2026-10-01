@@ -83,11 +83,9 @@ checks whether callbacks retained it. Pane destroy/stream/parser/mode cleanup,
 overlay free, monitor_destroy and timer/task cancellation remain explicit. The
 migration adds no Drop responsibility for core-model resource cleanup.
 
-The cfg(test) SessionFixture, WindowFixture, ClientFixture and PaneFixture traits
-provide narrow setup/component access to unit tests outside an owner. They do
-not expose a whole-model reference or pointer. Integration fixtures use the
-production trait factories and perform explicit teardown. Assertions that
-inspect private index, resize or cache storage live in their actual owner.
+Tests use production model operations and preserve explicit teardown.
+Assertions that inspect private index, resize or cache storage live in their
+actual owner.
 
 ## Existing types and owned results
 

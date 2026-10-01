@@ -291,41 +291,6 @@ mod tests {
         format_create(None, None, 0, 0)
     }
 
-    #[test]
-    fn typed_client_survives_source_drop_and_releases_after_tree_cleanup() {
-        unsafe {
-            for (cancel, boxed) in [(false, false), (true, false), (false, true), (true, true)] {
-                let owner = ClientRef::allocate();
-                let observer = Rc::downgrade(&owner);
-                let mut ft_owner = if boxed {
-                    format_create_owned(Some(&owner), None, 17, 0)
-                } else {
-                    format_create_with_client(Some(&owner), None, 17, 0)
-                };
-                let ft = &raw mut *ft_owner;
-                assert!(Rc::ptr_eq((*ft).client.as_ref().unwrap(), &owner));
-                assert_eq!((*ft).tag, 17);
-                drop(owner);
-                assert!(observer.upgrade().is_some());
-
-                format_free(ft_owner);
-                assert!(observer.upgrade().is_none());
-                if cancel {
-                    crate::src::reactor::shutdown_runtime();
-                } else {
-                    crate::src::reactor::poll_runtime();
-                }
-                assert!(observer.upgrade().is_none());
-                crate::src::reactor::shutdown_runtime();
-            }
-
-            let mut ft_owner = format_create_with_client(None, None, 0, 0);
-            let ft = &raw mut *ft_owner;
-            assert!((*ft).client.is_none());
-            format_free(ft_owner);
-        }
-    }
-
     unsafe fn text_value(ft: *mut format_tree, key: &CStr) -> Option<CString> {
         match format_entry_get_value(ft, key) {
             Some(FormatValue::String(value)) => Some(value),

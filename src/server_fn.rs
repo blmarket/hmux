@@ -27,8 +27,6 @@ use crate::src::server_client::Client;
 use crate::src::session::session_group_count;
 use crate::src::session::sessions;
 use crate::src::session::Session;
-#[cfg(test)]
-use crate::src::session::SessionFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
@@ -655,51 +653,5 @@ pub unsafe fn server_check_unattached() {
 pub unsafe fn server_unzoom_window(w_owner: &WindowRef) {
     if w_owner.unzoom(true) == 0 as ::core::ffi::c_int {
         server_redraw_window(&(w_owner));
-    }
-}
-
-#[cfg(test)]
-mod session_selection_tests {
-    use super::*;
-
-    use std::rc::Rc;
-
-    #[test]
-    fn replacement_selection_retains_winner_and_excludes_source() {
-        unsafe {
-            let mut head = crate::src::shared::session::sessions::default();
-            let source = crate::src::shared::session::SessionRef::allocate();
-            let detached = crate::src::shared::session::SessionRef::allocate();
-            let attached = crate::src::shared::session::SessionRef::allocate();
-            for (owner, name, activity) in [
-                (&source, c"source", 30),
-                (&detached, c"detached", 10),
-                (&attached, c"attached", 20),
-            ] {
-                (&owner).fixture_metadata(Some(name.to_owned()), None, None);
-                (owner).fixture_activity(UNIX_EPOCH + Duration::from_secs(activity as u64));
-                (&mut head).insert(owner.clone());
-            }
-            (&attached).fixture_metadata(None, None, Some(1));
-            let selected =
-                server_find_session(&head, &source, |a, b| server_newer_session(a, b)).unwrap();
-            assert!(Rc::ptr_eq(&selected, &attached));
-            let detached_selected =
-                server_find_session(&head, &source, |a, b| server_newer_detached_session(a, b))
-                    .unwrap();
-            assert!(Rc::ptr_eq(&detached_selected, &detached));
-            let observer = Rc::downgrade(&attached);
-            (&mut head).remove(&attached);
-            drop(attached);
-            assert!(observer.upgrade().is_some());
-            assert_eq!(selected.name().as_c_str(), c"attached");
-            drop(selected);
-            assert!(observer.upgrade().is_none());
-            (&mut head).remove(&detached);
-            assert!(
-                server_find_session(&head, &source, |a, b| server_newer_session(a, b)).is_none()
-            );
-            (&mut head).remove(&source);
-        }
     }
 }

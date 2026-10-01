@@ -60,15 +60,6 @@ impl session {
         })
     }
 
-    #[cfg(test)]
-    pub(super) fn with_options_for_test(options: Box<options>) -> SessionRef {
-        let owner = Self::new();
-        unsafe {
-            (*owner.get()).options = Some(options);
-        }
-        owner
-    }
-
     pub(super) fn empty() -> Self {
         Self {
             observer: std::rc::Weak::new(),

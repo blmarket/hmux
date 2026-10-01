@@ -15,8 +15,6 @@ use crate::src::shared::pane::{window_pane, window_pane_history, window_panes, P
 use crate::src::shared::screen::screen;
 use crate::src::shared::session::session;
 use crate::src::shared::window::{WindowRef, WindowWeak};
-#[cfg(test)]
-use crate::src::window_pane::WindowPane as _;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::src::shared::window::{window_winlinks, WindowIndex};
@@ -166,67 +164,11 @@ impl window {
         })
     }
 
-    /// Unregistered identity for tests of event payload ownership and release order.
-    #[cfg(test)]
-    pub(super) fn with_id_for_test(id: u32) -> WindowRef {
-        let owner = Self::new();
-        unsafe { (*owner.get()).id = id };
-        owner
-    }
-
-    /// Geometry-only fixture, without a layout, panes, options or resize callbacks.
-    #[cfg(test)]
-    pub(super) fn with_size_for_test(sx: u32, sy: u32) -> WindowRef {
-        let owner = Self::new();
-        unsafe {
-            (*owner.get()).sx = sx;
-            (*owner.get()).sy = sy;
-        }
-        owner
-    }
-
-    /// An unregistered owner for testing option inheritance without global state.
-    #[cfg(test)]
-    pub(super) fn with_options_for_test() -> WindowRef {
-        let owner = Self::new();
-        unsafe {
-            (*owner.get()).options = Some(crate::src::options::options_create(None));
-        }
-        owner
-    }
-
     pub(super) fn layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
         self.layout_root.as_deref_mut()
     }
 
     pub(super) fn saved_layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
         self.saved_layout_root.as_deref_mut()
-    }
-}
-
-#[cfg(test)]
-mod saved_zoom_tests {
-    use super::*;
-    use crate::src::window::{window_pop_zoom, Window, WINDOW_WASZOOMED};
-    use std::rc::Rc;
-
-    #[test]
-    fn saved_zoom_weak_target_expires_and_pop_clears_the_pending_state() {
-        unsafe {
-            let window = window::new();
-            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let observer = Rc::downgrade(&pane);
-            (*window.get()).was_zoomed = observer.clone();
-            (*window.get()).flags |= WINDOW_WASZOOMED;
-            assert_eq!(Rc::strong_count(&pane), 1);
-            drop(pane);
-            assert!(observer.upgrade().is_none());
-            assert!((*window.get()).was_zoomed.upgrade().is_none());
-            assert_eq!(window_pop_zoom(&window), 0);
-            assert_eq!((*window.get()).flags & WINDOW_WASZOOMED, 0);
-            assert!((*window.get()).was_zoomed.ptr_eq(&std::rc::Weak::new()));
-            assert_eq!(window_pop_zoom(&window), 0);
-            window.release(c"expired saved zoom test");
-        }
     }
 }

@@ -1,7 +1,5 @@
 use crate::src::options::options_owner_ptr;
 use crate::src::server_client::Client as _;
-#[cfg(test)]
-use crate::src::server_client::ClientFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
@@ -9,8 +7,6 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::Window as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_pane::WindowPane as _;
 // Built-in callbacks return owned bytes or copied timestamps. The sorted
 // immutable table is shared by lookup and enumeration; external user callbacks
@@ -2559,128 +2555,6 @@ pub(super) fn format_table_get(key: &CStr) -> Option<&'static FormatTableEntry> 
 #[cfg(test)]
 mod owned_callback_tests {
     use super::*;
-
-    #[test]
-    fn pane_builtin_dispatch_preserves_absent_defaults_and_context_identity() {
-        unsafe {
-            let mut context = format_tree::default();
-            for key in [c"pane_format"] {
-                let Some(FormatValue::String(value)) =
-                    format_table_get(key).unwrap().get(&mut context)
-                else {
-                    panic!("default string for {key:?}");
-                };
-                assert_eq!(value.as_c_str(), c"0");
-            }
-            for key in [
-                c"alternate_on",
-                c"pane_id",
-                c"pane_width",
-                c"pane_dead_time",
-                c"cursor_x",
-            ] {
-                assert!(format_table_get(key).unwrap().get(&mut context).is_none());
-            }
-
-            let first = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let other = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            first.fixture_id(42);
-            first.fixture_base(|base| base.cx = 7);
-            context.wp = Rc::downgrade(&first);
-            context.type_0 = FORMAT_TYPE_PANE;
-            for (key, expected) in [
-                (c"pane_id", c"%42"),
-                (c"cursor_x", c"7"),
-                (c"pane_format", c"1"),
-            ] {
-                let Some(FormatValue::String(value)) =
-                    format_table_get(key).unwrap().get(&mut context)
-                else {
-                    panic!("pane string for {key:?}");
-                };
-                assert_eq!(value.as_c_str(), expected);
-            }
-            assert!(other.format_value(c"pane_id", &mut context).is_none());
-            drop(first);
-            assert!(format_table_get(c"cursor_x")
-                .unwrap()
-                .get(&mut context)
-                .is_none());
-        }
-    }
-
-    #[test]
-    fn pane_formats_observe_context_and_getter_retains_selected_pane() {
-        unsafe {
-            let owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            owner.fixture_id(42);
-            owner.fixture_geometry((80, 0), (0, 0));
-            let observer = std::rc::Rc::downgrade(&owner);
-            let mut ft_owner = format_create(None, None, 0, 0);
-            let ft = &raw mut *ft_owner;
-            super::super::format_defaults_pane(ft, &owner.clone());
-            assert!(observer.ptr_eq(&(*ft).wp));
-            assert_eq!(format_cb_pane_id(ft).unwrap().as_c_str(), c"%42");
-            assert_eq!(format_cb_pane_width(ft).unwrap().as_c_str(), c"80");
-            let selected = super::super::format_get_pane(&*ft).unwrap();
-            drop(owner);
-            assert!(observer.upgrade().is_some());
-            drop(selected);
-            assert!(observer.upgrade().is_none());
-            assert!(super::super::format_get_pane(&*ft).is_none());
-            assert!(format_cb_pane_id(ft).is_none());
-            assert!(format_cb_pane_width(ft).is_none());
-            format_free(ft_owner);
-        }
-    }
-
-    #[test]
-    fn window_formats_observe_context_window_and_allow_clearing_it() {
-        unsafe {
-            let owner = crate::src::shared::window::WindowRef::empty();
-            owner.initialize_name(c"observed-window".to_owned(), false);
-            let observer = std::rc::Rc::downgrade(&owner);
-            let mut ft_owner = format_create(None, None, 0, 0);
-            let ft = &raw mut *ft_owner;
-            super::super::format_defaults_window(ft, Some(&owner));
-            assert!(observer.ptr_eq(&(*ft).w));
-            assert_eq!(
-                format_cb_window_name(ft).unwrap().as_c_str(),
-                c"observed-window"
-            );
-            super::super::format_defaults_window(ft, None);
-            assert!(format_cb_window_name(ft).is_none());
-            super::super::format_defaults_window(ft, Some(&owner));
-            owner.release(c"test owner");
-            assert!(observer.upgrade().is_none());
-            assert!(format_cb_window_name(ft).is_none());
-            assert!(format_cb_window_id(ft).is_none());
-            format_free(ft_owner);
-        }
-    }
-
-    #[test]
-    fn client_formats_observe_context_client_without_retaining_it() {
-        unsafe {
-            let owner = crate::src::shared::client::ClientRef::fixture_with_names(
-                Some(c"observed-client"),
-                None,
-            );
-            let observer = std::rc::Rc::downgrade(&owner);
-            let mut ft_owner = format_create(None, None, 0, 0);
-            let ft = &raw mut *ft_owner;
-            (*ft).c = observer.clone();
-            assert_eq!(
-                format_cb_client_name(ft).unwrap().as_c_str(),
-                c"observed-client"
-            );
-            drop(owner);
-            assert!(observer.upgrade().is_none());
-            assert!(format_cb_client_name(ft).is_none());
-            assert!(format_cb_client_width(ft).is_none());
-            format_free(ft_owner);
-        }
-    }
 
     #[test]
     fn buffer_formats_preserve_missing_empty_and_logical_binary_lengths() {

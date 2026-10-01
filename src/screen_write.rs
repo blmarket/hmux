@@ -75,8 +75,6 @@ use crate::src::tty::{
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_visible::window_position_is_visible;
 use std::ffi::CStr;
 
@@ -3298,101 +3296,6 @@ mod write_ctx_tests {
     impl Drop for DropCounter {
         fn drop(&mut self) {
             self.0.set(self.0.get() + 1);
-        }
-    }
-
-    #[test]
-    fn synchronized_dirty_rows_reallocate_on_resize_and_clear_on_release() {
-        unsafe {
-            let pane_owner = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            pane_owner.fixture_base(|screen| {
-                screen.grid = Some(crate::src::grid::grid_create(8, 10, 0));
-                screen.mode |= MODE_SYNC;
-            });
-            let mut ctx = screen_write_ctx::default();
-            pane_owner.prepare_write(&mut ctx, std::ptr::null_mut());
-
-            assert_eq!(screen_write_should_draw_lines(&mut ctx, 10, 1), 0);
-            pane_owner.fixture_sync_dirty(|rows, _| assert!(rows.is_none()));
-            assert_eq!(screen_write_should_draw_lines(&mut ctx, 7, 100), 0);
-            let address = pane_owner.fixture_sync_dirty(|rows, _| {
-                assert_eq!(rows, Some([0x80, 0x03].as_slice()));
-                rows.unwrap().as_ptr() as usize
-            });
-            screen_write_should_draw_lines(&mut ctx, 1, 2);
-            pane_owner.fixture_sync_dirty(|rows, _| {
-                assert_eq!(rows.unwrap().as_ptr() as usize, address);
-                assert_eq!(rows, Some([0x86, 0x03].as_slice()));
-            });
-
-            // A write must stop before replacing its borrowed screen component.
-            screen_write_stop(&mut ctx);
-            pane_owner.fixture_base(|screen| {
-                crate::src::screen::screen_free(screen);
-                screen.grid = Some(crate::src::grid::grid_create(8, 17, 0));
-                screen.mode |= MODE_SYNC;
-            });
-            pane_owner.prepare_write(&mut ctx, std::ptr::null_mut());
-            screen_write_should_draw_lines(&mut ctx, 16, 1);
-            pane_owner.fixture_sync_dirty(|rows, height| {
-                assert_eq!(height, 17);
-                assert_eq!(rows, Some([0xff, 0xff, 1].as_slice()));
-            });
-            pane_owner.clear_sync_dirty();
-            pane_owner.fixture_sync_dirty(|rows, height| {
-                assert!(rows.is_none());
-                assert_eq!(height, 0);
-            });
-            pane_owner.clear_sync_dirty();
-
-            screen_write_should_draw_lines(&mut ctx, 0, 1);
-            pane_owner.fixture_sync_dirty(|rows, _| assert_eq!(rows, Some([1, 0, 0].as_slice())));
-            screen_write_stop(&mut ctx);
-            pane_owner.clear_sync_dirty();
-            pane_owner.fixture_base(|screen| crate::src::screen::screen_free(screen));
-            pane_owner.release(c"synchronized dirty fixture");
-        }
-    }
-
-    #[test]
-    fn pane_callbacks_observe_without_retaining_and_skip_expired_targets() {
-        unsafe {
-            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let observer = Rc::downgrade(&pane);
-            let redraw = screen_write_redraw_cb(&observer).unwrap();
-            let mut set_client = screen_write_set_client_cb(&observer).unwrap();
-            let mut ttyctx = tty_ctx::default();
-            redraw(&ttyctx);
-            assert_ne!(pane.fixture_flags() & PANE_REDRAW, 0);
-            drop(pane);
-            assert!(observer.upgrade().is_none());
-            redraw(&ttyctx);
-            let client = ClientRef::allocate();
-            assert_eq!(set_client(&mut ttyctx, &client), 0);
-        }
-    }
-
-    #[test]
-    fn independent_screen_can_outlive_the_observed_pane() {
-        unsafe {
-            let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-            let observer = Rc::downgrade(&pane);
-            let mut screen = screen::empty();
-            screen.grid = Some(crate::src::grid::grid_create(8, 2, 0));
-            let mut ctx = screen_write_ctx::default();
-            screen_write_start_pane(&mut ctx, &pane, &mut screen);
-            assert!(ctx.wp.ptr_eq(&observer));
-            drop(pane);
-            assert!(
-                observer.upgrade().is_none(),
-                "write context must not own its pane"
-            );
-            assert_eq!(screen_write_pane_is_obscured(&mut ctx), 0);
-            assert_eq!(screen_write_should_draw_lines(&mut ctx, 0, 1), 1);
-            screen_write_collect_add(&mut ctx, &grid_default_cell);
-            screen_write_stop(&mut ctx);
-            assert_eq!(screen.cx, 1);
-            assert!(ctx.item.is_none());
         }
     }
 

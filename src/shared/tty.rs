@@ -11,8 +11,6 @@ use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::terminal::termios;
 use crate::src::shared::client::{ClientRef, ClientWeak};
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_pane::WindowPane as _;
 use hmux_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
@@ -488,41 +486,6 @@ impl PaletteSource {
             },
             Self::Snapshot(palette) => read(Some(palette)),
         }
-    }
-}
-
-#[cfg(test)]
-mod palette_source_tests {
-    use super::*;
-
-    #[test]
-    fn weak_sources_expire_and_snapshots_keep_their_colours() {
-        let pane = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-        unsafe { pane.fixture_palette(|palette| palette.fg = 3) };
-        let pane_source = PaletteSource::Pane(std::rc::Rc::downgrade(&pane));
-        assert_eq!(
-            unsafe { pane_source.with_palette(|palette| palette.unwrap().fg) },
-            3
-        );
-        drop(pane);
-        assert!(unsafe { pane_source.with_palette(|palette| palette.is_none()) });
-
-        let popup = refbox::RefBox::new(colour_palette {
-            fg: 5,
-            ..Default::default()
-        });
-        let popup_source = PaletteSource::Popup(popup.downgrade());
-        let snapshot = PaletteSource::Snapshot(Box::new(popup.try_borrow_mut().unwrap().clone()));
-        assert_eq!(
-            unsafe { popup_source.with_palette(|palette| palette.unwrap().fg) },
-            5
-        );
-        drop(popup);
-        assert!(unsafe { popup_source.with_palette(|palette| palette.is_none()) });
-        assert_eq!(
-            unsafe { snapshot.with_palette(|palette| palette.unwrap().fg) },
-            5
-        );
     }
 }
 

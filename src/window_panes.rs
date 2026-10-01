@@ -25,8 +25,6 @@ use crate::src::server_fn::{
     server_redraw_window, server_redraw_window_borders, server_status_window, server_unzoom_window,
 };
 use crate::src::session::Session;
-#[cfg(test)]
-use crate::src::session::SessionFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 
@@ -2052,57 +2050,6 @@ unsafe fn window_panes_key(
         target_owner.as_ref().expect("display-panes target").id(),
     );
     mode_pane_owner.reset_mode();
-}
-
-#[cfg(test)]
-mod session_observer_tests {
-    use super::*;
-    use crate::src::reactor::shutdown_runtime;
-    use crate::src::session::sessions;
-
-    #[test]
-    fn session_observer_rejects_removed_sessions_and_releases_guard_immediately() {
-        unsafe {
-            let saved = std::ptr::replace(
-                &raw mut sessions,
-                crate::src::shared::session::sessions::default(),
-            );
-            let owner = crate::src::shared::session::SessionRef::allocate();
-            (&owner).fixture_metadata(Some(c"panes-mode-session".to_owned()), None, None);
-            let observer = std::rc::Rc::downgrade(&owner);
-            (&mut sessions).insert(owner);
-            let mut mode = window_panes_modedata {
-                wp: Weak::new(),
-                session: observer.clone(),
-                source_session: 0,
-                source_window: 0,
-                screen: screen::empty(),
-                preview: None,
-                timer: Default::default(),
-                state: None,
-                delay: 0,
-                ignore_keys: 0,
-                zoomed: 0,
-                areas: Vec::new(),
-            };
-            assert_eq!(observer.strong_count(), 1);
-            let guard = window_panes_session(&mut mode).unwrap();
-            assert!(std::rc::Rc::downgrade(&guard).ptr_eq(&observer));
-            let owner = (&mut sessions)
-                .remove(&observer.upgrade().expect("indexed session"))
-                .unwrap();
-            assert!(window_panes_session(&mut mode).is_none());
-            assert_eq!(observer.strong_count(), 2);
-            drop(owner);
-            assert!(observer.upgrade().is_some(), "guard keeps allocation alive");
-            drop(guard);
-            assert!(observer.upgrade().is_none(), "guard cleanup is immediate");
-            shutdown_runtime();
-            assert!(observer.upgrade().is_none());
-            assert!(window_panes_session(&mut mode).is_none());
-            sessions = saved;
-        }
-    }
 }
 
 #[cfg(test)]

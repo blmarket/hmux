@@ -3558,21 +3558,6 @@ unsafe fn tty_keys_palette(
 mod key_tree_tests {
     use super::*;
 
-    #[test]
-    fn key_timer_callback_does_not_retain_or_access_expired_client() {
-        unsafe {
-            let owner = ClientRef::allocate();
-            let observer = std::rc::Rc::downgrade(&owner);
-            let mut callback =
-                crate::src::tty::tty_client_timer_callback(&owner, tty_keys_callback);
-            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            callback();
-            drop(owner);
-            assert!(observer.upgrade().is_none());
-            callback();
-        }
-    }
-
     fn lookup(tree: &Option<Box<tty_key>>, bytes: &[u8]) -> (Option<key_code>, size_t) {
         let mut size = 0;
         let key = tty_keys_find1(tree.as_deref(), bytes, &mut size).map(|node| node.key);

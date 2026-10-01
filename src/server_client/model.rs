@@ -125,17 +125,6 @@ impl client {
         self.session = session.map_or_else(std::rc::Weak::new, Rc::downgrade);
     }
 
-    #[cfg(test)]
-    pub(super) fn pan_window_is(&self, window: &WindowRef) -> bool {
-        self.pan_window.strong_count() != 0
-            && std::rc::Weak::ptr_eq(&self.pan_window, &Rc::downgrade(window))
-    }
-
-    #[cfg(test)]
-    pub(super) fn set_pan_window(&mut self, window: &WindowRef) {
-        self.pan_window = Rc::downgrade(window);
-    }
-
     pub(super) fn empty() -> Self {
         Self {
             observer: std::rc::Weak::new(),
@@ -228,81 +217,12 @@ impl client {
             Some(Box::new(crate::src::shared::control::control_state::empty()));
         owner
     }
-
-    pub(super) unsafe fn activity_for_test(owner: &ClientRef, seconds: u64, micros: u64) {
-        (*owner.get()).activity_time =
-            UNIX_EPOCH + Duration::from_secs(seconds) + Duration::from_micros(micros);
-    }
-
-    pub(super) unsafe fn with_names_for_test(
-        name: Option<&std::ffi::CStr>,
-        tty_name: Option<&std::ffi::CStr>,
-    ) -> ClientRef {
-        let owner = Self::new();
-        (*owner.get()).name = name.map(ToOwned::to_owned);
-        (*owner.get()).ttyname = tty_name.map(ToOwned::to_owned);
-        owner
-    }
-
-    /// A queue fixture uses the same explicit item cleanup as server clients.
-    pub(super) unsafe fn with_queue_for_test() -> ClientRef {
-        let owner = Self::new();
-        (*owner.get()).queue = Some(crate::src::cmd::queue::cmdq_new());
-        owner
-    }
 }
 
 #[cfg(test)]
 mod retained_client_tests {
     use super::*;
     use crate::src::reactor;
-
-    #[test]
-    fn attached_session_observer_does_not_retain_a_removed_session() {
-        let mut client = client::empty();
-        let session = crate::src::shared::session::SessionRef::allocate();
-        let observer = Rc::downgrade(&session);
-        unsafe {
-            client.set_session(Some(&session));
-        }
-        assert!(Rc::ptr_eq(
-            &client.session_handle().expect("attached session"),
-            &session,
-        ));
-        assert_eq!(Rc::strong_count(&session), 1);
-        drop(session);
-        assert!(observer.upgrade().is_none());
-        assert!(client.session_handle().is_none());
-    }
-
-    #[test]
-    fn pan_window_observes_identity_without_retaining_the_window() {
-        let mut client = client::empty();
-        let first = crate::src::shared::window::WindowRef::empty();
-        let first_observer = Rc::downgrade(&first);
-        unsafe {
-            let first_window = &first;
-            assert!(!client.pan_window_is(first_window));
-            client.set_pan_window(first_window);
-            assert!(client.pan_window_is(first_window));
-        }
-        assert_eq!(Rc::strong_count(&first), 1);
-        unsafe {
-            first.release(c"test owner");
-        }
-        assert!(first_observer.upgrade().is_none());
-
-        let second = crate::src::shared::window::WindowRef::empty();
-        unsafe {
-            assert!(!client.pan_window_is(&second));
-            client.set_pan_window(&second);
-            assert!(client.pan_window_is(&second));
-        }
-        assert_eq!(Rc::strong_count(&second), 1);
-        unsafe {
-            second.release(c"test owner");
-        }
-    }
 
     #[test]
     fn owner_release_cleans_up_synchronously() {

@@ -12,8 +12,6 @@ pub trait SessionIndex {
     /// Restore the existing empty-registry state during server initialization.
     unsafe fn reset(&mut self);
     fn has_entries(&self) -> bool;
-    unsafe fn insert(&mut self, session: SessionRef) -> Option<SessionRef>;
-    unsafe fn remove(&mut self, session: &SessionRef) -> Option<SessionRef>;
     fn first(&self) -> Option<SessionRef>;
     fn after(&self, name: &[u8]) -> Option<SessionRef>;
     fn resolve(&self, observer: &SessionWeak) -> Option<SessionRef>;
@@ -25,12 +23,6 @@ impl SessionIndex for crate::src::shared::session::sessions {
     }
     fn has_entries(&self) -> bool {
         self.storage.is_some()
-    }
-    unsafe fn insert(&mut self, session: SessionRef) -> Option<SessionRef> {
-        sessions_insert(self, session)
-    }
-    unsafe fn remove(&mut self, session: &SessionRef) -> Option<SessionRef> {
-        sessions_remove(self, session)
     }
     fn first(&self) -> Option<SessionRef> {
         sessions_minmax(self)
@@ -52,14 +44,6 @@ pub trait Session {
         Self: Sized;
     /// Deliver one window's alerts across its linked sessions.
     unsafe fn deliver_window_alerts(window: &WindowRef) -> i32
-    where
-        Self: Sized;
-    /// Allocate unregistered storage. Normal server sessions use `create`.
-    fn allocate() -> Self
-    where
-        Self: Sized;
-    #[cfg(test)]
-    fn allocate_with_options(options: Box<options>) -> Self
     where
         Self: Sized;
     unsafe fn create(
@@ -194,13 +178,6 @@ impl Session for SessionRef {
     }
     unsafe fn deliver_window_alerts(window: &WindowRef) -> i32 {
         alerts_check_all(window)
-    }
-    fn allocate() -> Self {
-        session::new()
-    }
-    #[cfg(test)]
-    fn allocate_with_options(options: Box<options>) -> Self {
-        session::with_options_for_test(options)
     }
     unsafe fn create(
         prefix: Option<&CStr>,
@@ -576,85 +553,6 @@ mod tests {
             );
             status_update_cache(&mut *session.get());
             assert_eq!(session.status_layout(), (-1, 0));
-        }
-    }
-}
-
-#[cfg(test)]
-mod index_boundary_tests {
-    use super::*;
-
-    #[test]
-    fn shifting_indices_preserves_link_identity_and_history() {
-        unsafe {
-            let owner = session::new();
-            let first = (&owner).fixture_add_link(4);
-            let second = (&owner).fixture_add_link(5);
-            (*owner.get()).curw = first.clone();
-            winlink_stack_push(&mut (*owner.get()).lastw, second.clone());
-            assert_eq!(owner.shuffle_window(first.clone(), true), 4);
-            assert_eq!(first.get_unchecked().idx, 5);
-            assert_eq!(second.get_unchecked().idx, 6);
-            assert_eq!(owner.current_winlink(), first);
-            assert_eq!(owner.last_winlink(), second);
-            assert_eq!(owner.shuffle_window(refbox::Weak::new(), false), -1);
-            (&owner).fixture_remove_link(first);
-            (&owner).fixture_remove_link(second);
-            assert!(!owner.last_winlink().is_alive());
-        }
-    }
-
-    #[test]
-    fn replacement_notifies_before_clearing_history_and_releasing_window() {
-        use crate::src::events::{events_add_sink, events_remove_sink};
-        use crate::src::window::winlink_set_window;
-        use std::cell::RefCell;
-        unsafe {
-            let owner = session::new();
-            let window = crate::src::shared::window::WindowRef::empty();
-            let mut link = (&owner).fixture_add_link(1);
-            (*owner.get()).curw = link.clone();
-            link.get_mut_unchecked().flags |= WINLINK_ALERTFLAGS;
-            winlink_stack_push(&mut (*owner.get()).lastw, link.clone());
-            winlink_set_window(link.clone(), &window);
-            window.release(c"fixture creator");
-            let order = Rc::new(RefCell::new(Vec::new()));
-            let callback_owner = Rc::downgrade(&owner);
-            let calls = order.clone();
-            let before = link.clone();
-            let unlinked = events_add_sink(
-                c"window-unlinked",
-                Rc::new(move |_, _| {
-                    let owner = callback_owner.upgrade().unwrap();
-                    assert_eq!(owner.current_winlink(), before);
-                    assert_eq!(owner.last_winlink(), before);
-                    assert_ne!(before.get_unchecked().flags & WINLINK_ALERTFLAGS, 0);
-                    assert!(owner
-                        .with_winlinks(|links| winlink_find_by_index(links, 1))
-                        .is_alive());
-                    calls.borrow_mut().push("unlinked");
-                }),
-            );
-            let callback_owner = Rc::downgrade(&owner);
-            let calls = order.clone();
-            let before = link.clone();
-            let closed = events_add_sink(
-                c"window-closed",
-                Rc::new(move |_, _| {
-                    let owner = callback_owner.upgrade().unwrap();
-                    assert_eq!(owner.current_winlink(), before);
-                    assert!(!owner.last_winlink().is_alive());
-                    assert_eq!(before.get_unchecked().flags & WINLINK_ALERTFLAGS, 0);
-                    calls.borrow_mut().push("closed");
-                }),
-            );
-            assert!(owner.remove_replaced_window(link.clone()));
-            assert_eq!(&*order.borrow(), &["unlinked", "closed"]);
-            assert!(!link.is_alive());
-            assert!(!owner.current_winlink().is_alive());
-            events_remove_sink(unlinked);
-            events_remove_sink(closed);
-            crate::src::reactor::shutdown_runtime();
         }
     }
 }

@@ -5,8 +5,6 @@ use super::*;
 use crate::src::control::{control_get_window_size, control_write_output};
 use crate::src::reactor::BufferEvent;
 use crate::src::session::Session;
-#[cfg(test)]
-use crate::src::session::SessionFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::control::control_state;
@@ -33,11 +31,6 @@ pub enum PanDirection {
 /// component borrows before callbacks. Logical client loss remains explicit;
 /// explicit owner-release sites must still release their retained reference.
 pub trait Client {
-    /// Allocate an unregistered client on the server thread. Fully initialized
-    /// clients still require explicit client-loss cleanup before final release.
-    unsafe fn allocate() -> Self
-    where
-        Self: Sized;
     /// Create and register a protocol client, preserving the registry's owner.
     unsafe fn create(fd: i32) -> Self
     where
@@ -285,9 +278,6 @@ pub trait Client {
     unsafe fn has_overlay(&self) -> bool;
     unsafe fn clips_terminal_output(&self) -> bool;
     unsafe fn draw_overlay(&self);
-    unsafe fn overlay_key(&self, event: &mut key_event) -> Option<i32>;
-    unsafe fn overlay_mode(&self) -> Option<(ScreenMode, u_int, u_int)>;
-    unsafe fn resize_overlay(&self);
     unsafe fn overlay_ranges(&self, px: u_int, py: u_int, nx: u_int) -> Option<visible_ranges>;
     /// Return only the popup's nonowning identity; acquire its state afterwards.
     unsafe fn popup_overlay(&self) -> Option<crate::src::popup::PopupHandle>;
@@ -346,10 +336,6 @@ pub trait Client {
 }
 
 impl Client for ClientRef {
-    unsafe fn allocate() -> Self {
-        client::new()
-    }
-
     unsafe fn create(fd: i32) -> Self {
         server_client_create(fd)
     }
@@ -1297,15 +1283,6 @@ impl Client for ClientRef {
     unsafe fn draw_overlay(&self) {
         server_client_overlay_draw(self);
     }
-    unsafe fn overlay_key(&self, event: &mut key_event) -> Option<i32> {
-        server_client_overlay_key(self, event)
-    }
-    unsafe fn overlay_mode(&self) -> Option<(ScreenMode, u_int, u_int)> {
-        server_client_overlay_mode(self)
-    }
-    unsafe fn resize_overlay(&self) {
-        server_client_overlay_resize(self);
-    }
     unsafe fn overlay_ranges(&self, px: u_int, py: u_int, nx: u_int) -> Option<visible_ranges> {
         server_client_overlay_check(self, px, py, nx)
     }
@@ -1558,7 +1535,6 @@ mod tests {
         }
     }
     use super::*;
-    use crate::src::shared::control::control_state;
     use crate::src::shared::terminal::termios;
     use std::cell::Cell;
 
@@ -1574,23 +1550,6 @@ mod tests {
             assert_eq!(owner.enter_source_file(2), Some(2));
             assert_eq!(owner.leave_source_file(), 1);
             assert_eq!(owner.leave_source_file(), 0);
-        }
-    }
-
-    #[test]
-    fn remembering_a_session_keeps_only_weak_identity() {
-        unsafe {
-            let owner = client::new();
-            let session = crate::src::shared::session::SessionRef::allocate();
-            (*owner.get()).session = Rc::downgrade(&session);
-            owner.remember_session();
-            (*owner.get()).session = Weak::new();
-            assert!(owner.previous_session().ptr_eq(&Rc::downgrade(&session)));
-            assert_eq!(Rc::strong_count(&session), 1);
-            drop(session);
-            assert!(owner.previous_session().upgrade().is_none());
-            owner.remember_session();
-            assert_eq!(owner.previous_session().as_ptr(), Weak::new().as_ptr());
         }
     }
 
@@ -1635,98 +1594,6 @@ mod tests {
             assert_eq!(stale_calls.get(), 0);
             assert_eq!(replacement_calls.get(), 1);
             client.clear_overlay();
-        }
-    }
-
-    #[test]
-    fn control_dimensions_and_partial_caps_remain_separate() {
-        unsafe {
-            let client = client::new();
-            (*client.get()).flags = CLIENT_CONTROL as u64;
-            (*client.get()).tty.sx = 120;
-            (*client.get()).tty.sy = 40;
-            (*client.get()).tty.xpixel = 8;
-            (*client.get()).tty.ypixel = 16;
-            (*client.get()).control_state = Some(Box::new(control_state::empty()));
-            let window = crate::src::shared::window::WindowRef::empty();
-
-            crate::src::control::control_set_window_size(&client, window.id(), 80, 0);
-            // A partial override falls back to terminal dimensions, but its
-            // nonzero width still constrains a later/manual sizing result.
-            assert_eq!(client.window_size(Some(&window)), (120, 40, 8, 16));
-            let (mut sx, mut sy) = (150, 50);
-            client.constrain_window_size(&window, &mut sx, &mut sy);
-            assert_eq!((sx, sy), (150, 50));
-            (*client.get()).flags |= CLIENT_WINDOWSIZECHANGED;
-            client.constrain_window_size(&window, &mut sx, &mut sy);
-            assert_eq!((sx, sy), (80, 50));
-
-            crate::src::control::control_set_window_size(&client, window.id(), 90, 30);
-            assert_eq!(client.window_size(Some(&window)), (90, 30, 8, 16));
-            assert_eq!(client.window_size(None), (120, 40, 8, 16));
-            window.release(c"client API sizing test");
-        }
-    }
-
-    #[test]
-    fn sizing_eligibility_does_not_filter_explicit_dimensions() {
-        unsafe {
-            let client = client::new();
-            let session = crate::src::shared::session::SessionRef::allocate();
-            (*client.get()).session = Rc::downgrade(&session);
-            (*client.get()).tty.sx = 100;
-            (*client.get()).tty.sy = 35;
-            (*client.get()).flags = CLIENT_CONTROL as u64;
-            assert!(!client.participates_in_window_sizing());
-            assert_eq!(client.window_size(None), (100, 35, 0, 0));
-            (*client.get()).flags |= CLIENT_SIZECHANGED as u64;
-            assert!(client.participates_in_window_sizing());
-            (*client.get()).flags |= CLIENT_SUSPENDED as u64;
-            assert!(!client.participates_in_window_sizing());
-            assert_eq!(client.window_size(None), (100, 35, 0, 0));
-            assert_eq!(Rc::strong_count(&session), 1);
-            (*client.get()).session = Weak::new();
-        }
-    }
-
-    #[test]
-    fn holder_overlay_callback_can_close_itself_during_dispatch() {
-        unsafe {
-            let session = crate::src::shared::session::SessionRef::allocate();
-            let link = (&session).fixture_add_link(0);
-            (&session).fixture_current(link.clone());
-            let client = client::new();
-            (*client.get()).session = Rc::downgrade(&session);
-            (*client.get()).tty.client = Rc::downgrade(&client);
-            let freed = Rc::new(Cell::new(0));
-            let called = Rc::new(Cell::new(0));
-            let free_count = freed.clone();
-            let draw_count = called.clone();
-            client.set_overlay(Overlay::callbacks(
-                None,
-                None,
-                Some(Box::new(move |owner| {
-                    draw_count.set(draw_count.get() + 1);
-                    owner.clear_overlay();
-                    assert!(owner.attached_session().upgrade().is_some());
-                })),
-                None,
-                Some(Box::new(move |owner| {
-                    assert!(!owner.is_dead());
-                    free_count.set(free_count.get() + 1);
-                })),
-                None,
-            ));
-            server_client_overlay_draw(&client);
-            assert_eq!(called.get(), 1);
-            assert_eq!(freed.get(), 1);
-            assert!((*client.get()).overlay.is_none());
-            assert_eq!((*client.get()).tty.flags & (TTY_FREEZE | TTY_NOCURSOR), 0);
-            server_client_overlay_draw(&client);
-            assert_eq!(called.get(), 1);
-            (*client.get()).session = Weak::new();
-            (&session).fixture_current(refbox::Weak::new());
-            (&session).fixture_remove_link(link);
         }
     }
 

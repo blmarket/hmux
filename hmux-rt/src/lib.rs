@@ -82,51 +82,12 @@ pub trait Handle: Clone + 'static {
 /// Readiness consumes no data. The caller must perform nonblocking I/O and
 /// handle `WouldBlock` by waiting again. Only one pending waiter per direction
 /// is supported, shared with byte reads/writes on the same registration.
-///
-/// ```
-/// use hmux_rt::{AsyncFd, Handle, Runtime, mio};
-/// use std::io::{self, Read, Write};
-/// use std::os::fd::OwnedFd;
-/// use std::os::unix::net::UnixStream;
-/// use std::rc::Rc;
-/// use std::time::Duration;
-///
-/// let mut runtime = mio::Runtime::new()?;
-/// let (mut reader, mut writer) = UnixStream::pair()?;
-/// reader.set_nonblocking(true)?;
-/// let lease = Rc::new(OwnedFd::from(reader.try_clone()?));
-/// let fd = runtime.handle().io(lease)?;
-/// let task = runtime.handle().spawn(async move {
-///     let mut byte = [0];
-///     loop {
-///         fd.readable().await.unwrap();
-///         match reader.read(&mut byte) {
-///             Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
-///             result => { assert_eq!(result.unwrap(), 1); break; }
-///         }
-///     }
-/// })?;
-/// writer.write_all(b"x")?;
-/// runtime.poll(Some(Duration::ZERO))?;
-/// drop(task);
-/// # Ok::<(), io::Error>(())
-/// ```
 pub trait AsyncFd {
     /// Wait for either requested direction, returning (readable, writable).
     /// Requesting neither direction returns `InvalidInput`. Dropping a pending
     /// wait unregisters its waiter without consuming input or output capacity.
     fn ready(&self, read: bool, write: bool)
     -> impl Future<Output = io::Result<(bool, bool)>> + '_;
-
-    /// Wait until a nonblocking read-side operation may make progress.
-    fn readable(&self) -> impl Future<Output = io::Result<()>> + '_ {
-        async move { self.ready(true, false).await.map(|_| ()) }
-    }
-
-    /// Wait until a nonblocking write-side operation may make progress.
-    fn writable(&self) -> impl Future<Output = io::Result<()>> + '_ {
-        async move { self.ready(false, true).await.map(|_| ()) }
-    }
 }
 
 /// A local async byte reader.

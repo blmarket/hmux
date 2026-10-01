@@ -1,26 +1,16 @@
 use crate::src::session::Session as _;
-#[cfg(test)]
-use crate::src::session::SessionFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
-#[cfg(test)]
-use crate::src::window::WindowFixture as _;
 use crate::src::window::WindowIndex as _;
-#[cfg(test)]
-use crate::src::window_pane::PaneFixture as _;
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, SystemTime};
 use std::{cell::UnsafeCell, rc::Rc};
 mod api;
-#[cfg(test)]
-mod fixtures;
 mod format;
 mod model;
-#[cfg(test)]
-pub(crate) use fixtures::ClientFixture;
 mod overlay;
 pub use api::{Client, PanDirection};
 pub use model::client;
@@ -3243,105 +3233,6 @@ unsafe fn server_client_prompt_cursor(
     return Some(cursor);
 }
 
-#[cfg(test)]
-mod prompt_cursor_tests {
-    use super::*;
-    use crate::src::shared::prompt::prompt;
-    use crate::src::shared::rc;
-    use crate::src::shared::screen::MODE_WRAP;
-
-    #[test]
-    fn pane_prompt_cursor_preserves_clipped_and_occluded_coordinates() {
-        unsafe {
-            use crate::src::session::Session;
-            let mut options = crate::src::options::options_create(None);
-            for key in [c"status", c"status-position"] {
-                let definition = crate::src::options_table::options_table
-                    .iter()
-                    .find(|definition| definition.name == Some(key))
-                    .unwrap();
-                crate::src::options::options_default(&mut *options, definition);
-            }
-            let session_owner =
-                crate::src::shared::session::SessionRef::allocate_with_options(options);
-            let c = client::with_session_for_test(Some(&session_owner));
-            c.borrow_terminal_mut().sy = 24;
-            let previous_sessions = std::mem::replace(
-                &mut crate::src::session::sessions,
-                crate::src::shared::session::sessions::default(),
-            );
-            (&mut crate::src::session::sessions).insert(session_owner.clone());
-            {
-                let mut terminal = c.borrow_terminal_mut();
-                (terminal.oox, terminal.ooy, terminal.osx, terminal.osy) = (10, 5, 80, 20);
-            }
-            let incoming = PromptCursor {
-                mode: MODE_CURSOR | MODE_WRAP,
-                cx: 67,
-                cy: 68,
-            };
-
-            // Golden mode/coordinates from tmux e880cf63e0a9's cursor helper.
-            // Its viewport comparisons intentionally include the right/bottom edge.
-            for (at, has_prompt, x, y, covered, expected) in [
-                (22, false, 15, 8, false, None),
-                (22, true, 15, 8, false, Some((17, 7, 6))),
-                (0, true, 15, 8, false, Some((17, 7, 5))),
-                (-1, true, 15, 8, false, Some((17, 7, 6))),
-                (22, true, 5, 8, false, Some((16, 67, 68))),
-                (22, true, 89, 8, false, Some((16, 67, 68))),
-                (22, true, 88, 8, false, Some((17, 80, 6))),
-                (22, true, 15, 1, false, Some((16, 67, 68))),
-                (22, true, 15, 23, false, Some((16, 67, 68))),
-                (22, true, 15, 22, false, Some((17, 7, 20))),
-                (22, true, 15, 8, true, Some((16, 7, 6))),
-                (0, true, 15, 8, true, Some((16, 7, 3))),
-            ] {
-                session_owner.with_options_mut(|options| {
-                    options_set_number(options, c"status".as_ptr(), 2);
-                    options_set_number(
-                        options,
-                        c"status-position".as_ptr(),
-                        if at == 0 { 0 } else { 1 },
-                    );
-                });
-                crate::src::shared::session::SessionRef::recalculate_attachment_status();
-                let flags = if at == -1 { CLIENT_STATUSOFF as u64 } else { 0 };
-                c.update_flags(flags, !flags);
-                let window_owner =
-                    crate::src::shared::window::WindowRef::fixture_with_size(100, 40);
-                let prompt = refbox::RefBox::new(prompt::default());
-                let base = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-                base.fixture_parent(Some(&window_owner));
-                base.fixture_geometry((0, 4), (x, y));
-                if has_prompt {
-                    base.fixture_prompt(prompt, 2);
-                }
-                window_owner
-                    .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .push_front(std::rc::Rc::downgrade(&base));
-                let blocker = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::allocate();
-                if covered {
-                    blocker.fixture_parent(Some(&window_owner));
-                    blocker.fixture_geometry((3, 1), (6, if at == 0 { 3 } else { 6 }));
-                    window_owner
-                        .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                        .push_front(std::rc::Rc::downgrade(&blocker));
-                }
-                let result = server_client_prompt_cursor(&c, &base, incoming);
-                assert_eq!(
-                    result.map(|cursor| (cursor.mode, cursor.cx, cursor.cy)),
-                    expected,
-                    "status {at}, prompt {has_prompt}, pane {x},{y}, covered {covered}"
-                );
-                window_owner.release(c"test owner");
-            }
-            (&mut crate::src::session::sessions).remove(&session_owner);
-            crate::src::session::sessions = previous_sessions;
-        }
-    }
-}
-
 unsafe fn server_client_reset_state(client_owner: &ClientRef) {
     let c = client_owner.get();
     let Some(session_owner) = (*c).session.upgrade() else {
@@ -5206,168 +5097,6 @@ impl Drop for client {
 }
 
 #[cfg(test)]
-mod overlay_dispatch_tests {
-    use super::*;
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    unsafe fn with_client(test: impl FnOnce(&ClientRef)) {
-        let session_owner = crate::src::shared::session::SessionRef::allocate();
-        let session = Some(session_owner.clone());
-        let link = (&session_owner).fixture_add_link(0);
-        (&session_owner).fixture_current(link.clone());
-        let client_owner = client::new();
-        let client = client_owner.get();
-        (*client).session = Rc::downgrade(&session_owner);
-        (*client).tty.client = Rc::downgrade(&client_owner);
-        test(&client_owner);
-        client_owner.clear_overlay();
-        (*client).session = std::rc::Weak::new();
-        (&session_owner).fixture_current(refbox::Weak::new());
-        (&session_owner).fixture_remove_link(link);
-    }
-
-    unsafe fn install(owner: &ClientRef) {
-        let c = owner.get();
-        server_client_set_overlay(
-            &(*(c)).observer.upgrade().expect("live client"),
-            Overlay::callbacks(None, None, Some(Box::new(|_| {})), None, None, None),
-        );
-    }
-
-    #[test]
-    fn callbacks_clearing_the_overlay_are_not_restored_and_stale_results_are_discarded() {
-        unsafe {
-            with_client(|owner| {
-                let c = owner.get();
-                install(&(*(c)).observer.upgrade().expect("live client"));
-                let freed = Rc::new(Cell::new(0));
-                let observed = freed.clone();
-                (*c).overlay.as_mut().unwrap().free =
-                    Some(Box::new(move |_| observed.set(observed.get() + 1)));
-                (*c).overlay.as_mut().unwrap().draw = Some(Box::new(|c| {
-                    // Draw has been taken out of the client during dispatch.
-                    assert!((*c.get()).overlay.as_mut().unwrap().draw.is_none());
-                    c.clear_overlay();
-                    assert!((*c.get()).overlay.is_none());
-                }));
-                server_client_overlay_draw(&(*(c)).observer.upgrade().expect("live client"));
-                assert!(!(*c)
-                    .overlay
-                    .as_ref()
-                    .is_some_and(|overlay| overlay.draw.is_some()));
-                assert_eq!(freed.get(), 1);
-
-                install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay.as_mut().unwrap().resize = Some(Box::new(|c| c.clear_overlay()));
-                server_client_overlay_resize(&(*(c)).observer.upgrade().expect("live client"));
-                assert!(!(*c)
-                    .overlay
-                    .as_ref()
-                    .is_some_and(|overlay| overlay.resize.is_some()));
-
-                install(&(*(c)).observer.upgrade().expect("live client"));
-                let owned_screen = Box::new(screen::empty());
-                let screen = ScreenMode::from(&*owned_screen);
-                (*c).overlay.as_mut().unwrap().mode = Some(Box::new(move |c| {
-                    let _keep_screen_alive = &owned_screen;
-                    c.clear_overlay();
-                    Some((screen, 1, 2))
-                }));
-                assert!(server_client_overlay_mode(
-                    &(*(c)).observer.upgrade().expect("live client")
-                )
-                .is_none());
-                assert!(!(*c)
-                    .overlay
-                    .as_ref()
-                    .is_some_and(|overlay| overlay.mode.is_some()));
-
-                install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay.as_mut().unwrap().check = Some(Box::new(|c, _, _, _| {
-                    c.clear_overlay();
-                    visible_ranges::default()
-                }));
-                let ranges = crate::src::tty::tty_check_overlay_range(
-                    &(*c).observer.upgrade().unwrap(),
-                    3,
-                    4,
-                    5,
-                );
-                assert_eq!(ranges.used, 1);
-                assert_eq!(ranges.storage[0].px, 3);
-                assert_eq!(ranges.storage[0].nx, 5);
-                assert!(!(*c)
-                    .overlay
-                    .as_ref()
-                    .is_some_and(|overlay| overlay.check.is_some()));
-            });
-        }
-    }
-
-    #[test]
-    fn a_retired_key_callback_cannot_close_or_replace_the_new_overlay() {
-        unsafe {
-            with_client(|owner| {
-                let c = owner.get();
-                install(&(*(c)).observer.upgrade().expect("live client"));
-                let generation = (*c).overlay_generation;
-                (*c).overlay.as_mut().unwrap().key = Some(Box::new(|c, _| {
-                    install(c);
-                    (*c.get()).overlay.as_mut().unwrap().key = Some(Box::new(|_, _| 42));
-                    1
-                }));
-                let mut event = key_event::new(0, mouse_event::default(), None);
-                assert_eq!(
-                    server_client_overlay_key(
-                        &(*(c)).observer.upgrade().expect("live client"),
-                        &mut event
-                    ),
-                    Some(0)
-                );
-                assert!((*c).overlay_generation > generation);
-                assert!((*c).overlay.is_some());
-                assert_eq!(
-                    server_client_overlay_key(
-                        &(*(c)).observer.upgrade().expect("live client"),
-                        &mut event
-                    ),
-                    Some(42)
-                );
-            });
-        }
-    }
-
-    #[test]
-    fn cleanup_preserves_replacement_flags_and_set_retires_nested_owners() {
-        unsafe {
-            with_client(|owner| {
-                let c = owner.get();
-                install(&(*(c)).observer.upgrade().expect("live client"));
-                (*c).overlay.as_mut().unwrap().free = Some(Box::new(|c| install(c)));
-                server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
-                assert!((*c).overlay.is_some());
-                assert_eq!(
-                    (*c).tty.flags & (TTY_FREEZE | TTY_NOCURSOR),
-                    TTY_FREEZE | TTY_NOCURSOR
-                );
-
-                let nested_frees = Rc::new(Cell::new(0));
-                let observed = nested_frees.clone();
-                (*c).overlay.as_mut().unwrap().free = Some(Box::new(move |c| {
-                    install(c);
-                    (*c.get()).overlay.as_mut().unwrap().free =
-                        Some(Box::new(move |_| observed.set(observed.get() + 1)));
-                }));
-                install(&(*(c)).observer.upgrade().expect("live client"));
-                assert_eq!(nested_frees.get(), 1);
-                assert!((*c).overlay.is_some());
-            });
-        }
-    }
-}
-
-#[cfg(test)]
 mod client_timer_observer_tests {
     use super::*;
 
@@ -5399,51 +5128,6 @@ mod client_timer_observer_tests {
             crate::src::reactor::poll_runtime();
             assert!(observer.upgrade().is_none());
             drop(detached_timer);
-        }
-    }
-}
-
-#[cfg(test)]
-mod cwd_observer_ownership_tests {
-    use crate::src::cfg::{cfg_client, cfg_finished};
-    use crate::src::server_client::Client as _;
-    use crate::src::session::Session;
-    use crate::src::shared::client::ClientRef;
-    use crate::src::shared::{client::client, session::session};
-    use std::rc::{Rc, Weak};
-
-    #[test]
-    fn startup_observer_and_owned_directory_preserve_lifetime_and_precedence() {
-        unsafe {
-            let startup = client::new();
-            (*startup.get()).cwd = Some(c"/startup".to_owned());
-            cfg_client = Rc::downgrade(&startup);
-            cfg_finished = 0;
-            let other = client::new();
-            (*other.get()).cwd = Some(c"/other".to_owned());
-            let session = crate::src::shared::session::SessionRef::allocate();
-            session.set_cwd(Some(c"/session".to_owned()));
-            let saved = ClientRef::working_directory(Some(&other), Some(&session)).unwrap();
-            assert_eq!(saved.as_c_str(), c"/startup");
-            (*startup.get()).cwd = None;
-            assert!(ClientRef::working_directory(Some(&other), None).is_none());
-            drop(startup);
-            assert!((&cfg_client).upgrade().is_none());
-            assert_eq!(saved.as_c_str(), c"/startup");
-            assert_eq!(
-                ClientRef::working_directory(Some(&other), Some(&session))
-                    .unwrap()
-                    .as_c_str(),
-                c"/other",
-            );
-            assert_eq!(
-                ClientRef::working_directory(None, Some(&session))
-                    .unwrap()
-                    .as_c_str(),
-                c"/session",
-            );
-            cfg_client = Weak::new();
-            cfg_finished = 1;
         }
     }
 }

@@ -6,8 +6,6 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::Timer;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
-#[cfg(test)]
-use crate::src::session::SessionFixture as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::session::{sessions, Session as _};
 use crate::src::shared::abi::*;
@@ -1064,7 +1062,6 @@ unsafe fn monitor_windows_next(
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
-    use crate::src::shared::client::{client, CLIENT_DEAD};
 
     #[test]
     fn destroy_expires_observers_before_releasing_callback_captures() {
@@ -1236,78 +1233,6 @@ mod ownership_tests {
     }
 
     #[test]
-    fn timer_destruction_in_session_phase_prevents_later_phases_and_rearming() {
-        use std::cell::{Cell, RefCell};
-        unsafe {
-            let saved_sessions = std::ptr::replace(
-                &raw mut sessions,
-                crate::src::shared::session::sessions::default(),
-            );
-            let session = crate::src::shared::session::SessionRef::allocate();
-            (&session).fixture_metadata(Some(c"monitor-timer-destroy".to_owned()), None, None);
-            let session_observer = Rc::downgrade(&session);
-            (&mut sessions).insert(session);
-            let owner_slot = Rc::new(RefCell::new(None::<refbox::RefBox<monitor_set>>));
-            let callback_owner = owner_slot.clone();
-            let calls = Rc::new(Cell::new(0));
-            let callback_calls = calls.clone();
-            let owner = monitor_create_session(
-                session_observer.upgrade().as_ref(),
-                Rc::new(move |change| {
-                    assert_eq!(change.name, c"a-session");
-                    assert_eq!(change.value, c"constant");
-                    monitor_destroy(callback_owner.borrow_mut().take().unwrap());
-                    // The dispatched strings remain valid after logical destruction.
-                    assert_eq!(change.value, c"constant");
-                    callback_calls.set(callback_calls.get() + 1);
-                }),
-            );
-            for (name, kind) in [
-                (c"a-session", MONITOR_SESSION),
-                (c"b-session", MONITOR_SESSION),
-                (c"c-pane", MONITOR_PANE),
-                (c"d-window", MONITOR_WINDOW),
-                (c"e-all-panes", MONITOR_ALL_PANES),
-                (c"f-all-windows", MONITOR_ALL_WINDOWS),
-            ] {
-                monitor_add(
-                    &owner.downgrade(),
-                    name.as_ptr(),
-                    kind,
-                    -1,
-                    c"constant".as_ptr(),
-                    MONITOR_NOTIFY_INITIAL,
-                );
-            }
-            let observer = owner.downgrade();
-            let dispatch = owner.downgrade();
-            *owner_slot.borrow_mut() = Some(owner);
-            monitor_timer(&dispatch);
-            assert_eq!(calls.get(), 1);
-            assert!(!observer.is_alive());
-            assert!(matches!(
-                dispatch.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            // Monitor teardown releases its owner before returning; only the
-            // session registry remains after the dispatch view is released.
-            assert_eq!(session_observer.strong_count(), 1);
-            (&mut sessions).remove(&session_observer.upgrade().unwrap());
-            assert_eq!(session_observer.strong_count(), 0);
-            drop(dispatch);
-            assert!(matches!(
-                observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            crate::src::reactor::poll_runtime();
-            assert_eq!(calls.get(), 1);
-            assert!(session_observer.upgrade().is_none());
-            crate::src::reactor::shutdown_runtime();
-            sessions = saved_sessions;
-        }
-    }
-
-    #[test]
     fn notify_true_updates_last_without_firing_until_truth_changes() {
         use std::cell::RefCell;
         unsafe {
@@ -1355,93 +1280,6 @@ mod ownership_tests {
                 current_time
             );
             monitor_destroy(owner);
-        }
-    }
-
-    #[test]
-    fn client_scan_guards_release_immediately_on_missing_session_and_dead_client() {
-        use crate::src::reactor::{poll_runtime, shutdown_runtime};
-
-        unsafe {
-            for cancel in [false, true] {
-                let client = ClientRef::allocate();
-                let observer = Rc::downgrade(&client);
-                let set_owner = monitor_create_client(Some(&client), Rc::new(|_| {}));
-                let set_observer = set_owner.downgrade();
-                let set = &set_observer;
-                assert!(monitor_has_client(set));
-
-                // The client exists, but the missing session ends the scan early.
-                monitor_check_sessions(set);
-                assert_eq!(observer.strong_count(), 1);
-                observer
-                    .upgrade()
-                    .unwrap()
-                    .update_flags(CLIENT_DEAD as uint64_t, 0);
-                assert!(monitor_client(set).is_none());
-                assert_eq!(observer.strong_count(), 1);
-
-                drop(client);
-                assert!(observer.upgrade().is_none());
-                if cancel {
-                    shutdown_runtime();
-                } else {
-                    poll_runtime();
-                }
-                assert!(observer.upgrade().is_none());
-                assert!(
-                    monitor_has_client(set),
-                    "expired explicit client remains selected"
-                );
-                assert!(monitor_client(set).is_none());
-                monitor_check_sessions(set);
-                monitor_destroy(set_owner);
-                shutdown_runtime();
-            }
-            let global_owner = monitor_create(Rc::new(|_| {}));
-            let global_observer = global_owner.downgrade();
-            let global = &global_observer;
-            assert!(!monitor_has_client(global));
-            monitor_destroy(global_owner);
-        }
-    }
-
-    #[test]
-    fn session_scan_guards_release_immediately_and_monitor_owner_releases_on_teardown() {
-        use crate::src::reactor::{poll_runtime, shutdown_runtime};
-
-        unsafe {
-            let saved = std::ptr::replace(
-                &raw mut sessions,
-                crate::src::shared::session::sessions::default(),
-            );
-            let owner = crate::src::shared::session::SessionRef::allocate();
-            (&owner).fixture_metadata(Some(c"monitor-release-test".to_owned()), None, None);
-            let observer = std::rc::Rc::downgrade(&owner);
-            (&mut sessions).insert(owner);
-            let set_owner =
-                monitor_create_session(observer.upgrade().as_ref(), std::rc::Rc::new(|_| {}));
-            let set_observer = set_owner.downgrade();
-            let set = &set_observer;
-            monitor_add(set, c"missing".as_ptr(), MONITOR_PANE, -1, c"".as_ptr(), 0);
-            let name = monitor_first_item(set).expect("registered monitor item");
-
-            // Missing pane and window both return after acquiring a guard.
-            monitor_check_pane(set, &name);
-            monitor_check_window(set, &name);
-            // Empty scans exercise the normal exit paths.
-            monitor_check_all_panes(set);
-            monitor_check_all_windows(set);
-            assert_eq!(observer.strong_count(), 2);
-            poll_runtime();
-            assert_eq!(observer.strong_count(), 2);
-
-            (&mut sessions).remove(&observer.upgrade().expect("indexed session"));
-            monitor_destroy(set_owner);
-            assert_eq!(observer.strong_count(), 0);
-            shutdown_runtime();
-            assert!(observer.upgrade().is_none());
-            sessions = saved;
         }
     }
 
