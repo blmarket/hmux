@@ -271,7 +271,7 @@ unsafe fn cmd_new_window_exec(
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    new_wl = spawn_window(&raw mut sc, &raw mut cause);
+    new_wl = spawn_window(&mut sc, &mut cause);
     if !new_wl.is_alive() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"create window failed: ")?;

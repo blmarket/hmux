@@ -174,16 +174,14 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
 }
 
 pub unsafe fn spawn_window(
-    sc: *mut spawn_context,
-    cause: *mut Option<CString>,
+    sc: &mut spawn_context,
+    cause: &mut Option<CString>,
 ) -> refbox::Weak<winlink> {
-    let session = (*sc).s.upgrade().expect("spawn context session");
-    match session.spawn_window(&mut *sc) {
+    let session = sc.s.upgrade().expect("spawn context session");
+    match session.spawn_window(sc) {
         Ok(link) => link,
         Err(error) => {
-            if let Some(cause) = cause.as_mut() {
-                *cause = Some(error);
-            }
+            *cause = Some(error);
             refbox::Weak::new()
         }
     }

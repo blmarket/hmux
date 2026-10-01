@@ -647,8 +647,8 @@ unsafe fn cmd_new_session_exec(
                                                         .map(CStr::to_owned);
                                                         sc.flags = 0 as ::core::ffi::c_int;
                                                         if !spawn_window(
-                                                            &raw mut sc,
-                                                            &raw mut cause,
+                                                            &mut sc,
+                                                            &mut cause,
                                                         )
                                                         .is_alive()
                                                         {

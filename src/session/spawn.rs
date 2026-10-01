@@ -14,24 +14,24 @@ use crate::src::window::Window as _;
 use crate::src::window::Window;
 
 pub(super) unsafe fn spawn_window(
-    sc: *mut spawn_context,
-    cause: *mut Option<CString>,
+    sc: &mut spawn_context,
+    cause: &mut Option<CString>,
 ) -> refbox::Weak<winlink> {
-    let session = (*sc).s.upgrade().expect("spawn context session");
-    let target_client = (*sc).tc.upgrade();
+    let session = sc.s.upgrade().expect("spawn context session");
+    let target_client = sc.tc.upgrade();
     let s = session.get();
-    let mut index = (*sc).idx;
+    let mut index = sc.idx;
     let mut created_window = std::rc::Weak::new();
     spawn_log(c"spawn_window".as_ptr(), sc);
 
-    if (*sc).flags & SPAWN_RESPAWN != 0 && !prepare_respawn_window(sc, cause) {
+    if sc.flags & SPAWN_RESPAWN != 0 && !prepare_respawn_window(sc, cause) {
         return refbox::Weak::new();
     }
-    if (*sc).flags & SPAWN_RESPAWN == 0 && index != -1 {
+    if sc.flags & SPAWN_RESPAWN == 0 && index != -1 {
         let mut link = winlink_find_by_index(&(*s).windows, index);
-        if link.is_alive() && (*sc).flags & SPAWN_KILL == 0 {
+        if link.is_alive() && sc.flags & SPAWN_KILL == 0 {
             set_spawn_cause(
-                cause.as_mut(),
+                Some(cause),
                 &[b"index ", index.to_string().as_bytes(), b" in use"],
             );
             return refbox::Weak::new();
@@ -43,11 +43,11 @@ pub(super) unsafe fn spawn_window(
             winlink_remove(&mut (*s).windows, link.clone());
             if (*s).curw == link {
                 (*s).curw = refbox::Weak::new();
-                (*sc).flags &= !SPAWN_DETACHED;
+                sc.flags &= !SPAWN_DETACHED;
             }
         }
     }
-    if (*sc).flags & SPAWN_RESPAWN == 0 {
+    if sc.flags & SPAWN_RESPAWN == 0 {
         if index == -1 {
             index = (-1i64
                 - options_get_number(
@@ -55,10 +55,10 @@ pub(super) unsafe fn spawn_window(
                     c"base-index",
                 )) as i32;
         }
-        (*sc).set_wl(winlink_add(&mut (*s).windows, index));
-        if !(*sc).winlink_handle().is_alive() {
+        sc.set_wl(winlink_add(&mut (*s).windows, index));
+        if !sc.winlink_handle().is_alive() {
             set_spawn_cause(
-                cause.as_mut(),
+                Some(cause),
                 &[b"couldn't add window ", index.to_string().as_bytes()],
             );
             return refbox::Weak::new();
@@ -77,42 +77,42 @@ pub(super) unsafe fn spawn_window(
         let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
         created_window = Rc::downgrade(&window);
         if !(*s).curw.is_alive() {
-            (*s).curw = (*sc).winlink_handle();
+            (*s).curw = sc.winlink_handle();
         }
-        (*sc).winlink_handle().get_mut_unchecked().session = Rc::downgrade(&session);
+        sc.winlink_handle().get_mut_unchecked().session = Rc::downgrade(&session);
         window.set_latest_client(target_client.as_ref());
-        winlink_set_window((*sc).winlink_handle(), &window);
+        winlink_set_window(sc.winlink_handle(), &window);
         // The new link owns the window before the constructor owner is released.
         window.release(c"spawn_window");
     }
 
-    (*sc).flags |= SPAWN_NONOTIFY;
+    sc.flags |= SPAWN_NONOTIFY;
     let pane = spawn_pane(sc, cause);
     if pane.is_none() {
-        if (*sc).flags & SPAWN_RESPAWN == 0 {
-            winlink_remove(&mut (*s).windows, (*sc).winlink_handle());
+        if sc.flags & SPAWN_RESPAWN == 0 {
+            winlink_remove(&mut (*s).windows, sc.winlink_handle());
         }
         return refbox::Weak::new();
     }
-    if (*sc).flags & SPAWN_RESPAWN == 0 {
+    if sc.flags & SPAWN_RESPAWN == 0 {
         let window = created_window
             .upgrade()
             .expect("spawned window remains live");
         initialize_spawned_window(sc, &window);
         window.release(c"spawn_window initialization");
     }
-    if (*sc).flags & SPAWN_DETACHED == 0 {
-        session_select(&session, (*sc).winlink_handle().get_unchecked().idx);
+    if sc.flags & SPAWN_DETACHED == 0 {
+        session_select(&session, sc.winlink_handle().get_unchecked().idx);
     }
-    if (*sc).flags & SPAWN_RESPAWN == 0 {
+    if sc.flags & SPAWN_RESPAWN == 0 {
         // Pane and selection callbacks can change the link's association. The
         // creation notification still describes the originally created window.
         let window = created_window
             .upgrade()
             .expect("spawned window remains live");
         events_fire_window(c"window-created".as_ptr(), window);
-        events_fire_winlink(c"window-linked".as_ptr(), (*sc).winlink_handle());
+        events_fire_winlink(c"window-linked".as_ptr(), sc.winlink_handle());
     }
     session_group_synchronize_from(&session);
-    (*sc).winlink_handle()
+    sc.winlink_handle()
 }

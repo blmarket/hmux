@@ -98,7 +98,7 @@ unsafe fn cmd_respawn_window_exec(
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    if !spawn_window(&raw mut sc, &raw mut cause).is_alive() {
+    if !spawn_window(&mut sc, &mut cause).is_alive() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"respawn window failed: ")?;
             write_cstr(
