@@ -57,6 +57,7 @@ use crate::src::tmux::{
 };
 use crate::src::tty_term::tty_term_read_list;
 use std::ffi::{CStr, CString};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 
 pub const ECONNREFUSED: ::core::ffi::c_int = 111 as ::core::ffi::c_int;
 
@@ -105,150 +106,120 @@ pub(crate) unsafe fn client_remove_file(
         crate::src::file::client_files_remove_identity(&mut client_files, stream, identity);
     drop(removed);
 }
-unsafe fn client_get_lock(mut lockfile: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    let mut lockfd: ::core::ffi::c_int = 0;
-    log_debug(format_args!(
-        "lock file is {}",
-        log_cstr((lockfile) as *const _)
-    ));
-    lockfd = open(lockfile, O_WRONLY | O_CREAT, 0o600 as ::core::ffi::c_int);
-    if lockfd == -(1 as ::core::ffi::c_int) {
+enum ClientLock {
+    Acquired(OwnedFd),
+    Retry,
+    Unavailable,
+}
+
+unsafe fn client_get_lock(lockfile: *const ::core::ffi::c_char) -> ClientLock {
+    log_debug(format_args!("lock file is {}", log_cstr(lockfile)));
+    let fd = open(lockfile, O_WRONLY | O_CREAT, 0o600 as ::core::ffi::c_int);
+    if fd == -1 {
         log_debug(format_args!(
             "open failed: {}",
-            log_cstr((strerror(*__errno_location())) as *const _)
+            log_cstr(strerror(*__errno_location()))
         ));
-        return -(1 as ::core::ffi::c_int);
+        return ClientLock::Unavailable;
     }
-    if flock(lockfd, LOCK_EX | LOCK_NB) == -(1 as ::core::ffi::c_int) {
+    let lock = OwnedFd::from_raw_fd(fd);
+    if flock(lock.as_raw_fd(), LOCK_EX | LOCK_NB) == -1 {
         log_debug(format_args!(
             "flock failed: {}",
-            log_cstr((strerror(*__errno_location())) as *const _)
+            log_cstr(strerror(*__errno_location()))
         ));
         if *__errno_location() != EAGAIN {
-            return lockfd;
+            return ClientLock::Acquired(lock);
         }
-        while flock(lockfd, LOCK_EX) == -(1 as ::core::ffi::c_int) && *__errno_location() == EINTR {
-        }
-        close(lockfd);
-        return -(2 as ::core::ffi::c_int);
+        while flock(lock.as_raw_fd(), LOCK_EX) == -1 && *__errno_location() == EINTR {}
+        return ClientLock::Retry;
     }
     log_debug(format_args!("flock succeeded"));
-    return lockfd;
+    ClientLock::Acquired(lock)
 }
-unsafe fn client_connect(
-    mut path: *const ::core::ffi::c_char,
-    mut flags: uint64_t,
-) -> ::core::ffi::c_int {
-    let mut current_block: u64;
+
+unsafe fn client_connect(path: *const ::core::ffi::c_char, flags: uint64_t) -> ::core::ffi::c_int {
     let mut sa: sockaddr_un = sockaddr_un {
-        sun_family: 0,
+        sun_family: AF_UNIX as sa_family_t,
         sun_path: [0; 108],
     };
-    let mut size: size_t = 0;
-    let mut fd: ::core::ffi::c_int = 0;
-    let mut lockfd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    let mut locked: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut lockfile: Option<CString> = None;
-    memset(
-        &raw mut sa as *mut ::core::ffi::c_void,
-        0 as ::core::ffi::c_int,
-        ::core::mem::size_of::<sockaddr_un>() as size_t,
-    );
-    sa.sun_family = AF_UNIX as sa_family_t;
-    size = strlcpy(
-        &raw mut sa.sun_path as *mut ::core::ffi::c_char,
-        path,
-        ::core::mem::size_of::<[::core::ffi::c_char; 108]>() as size_t,
-    ) as size_t;
-    if size >= ::core::mem::size_of::<[::core::ffi::c_char; 108]>() as usize {
+    let size = strlcpy(sa.sun_path.as_mut_ptr(), path, sa.sun_path.len());
+    if size as usize >= sa.sun_path.len() {
         *__errno_location() = ENAMETOOLONG;
-        return -(1 as ::core::ffi::c_int);
+        return -1;
     }
-    log_debug(format_args!("socket is {}", log_cstr((path) as *const _)));
+    let mut lockfd = None;
+    let mut locked = false;
+    let mut lockfile = None;
+    log_debug(format_args!("socket is {}", log_cstr(path)));
     loop {
-        fd = socket(
-            AF_UNIX,
-            SOCK_STREAM as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-        if fd == -(1 as ::core::ffi::c_int) {
-            return -(1 as ::core::ffi::c_int);
+        let fd = socket(AF_UNIX, SOCK_STREAM as ::core::ffi::c_int, 0);
+        if fd == -1 {
+            let error = *__errno_location();
+            drop(lockfd);
+            *__errno_location() = error;
+            return -1;
         }
+        let socket = OwnedFd::from_raw_fd(fd);
         log_debug(format_args!("trying connect"));
-        if !(connect(
-            fd,
+        if connect(
+            socket.as_raw_fd(),
             __CONST_SOCKADDR_ARG {
-                __sockaddr__: &raw mut sa as *mut sockaddr,
+                __sockaddr__: (&raw mut sa).cast(),
             },
             ::core::mem::size_of::<sockaddr_un>() as socklen_t,
-        ) == -(1 as ::core::ffi::c_int))
+        ) != -1
         {
-            current_block = 7172762164747879670;
-            break;
+            drop(lockfd);
+            setblocking(socket.as_raw_fd(), 0);
+            return socket.into_raw_fd();
         }
+        let error = *__errno_location();
         log_debug(format_args!(
             "connect failed: {}",
-            log_cstr((strerror(*__errno_location())) as *const _)
+            log_cstr(strerror(error))
         ));
-        if *__errno_location() != ECONNREFUSED && *__errno_location() != ENOENT {
-            current_block = 16524389688364091157;
-            break;
+        if (error != ECONNREFUSED && error != ENOENT)
+            || flags & CLIENT_NOSTARTSERVER as uint64_t != 0
+            || flags & CLIENT_STARTSERVER as uint64_t == 0
+        {
+            drop(socket);
+            drop(lockfd);
+            *__errno_location() = error;
+            return -1;
         }
-        if flags & CLIENT_NOSTARTSERVER as uint64_t != 0 {
-            current_block = 16524389688364091157;
-            break;
-        }
-        if !flags & CLIENT_STARTSERVER as uint64_t != 0 {
-            current_block = 16524389688364091157;
-            break;
-        }
-        close(fd);
-        if locked == 0 {
-            let mut name = std::ffi::CStr::from_ptr(path).to_bytes().to_vec();
+        drop(socket);
+        if !locked {
+            let mut name = CStr::from_ptr(path).to_bytes().to_vec();
             name.extend_from_slice(b".lock");
             lockfile = Some(CString::new(name).expect("socket path has no interior NUL"));
-            lockfd = client_get_lock(lockfile.as_ref().unwrap().as_ptr());
-            if lockfd < 0 as ::core::ffi::c_int {
-                log_debug(format_args!("didn't get lock ({})", (lockfd) as i32));
-                lockfile = None;
-                if lockfd == -(2 as ::core::ffi::c_int) {
+            match client_get_lock(lockfile.as_ref().unwrap().as_ptr()) {
+                ClientLock::Acquired(fd) => lockfd = Some(fd),
+                ClientLock::Retry => {
+                    lockfile = None;
                     continue;
                 }
+                ClientLock::Unavailable => lockfile = None,
             }
-            log_debug(format_args!("got lock ({})", (lockfd) as i32));
-            locked = 1 as ::core::ffi::c_int;
+            log_debug(format_args!(
+                "got lock ({})",
+                lockfd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
+            ));
+            locked = true;
         } else {
-            if lockfd >= 0 as ::core::ffi::c_int
-                && unlink(path) != 0 as ::core::ffi::c_int
-                && *__errno_location() != ENOENT
-            {
-                lockfile.take();
-                close(lockfd);
-                return -(1 as ::core::ffi::c_int);
+            if lockfd.is_some() && unlink(path) != 0 && *__errno_location() != ENOENT {
+                let error = *__errno_location();
+                drop(lockfd);
+                *__errno_location() = error;
+                return -1;
             }
-            fd = server_start(flags, lockfd, &mut lockfile);
-            current_block = 7172762164747879670;
-            break;
-        }
-    }
-    match current_block {
-        16524389688364091157 => {
-            if locked != 0 {
-                lockfile.take();
-                close(lockfd);
-            }
-            close(fd);
-            return -(1 as ::core::ffi::c_int);
-        }
-        _ => {
-            if locked != 0 && lockfd >= 0 as ::core::ffi::c_int {
-                lockfile.take();
-                close(lockfd);
-            }
-            setblocking(fd, 0 as ::core::ffi::c_int);
+            // After fork each process releases its own copy of the lock.
+            let fd = server_start(flags, &mut lockfd, &mut lockfile);
+            drop(lockfd);
+            setblocking(fd, 0);
             return fd;
         }
-    };
+    }
 }
 unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
     static mut msg: [::core::ffi::c_char; 256] = [0; 256];
@@ -360,7 +331,7 @@ pub unsafe fn client_main(
             log_hex(client_flags as ::core::ffi::c_ulonglong)
         ));
         if systemd_activated() != 0 {
-            fd = server_start(flags, -1, &mut None);
+            fd = server_start(flags, &mut None, &mut None);
         } else {
             fd = client_connect(socket_path, client_flags);
         }

@@ -13,6 +13,7 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
+use std::os::fd::AsRawFd;
 use std::time::Duration;
 
 /// Access a pane without lending its model storage.
@@ -1184,7 +1185,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
 
     unsafe fn has_tty(&self) -> bool {
-        (*self.get()).fd != -1
+        (*self.get()).fd.is_some()
     }
 
     unsafe fn resize(&self, sx: u32, sy: u32) {
@@ -1441,7 +1442,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
 
     unsafe fn finish_cycle(&self) {
-        if (*self.get()).fd != -1 {
+        if (*self.get()).fd.is_some() {
             finish_resize(self);
             finish_buffer(self);
         }
@@ -1609,7 +1610,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         pending
     }
     unsafe fn process_name(&self) -> Option<CString> {
-        let descriptor = (*self.get()).fd;
+        let descriptor = (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
         crate::src::osdep_linux::osdep_get_name_cstring(descriptor)
     }
     unsafe fn draw_editor_waiting(&self, pid: pid_t) {
@@ -1711,7 +1712,7 @@ unsafe fn finish_resize(owner: &Rc<UnsafeCell<window_pane>>) {
 unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
     let pane = owner.get();
     let mut minimum = (*pane).offset.used;
-    if (*pane).pipe_fd != -1 {
+    if (*pane).pipe_fd.is_some() {
         minimum = minimum.min((*pane).pipe_offset.used);
     }
     let mut off = true;
@@ -1750,7 +1751,7 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
         if (*pane).base_offset > usize::MAX.wrapping_sub(count) {
             let base = (*pane).base_offset;
             (*pane).offset.used = (*pane).offset.used.wrapping_sub(base);
-            if (*pane).pipe_fd != -1 {
+            if (*pane).pipe_fd.is_some() {
                 (*pane).pipe_offset.used = (*pane).pipe_offset.used.wrapping_sub(base);
             }
             let mut cursor = clients.first();
@@ -1792,8 +1793,8 @@ mod tests {
 
     unsafe fn buffered_pane(bytes: &[u8]) -> Rc<UnsafeCell<window_pane>> {
         let pane = window_pane::new();
-        (*pane.get()).fd = -1;
-        (*pane.get()).pipe_fd = -1;
+        (*pane.get()).fd = None;
+        (*pane.get()).pipe_fd = None;
         let stream = bufferevent_new(-1, None, None, None);
         (*pane.get()).event = StreamHandle::from_ptr(stream);
         evbuffer_add(&mut (*stream).input, bytes.as_ptr().cast(), bytes.len());
@@ -1804,8 +1805,8 @@ mod tests {
     fn fallback_selection_preserves_the_last_activity_point() {
         unsafe {
             let pane = window_pane::new();
-            (*pane.get()).fd = -1;
-            (*pane.get()).pipe_fd = -1;
+            (*pane.get()).fd = None;
+            (*pane.get()).pipe_fd = None;
             let previous = next_active_point;
             pane.on_selected(true);
             assert_eq!((*pane.get()).active_point, previous);
@@ -1862,8 +1863,8 @@ mod tests {
             let previous_options = global_options;
             global_options = &mut *options;
             let pane = window_pane::new();
-            (*pane.get()).fd = -1;
-            (*pane.get()).pipe_fd = -1;
+            (*pane.get()).fd = None;
+            (*pane.get()).pipe_fd = None;
             let source = &mut (*pane.get()).base;
             source.grid = Some(grid_create(3, 2, 0));
             source.hyperlinks = Some(crate::src::hyperlinks::hyperlinks_init());

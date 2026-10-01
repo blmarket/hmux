@@ -42,7 +42,7 @@ pub struct window_pane {
     pub(super) cmd_start_time: time_t,
     pub(super) cmd_end_time: time_t,
     pub(super) cmd_status: ::core::ffi::c_int,
-    pub(super) fd: ::core::ffi::c_int,
+    pub(super) fd: Option<std::os::fd::OwnedFd>,
     /// Observes the runtime-owned pane stream, including empty pane buffers.
     pub(super) event: crate::src::reactor::StreamHandle,
     pub(super) offset: window_pane_offset,
@@ -58,7 +58,7 @@ pub struct window_pane {
     pub(super) palette: colour_palette,
     pub(super) last_theme: client_theme,
     pub(super) border_status_line: style_line_entry,
-    pub(super) pipe_fd: ::core::ffi::c_int,
+    pub(super) pipe_fd: Option<std::os::fd::OwnedFd>,
     pub(super) pipe_pid: pid_t,
     /// Observes the runtime-owned pipe stream; pipe_fd controls its lifetime.
     pub(super) pipe_event: crate::src::reactor::StreamHandle,

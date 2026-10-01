@@ -15,6 +15,7 @@ use crate::src::shared::screen::*;
 use crate::src::style::colour::colour_format;
 use crate::src::tmux::sig2name;
 use std::fmt::Write as _;
+use std::os::fd::AsRawFd;
 
 pub(super) unsafe fn format_value(
     owner: &Rc<UnsafeCell<window_pane>>,
@@ -220,7 +221,7 @@ unsafe fn format_cb_current_command(mut ft: *mut format_tree) -> Option<CString>
     if wp.is_null() || (*wp).shell.is_none() {
         return None;
     }
-    if let Some(cmd) = osdep_get_name_cstring((*wp).fd) {
+    if let Some(cmd) = osdep_get_name_cstring((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)) {
         let value = parse_window_name_cstring(cmd.as_c_str());
         return Some(value);
     }
@@ -243,7 +244,7 @@ unsafe fn format_cb_current_path(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    cwd = osdep_get_cwd((*wp).fd);
+    cwd = osdep_get_cwd((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
     if cwd.is_null() {
         return None;
     }
@@ -1099,7 +1100,7 @@ unsafe fn format_cb_pane_dead(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
     if !wp.is_null() {
-        if (*wp).fd == -(1 as ::core::ffi::c_int) && (*wp).flags & PANE_STATUSREADY != 0 {
+        if (*wp).fd.is_none() && (*wp).flags & PANE_STATUSREADY != 0 {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1478,7 +1479,7 @@ unsafe fn format_cb_pane_pid(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane = format_pane_owner
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() && (*format_pane).fd != -(1 as ::core::ffi::c_int) {
+    if !format_pane.is_null() && (*format_pane).fd.is_some() {
         return Some(
             CString::new(format!(
                 "{}",
@@ -1496,7 +1497,7 @@ unsafe fn format_cb_pane_pipe(mut ft: *mut format_tree) -> Option<CString> {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
-        if (*format_pane).pipe_fd != -(1 as ::core::ffi::c_int) {
+        if (*format_pane).pipe_fd.is_some() {
             return Some(c"1".to_owned());
         }
         return Some(c"0".to_owned());
@@ -1510,7 +1511,7 @@ unsafe fn format_cb_pane_pipe_pid(mut ft: *mut format_tree) -> Option<CString> {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut value = None;
-    if !format_pane.is_null() && (*format_pane).pipe_fd != -(1 as ::core::ffi::c_int) {
+    if !format_pane.is_null() && (*format_pane).pipe_fd.is_some() {
         value = Some(
             CString::new(format!(
                 "{}",

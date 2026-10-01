@@ -22,7 +22,7 @@ pub struct client_file {
     pub(super) path: Option<std::ffi::CString>,
     pub(super) buffer: SegmentedBuf,
     pub(super) event: crate::src::reactor::StreamHandle,
-    pub(super) fd: ::core::ffi::c_int,
+    pub(super) fd: Option<OwnedFd>,
     pub(super) error: ::core::ffi::c_int,
     pub(super) closed: ::core::ffi::c_int,
     pub(super) cb: client_file_cb,

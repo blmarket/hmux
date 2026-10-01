@@ -20,9 +20,9 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, close, closefrom, execl, execvp, fdopen, fopen, fread, fseeko,
-    ftello, fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask,
-    strerror, strrchr, tcgetattr, tcsetattr, unlink,
+    __errno_location, _exit, chdir, closefrom, execl, execvp, fdopen, fopen, fread, fseeko, ftello,
+    fwrite, getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask, strerror,
+    strrchr, tcgetattr, tcsetattr, unlink,
 };
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::write_cstr;
@@ -333,7 +333,7 @@ pub(super) unsafe fn spawn_pane(
         hlimit = session_owner
             .with_options_mut(|options| options_get_number(options, c"history-limit") as u_int);
         if (*sc).flags & SPAWN_RESPAWN != 0 {
-            if (*source_pane).fd != -(1 as ::core::ffi::c_int) && !(*sc).flags & SPAWN_KILL != 0 {
+            if (*source_pane).fd.is_some() && !(*sc).flags & SPAWN_KILL != 0 {
                 idx = window_pane_index(&*source_pane).expect("pane belongs to window ordering");
                 set_spawn_cause(
                     cause.as_mut(),
@@ -354,10 +354,7 @@ pub(super) unsafe fn spawn_pane(
                 return None;
             }
             std::mem::take(&mut (*source_pane).event).free();
-            if (*source_pane).fd != -(1 as ::core::ffi::c_int) {
-                close((*source_pane).fd);
-                (*source_pane).fd = -(1 as ::core::ffi::c_int);
-            }
+            drop((*source_pane).fd.take());
             window_pane_reset_mode_all(source_pane_owner.as_ref().expect("respawn source pane"));
             screen_reinit(&mut (*source_pane).base, 0 as ::core::ffi::c_int);
             if let Some(ictx) = (*source_pane).ictx.take() {
@@ -649,9 +646,10 @@ pub(super) unsafe fn spawn_pane(
                     actual_cwd = b"/\0" as *const u8 as *const ::core::ffi::c_char;
                 }
             }
+            let mut master = -1;
             (*new_wp).pid = fdforkpty(
                 ptm_fd,
-                &raw mut (*new_wp).fd,
+                &raw mut master,
                 &raw mut (*new_wp).tty as *mut ::core::ffi::c_char,
                 ::core::ptr::null_mut::<termios>(),
                 &raw mut ws,
@@ -664,7 +662,7 @@ pub(super) unsafe fn spawn_pane(
                         CStr::from_ptr(strerror(*__errno_location())).to_bytes(),
                     ],
                 );
-                (*new_wp).fd = -(1 as ::core::ffi::c_int);
+                (*new_wp).fd = None;
                 if !(*sc).flags & SPAWN_RESPAWN != 0 {
                     let pane_owner = (*new_wp).observer.upgrade().expect("new pane owner");
                     ClientRef::forget_pane(
@@ -688,6 +686,7 @@ pub(super) unsafe fn spawn_pane(
                 return None;
             }
             if (*new_wp).pid != 0 as ::core::ffi::c_int {
+                (*new_wp).fd = Some(OwnedFd::from_raw_fd(master));
                 if !actual_cwd.is_null()
                     && chdir(&raw mut path as *mut ::core::ffi::c_char) != 0 as ::core::ffi::c_int
                     && (home.is_null() || chdir(home) != 0 as ::core::ffi::c_int)
@@ -804,7 +803,10 @@ pub(super) unsafe fn spawn_pane(
         if !(*new_wp).flags & PANE_EMPTY != 0 {
             let record = CString::new(format!("tmux({}).%{}", getpid(), (*new_wp).id))
                 .expect("pane login record contains no NUL");
-            utempter_add_record((*new_wp).fd, record.as_ptr());
+            utempter_add_record(
+                (*new_wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+                record.as_ptr(),
+            );
             kill(getpid(), SIGCHLD);
         }
         (*new_wp).flags &= !PANE_EXITED;

@@ -47,6 +47,7 @@ use crate::src::tmux::{
 };
 use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SHUT_WR: C2RustUnnamed = 1;
@@ -108,6 +109,7 @@ pub unsafe fn job_run(
     let mut pid: pid_t = 0;
     let mut nullfd: ::core::ffi::c_int = 0;
     let mut out: [::core::ffi::c_int; 2] = [0; 2];
+    let mut out_owner = None;
     let mut master: ::core::ffi::c_int = 0;
     let mut do_close: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
     let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -180,6 +182,7 @@ pub unsafe fn job_run(
     {
         current_block = 12393940290395533062;
     } else {
+        out_owner = Some(out.map(|fd| OwnedFd::from_raw_fd(fd)));
         pid = fork() as pid_t;
         current_block = 224731115979188411;
     }
@@ -214,12 +217,14 @@ pub unsafe fn job_run(
             }
             match pid {
                 -1 => {
-                    if !flags & JOB_PTY != 0 {
-                        close(out[0 as ::core::ffi::c_int as usize]);
-                        close(out[1 as ::core::ffi::c_int as usize]);
-                    }
+                    drop(out_owner.take());
                 }
                 0 => {
+                    // The exec child remaps descriptors onto stdio and uses closefrom.
+                    // Transfer ownership before that raw descriptor setup.
+                    if let Some(pair) = out_owner.take() {
+                        out = pair.map(IntoRawFd::into_raw_fd);
+                    }
                     proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
                     sigprocmask(
                         SIG_SETMASK,
@@ -360,13 +365,14 @@ pub unsafe fn job_run(
                         value.tty = tty;
                     }
                     if flags & JOB_PTY == 0 {
-                        close(out[1]);
-                        value.fd = out[0];
+                        let [parent, child] = out_owner.take().expect("job socket pair");
+                        drop(child);
+                        value.fd = Some(parent);
                     } else {
-                        value.fd = master;
+                        value.fd = Some(OwnedFd::from_raw_fd(master));
                     }
-                    setblocking(value.fd, 0);
-                    let fd = value.fd;
+                    let fd = value.fd.as_ref().expect("job descriptor").as_raw_fd();
+                    setblocking(fd, 0);
                     let job = job_insert(RefBox::new(value));
                     let read_job = job.clone();
                     let write_job = job.clone();
@@ -455,17 +461,14 @@ pub unsafe fn job_free(handle: &Weak<job>) {
             job.pid = -1;
         }
         std::mem::take(&mut job.event).free();
-        if job.fd != -1 {
-            close(job.fd);
-            job.fd = -1;
-        }
+        drop(job.fd.take());
     }
     drop(owner);
 }
 
 pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
     let job = handle.try_borrow_mut().expect("live popup job");
-    if job.fd == -1 || job.flags & JOB_PTY == 0 {
+    if job.fd.is_none() || job.flags & JOB_PTY == 0 {
         return;
     }
     log_debug(format_args!("resize job: {}x{}", sx, sy));
@@ -475,7 +478,12 @@ pub unsafe fn job_resize(handle: &Weak<job>, sx: u_int, sy: u_int) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if ioctl(job.fd, TIOCSWINSZ as ::core::ffi::c_ulong, &ws) == -1 {
+    if ioctl(
+        job.fd.as_ref().expect("job PTY").as_raw_fd(),
+        TIOCSWINSZ as ::core::ffi::c_ulong,
+        &ws,
+    ) == -1
+    {
         fatal(|out| out.write_all(b"ioctl failed"));
     }
 }
@@ -514,7 +522,10 @@ unsafe fn job_write_callback(handle: &Weak<job>) {
     job_log("write", &job);
     log_debug(format_args!("job output left {}", len));
     if len == 0 && job.flags & JOB_KEEPWRITE == 0 {
-        shutdown(job.fd, SHUT_WR as _);
+        shutdown(
+            job.fd.as_ref().expect("job descriptor").as_raw_fd(),
+            SHUT_WR as _,
+        );
         job.event.with_ptr(|stream| {
             bufferevent_disable(stream, EV_WRITE as _);
         });
@@ -621,7 +632,12 @@ pub unsafe fn job_print_summary(
     for (n, handle) in job_snapshot().into_iter().enumerate() {
         let (cmd, fd, pid, status) = {
             let job = handle.try_borrow_mut().expect("registered job");
-            (job.cmd.clone(), job.fd, job.pid, job.status)
+            (
+                job.cmd.clone(),
+                job.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+                job.pid,
+                job.status,
+            )
         };
         if blank != 0 {
             cmdq_print(item_handle, |_| Ok(()));
@@ -645,7 +661,7 @@ mod job_stream_tests {
     fn idle_job() -> job {
         job {
             pid: -1,
-            fd: -1,
+            fd: None,
             ..job::empty()
         }
     }
@@ -665,7 +681,7 @@ mod job_stream_tests {
             let fd = pair[0];
             let stream = bufferevent_new(fd, None, None, None);
             let first = job_insert(RefBox::new(job {
-                fd,
+                fd: Some(OwnedFd::from_raw_fd(fd)),
                 event: crate::src::reactor::StreamHandle::from_ptr(stream),
                 ..idle_job()
             }));
@@ -676,7 +692,16 @@ mod job_stream_tests {
             first.try_borrow_mut().unwrap().freecb = Some(Box::new(move || {
                 assert_eq!(job_snapshot(), vec![second.clone()]);
                 // Owner and resources remain live, with no outstanding borrow.
-                assert_eq!(callback_first.try_borrow_mut().unwrap().fd, fd);
+                assert_eq!(
+                    callback_first
+                        .try_borrow_mut()
+                        .unwrap()
+                        .fd
+                        .as_ref()
+                        .unwrap()
+                        .as_raw_fd(),
+                    fd
+                );
                 assert_eq!(callback_event.ptr(), stream);
                 assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
                 job_free(&callback_first); // reentrant cancellation is harmless

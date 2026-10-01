@@ -16,6 +16,7 @@ use crate::src::shared::terminal::termios;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window;
 use std::cell::UnsafeCell;
+use std::os::fd::AsRawFd;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, SystemTime};
 
@@ -384,7 +385,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn terminal_fd(&self) -> i32 {
-        (*self.get()).fd
+        (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
     }
     unsafe fn record_terminal_discard(&self, bytes: usize) {
         let discarded = &mut (*self.get()).discarded;
@@ -472,12 +473,19 @@ impl Client for ClientRef {
         let state = &mut *self.get();
         let input = state.tty.in_0.as_deref_mut().expect("open TTY buffer");
         let size = input.len();
-        (size, input.read(state.fd))
+        (
+            size,
+            input.read(state.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)),
+        )
     }
     unsafe fn initialize_terminal(&self) -> i32 {
         let observer = Rc::downgrade(self);
         let state = &mut *self.get();
-        crate::src::tty::tty_initialize_component(&mut state.tty, state.fd, observer)
+        crate::src::tty::tty_initialize_component(
+            &mut state.tty,
+            state.fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+            observer,
+        )
     }
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {
         let state = &mut *self.get();
@@ -609,10 +617,10 @@ impl Client for ClientRef {
             bufferevent_new, bufferevent_setwatermark, bufferevent_write, StreamHandle,
         };
         let control_control = self.flags() & CLIENT_CONTROLCONTROL as u64 != 0;
-        let (fd, out_fd) = ((*self.get()).fd, (*self.get()).out_fd);
+        let fd = (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
+        let out_fd = (*self.get()).out_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd);
         if control_control {
-            close(out_fd);
-            (*self.get()).out_fd = -1;
+            drop((*self.get()).out_fd.take());
         } else {
             setblocking(out_fd, 0);
         }
@@ -833,7 +841,7 @@ impl Client for ClientRef {
         (*self.get()).last_session.clone()
     }
     unsafe fn has_input_fd(&self) -> bool {
-        (*self.get()).fd != -1
+        (*self.get()).fd.is_some()
     }
     unsafe fn enter_source_file(&self, limit: u32) -> Option<u32> {
         let depth = &mut (*self.get()).source_file_depth;
@@ -850,7 +858,11 @@ impl Client for ClientRef {
     }
     unsafe fn capture_termios(&self) -> termios {
         let mut result = std::mem::MaybeUninit::uninit();
-        if crate::src::ffi::libc::tcgetattr((*self.get()).fd, result.as_mut_ptr()) != 0 {
+        if crate::src::ffi::libc::tcgetattr(
+            (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+            result.as_mut_ptr(),
+        ) != 0
+        {
             fatal(|out| out.write_all(b"tcgetattr failed"));
         }
         result.assume_init()
@@ -1322,7 +1334,7 @@ impl Client for ClientRef {
             ws_ypixel: 0,
         };
         (crate::src::ffi::libc::ioctl(
-            (*self.get()).fd,
+            (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
             crate::src::tty::TIOCGWINSZ as _,
             &mut size,
         ) != -1)
@@ -1485,7 +1497,10 @@ impl Client for ClientRef {
                 code,
             )
             .to_owned();
-            crate::src::tty::tty_raw((*self.get()).fd, output.as_ptr());
+            crate::src::tty::tty_raw(
+                (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+                output.as_ptr(),
+            );
         }
         self.update_flags(CLIENT_SUSPENDED as u64, 0);
         let peer = (*self.get()).peer;

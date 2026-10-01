@@ -40,6 +40,7 @@ use crate::src::shared::tree::RB_NEGINF;
 use crate::src::tmux::find_home_cstr;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]
@@ -886,11 +887,11 @@ unsafe fn file_write_finished(owner: &Rc<UnsafeCell<client_file>>) {
         error: 0,
     };
     std::mem::take(&mut cf.event).free();
-    if cf.fd != -(1 as ::core::ffi::c_int) {
-        if close(cf.fd) != 0 as ::core::ffi::c_int && cf.error == 0 as ::core::ffi::c_int {
+    if let Some(fd) = cf.fd.take() {
+        // Completion must report close errors; consume ownership before closing.
+        if close(fd.into_raw_fd()) != 0 && cf.error == 0 {
             cf.error = *__errno_location();
         }
-        cf.fd = -(1 as ::core::ffi::c_int);
     }
     msg.stream = cf.stream;
     msg.error = cf.error;
@@ -929,8 +930,7 @@ unsafe fn file_write_error_callback(
     log_debug(format_args!("write error file {}", (cf.stream) as i32));
     cf.error = error;
     std::mem::take(&mut cf.event).free();
-    close(cf.fd);
-    cf.fd = -(1 as ::core::ffi::c_int);
+    drop(cf.fd.take());
     if cf.closed != 0 {
         file_write_finished(owner);
     } else if let Some(callback) = cf.cb.as_mut() {
@@ -1003,26 +1003,27 @@ pub unsafe fn file_write_open(
         if cf.closed != 0 {
             error = EBADF;
         } else {
-            cf.fd = -(1 as ::core::ffi::c_int);
+            let mut fd = -1;
             if msg.fd == -(1 as ::core::ffi::c_int) {
-                cf.fd = open(path, msg.flags | flags, 0o644 as ::core::ffi::c_int);
+                fd = open(path, msg.flags | flags, 0o644 as ::core::ffi::c_int);
             } else {
                 if msg.fd != STDOUT_FILENO && msg.fd != STDERR_FILENO {
                     *__errno_location() = EBADF;
                 } else {
-                    cf.fd = dup(msg.fd);
+                    fd = dup(msg.fd);
                     if close_received != 0 {
                         close(msg.fd);
                     }
                 }
             }
-            if cf.fd == -(1 as ::core::ffi::c_int) {
+            if fd == -1 {
                 error = *__errno_location();
             } else {
+                cf.fd = Some(OwnedFd::from_raw_fd(fd));
                 let data_observer = Rc::downgrade(&transfer_owner);
                 let error_observer = data_observer.clone();
                 let stream = bufferevent_new(
-                    cf.fd,
+                    cf.fd.as_ref().expect("open file").as_raw_fd(),
                     None,
                     bufferevent_data_callback(move |_| unsafe {
                         if let Some(owner) = data_observer.upgrade() {
@@ -1037,8 +1038,7 @@ pub unsafe fn file_write_open(
                 );
                 if stream.is_null() {
                     error = *__errno_location();
-                    close(cf.fd);
-                    cf.fd = -1;
+                    drop(cf.fd.take());
                     client_files_remove(cf);
                 } else {
                     cf.event = crate::src::reactor::StreamHandle::from_ptr(stream);
@@ -1131,7 +1131,7 @@ unsafe fn file_read_error_callback(
         ::core::mem::size_of::<msg_read_done>() as size_t,
     );
     std::mem::take(&mut cf.event).free();
-    close(cf.fd);
+    drop(cf.fd.take());
     client_files_remove(&mut *cf);
 }
 unsafe fn file_read_callback(owner: &Rc<UnsafeCell<client_file>>) {
@@ -1222,26 +1222,27 @@ pub unsafe fn file_read_open(
         if (*cf).closed != 0 {
             error = EBADF;
         } else {
-            (*cf).fd = -(1 as ::core::ffi::c_int);
+            let mut fd = -1;
             if msg.fd == -(1 as ::core::ffi::c_int) {
-                (*cf).fd = open(path, flags);
+                fd = open(path, flags);
             } else {
                 if msg.fd != STDIN_FILENO {
                     *__errno_location() = EBADF;
                 } else {
-                    (*cf).fd = dup(msg.fd);
+                    fd = dup(msg.fd);
                     if close_received != 0 {
                         close(msg.fd);
                     }
                 }
             }
-            if (*cf).fd == -(1 as ::core::ffi::c_int) {
+            if fd == -1 {
                 error = *__errno_location();
             } else {
+                cf.fd = Some(OwnedFd::from_raw_fd(fd));
                 let data_observer = Rc::downgrade(&transfer_owner);
                 let error_observer = data_observer.clone();
                 let stream = bufferevent_new(
-                    (*cf).fd,
+                    (*cf).fd.as_ref().expect("open file").as_raw_fd(),
                     bufferevent_data_callback(move |_| unsafe {
                         if let Some(owner) = data_observer.upgrade() {
                             file_read_callback(&owner);
@@ -1256,8 +1257,7 @@ pub unsafe fn file_read_open(
                 );
                 if stream.is_null() {
                     error = *__errno_location();
-                    close((*cf).fd);
-                    (*cf).fd = -1;
+                    drop((*cf).fd.take());
                     client_files_remove(&mut *cf);
                 } else {
                     (*cf).event = crate::src::reactor::StreamHandle::from_ptr(stream);

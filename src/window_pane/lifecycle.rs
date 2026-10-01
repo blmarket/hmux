@@ -6,7 +6,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::{close, getpid, kill, memcpy, strlen};
+use crate::src::ffi::libc::{getpid, kill, memcpy, strlen};
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -45,6 +45,7 @@ use crate::src::window::{
     winlink_find_by_index, winlink_find_by_window, winlink_remove, winlink_stack_remove,
 };
 use crate::src::window_pane::WindowPane as _;
+use std::os::fd::AsRawFd;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::src::compat::imsg::*;
@@ -195,17 +196,15 @@ pub(super) unsafe fn finish_process(
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut sx: u_int = (*wp).base.grid().sx;
     let mut sy: u_int = (*wp).base.grid().sy;
-    if (*wp).fd != -(1 as ::core::ffi::c_int) {
-        utempter_remove_record((*wp).fd);
+    if (*wp).fd.is_some() {
+        utempter_remove_record((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
         kill(getpid(), SIGCHLD);
         std::mem::take(&mut (*wp).event).free();
-        close((*wp).fd);
-        (*wp).fd = -(1 as ::core::ffi::c_int);
+        drop((*wp).fd.take());
     }
-    if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
+    if (*wp).pipe_fd.is_some() {
         std::mem::take(&mut (*wp).pipe_event).free();
-        close((*wp).pipe_fd);
-        (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
+        drop((*wp).pipe_fd.take());
     }
     if !(*wp).flags & PANE_STATUSREADY != 0 {
         window_owner.release(c"server_destroy_pane");

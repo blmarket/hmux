@@ -20,7 +20,7 @@ pub struct job {
     pub pid: pid_t,
     pub tty: [::core::ffi::c_char; 32],
     pub status: ::core::ffi::c_int,
-    pub fd: ::core::ffi::c_int,
+    pub fd: Option<std::os::fd::OwnedFd>,
     pub event: crate::src::reactor::StreamHandle,
     pub updatecb: job_update_cb,
     pub completecb: job_complete_cb,

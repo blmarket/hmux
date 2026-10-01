@@ -47,6 +47,7 @@ use crate::src::shared::signal::{__sigset_t, sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::socket::{AF_UNIX, PF_UNSPEC, SOCK_STREAM};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut self_0: refbox::Weak<cmd>,
@@ -63,7 +64,7 @@ pub(super) unsafe fn pipe_pane(
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
-    let mut old_fd: ::core::ffi::c_int = 0;
+    let had_pipe = (*wp).pipe_fd.is_some();
     let mut pipe_fd: [::core::ffi::c_int; 2] = [0; 2];
     let mut null_fd: ::core::ffi::c_int = 0;
     let mut in_0: ::core::ffi::c_int = 0;
@@ -75,11 +76,9 @@ pub(super) unsafe fn pipe_pane(
         cmdq_error(item_handle, |out| out.write_all(b"target pane has exited"));
         return CMD_RETURN_ERROR;
     }
-    old_fd = (*wp).pipe_fd;
-    if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
+    if (*wp).pipe_fd.is_some() {
         std::mem::take(&mut (*wp).pipe_event).free();
-        close((*wp).pipe_fd);
-        (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
+        drop((*wp).pipe_fd.take());
         if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
             server_destroy_pane(pane_owner, 1);
             return CMD_RETURN_NORMAL;
@@ -92,7 +91,7 @@ pub(super) unsafe fn pipe_pane(
     {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'o' as i32 as u_char) != 0 && old_fd != -(1 as ::core::ffi::c_int) {
+    if args_has(args, 'o' as i32 as u_char) != 0 && had_pipe {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'I' as i32 as u_char) != 0 {
@@ -115,6 +114,7 @@ pub(super) unsafe fn pipe_pane(
         });
         return CMD_RETURN_ERROR;
     }
+    let [parent, child] = pipe_fd.map(|fd| OwnedFd::from_raw_fd(fd));
     let mut ft_owner = format_create_with_client(
         queue_client.as_ref(),
         Some(item_handle),
@@ -150,8 +150,6 @@ pub(super) unsafe fn pipe_pane(
                 out.write_all(b"fork error: ")?;
                 write_cstr(out, strerror(*__errno_location()))
             });
-            close(pipe_fd[0 as ::core::ffi::c_int as usize]);
-            close(pipe_fd[1 as ::core::ffi::c_int as usize]);
             return CMD_RETURN_ERROR;
         }
         0 => {
@@ -161,28 +159,26 @@ pub(super) unsafe fn pipe_pane(
                 &raw mut oldset,
                 ::core::ptr::null_mut::<sigset_t>(),
             );
-            close(pipe_fd[0 as ::core::ffi::c_int as usize]);
+            drop(parent);
+            // Stdio remapping and closefrom consume the child endpoint.
+            let child_fd = child.into_raw_fd();
             if setpgid(0 as __pid_t, 0 as __pid_t) == -(1 as ::core::ffi::c_int) {
                 _exit(1 as ::core::ffi::c_int);
             }
             null_fd = open(_PATH_DEVNULL.as_ptr(), O_WRONLY);
             if out != 0 {
-                if dup2(pipe_fd[1 as ::core::ffi::c_int as usize], STDIN_FILENO)
-                    == -(1 as ::core::ffi::c_int)
-                {
+                if dup2(child_fd, STDIN_FILENO) == -(1 as ::core::ffi::c_int) {
                     _exit(1 as ::core::ffi::c_int);
                 }
             } else if dup2(null_fd, STDIN_FILENO) == -(1 as ::core::ffi::c_int) {
                 _exit(1 as ::core::ffi::c_int);
             }
             if in_0 != 0 {
-                if dup2(pipe_fd[1 as ::core::ffi::c_int as usize], STDOUT_FILENO)
-                    == -(1 as ::core::ffi::c_int)
-                {
+                if dup2(child_fd, STDOUT_FILENO) == -(1 as ::core::ffi::c_int) {
                     _exit(1 as ::core::ffi::c_int);
                 }
-                if pipe_fd[1 as ::core::ffi::c_int as usize] != STDOUT_FILENO {
-                    close(pipe_fd[1 as ::core::ffi::c_int as usize]);
+                if child_fd != STDOUT_FILENO {
+                    close(child_fd);
                 }
             } else if dup2(null_fd, STDOUT_FILENO) == -(1 as ::core::ffi::c_int) {
                 _exit(1 as ::core::ffi::c_int);
@@ -206,19 +202,22 @@ pub(super) unsafe fn pipe_pane(
                 &raw mut oldset,
                 ::core::ptr::null_mut::<sigset_t>(),
             );
-            close(pipe_fd[1 as ::core::ffi::c_int as usize]);
-            (*wp).pipe_fd = pipe_fd[0 as ::core::ffi::c_int as usize];
+            drop(child);
+            (*wp).pipe_fd = Some(parent);
             memcpy(
                 wpo as *mut ::core::ffi::c_void,
                 &raw mut (*wp).offset as *const ::core::ffi::c_void,
                 ::core::mem::size_of::<window_pane_offset>() as size_t,
             );
-            setblocking((*wp).pipe_fd, 0 as ::core::ffi::c_int);
+            setblocking(
+                (*wp).pipe_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+                0 as ::core::ffi::c_int,
+            );
             let read_observer = std::rc::Rc::downgrade(pane_owner);
             let write_observer = read_observer.clone();
             let error_observer = read_observer.clone();
             let stream = bufferevent_new(
-                (*wp).pipe_fd,
+                (*wp).pipe_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
                 bufferevent_data_callback(move |_| unsafe {
                     if let Some(owner) = read_observer.upgrade() {
                         cmd_pipe_pane_read_callback(&owner);
@@ -297,8 +296,7 @@ unsafe fn cmd_pipe_pane_error_callback(
     let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe error", ((*wp).id) as u32));
     std::mem::take(&mut (*wp).pipe_event).free();
-    close((*wp).pipe_fd);
-    (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
+    drop((*wp).pipe_fd.take());
     if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
@@ -310,12 +308,38 @@ mod pipe_stream_tests {
     use crate::src::reactor::{bufferevent_free, evbuffer_add, shutdown_runtime};
 
     #[test]
+    fn pipe_error_closes_descriptor_while_pane_remains_alive() {
+        use std::os::unix::net::UnixStream;
+
+        unsafe {
+            let pane = window_pane::new();
+            let (socket, _receiver) = UnixStream::pair().unwrap();
+            let fd = socket.as_raw_fd();
+            (*pane.get()).pipe_fd = Some(socket.into());
+            let stream = bufferevent_new(fd, None, None, None);
+            (*pane.get()).pipe_event = crate::src::reactor::StreamHandle::from_ptr(stream);
+            let observer = (*pane.get()).pipe_event.clone();
+
+            cmd_pipe_pane_error_callback(&pane);
+
+            assert!((*pane.get()).pipe_fd.is_none());
+            assert!(!observer.is_alive());
+            assert_eq!(libc::fcntl(fd, libc::F_GETFD), -1);
+            // A repeated cleanup must not close a subsequently opened descriptor.
+            let replacement = std::fs::File::open("/dev/null").unwrap();
+            cmd_pipe_pane_error_callback(&pane);
+            assert!(libc::fcntl(replacement.as_raw_fd(), libc::F_GETFD) >= 0);
+            shutdown_runtime();
+        }
+    }
+
+    #[test]
     fn pipe_read_forwards_bytes_and_stream_handle_expires() {
         unsafe {
             let pane_owner = window_pane::new();
             let wp = pane_owner.get();
-            (*wp).fd = -1;
-            (*wp).pipe_fd = -1;
+            (*wp).fd = None;
+            (*wp).pipe_fd = None;
             let main = bufferevent_new(-1, None, None, None);
             (*wp).event = crate::src::reactor::StreamHandle::from_ptr(main);
             let pipe = bufferevent_new(-1, None, None, None);

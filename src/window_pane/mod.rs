@@ -5,6 +5,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::Window as _;
 use crate::src::window::*;
+use std::os::fd::AsRawFd;
 use std::time::Duration;
 mod api;
 #[cfg(test)]
@@ -40,7 +41,7 @@ use crate::src::events_payload::{
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __ctype_b_loc, close, fnmatch, gethostname, getpid, ioctl, kill, memcpy, memset, strcasecmp,
+    __ctype_b_loc, fnmatch, gethostname, getpid, ioctl, kill, memcpy, memset, strcasecmp,
 };
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;
@@ -429,7 +430,7 @@ unsafe fn window_pane_destroy_ready(
 ) -> ::core::ffi::c_int {
     let mut wp = wp_owner.get();
     let mut n: ::core::ffi::c_int = 0;
-    if (*wp).pipe_fd != -(1 as ::core::ffi::c_int)
+    if (*wp).pipe_fd.is_some()
         && (*wp)
             .pipe_event
             .with_ptr(|event| unsafe { evbuffer_get_length(&*(*event).output) != 0 as size_t })
@@ -437,7 +438,11 @@ unsafe fn window_pane_destroy_ready(
     {
         return 0 as ::core::ffi::c_int;
     }
-    if ioctl((*wp).fd, FIONREAD as ::core::ffi::c_ulong, &raw mut n) != -(1 as ::core::ffi::c_int)
+    if ioctl(
+        (*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+        FIONREAD as ::core::ffi::c_ulong,
+        &raw mut n,
+    ) != -(1 as ::core::ffi::c_int)
         && n > 0 as ::core::ffi::c_int
     {
         return 0 as ::core::ffi::c_int;
@@ -488,7 +493,7 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    if (*wp).fd == -(1 as ::core::ffi::c_int) {
+    if (*wp).fd.is_none() {
         return;
     }
     log_debug(format_args!(
@@ -510,8 +515,11 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     parent.release(c"window_pane_send_resize");
     ws.ws_xpixel = xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
     ws.ws_ypixel = ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
-    if ioctl((*wp).fd, TIOCSWINSZ as ::core::ffi::c_ulong, &raw mut ws)
-        == -(1 as ::core::ffi::c_int)
+    if ioctl(
+        (*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+        TIOCSWINSZ as ::core::ffi::c_ulong,
+        &raw mut ws,
+    ) == -(1 as ::core::ffi::c_int)
     {
         fatal(|out| out.write_all(b"ioctl failed"));
     }
@@ -961,12 +969,12 @@ unsafe fn window_pane_create(
     next_window_pane_id = next_window_pane_id.wrapping_add(1);
     (*wp).id = fresh2;
     window_pane_tree_insert(&mut all_window_panes, owner.clone());
-    (*wp).fd = -(1 as ::core::ffi::c_int);
+    (*wp).fd = None;
     (*wp).modes = window_pane_modes::default();
     (*wp).resize_queue = window_pane_resizes::default();
     (*wp).sx = sx;
     (*wp).sy = sy;
-    (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
+    (*wp).pipe_fd = None;
     (*wp).control_bg = -(1 as ::core::ffi::c_int);
     (*wp).control_fg = -(1 as ::core::ffi::c_int);
     style_set_scrollbar_style_from_option(
@@ -1100,23 +1108,19 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     window_pane_clear_prompt(&owner);
     window_pane_free_modes(&owner);
     pane_owner.clear_sync_dirty();
-    if (*wp).fd != -(1 as ::core::ffi::c_int) {
-        utempter_remove_record((*wp).fd);
+    if (*wp).fd.is_some() {
+        utempter_remove_record((*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd));
         kill(getpid(), SIGCHLD);
     }
     // Empty panes have stream buffers and an input parser without a PTY.
     std::mem::take(&mut (*wp).event).free();
-    if (*wp).fd != -(1 as ::core::ffi::c_int) {
-        close((*wp).fd);
-        (*wp).fd = -(1 as ::core::ffi::c_int);
-    }
+    drop((*wp).fd.take());
     if let Some(ictx) = (*wp).ictx.take() {
         input_free(ictx);
     }
-    if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
+    if (*wp).pipe_fd.is_some() {
         std::mem::take(&mut (*wp).pipe_event).free();
-        close((*wp).pipe_fd);
-        (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
+        drop((*wp).pipe_fd.take());
     }
     drop((*wp).resize_timer.take());
     drop((*wp).sync_timer.take());
@@ -1161,7 +1165,7 @@ unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane
             pane.pipe_event.clone(),
             pane.base_offset,
             pane.pipe_offset,
-            pane.pipe_fd != -1,
+            pane.pipe_fd.is_some(),
         )
     };
     let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
@@ -1211,9 +1215,12 @@ unsafe fn window_pane_set_event(wp_owner: &Rc<std::cell::UnsafeCell<window_pane>
     let mut wp = wp_owner.get();
     let read_observer = (*wp).observer.clone();
     let error_observer = read_observer.clone();
-    setblocking((*wp).fd, 0 as ::core::ffi::c_int);
+    setblocking(
+        (*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
+        0 as ::core::ffi::c_int,
+    );
     let stream = bufferevent_new(
-        (*wp).fd,
+        (*wp).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
         bufferevent_data_callback(move |_| unsafe {
             if let Some(owner) = read_observer.upgrade() {
                 window_pane_read_callback(&owner);
@@ -1762,7 +1769,7 @@ unsafe fn window_pane_copy_paste(
         let loop_0 = pane_owner.get();
         if loop_0 != wp
             && (*loop_0).modes.is_empty()
-            && (*loop_0).fd != -(1 as ::core::ffi::c_int)
+            && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(&pane_owner) != 0
             && options_get_number(
@@ -1796,7 +1803,7 @@ unsafe fn window_pane_copy_key(
         let loop_0 = pane_owner.get();
         if loop_0 != wp
             && (*loop_0).modes.is_empty()
-            && (*loop_0).fd != -(1 as ::core::ffi::c_int)
+            && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
             && window_pane_is_visible(&pane_owner) != 0
             && options_get_number(
@@ -1821,7 +1828,7 @@ unsafe fn window_pane_paste(
     if !(*wp).modes.is_empty() {
         return;
     }
-    if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
+    if (*wp).fd.is_none() || (*wp).flags & PANE_INPUTOFF != 0 {
         return;
     }
     if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -1887,7 +1894,7 @@ unsafe fn window_pane_key(
         }
         return 0 as ::core::ffi::c_int;
     }
-    if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
+    if (*wp).fd.is_none() || (*wp).flags & PANE_INPUTOFF != 0 {
         return 0 as ::core::ffi::c_int;
     }
     if input_key_pane(pane_owner, key, m) != 0 as ::core::ffi::c_int {
@@ -1925,7 +1932,7 @@ unsafe fn window_pane_is_visible(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::
 }
 
 fn window_pane_exited(wp: &window_pane) -> ::core::ffi::c_int {
-    (wp.fd == -1 || wp.flags & PANE_EXITED != 0) as ::core::ffi::c_int
+    (wp.fd.is_none() || wp.flags & PANE_EXITED != 0) as ::core::ffi::c_int
 }
 
 unsafe fn window_pane_search(
@@ -2976,8 +2983,8 @@ mod pane_stream_lifecycle_tests {
         unsafe {
             let pane_owner = window_pane::new();
             let pane = pane_owner.get();
-            (*pane).fd = -1;
-            (*pane).pipe_fd = -1;
+            (*pane).fd = None;
+            (*pane).pipe_fd = None;
             let observer = window_pane_weak(&*(pane));
             assert_eq!((*pane).observer.strong_count(), 1);
             let guard = window_pane_upgrade(&observer).unwrap();
@@ -3003,8 +3010,8 @@ mod pane_stream_lifecycle_tests {
             let pane_owner = window_pane::new();
             let pane = pane_owner.get();
             let observer = window_pane_weak(&*(pane));
-            (*pane).fd = -1;
-            (*pane).pipe_fd = -1;
+            (*pane).fd = None;
+            (*pane).pipe_fd = None;
             (*pane).flags = PANE_EMPTY;
             window_pane_set_event(&(*(pane)).observer.upgrade().expect("live window_pane"));
             assert!((*pane).ictx.is_some());

@@ -6,6 +6,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 use crate::src::window_pane::WindowPane as _;
+use std::os::fd::AsRawFd;
 use std::time::{Duration, SystemTime};
 use std::{cell::UnsafeCell, rc::Rc};
 mod api;
@@ -39,7 +40,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    access, close, free, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep, ttyname,
+    access, free, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep, ttyname,
 };
 use crate::src::file::{file_print, file_read_data, file_read_done, file_write_done, file_write_ready};
 use crate::src::format::bytes::xformat;
@@ -1013,8 +1014,8 @@ unsafe fn server_client_create(mut fd: ::core::ffi::c_int) -> ClientRef {
     (*c).creation_time = SystemTime::now();
     (*c).activity_time = (*c).creation_time;
     (*c).environ = Some(environ_create());
-    (*c).fd = -(1 as ::core::ffi::c_int);
-    (*c).out_fd = -(1 as ::core::ffi::c_int);
+    (*c).fd = None;
+    (*c).out_fd = None;
     (*c).queue = Some(cmdq_new());
     (*c).tty.sx = 80 as u_int;
     (*c).tty.sy = 24 as u_int;
@@ -1407,13 +1408,8 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     drop((*c).environ.take());
     proc_remove_peer((*c).peer);
     (*c).peer = ::core::ptr::null_mut::<tmuxpeer>();
-    if (*c).out_fd != -(1 as ::core::ffi::c_int) {
-        close((*c).out_fd);
-    }
-    if (*c).fd != -(1 as ::core::ffi::c_int) {
-        close((*c).fd);
-        (*c).fd = -(1 as ::core::ffi::c_int);
-    }
+    drop((*c).out_fd.take());
+    drop((*c).fd.take());
     server_client_unref_owned(registry_owner);
     server_add_accept(0 as ::core::ffi::c_int);
     recalculate_sizes();
@@ -4072,7 +4068,7 @@ unsafe fn server_client_dispatch(
                 current_block = 14945149239039849694;
             } else {
                 (*c).flags &= !CLIENT_SUSPENDED as uint64_t;
-                if (*c).fd == -(1 as ::core::ffi::c_int) || (*c).session_handle().is_none() {
+                if (*c).fd.is_none() || (*c).session_handle().is_none() {
                     current_block = 14945149239039849694;
                 } else {
                     s = (*c).session_handle();
@@ -4423,26 +4419,22 @@ unsafe fn server_client_dispatch_identify(
             if datalen != 0 as size_t {
                 return -(1 as ::core::ffi::c_int);
             }
-            (*c).fd = imsg_get_fd(imsg)
-                .map(std::os::fd::IntoRawFd::into_raw_fd)
-                .unwrap_or(-1);
+            (*c).fd = imsg_get_fd(imsg);
             log_debug(format_args!(
                 "client {} IDENTIFY_STDIN {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                ((*c).fd) as i32
+                (*c).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
             ));
         }
         MSG_IDENTIFY_STDOUT => {
             if datalen != 0 as size_t {
                 return -(1 as ::core::ffi::c_int);
             }
-            (*c).out_fd = imsg_get_fd(imsg)
-                .map(std::os::fd::IntoRawFd::into_raw_fd)
-                .unwrap_or(-1);
+            (*c).out_fd = imsg_get_fd(imsg);
             log_debug(format_args!(
                 "client {} IDENTIFY_STDOUT {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                ((*c).out_fd) as i32
+                (*c).out_fd.as_ref().map_or(-1, AsRawFd::as_raw_fd)
             ));
         }
         MSG_IDENTIFY_ENVIRON => {
@@ -4511,19 +4503,15 @@ unsafe fn server_client_dispatch_identify(
     ));
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         control_start(owner);
-    } else if (*c).fd != -(1 as ::core::ffi::c_int) {
+    } else if (*c).fd.is_some() {
         if tty_init(owner) != 0 as ::core::ffi::c_int {
-            close((*c).fd);
-            (*c).fd = -(1 as ::core::ffi::c_int);
+            drop((*c).fd.take());
         } else {
             (*c).tty.r.ensure(1);
             tty_resize(&(*c).observer.upgrade().expect("live client"));
             (*c).flags |= CLIENT_TERMINAL as uint64_t;
         }
-        if (*c).out_fd != -(1 as ::core::ffi::c_int) {
-            close((*c).out_fd);
-        }
-        (*c).out_fd = -(1 as ::core::ffi::c_int);
+        drop((*c).out_fd.take());
     }
     if (*c).flags & (CLIENT_CONTROL | CLIENT_TERMINAL) as uint64_t != 0 {
         events_fire_client(

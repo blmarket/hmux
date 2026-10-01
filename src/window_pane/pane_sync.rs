@@ -171,8 +171,8 @@ mod tests {
         unsafe {
             let pane = window_pane::new();
             (*pane.get()).base.grid = Some(crate::src::grid::grid_create(8, 2, 0));
-            (*pane.get()).fd = -1;
-            (*pane.get()).pipe_fd = -1;
+            (*pane.get()).fd = None;
+            (*pane.get()).pipe_fd = None;
             let observer = Rc::downgrade(&pane);
             let pending = || (*pane.get()).sync_timer.is_some();
             pane.start_sync();

@@ -30,7 +30,7 @@ use crate::src::tmux::{getversion, socket_path};
 use hmux_rt::AsyncFd as _;
 use hmux_rt::{Handle as _, Signals as _};
 use std::ffi::CStr;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -425,22 +425,23 @@ pub unsafe fn proc_fork_and_daemon(mut fd: *mut ::core::ffi::c_int) -> pid_t {
     {
         fatal(|out| out.write_all(b"socketpair failed"));
     }
+    let [parent, child] = pair.map(|fd| OwnedFd::from_raw_fd(fd));
     pid = fork() as pid_t;
     match pid {
         -1 => {
             fatal(|out| out.write_all(b"fork failed"));
         }
         0 => {
-            close(pair[0 as ::core::ffi::c_int as usize]);
-            *fd = pair[1 as ::core::ffi::c_int as usize];
+            drop(parent);
+            *fd = child.into_raw_fd();
             if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int) != 0 as ::core::ffi::c_int {
                 fatal(|out| out.write_all(b"daemon failed"));
             }
             return 0 as pid_t;
         }
         _ => {
-            close(pair[1 as ::core::ffi::c_int as usize]);
-            *fd = pair[0 as ::core::ffi::c_int as usize];
+            drop(child);
+            *fd = parent.into_raw_fd();
             return pid;
         }
     };
