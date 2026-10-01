@@ -136,7 +136,6 @@ pub trait WindowPane {
     unsafe fn mode_entry(&self) -> refbox::Weak<window_mode_entry>;
     unsafe fn notify_style_changed(&self);
     unsafe fn needs_redraw(&self, scrollbar: bool) -> bool;
-    unsafe fn mark_unseen_changes(&self);
     unsafe fn screen_mode(&self, displayed: bool) -> crate::src::shared::screen::ScreenMode;
     unsafe fn prompt_position(&self, top: bool) -> Option<(i32, i32)>;
     unsafe fn screen_path(&self) -> CString;
@@ -522,9 +521,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
                 PANE_REDRAW
             }
             != 0
-    }
-    unsafe fn mark_unseen_changes(&self) {
-        (*self.get()).flags |= PANE_UNSEENCHANGES;
     }
     unsafe fn screen_mode(&self, displayed: bool) -> crate::src::shared::screen::ScreenMode {
         let pane = &*self.get();
