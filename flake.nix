@@ -34,8 +34,8 @@
             cargo = rustNightly;
             rustc = rustNightly;
           };
-          hmux2 = rustPlatform.buildRustPackage {
-            pname = "hmux2";
+          hmux = rustPlatform.buildRustPackage {
+            pname = "hmux";
             version = "0.0.0";
             src = ./.;
 
@@ -54,7 +54,7 @@
             # need a process each; `make unit-c2rs` is where they run.
             doCheck = false;
 
-            meta.mainProgram = "hmux2";
+            meta.mainProgram = "hmux";
           };
         in
         {
@@ -62,8 +62,8 @@
           tmux = self.packages.${system}.tmux-target;
         }
         // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux) {
-          inherit hmux2;
-          default = hmux2;
+          inherit hmux;
+          default = hmux;
         });
 
       devShells = forAllSystems (system:

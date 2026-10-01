@@ -8,7 +8,7 @@ members = [
 ]
 
 [package]
-name = "hmux2"
+name = "hmux"
 authors = ["C2Rust"]
 version = "0.0.0"
 publish = false
@@ -16,13 +16,13 @@ edition = "2021"
 autobins = false
 
 [lib]
-name = "hmux2"
+name = "hmux"
 path = "src/lib.rs"
 crate-type = ["rlib"]
 
 [[bin]]
 path = "src/main.rs"
-name = "hmux2"
+name = "hmux"
 
 [dependencies]
 hmux-agent = { path = "hmux-agent" }
