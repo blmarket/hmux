@@ -1,12 +1,12 @@
-use hmux2::src::environ::environ_create;
-use hmux2::src::options::{options_create, options_default, options_free};
-use hmux2::src::options_table::options_table;
-use hmux2::src::prompt::{
+use hmux::src::environ::environ_create;
+use hmux::src::options::{options_create, options_default, options_free};
+use hmux::src::options_table::options_table;
+use hmux::src::prompt::{
     prompt_create, prompt_free, prompt_incremental_start, prompt_set_options, prompt_update,
 };
-use hmux2::src::shared::command::cmd_find_state;
-use hmux2::src::shared::prompt::*;
-use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use hmux::src::shared::command::cmd_find_state;
+use hmux::src::shared::prompt::*;
+use hmux::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::{cell::RefCell, ffi::CString, rc::Rc};
 
 fn input_bytes(prompt: &prompt) -> Vec<u8> {

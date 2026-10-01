@@ -1,4 +1,4 @@
-# hmux2
+# hmux
 
 c2rust translation of tmux
 
@@ -42,9 +42,9 @@ subscriptions retain tmux's existing polling cadence.
 Set `TMUX_C2RS_PLUGINS` in the environment that starts the server:
 
 ```sh
-TMUX_C2RS_PLUGINS=agent,git hmux2
-TMUX_C2RS_PLUGINS=git hmux2
-TMUX_C2RS_PLUGINS=none hmux2
+TMUX_C2RS_PLUGINS=agent,git hmux
+TMUX_C2RS_PLUGINS=git hmux
+TMUX_C2RS_PLUGINS=none hmux
 ```
 
 An unset variable enables both built-ins; `all` enables every built-in provider.
@@ -76,9 +76,9 @@ the pane owner. Server shutdown cancels the timer before releasing providers.
 Run the focused checks with:
 
 ```sh
-cargo nextest run -p hmux2 -E 'test(src::plugin::) or test(src::window_pane::observability::) or binary(plugins)'
+cargo nextest run -p hmux -E 'test(src::plugin::) or test(src::window_pane::observability::) or binary(plugins)'
 cargo nextest run --workspace
 ```
 
-The parent repository's `make test SUT=hmux2` compares the engine against pinned
+The parent repository's `make test SUT=hmux` compares the engine against pinned
 tmux with plugins disabled by `scripts/hmux-sut.sh`.

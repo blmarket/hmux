@@ -1,9 +1,9 @@
 use std::ffi::CStr;
 
-use hmux2::src::cmd::{cmd_copy, cmd_parse};
-use hmux2::src::shared::arguments::ArgumentValue;
+use hmux::src::cmd::{cmd_copy, cmd_parse};
+use hmux::src::shared::arguments::ArgumentValue;
 
-unsafe fn parse_display_message(file: Option<&CStr>) -> refbox::RefBox<hmux2::src::cmd::cmd> {
+unsafe fn parse_display_message(file: Option<&CStr>) -> refbox::RefBox<hmux::src::cmd::cmd> {
     let command_name = c"display-message";
     let value = ArgumentValue::borrowed_string(command_name);
     cmd_parse(std::slice::from_ref(&value), file, 37, 0).expect("command parse reported an error")

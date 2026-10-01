@@ -61,7 +61,7 @@ use std::ffi::{CStr, CString};
 /// Queue-created command state. Only this module may construct or remove it.
 ///
 /// ```compile_fail
-/// use hmux2::src::shared::command::cmdq_item;
+/// use hmux::src::shared::command::cmdq_item;
 /// let item = cmdq_item::empty();
 /// ```
 pub struct cmdq_item {
@@ -146,7 +146,7 @@ impl cmdq_item {
 /// the process. The private deque owns stable command item allocations.
 ///
 /// ```compile_fail
-/// use hmux2::src::cmd::queue::cmdq_new;
+/// use hmux::src::cmd::queue::cmdq_new;
 /// let mut queue = cmdq_new();
 /// queue.list.pop_front();
 /// ```

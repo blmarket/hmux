@@ -1,9 +1,9 @@
 //! A grid line's temporary decoded cells must survive conversion to an owned
 //! string, including tabs, wide-cell padding, and UTF-8 bytes.
 
-use hmux2::src::format::format_grid_line;
-use hmux2::src::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_padding};
-use hmux2::src::shared::grid::GRID_FLAG_TAB;
+use hmux::src::format::format_grid_line;
+use hmux::src::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_padding};
+use hmux::src::shared::grid::GRID_FLAG_TAB;
 
 #[test]
 fn grid_line_converts_cells_and_returns_an_owned_string() {

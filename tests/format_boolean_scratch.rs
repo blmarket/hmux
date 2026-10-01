@@ -1,5 +1,5 @@
 //! Exercise the && and || operand scratch lifetime through public expansion.
-use hmux2::src::format::{format_create, format_expand_cstring, format_free};
+use hmux::src::format::{format_create, format_expand_cstring, format_free};
 use std::ffi::CStr;
 
 #[test]

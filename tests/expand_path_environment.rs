@@ -46,7 +46,7 @@ impl Server {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux2"))
+        Command::new(env!("CARGO_BIN_EXE_hmux"))
             .arg("-L")
             .arg(&self.label)
             .args(args)
@@ -57,11 +57,11 @@ impl Server {
             .env("TERM", "xterm-256color")
             .env("SHELL", "/bin/sh")
             .output()
-            .expect("run hmux2")
+            .expect("run hmux")
     }
 
     fn run_without_tmpdir(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux2"))
+        Command::new(env!("CARGO_BIN_EXE_hmux"))
             .arg("-L")
             .arg(&self.label)
             .args(args)
@@ -72,7 +72,7 @@ impl Server {
             .env("TERM", "xterm-256color")
             .env("SHELL", "/bin/sh")
             .output()
-            .expect("run hmux2 without TMUX_TMPDIR")
+            .expect("run hmux without TMUX_TMPDIR")
     }
 }
 

@@ -211,7 +211,7 @@ fn file_transfers_interoperate_with_unmodified_tmux_in_both_roles() {
         return;
     };
     let reference = PathBuf::from(reference);
-    let hmux = Path::new(env!("CARGO_BIN_EXE_hmux2"));
+    let hmux = Path::new(env!("CARGO_BIN_EXE_hmux"));
     let hmux_server = Server::new(hmux, "hmux-server");
     exercise_files(&hmux_server, &reference);
     let reference_server = Server::new(&reference, "tmux-server");
@@ -220,7 +220,7 @@ fn file_transfers_interoperate_with_unmodified_tmux_in_both_roles() {
 
 #[test]
 fn file_transfers_work_with_hmux_client_and_server() {
-    let hmux = Path::new(env!("CARGO_BIN_EXE_hmux2"));
+    let hmux = Path::new(env!("CARGO_BIN_EXE_hmux"));
     let server = Server::new(hmux, "hmux-both");
     exercise_files(&server, hmux);
 }

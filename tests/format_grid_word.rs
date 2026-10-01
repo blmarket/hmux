@@ -1,11 +1,11 @@
 //! A word's collected cells are converted into an owner before the local array
 //! drops.
 
-use hmux2::src::format::format_grid_word;
-use hmux2::src::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_padding};
-use hmux2::src::options::{options_create, options_default, options_free};
-use hmux2::src::options_table::options_table;
-use hmux2::src::tmux::global_s_options;
+use hmux::src::format::format_grid_word;
+use hmux::src::grid::{grid_create, grid_default_cell, grid_set_cell, grid_set_padding};
+use hmux::src::options::{options_create, options_default, options_free};
+use hmux::src::options_table::options_table;
+use hmux::src::tmux::global_s_options;
 
 #[test]
 fn grid_word_collects_wide_cells_and_returns_owned_strings() {

@@ -1,4 +1,4 @@
-use hmux2::src::json::{
+use hmux::src::json::{
     json_array_members, json_find, json_get_number, json_parse, json_to_string, NODE_ARRAY,
     NODE_OBJECT,
 };

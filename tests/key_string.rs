@@ -1,8 +1,8 @@
-use hmux2::src::key_string::{
+use hmux::src::key_string::{
     key_string_format, key_string_format_into, key_string_lookup_key, key_string_lookup_string,
     key_string_parse, key_string_parse_cstr,
 };
-use hmux2::src::shared::key::*;
+use hmux::src::shared::key::*;
 use std::ffi::{CStr, CString};
 
 fn formatted(key: key_code, with_flags: bool) -> Vec<u8> {

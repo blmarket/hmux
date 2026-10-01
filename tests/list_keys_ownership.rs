@@ -19,14 +19,14 @@ impl Server {
             .expect("clock after epoch")
             .as_nanos();
         let directory =
-            std::env::temp_dir().join(format!("hmux2-list-keys-{}-{stamp}", std::process::id()));
+            std::env::temp_dir().join(format!("hmux-list-keys-{}-{stamp}", std::process::id()));
         fs::create_dir(&directory).expect("create private directory");
         let socket = directory.join("socket");
         Self { directory, socket }
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux2"))
+        Command::new(env!("CARGO_BIN_EXE_hmux"))
             .args(["-f", "/dev/null", "-S"])
             .arg(&self.socket)
             .args(args)
@@ -34,7 +34,7 @@ impl Server {
             .env("SHELL", "/bin/sh")
             .env_remove("TMUX")
             .output()
-            .expect("run hmux2")
+            .expect("run hmux")
     }
 
     fn success(&self, args: &[&str]) -> Vec<u8> {

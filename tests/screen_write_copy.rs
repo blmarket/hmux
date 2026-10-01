@@ -1,11 +1,11 @@
-use hmux2::src::grid::view::{grid_view_get_cell, grid_view_set_cell, grid_view_set_padding};
-use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use hmux2::src::screen_write::{
+use hmux::src::grid::view::{grid_view_get_cell, grid_view_set_cell, grid_view_set_padding};
+use hmux::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
+use hmux::src::screen_write::{
     screen_write_fast_copy, screen_write_preview, screen_write_start, screen_write_stop,
 };
-use hmux2::src::shared::grid::{grid_cell, GRID_ATTR_REVERSE, GRID_FLAG_PADDING};
-use hmux2::src::shared::screen::{screen, MODE_CURSOR, MODE_WRAP};
-use hmux2::src::shared::screen_write::screen_write_ctx;
+use hmux::src::shared::grid::{grid_cell, GRID_ATTR_REVERSE, GRID_FLAG_PADDING};
+use hmux::src::shared::screen::{screen, MODE_CURSOR, MODE_WRAP};
+use hmux::src::shared::screen_write::screen_write_ctx;
 
 unsafe fn make_screen(width: u32, height: u32) -> screen {
     let mut s = screen::empty();

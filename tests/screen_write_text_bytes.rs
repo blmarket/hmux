@@ -1,9 +1,9 @@
-use hmux2::src::grid::view::grid_view_get_cell;
-use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use hmux2::src::screen_write::{screen_write_nputs, screen_write_start, screen_write_stop};
-use hmux2::src::shared::grid::{GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING};
-use hmux2::src::shared::screen::{screen, MODE_WRAP};
-use hmux2::src::shared::screen_write::screen_write_ctx;
+use hmux::src::grid::view::grid_view_get_cell;
+use hmux::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
+use hmux::src::screen_write::{screen_write_nputs, screen_write_start, screen_write_stop};
+use hmux::src::shared::grid::{GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING};
+use hmux::src::shared::screen::{screen, MODE_WRAP};
+use hmux::src::shared::screen_write::screen_write_ctx;
 
 #[test]
 fn bounded_text_preserves_byte_scanning_width_limits_and_style_toggles() {

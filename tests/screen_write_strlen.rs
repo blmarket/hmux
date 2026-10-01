@@ -1,4 +1,4 @@
-use hmux2::src::screen_write::screen_write_strlen;
+use hmux::src::screen_write::screen_write_strlen;
 use std::ffi::{CStr, CString};
 
 fn display_width(bytes: &[u8]) -> usize {

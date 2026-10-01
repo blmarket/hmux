@@ -1040,7 +1040,7 @@ mod tests {
         }
     }
 
-    const CHILD_CASE: &str = "HMUX2_EDITOR_FD_OWNER_CASE";
+    const CHILD_CASE: &str = "HMUX_EDITOR_FD_OWNER_CASE";
     const SUCCESS_CASE: &str = "success";
     const SUCCESS_TEST: &str =
         "src::window_pane::spawning::tests::editor_completion_reads_and_unlinks";
@@ -1070,7 +1070,7 @@ mod tests {
     }
 
     unsafe fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
-        let mut template = b"/tmp/hmux2-editor-owner-XXXXXX\0".to_vec();
+        let mut template = b"/tmp/hmux-editor-owner-XXXXXX\0".to_vec();
         let fd = mkstemp(template.as_mut_ptr() as *mut ::core::ffi::c_char);
         assert!(
             fd >= 0,

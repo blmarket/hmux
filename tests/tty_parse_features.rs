@@ -1,4 +1,4 @@
-use hmux2::src::tty_features::{tty_get_features, tty_parse_features};
+use hmux::src::tty_features::{tty_get_features, tty_parse_features};
 
 fn feature_names(bits: i32) -> String {
     unsafe { tty_get_features(bits) }

@@ -1,4 +1,4 @@
-use hmux2::src::hyperlinks::*;
+use hmux::src::hyperlinks::*;
 use std::ffi::CString;
 
 #[test]

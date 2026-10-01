@@ -1,7 +1,7 @@
 //! Exercise the expanded operands returned by format_choose through public formats.
-use hmux2::src::format::{format_create, format_expand_cstring, format_free};
-use hmux2::src::options::{options_create, options_free};
-use hmux2::src::tmux::{global_options, global_s_options, global_w_options};
+use hmux::src::format::{format_create, format_expand_cstring, format_free};
+use hmux::src::options::{options_create, options_free};
+use hmux::src::tmux::{global_options, global_s_options, global_w_options};
 use std::ffi::CStr;
 
 #[test]

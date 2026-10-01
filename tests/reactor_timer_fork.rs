@@ -1,7 +1,7 @@
 //! Each process initializes its own reactor after the fork.
 #![cfg(unix)]
 
-use hmux2::src::reactor::{poll_runtime, shutdown_runtime, task_start, Timer};
+use hmux::src::reactor::{poll_runtime, shutdown_runtime, task_start, Timer};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;

@@ -1,13 +1,13 @@
-use hmux2::src::grid::view::grid_view_get_cell;
-use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use hmux2::src::options::{options_create, options_default, options_free};
-use hmux2::src::options_table::options_table;
-use hmux2::src::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
-use hmux2::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
-use hmux2::src::shared::menu::{menu, MenuRow};
-use hmux2::src::shared::screen::{screen, MODE_WRAP};
-use hmux2::src::shared::screen_write::screen_write_ctx;
-use hmux2::src::tmux::global_options;
+use hmux::src::grid::view::grid_view_get_cell;
+use hmux::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
+use hmux::src::options::{options_create, options_default, options_free};
+use hmux::src::options_table::options_table;
+use hmux::src::screen_write::{screen_write_menu, screen_write_start, screen_write_stop};
+use hmux::src::shared::grid::{grid_cell, GRID_ATTR_DIM};
+use hmux::src::shared::menu::{menu, MenuRow};
+use hmux::src::shared::screen::{screen, MODE_WRAP};
+use hmux::src::shared::screen_write::screen_write_ctx;
+use hmux::src::tmux::global_options;
 use std::ffi::CStr;
 
 unsafe fn cell_at(s: &screen, x: u32, y: u32) -> grid_cell {

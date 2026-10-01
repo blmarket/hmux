@@ -1,4 +1,4 @@
-use hmux2::src::json::{json_parse, json_to_string, PARSE_DEPTH_MAX};
+use hmux::src::json::{json_parse, json_to_string, PARSE_DEPTH_MAX};
 use std::ffi::CString;
 
 #[test]

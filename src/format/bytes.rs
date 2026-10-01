@@ -1,7 +1,7 @@
 //! Rust formatting into owned bytes and bounded C-character slices
 //!
 //! ```
-//! use hmux2::src::format::bytes::format_bytes;
+//! use hmux::src::format::bytes::format_bytes;
 //! use std::ffi::CString;
 //! use std::io::Write;
 //!

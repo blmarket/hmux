@@ -11,7 +11,7 @@ The lexer must emit a newline after the final statement. Keep tokenization lazy:
 assignments performed during parsing can affect expansion in subsequent tokens.
 Token strings use `CString` to preserve non-UTF-8 command bytes.
 
-The hmux2 adapter lives in `src/cmd/parse.rs`, with a custom byte-oriented
+The hmux adapter lives in `src/cmd/parse.rs`, with a custom byte-oriented
 `Lexer` in `src/cmd/parse/lexer.rs`. The lexer yields typed tokens and reports
 structured errors; each parse owns its scanner state and diagnostic. Grammar
 actions and the lazy lexer share a scoped parsing session. Alias expansion and

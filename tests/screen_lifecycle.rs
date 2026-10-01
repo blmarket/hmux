@@ -1,16 +1,16 @@
-use hmux2::src::grid::{grid_default_cell, grid_get_cell, grid_set_cell};
-use hmux2::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
-use hmux2::src::options::{options_create, options_default, options_free};
-use hmux2::src::options_table::options_table;
-use hmux2::src::screen::{
+use hmux::src::grid::{grid_default_cell, grid_get_cell, grid_set_cell};
+use hmux::src::hyperlinks::{hyperlinks_get, hyperlinks_put};
+use hmux::src::options::{options_create, options_default, options_free};
+use hmux::src::options_table::options_table;
+use hmux::src::screen::{
     screen_alternate_on, screen_free, screen_init, screen_push_title, screen_reinit,
     screen_set_path, screen_set_progress_bar, screen_set_selection, screen_set_title,
 };
-use hmux2::src::screen_write::screen_write_make_list;
-use hmux2::src::shared::display::{PROGRESS_BAR_HIDDEN, PROGRESS_BAR_PAUSED};
-use hmux2::src::shared::key::MODEKEY_VI;
-use hmux2::src::shared::screen::{screen, MODE_CRLF, MODE_CURSOR, MODE_WRAP};
-use hmux2::src::tmux::global_options;
+use hmux::src::screen_write::screen_write_make_list;
+use hmux::src::shared::display::{PROGRESS_BAR_HIDDEN, PROGRESS_BAR_PAUSED};
+use hmux::src::shared::key::MODEKEY_VI;
+use hmux::src::shared::screen::{screen, MODE_CRLF, MODE_CURSOR, MODE_WRAP};
+use hmux::src::tmux::global_options;
 
 #[test]
 fn reinitialization_leaves_alternate_mode_and_clears_transient_state() {

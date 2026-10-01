@@ -1,4 +1,4 @@
-//! Existing hmux-agent detectors hosted through hmux2 pane observations.
+//! Existing hmux-agent detectors hosted through hmux pane observations.
 use super::{Host, PaneActivity, PaneId, PaneValues, Plugin, Variable};
 use hmux_agent::integration::status::{AgentStatus, StatusHub};
 use hmux_agent::integration::{AgentObserver, AgentState};

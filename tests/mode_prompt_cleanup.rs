@@ -23,7 +23,7 @@ impl Server {
             .expect("clock after epoch")
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "hmux2-mode-prompt-cleanup-{}-{stamp}",
+            "hmux-mode-prompt-cleanup-{}-{stamp}",
             std::process::id()
         ));
         fs::create_dir(&directory).expect("create private directory");
@@ -32,7 +32,7 @@ impl Server {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux2"))
+        Command::new(env!("CARGO_BIN_EXE_hmux"))
             .args(["-f", "/dev/null", "-S"])
             .arg(&self.socket)
             .args(args)
@@ -41,7 +41,7 @@ impl Server {
             .env("LC_ALL", "C")
             .env_remove("TMUX")
             .output()
-            .expect("run hmux2 command")
+            .expect("run hmux command")
     }
 
     fn command(&self, args: &[&str]) -> Output {
@@ -77,7 +77,7 @@ impl AttachedClient {
         let pid = unsafe { libc::forkpty(&mut fd, std::ptr::null_mut(), std::ptr::null(), &size) };
         assert!(pid >= 0, "forkpty: {}", std::io::Error::last_os_error());
         if pid == 0 {
-            let error = Command::new(env!("CARGO_BIN_EXE_hmux2"))
+            let error = Command::new(env!("CARGO_BIN_EXE_hmux"))
                 .args(["-f", "/dev/null", "-S"])
                 .arg(&server.socket)
                 .args(["attach-session", "-t", "mode:0.0"])
@@ -215,7 +215,7 @@ fn popup_input_resize_completion_and_cancellation_release_the_waiting_command() 
     let tty = String::from_utf8(output.stdout).unwrap();
     let tty = tty.trim();
     let spawn_popup = |script: &str| {
-        Command::new(env!("CARGO_BIN_EXE_hmux2"))
+        Command::new(env!("CARGO_BIN_EXE_hmux"))
             .args(["-f", "/dev/null", "-S"])
             .arg(&server.socket)
             .args([

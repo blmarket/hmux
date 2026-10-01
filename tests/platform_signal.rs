@@ -2,7 +2,7 @@
 
 #[test]
 fn signal_callback_abi() {
-    use hmux2::src::{client, proc};
+    use hmux::src::{client, proc};
     use std::ffi::{c_int, c_void};
     unsafe extern "C" fn handler(signal: c_int) {
         assert_eq!(signal, 15);

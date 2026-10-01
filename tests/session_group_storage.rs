@@ -1,4 +1,4 @@
-use hmux2::src::session::*;
+use hmux::src::session::*;
 use std::ffi::CString;
 
 #[test]

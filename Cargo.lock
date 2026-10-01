@@ -187,6 +187,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "hmux"
+version = "0.0.0"
+dependencies = [
+ "c2rust-bitfields",
+ "futures-core",
+ "hmux-agent",
+ "hmux-buffer",
+ "hmux-cmdparse",
+ "hmux-refbox",
+ "hmux-rt",
+ "libc",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "hmux-agent"
 version = "0.1.0"
 dependencies = [
@@ -222,22 +238,6 @@ dependencies = [
  "libc",
  "mio",
  "signal-hook",
-]
-
-[[package]]
-name = "hmux2"
-version = "0.0.0"
-dependencies = [
- "c2rust-bitfields",
- "futures-core",
- "hmux-agent",
- "hmux-buffer",
- "hmux-cmdparse",
- "hmux-refbox",
- "hmux-rt",
- "libc",
- "quote",
- "syn",
 ]
 
 [[package]]

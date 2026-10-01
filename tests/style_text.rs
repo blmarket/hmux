@@ -1,6 +1,6 @@
 //! Compatibility observations recorded before replacing the text APIs.
-use hmux2::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
-use hmux2::src::{shared::grid::*, style::attributes::*, style::colour::*};
+use hmux::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
+use hmux::src::{shared::grid::*, style::attributes::*, style::colour::*};
 use std::ffi::{CStr, CString};
 
 #[test]

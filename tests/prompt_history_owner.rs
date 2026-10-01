@@ -1,16 +1,16 @@
 //! Prompt history owns strings and supplies independent snapshots to readers.
 
-use hmux2::src::format::bytes::write_cstr;
-use hmux2::src::options::{
+use hmux::src::format::bytes::write_cstr;
+use hmux::src::options::{
     options_create, options_default, options_free, options_set_number, options_set_string,
 };
-use hmux2::src::options_table::options_table;
-use hmux2::src::prompt_history::{
+use hmux::src::options_table::options_table;
+use hmux::src::prompt_history::{
     prompt_add_history, prompt_down_history, prompt_history_clear, prompt_history_get,
     prompt_history_size, prompt_load_history, prompt_save_history, prompt_up_history,
 };
-use hmux2::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
-use hmux2::src::tmux::global_options;
+use hmux::src::shared::prompt::{PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH};
+use hmux::src::tmux::global_options;
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 
@@ -145,8 +145,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
             c"three"
         );
 
-        let path =
-            std::env::temp_dir().join(format!("hmux2-prompt-history-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("hmux-prompt-history-{}", std::process::id()));
         let path_string = CString::new(path.as_os_str().as_bytes()).unwrap();
         options_set_string(options, c"history-file".as_ptr(), 0, |out| {
             write_cstr(out, path_string.as_ptr())

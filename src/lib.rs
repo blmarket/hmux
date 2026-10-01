@@ -19,6 +19,6 @@
 extern crate c2rust_bitfields;
 extern crate libc;
 
-/// Public modules; the historical `hmux2::src` namespace remains supported.
+/// Public modules exposed through the `hmux::src` namespace.
 #[path = "modules.rs"]
 pub mod src;

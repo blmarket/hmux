@@ -1,9 +1,9 @@
 //! Environment iteration supports nested expansion and last-entry detection.
-use hmux2::src::environ::{environ_create, environ_set};
-use hmux2::src::format::bytes::write_cstr;
-use hmux2::src::format::{format_create, format_expand_cstring, format_free};
-use hmux2::src::options::{options_create, options_free};
-use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use hmux::src::environ::{environ_create, environ_set};
+use hmux::src::format::bytes::write_cstr;
+use hmux::src::format::{format_create, format_expand_cstring, format_free};
+use hmux::src::options::{options_create, options_free};
+use hmux::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 
 #[test]
 fn environment_loops_support_nested_reads_and_last_entry_flags() {

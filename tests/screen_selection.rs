@@ -1,13 +1,13 @@
-use hmux2::src::grid::grid_default_cell;
-use hmux2::src::screen::{
+use hmux::src::grid::grid_default_cell;
+use hmux::src::screen::{
     screen_check_selection, screen_clear_selection, screen_hide_selection, screen_select_cell,
     screen_set_selection,
 };
-use hmux2::src::shared::grid::{
+use hmux::src::shared::grid::{
     GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_ATTR_NOATTR, GRID_ATTR_UNDERSCORE, GRID_FLAG_SELECTED,
 };
-use hmux2::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
-use hmux2::src::shared::screen::{screen, screen_sel};
+use hmux::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
+use hmux::src::shared::screen::{screen, screen_sel};
 
 fn selected_rows(s: &screen) -> Vec<String> {
     (0..3)

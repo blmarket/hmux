@@ -1,13 +1,13 @@
-use hmux2::src::grid::view::grid_view_get_cell;
-use hmux2::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
-use hmux2::src::screen_write::{
+use hmux::src::grid::view::grid_view_get_cell;
+use hmux::src::grid::{grid_cells_equal, grid_create, grid_default_cell};
+use hmux::src::screen_write::{
     screen_write_box, screen_write_hline, screen_write_start, screen_write_stop, screen_write_vline,
 };
-use hmux2::src::shared::grid::{
+use hmux::src::shared::grid::{
     grid_cell, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_NOPALETTE,
 };
-use hmux2::src::shared::screen::{screen, MODE_WRAP};
-use hmux2::src::shared::screen_write::screen_write_ctx;
+use hmux::src::shared::screen::{screen, MODE_WRAP};
+use hmux::src::shared::screen_write::screen_write_ctx;
 
 unsafe fn canvas() -> screen {
     let mut s = screen::empty();

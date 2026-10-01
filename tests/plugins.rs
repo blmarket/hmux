@@ -20,13 +20,13 @@ impl Server {
     fn start(plugins: Option<&str>, config: &str) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "hmux2-plugins-{}-{}",
+            "hmux-plugins-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
         fs::write(root.join("config"), config).unwrap();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux2"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux"));
         command
             .args(["-D", "-S"])
             .arg(root.join("socket"))
@@ -60,7 +60,7 @@ impl Server {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux2"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_hmux"));
         command
             .arg("-S")
             .arg(self.root.join("socket"))

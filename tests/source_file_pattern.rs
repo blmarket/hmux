@@ -21,13 +21,13 @@ impl Server {
             .as_nanos();
         // Glob punctuation in the cwd must be quoted; UTF-8 bytes stay literal.
         let directory = std::env::temp_dir().join(format!(
-            "hmux2-source-pattern-[test]+é-{}-{stamp}",
+            "hmux-source-pattern-[test]+é-{}-{stamp}",
             std::process::id()
         ));
         fs::create_dir(&directory).expect("create private directory");
         let socket = directory.join("socket");
         let absolute = std::env::temp_dir().join(format!(
-            "hmux2-source-absolute-{}-{stamp}.conf",
+            "hmux-source-absolute-{}-{stamp}.conf",
             std::process::id()
         ));
         Self {
@@ -38,7 +38,7 @@ impl Server {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_hmux2"))
+        Command::new(env!("CARGO_BIN_EXE_hmux"))
             .args(["-f", "/dev/null", "-S"])
             .arg(&self.socket)
             .args(args)
@@ -48,7 +48,7 @@ impl Server {
             .env_remove("TMUX")
             .env("LC_ALL", "C")
             .output()
-            .expect("run hmux2")
+            .expect("run hmux")
     }
 
     fn source(&self, path: &str) {

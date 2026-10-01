@@ -1,3 +1,3 @@
 fn main() {
-    hmux2::src::tmux::main()
+    hmux::src::tmux::main()
 }

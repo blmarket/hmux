@@ -1,9 +1,9 @@
 //! Exercise conditional scratch strings through public format expansion.
-use hmux2::src::environ::environ_create;
-use hmux2::src::format::bytes::write_cstr;
-use hmux2::src::format::{format_add, format_create, format_expand_cstring, format_free};
-use hmux2::src::options::{options_create, options_free};
-use hmux2::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use hmux::src::environ::environ_create;
+use hmux::src::format::bytes::write_cstr;
+use hmux::src::format::{format_add, format_create, format_expand_cstring, format_free};
+use hmux::src::options::{options_create, options_free};
+use hmux::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use std::ffi::CStr;
 
 #[test]

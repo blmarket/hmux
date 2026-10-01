@@ -153,7 +153,7 @@ Validation for this checkpoint:
   `python3 tools/client_storage_boundary.py`: all targets pass.
 - `python3 tools/monitor_borrow_boundary.py`: monitor cases exercise the checked
   RefBox borrows used in production.
-- After `cargo build --bin hmux2`, both `tools/client_boundary_smoke.py` and
+- After `cargo build --bin hmux`, both `tools/client_boundary_smoke.py` and
   `tools/window_boundary_smoke.py` pass against isolated temporary servers.
 - Default Clippy still fails at the pre-existing `hmux-refbox` `mut_from_ref`
   denial. The supplemental complete `-- --cap-lints warn` run passes; this does

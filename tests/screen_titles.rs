@@ -1,5 +1,5 @@
-use hmux2::src::screen::{screen_pop_title, screen_push_title, screen_set_path, screen_set_title};
-use hmux2::src::shared::screen::screen;
+use hmux::src::screen::{screen_pop_title, screen_push_title, screen_set_path, screen_set_title};
+use hmux::src::shared::screen::screen;
 use std::ffi::CString;
 
 #[test]

@@ -1,5 +1,5 @@
-use hmux2::src::screen::screen_mode_display;
-use hmux2::src::shared::screen::{
+use hmux::src::screen::screen_mode_display;
+use hmux::src::shared::screen::{
     ALL_MODES, MODE_CURSOR, MODE_CURSOR_VERY_VISIBLE, MODE_MOUSE_UTF8, MODE_SYNC,
 };
 

@@ -1,6 +1,6 @@
-use hmux2::src::grid::{grid_create, grid_default_cell, grid_set_cell};
-use hmux2::src::screen::screen_print;
-use hmux2::src::shared::screen::screen;
+use hmux::src::grid::{grid_create, grid_default_cell, grid_set_cell};
+use hmux::src::screen::screen_print;
+use hmux::src::shared::screen::screen;
 use std::ffi::CStr;
 
 #[test]
