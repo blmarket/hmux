@@ -1789,7 +1789,7 @@ mod tests {
     use super::*;
 
     use crate::src::grid::grid_create;
-    use crate::src::reactor::{evbuffer_add, shutdown_runtime, StreamHandle};
+    use crate::src::reactor::{evbuffer_add, StreamHandle};
 
     unsafe fn buffered_pane(bytes: &[u8]) -> Rc<UnsafeCell<window_pane>> {
         let pane = window_pane::new();
@@ -1847,7 +1847,6 @@ mod tests {
             pane.advance_output(&mut first, usize::MAX);
             assert_eq!(first.used, 3);
             drop(pane);
-            shutdown_runtime();
         }
     }
 
@@ -1919,7 +1918,6 @@ mod tests {
             assert!(observer.upgrade().is_some());
             drop(pane);
             assert!(observer.upgrade().is_none());
-            shutdown_runtime();
         }
     }
 }

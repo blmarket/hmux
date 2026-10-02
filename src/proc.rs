@@ -12,7 +12,7 @@ use crate::src::ffi::libc::{daemon, fork, getpid, memset, sigaction, sigemptyset
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_open, log_pointer, log_toggle};
-use crate::src::reactor::{self, poll_runtime};
+use crate::src::reactor;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
 use crate::src::shared::process::PeerMessage;
@@ -24,8 +24,7 @@ pub use crate::src::shared::signal::{
     SIG_DFL,
 };
 use crate::src::tmux::{getversion, socket_path};
-use hmux_rt::Signals as _;
-use hmux_rt::{AsyncRead as _, AsyncWrite as _};
+use hmux_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
@@ -309,13 +308,18 @@ pub unsafe fn proc_free(mut owner: Box<tmuxproc>) {
     drop(owner);
 }
 
-pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut() -> bool>) {
+/// Drive the process until exit, then release streams and the runtime owner.
+pub unsafe fn proc_loop(
+    mut tp: *mut tmuxproc,
+    mut runtime: hmux_rt::mio::Runtime,
+    mut loopcb: Option<&mut dyn FnMut() -> bool>,
+) {
     log_debug(format_args!(
         "{} loop enter",
         crate::src::log::log_bytes((*tp).name.as_bytes())
     ));
     loop {
-        poll_runtime();
+        runtime.poll(None).expect("hmux-rt poll");
         let exiting = (*tp).exit != 0;
         let drained = (*tp)
             .peers
@@ -329,6 +333,7 @@ pub unsafe fn proc_loop(mut tp: *mut tmuxproc, mut loopcb: Option<&mut dyn FnMut
         "{} loop exit",
         crate::src::log::log_bytes((*tp).name.as_bytes())
     ));
+    reactor::shutdown_runtime(runtime);
 }
 pub unsafe fn proc_exit(tp: *mut tmuxproc) {
     // The loop continues driving queued writes before returning to teardown.
@@ -491,6 +496,60 @@ pub unsafe fn proc_get_peer_gid(mut peer: *mut tmuxpeer) -> gid_t {
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
+
+    #[test]
+    fn loop_exit_releases_streams_and_runtime_for_both_exit_paths() {
+        use crate::src::reactor::{BufferEvent as _, StreamHandle};
+        use hmux_rt::Handle as _;
+
+        for callback_exit in [false, true] {
+            let runtime = hmux_rt::mio::Runtime::new().unwrap();
+            let handle = runtime.handle();
+            let mut owner = Box::new(tmuxproc {
+                name: c"loop-ownership-test".to_owned(),
+                exit: 0,
+                signalcb: None,
+                signal_task: None,
+                peers: Vec::new(),
+            });
+            let tp = &raw mut *owner;
+            let (socket, _remote) = UnixStream::pair().unwrap();
+            unsafe {
+                let fd = socket.as_raw_fd();
+                let flags = libc::fcntl(fd, libc::F_GETFL);
+                let stream = reactor::bufferevent_new(fd, None, None, None);
+                assert!(!stream.is_null());
+                let observer = StreamHandle::from_ptr(stream);
+                let task = handle
+                    .spawn(async move {
+                        if !callback_exit {
+                            proc_exit(tp);
+                        }
+                    })
+                    .unwrap();
+                let mut callback = || {
+                    assert!(hmux_rt::mio::Runtime::is_initialized());
+                    false
+                };
+                let loopcb: Option<&mut dyn FnMut() -> bool> = if callback_exit {
+                    Some(&mut callback)
+                } else {
+                    None
+                };
+                proc_loop(tp, runtime, loopcb);
+
+                assert!(!observer.is_alive());
+                assert_eq!(libc::fcntl(fd, libc::F_GETFL), flags);
+                assert!(!hmux_rt::mio::Runtime::is_initialized());
+                assert!(matches!(
+                    handle.spawn(async {}),
+                    Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe
+                ));
+                drop(task);
+                proc_free(owner);
+            }
+        }
+    }
 
     #[test]
     fn rejected_messages_close_the_transferred_descriptor() {

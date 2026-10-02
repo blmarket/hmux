@@ -1,5 +1,4 @@
 //! Application-owned futures with explicit and drop cancellation.
-use super::ensure_runtime;
 use hmux_rt::Handle as _;
 use std::future::Future;
 use std::io;
@@ -14,7 +13,6 @@ where
     F: Future<Output = ()> + 'static,
 {
     drop(task.take());
-    ensure_runtime();
     *task = Some(hmux_rt::mio::Handle::current().spawn(initialize()?)?);
     Ok(())
 }

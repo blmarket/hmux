@@ -21,7 +21,6 @@ use crate::src::proc::{
     proc_add_peer, proc_clear_signals, proc_exit, proc_loop, proc_send, proc_set_signals,
     proc_start,
 };
-use crate::src::reactor::init_runtime;
 use crate::src::server::server_start;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{ssize_t, uint32_t};
@@ -52,6 +51,7 @@ use crate::src::tty_term::tty_term_read_list;
 use std::ffi::{CStr, CString, OsStr};
 use std::fs::OpenOptions;
 use std::io;
+use hmux_rt::Runtime as _;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
@@ -325,7 +325,7 @@ pub unsafe fn client_main(
         };
         // Connecting may daemonize a new server. Initialize each process's
         // runtime only after that fork.
-        init_runtime();
+        let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
         proc_set_signals(
             client_proc,
             Some(Box::new(|sig| unsafe { client_signal(sig) })),
@@ -465,7 +465,7 @@ pub unsafe fn client_main(
                 0 as size_t,
             );
         }
-        proc_loop(client_proc, None);
+        proc_loop(client_proc, runtime, None);
         if client_exittype as ::core::ffi::c_uint
             == MSG_EXEC as ::core::ffi::c_int as ::core::ffi::c_uint
         {

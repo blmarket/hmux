@@ -329,8 +329,10 @@ mod pipe_stream_tests {
 
     #[test]
     fn pipe_error_closes_descriptor_while_pane_remains_alive() {
+        use hmux_rt::Runtime as _;
         use std::os::unix::net::UnixStream;
 
+        let runtime = hmux_rt::mio::Runtime::new().unwrap();
         unsafe {
             let pane = window_pane::new();
             let (socket, _receiver) = UnixStream::pair().unwrap();
@@ -349,7 +351,7 @@ mod pipe_stream_tests {
             let replacement = std::fs::File::open("/dev/null").unwrap();
             cmd_pipe_pane_error_callback(&pane);
             assert!(libc::fcntl(replacement.as_raw_fd(), libc::F_GETFD) >= 0);
-            shutdown_runtime();
+            shutdown_runtime(runtime);
         }
     }
 
@@ -382,7 +384,6 @@ mod pipe_stream_tests {
             assert!(!(*wp).pipe_event.is_alive());
             std::mem::take(&mut (*wp).event).free();
             drop(pane_owner);
-            shutdown_runtime();
         }
     }
 }

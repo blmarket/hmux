@@ -247,7 +247,6 @@ pub unsafe fn bufferevent_new(
     writecb: bufferevent_data_cb,
     errorcb: bufferevent_event_cb,
 ) -> *mut bufferevent {
-    super::ensure_runtime();
     let was_nonblocking = if fd == -1 {
         true
     } else {

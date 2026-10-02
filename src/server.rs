@@ -43,7 +43,7 @@ use crate::src::tty::tty_create_log;
 
 use crate::src::window::{windows, Window as _};
 use crate::src::window_pane::WindowPane as _;
-use hmux_rt::AsyncAccept as _;
+use hmux_rt::{AsyncAccept as _, Runtime as _};
 use std::time::{Duration, SystemTime};
 
 use std::ffi::{CStr, CString, OsStr};
@@ -238,7 +238,7 @@ pub(crate) unsafe fn server_start(
         fd = Some(socket);
     }
     server_client_flags = flags;
-    reactor::init_runtime();
+    let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
     let mut process_owner = proc_start(c"server".as_ptr());
     server_proc = &raw mut *process_owner;
     proc_set_signals(
@@ -312,6 +312,7 @@ pub(crate) unsafe fn server_start(
             crate::src::proc::proc_free(process_owner);
             server_proc = std::ptr::null_mut();
             crate::src::plugin::shutdown();
+            reactor::shutdown_runtime(runtime);
             exit(1 as ::core::ffi::c_int);
         }
     }
@@ -319,7 +320,7 @@ pub(crate) unsafe fn server_start(
     server_acl_init();
     server_add_accept(0 as ::core::ffi::c_int);
     let mut loop_callback = || unsafe { server_loop() == 0 };
-    proc_loop(server_proc, Some(&mut loop_callback));
+    proc_loop(server_proc, runtime, Some(&mut loop_callback));
     crate::src::plugin::shutdown();
     crate::src::cmd::queue::cmdq_cancel_background();
     job_kill_all();

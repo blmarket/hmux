@@ -3,16 +3,15 @@
 //! Streams own their buffers. Task handles own their cancellable futures;
 //! callbacks run without registry borrows. Descriptor leases are
 //! owned by each task and close after an executing poll finishes.
+//! The client and server create their runtimes and move them into the process
+//! loop. Scheduling helpers use the current handle without creating a runtime.
 #![allow(clippy::missing_safety_doc)]
 mod buffer;
 mod streams;
 mod tasks;
 mod timers;
 pub use buffer::*;
-use hmux_rt::Runtime as _;
-use std::cell::RefCell;
 use std::os::fd::BorrowedFd;
-use std::time::Duration;
 pub use streams::*;
 pub use tasks::task_start;
 pub use timers::Timer;
@@ -20,16 +19,6 @@ pub use timers::Timer;
 #[repr(C)]
 pub struct bufferevent_ops {
     _private: [u8; 0],
-}
-thread_local! {
-    static HOST: RefCell<Option<hmux_rt::mio::Runtime>> = const { RefCell::new(None) };
-}
-fn ensure_runtime() {
-    if hmux_rt::mio::Runtime::is_initialized() {
-        return;
-    }
-    let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
-    HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
 pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<hmux_rt::mio::Io> {
@@ -49,30 +38,9 @@ pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
         }
     }
 }
-pub fn init_runtime() {
-    ensure_runtime();
-}
-
-pub fn poll_runtime() {
-    poll_runtime_with_timeout(None);
-}
-
-fn poll_runtime_with_timeout(max_wait: Option<Duration>) {
-    ensure_runtime();
-    HOST.with(|h| {
-        h.borrow_mut()
-            .as_mut()
-            .expect("runtime initialized")
-            .poll(max_wait)
-            .expect("hmux-rt poll");
-    });
-}
-
-/// Drop the runtime after polling has returned. Calling this from a callback
-/// panics before cleanup because the runtime owner is still borrowed.
-pub fn shutdown_runtime() {
-    let runtime = HOST.with(|h| h.borrow_mut().take());
-    let Some(runtime) = runtime else { return };
+/// Free compatibility streams before dropping the runtime that drives them.
+/// Taking ownership keeps shutdown outside an active runtime poll.
+pub fn shutdown_runtime(runtime: hmux_rt::mio::Runtime) {
     streams::clear();
     // The runtime clears its current handle after destructors run.
     drop(runtime);

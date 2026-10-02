@@ -207,7 +207,6 @@ mod input_buffer_ownership_tests {
             assert!(!input.event.is_alive());
             input_send_reply(&mut *input, c"reply".as_ptr());
             drop(input);
-            crate::src::reactor::shutdown_runtime();
         }
     }
 
@@ -221,7 +220,6 @@ mod input_buffer_ownership_tests {
             drop(pane);
             assert!(context.wp.upgrade().is_none());
             drop(context);
-            crate::src::reactor::shutdown_runtime();
         }
     }
 

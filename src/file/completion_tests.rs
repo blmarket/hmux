@@ -37,6 +37,8 @@ unsafe fn start_read(
 
 #[test]
 fn local_completion_can_be_cancelled_after_runtime_shutdown() {
+    use hmux_rt::Runtime as _;
+    let runtime = hmux_rt::mio::Runtime::new().unwrap();
     unsafe {
         let data = Rc::new(());
         let retained = data.clone();
@@ -52,7 +54,7 @@ fn local_completion_can_be_cancelled_after_runtime_shutdown() {
             },
             Some(Box::new(move || observed.set(observed.get() + 1))),
         );
-        shutdown_runtime();
+        shutdown_runtime(runtime);
         // Runtime shutdown does not own command cleanup. The command's file
         // wait remains cancellable after its runtime stops.
         let owner = file.upgrade().unwrap();

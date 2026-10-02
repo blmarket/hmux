@@ -144,7 +144,6 @@ mod tests {
             Pin::new(&mut file).poll_next(&mut cx),
             Poll::Ready(None)
         ));
-        crate::src::reactor::shutdown_runtime();
     }
 
     #[test]

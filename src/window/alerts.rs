@@ -95,7 +95,6 @@ mod tests {
             assert_eq!(window.queue_alerts(WINDOW_BELL), Some(true));
             window.finish_alerts();
             window.release(c"alert membership test");
-            crate::src::reactor::shutdown_runtime();
         }
     }
 }

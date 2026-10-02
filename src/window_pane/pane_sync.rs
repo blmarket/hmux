@@ -168,6 +168,8 @@ mod tests {
 
     #[test]
     fn stopping_and_destroying_sync_cancel_the_timer_without_retaining_the_pane() {
+        use hmux_rt::Runtime as _;
+        let runtime = hmux_rt::mio::Runtime::new().unwrap();
         unsafe {
             let pane = window_pane::new();
             (*pane.get()).base.grid = Some(crate::src::grid::grid_create(8, 2, 0));
@@ -192,7 +194,7 @@ mod tests {
             assert!((*pane.get()).sync_dirty.is_none());
             drop(pane);
             assert!(observer.upgrade().is_none());
-            shutdown_runtime();
+            shutdown_runtime(runtime);
         }
     }
 }

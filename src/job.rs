@@ -672,6 +672,8 @@ mod job_stream_tests {
 
     #[test]
     fn registry_cleanup_reentrancy_and_both_completion_orders() {
+        use hmux_rt::Runtime as _;
+        let runtime = hmux_rt::mio::Runtime::new().unwrap();
         unsafe {
             assert!(job_snapshot().is_empty());
             let calls = Rc::new(Cell::new(0));
@@ -769,7 +771,7 @@ mod job_stream_tests {
             }
             assert_eq!(calls.get(), 4);
             assert!(job_snapshot().is_empty());
-            crate::src::reactor::shutdown_runtime();
+            crate::src::reactor::shutdown_runtime(runtime);
         }
     }
 
@@ -793,7 +795,6 @@ mod job_stream_tests {
             assert!(job_completion(&owner.try_borrow_mut().unwrap())
                 .output
                 .is_empty());
-            crate::src::reactor::shutdown_runtime();
         }
     }
 }

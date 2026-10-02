@@ -210,6 +210,7 @@ fn failed_registration_drops_plugin_outside_registry_borrows() {
 
 #[test]
 fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
+    use hmux_rt::Runtime as _;
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -253,7 +254,7 @@ fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
         }
     }
     shutdown();
-    crate::src::reactor::init_runtime();
+    let runtime = hmux_rt::mio::Runtime::new().unwrap();
     let calls = Rc::new(Cell::new(0));
     let dropped = Rc::new(Cell::new(false));
     unsafe {
@@ -278,6 +279,6 @@ fn refresh_reads_previous_snapshot_and_errors_do_not_publish_partial_values() {
     shutdown();
     assert!(dropped.get());
     REGISTRY.with(|registry| assert!(registry.borrow().timer.is_none()));
-    crate::src::reactor::shutdown_runtime();
+    crate::src::reactor::shutdown_runtime(runtime);
     assert_eq!(calls.get(), 2);
 }

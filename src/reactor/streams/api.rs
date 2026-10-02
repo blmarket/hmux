@@ -282,7 +282,6 @@ mod tests {
         assert!(state.generation.get() > generation);
         stream.free();
         assert!(state.stream.borrow().is_none());
-        super::super::super::shutdown_runtime();
     }
 
     #[test]

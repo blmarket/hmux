@@ -2949,7 +2949,6 @@ mod pane_prompt_data_tests {
 #[cfg(test)]
 mod pane_stream_lifecycle_tests {
     use super::*;
-    use crate::src::reactor::shutdown_runtime;
     use crate::src::shared::rc;
 
     #[test]
@@ -3002,7 +3001,6 @@ mod pane_stream_lifecycle_tests {
             assert!(observer.upgrade().is_none());
             assert!(callback.upgrade().is_none());
             assert!(!stale_stream.is_alive());
-            shutdown_runtime();
         }
     }
 }

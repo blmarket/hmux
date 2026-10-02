@@ -1061,9 +1061,11 @@ unsafe fn monitor_windows_next(
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
+    use hmux_rt::Runtime as _;
 
     #[test]
     fn traversal_preserves_prefetched_successor_order_and_resolves_live_names() {
+        let _runtime = hmux_rt::mio::Runtime::new().unwrap();
         unsafe {
             let owner = monitor_create(Rc::new(|_| {}));
             for name in [c"a", c"c", c"e"] {
@@ -1118,6 +1120,7 @@ mod ownership_tests {
     #[test]
     fn notify_true_updates_last_without_firing_until_truth_changes() {
         use std::cell::RefCell;
+        let _runtime = hmux_rt::mio::Runtime::new().unwrap();
         unsafe {
             let changes = Rc::new(RefCell::new(Vec::new()));
             let callback_changes = changes.clone();
@@ -1175,6 +1178,7 @@ mod ownership_tests {
 
     #[test]
     fn changed_value_survives_reentrant_item_removal() {
+        let _runtime = hmux_rt::mio::Runtime::new().unwrap();
         unsafe {
             let capture = std::rc::Rc::new(std::cell::RefCell::new(Capture {
                 set: refbox::Weak::new(),
