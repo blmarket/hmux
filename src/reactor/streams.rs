@@ -1,5 +1,5 @@
 mod api;
-use super::{handle, io};
+use super::io;
 use crate::src::control::CONTROL_BUFFER_LOW;
 use crate::src::shared::event::{bufferevent, bufferevent_data_cb, bufferevent_event_cb};
 pub use api::*;
@@ -110,7 +110,8 @@ fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
     // SAFETY: the stream's model owner keeps this descriptor open through registration.
     let source = io(unsafe { std::os::fd::BorrowedFd::borrow_raw(state.fd) })?;
     let s = state.clone();
-    let task = handle().spawn(async move {
+    let handle = hmux_rt::mio::Handle::current();
+    let task = handle.spawn(async move {
         enum Completion {
             Changed,
             Read(std::io::Result<hmux_rt::Received>),

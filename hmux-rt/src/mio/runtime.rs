@@ -207,6 +207,28 @@ pub struct Handle {
     pub(crate) core: Rc<Core>,
 }
 
+thread_local! {
+    static HANDLE: RefCell<Option<Handle>> = const { RefCell::new(None) };
+}
+
+impl Handle {
+    /// Clone the handle registered during runtime initialization on this thread.
+    /// Looking up a handle neither creates nor drives a runtime.
+    ///
+    /// # Panics
+    /// Panics before initialization or after the registered runtime is dropped.
+    #[track_caller]
+    pub fn current() -> Self {
+        HANDLE.with(|handle| {
+            handle
+                .borrow()
+                .as_ref()
+                .expect("runtime initialized")
+                .clone()
+        })
+    }
+}
+
 impl crate::Handle for Handle {
     type Task = Task;
     type Io = Io;
@@ -252,6 +274,11 @@ impl crate::Handle for Handle {
 }
 
 /// Host-driven local-waker executor with a mio Unix readiness backend.
+///
+/// Construction registers the runtime for [`Handle::current`] if none is
+/// registered. Additional runtimes leave that registration unchanged, so
+/// independent drivers used for synchronous I/O do not replace it.
+/// The registered runtime clears its handle after shutdown cleanup.
 pub struct Runtime {
     core: Rc<Core>,
     poller: mio::Poll,
@@ -264,7 +291,7 @@ impl crate::Runtime for Runtime {
     fn new() -> io::Result<Self> {
         let poller = mio::Poll::new()?;
         let registry = poller.registry().try_clone()?;
-        Ok(Self {
+        let runtime = Self {
             core: Rc::new(Core {
                 pid: std::process::id(),
                 alive: Cell::new(true),
@@ -281,7 +308,14 @@ impl crate::Runtime for Runtime {
             }),
             poller,
             events: mio::Events::with_capacity(1024),
-        })
+        };
+        HANDLE.with(|handle| {
+            let mut handle = handle.borrow_mut();
+            if handle.is_none() {
+                *handle = Some(runtime.handle());
+            }
+        });
+        Ok(runtime)
     }
 
     fn handle(&self) -> Handle {
@@ -297,6 +331,14 @@ impl crate::Runtime for Runtime {
 }
 
 impl Runtime {
+    /// Whether a runtime has registered its handle on this thread.
+    /// Remains true during shutdown cleanup, until that handle is cleared.
+    pub fn is_initialized() -> bool {
+        HANDLE
+            .try_with(|handle| handle.borrow().is_some())
+            .unwrap_or(false)
+    }
+
     /// Drive a borrowed future to completion on this runtime.
     ///
     /// This is also useful for synchronous startup/teardown with an independent
@@ -485,6 +527,19 @@ impl Core {
 impl Drop for Runtime {
     fn drop(&mut self) {
         self.core.close();
+        // Keep the handle accessible while close releases user-owned wakers.
+        // TLS may already have been destroyed during thread shutdown.
+        let _ = HANDLE.try_with(|handle| {
+            let mut handle = handle.borrow_mut();
+            if handle
+                .as_ref()
+                .is_some_and(|handle| Rc::ptr_eq(&handle.core, &self.core))
+            {
+                handle.take()
+            } else {
+                None
+            }
+        });
     }
 }
 

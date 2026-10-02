@@ -501,7 +501,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     };
     if timeout == 0 as ::core::ffi::c_int {
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let source = reactor::handle().listener(socket.try_clone()?)?;
+            let source = hmux_rt::mio::Handle::current().listener(socket.try_clone()?)?;
             Ok(async move {
                 let accepted = source.accept().await;
                 unsafe { server_accept(accepted) };
@@ -512,7 +512,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         let now = std::time::Instant::now();
         let deadline = now.checked_add(tv).unwrap_or(now);
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let wait = reactor::handle().sleep_until(deadline);
+            let wait = hmux_rt::mio::Handle::current().sleep_until(deadline);
             Ok(async move {
                 wait.await.expect("accept backoff wait");
                 unsafe { server_add_accept(0) };

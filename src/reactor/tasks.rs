@@ -1,5 +1,5 @@
 //! Application-owned futures with explicit and drop cancellation.
-use super::{ensure_runtime, handle};
+use super::ensure_runtime;
 use hmux_rt::Handle as _;
 use std::future::Future;
 use std::io;
@@ -15,7 +15,7 @@ where
 {
     drop(task.take());
     ensure_runtime();
-    *task = Some(handle().spawn(initialize()?)?);
+    *task = Some(hmux_rt::mio::Handle::current().spawn(initialize()?)?);
     Ok(())
 }
 
@@ -305,7 +305,7 @@ mod tests {
             Ok(async move {
                 let result = std::panic::catch_unwind(super::super::shutdown_runtime);
                 observed.set(result.is_err());
-                assert!(super::super::runtime_initialized());
+                assert!(hmux_rt::mio::Runtime::is_initialized());
             })
         })
         .unwrap();
@@ -318,7 +318,7 @@ mod tests {
         assert!(rejected.get());
         assert_eq!(calls.get(), 1);
         super::super::shutdown_runtime();
-        assert!(!super::super::runtime_initialized());
+        assert!(!hmux_rt::mio::Runtime::is_initialized());
     }
 
     #[test]

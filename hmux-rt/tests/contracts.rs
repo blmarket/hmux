@@ -111,7 +111,6 @@ fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
     let runtime = Rc::new(RefCell::new(Some(mio::Runtime::new().unwrap())));
     let handle = runtime.borrow().as_ref().unwrap().handle();
     let owner = runtime.clone();
-    let nested = handle.clone();
     let tasks = Rc::new(RefCell::new(Vec::new()));
     let retained = tasks.clone();
     let calls = Rc::new(Cell::new(0));
@@ -120,7 +119,7 @@ fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
         .spawn(async move {
             assert!(owner.try_borrow_mut().is_err());
             retained.borrow_mut().push(
-                nested
+                mio::Handle::current()
                     .spawn(async move {
                         observed.set(1);
                     })
@@ -138,6 +137,7 @@ fn tasks_can_spawn_owned_work_while_runtime_is_borrowed() {
     assert_eq!(calls.get(), 1);
     let owner = runtime.borrow_mut().take();
     drop(owner);
+    assert!(!mio::Runtime::is_initialized());
     assert!(handle.spawn(async {}).is_err());
 }
 

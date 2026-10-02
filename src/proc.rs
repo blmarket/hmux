@@ -180,7 +180,7 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
                             // This resource shortage is transient but not a
                             // readiness transition. Retry without a busy loop.
                             use hmux_rt::Handle as _;
-                            reactor::handle()
+                            hmux_rt::mio::Handle::current()
                                 .sleep_until(
                                     std::time::Instant::now() + std::time::Duration::from_millis(1),
                                 )
@@ -363,7 +363,7 @@ pub unsafe fn proc_set_signals(
     sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     crate::src::reactor::task_start(&mut (*tp).signal_task, move || {
-        let mut signals = reactor::handle().signals(&[
+        let mut signals = hmux_rt::mio::Handle::current().signals(&[
             SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
         ])?;
         Ok(async move {
@@ -460,7 +460,7 @@ pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
 }
 pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
-        !reactor::runtime_initialized(),
+        !hmux_rt::mio::Runtime::is_initialized(),
         "daemonize before initializing the runtime"
     );
     let (parent, child) = hmux_rt::unix::socket_pair()

@@ -1,5 +1,5 @@
 //! Timer work is a future owned by the caller's task handle.
-use super::{ensure_runtime, handle};
+use super::ensure_runtime;
 use hmux_rt::Handle as _;
 use std::io;
 use std::time::{Duration, Instant};
@@ -17,8 +17,9 @@ impl Timer {
         let now = Instant::now();
         // Preserve the existing behavior: an overflowing deadline is expired.
         let deadline = now.checked_add(delay).unwrap_or(now);
-        let sleep = handle().sleep_until(deadline);
-        let task = handle().spawn(async move {
+        let handle = hmux_rt::mio::Handle::current();
+        let sleep = handle.sleep_until(deadline);
+        let task = handle.spawn(async move {
             sleep.await.expect("timer wait failed");
             callback();
         })?;

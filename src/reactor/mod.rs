@@ -23,27 +23,19 @@ pub struct bufferevent_ops {
 }
 thread_local! {
     static HOST: RefCell<Option<hmux_rt::mio::Runtime>> = const { RefCell::new(None) };
-    static HANDLE: RefCell<Option<hmux_rt::mio::Handle>> = const { RefCell::new(None) };
-}
-pub(crate) fn handle() -> hmux_rt::mio::Handle {
-    HANDLE.with(|h| h.borrow().as_ref().expect("runtime initialized").clone())
-}
-pub(crate) fn runtime_initialized() -> bool {
-    HANDLE.with(|h| h.borrow().is_some())
 }
 fn ensure_runtime() {
-    if runtime_initialized() {
+    if hmux_rt::mio::Runtime::is_initialized() {
         return;
     }
     let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
-    HANDLE.with(|h| *h.borrow_mut() = Some(runtime.handle()));
     HOST.with(|h| *h.borrow_mut() = Some(runtime));
 }
 /// Create a task-owned registration; no raw descriptor lookup survives this call.
 pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<hmux_rt::mio::Io> {
     // Retain the open file description through callback cancellation.
     let lease = fd.try_clone_to_owned()?;
-    handle().io(lease)
+    hmux_rt::mio::Handle::current().io(lease)
 }
 /// Translate an owned I/O error at the remaining C-style callback boundary.
 pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {
@@ -82,9 +74,8 @@ pub fn shutdown_runtime() {
     let runtime = HOST.with(|h| h.borrow_mut().take());
     let Some(runtime) = runtime else { return };
     streams::clear();
-    // Keep the scheduling handle accessible while destructors run.
+    // The runtime clears its current handle after destructors run.
     drop(runtime);
-    HANDLE.with(|h| h.borrow_mut().take());
 }
 pub(crate) async fn yield_now() {
     let mut yielded = false;
