@@ -48,6 +48,7 @@ use crate::src::shared::window::WINDOW_MAXIMUM;
 pub struct layout_parse_ctx<'a> {
     pub version: int64_t,
     pub num_active: ::core::ffi::c_int,
+    pub scrolling: Option<(u32, u32)>,
     pub root: Option<Box<layout_cell>>,
     pub cause: Option<&'a mut Option<CString>>,
     pub cctxs: Vec<layout_parse_cell_ctx>,
@@ -68,6 +69,7 @@ pub struct layout_parse_cell_ctx {
     pub last: ::core::ffi::c_int,
     pub index: ::core::ffi::c_int,
     pub zindex: ::core::ffi::c_int,
+    pub full_width: Option<bool>,
 }
 
 unsafe fn layout_parse_free_ctx(mut pctx: *mut layout_parse_ctx) {
@@ -82,6 +84,7 @@ unsafe fn layout_parse_add_cctx(
     mut last: ::core::ffi::c_int,
     mut index: ::core::ffi::c_int,
     mut zindex: ::core::ffi::c_int,
+    full_width: Option<bool>,
 ) {
     (*pctx).cctxs.push(layout_parse_cell_ctx {
         lc,
@@ -89,6 +92,7 @@ unsafe fn layout_parse_add_cctx(
         last,
         index,
         zindex,
+        full_width,
     });
 }
 unsafe fn layout_parse_remove_cctx(
@@ -118,7 +122,11 @@ fn layout_checksum(layout: &[u8]) -> u_short {
     })
 }
 // Serialize the live tree. These reads do not dispatch callbacks or mutate layout.
-pub(crate) unsafe fn layout_dump(root: &layout_cell, legacy: bool) -> Option<CString> {
+pub(crate) unsafe fn layout_dump(
+    root: &layout_cell,
+    legacy: bool,
+    scrolling: Option<(u32, u32)>,
+) -> Option<CString> {
     let mut body = Vec::new();
     if legacy {
         layout_append_v1(layout_compat_cell(root)?, &mut body, true);
@@ -132,6 +140,11 @@ pub(crate) unsafe fn layout_dump(root: &layout_cell, legacy: bool) -> Option<CSt
     } else {
         output.extend_from_slice(b"{\"V\":2,\"L\":");
         output.extend_from_slice(&body);
+        if let Some((width, height)) = scrolling {
+            output.extend_from_slice(
+                format!(",\"scrolling\":{{\"width\":{width},\"height\":{height}}}").as_bytes(),
+            );
+        }
         output.push(b'}');
     }
     Some(CString::new(output).expect("layout serializer produced an interior NUL"))
@@ -187,6 +200,7 @@ unsafe fn layout_append_v2(cell: &layout_cell, bytes: &mut Vec<u8>) -> Option<()
             .window_observer()
             .upgrade()
             .expect("layout pane window");
+        bytes.extend_from_slice(format!(",\"full\":{}", pane.scrolling_full_width()).as_bytes());
         let observer = std::rc::Rc::downgrade(&pane);
         if window
             .active_pane()
@@ -304,6 +318,7 @@ pub unsafe fn layout_parse(
     let mut pctx: layout_parse_ctx = layout_parse_ctx {
         version: -1,
         num_active: 0,
+        scrolling: None,
         root: None,
         cause: cause.as_mut(),
         cctxs: Vec::new(),
@@ -409,8 +424,16 @@ pub unsafe fn layout_parse(
                         c"size mismatch after applying layout".as_ptr(),
                     );
                 } else {
-                    if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
-                        w_owner.set_layout_size((*lc).g.sx, (*lc).g.sy);
+                    w_owner.unzoom(true);
+                    let size =
+                        if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
+                            ((*lc).g.sx, (*lc).g.sy)
+                        } else {
+                            pctx.scrolling.unwrap_or(w_owner.sizing_size())
+                        };
+                    w_owner.set_layout_size(size.0, size.1, pctx.scrolling);
+                    if pctx.scrolling.is_some() {
+                        w_owner.remember_layout_preset(super::set::SCROLLING_LAYOUT as i32);
                     }
                     // Resizing may dispatch callbacks. Acquire the current pane order
                     // afterward, then keep all tree edits in one bounded borrow.
@@ -490,6 +513,9 @@ unsafe fn layout_assign_from_ctx(
     );
     for (cctx, pane_owner) in (*pctx).cctxs.iter().zip(panes) {
         layout_make_leaf(cctx.lc, pane_owner);
+        if let Some(full) = cctx.full_width.or((*pctx).scrolling.map(|_| false)) {
+            pane_owner.set_scrolling_full_width(full);
+        }
     }
 }
 unsafe fn layout_assign_fallback_tiled(
@@ -680,6 +706,24 @@ unsafe fn layout_parse_json(root: &json_node, pctx: *mut layout_parse_ctx) -> ::
     let result = (|| {
         let root = json_get_object(root).ok_or_else(|| c"invalid layout json".to_owned())?;
         (*pctx).version = json_find_number(root, c"V")?;
+        if json_find(root, c"scrolling").is_some() {
+            let metadata = json_find_object(root, c"scrolling")?;
+            let width = layout_json_number(
+                metadata,
+                c"width",
+                1,
+                WINDOW_MAXIMUM as i64,
+                "scrolling width",
+            )? as u32;
+            let height = layout_json_number(
+                metadata,
+                c"height",
+                1,
+                WINDOW_MAXIMUM as i64,
+                "scrolling height",
+            )? as u32;
+            (*pctx).scrolling = Some((width, height));
+        }
         let object = json_find_object(root, c"L")?;
         (*pctx).root = Some(layout_parse_json_layout(object, pctx)?);
         Ok::<_, CString>(())
@@ -731,7 +775,11 @@ unsafe fn layout_parse_json_layout(
             node,
             c"w",
             PANE_MINIMUM as i64,
-            PANE_MAXIMUM as i64,
+            if (*pctx).scrolling.is_some() && (*lc).type_0 != LAYOUT_WINDOWPANE {
+                i32::MAX as i64
+            } else {
+                PANE_MAXIMUM as i64
+            },
             "width",
         )? as u_int;
         (*lc).g.sy = layout_json_number(
@@ -745,7 +793,11 @@ unsafe fn layout_parse_json_layout(
             node,
             c"x",
             -WINDOW_MAXIMUM as i64,
-            WINDOW_MAXIMUM as i64,
+            if (*pctx).scrolling.is_some() {
+                i32::MAX as i64 - PANE_MAXIMUM as i64 - 1
+            } else {
+                WINDOW_MAXIMUM as i64
+            },
             "x-offset",
         )? as i32;
         (*lc).g.yoff = layout_json_number(
@@ -779,7 +831,12 @@ unsafe fn layout_parse_json_layout(
             } else {
                 INT_MAX
             };
-            layout_parse_add_cctx(pctx, lc, active, last, index, zindex);
+            let full_width = if json_find(node, c"full").is_some() {
+                Some(json_find_boolean(node, c"full")? != 0)
+            } else {
+                None
+            };
+            layout_parse_add_cctx(pctx, lc, active, last, index, zindex, full_width);
         } else {
             let members = json_find_array(node, c"c")?;
             if members.len() < 2 {
@@ -859,6 +916,15 @@ unsafe fn layout_construct(
         if (*pctx).cctxs.is_empty() {
             layout_set_static_cause((*pctx).cause.as_deref_mut(), c"no panes".as_ptr());
             return -(1 as ::core::ffi::c_int);
+        }
+        if let Some(error) = (*pctx)
+            .scrolling
+            .and_then(|_| super::scrolling::check_capacity((*pctx).cctxs.len()).err())
+        {
+            if let Some(cause) = (*pctx).cause.as_deref_mut() {
+                *cause = Some(error);
+            }
+            return -1;
         }
         if layout_parse_ctx_check_indexes(pctx) == 0 {
             return -(1 as ::core::ffi::c_int);
@@ -972,6 +1038,7 @@ mod json_tests {
             let mut ctx = layout_parse_ctx {
                 version: -1,
                 num_active: 0,
+                scrolling: None,
                 root: None,
                 cause: Some(&mut cause),
                 cctxs: Vec::new(),
@@ -1048,7 +1115,7 @@ mod serialization_tests {
             floating.flags = LAYOUT_CELL_FLOATING;
             layout_cells_push_back(&mut *root, tiled);
             layout_cells_push_back(&mut *root, floating);
-            let result = layout_dump(&root, true).unwrap();
+            let result = layout_dump(&root, true, None).unwrap();
             let body = b"40x24,0,0";
             assert_eq!(
                 result.to_bytes(),
@@ -1056,7 +1123,7 @@ mod serialization_tests {
             );
             let mut floating = layout_create_cell();
             floating.flags = LAYOUT_CELL_FLOATING;
-            assert!(layout_dump(&floating, true).is_none());
+            assert!(layout_dump(&floating, true, None).is_none());
         }
     }
 }

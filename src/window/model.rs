@@ -58,6 +58,8 @@ pub struct window {
     pub(super) layout_root: Option<Box<layout_cell>>,
     pub(super) saved_layout_root: Option<Box<layout_cell>>,
     pub(super) old_layout: Option<std::ffi::CString>,
+    /// Visible sizing basis for a scrolling canvas (retained while zoomed).
+    pub(super) scrolling: Option<(u32, u32)>,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) manual_sx: u_int,
@@ -109,6 +111,7 @@ impl Default for window {
             layout_root: Default::default(),
             saved_layout_root: Default::default(),
             old_layout: Default::default(),
+            scrolling: None,
             sx: Default::default(),
             sy: Default::default(),
             manual_sx: Default::default(),

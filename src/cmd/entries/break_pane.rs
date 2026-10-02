@@ -253,7 +253,7 @@ unsafe fn cmd_break_pane_exec(
                 );
             }
             layout_close_pane(&pane_owner);
-            let (sx, sy) = source_window.size();
+            let (sx, sy) = source_window.sizing_size();
             let (xpixel, ypixel) = source_window.cell_size();
             let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
             let destination = std::rc::Rc::downgrade(&window);

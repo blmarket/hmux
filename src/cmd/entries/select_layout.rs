@@ -102,7 +102,6 @@ unsafe fn cmd_select_layout_exec(
         .window_handle()
         .expect("target window")
         .clone();
-    let client = cmdq_get_target_client(Some(&*item_handle.get()));
     let next = is_next || args_has(arguments, b'n') != 0;
     let previous = is_previous || args_has(arguments, b'p') != 0;
     let cycle = if next {
@@ -123,10 +122,7 @@ unsafe fn cmd_select_layout_exec(
     } else {
         None
     };
-    let legacy = client
-        .as_ref()
-        .is_some_and(|client| client.uses_legacy_layout_format());
-    let result = window.select_layout(name, restore, cycle, spread.as_ref(), legacy);
+    let result = window.select_layout(name, restore, cycle, spread.as_ref());
     window.release(c"cmd_select_layout");
     match result {
         Ok(()) => CMD_RETURN_NORMAL,

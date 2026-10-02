@@ -112,6 +112,9 @@ pub trait WindowPane {
     /// caller publishes membership or dispatches move/layout notifications.
     unsafe fn reparent(&self, window: &WindowRef);
     unsafe fn geometry(&self) -> (u32, u32, i32, i32);
+    unsafe fn scrolling_full_width(&self) -> bool;
+    /// Restore or change the preference before the Window arranges its layout.
+    unsafe fn set_scrolling_full_width(&self, full: bool);
     unsafe fn send_theme_update(&self);
     unsafe fn mark_theme_changed(&self);
     unsafe fn update_history_limit(&self, limit: u32);
@@ -1153,6 +1156,14 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         (pane.sx, pane.sy, pane.xoff, pane.yoff)
     }
 
+    unsafe fn scrolling_full_width(&self) -> bool {
+        (*self.get()).scrolling_full_width
+    }
+
+    unsafe fn set_scrolling_full_width(&self, full: bool) {
+        (*self.get()).scrolling_full_width = full;
+    }
+
     unsafe fn mouse_position(&self, mouse: &mouse_event, last: bool) -> Option<(u32, u32)> {
         let (width, height, xoff, yoff) = self.geometry();
         let (mx, my) = if last {
@@ -1178,9 +1189,13 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn visible_cursor_in_window(&self) -> Option<(u32, u32)> {
         let pane = &*self.get();
         let screen = &*pane.screen_ptr();
+        // A cursor awaiting automatic wrap is stored one column past the
+        // grid, but is displayed on its final cell.
+        let cx = screen.cx.min(pane.sx.saturating_sub(1));
+        let cy = screen.cy.min(pane.sy.saturating_sub(1));
         (screen.mode & crate::src::shared::screen::MODE_CURSOR != 0).then_some((
-            (pane.xoff as u32).wrapping_add(screen.cx),
-            (pane.yoff as u32).wrapping_add(screen.cy),
+            (pane.xoff as i64 + cx as i64).max(0) as u32,
+            (pane.yoff as i64 + cy as i64).max(0) as u32,
         ))
     }
 

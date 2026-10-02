@@ -1,6 +1,6 @@
 # Scrolling layout implementation plan
 
-Status: requirements and implementation plan only. No implementation changes yet.
+Status: implemented and verified.
 
 ## Confirmed behavior
 
@@ -296,3 +296,37 @@ The confirmed behavior works through normal hmux commands. Pane geometry remains
 stable across creation, removal, focus changes, terminal resizing, and zoom.
 Existing layouts retain their behavior, and the tests
 exercise both scrolling behavior and its integration with the existing lifecycle.
+
+
+## Implementation evidence
+
+- `src/layout/scrolling.rs` maintains the strip using existing leaf ownership,
+  Window sizing policy, and Pane width preferences. Preset selection, creation,
+  removal, tiling, swapping, rotation, break/move, resizing, and zoom use that policy.
+- `src/tty.rs` follows pane bounds per client. Cursor placement uses window
+  coordinates before viewport translation, including a cursor waiting to wrap.
+- Startup defaults and requested bindings are installed in `src/window/mod.rs`,
+  `src/options_table.rs`, and `src/key_bindings.rs`. README documents the commands,
+  environment semantics, rounding, limits, and legacy serialization behavior.
+- `tests/scrolling_layout.rs` runs 15 isolated-server tests. Real PTY clients verify
+  keys and overrides, directory following, pane rendering and clipping, cursor
+  visibility, mouse selection and rejected dragging, terminal resizing, panning,
+  and clients of different widths. Command tests cover mixed widths, insertion,
+  removal, rejected mutations, pane exit, move/join/break/swap/rotate, floating-only
+  windows, zoom, JSON and legacy restoration, environment/cwd fallbacks, and limits.
+- Forced fork failure verifies complete layout/focus/zoom rollback. Control-client
+  notifications verify that an unchanged sizing basis does not resize the canvas
+  again. Unit tests check width arithmetic and minimum viewport movement.
+- Existing tests that created splits now use tiled insertion; the regex wrapping
+  fixture explicitly selects a traditional layout to retain its ten-cell pane.
+  No changes are made under `src/compat/`.
+
+Validation completed:
+
+- `cargo test --workspace --no-fail-fast --quiet`: **833 passed, 0 failed,
+  0 ignored**, including the 15 scrolling server/PTY tests and model-boundary checks.
+- `cargo build --bin hmux`: passed.
+- `rustfmt --edition 2021 --config skip_children=true` on changed Rust files and
+  `git diff --check`: passed.
+- Final diff review: no changes under `src/compat/`; existing explicit lifecycle
+  operations and model trait boundaries retained.

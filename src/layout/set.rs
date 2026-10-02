@@ -20,7 +20,7 @@ use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 
 use crate::src::window_pane::WindowPane as _;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -28,7 +28,7 @@ pub struct C2RustUnnamed_35 {
     pub name: &'static CStr,
     pub arrange: Option<fn(&WindowRef)>,
 }
-static layout_sets: [C2RustUnnamed_35; 7] = {
+static layout_sets: [C2RustUnnamed_35; 8] = {
     [
         C2RustUnnamed_35 {
             name: c"even-horizontal",
@@ -58,102 +58,84 @@ static layout_sets: [C2RustUnnamed_35; 7] = {
             name: c"tiled",
             arrange: Some(layout_set_tiled_callback),
         },
+        C2RustUnnamed_35 {
+            name: c"scrolling",
+            arrange: None,
+        },
     ]
 };
-pub unsafe fn layout_set_lookup(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    let mut i: u_int = 0;
-    let mut matched: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
+pub(crate) const SCROLLING_LAYOUT: u32 = 7;
+
+pub unsafe fn layout_set_lookup(name: *const ::core::ffi::c_char) -> i32 {
+    let name = CStr::from_ptr(name).to_bytes();
+    if let Some(index) = layout_sets
+        .iter()
+        .position(|layout| layout.name.to_bytes() == name)
     {
-        if strcmp(layout_sets[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
-            return i as ::core::ffi::c_int;
-        }
-        i = i.wrapping_add(1);
+        return index as i32;
     }
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-    {
-        if strncmp(layout_sets[i as usize].name.as_ptr(), name, strlen(name))
-            == 0 as ::core::ffi::c_int
-        {
-            if matched != -(1 as ::core::ffi::c_int) {
-                return -(1 as ::core::ffi::c_int);
-            }
-            matched = i as ::core::ffi::c_int;
-        }
-        i = i.wrapping_add(1);
+    let mut matches = layout_sets
+        .iter()
+        .enumerate()
+        .filter(|(_, layout)| layout.name.to_bytes().starts_with(name));
+    match (matches.next(), matches.next()) {
+        (Some((index, _)), None) => index as i32,
+        _ => -1,
     }
-    matched
 }
-pub unsafe fn layout_set_select(w_owner: &WindowRef, mut layout: u_int) -> u_int {
-    if layout as usize
-        > (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-            .wrapping_sub(1_usize)
-    {
-        layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-            .wrapping_sub(1_usize) as u_int;
-    }
-    if layout_sets[layout as usize].arrange.is_some() {
-        layout_sets[layout as usize]
-            .arrange
-            .expect("non-null function pointer")(w_owner);
-    }
-    w_owner.remember_layout_preset(layout as i32);
-    layout
-}
-pub unsafe fn layout_set_next(w_owner: &WindowRef) -> u_int {
-    let mut layout: u_int = 0;
-    if w_owner.last_layout_preset() == -(1 as ::core::ffi::c_int) {
-        layout = 0 as u_int;
+
+pub unsafe fn layout_set_select(window: &WindowRef, layout: u32) -> Result<u32, CString> {
+    let layout = layout.min(layout_sets.len() as u32 - 1);
+    let size = window.sizing_size();
+    let leaving_scrolling = window.is_scrolling() && layout != SCROLLING_LAYOUT;
+    if layout == SCROLLING_LAYOUT {
+        let maximum = crate::src::shared::window::WINDOW_MAXIMUM as u32;
+        let basis = (size.0.clamp(1, maximum), size.1.clamp(1, maximum));
+        super::scrolling::arrange(window, basis, true)?;
+        layout_fix_panes(window, None);
     } else {
-        layout = (w_owner.last_layout_preset() + 1 as ::core::ffi::c_int) as u_int;
-        if layout as usize
-            > (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
-                .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-                .wrapping_sub(1_usize)
-        {
-            layout = 0 as u_int;
-        }
-    }
-    if layout_sets[layout as usize].arrange.is_some() {
+        // Leave the previous policy before another preset fixes pane geometry.
+        window.set_layout_size(size.0, size.1, None);
         layout_sets[layout as usize]
             .arrange
-            .expect("non-null function pointer")(w_owner);
+            .expect("ordinary layout callback")(window);
     }
-    w_owner.remember_layout_preset(layout as i32);
-    layout
+    if leaving_scrolling
+        && window
+            .pane_snapshot()
+            .iter()
+            .filter(|pane| !pane.is_floating())
+            .count()
+            == 1
+    {
+        // Traditional presets leave a lone pane alone; expand the half-width
+        // scrolling leaf to the ordinary window geometry on this transition.
+        super::layout_resize(window, size.0, size.1);
+    }
+    window.remember_layout_preset(layout as i32);
+    Ok(layout)
 }
-pub unsafe fn layout_set_previous(w_owner: &WindowRef) -> u_int {
-    let mut layout: u_int = 0;
-    if w_owner.last_layout_preset() == -(1 as ::core::ffi::c_int) {
-        layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-            .wrapping_sub(1_usize) as u_int;
+
+pub unsafe fn layout_set_next(window: &WindowRef) -> Result<u32, CString> {
+    let previous = window.last_layout_preset();
+    let layout = if previous < 0 {
+        0
     } else {
-        layout = w_owner.last_layout_preset() as u_int;
-        if layout == 0 as u_int {
-            layout = (::core::mem::size_of::<[C2RustUnnamed_35; 7]>() as usize)
-                .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
-                .wrapping_sub(1_usize) as u_int;
-        } else {
-            layout = layout.wrapping_sub(1);
-        }
-    }
-    if layout_sets[layout as usize].arrange.is_some() {
-        layout_sets[layout as usize]
-            .arrange
-            .expect("non-null function pointer")(w_owner);
-    }
-    w_owner.remember_layout_preset(layout as i32);
-    layout
+        (previous as u32 + 1) % layout_sets.len() as u32
+    };
+    layout_set_select(window, layout)
 }
+
+pub unsafe fn layout_set_previous(window: &WindowRef) -> Result<u32, CString> {
+    let previous = window.last_layout_preset();
+    let layout = if previous <= 0 {
+        layout_sets.len() as u32 - 1
+    } else {
+        previous as u32 - 1
+    };
+    layout_set_select(window, layout)
+}
+
 // Detached leaves remain owned throughout preset reconstruction. Resolve their
 // IDs here rather than reaching through Pane into the Window's old tree.
 fn layout_set_leaf(leaves: &mut [Box<layout_cell>], id: *mut layout_cell) -> &mut layout_cell {
@@ -274,7 +256,7 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
         layout_print_cell(root, c"layout_set_even".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    w_owner.set_layout_size(layout_sx, layout_sy, None);
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -488,7 +470,7 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
         layout_print_cell(root, c"layout_set_main_h".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    w_owner.set_layout_size(layout_sx, layout_sy, None);
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -675,7 +657,7 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
         layout_print_cell(root, c"layout_set_main_h_mirrored".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    w_owner.set_layout_size(layout_sx, layout_sy, None);
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -862,7 +844,7 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
         layout_print_cell(root, c"layout_set_main_v".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    w_owner.set_layout_size(layout_sx, layout_sy, None);
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -1049,7 +1031,7 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
         layout_print_cell(root, c"layout_set_main_v_mirrored".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    w_owner.set_layout_size(layout_sx, layout_sy, None);
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -1263,7 +1245,7 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
         layout_print_cell(root, c"layout_set_tiled".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    w_owner.set_layout_size(layout_sx, layout_sy, None);
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),

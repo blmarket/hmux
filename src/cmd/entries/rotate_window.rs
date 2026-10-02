@@ -67,9 +67,27 @@ unsafe fn cmd_rotate_window_panes(
     down: bool,
     mut resize: impl FnMut(&Rc<UnsafeCell<window_pane>>, u32, u32),
 ) -> Rc<UnsafeCell<window_pane>> {
-    let moved = window
-        .step_pane(crate::src::window::PaneOrder::Index, None, down)
-        .expect("rotation window has panes");
+    let scrolling = window.is_scrolling();
+    let step = |from: Option<&Rc<UnsafeCell<window_pane>>>, backwards| {
+        let mut next = window.step_pane(
+            crate::src::window::PaneOrder::Index,
+            from.map(Rc::downgrade).as_ref(),
+            backwards,
+        );
+        while scrolling && next.as_ref().is_some_and(|pane| pane.is_floating()) {
+            next = window.step_pane(
+                crate::src::window::PaneOrder::Index,
+                next.as_ref().map(Rc::downgrade).as_ref(),
+                backwards,
+            );
+        }
+        next
+    };
+    let Some(moved) = step(None, down) else {
+        return window
+            .active_pane()
+            .expect("rotation window has an active pane");
+    };
     {
         let mut order = window.borrow_pane_order_mut(crate::src::window::PaneOrder::Index);
         let observer = Rc::downgrade(&moved);
@@ -82,16 +100,8 @@ unsafe fn cmd_rotate_window_panes(
     }
     let saved_cell = moved.layout_identity(false);
     let (saved_sx, saved_sy, saved_x, saved_y) = moved.geometry();
-    let mut cursor = window
-        .step_pane(crate::src::window::PaneOrder::Index, None, !down)
-        .expect("rotation window has panes");
-    let next = |pane: &Rc<UnsafeCell<window_pane>>| {
-        window.step_pane(
-            crate::src::window::PaneOrder::Index,
-            Some(&Rc::downgrade(pane)),
-            !down,
-        )
-    };
+    let mut cursor = step(None, !down).expect("rotation has a tiled pane");
+    let next = |pane: &Rc<UnsafeCell<window_pane>>| step(Some(pane), !down);
     while let Some(neighbor) = next(&cursor) {
         let cell = neighbor.layout_identity(false);
         let (sx, sy, x, y) = neighbor.geometry();
@@ -104,15 +114,12 @@ unsafe fn cmd_rotate_window_panes(
     cursor.set_layout_offset(saved_x, saved_y);
     resize(&cursor, saved_sx, saved_sy);
     let active = window.active_pane();
-    let selected = active.as_ref().and_then(|pane| {
-        window.step_pane(
-            crate::src::window::PaneOrder::Index,
-            Some(&Rc::downgrade(pane)),
-            down,
-        )
-    });
+    if scrolling && active.as_ref().is_some_and(|pane| pane.is_floating()) {
+        return active.unwrap();
+    }
+    let selected = active.as_ref().and_then(|pane| step(Some(pane), down));
     selected
-        .or_else(|| window.step_pane(crate::src::window::PaneOrder::Index, None, down))
+        .or_else(|| step(None, down))
         .expect("rotation window has an active candidate")
 }
 
@@ -133,6 +140,9 @@ unsafe fn cmd_rotate_window_exec(
             cmd_rotate_window_panes(&window_owner, args_has(args, b'D') != 0, |pane, sx, sy| {
                 pane.resize(sx, sy)
             });
+        if window_owner.is_scrolling() {
+            crate::src::layout::layout_fix_panes(&window_owner, None);
+        }
         std::rc::Rc::clone(&(window_owner)).select_pane(&selected_pane, true);
         cmd_find_from_winlink_pane(
             &mut *current.current.borrow_mut(),

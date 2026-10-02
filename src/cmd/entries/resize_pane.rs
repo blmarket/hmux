@@ -40,12 +40,12 @@ pub static cmd_resize_pane_entry: cmd_entry = {
         name: c"resize-pane",
         alias: Some(c"resizep"),
         args: args_parse {
-            template: c"D::L::MR::Tt:U::x:y:Z",
+            template: c"D::L::MR::Tt:U::Wx:y:Z",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-MTZ] [-D lines] [-L columns] [-R columns] [-U lines] [-x width] [-y height] [-t target-pane]",
+        usage: c"[-MTWZ] [-D lines] [-L columns] [-R columns] [-U lines] [-x width] [-y height] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -77,6 +77,36 @@ unsafe fn cmd_resize_pane_exec(
         .expect("resize target window");
     let mut layout_owner = None;
     let result = (|| {
+        if args_has(args, b'W') != 0 {
+            if args_count(args) != 0 || b"DLMRTUxyZ".iter().any(|flag| args_has(args, *flag) != 0) {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"-W cannot be combined with other resize operations")
+                });
+                return CMD_RETURN_ERROR;
+            }
+            return match crate::src::layout::scrolling::toggle(&original_window, &pane_owner) {
+                Ok(()) => CMD_RETURN_NORMAL,
+                Err(error) => {
+                    cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
+                    CMD_RETURN_ERROR
+                }
+            };
+        }
+        if original_window.is_scrolling()
+            && original_window
+                .pane_layout_cell(
+                    &std::rc::Rc::downgrade(&pane_owner),
+                    crate::src::window::LayoutView::Unzoomed,
+                )
+                .is_some_and(|cell| !cell.is_floating())
+            && (b"DLMRUxy".iter().any(|flag| args_has(args, *flag) != 0)
+                || (args_has(args, b'Z') == 0 && args_has(args, b'T') == 0))
+        {
+            cmdq_error(item_handle, |out| {
+                out.write_all(b"cannot resize a scrolling pane; use resize-pane -W to toggle width")
+            });
+            return CMD_RETURN_ERROR;
+        }
         let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
         let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut argval: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -349,6 +379,20 @@ unsafe fn cmd_resize_pane_mouse_update(
     }
     let pane_owner = mouse_pane_owner.as_ref().expect("mouse pane");
     if !pane_owner.is_floating() {
+        let window = pane_owner
+            .window_observer()
+            .upgrade()
+            .expect("mouse pane window");
+        let scrolling = window.is_scrolling();
+        window.release(c"mouse resize policy");
+        if scrolling {
+            cmdq_error(item_handle, |out| {
+                out.write_all(
+                    b"cannot drag a scrolling pane border; use resize-pane -W to toggle width",
+                )
+            });
+            return CMD_RETURN_ERROR;
+        }
         c.as_ref()
             .expect("live client")
             .borrow_terminal_mut()

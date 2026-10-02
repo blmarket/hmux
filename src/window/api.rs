@@ -296,6 +296,10 @@ pub trait Window {
         report_error: impl FnOnce(&CStr),
     ) -> Result<Rc<UnsafeCell<window_pane>>, CString>;
     unsafe fn size(&self) -> (u32, u32);
+    /// Requested visible dimensions, which can be smaller than the canvas.
+    unsafe fn sizing_size(&self) -> (u32, u32);
+    /// The policy remains active while its layout is temporarily zoomed.
+    unsafe fn is_scrolling(&self) -> bool;
     unsafe fn manual_size(&self) -> (u32, u32);
     /// Select manual sizing and record both requested dimensions together.
     unsafe fn set_manual_size(&self, sx: u32, sy: u32);
@@ -306,19 +310,18 @@ pub trait Window {
     unsafe fn cell_size(&self) -> (u32, u32);
     unsafe fn is_zoomed(&self) -> bool;
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32);
-    /// Adopt a parsed layout's dimensions without resizing the previous tree
-    /// or firing resize events. Preserve the terminal cell's pixel dimensions.
-    unsafe fn set_layout_size(&self, sx: u32, sy: u32);
+    /// Adopt canvas dimensions and the optional scrolling sizing basis without
+    /// reshaping the tree or firing resize events. Preserve pixel dimensions.
+    unsafe fn set_layout_size(&self, sx: u32, sy: u32, scrolling: Option<(u32, u32)>);
     /// Preserve command precedence: cycle, spread, then named/saved layout.
-    /// `cycle` is -1 (previous), 0, or 1 (next). `legacy_format` preserves the
-    /// attached control client's old custom-layout serialization format.
+    /// `cycle` is -1 (previous), 0, or 1 (next). Saved layouts always retain
+    /// policy metadata, independently of the client's output format.
     unsafe fn select_layout(
         &self,
         name: Option<&CStr>,
         restore_previous: bool,
         cycle: i32,
         spread: Option<&Rc<UnsafeCell<window_pane>>>,
-        legacy_format: bool,
     ) -> Result<(), CString>;
     unsafe fn zoom(&self, pane: &Rc<UnsafeCell<window_pane>>) -> i32;
     unsafe fn unzoom(&self, notify: bool) -> i32;
@@ -512,7 +515,11 @@ impl Window for WindowRef {
     }
     unsafe fn layout_string(&self, view: LayoutView, legacy: bool) -> Option<CString> {
         let root = self.borrow_layout_root(view)?;
-        layout_dump(root, legacy)
+        layout_dump(
+            root,
+            legacy,
+            self.is_scrolling().then(|| self.sizing_size()),
+        )
     }
     unsafe fn pane_layout_cell(
         &self,
@@ -953,6 +960,11 @@ impl Window for WindowRef {
             context.layout.is_none(),
             "layout cells must stay inside the window operation"
         );
+        if self.is_scrolling() && context.flags & crate::src::shared::spawn::SPAWN_SPLIT != 0 {
+            let error = c"cannot split a scrolling layout; use new-pane -L".to_owned();
+            report_error(&error);
+            return Err(error);
+        }
         let item = context
             .item
             .upgrade()
@@ -985,6 +997,13 @@ impl Window for WindowRef {
                 return Err(error);
             }
         }
+        // Successful insertion follows the requested zoom flags. Failure must
+        // restore the view that existed before reserving the scrolling cell.
+        let failed_zoom = if self.is_scrolling() {
+            window_zoomed_pane(&*self.get())
+        } else {
+            None
+        };
         let layout = if context.flags & SPAWN_FLOATING != 0 {
             layout_get_floating_cell(&item, arguments, lines, self, &pane, context.flags)
         } else {
@@ -996,6 +1015,9 @@ impl Window for WindowRef {
                 report_error(&error);
                 if restore_zoom {
                     window_pop_zoom(self);
+                }
+                if let Some(pane) = failed_zoom.as_ref() {
+                    window_zoom(pane);
                 }
                 return Err(error);
             }
@@ -1016,11 +1038,21 @@ impl Window for WindowRef {
             if restore_zoom || context.flags & SPAWN_FLOATING == 0 {
                 window_pop_zoom(self);
             }
+            if let Some(pane) = failed_zoom.as_ref() {
+                window_zoom(pane);
+            }
             error
         })
     }
     unsafe fn size(&self) -> (u32, u32) {
         ((*self.get()).sx, (*self.get()).sy)
+    }
+    unsafe fn sizing_size(&self) -> (u32, u32) {
+        let state = &*self.get();
+        state.scrolling.unwrap_or((state.sx, state.sy))
+    }
+    unsafe fn is_scrolling(&self) -> bool {
+        (*self.get()).scrolling.is_some()
     }
     unsafe fn manual_size(&self) -> (u32, u32) {
         let state = &*self.get();
@@ -1068,7 +1100,8 @@ impl Window for WindowRef {
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32) {
         resize_window(self, sx, sy, xpixel, ypixel);
     }
-    unsafe fn set_layout_size(&self, sx: u32, sy: u32) {
+    unsafe fn set_layout_size(&self, sx: u32, sy: u32, scrolling: Option<(u32, u32)>) {
+        (*self.get()).scrolling = scrolling;
         window_resize(self, sx, sy, -1, -1);
     }
     unsafe fn select_layout(
@@ -1077,18 +1110,24 @@ impl Window for WindowRef {
         restore_previous: bool,
         cycle: i32,
         spread: Option<&Rc<UnsafeCell<window_pane>>>,
-        legacy_format: bool,
     ) -> Result<(), CString> {
         assert!((-1..=1).contains(&cycle), "layout cycle direction");
-        if self.unzoom(true) == 0 {
-            server_redraw_window(self);
+        if self.is_scrolling() && cycle == 0 && spread.is_some() {
+            return Err(
+                c"cannot spread a scrolling layout; use resize-pane -W to toggle width".to_owned(),
+            );
         }
-        let new_layout = self.layout_string(LayoutView::Visible, legacy_format);
+        let new_layout = self.layout_string(LayoutView::Unzoomed, false);
         let old_layout = window_replace_old_layout(self, new_layout);
+        if cycle != 0 || spread.is_some() {
+            if self.unzoom(true) == 0 {
+                server_redraw_window(self);
+            }
+        }
         if cycle > 0 {
-            layout_set_next(self);
+            layout_set_next(self)?;
         } else if cycle < 0 {
-            layout_set_previous(self);
+            layout_set_previous(self)?;
         } else if let Some(pane) = spread {
             assert!(
                 window_has_pane(&*self.get(), &Rc::downgrade(pane)),
@@ -1111,7 +1150,10 @@ impl Window for WindowRef {
                 })
             };
             if preset != -1 {
-                layout_set_select(self, preset as u32);
+                if self.unzoom(true) == 0 {
+                    server_redraw_window(self);
+                }
+                layout_set_select(self, preset as u32)?;
             } else if let Some(name) = requested {
                 let mut cause = None;
                 if layout_parse(self, name.as_ptr(), &mut cause) == -1 {

@@ -390,6 +390,10 @@ pub unsafe fn layout_fix_panes(
     window: &WindowRef,
     skip: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
 ) {
+    if window.is_scrolling() && !window.is_zoomed() {
+        super::scrolling::arrange(window, window.sizing_size(), false)
+            .expect("live scrolling layout fits signed coordinates");
+    }
     let mut changed = false;
     let mut cursor = window.next_pane(None);
     while let Some(pane) = cursor {
@@ -410,6 +414,9 @@ pub unsafe fn layout_fix_panes(
     }
     if changed {
         window.invalidate_scene();
+    }
+    if window.is_scrolling() {
+        crate::src::tty::tty_update_window_offset(window);
     }
 }
 pub unsafe fn layout_count_cells(
@@ -846,6 +853,12 @@ mod floating_clamp_tests {
     }
 }
 pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) {
+    if w_owner.is_scrolling() && !w_owner.is_zoomed() {
+        super::scrolling::arrange(w_owner, (sx, sy), false).expect("validated scrolling capacity");
+        layout_clamp_floating_panes(w_owner, sx, sy);
+        layout_fix_panes(w_owner, None);
+        return;
+    }
     let floating_root = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("layout root");
@@ -1128,6 +1141,9 @@ pub unsafe fn layout_resize_layout(
     change: i32,
     opposite: i32,
 ) -> bool {
+    if window.is_scrolling() {
+        return false;
+    }
     let exists = {
         let tree = window.borrow_layout_root(crate::src::window::LayoutView::Visible);
         tree.is_some_and(|root| root.find(id).is_some())
@@ -1677,6 +1693,10 @@ pub unsafe fn layout_split_pane(
     mut flags: ::core::ffi::c_int,
 ) -> Option<*mut layout_cell> {
     let window = wp_owner.window_observer().upgrade().expect("split window");
+    if window.is_scrolling() {
+        window.release(c"rejected scrolling split");
+        return None;
+    }
     let status = window.pane_border_status();
     let split_horizontal_minimum =
         wp_owner.split_minimum_width(window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS);
@@ -2081,6 +2101,10 @@ pub unsafe fn layout_spread_out(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<win
         .window_observer()
         .upgrade()
         .expect("spread pane window");
+    if window.is_scrolling() {
+        window.release(c"scrolling spread ignored");
+        return;
+    }
     let pane = std::rc::Rc::downgrade(wp_owner);
     let can_spread = {
         let mut tree = window.borrow_layout_root_mut();
@@ -2144,6 +2168,16 @@ pub unsafe fn layout_get_tiled_cell(
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut flags: ::core::ffi::c_int,
 ) -> Result<*mut layout_cell, std::ffi::CString> {
+    if w_owner.is_scrolling() {
+        if flags & SPAWN_SPLIT != 0 {
+            return Err(c"cannot split a scrolling layout; use new-pane -L".to_owned());
+        }
+        if b"fhvlpxyXY".iter().any(|flag| args_has(args, *flag) != 0) {
+            return Err(c"scrolling panes do not accept split geometry".to_owned());
+        }
+        w_owner.push_zoom(true, flags & SPAWN_ZOOM != 0);
+        return super::scrolling::insert(w_owner, wp_owner, flags & SPAWN_BEFORE != 0);
+    }
     let mut type_0: layout_type = LAYOUT_TOPBOTTOM;
     let mut curval: u_int = 0;
     let mut size: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -2623,6 +2657,26 @@ pub unsafe fn layout_tile_pane(
     window: &WindowRef,
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> bool {
+    if window.is_scrolling() {
+        let count = window
+            .pane_snapshot()
+            .iter()
+            .filter(|pane| !pane.is_floating())
+            .count();
+        if super::scrolling::check_capacity(count + 1).is_err() {
+            return false;
+        }
+        let id = pane.layout_identity(false).expect("tiling pane layout");
+        let mut cell = window
+            .borrow_layout_cell_mut(id)
+            .expect("tiling pane belongs to window");
+        if !cell.is_floating() {
+            return false;
+        }
+        cell.fg = cell.g;
+        cell.flags &= !LAYOUT_CELL_FLOATING;
+        return true;
+    }
     let (id, split_pane) = {
         let mut tree = window.borrow_layout_root_mut();
         let cell = tree

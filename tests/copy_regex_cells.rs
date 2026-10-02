@@ -136,6 +136,13 @@ fn regex_search_spans_wrapped_lines_in_both_directions() {
         "8",
         "-s",
         "copy-regex-wrap",
+        "sleep 30",
+    ]);
+    // This fixture needs an exact ten-cell pane, independently of startup layout.
+    server.command(&["select-layout", "even-horizontal"]);
+    server.command(&[
+        "respawn-pane",
+        "-k",
         "printf 'ABCDEFGHIJé漢XYZ\\n'; sleep 30",
     ]);
 

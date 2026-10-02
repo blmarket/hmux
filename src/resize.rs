@@ -416,7 +416,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         if now == 0 && changed != 0 && pending == (sx, sy) {
             changed = 0 as ::core::ffi::c_int;
         }
-    } else if now == 0 && changed != 0 && (w_owner).size().0 == sx && (w_owner).size().1 == sy {
+    } else if now == 0 && changed != 0 && w_owner.sizing_size() == (sx, sy) {
         changed = 0 as ::core::ffi::c_int;
     }
     if changed == 0 {

@@ -159,7 +159,8 @@ fn exercise_files(server: &Server, client: &Path) {
     let pane = server.success(
         client,
         &[
-            "split-window",
+            "new-pane",
+            "-L",
             "-d",
             "-I",
             "-P",

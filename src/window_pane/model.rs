@@ -13,6 +13,8 @@ pub struct window_pane {
     /// Nonowning cell identities; resolve only under the owning Window tree guard.
     pub(super) layout_cell: Option<*mut layout_cell>,
     pub(super) saved_layout_cell: Option<*mut layout_cell>,
+    /// A preference, independent of the rounded geometry and current layout.
+    pub(super) scrolling_full_width: bool,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) xoff: ::core::ffi::c_int,
@@ -93,6 +95,7 @@ impl Default for window_pane {
             options: Default::default(),
             layout_cell: Default::default(),
             saved_layout_cell: Default::default(),
+            scrolling_full_width: false,
             sx: Default::default(),
             sy: Default::default(),
             xoff: Default::default(),

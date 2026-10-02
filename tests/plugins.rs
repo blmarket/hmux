@@ -186,7 +186,7 @@ fn defaults_match_hmux_and_plugin_output_preserves_user_options() {
         server.run(&["show-options", "-gwv", "window-status-current-format"]),
         HMUX_STATUS
     );
-    assert_eq!(server.run(&["show-options", "-gv", "prefix"]), "C-b");
+    assert_eq!(server.run(&["show-options", "-gv", "prefix"]), "C-a");
     assert!(server
         .format(&pane, "#{E:window-status-format}")
         .contains("💲#[default] project"));
@@ -313,7 +313,8 @@ fn pane_loops_and_control_subscriptions_observe_cached_changes() {
     let first = server.pane(repo.to_str().unwrap());
     server.await_format(&first, "#{git_branch}", "main");
     let second = server.run(&[
-        "split-window",
+        "new-pane",
+        "-L",
         "-d",
         "-t",
         &first,

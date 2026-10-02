@@ -115,11 +115,11 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
-    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
-    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_BOTTOM_FLOATING,
-    PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING, PANE_STYLECHANGED,
-    PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
+    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF, PANE_MINIMUM,
+    PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE,
+    PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM,
+    PANE_STATUS_BOTTOM_FLOATING, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING,
+    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
@@ -381,7 +381,8 @@ unsafe fn window_create(
     (*w).z_index = window_panes::default();
     (*w).last_panes = window_pane_history::default();
     (*w).set_active(None);
-    (*w).lastlayout = -(1 as ::core::ffi::c_int);
+    (*w).lastlayout = crate::src::layout::set::SCROLLING_LAYOUT as i32;
+    (*w).scrolling = Some((sx, sy));
     (*w).layout_root = None;
     (*w).sx = sx;
     (*w).sy = sy;
@@ -579,6 +580,13 @@ unsafe fn window_set_active_pane(
         pane_history_push(&mut (*w).last_panes, Rc::downgrade(previous));
     }
     (*w).active = observer;
+    if window.is_scrolling() {
+        let mut cursor = clients.first();
+        while let Some(client) = cursor {
+            client.reset_pan(Some(window));
+            cursor = clients.next(&client);
+        }
+    }
     pane.on_selected(true);
     if options_get_number(global_options, c"focus-events") != 0 {
         if let Some(previous) = previous.as_ref() {
@@ -765,7 +773,9 @@ unsafe fn window_zoom(pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
 
 unsafe fn window_zoom_in(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
     let w = window.get();
-    if (*w).flags & WINDOW_ZOOMED != 0 || window_count_panes(&*w, 1) == 1 {
+    if (*w).flags & WINDOW_ZOOMED != 0
+        || (window_count_panes(&*w, 1) == 1 && !window.is_scrolling())
+    {
         return -1;
     }
     let active = (*w).active_pane();
@@ -783,6 +793,19 @@ unsafe fn window_zoom_in(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>)
         owner.save_layout_for_zoom();
     }
     (*w).saved_layout_root = (*w).layout_root.take();
+    (*w).flags |= WINDOW_ZOOMED;
+    if let Some((sx, sy)) = (*w).scrolling {
+        let minimum_width =
+            pane.minimum_layout_width(window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS);
+        let minimum_height = PANE_MINIMUM as u32 + u32::from(window.pane_border_status() != 0);
+        window_resize(
+            window,
+            sx.max(minimum_width),
+            sy.max(minimum_height),
+            -1,
+            -1,
+        );
+    }
     layout_init(window, pane);
     for owner in (*w).panes.snapshot() {
         let saved = owner.layout_identity(true).and_then(|id| {
@@ -812,7 +835,6 @@ unsafe fn window_zoom_in(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>)
         window_pane_z_remove(&mut *w, pane);
         window_pane_z_insert_back(&mut *w, pane);
     }
-    (*w).flags |= WINDOW_ZOOMED;
     events_fire_window(c"window-zoomed".as_ptr(), window.clone());
     events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
     (*w).invalidate_scene();

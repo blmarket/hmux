@@ -1922,11 +1922,17 @@ unsafe fn window_pane_find_left(
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff;
     if edge == 0 as ::core::ffi::c_int {
+        if window.is_scrolling() && !source.is_floating() {
+            return None;
+        }
         edge = width as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     }
     top = yoff;
     bottom = yoff + sy as ::core::ffi::c_int;
     for candidate in window.pane_snapshot() {
+        if window.is_scrolling() && !source.is_floating() && candidate.is_floating() {
+            continue;
+        }
         next = candidate.get();
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
         if !(next == wp) && !(xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge) {
@@ -1967,11 +1973,17 @@ unsafe fn window_pane_find_right(
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if edge >= width as ::core::ffi::c_int {
+        if window.is_scrolling() && !source.is_floating() {
+            return None;
+        }
         edge = 0 as ::core::ffi::c_int;
     }
     top = (*wp).yoff;
     bottom = (*wp).yoff + (*wp).sy as ::core::ffi::c_int;
     for candidate in window.pane_snapshot() {
+        if window.is_scrolling() && !source.is_floating() && candidate.is_floating() {
+            continue;
+        }
         next = candidate.get();
         (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
         if !(next == wp) && !(xoff != edge) {

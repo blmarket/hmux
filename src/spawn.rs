@@ -245,7 +245,7 @@ pub(crate) unsafe fn prepare_respawn_window(
         window
             .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
             .push_back(source);
-        let (sx, sy) = window.size();
+        let (sx, sy) = window.sizing_size();
         source_pane_owner.resize(sx, sy);
         layout_init(&window, &source_pane_owner);
         window.select_respawned_pane(&source_pane_owner);

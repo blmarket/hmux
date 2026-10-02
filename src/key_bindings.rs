@@ -198,8 +198,8 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
 }
 
 pub unsafe fn key_bindings_init() {
-    static defaults: [&CStr; 308] = [
-        c"bind -N 'Send the prefix key' C-b { send-prefix }",
+    static defaults: [&CStr; 310] = [
+        c"bind -N 'Send the prefix key' C-a { send-prefix }",
         c"bind -N 'Rotate through the panes' C-o { rotate-window }",
         c"bind -N 'Suspend the current client' C-z { suspend-client }",
         c"bind -N 'Select next layout' Space { next-layout }",
@@ -234,16 +234,18 @@ pub unsafe fn key_bindings_init() {
         c"bind -N 'List key bindings' ? { list-keys -N }",
         c"bind -N 'Choose and detach a client from a list' D { choose-client -Z }",
         c"bind -N 'Spread panes out evenly' E { select-layout -E }",
-        c"bind -N 'Switch to the last client' L { switch-client -l }",
+        c"bind -N 'Move the active pane right' L { swap-pane -D }",
         c"bind -N 'Clear the marked pane' M { select-pane -M }",
         c"bind -N 'Change the pane title' T { command-prompt -I'#T' { select-pane -T '%%' } }",
         c"bind -N 'Enter copy mode' [ { copy-mode }",
         c"bind -N 'Paste the most recent paste buffer' ] { paste-buffer -p }",
-        c"bind -N 'Create a new window' c { new-window }",
+        c"bind -N 'Insert a pane in the current directory' c { new-pane -L -c '#{pane_current_path}' }",
         c"bind -N 'Detach the current client' d { detach-client }",
-        c"bind -N 'Search for a pane' f { command-prompt { find-window -Z -- '%%' } }",
+        c"bind -N 'Toggle half or full pane width' f { resize-pane -W }",
+        c"bind -N 'Focus the pane to the left' h { select-pane -L }",
+        c"bind -N 'Move the active pane left' H { swap-pane -U }",
         c"bind -N 'Display window information' i { display-message }",
-        c"bind -N 'Select the previously current window' l { last-window }",
+        c"bind -N 'Focus the pane to the right' l { select-pane -R }",
         c"bind -N 'Toggle the marked pane' m { select-pane -m }",
         c"bind -N 'Select the next window' n { next-window }",
         c"bind -N 'Select the next pane' o { select-pane -t:.+ }",
@@ -256,7 +258,7 @@ pub unsafe fn key_bindings_init() {
         c"bind -N 'Switch to a window' Tab { new-pane -E -x75% -y30% -X0 -Y0; move-pane -P bottom-centre; switch-mode -wk }",
         c"bind -N 'Switch to a session' BTab { new-pane -E -x75% -y30% -X0 -Y0; move-pane -P bottom-centre; switch-mode -sk }",
         c"bind -N 'Choose a window from a list' w { choose-tree -Zw }",
-        c"bind -N 'Kill the active pane' x { confirm-before -p\"kill-pane #P? (y/n)\" kill-pane }",
+        c"bind -N 'Kill the active pane' x { kill-pane }",
         c"bind -N 'Zoom the active pane' z { resize-pane -Z }",
         c"bind -N 'Swap the active pane with the pane above' '{' { swap-pane -U }",
         c"bind -N 'Swap the active pane with the pane below' '}' { swap-pane -D }",

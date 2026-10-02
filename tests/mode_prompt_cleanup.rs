@@ -149,7 +149,7 @@ fn check_destruction(automatic: bool) {
         server.command(&["new-session", "-d", "-s", "keep", "sleep 60"]);
         server.command(&["new-session", "-d", "-s", "mode", "sleep 60"]);
         server.command(&["new-window", "-d", "-t", "mode:1", "sleep 60"]);
-        server.command(&["split-window", "-d", "-t", "mode:0", "sleep 60"]);
+        server.command(&["new-pane", "-L", "-d", "-t", "mode:0", "sleep 60"]);
         let mut client = AttachedClient::new(&server);
         client.read_until(&[b"[mode]"]);
         let output = server.command(&["list-clients", "-F", "#{client_tty}"]);

@@ -3038,22 +3038,16 @@ unsafe fn server_client_prompt_cursor(
     cursor.mode &= !MODE_CURSOR;
     let tty_window_view { ox, oy, sx, sy, .. } = owner.terminal_view();
     if px < ox as ::core::ffi::c_int
-        || px > ox.wrapping_add(sx) as ::core::ffi::c_int
+        || px >= ox.saturating_add(sx) as ::core::ffi::c_int
         || py < oy as ::core::ffi::c_int
-        || py > oy.wrapping_add(sy) as ::core::ffi::c_int
+        || py >= oy.saturating_add(sy) as ::core::ffi::c_int
     {
         return Some(cursor);
     }
     cursor.cx = (px as u_int).wrapping_sub(ox);
     cursor.cy = (py as u_int).wrapping_sub(oy);
-    window_visible_ranges(
-        Some(pane),
-        cursor.cx as ::core::ffi::c_int,
-        cursor.cy as ::core::ffi::c_int,
-        1 as u_int,
-        &mut r,
-    );
-    if window_position_is_visible(&r, cursor.cx) {
+    window_visible_ranges(Some(pane), px, py, 1 as u_int, &mut r);
+    if window_position_is_visible(&r, px as u32) {
         if status_at_line(owner) == 0 as ::core::ffi::c_int {
             cursor.cy = cursor.cy.wrapping_add(status_line_size(owner));
         }
@@ -3181,7 +3175,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             if prompt == 0 {
                 let s = s.expect("active pane screen mode");
                 let pane = active_owner.as_ref().expect("active pane");
-                let (pane_width, _, pane_x, pane_y) = pane.geometry();
+                let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
                 let scrollbar = &pane;
                 cursor = 0 as ::core::ffi::c_int;
                 pane_mode = active_owner
@@ -3190,24 +3184,24 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                     .screen_mode(false)
                     .mode;
                 let tty_window_view { ox, oy, sx, sy, .. } = tty_window_offset(&*tty);
-                if pane_x + s.cx as ::core::ffi::c_int >= ox as ::core::ffi::c_int
-                    && pane_x + s.cx as ::core::ffi::c_int
-                        <= ox as ::core::ffi::c_int + sx as ::core::ffi::c_int
-                    && pane_y + s.cy as ::core::ffi::c_int >= oy as ::core::ffi::c_int
-                    && pane_y + s.cy as ::core::ffi::c_int
-                        <= oy as ::core::ffi::c_int + sy as ::core::ffi::c_int
+                let window_x = pane_x + s.cx.min(pane_width.saturating_sub(1)) as i32;
+                let window_y = pane_y + s.cy.min(pane_height.saturating_sub(1)) as i32;
+                if window_x >= ox as i32
+                    && window_x < (ox + sx) as i32
+                    && window_y >= oy as i32
+                    && window_y < (oy + sy) as i32
                 {
                     cursor = 1 as ::core::ffi::c_int;
-                    cx = (pane_x + s.cx as ::core::ffi::c_int - ox as ::core::ffi::c_int) as u_int;
-                    cy = (pane_y + s.cy as ::core::ffi::c_int - oy as ::core::ffi::c_int) as u_int;
+                    cx = (window_x - ox as i32) as u32;
+                    cy = (window_y - oy as i32) as u32;
                     window_visible_ranges(
                         active_owner.as_ref(),
-                        cx as ::core::ffi::c_int,
-                        cy as ::core::ffi::c_int,
+                        window_x,
+                        window_y,
                         1 as u_int,
                         &mut r,
                     );
-                    if !window_position_is_visible(&r, cx) {
+                    if !window_position_is_visible(&r, window_x as u32) {
                         cursor = 0 as ::core::ffi::c_int;
                     }
                     if scrollbar.scrollbar_overlay() && scrollbar.scrollbar_visible() {

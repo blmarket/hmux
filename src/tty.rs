@@ -1052,6 +1052,37 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
         sy: tty.osy,
     }
 }
+// Move the viewport the minimum distance needed to reveal a pane. When a
+// client is narrower than the pane, follow its cursor within that pane instead.
+fn tty_follow_pane_axis(
+    previous: u32,
+    origin: i32,
+    length: u32,
+    visible: u32,
+    extent: u32,
+    cursor: Option<u32>,
+) -> u32 {
+    let limit = extent.saturating_sub(visible);
+    let start = (origin as i64).max(0).min(extent as i64) as u32;
+    let end = (origin as i64 + length as i64)
+        .max(start as i64)
+        .min(extent as i64) as u32;
+    if end - start <= visible {
+        return previous
+            .clamp(end.saturating_sub(visible), start)
+            .min(limit);
+    }
+    let mut offset = previous.clamp(start.min(limit), end.saturating_sub(visible).min(limit));
+    if let Some(cursor) = cursor {
+        if cursor < offset {
+            offset = cursor;
+        } else if cursor >= offset.saturating_add(visible) {
+            offset = cursor.saturating_add(1).saturating_sub(visible);
+        }
+    }
+    offset.min(limit)
+}
+
 unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     let session = owner.attached_session().upgrade().expect("live session");
     let link = session.current_winlink();
@@ -1062,9 +1093,9 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         .expect("current window");
     let (sx, sy) = window.size();
     let (tx, ty) = owner.terminal_size();
-    let height = ty.wrapping_sub(status_line_size(owner));
+    let height = ty.saturating_sub(status_line_size(owner)).max(1);
     if tx >= sx && height >= sy {
-        owner.reset_pan();
+        owner.reset_pan(None);
         return tty_window_view {
             bigger: false,
             ox: 0,
@@ -1081,6 +1112,39 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         sy: height,
     };
     if owner.apply_pan(&window, &mut view) {
+        return view;
+    }
+    if window.is_scrolling() && !window.is_zoomed() {
+        let old = tty_window_offset(owner.borrow_terminal());
+        view.ox = old.ox.min(sx.saturating_sub(view.sx));
+        view.oy = old.oy.min(sy.saturating_sub(view.sy));
+        if let Some(pane) = window.active_pane() {
+            let (mut x, y, mut width, height) = if pane.is_floating() {
+                pane.outer_geometry()
+            } else {
+                let Some(cell) = window.pane_layout_cell(
+                    &std::rc::Rc::downgrade(&pane),
+                    crate::src::window::LayoutView::Visible,
+                ) else {
+                    // Closing an active pane removes its cell before choosing
+                    // the successor. Focus selection will update the view again.
+                    return view;
+                };
+                let geometry = cell.g;
+                (geometry.xoff, geometry.yoff, geometry.sx, geometry.sy)
+            };
+            // Include adjacent separators when there is room for the pane and
+            // both borders. Full-width panes use the entire client for content.
+            if !pane.is_floating() && width.saturating_add(2) <= view.sx {
+                let left = u32::from(x > 0);
+                let right = u32::from((x as u32).saturating_add(width) < sx);
+                x -= left as i32;
+                width += left + right;
+            }
+            let cursor = pane.visible_cursor_in_window();
+            view.ox = tty_follow_pane_axis(old.ox, x, width, view.sx, sx, cursor.map(|c| c.0));
+            view.oy = tty_follow_pane_axis(old.oy, y, height, view.sy, sy, cursor.map(|c| c.1));
+        }
         return view;
     }
     if let Some((cx, cy)) = window
@@ -1103,7 +1167,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
             cy.wrapping_sub(view.sy).wrapping_add(1)
         };
     }
-    owner.reset_pan();
+    owner.reset_pan(None);
     view
 }
 pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
@@ -2274,6 +2338,31 @@ pub unsafe fn tty_clipboard_query(owner: &ClientRef) {
 #[cfg(test)]
 mod clipping_tests {
     use super::*;
+
+    #[test]
+    fn scrolling_follow_is_minimal_and_ignores_a_visible_panes_cursor() {
+        for previous in 0..160 {
+            for cursor in [40, 55, 78] {
+                assert_eq!(
+                    tty_follow_pane_axis(previous, 39, 41, 80, 200, Some(cursor)),
+                    previous.min(39)
+                );
+            }
+        }
+        assert_eq!(tty_follow_pane_axis(0, 119, 40, 80, 159, None), 79);
+        assert_eq!(tty_follow_pane_axis(79, 79, 41, 80, 159, None), 79);
+        assert_eq!(tty_follow_pane_axis(79, 39, 41, 80, 159, None), 39);
+        assert_eq!(tty_follow_pane_axis(39, 0, 40, 80, 159, None), 0);
+        assert_eq!(tty_follow_pane_axis(10, -5, 15, 20, 100, None), 0);
+        assert_eq!(tty_follow_pane_axis(90, 80, 80, 40, 200, Some(159)), 120);
+        assert_eq!(tty_follow_pane_axis(120, 80, 80, 40, 200, Some(80)), 80);
+        assert_eq!(tty_follow_pane_axis(7, 0, 1, 1, 1, Some(0)), 0);
+        assert_eq!(tty_follow_pane_axis(7, 0, 0, 0, 0, None), 0);
+        assert_eq!(
+            tty_follow_pane_axis(7, i32::MAX, u32::MAX, u32::MAX, u32::MAX, None),
+            0
+        );
+    }
 
     #[test]
     fn clipping_matches_tmux_at_viewport_edges_and_for_empty_regions() {

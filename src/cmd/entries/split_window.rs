@@ -138,6 +138,27 @@ unsafe fn cmd_split_window_exec(
     let result = (|| {
         let mut current_block: u64;
         let original_pane = (*target).pane_handle().expect("split target pane");
+        if original_window.is_scrolling() {
+            if std::ptr::eq(
+                cmd_get_entry(self_0.get_unchecked()),
+                &cmd_split_window_entry,
+            ) {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"cannot split a scrolling layout; use new-pane -L")
+                });
+                return CMD_RETURN_ERROR;
+            }
+            if args_has(args, b'L') != 0
+                && b"fhvlpxyXY".iter().any(|flag| args_has(args, *flag) != 0)
+            {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(
+                        b"scrolling panes start at half width; use resize-pane -W to toggle width",
+                    )
+                });
+                return CMD_RETURN_ERROR;
+            }
+        }
         let mut fs: cmd_find_state = cmd_find_state {
             flags: 0,
             s: Default::default(),

@@ -108,7 +108,8 @@ pub trait Client {
     unsafe fn terminal_feature_mask(&self) -> i32;
     unsafe fn record_terminal_type(&self, name: &CStr);
     unsafe fn set_control_size(&self, width: u32, height: u32);
-    unsafe fn reset_pan(&self);
+    /// Clear explicit panning, optionally only if it belongs to this Window.
+    unsafe fn reset_pan(&self, window: Option<&WindowRef>);
     /// Apply and clamp this window's explicit pan, if active, to a viewport.
     /// Window dimensions are read before borrowing Client state.
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool;
@@ -503,8 +504,11 @@ impl Client for ClientRef {
         crate::src::tty::tty_set_size(&raw mut (*self.get()).tty, width, height, 0, 0);
         (*self.get()).flags |= CLIENT_SIZECHANGED as u64;
     }
-    unsafe fn reset_pan(&self) {
-        (*self.get()).pan_window = Weak::new();
+    unsafe fn reset_pan(&self, window: Option<&WindowRef>) {
+        let state = &mut *self.get();
+        if window.is_none_or(|window| state.pan_window.ptr_eq(&Rc::downgrade(window))) {
+            state.pan_window = Weak::new();
+        }
     }
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
         let (sx, sy) = window.size();
@@ -541,15 +545,15 @@ impl Client for ClientRef {
             PanDirection::Right => {
                 state.pan_ox = state
                     .pan_ox
-                    .wrapping_add(amount)
-                    .min(width.wrapping_sub(state.tty.osx));
+                    .saturating_add(amount)
+                    .min(width.saturating_sub(state.tty.osx));
             }
             PanDirection::Up => state.pan_oy = state.pan_oy.saturating_sub(amount),
             PanDirection::Down => {
                 state.pan_oy = state
                     .pan_oy
-                    .wrapping_add(amount)
-                    .min(height.wrapping_sub(state.tty.osy));
+                    .saturating_add(amount)
+                    .min(height.saturating_sub(state.tty.osy));
             }
         }
     }

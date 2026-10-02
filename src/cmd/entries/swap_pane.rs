@@ -105,13 +105,47 @@ unsafe fn cmd_swap_pane_exec(
             cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
             return CMD_RETURN_ERROR;
         }
+        let scrolling_neighbor = if dst_window_owner.is_scrolling()
+            && !dst_pane_owner.is_floating()
+            && (args_has(args, b'U') != 0 || args_has(args, b'D') != 0)
+        {
+            let mut tiled = dst_window_owner.pane_snapshot();
+            tiled.retain(|pane| !pane.is_floating());
+            tiled.sort_by_key(|pane| {
+                dst_window_owner
+                    .pane_layout_cell(
+                        &Rc::downgrade(pane),
+                        crate::src::window::LayoutView::Unzoomed,
+                    )
+                    .map(|cell| cell.g.xoff)
+            });
+            let index = tiled
+                .iter()
+                .position(|pane| Rc::ptr_eq(pane, &dst_pane_owner))
+                .expect("swap target in strip");
+            let neighbor = if args_has(args, b'U') != 0 {
+                index.checked_sub(1)
+            } else {
+                index.checked_add(1)
+            };
+            let Some(neighbor) = neighbor.and_then(|index| tiled.get(index)).cloned() else {
+                return CMD_RETURN_NORMAL;
+            };
+            Some(neighbor)
+        } else {
+            None
+        };
         if std::rc::Rc::clone(&(dst_window_owner))
             .push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0)
             != 0
         {
             server_redraw_window(&(dst_window_owner));
         }
-        if args_has(args, 'D' as i32 as u_char) != 0 {
+        if let Some(neighbor) = scrolling_neighbor {
+            let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
+            previous.release(c"cmd_swap_pane_exec");
+            src_pane_owner = neighbor;
+        } else if args_has(args, 'D' as i32 as u_char) != 0 {
             if dst_pane_owner.is_floating() {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"cannot swap down on floating pane")

@@ -2,6 +2,7 @@
 
 mod core;
 pub mod custom;
+pub(crate) mod scrolling;
 pub mod set;
 
 // Preserve the established family API without glob exports.
