@@ -1,7 +1,7 @@
 use crate::src::shared::abi::*;
 use crate::src::shared::alerts::{ALERT_ANY, ALERT_OTHER, VISUAL_OFF};
 use crate::src::shared::input::INPUT_BUF_DEFAULT_SIZE;
-use crate::src::shared::key::MODEKEY_EMACS;
+use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX};
@@ -2444,7 +2444,7 @@ pub static options_table: [options_table_entry; 273] = [
             maximum: 0,
             choices: &options_table_mode_keys_list,
             default_str: None,
-            default_num: MODEKEY_EMACS as ::core::ffi::c_longlong,
+            default_num: MODEKEY_VI as ::core::ffi::c_longlong,
             default_arr: None,
             separator: None,
             pattern: None,
