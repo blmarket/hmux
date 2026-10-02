@@ -58,8 +58,7 @@ fn weak_observation_expires_on_destruction_and_cannot_follow_reused_id() {
         window_pane_tree_insert(&mut all_window_panes, owner.clone());
         let observed = resolve(PaneId(71)).unwrap();
         assert_eq!(observed.output_revision().unwrap(), 42);
-        let registry_owner =
-            window_pane_tree_remove(&mut all_window_panes, &mut *owner.get()).unwrap();
+        let registry_owner = window_pane_tree_remove(&mut all_window_panes, &owner).unwrap();
         (*owner.get()).flags |= PANE_DESTROYED;
         drop(registry_owner);
         assert!(observed.output_revision().is_err());
@@ -70,7 +69,7 @@ fn weak_observation_expires_on_destruction_and_cannot_follow_reused_id() {
         assert_eq!(resolve(PaneId(71)).unwrap().output_revision().unwrap(), 0);
         drop(window_pane_tree_remove(
             &mut all_window_panes,
-            &mut *replacement.get(),
+            &replacement,
         ));
         // Drop cannot retain pane storage: these observations only hold Weak.
         assert_eq!(Rc::strong_count(&owner), 1);

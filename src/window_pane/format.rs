@@ -381,7 +381,7 @@ unsafe fn format_cb_pane_fg(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    gc = tty_default_colours(&(*(wp)).observer.upgrade().expect("live window_pane")).0;
+    gc = tty_default_colours(format_pane_owner.as_ref().expect("live pane")).0;
     Some(colour_format(gc.fg))
 }
 
@@ -392,10 +392,7 @@ unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
         return Some(window_pane_printable_flags(
-            &(*(format_pane))
-                .observer
-                .upgrade()
-                .expect("live window_pane"),
+            format_pane_owner.as_ref().expect("live pane"),
         ));
     }
     None
@@ -448,7 +445,7 @@ unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
     if wp.is_null() {
         return None;
     }
-    gc = tty_default_colours(&(*(wp)).observer.upgrade().expect("live window_pane")).0;
+    gc = tty_default_colours(format_pane_owner.as_ref().expect("live pane")).0;
     Some(colour_format(gc.bg))
 }
 
@@ -1326,7 +1323,7 @@ unsafe fn format_cb_pane_index(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut idx: u_int = 0;
     if !format_pane.is_null()
-        && window_pane_index(&*format_pane)
+        && window_pane_index(format_pane_owner.as_ref().expect("live pane"))
             .map(|value| {
                 idx = value;
             })
@@ -1716,7 +1713,7 @@ unsafe fn format_cb_pane_z(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut idx: u_int = 0;
     if !format_pane.is_null()
-        && window_pane_zindex(&*format_pane)
+        && window_pane_zindex(format_pane_owner.as_ref().expect("live pane"))
             .map(|value| {
                 idx = value;
             })

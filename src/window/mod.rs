@@ -290,16 +290,12 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, mut old_name: *const ::core::
         idx: 0,
     };
     let mut ep = event_payload_create();
-    cmd_find_from_window(
-        &raw mut fs,
-        &(*(w)).observer.upgrade().expect("live window"),
-        0 as ::core::ffi::c_int,
-    );
+    cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_window(
         &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(w)).observer.upgrade().expect("live window"),
+        std::rc::Rc::clone(w_owner),
     );
     event_payload_set_string(
         &mut ep,
@@ -422,7 +418,7 @@ unsafe fn window_create(
     (*w).id = fresh0;
     windows_insert(&raw mut windows, &owner);
     (*w).creation_time = SystemTime::now();
-    window_update_activity(&(*(w)).observer.upgrade().expect("live window"));
+    window_update_activity(&owner);
     log_debug(format_args!(
         "{}: @{} create {}x{} ({}x{})",
         "window_create",
@@ -1336,8 +1332,10 @@ impl Drop for window {
         // Stack lookup keys have no shared lifecycle. Rc windows must be explicitly
         // cleaned up before the last owner is dropped; Drop does no model cleanup.
         assert!(
-            self.observer.ptr_eq(&std::rc::Weak::new())
-                || self.lifecycle == WindowLifecycle::Destroyed,
+            matches!(
+                self.lifecycle,
+                WindowLifecycle::Unowned | WindowLifecycle::Destroyed
+            ),
             "window must be released through window_remove_ref"
         );
     }

@@ -171,9 +171,6 @@ fn sessions_resolve(head: &sessions, observer: &SessionWeak) -> Option<SessionRe
         .then_some(owner)
 }
 
-unsafe fn session_alive(s: Option<&session>) -> ::core::ffi::c_int {
-    s.is_some_and(|s| sessions_resolve(&sessions, &s.observer).is_some()) as ::core::ffi::c_int
-}
 unsafe fn session_find(name: &CStr) -> Option<SessionRef> {
     let index = sessions.storage.as_ref()?;
     let map = index
@@ -206,7 +203,7 @@ unsafe fn session_find_by_id(mut id: u_int) -> Option<SessionRef> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     while !s.is_null() {
         if (*s).id == id {
-            return (*s).observer.upgrade();
+            return s_owner;
         }
         s_owner = sessions_next(&*s);
         s = s_owner
@@ -266,18 +263,7 @@ unsafe fn session_create(
     ));
     (*s).creation_time = SystemTime::now();
     let created = (*s).creation_time;
-    session_update_activity(&mut *s, Some(created));
-    owner
-}
-unsafe fn session_add_ref(s: &session, from: *const ::core::ffi::c_char) -> SessionRef {
-    let owner = s.observer.upgrade().expect("live Rc session");
-    log_debug(format_args!(
-        "{}: {} {}, now {}",
-        "session_add_ref",
-        log_bytes(s.name.as_bytes()),
-        log_cstr((from) as *const _),
-        s.observer.strong_count() as ::core::ffi::c_int
-    ));
+    session_update_activity(&owner, Some(created));
     owner
 }
 /// Consume one session owner; the final owner performs cleanup immediately.
@@ -321,7 +307,7 @@ unsafe fn session_destroy(
     if notify != 0 {
         events_fire_session(
             b"session-closed\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(s)).observer.upgrade().expect("live session"),
+            std::rc::Rc::clone(s_owner),
         );
     }
     (*s).tio = None;
@@ -346,7 +332,7 @@ unsafe fn session_destroy(
 }
 unsafe fn session_lock_timer(owner: &SessionRef) {
     let session = &*owner.get();
-    if session_alive(Some(session)) == 0 || session.attached == 0 {
+    if !owner.is_registered() || session.attached == 0 {
         return;
     }
     log_debug(format_args!(
@@ -357,7 +343,8 @@ unsafe fn session_lock_timer(owner: &SessionRef) {
     server_lock_session(owner);
     recalculate_sizes();
 }
-unsafe fn session_update_activity(session: &mut session, from: Option<SystemTime>) {
+unsafe fn session_update_activity(owner: &SessionRef, from: Option<SystemTime>) {
+    let session = &mut *owner.get();
     if let Some(from) = from {
         session.activity_time = from;
     } else {
@@ -383,7 +370,7 @@ unsafe fn session_update_activity(session: &mut session, from: Option<SystemTime
             )) as u64,
         );
         if timeout.as_secs() != 0 {
-            let observer = session.observer.clone();
+            let observer = Rc::downgrade(owner);
             session.lock_timer = Some(
                 Timer::new(timeout, move || unsafe {
                     if let Some(owner) = observer.upgrade() {
@@ -439,7 +426,7 @@ unsafe fn session_attach(
         return Err(std::ffi::CString::new(format!("index in use: {idx}"))
             .expect("numeric diagnostic contains no NUL"));
     }
-    wl.get_mut_unchecked().session = (*s).observer.clone();
+    wl.get_mut_unchecked().session = std::rc::Rc::downgrade(s_owner);
     winlink_set_window(wl.clone(), window_owner);
     events_fire_winlink(
         b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -571,8 +558,6 @@ unsafe fn session_fire_window_changed(
     mut wl: refbox::Weak<winlink>,
     mut old: refbox::Weak<winlink>,
 ) {
-    let s = s_owner.get();
-
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: std::rc::Weak::new(),
@@ -587,7 +572,7 @@ unsafe fn session_fire_window_changed(
     event_payload_set_session(
         &mut ep,
         b"session\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(s)).observer.upgrade().expect("live session"),
+        std::rc::Rc::clone(s_owner),
     );
     event_payload_set_window(
         &mut ep,
@@ -663,13 +648,6 @@ unsafe fn session_set_current(
     session_fire_window_changed(s_owner, wl.clone(), (old).clone());
     0 as ::core::ffi::c_int
 }
-unsafe fn session_group_contains(target: Option<&session>) -> *mut session_group {
-    let Some(target) = target else {
-        return std::ptr::null_mut();
-    };
-    session_group_for(&target.observer)
-}
-
 /// Rebuild Session-owned associations. Group membership and group traversal are
 /// deliberately outside this operation. Each model loan ends before notification.
 unsafe fn session_synchronize_windows(source: &SessionRef, destination: &SessionRef) {
@@ -778,7 +756,7 @@ unsafe fn session_renumber_windows(s_owner: &SessionRef) {
     wl = winlinks_minmax(&old_wins, RB_NEGINF);
     while wl.is_alive() {
         wl_new = winlink_add(&raw mut (*s).windows, new_idx);
-        wl_new.get_mut_unchecked().session = (*s).observer.clone();
+        wl_new.get_mut_unchecked().session = std::rc::Rc::downgrade(s_owner);
         winlink_set_window(
             (wl_new).clone(),
             &std::rc::Rc::clone(

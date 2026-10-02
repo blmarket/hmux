@@ -107,7 +107,7 @@ unsafe fn server_fire_pane_exit(
     event_payload_set_pane(
         &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(wp)).observer.upgrade().expect("live window_pane"),
+        std::rc::Rc::clone(wp_owner),
     );
     event_payload_set_window(
         &mut ep,
@@ -151,8 +151,8 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
         window_owner.release(c"server_kill_pane");
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
             .push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
-        ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-        layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
+        ClientRef::forget_pane(pane_owner);
+        layout_close_pane(pane_owner);
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
             .remove_pane(pane_owner);
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")).pop_zoom();
@@ -245,23 +245,16 @@ pub(super) unsafe fn finish_process(
             if notify != 0 {
                 server_fire_pane_exit(
                     b"pane-died\0" as *const u8 as *const ::core::ffi::c_char,
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    pane_owner,
                 );
             }
-            let format = (*wp)
-                .observer
-                .upgrade()
-                .expect("live pane")
+            let format = pane_owner
                 .with_options_mut(|options| {
                     options_get_string(options, c"remain-on-exit-format".as_ptr())
                 });
             s = format.as_ptr();
             if *s as ::core::ffi::c_int != '\0' as i32 {
-                screen_write_start_pane(
-                    &mut ctx,
-                    &(*wp).observer.upgrade().expect("live screen-write pane"),
-                    &raw mut (*wp).base,
-                );
+                screen_write_start_pane(&mut ctx, pane_owner, &raw mut (*wp).base);
                 screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                 screen_write_cursormove(
                     &mut ctx,
@@ -281,9 +274,7 @@ pub(super) unsafe fn finish_process(
                     None,
                     None,
                     (refbox::Weak::new()).clone(),
-                    (wp).as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
+                    Some(pane_owner),
                 );
                 format_draw(
                     &raw mut ctx,
@@ -304,13 +295,13 @@ pub(super) unsafe fn finish_process(
     if notify != 0 {
         server_fire_pane_exit(
             b"pane-exited\0" as *const u8 as *const ::core::ffi::c_char,
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            pane_owner,
         );
     }
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
-    ClientRef::forget_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
-    layout_close_pane(&(*(wp)).observer.upgrade().expect("live window_pane"));
+    ClientRef::forget_pane(pane_owner);
+    layout_close_pane(pane_owner);
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .remove_pane(pane_owner);
     if window_owner.next_pane(None).is_none() {

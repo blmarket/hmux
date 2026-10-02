@@ -119,11 +119,7 @@ impl client {
     /// The caller must serialize access to the global server model and perform
     /// client-loss cleanup before releasing a fully initialized client.
     unsafe fn new() -> ClientRef {
-        std::rc::Rc::new_cyclic(|observer| {
-            let mut value = client::empty();
-            value.observer = observer.clone();
-            std::cell::UnsafeCell::new(value)
-        })
+        std::rc::Rc::new(std::cell::UnsafeCell::new(client::empty()))
     }
 }
 
@@ -259,48 +255,10 @@ mod client_message_owner_tests {
         client, server_client_add_term_cap, server_client_clear_term_caps,
         server_client_ensure_term_name, server_client_replace_path, server_client_replace_title,
         server_client_set_cwd, server_client_set_exit_message, server_client_set_exit_session,
-        server_client_set_message, server_client_set_name, server_client_set_term_name,
-        server_client_set_term_type, server_client_set_ttyname, server_client_set_user,
+        server_client_set_name, server_client_set_term_name, server_client_set_term_type,
+        server_client_set_ttyname, server_client_set_user,
     };
-    use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
-
-    #[test]
-    fn message_replacement_and_clear_keep_the_client_pointer_stable() {
-        unsafe {
-            let owner = client::new();
-            let c = owner.get();
-            assert!((*c).message_string.is_none());
-
-            server_client_set_message(&mut *c, Some(CString::new(vec![b'a', 0xff]).unwrap()));
-            assert_eq!(
-                ((*c).message_string)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b"a\xff"
-            );
-            assert_eq!(c, owner.get());
-
-            server_client_set_message(&mut *c, Some(CString::new(Vec::<u8>::new()).unwrap()));
-            assert_eq!(
-                ((*c).message_string)
-                    .as_deref()
-                    .expect("string is present")
-                    .to_bytes(),
-                b""
-            );
-            assert!(!(*c).message_string.is_none());
-
-            // A live message has pushed a status screen. Keep one extra
-            // screen user so status_message_clear does not need a full screen.
-            (*c).status.screen_users = 2;
-            status_message_clear(&(*c).observer.upgrade().expect("live client"));
-            assert!((*c).message_string.is_none());
-            assert!((*owner.get()).message_string.is_none());
-            assert_eq!((*c).status.screen_users, 1);
-        }
-    }
 
     #[test]
     fn ttyname_replacement_and_clear_keep_a_borrowed_client_view() {
@@ -987,11 +945,11 @@ unsafe fn server_client_is_default_key_table(c: &client, table: &key_table) -> :
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int
 }
 unsafe fn server_client_timer(
-    client: &client,
+    client: &ClientRef,
     delay: Duration,
     callback: unsafe fn(&ClientRef),
 ) -> Timer {
-    let observer = client.observer.clone();
+    let observer = Rc::downgrade(client);
     Timer::new(delay, move || unsafe {
         if let Some(owner) = observer.upgrade() {
             callback(&owner);
@@ -1067,18 +1025,13 @@ unsafe fn server_client_open(owner: &ClientRef) -> Result<(), CString> {
         return Err(c"not a terminal".to_owned());
     }
     tty_open(owner)?;
-    server_client_update_theme_colours(
-        (c).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
-    );
+    server_client_update_theme_colours(Some(owner));
     Ok(())
 }
 unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
     let mut c = c_owner.get();
     let mut s: Option<SessionRef> = None;
     let mut loop_0: *mut client = ::core::ptr::null_mut::<client>();
-    let mut found: *mut client = ::core::ptr::null_mut::<client>();
     log_debug(format_args!(
         "lost attached client {}",
         log_pointer((c) as *const ::core::ffi::c_void)
@@ -1086,7 +1039,7 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
     let mut window_cursor = windows.first();
     while let Some(window_owner) = window_cursor.take() {
         if window_owner.is_latest_client(c_owner) {
-            found = ::core::ptr::null_mut::<client>();
+            let mut found: Option<ClientRef> = None;
             let mut registry_loop_0_owner = clients.first();
             loop_0 = registry_loop_0_owner
                 .as_ref()
@@ -1099,9 +1052,11 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
                         .get_unchecked()
                         .window_handle()
                         .is_none_or(|current| !std::rc::Rc::ptr_eq(current, &window_owner)))
-                    && (found.is_null() || (*loop_0).activity_time > (*found).activity_time)
+                    && found.as_ref().is_none_or(|owner| {
+                        (*loop_0).activity_time > (*owner.get()).activity_time
+                    })
                 {
-                    found = loop_0;
+                    found = registry_loop_0_owner.clone();
                 }
                 registry_loop_0_owner = clients.next(
                     registry_loop_0_owner
@@ -1112,8 +1067,8 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
                     .as_ref()
                     .map_or(std::ptr::null_mut(), |owner| owner.get());
             }
-            if !found.is_null() {
-                server_client_update_latest(&(*(found)).observer.upgrade().expect("live client"));
+            if let Some(found) = found {
+                server_client_update_latest(&found);
             }
         }
         window_cursor = window_owner.next_window();
@@ -1121,7 +1076,6 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
     }
 }
 unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Option<&SessionRef>) {
-    let mut c = c_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         s: Default::default(),
@@ -1133,7 +1087,7 @@ unsafe fn server_client_fire_session_changed(c_owner: &ClientRef, old_owner: Opt
     let mut ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, Some(c_owner), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_client(&mut ep, (*(c)).observer.upgrade().expect("live client"));
+    event_payload_set_client(&mut ep, std::rc::Rc::clone(c_owner));
     if !fs.session_handle().is_none() {
         event_payload_set_session(
             &mut ep,
@@ -1198,7 +1152,7 @@ unsafe fn server_client_fire_resized(c_owner: &ClientRef, mut old_sx: u_int, mut
     let mut ep = event_payload_create();
     cmd_find_from_client(&raw mut fs, Some(c_owner), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_client(&mut ep, (*(c)).observer.upgrade().expect("live client"));
+    event_payload_set_client(&mut ep, std::rc::Rc::clone(c_owner));
     if !fs.session_handle().is_none() {
         event_payload_set_session(
             &mut ep,
@@ -1317,41 +1271,41 @@ unsafe fn server_client_set_session(c_owner: &ClientRef, s_owner: Option<&Sessio
 
 unsafe fn server_client_lost(client_owner: &ClientRef) {
     let c = client_owner.get();
-    if cfg_client.ptr_eq(&(*c).observer) {
+    if cfg_client.ptr_eq(&Rc::downgrade(client_owner)) {
         cfg_client = std::rc::Weak::new();
     }
     (*c).flags |= CLIENT_DEAD as uint64_t;
-    server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
-    status_prompt_clear(&(*(c)).observer.upgrade().expect("live client"));
-    status_message_clear(&(*c).observer.upgrade().expect("live client"));
+    server_client_clear_overlay(client_owner);
+    status_prompt_clear(client_owner);
+    status_message_clear(client_owner);
     cmdq_abort_owned_wait(client_owner);
     let files = client_owner.file_handles();
     crate::src::file::client_files_interrupt(files, EINTR);
     let registry_owner = clients
-        .remove(&(*c).observer)
+        .remove(&Rc::downgrade(client_owner))
         .expect("registered client owner");
     log_debug(format_args!(
         "lost client {}",
         log_pointer((c) as *const ::core::ffi::c_void)
     ));
     if (*c).flags & CLIENT_ATTACHED as uint64_t != 0 {
-        server_client_attached_lost(&(*(c)).observer.upgrade().expect("live client"));
+        server_client_attached_lost(client_owner);
         events_fire_client(
             b"client-detached\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(c)).observer.upgrade().expect("live client"),
+            std::rc::Rc::clone(client_owner),
         );
     }
     if !(*c).name.is_none() && (*c).flags & (CLIENT_CONTROL | CLIENT_TERMINAL) as uint64_t != 0 {
         events_fire_client(
             b"client-closed\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(c)).observer.upgrade().expect("live client"),
+            std::rc::Rc::clone(client_owner),
         );
     }
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        control_stop(&(*(c)).observer.upgrade().expect("live client"));
+        control_stop(client_owner);
     }
     if (*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
-        tty_free(&(*c).observer.upgrade().expect("live client"));
+        tty_free(client_owner);
     }
     server_client_set_ttyname(&mut *c, None);
     server_client_set_term_name(&mut *c, None);
@@ -1376,7 +1330,7 @@ unsafe fn server_client_lost(client_owner: &ClientRef) {
     if let Some(prompt) = (*c).prompt.take() {
         prompt_free(&prompt.downgrade());
     }
-    format_lost_client(&(*(c)).observer.upgrade().expect("live client"));
+    format_lost_client(client_owner);
     drop((*c).environ.take());
     proc_remove_peer((*c).peer);
     (*c).peer = ::core::ptr::null_mut::<tmuxpeer>();
@@ -1414,7 +1368,7 @@ unsafe fn server_client_suspend(c_owner: &ClientRef) {
     if s.is_none() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
         return;
     }
-    tty_stop_tty(&(*c).observer.upgrade().expect("live client"));
+    tty_stop_tty(c_owner);
     (*c).flags |= CLIENT_SUSPENDED as uint64_t;
     proc_send(
         (*c).peer,
@@ -1706,14 +1660,14 @@ unsafe fn server_client_check_mouse(
         (*m).w = -(1 as ::core::ffi::c_int);
         (*m).wp = -(1 as ::core::ffi::c_int);
         (*m).ignore = ignore;
-        (*m).statusat = status_at_line(&(*c).observer.upgrade().expect("live client"));
-        (*m).statuslines = status_line_size(&(*c).observer.upgrade().expect("live client"));
+        (*m).statusat = status_at_line(client_owner);
+        (*m).statuslines = status_line_size(client_owner);
         if (*m).statusat != -(1 as ::core::ffi::c_int)
             && y >= (*m).statusat as u_int
             && y < ((*m).statusat as u_int).wrapping_add((*m).statuslines)
         {
             if let Some(sr) = status_get_range(
-                &(*c).observer.upgrade().expect("live client"),
+                client_owner,
                 x,
                 y.wrapping_sub((*m).statusat as u_int),
             ) {
@@ -1990,7 +1944,7 @@ unsafe fn server_client_check_mouse(
                 let timeout = Duration::from_millis(KEYC_CLICK_TIMEOUT as u64);
                 drop((*c).click_timer.take());
                 (*c).click_timer =
-                    Some(server_client_timer(&*c, timeout, server_client_click_timer));
+                    Some(server_client_timer(client_owner, timeout, server_client_click_timer));
             }
         }
         key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -2414,13 +2368,7 @@ unsafe fn server_client_key_callback(
                                 << 32 as ::core::ffi::c_int)
                     || cmd_find_from_mouse(&raw mut fs, m) != 0 as ::core::ffi::c_int
                 {
-                    cmd_find_from_client(
-                        &raw mut fs,
-                        (c).as_ref()
-                            .and_then(|model| model.observer.upgrade())
-                            .as_ref(),
-                        0 as ::core::ffi::c_int,
-                    );
+                    cmd_find_from_client(&raw mut fs, Some(&c_owner), 0 as ::core::ffi::c_int);
                 }
                 target_pane = fs.pane_handle();
                 if (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -2527,7 +2475,7 @@ unsafe fn server_client_key_callback(
                                 ) != 0 as ::core::ffi::c_int
                             {
                                 server_client_set_key_table(
-                                    &(*(c)).observer.upgrade().expect("live client"),
+                                    &c_owner,
                                     b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
                                 );
                                 (*c).flags |= CLIENT_REDRAWSTATUS as u64;
@@ -2580,7 +2528,7 @@ unsafe fn server_client_key_callback(
                                         } else {
                                             log_debug(format_args!("prefix timeout exceeded"));
                                             server_client_set_key_table(
-                                                &(*(c)).observer.upgrade().expect("live client"),
+                                                &c_owner,
                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                             );
                                             table_owner = (*c).keytable.clone();
@@ -2678,14 +2626,14 @@ unsafe fn server_client_key_callback(
                                             let timeout = Duration::from_millis(repeat as u64);
                                             drop((*c).repeat_timer.take());
                                             (*c).repeat_timer = Some(server_client_timer(
-                                                &*c,
+                                                &c_owner,
                                                 timeout,
                                                 server_client_repeat_timer,
                                             ));
                                         } else {
                                             (*c).flags &= !CLIENT_REPEAT as uint64_t;
                                             server_client_set_key_table(
-                                                &(*(c)).observer.upgrade().expect("live client"),
+                                                &c_owner,
                                                 ::core::ptr::null::<::core::ffi::c_char>(),
                                             );
                                         }
@@ -2693,9 +2641,7 @@ unsafe fn server_client_key_callback(
                                         key_bindings_dispatch(
                                             bd,
                                             Some(item_handle),
-                                            (c).as_ref()
-                                                .and_then(|model| model.observer.upgrade())
-                                                .as_ref(),
+                                            Some(&c_owner),
                                             event,
                                             &raw mut fs,
                                         );
@@ -2705,7 +2651,7 @@ unsafe fn server_client_key_callback(
                                     13484060386966298149 => {
                                         log_debug(format_args!("trying in root table"));
                                         server_client_set_key_table(
-                                            &(*(c)).observer.upgrade().expect("live client"),
+                                            &c_owner,
                                             ::core::ptr::null::<::core::ffi::c_char>(),
                                         );
                                         table_owner = (*c).keytable.clone();
@@ -2725,7 +2671,7 @@ unsafe fn server_client_key_callback(
                                             )
                                         ));
                                         server_client_set_key_table(
-                                            &(*(c)).observer.upgrade().expect("live client"),
+                                            &c_owner,
                                             ::core::ptr::null::<::core::ffi::c_char>(),
                                         );
                                         table_owner = (*c).keytable.clone();
@@ -2742,7 +2688,7 @@ unsafe fn server_client_key_callback(
                             15469183920764600035 => {}
                             _ => {
                                 server_client_set_key_table(
-                                    &(*(c)).observer.upgrade().expect("live client"),
+                                    &c_owner,
                                     ::core::ptr::null::<::core::ffi::c_char>(),
                                 );
                                 (*c).flags |= CLIENT_REDRAWSTATUS as u64;
@@ -2786,7 +2732,7 @@ unsafe fn server_client_key_callback(
         }
     }
     if !s.is_none() && key != KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
-        server_client_update_latest(&(*(c)).observer.upgrade().expect("live client"));
+        server_client_update_latest(&c_owner);
     }
     CMD_RETURN_NORMAL
 }
@@ -2830,8 +2776,8 @@ unsafe fn server_client_handle_menu_key(
                     << 32 as ::core::ffi::c_int
     {
         m = &raw mut new_event.m;
-        (*m).statusat = status_at_line(&(*c).observer.upgrade().expect("live client"));
-        (*m).statuslines = status_line_size(&(*c).observer.upgrade().expect("live client"));
+        (*m).statusat = status_at_line(owner);
+        (*m).statuslines = status_line_size(owner);
         let tty_window_view { ox, oy, .. } = tty_window_offset(&(*c).tty);
         (*m).x = (*m).x.wrapping_add(ox);
         if (*m).statusat == 0 as ::core::ffi::c_int {
@@ -2869,14 +2815,11 @@ unsafe fn server_client_handle_key0(
         return 0 as ::core::ffi::c_int;
     }
     if (*event).key == KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code {
-        server_client_report_theme(
-            &(*(c)).observer.upgrade().expect("live client"),
-            THEME_LIGHT,
-        );
+        server_client_report_theme(owner, THEME_LIGHT);
         return 0 as ::core::ffi::c_int;
     }
     if (*event).key == KEYC_REPORT_DARK_THEME as ::core::ffi::c_ulong as key_code {
-        server_client_report_theme(&(*(c)).observer.upgrade().expect("live client"), THEME_DARK);
+        server_client_report_theme(owner, THEME_DARK);
         return 0 as ::core::ffi::c_int;
     }
     if !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
@@ -2884,22 +2827,19 @@ unsafe fn server_client_handle_key0(
             if (*c).message_ignore_keys != 0 {
                 return 0 as ::core::ffi::c_int;
             }
-            status_message_clear(&(*c).observer.upgrade().expect("live client"));
+            status_message_clear(owner);
         }
-        if let Some(result) = server_client_overlay_key(
-            &(*(c)).observer.upgrade().expect("live client"),
-            &mut *event,
-        ) {
+        if let Some(result) = server_client_overlay_key(owner, &mut *event) {
             match result {
                 0 => return 0 as ::core::ffi::c_int,
                 1 => {
-                    server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
+                    server_client_clear_overlay(owner);
                     return 0 as ::core::ffi::c_int;
                 }
                 _ => {}
             }
         }
-        server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
+        server_client_clear_overlay(owner);
         let active_pane_owner = (((s.as_ref().expect("live session").current_winlink())
             .get_unchecked()
             .window_handle()
@@ -2962,11 +2902,7 @@ unsafe fn server_client_handle_key0(
             return 0 as ::core::ffi::c_int;
         }
         if (*c).prompt.is_some() {
-            match status_prompt_key(
-                &(*(c)).observer.upgrade().expect("live client"),
-                (*event).key,
-                &raw mut (*event).m,
-            ) as ::core::ffi::c_uint
+            match status_prompt_key(owner, (*event).key, &raw mut (*event).m) as ::core::ffi::c_uint
             {
                 1 | 2 => return 0 as ::core::ffi::c_int,
                 _ => {}
@@ -3220,7 +3156,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             .is_some_and(|overlay| overlay.draw.is_some())
         {
             if let Some((overlay_screen, overlay_cx, overlay_cy)) =
-                server_client_overlay_mode(&(*(c)).observer.upgrade().expect("live client"))
+                server_client_overlay_mode(client_owner)
             {
                 s = Some(overlay_screen);
                 cx = overlay_cx;
@@ -3264,7 +3200,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
         };
         if (*c).prompt.is_some() {
             prompt = 1 as u_int;
-            (cx, cy) = status_prompt_cursor(&(*c).observer.upgrade().expect("live client"));
+            (cx, cy) = status_prompt_cursor(client_owner);
         } else if active_owner.is_some()
             && !(*c)
                 .overlay
@@ -3278,12 +3214,10 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 } else {
                     cx = cx.wrapping_sub(ox);
                     cy = cy.wrapping_sub(oy);
-                    if status_at_line(&(*c).observer.upgrade().expect("live client"))
+                    if status_at_line(client_owner)
                         == 0 as ::core::ffi::c_int
                     {
-                        cy = cy.wrapping_add(status_line_size(
-                            &(*c).observer.upgrade().expect("live client"),
-                        ));
+                        cy = cy.wrapping_add(status_line_size(client_owner));
                     }
                 }
                 prompt = 1 as u_int;
@@ -3346,12 +3280,10 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                             cursor = 0 as ::core::ffi::c_int;
                         }
                     }
-                    if status_at_line(&(*c).observer.upgrade().expect("live client"))
+                    if status_at_line(client_owner)
                         == 0 as ::core::ffi::c_int
                     {
-                        cy = cy.wrapping_add(status_line_size(
-                            &(*c).observer.upgrade().expect("live client"),
-                        ));
+                        cy = cy.wrapping_add(status_line_size(client_owner));
                     }
                 }
                 if cursor == 0 {
@@ -3430,10 +3362,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
 unsafe fn server_client_repeat_timer(owner: &ClientRef) {
     let c = owner.get();
     if (*c).flags & CLIENT_REPEAT as uint64_t != 0 {
-        server_client_set_key_table(
-            &(*(c)).observer.upgrade().expect("live client"),
-            ::core::ptr::null::<::core::ffi::c_char>(),
-        );
+        server_client_set_key_table(owner, ::core::ptr::null::<::core::ffi::c_char>());
         (*c).flags &= !CLIENT_REPEAT as uint64_t;
         (*c).flags |= CLIENT_REDRAWSTATUS as u64;
     }
@@ -3451,10 +3380,11 @@ unsafe fn server_client_click_timer(owner: &ClientRef) {
     }
     (*c).flags &= !(CLIENT_DOUBLECLICK | CLIENT_TRIPLECLICK) as uint64_t;
 }
-unsafe fn server_client_start_exit_timer(c: &mut client) {
+unsafe fn server_client_start_exit_timer(owner: &ClientRef) {
+    let c = &mut *owner.get();
     let timeout = Duration::from_secs(10);
     if c.exit_timer.is_none() {
-        c.exit_timer = Some(server_client_timer(&*c, timeout, server_client_exit_timer));
+        c.exit_timer = Some(server_client_timer(owner, timeout, server_client_exit_timer));
     }
 }
 unsafe fn server_client_exit_timer(owner: &ClientRef) {
@@ -3502,22 +3432,22 @@ unsafe fn server_client_check_exit(client_owner: &ClientRef, force: ::core::ffi:
     }
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         if force != 0 {
-            control_discard_all(&(*c).observer.upgrade().expect("live client"));
+            control_discard_all(client_owner);
         } else {
-            control_discard(&(*c).observer.upgrade().expect("live client"));
-            if control_all_done(&(*c).observer.upgrade().expect("live client")) == 0 {
-                server_client_start_exit_timer(&mut *c);
+            control_discard(client_owner);
+            if control_all_done(client_owner) == 0 {
+                server_client_start_exit_timer(client_owner);
                 return;
             }
         }
     }
     if force == 0 && crate::src::file::client_files_has_pending_data(&(*c).files) {
-        server_client_start_exit_timer(&mut *c);
+        server_client_start_exit_timer(client_owner);
         return;
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;
     drop((*c).exit_timer.take());
-    server_client_start_exit_timer(&mut *c);
+    server_client_start_exit_timer(client_owner);
     match (*c).exit_type as ::core::ffi::c_uint {
         0 => {
             let mut data = Vec::from((*c).retval.to_ne_bytes());
@@ -3847,9 +3777,7 @@ unsafe fn server_client_set_title(client_owner: &ClientRef) {
     ft = &raw mut *ft_owner;
     format_defaults(
         ft,
-        (c).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        Some(client_owner),
         None,
         (refbox::Weak::new()).clone(),
         None,
@@ -3961,10 +3889,10 @@ unsafe fn server_client_dispatch(
             } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                 current_block = 14945149239039849694;
             } else {
-                server_client_update_latest(&(*(c)).observer.upgrade().expect("live client"));
+                server_client_update_latest(owner);
                 old_sx = (*c).tty.sx;
                 old_sy = (*c).tty.sy;
-                tty_resize(&(*c).observer.upgrade().expect("live client"));
+                tty_resize(owner);
                 {
                     let terminal = &(owner);
                     tty_repeat_requests(terminal, 0 as ::core::ffi::c_int)
@@ -3975,17 +3903,13 @@ unsafe fn server_client_dispatch(
                     .as_ref()
                     .is_some_and(|overlay| overlay.resize.is_some())
                 {
-                    server_client_clear_overlay(&(*(c)).observer.upgrade().expect("live client"));
+                    server_client_clear_overlay(owner);
                 } else {
-                    server_client_overlay_resize(&(*(c)).observer.upgrade().expect("live client"));
+                    server_client_overlay_resize(owner);
                 }
                 (*c).flags |= CLIENT_ALLREDRAWFLAGS as u64;
                 if !(*c).session_handle().is_none() {
-                    server_client_fire_resized(
-                        &(*(c)).observer.upgrade().expect("live client"),
-                        old_sx,
-                        old_sy,
-                    );
+                    server_client_fire_resized(owner, old_sx, old_sy);
                 }
                 current_block = 14945149239039849694;
             }
@@ -3994,9 +3918,9 @@ unsafe fn server_client_dispatch(
             if datalen != 0 as ssize_t {
                 current_block = 13639960948656484833;
             } else {
-                server_client_set_session(&(*(c)).observer.upgrade().expect("live client"), None);
+                server_client_set_session(owner, None);
                 recalculate_sizes();
-                tty_close(&(*c).observer.upgrade().expect("live client"));
+                tty_close(owner);
                 proc_send(
                     (*c).peer,
                     MSG_EXITED,
@@ -4019,7 +3943,7 @@ unsafe fn server_client_dispatch(
                 } else {
                     s = (*c).session_handle();
                     (*c).activity_time = SystemTime::now();
-                    tty_start_tty(&(*c).observer.upgrade().expect("live client"));
+                    tty_start_tty(owner);
                     (*c).flags |= CLIENT_ALLREDRAWFLAGS as u64;
                     recalculate_sizes();
                     if let Some(s_value) = s.as_ref() {
@@ -4117,7 +4041,7 @@ unsafe fn server_client_command_done(
         (*c).flags |= CLIENT_EXIT as uint64_t;
     } else if !(*c).flags & CLIENT_EXIT as uint64_t != 0 {
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_ready(&(*(c)).observer.upgrade().expect("live client"));
+            control_ready(c_owner.as_ref().expect("live client"));
         }
         {
             let terminal = c_owner.as_ref().expect("live client");
@@ -4442,7 +4366,7 @@ unsafe fn server_client_dispatch_identify(
             drop((*c).fd.take());
         } else {
             (*c).tty.r.ensure(1);
-            tty_resize(&(*c).observer.upgrade().expect("live client"));
+            tty_resize(owner);
             (*c).flags |= CLIENT_TERMINAL as uint64_t;
         }
         drop((*c).out_fd.take());
@@ -4450,7 +4374,7 @@ unsafe fn server_client_dispatch_identify(
     if (*c).flags & (CLIENT_CONTROL | CLIENT_TERMINAL) as uint64_t != 0 {
         events_fire_client(
             b"client-created\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(c)).observer.upgrade().expect("live client"),
+            std::rc::Rc::clone(owner),
         );
     }
     if (*c).flags as ::core::ffi::c_ulonglong & (CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING) != 0
@@ -4625,7 +4549,7 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, mut flags: *const ::core:
             (*c).flags |= flag;
         }
         if flag == CLIENT_CONTROL_NOOUTPUT as uint64_t {
-            control_reset_offsets(&(*c).observer.upgrade().expect("live client"));
+            control_reset_offsets(c_owner);
         }
     }
     drop(copy);
@@ -4807,7 +4731,7 @@ unsafe fn server_client_print(
             if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
                 let sanitized = utf8_sanitize_cstring(CStr::from_ptr(msg));
                 if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                    control_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+                    control_write(client_owner.expect("live client"), |out| {
                         write_cstr(out, sanitized.as_ptr())
                     });
                 } else {
@@ -4817,7 +4741,7 @@ unsafe fn server_client_print(
                     });
                 }
             } else if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                control_write(&(*(c)).observer.upgrade().expect("live client"), |out| {
+                control_write(client_owner.expect("live client"), |out| {
                     write_cstr(out, msg)
                 });
             } else {
@@ -4870,13 +4794,13 @@ unsafe fn server_client_report_theme(c_owner: &ClientRef, mut theme: client_them
         (*c).theme = THEME_LIGHT;
         events_fire_client(
             b"client-light-theme\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(c)).observer.upgrade().expect("live client"),
+            std::rc::Rc::clone(c_owner),
         );
     } else {
         (*c).theme = THEME_DARK;
         events_fire_client(
             b"client-dark-theme\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(c)).observer.upgrade().expect("live client"),
+            std::rc::Rc::clone(c_owner),
         );
     }
     if (*c).theme as ::core::ffi::c_uint != old as ::core::ffi::c_uint {

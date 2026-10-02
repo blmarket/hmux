@@ -1,7 +1,7 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use super::{
-    window_pane_index, window_pane_next, window_pane_reset_mode_all, window_pane_resize,
-    window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
+    window_pane_index, window_pane_reset_mode_all, window_pane_resize, window_pane_set_cwd,
+    window_pane_set_event, window_pane_set_shell,
 };
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
@@ -143,7 +143,7 @@ unsafe fn spawn_fire_pane_created(
     event_payload_set_pane(
         &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(wp)).observer.upgrade().expect("live window_pane"),
+        std::rc::Rc::clone(wp_owner),
     );
     let cmd = if !(*wp).argv.is_empty() {
         cmd_stringify_argv_cstring(&(*wp).argv)
@@ -334,7 +334,8 @@ pub(super) unsafe fn spawn_pane(
             .with_options_mut(|options| options_get_number(options, c"history-limit") as u_int);
         if (*sc).flags & SPAWN_RESPAWN != 0 {
             if (*source_pane).fd.is_some() && !(*sc).flags & SPAWN_KILL != 0 {
-                idx = window_pane_index(&*source_pane).expect("pane belongs to window ordering");
+                idx = window_pane_index(source_pane_owner.as_ref().expect("respawn pane"))
+                    .expect("pane belongs to window ordering");
                 set_spawn_cause(
                     cause.as_mut(),
                     &[
@@ -369,10 +370,7 @@ pub(super) unsafe fn spawn_pane(
                 if loop_0.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
                     control_reset_pane(
                         &loop_0.clone().expect("live client"),
-                        &(*(source_pane))
-                            .observer
-                            .upgrade()
-                            .expect("live window_pane"),
+                        source_pane_owner.as_ref().expect("respawn pane"),
                     );
                 }
                 registry_loop_0_owner = clients.next(
@@ -404,7 +402,7 @@ pub(super) unsafe fn spawn_pane(
                             .as_ref())
                         .expect("live window"),
                     ),
-                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
+                    &new_pane_owner,
                 );
             } else {
                 new_pane_owner = std::rc::Rc::clone(
@@ -414,27 +412,20 @@ pub(super) unsafe fn spawn_pane(
                         .as_ref())
                     .expect("live window"),
                 )
-                .add_pane(
-                    (source_pane)
-                        .as_ref()
-                        .and_then(|model| model.observer.upgrade())
-                        .as_ref(),
-                    hlimit,
-                    (*sc).flags,
-                );
+                .add_pane(source_pane_owner.as_ref(), hlimit, (*sc).flags);
                 new_wp = new_pane_owner.get();
                 if (*sc).flags & SPAWN_ZOOM != 0 {
                     layout_assign_pane(
                         &original_window,
                         (*sc).layout.expect("reserved pane layout"),
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
+                        &new_pane_owner,
                         1 as ::core::ffi::c_int,
                     );
                 } else {
                     layout_assign_pane(
                         &original_window,
                         (*sc).layout.expect("reserved pane layout"),
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
+                        &new_pane_owner,
                         0 as ::core::ffi::c_int,
                     );
                 }
@@ -664,11 +655,8 @@ pub(super) unsafe fn spawn_pane(
                 );
                 (*new_wp).fd = None;
                 if !(*sc).flags & SPAWN_RESPAWN != 0 {
-                    let pane_owner = (*new_wp).observer.upgrade().expect("new pane owner");
-                    ClientRef::forget_pane(
-                        &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                    );
-                    layout_close_pane(&(*(new_wp)).observer.upgrade().expect("live window_pane"));
+                    ClientRef::forget_pane(&new_pane_owner);
+                    layout_close_pane(&new_pane_owner);
                     std::rc::Rc::clone(
                         (((*sc).winlink_handle())
                             .get_unchecked()
@@ -676,7 +664,7 @@ pub(super) unsafe fn spawn_pane(
                             .as_ref())
                         .expect("live window"),
                     )
-                    .remove_pane(&pane_owner);
+                    .remove_pane(&new_pane_owner);
                 }
                 sigprocmask(
                     SIG_SETMASK,
@@ -819,12 +807,9 @@ pub(super) unsafe fn spawn_pane(
             &raw mut oldset,
             ::core::ptr::null_mut::<sigset_t>(),
         );
-        window_pane_set_event(&(*(new_wp)).observer.upgrade().expect("live window_pane"));
+        window_pane_set_event(&new_pane_owner);
         drop(child_owner.take());
-        spawn_fire_pane_created(
-            sc,
-            &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-        );
+        spawn_fire_pane_created(sc, &new_pane_owner);
         if (*sc).flags & SPAWN_RESPAWN != 0 {
             return Some(new_pane_owner);
         }
@@ -837,12 +822,7 @@ pub(super) unsafe fn spawn_pane(
                     .as_ref())
                 .expect("live window"),
             )
-            .redraw_active_switch(
-                (new_wp)
-                    .as_ref()
-                    .and_then(|model| model.observer.upgrade())
-                    .as_ref(),
-            );
+            .redraw_active_switch(Some(&new_pane_owner));
             if (*sc).flags & SPAWN_NONOTIFY != 0 {
                 std::rc::Rc::clone(
                     (((*sc).winlink_handle())
@@ -851,10 +831,7 @@ pub(super) unsafe fn spawn_pane(
                         .as_ref())
                     .expect("live window"),
                 )
-                .select_pane(
-                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                    false,
-                );
+                .select_pane(&new_pane_owner, false);
             } else {
                 std::rc::Rc::clone(
                     (((*sc).winlink_handle())
@@ -863,10 +840,7 @@ pub(super) unsafe fn spawn_pane(
                         .as_ref())
                     .expect("live window"),
                 )
-                .select_pane(
-                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                    true,
-                );
+                .select_pane(&new_pane_owner, true);
             }
         } else if (!(*sc).flags & SPAWN_DETACHED != 0
             || ((((*sc).winlink_handle())
@@ -886,10 +860,7 @@ pub(super) unsafe fn spawn_pane(
                         .as_ref())
                     .expect("live window"),
                 )
-                .select_pane(
-                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                    false,
-                );
+                .select_pane(&new_pane_owner, false);
             } else {
                 std::rc::Rc::clone(
                     (((*sc).winlink_handle())
@@ -898,10 +869,7 @@ pub(super) unsafe fn spawn_pane(
                         .as_ref())
                     .expect("live window"),
                 )
-                .select_pane(
-                    &(*(new_wp)).observer.upgrade().expect("live window_pane"),
-                    true,
-                );
+                .select_pane(&new_pane_owner, true);
             }
         }
         if !(*sc).flags & SPAWN_NONOTIFY != 0 {

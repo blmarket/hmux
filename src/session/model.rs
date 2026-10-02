@@ -4,7 +4,7 @@ use crate::src::shared::environment::environ;
 use crate::src::shared::event::Timer;
 use crate::src::shared::options::options;
 use crate::src::shared::session::session_group;
-use crate::src::shared::session::{SessionRef, SessionWeak};
+use crate::src::shared::session::SessionRef;
 use crate::src::shared::terminal::termios;
 use crate::src::shared::window::{winlink, winlink_stack, winlinks};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,8 +17,6 @@ pub struct sessions {
 
 #[repr(C)]
 pub struct session {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(super) observer: SessionWeak,
     pub(super) id: u_int,
     pub(super) name: std::ffi::CString,
     pub(super) cwd: Option<std::ffi::CString>,
@@ -53,16 +51,11 @@ impl session {
     }
 
     pub(super) fn new() -> SessionRef {
-        std::rc::Rc::new_cyclic(|observer| {
-            let mut value = Self::empty();
-            value.observer = observer.clone();
-            std::cell::UnsafeCell::new(value)
-        })
+        std::rc::Rc::new(std::cell::UnsafeCell::new(Self::empty()))
     }
 
     pub(super) fn empty() -> Self {
         Self {
-            observer: std::rc::Weak::new(),
             id: Default::default(),
             name: Default::default(),
             cwd: Default::default(),

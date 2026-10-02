@@ -5,8 +5,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[repr(C)]
 pub struct window_pane {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(super) observer: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub(super) id: u_int,
     pub(super) active_point: u_int,
     /// Nonowning parent; final window teardown provides a scoped fallback.
@@ -89,7 +87,6 @@ pub struct window_pane {
 impl Default for window_pane {
     fn default() -> Self {
         Self {
-            observer: Default::default(),
             id: Default::default(),
             active_point: Default::default(),
             window: Default::default(),
@@ -187,11 +184,8 @@ impl window_pane {
         Self::empty().into_shared()
     }
 
-    pub(super) fn into_shared(mut self) -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
-        std::rc::Rc::new_cyclic(|observer| {
-            self.observer = observer.clone();
-            std::cell::UnsafeCell::new(self)
-        })
+    pub(super) fn into_shared(self) -> std::rc::Rc<std::cell::UnsafeCell<Self>> {
+        std::rc::Rc::new(std::cell::UnsafeCell::new(self))
     }
 
     pub(super) fn empty() -> Self {

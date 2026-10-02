@@ -77,7 +77,7 @@ pub(super) unsafe fn pipe_pane(
     if (*wp).pipe_fd.is_some() {
         std::mem::take(&mut (*wp).pipe_event).free();
         drop((*wp).pipe_fd.take());
-        if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
+        if window_pane_destroy_ready(pane_owner) != 0 {
             server_destroy_pane(pane_owner, 1);
             return CMD_RETURN_NORMAL;
         }
@@ -118,9 +118,7 @@ pub(super) unsafe fn pipe_pane(
         tc.as_ref(),
         s.as_ref(),
         wl.clone(),
-        (wp).as_ref()
-            .and_then(|model| model.observer.upgrade())
-            .as_ref(),
+        Some(pane_owner),
     );
     let cmd = format_expand_time_cstring(
         ft,
@@ -306,7 +304,7 @@ unsafe fn cmd_pipe_pane_write_callback(
 ) {
     let wp = pane_owner.get();
     log_debug(format_args!("%{} pipe empty", { (*wp).id }));
-    if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
+    if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
 }
@@ -317,7 +315,7 @@ unsafe fn cmd_pipe_pane_error_callback(
     log_debug(format_args!("%{} pipe error", { (*wp).id }));
     std::mem::take(&mut (*wp).pipe_event).free();
     drop((*wp).pipe_fd.take());
-    if window_pane_destroy_ready(&(*(wp)).observer.upgrade().expect("live window_pane")) != 0 {
+    if window_pane_destroy_ready(pane_owner) != 0 {
         server_destroy_pane(pane_owner, 1);
     }
 }

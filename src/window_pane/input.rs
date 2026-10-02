@@ -2028,7 +2028,7 @@ unsafe fn input_fire_pane_title_changed(
     event_payload_set_pane(
         &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(wp)).observer.upgrade().expect("live window_pane"),
+        std::rc::Rc::clone(wp_owner),
     );
     event_payload_set_window(
         &mut ep,
@@ -2277,7 +2277,7 @@ pub(super) unsafe fn input_parse_buffer(
         (*wp).flags |= PANE_ACTIVITY;
         events_fire_pane(
             b"pane-activity\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(wp)).observer.upgrade().expect("live window_pane"),
+            std::rc::Rc::clone(wp_owner),
         );
     }
     (*wp).flags |= PANE_CHANGED;
@@ -2285,11 +2285,7 @@ pub(super) unsafe fn input_parse_buffer(
         (*wp).flags |= PANE_UNSEENCHANGES;
     }
     if (*wp).modes.is_empty() {
-        screen_write_start_pane(
-            &mut *sctx,
-            &(*wp).observer.upgrade().expect("live screen-write pane"),
-            &raw mut (*wp).base,
-        );
+        screen_write_start_pane(&mut *sctx, wp_owner, &raw mut (*wp).base);
     } else {
         screen_write_start(&mut *sctx, &raw mut (*wp).base);
     }
@@ -2571,7 +2567,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
             if !wp.is_null() {
                 events_fire_pane(
                     b"pane-bell\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*(wp)).observer.upgrade().expect("live window_pane"),
+                    std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
                 );
                 alerts_queue(
                     &std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
@@ -3717,12 +3713,7 @@ unsafe fn input_csi_dispatch_sm_private(mut ictx: *mut input_ctx) {
             2031 => {
                 screen_write_mode_set(&mut *sctx, MODE_THEME_UPDATES);
                 if !input_pane.is_null() {
-                    (*input_pane).last_theme = window_pane_get_theme(
-                        (input_pane)
-                            .as_ref()
-                            .and_then(|model| model.observer.upgrade())
-                            .as_ref(),
-                    );
+                    (*input_pane).last_theme = window_pane_get_theme(input_pane_owner.as_ref());
                     (*input_pane).flags &= !PANE_THEMECHANGED;
                 }
             }
@@ -3876,7 +3867,7 @@ unsafe fn input_csi_dispatch_winops(mut ictx: *mut input_ctx) {
                         screen_pop_title(&mut *(*sctx).screen_ptr());
                         if !wp.is_null() {
                             input_fire_pane_title_changed(
-                                &(*(wp)).observer.upgrade().expect("live window_pane"),
+                                input_pane_owner.as_ref().expect("live pane"),
                                 (*(*sctx).screen_ptr()).title.as_ptr(),
                             );
                             server_redraw_window_borders(
@@ -4588,7 +4579,7 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
                 ) != 0
             {
                 input_fire_pane_title_changed(
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    input_pane_owner.as_ref().expect("live pane"),
                     p as *const ::core::ffi::c_char,
                 );
                 server_redraw_window_borders(
@@ -4685,7 +4676,7 @@ unsafe fn input_exit_apc(mut ictx: *mut input_ctx) {
         ) != 0
     {
         input_fire_pane_title_changed(
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
+            input_pane_owner.as_ref().expect("live pane"),
             (*ictx).input_buf.as_ptr() as *const ::core::ffi::c_char,
         );
         server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
@@ -5092,14 +5083,12 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         if wp.is_null() {
             return;
         }
-        c = window_pane_get_fg_control_client(
-            &(*(wp)).observer.upgrade().expect("live window_pane"),
-        );
+        c = window_pane_get_fg_control_client(input_pane_owner.as_ref().expect("live pane"));
         if c == -(1 as ::core::ffi::c_int) {
             defaults =
-                tty_default_colours(&(*(wp)).observer.upgrade().expect("live window_pane")).0;
+                tty_default_colours(input_pane_owner.as_ref().expect("live pane")).0;
             if defaults.fg == 8 as ::core::ffi::c_int || defaults.fg == 9 as ::core::ffi::c_int {
-                c = window_pane_get_fg(&(*(wp)).observer.upgrade().expect("live window_pane"));
+                c = window_pane_get_fg(input_pane_owner.as_ref().expect("live pane"));
             } else {
                 c = defaults.fg;
             }
@@ -5157,7 +5146,7 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         if wp.is_null() {
             return;
         }
-        c = window_pane_get_bg(&(*(wp)).observer.upgrade().expect("live window_pane"));
+        c = window_pane_get_bg(input_pane_owner.as_ref().expect("live pane"));
         input_osc_colour_reply(
             ictx,
             1 as ::core::ffi::c_int,
@@ -5343,7 +5332,7 @@ unsafe fn input_fire_command_event(
     event_payload_set_pane(
         &mut ep,
         b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(wp)).observer.upgrade().expect("live window_pane"),
+        std::rc::Rc::clone(wp_owner),
     );
     if (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
         event_payload_set_int(
@@ -5408,7 +5397,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
                 (*wp).last_prompt_time = time(::core::ptr::null_mut::<time_t>());
                 events_fire_pane(
                     b"pane-shell-prompt\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*(wp)).observer.upgrade().expect("live window_pane"),
+                    std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
                 );
             }
         }
@@ -5449,7 +5438,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
                 (*wp).flags |= PANE_CMDRUNNING;
                 (*wp).cmd_status = -(1 as ::core::ffi::c_int);
                 input_fire_command_event(
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    input_pane_owner.as_ref().expect("live pane"),
                     b"pane-command-started\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -5461,7 +5450,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
                 (*wp).flags &= !PANE_CMDRUNNING;
                 (*wp).cmd_status = status;
                 input_fire_command_event(
-                    &(*(wp)).observer.upgrade().expect("live window_pane"),
+                    input_pane_owner.as_ref().expect("live pane"),
                     b"pane-command-finished\0" as *const u8 as *const ::core::ffi::c_char,
                 );
             }
@@ -5621,7 +5610,7 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         screen_write_stop(&mut ctx);
         events_fire_pane(
             b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-            (*(wp)).observer.upgrade().expect("live window_pane"),
+            std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
         );
         paste_add_owned(None, out.into_boxed_slice());
     };
@@ -6006,11 +5995,7 @@ unsafe fn input_report_current_theme(mut ictx: *mut input_ctx) {
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
     if !wp.is_null() {
-        (*wp).last_theme = window_pane_get_theme(
-            (wp).as_ref()
-                .and_then(|model| model.observer.upgrade())
-                .as_ref(),
-        );
+        (*wp).last_theme = window_pane_get_theme(input_pane_owner.as_ref());
         (*wp).flags &= !PANE_THEMECHANGED;
         match (*wp).last_theme as ::core::ffi::c_uint {
             2 => {

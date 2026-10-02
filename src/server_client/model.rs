@@ -1,6 +1,4 @@
 //! Authoritative client objects, file transfers, overlays, and scalar domains.
-#[cfg(test)]
-use crate::src::server_client::Client as _;
 use crate::src::session::Session as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
@@ -33,8 +31,6 @@ use std::ffi::CStr;
 
 use crate::src::shared::client::*;
 pub struct client {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(super) observer: ClientWeak,
     // Preserve after removal so a traversal holding this client can continue.
     pub(super) registry_next: ClientWeak,
     pub(super) name: Option<std::ffi::CString>,
@@ -127,7 +123,6 @@ impl client {
 
     pub(super) fn empty() -> Self {
         Self {
-            observer: std::rc::Weak::new(),
             registry_next: std::rc::Weak::new(),
             name: Default::default(),
             peer: Default::default(),
@@ -197,12 +192,6 @@ impl client {
     }
 }
 
-/// Retain an optional live, Rc-owned client.
-/// Panics if a supplied client is not backed by a live Rc allocation.
-pub(super) fn client_retain(value: Option<&client>) -> Option<ClientRef> {
-    value.map(|client| client.observer.upgrade().expect("live Rc client"))
-}
-
 #[cfg(test)]
 impl client {
     /// No descriptors or monitors are installed; tests explicitly stop control
@@ -216,26 +205,5 @@ impl client {
         (*owner.get()).control_state =
             Some(Box::new(crate::src::shared::control::control_state::empty()));
         owner
-    }
-}
-
-#[cfg(test)]
-mod retained_client_tests {
-    use super::*;
-    use crate::src::reactor;
-
-    #[test]
-    fn owner_release_cleans_up_synchronously() {
-        unsafe {
-            let initial = client::new();
-            let ptr = initial.get();
-            let observer = (*ptr).observer.clone();
-            let owner = client_retain(ptr.as_ref()).unwrap();
-            drop(initial);
-            assert_eq!(owner.get(), ptr);
-            owner.release();
-            assert!(observer.upgrade().is_none());
-            assert!(client_retain(None).is_none());
-        }
     }
 }

@@ -14,14 +14,16 @@ use crate::src::shared::options::options;
 use crate::src::shared::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
 use crate::src::shared::screen::screen;
 use crate::src::shared::session::session;
-use crate::src::shared::window::{WindowRef, WindowWeak};
+use crate::src::shared::window::WindowRef;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::src::shared::window::{window_winlinks, WindowIndex};
 /// Explicit cleanup is separate from the lifetime of retained Rc allocations.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) enum WindowLifecycle {
+    /// A plain lookup value has no shared allocation to release.
     #[default]
+    Unowned,
     Live,
     Destroying,
     Destroyed,
@@ -30,8 +32,6 @@ pub(super) enum WindowLifecycle {
 #[repr(C)]
 /// Rc-owned window record; retain/release preserves pre-close notifications.
 pub struct window {
-    /// Nonowning allocation observer for callbacks receiving borrowed pointers.
-    pub(super) observer: WindowWeak,
     pub(super) lifecycle: WindowLifecycle,
     pub(super) id: u_int,
     /// Nonowning identity of the client last active in this window.
@@ -88,7 +88,6 @@ pub struct window {
 impl Default for window {
     fn default() -> Self {
         Self {
-            observer: Default::default(),
             lifecycle: Default::default(),
             id: Default::default(),
             latest: Default::default(),
@@ -157,11 +156,9 @@ impl window {
     }
 
     pub(super) fn new() -> WindowRef {
-        std::rc::Rc::new_cyclic(|observer| {
-            let mut value = Self::default();
-            value.observer = observer.clone();
-            std::cell::UnsafeCell::new(value)
-        })
+        let mut value = Self::default();
+        value.lifecycle = WindowLifecycle::Live;
+        std::rc::Rc::new(std::cell::UnsafeCell::new(value))
     }
 
     pub(super) fn layout_root_ptr(&mut self) -> Option<&mut layout_cell> {

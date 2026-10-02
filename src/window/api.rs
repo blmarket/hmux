@@ -1213,7 +1213,7 @@ unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut
     event_payload_set_window(
         &mut ep,
         b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(w)).observer.upgrade().expect("live window"),
+        std::rc::Rc::clone(w_owner),
     );
     event_payload_set_uint(
         &mut ep,
@@ -1316,11 +1316,11 @@ unsafe fn resize_window(
             window_zoom(&zoomed_owner);
         }
     }
-    tty_update_window_offset(&(*(w)).observer.upgrade().expect("live window"));
+    tty_update_window_offset(w_owner);
     server_redraw_window(w_owner);
     events_fire_window(
         b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        (*(w)).observer.upgrade().expect("live window"),
+        std::rc::Rc::clone(w_owner),
     );
     resize_fire_window_resized(w_owner, old_sx, old_sy);
     (*w).flags &= !WINDOW_RESIZE;

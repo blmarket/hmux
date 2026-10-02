@@ -1,7 +1,7 @@
 //! Borrowed model views for ordinary Rc owners.
 //!
-//! Ownership is kept in Rc values. Callback observers use Weak handles created
-//! with the allocation; borrowed raw addresses never represent strong references.
+//! Ownership is kept in Rc values. Callback observers use Weak handles derived
+//! from those owners; borrowed raw addresses never represent strong references.
 
 use std::cell::UnsafeCell;
 use std::rc::Rc;

@@ -421,7 +421,7 @@ impl Session for SessionRef {
         session_update_history(&*self.get());
     }
     unsafe fn update_activity(&self, from: Option<SystemTime>) {
-        session_update_activity(&mut *self.get(), from);
+        session_update_activity(self, from);
     }
     unsafe fn theme_changed(&self) {
         session_theme_changed(Some(&*self.get()));
