@@ -474,11 +474,20 @@ pub(crate) fn tty_start_write(terminal: &mut tty) {
     }
     let fd = terminal.io_fd.expect("open TTY descriptor");
     let observer = terminal.client.clone();
-    let bytes = reactor::buffer_prefix(terminal.out.as_deref().expect("open TTY buffer"), 65536);
     crate::src::reactor::task_start(&mut terminal.write_task, move || {
         // SAFETY: the client owns this TTY descriptor until terminal cleanup.
         let source = reactor::io(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) })?;
         Ok(async move {
+            // Include output queued before this task runs. Capturing only the
+            // first enqueue leaves an artificial backlog that can trigger TTY
+            // blocking and discard the rest of a redraw on small terminals.
+            let bytes = {
+                let Some(owner) = observer.upgrade() else {
+                    return;
+                };
+                let terminal = unsafe { owner.borrow_terminal() };
+                reactor::buffer_prefix(terminal.out.as_deref().expect("open TTY buffer"), 65536)
+            };
             let buffers = [std::io::IoSlice::new(&bytes)];
             let result = source.write(&buffers, None).await;
             if let Some(owner) = observer.upgrade() {

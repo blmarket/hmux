@@ -1,13 +1,13 @@
 //! FD passing is part of ordinary I/O, including one-way adapters.
 use hmux_rt::stream::{Reader, Writer};
 use hmux_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio};
-use std::future::Future;
+use std::future::{Future, poll_fn};
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::pin::{Pin, pin};
 use std::task::{Context, Poll, Waker};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn tick(runtime: &mut mio::Runtime) {
     runtime.poll(Some(Duration::ZERO)).unwrap();
@@ -18,14 +18,28 @@ fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
 }
 
 fn ready<T>(runtime: &mut mio::Runtime, future: impl Future<Output = T>) -> T {
-    let mut future = pin!(future);
-    for _ in 0..100 {
-        tick(runtime);
-        if let Poll::Ready(value) = poll(future.as_mut()) {
-            return value;
-        }
-    }
-    panic!("operation did not complete");
+    let timeout = runtime
+        .handle()
+        .sleep_until(Instant::now() + Duration::from_secs(5));
+    // PTY delivery can require kernel worker scheduling. Wait for readiness
+    // with a real deadline instead of exhausting a fixed number of busy polls.
+    runtime
+        .block_on(async {
+            let mut future = pin!(future);
+            let mut timeout = pin!(timeout);
+            poll_fn(|cx| {
+                if let Poll::Ready(value) = future.as_mut().poll(cx) {
+                    return Poll::Ready(value);
+                }
+                assert!(
+                    timeout.as_mut().poll(cx).is_pending(),
+                    "operation did not complete"
+                );
+                Poll::Pending
+            })
+            .await
+        })
+        .unwrap()
 }
 
 fn pair() -> (UnixStream, UnixStream) {
