@@ -940,9 +940,6 @@ pub(super) unsafe fn format_loop_sessions(
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -990,10 +987,7 @@ pub(super) unsafe fn format_loop_sessions(
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
-            (item)
-                .as_ref()
-                .and_then(|item| item.observer.upgrade())
-                .as_ref(),
+            item_owner.as_ref(),
             FORMAT_NONE,
             (*ft).flags,
         );
@@ -1120,9 +1114,6 @@ pub(super) unsafe fn format_loop_windows(
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -1186,10 +1177,7 @@ pub(super) unsafe fn format_loop_windows(
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
-            (item)
-                .as_ref()
-                .and_then(|item| item.observer.upgrade())
-                .as_ref(),
+            item_owner.as_ref(),
             (FORMAT_WINDOW | window_id) as ::core::ffi::c_int,
             (*ft).flags,
         );
@@ -1281,9 +1269,6 @@ pub(super) unsafe fn format_loop_panes(
     let mut format_client: Option<ClientRef> = format_client_owner.clone();
     let client_owner = (*ft).client.clone();
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -1339,10 +1324,7 @@ pub(super) unsafe fn format_loop_panes(
         };
         let mut nft_owner = format_create_with_client(
             client_owner.as_ref(),
-            (item)
-                .as_ref()
-                .and_then(|item| item.observer.upgrade())
-                .as_ref(),
+            item_owner.as_ref(),
             (FORMAT_PANE | pane.id()) as ::core::ffi::c_int,
             (*ft).flags,
         );
@@ -1704,9 +1686,6 @@ pub(super) unsafe fn format_loop_clients(
     let format_session_owner = (*ft).s.upgrade();
     let mut c: Option<ClientRef> = None;
     let item_owner = (*ft).item.upgrade();
-    let mut item: *mut cmdq_item = item_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut nft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut next: format_expand_state = format_expand_state {
         ft: ::core::ptr::null_mut::<format_tree>(),
@@ -1751,10 +1730,7 @@ pub(super) unsafe fn format_loop_clients(
         );
         let mut nft_owner = format_create_with_client(
             Some(&clients_sorted[i as usize]),
-            (item)
-                .as_ref()
-                .and_then(|item| item.observer.upgrade())
-                .as_ref(),
+            item_owner.as_ref(),
             0 as ::core::ffi::c_int,
             (*ft).flags,
         );

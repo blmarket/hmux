@@ -337,17 +337,11 @@ unsafe fn format_log1(
         .upgrade()
         .filter(|_| (*ft).flags & FORMAT_VERBOSE != 0)
     {
-        cmdq_print(
-            &(*(item.get()))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-            |out| {
-                out.write_all(b"#")?;
-                write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
-                write_cstr(out, s.as_ptr())
-            },
-        );
+        cmdq_print(&item, |out| {
+            out.write_all(b"#")?;
+            write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
+            write_cstr(out, s.as_ptr())
+        });
     }
 }
 unsafe fn format_copy_state(

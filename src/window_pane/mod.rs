@@ -856,12 +856,7 @@ unsafe fn window_pane_wait_finish(wp_owner: &Rc<std::cell::UnsafeCell<window_pan
             client.set_return_value(retval);
         }
     }
-    cmdq_continue(
-        &(*(item))
-            .observer
-            .upgrade()
-            .expect("live command queue item"),
-    );
+    cmdq_continue(&item_owner);
 }
 
 unsafe fn window_pane_free_modes(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -2147,7 +2142,7 @@ unsafe fn window_pane_start_input(
     // The file initializer publishes its weak identity before dispatch. The
     // callback then owns the box, including its retained client reference.
     let mut cdata = Box::new(window_pane_input_data {
-        item: (*item).observer.clone(),
+        item: std::rc::Rc::downgrade(item_handle),
         client: c.clone(),
         wp: (*wp).id,
         file: Weak::new(),

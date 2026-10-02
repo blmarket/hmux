@@ -293,10 +293,7 @@ pub(super) unsafe fn spawn_pane(
         if let Some(requested_cwd) = (*sc).cwd.as_ref() {
             if !item.is_null() {
                 cwd = Some(format_single_cstring(
-                    (item)
-                        .as_ref()
-                        .and_then(|item| item.observer.upgrade())
-                        .as_ref(),
+                    item_owner.as_ref(),
                     requested_cwd.as_ptr(),
                     c.as_ref(),
                     target_session_owner.as_ref(),

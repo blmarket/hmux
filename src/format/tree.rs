@@ -133,11 +133,7 @@ unsafe fn format_create_box(
     let mut owner = Box::new(format_tree::default());
     let ft = &raw mut *owner;
     (*ft).client = c;
-    (*ft).item = if item.is_null() {
-        std::rc::Weak::new()
-    } else {
-        (*item).observer.clone()
-    };
+    (*ft).item = item_handle.map(std::rc::Rc::downgrade).unwrap_or_default();
     (*ft).tag = tag as u_int;
     (*ft).flags = flags;
     if !item.is_null() {

@@ -86,7 +86,7 @@ unsafe fn cmd_confirm_before_exec(
         default_yes: 0,
     });
     if wait != 0 {
-        cdata.item = (*item).observer.clone();
+        cdata.item = std::rc::Rc::downgrade(item_handle);
     }
     cdata.default_yes = args_has(args, 'y' as i32 as u_char);
     confirm_key =
@@ -168,10 +168,7 @@ unsafe fn cmd_confirm_before_callback(
                 } else {
                     new_item_allocation = cmdq_get_command(&cdata.cmdlist, (*item).state.as_ref());
                     cmdq_insert_after(
-                        &(*(item))
-                            .observer
-                            .upgrade()
-                            .expect("queued insertion anchor"),
+                        item_owner.as_ref().expect("live command queue item"),
                         new_item_allocation,
                     );
                 }
@@ -184,12 +181,7 @@ unsafe fn cmd_confirm_before_callback(
                 client.set_return_value(retcode);
             }
         }
-        cmdq_continue(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        );
+        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
     }
     PROMPT_CLOSE
 }

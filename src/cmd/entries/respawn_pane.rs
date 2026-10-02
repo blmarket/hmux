@@ -73,7 +73,7 @@ unsafe fn cmd_respawn_pane_exec(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let wp = (*target).pane_handle();
     let mut cause: Option<std::ffi::CString> = None;
-    sc.item = (*item).observer.clone();
+    sc.item = std::rc::Rc::downgrade(item_handle);
     sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
     sc.set_wl(wl.clone());
     sc.wp0 = std::rc::Rc::downgrade(wp.as_ref().expect("respawn pane"));

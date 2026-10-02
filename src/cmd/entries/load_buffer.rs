@@ -95,10 +95,7 @@ unsafe fn cmd_load_buffer_done(
     if error != 0 as ::core::ffi::c_int {
         if !item.is_null() {
             cmdq_error(
-                &(*(item))
-                    .observer
-                    .upgrade()
-                    .expect("live command queue item"),
+                item_owner.as_ref().expect("live command queue item"),
                 |out| {
                     write_cstr(out, strerror(error))?;
                     out.write_all(b": ")?;
@@ -113,10 +110,7 @@ unsafe fn cmd_load_buffer_done(
         {
             if !item.is_null() {
                 cmdq_error(
-                    &(*(item))
-                        .observer
-                        .upgrade()
-                        .expect("live command queue item"),
+                    item_owner.as_ref().expect("live command queue item"),
                     |out| write_cstr(out, cause.as_ref().unwrap().as_ptr()),
                 );
             }
@@ -132,12 +126,7 @@ unsafe fn cmd_load_buffer_done(
     }
     cdata.release_client();
     if !item.is_null() {
-        cmdq_continue(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        );
+        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
     }
 }
 unsafe fn cmd_load_buffer_exec(
@@ -152,7 +141,7 @@ unsafe fn cmd_load_buffer_exec(
     let mut tc: Option<ClientRef> = tc_owner.clone();
     let mut cdata = Box::new(cmd_load_buffer_data {
         client: None,
-        item: (*item).observer.clone(),
+        item: std::rc::Rc::downgrade(item_handle),
         name: None,
     });
     let mut bufname: *const ::core::ffi::c_char =

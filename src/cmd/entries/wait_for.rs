@@ -241,23 +241,13 @@ unsafe fn cmd_wait_for_item_client_name(
 }
 unsafe fn cmd_wait_for_waiter_client_name(waiter: &wait_item) -> CString {
     waiter.item.upgrade().map_or_else(CString::default, |item| {
-        cmd_wait_for_item_client_name(
-            &(*(item.get()))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        )
+        cmd_wait_for_item_client_name(&item)
     })
 }
 
 unsafe fn cmd_wait_for_continue_waiter(waiter: &wait_item) {
     if let Some(item) = waiter.item.upgrade() {
-        cmdq_continue(
-            &(*(item.get()))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        );
+        cmdq_continue(&item);
     }
 }
 
@@ -267,12 +257,7 @@ unsafe fn cmd_wait_for_prune_expired(wc: *mut wait_channel) {
 }
 unsafe fn cmd_wait_for_client_name(wei: *mut wait_event_item) -> CString {
     (*wei).item.upgrade().map_or_else(CString::default, |item| {
-        cmd_wait_for_item_client_name(
-            &(*(item.get()))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        )
+        cmd_wait_for_item_client_name(&item)
     })
 }
 unsafe fn cmd_wait_for_exec(
@@ -339,21 +324,12 @@ unsafe fn cmd_wait_for_event_cb(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut flag: ::core::ffi::c_int = 0;
     if (*wei).verbose != 0 {
-        cmd_wait_for_event_print(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-            ep,
-        );
+        cmd_wait_for_event_print(&item_owner, ep);
     }
     if !(*wei).filter.is_none() {
         let mut ft_owner = format_create_with_client(
             queue_client.as_ref(),
-            (item)
-                .as_ref()
-                .and_then(|item| item.observer.upgrade())
-                .as_ref(),
+            Some(&item_owner),
             FORMAT_NONE,
             FORMAT_NOJOBS,
         );
@@ -372,12 +348,7 @@ unsafe fn cmd_wait_for_event_cb(
         }
     }
     let owner = wait_event_items_remove(&raw mut wait_event_items, wei);
-    cmdq_continue(
-        &(*(item))
-            .observer
-            .upgrade()
-            .expect("live command queue item"),
-    );
+    cmdq_continue(&item_owner);
     if let Some(owner) = owner {
         cmd_wait_for_event_free(owner);
     }
@@ -423,7 +394,7 @@ unsafe fn cmd_wait_for_event(
         return CMD_RETURN_ERROR;
     }
     let mut owner = Box::new(wait_event_item {
-        item: (*item).observer.clone(),
+        item: std::rc::Rc::downgrade(item_handle),
         sink: EventSinkId::default(),
         name: CStr::from_ptr(name).to_owned(),
         filter: if filter.is_null() {
@@ -474,12 +445,7 @@ unsafe fn cmd_wait_for_event_wake(
         {
             let owner = (&raw mut wait_event_items).as_mut().unwrap().remove(index);
             if let Some(item) = owner.item.upgrade() {
-                cmdq_continue(
-                    &(*(item.get()))
-                        .observer
-                        .upgrade()
-                        .expect("live command queue item"),
-                );
+                cmdq_continue(&item);
             }
             cmd_wait_for_event_free(owner);
             return CMD_RETURN_NORMAL;
@@ -610,7 +576,7 @@ unsafe fn cmd_wait_for_wait(
         log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")).cast())
     ));
     (*wait_channel_waiters(wc)).push(Box::new(wait_item {
-        item: (*item).observer.clone(),
+        item: std::rc::Rc::downgrade(item_handle),
     }));
     CMD_RETURN_WAIT
 }
@@ -629,7 +595,7 @@ unsafe fn cmd_wait_for_lock(
     }
     if (*wc).locked != 0 {
         (*wait_channel_lockers(wc)).push(Box::new(wait_item {
-            item: (*item).observer.clone(),
+            item: std::rc::Rc::downgrade(item_handle),
         }));
         return CMD_RETURN_WAIT;
     }
@@ -674,12 +640,7 @@ pub unsafe fn cmd_wait_for_flush() {
             break;
         };
         if let Some(item) = owner.item.upgrade() {
-            cmdq_continue(
-                &(*(item.get()))
-                    .observer
-                    .upgrade()
-                    .expect("live command queue item"),
-            );
+            cmdq_continue(&item);
         }
         cmd_wait_for_event_free(owner);
         wei = wei1;

@@ -605,7 +605,7 @@ unsafe fn cmd_new_session_exec(
                                                             .then(|| CStr::from_ptr(sname)), CStr::from_ptr(cwd), env.take()
                                                             .expect("new session environment"), oo.take(), tiop.as_ref());
                                                     s = Some(session_owner.clone());
-                                                    sc.item = (*item).observer.clone();
+                                                    sc.item = std::rc::Rc::downgrade(item_handle);
                                                     sc.s = std::rc::Rc::downgrade(&session_owner);
                                                     if detached == 0 {
                                                         sc.tc = c_owner.as_ref().map_or_else(

@@ -152,7 +152,7 @@ unsafe fn cmd_if_shell_exec(
     }
     if wait != 0 {
         cdata.client = cmdq_get_client((item).as_ref());
-        cdata.item = (*item).observer.clone();
+        cdata.item = std::rc::Rc::downgrade(item_handle);
     } else {
         cdata.client = tc_owner.clone();
     }
@@ -224,10 +224,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                     );
                 } else {
                     cmdq_error(
-                        &(*(item))
-                            .observer
-                            .upgrade()
-                            .expect("live command queue item"),
+                        item_owner.as_ref().expect("live command queue item"),
                         |out| write_cstr(out, error_ptr),
                     );
                 }
@@ -240,10 +237,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
             Ok(commands) => {
                 new_item_allocation = cmdq_get_command(&commands, (*item).state.as_ref());
                 cmdq_insert_after(
-                    &(*(item))
-                        .observer
-                        .upgrade()
-                        .expect("queued insertion anchor"),
+                    item_owner.as_ref().expect("live command queue item"),
                     new_item_allocation,
                 );
                 drop(commands);
@@ -251,12 +245,7 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
         }
     }
     if cdata.wait {
-        cmdq_continue(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        );
+        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
     }
 }
 impl Drop for cmd_if_shell_data {

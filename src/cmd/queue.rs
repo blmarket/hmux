@@ -65,8 +65,6 @@ use std::ffi::{CStr, CString};
 /// let item = cmdq_item::empty();
 /// ```
 pub struct cmdq_item {
-    /// Observe this allocation across detached and queued ownership transfer.
-    pub(crate) observer: std::rc::Weak<std::cell::UnsafeCell<cmdq_item>>,
     pub name: Option<std::ffi::CString>,
     queue: Option<QueueTarget>,
     /// Own the remaining detached chain until enqueue consumes it.
@@ -114,7 +112,6 @@ impl cmdq_item {
 
     fn empty() -> Self {
         Self {
-            observer: Default::default(),
             name: Default::default(),
             queue: Default::default(),
             next: Default::default(),
@@ -180,7 +177,6 @@ unsafe fn cmdq_new_named_item(
 ) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
     let owner = std::rc::Rc::new(std::cell::UnsafeCell::new(cmdq_item::empty()));
     let item = owner.get();
-    (*item).observer = std::rc::Rc::downgrade(&owner);
     (*item).name = Some(format_message_with(|out| {
         out.write_all(b"[")?;
         out.write_all(label.to_bytes())?;
@@ -607,7 +603,9 @@ pub unsafe fn cmdq_insert_hook(
     event_payload_set_identity(
         &mut ep,
         b"_cmdq_item\0" as *const u8 as *const ::core::ffi::c_char,
-        crate::src::shared::events::EventPayloadIdentity::QueueItem((*item).observer.clone()),
+        crate::src::shared::events::EventPayloadIdentity::QueueItem(std::rc::Rc::downgrade(
+            item_handle,
+        )),
     );
     let arguments = args_print_cstring(&*args_0);
     event_payload_set_string(
@@ -685,7 +683,7 @@ unsafe fn cmdq_remove(item_handle: std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>
     drop((*item).state.take());
     if let Some(queue) = (*item).queue.take() {
         queue.with_queue(|queue| {
-            if queue.item.ptr_eq(&(*item).observer) {
+            if queue.item.ptr_eq(&std::rc::Rc::downgrade(&item_handle)) {
                 queue.item = std::rc::Weak::new();
             }
         });

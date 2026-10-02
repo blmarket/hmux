@@ -107,31 +107,18 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_l
     let Some(item_owner) = (*pi).item.upgrade() else {
         return;
     };
-    let item = item_owner.get();
     let s = cmd_list_print_cstring(cmdlist, 0);
     if (*pi).file.is_some() {
-        cmdq_print(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-            |out| {
-                write_cstr(out, (*pi).file_ptr())?;
-                write!(out, ":{}: ", { (*pi).line })?;
-                out.write_all(s.as_bytes())
-            },
-        );
+        cmdq_print(&item_owner, |out| {
+            write_cstr(out, (*pi).file_ptr())?;
+            write!(out, ":{}: ", { (*pi).line })?;
+            out.write_all(s.as_bytes())
+        });
     } else {
-        cmdq_print(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-            |out| {
-                write!(out, "{}: ", { (*pi).line })?;
-                out.write_all(s.as_bytes())
-            },
-        );
+        cmdq_print(&item_owner, |out| {
+            write!(out, "{}: ", { (*pi).line })?;
+            out.write_all(s.as_bytes())
+        });
     }
 }
 fn cmd_parse_new_command(line: u_int) -> Box<cmd_parse_command> {
@@ -167,15 +154,9 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
                 &raw mut fs
             };
             let item_owner = pi.item.upgrade();
-            let item = item_owner
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |owner| owner.get());
             let mut ft_owner = format_create_with_client(
                 client_owner.as_ref(),
-                (item)
-                    .as_ref()
-                    .and_then(|item| item.observer.upgrade())
-                    .as_ref(),
+                item_owner.as_ref(),
                 FORMAT_NONE,
                 FORMAT_NOJOBS,
             );

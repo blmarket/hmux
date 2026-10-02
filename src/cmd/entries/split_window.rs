@@ -279,7 +279,7 @@ unsafe fn cmd_split_window_exec(
                 return CMD_RETURN_ERROR;
             }
         }
-        sc.item = (*item).observer.clone();
+        sc.item = std::rc::Rc::downgrade(item_handle);
         sc.s = std::rc::Rc::downgrade(s.as_ref().expect("live session"));
         sc.set_wl(wl.clone());
         sc.wp0 = std::rc::Rc::downgrade(&original_pane);

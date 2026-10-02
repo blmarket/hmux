@@ -169,7 +169,7 @@ unsafe fn cmd_command_prompt_exec(
         argv: Vec::new(),
     });
     if wait != 0 {
-        cdata.item = (*item).observer.clone();
+        cdata.item = std::rc::Rc::downgrade(item_handle);
     }
     if pane != 0 {
         cdata.wp = std::rc::Rc::downgrade(wp.as_ref().expect("prompt target pane"));
@@ -361,10 +361,7 @@ unsafe fn cmd_command_prompt_callback(
                     Ok(cmdlist) => {
                         new_item_allocation = cmdq_get_command(&cmdlist, (*item).state.as_ref());
                         cmdq_insert_after(
-                            &(*(item))
-                                .observer
-                                .upgrade()
-                                .expect("queued insertion anchor"),
+                            item_owner.as_ref().expect("live command queue item"),
                             new_item_allocation,
                         );
                         drop(cmdlist);
@@ -378,12 +375,7 @@ unsafe fn cmd_command_prompt_callback(
     }
     if cdata.wait {
         cdata.item = Weak::new();
-        cmdq_continue(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        );
+        cmdq_continue(item_owner.as_ref().expect("live command queue item"));
     }
     PROMPT_CLOSE
 }
@@ -399,12 +391,7 @@ impl Drop for cmd_command_prompt_cdata {
     fn drop(&mut self) {
         unsafe {
             if let Some(item) = self.item.upgrade() {
-                cmdq_continue(
-                    &(*(item.get()))
-                        .observer
-                        .upgrade()
-                        .expect("live command queue item"),
-                );
+                cmdq_continue(&item);
             }
             self.prompts.clear();
             drop(self.state.take());

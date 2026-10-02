@@ -222,12 +222,7 @@ impl Drop for popup_data {
                             client.set_return_value(self.status);
                         }
                     }
-                    cmdq_continue(
-                        &(*(item.get()))
-                            .observer
-                            .upgrade()
-                            .expect("live command queue item"),
-                    );
+                    cmdq_continue(&item);
                 }
             }
             if let Some(client) = self.c.take() {
@@ -977,7 +972,6 @@ pub unsafe fn popup_display(
     mut style: *const ::core::ffi::c_char,
     mut border_style: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let item = item_handle.map_or(std::ptr::null_mut(), |item| item.get());
     let mut jx: u_int = 0;
     let mut jy: u_int = 0;
     let mut sytmp: style = style {
@@ -1054,11 +1048,7 @@ pub unsafe fn popup_display(
     let handle = PopupHandle(owner.downgrade());
     let popup = handle.upgrade().expect("new popup");
     let pd = popup.as_ptr();
-    (*pd).item = if item.is_null() {
-        Weak::new()
-    } else {
-        (*item).observer.clone()
-    };
+    (*pd).item = item_handle.map(std::rc::Rc::downgrade).unwrap_or_default();
     (*pd).flags = flags;
     (*pd).c = Some(c_owner.clone());
     (*pd).status = 128 as ::core::ffi::c_int + SIGHUP;

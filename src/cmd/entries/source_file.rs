@@ -160,20 +160,13 @@ unsafe fn cmd_source_file_complete(mut cdata: Box<cmd_source_file_data>) {
     let Some(after_owner) = cdata.after.upgrade().or_else(|| cdata.item.upgrade()) else {
         return;
     };
-    let after = after_owner.get();
     let new_item_allocation = cmdq_get_callback_owned(
         c"cmd_source_file_complete_cb",
         Some(Box::new(move |item| unsafe {
             cmd_source_file_complete_cb(item, cdata)
         })),
     );
-    cmdq_insert_after(
-        &(*(after))
-            .observer
-            .upgrade()
-            .expect("queued insertion anchor"),
-        new_item_allocation,
-    );
+    cmdq_insert_after(&after_owner, new_item_allocation);
 }
 
 unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
@@ -208,17 +201,11 @@ unsafe fn cmd_source_file_done(
     let mut new_item = Weak::new();
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     if error != 0 {
-        cmdq_error(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-            |out| {
-                write_cstr(out, strerror(error))?;
-                out.write_all(b": ")?;
-                write_cstr(out, path)
-            },
-        );
+        cmdq_error(&item_owner, |out| {
+            write_cstr(out, strerror(error))?;
+            out.write_all(b": ")?;
+            write_cstr(out, path)
+        });
     } else if bsize != 0 {
         let after_owner = cdata
             .after
@@ -229,10 +216,7 @@ unsafe fn cmd_source_file_done(
             bsize,
             path,
             cdata.client.as_ref(),
-            (after_owner.get())
-                .as_ref()
-                .and_then(|item| item.observer.upgrade())
-                .as_ref(),
+            Some(&after_owner),
             target,
             cdata.flags,
             Some(&mut new_item),
@@ -248,12 +232,7 @@ unsafe fn cmd_source_file_done(
         Some(cdata)
     } else {
         cmd_source_file_complete(cdata);
-        cmdq_continue(
-            &(*(item))
-                .observer
-                .upgrade()
-                .expect("live command queue item"),
-        );
+        cmdq_continue(&item_owner);
         None
     }
 }
@@ -319,7 +298,7 @@ unsafe fn cmd_source_file_exec(
         ));
     }
     let mut cdata = Box::new(cmd_source_file_data {
-        item: (*item).observer.clone(),
+        item: std::rc::Rc::downgrade(item_handle),
         client: if c.is_none() { None } else { c.clone() },
         depth_active: true,
         flags: 0,
@@ -404,7 +383,7 @@ unsafe fn cmd_source_file_exec(
         }
         i = i.wrapping_add(1);
     }
-    cdata.after = (*item).observer.clone();
+    cdata.after = std::rc::Rc::downgrade(item_handle);
     cdata.retval = retval;
     if !cdata.files.is_empty() {
         cmd_source_file_read(cdata);

@@ -131,7 +131,7 @@ unsafe fn file_set_cmdq_wait(
     let owner = &mut *file_owner.get();
     assert!(!item.is_null());
     assert!(!owner.wait_active);
-    owner.wait_item = (*item).observer.clone();
+    owner.wait_item = std::rc::Rc::downgrade(item_handle);
     owner.wait_active = true;
     owner.wait_client = (*item).client.clone();
     owner.cancel_data = cancel_cb;
