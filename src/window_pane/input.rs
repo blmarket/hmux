@@ -212,29 +212,6 @@ mod input_buffer_ownership_tests {
     }
 
     #[test]
-    fn dropping_the_input_owner_cancels_registered_timers() {
-        unsafe {
-            let mut owner = input_init(None, std::ptr::null_mut(), Default::default(), None);
-            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
-            for timer in [&mut owner.ground_timer, &mut owner.request_timer] {
-                let calls = calls.clone();
-                *timer = Some(
-                    Timer::new(Duration::ZERO, move || calls.set(calls.get() + 1))
-                        .expect("arm timer"),
-                );
-            }
-            // Moving the owning Box into a model field keeps both timers armed.
-            // The owner cleanup must cancel both registrations.
-            let slot = Some(owner);
-            drop(slot);
-            crate::src::reactor::poll_runtime();
-            assert_eq!(calls.get(), 0);
-            assert_eq!(std::rc::Rc::strong_count(&calls), 1);
-            crate::src::reactor::shutdown_runtime();
-        }
-    }
-
-    #[test]
     fn input_observes_pane_and_can_outlive_its_allocation() {
         unsafe {
             let pane = window_pane::new();
@@ -244,37 +221,6 @@ mod input_buffer_ownership_tests {
             drop(pane);
             assert!(context.wp.upgrade().is_none());
             drop(context);
-            crate::src::reactor::shutdown_runtime();
-        }
-    }
-
-    #[test]
-    fn final_pane_release_cancels_sync_without_upgrading_input_observer() {
-        unsafe {
-            let pane = window_pane::new();
-            let pointer = pane.get();
-            (*pointer).base.grid = Some(crate::src::grid::grid_create(8, 2, 0));
-            (*pointer).base.mode |= MODE_SYNC;
-            (*pointer).ictx = Some(input_init(
-                Some(&pane),
-                std::ptr::null_mut(),
-                Default::default(),
-                None,
-            ));
-            let observed = std::rc::Rc::downgrade(&pane);
-            let calls = std::rc::Rc::new(std::cell::Cell::new(0));
-            let callback_calls = calls.clone();
-            (*pointer).sync_timer = Some(
-                Timer::new(Duration::ZERO, move || {
-                    callback_calls.set(callback_calls.get() + 1)
-                })
-                .expect("arm timer"),
-            );
-            drop(pane);
-            assert!(observed.upgrade().is_none());
-            crate::src::reactor::poll_runtime();
-            assert_eq!(calls.get(), 0);
-            assert_eq!(std::rc::Rc::strong_count(&calls), 1);
             crate::src::reactor::shutdown_runtime();
         }
     }

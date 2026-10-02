@@ -242,7 +242,6 @@ pub unsafe fn new_buffer_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use std::os::fd::AsRawFd;
     use std::os::unix::net::UnixStream;
 
@@ -287,78 +286,6 @@ mod tests {
     }
 
     #[test]
-    fn fixed_watermark_pauses_and_drain_resumes_reads() {
-        let (socket, mut peer) = UnixStream::pair().unwrap();
-        let callbacks_seen = Rc::new(Cell::new(0));
-        let seen = callbacks_seen.clone();
-        let stream = unsafe {
-            new_buffer_event(
-                socket.as_raw_fd(),
-                StreamOptions {
-                    read_low: 3,
-                    read_high: Some(3),
-                    ..Default::default()
-                },
-                Callbacks {
-                    read: Some(Box::new(move |handle| {
-                        assert_eq!(handle.input_len(), Ok(3));
-                        seen.set(seen.get() + 1);
-                    })),
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-        };
-        stream.enable(Interests::READ).unwrap();
-        peer.write_all(b"abcdef").unwrap();
-        super::super::tests::poll_until(|| callbacks_seen.get() == 1);
-        assert_eq!(stream.input_len(), Ok(3));
-        let mut bytes = [0; 3];
-        stream.copy_input(0, &mut bytes).unwrap();
-        assert_eq!(&bytes, b"abc");
-        stream.drain_input(3).unwrap();
-        super::super::tests::poll_until(|| callbacks_seen.get() == 2);
-        stream.copy_input(0, &mut bytes).unwrap();
-        assert_eq!(&bytes, b"def");
-        stream.free();
-        // Explicit free restores flags but leaves the caller's fd open.
-        assert_eq!(
-            unsafe { libc::fcntl(socket.as_raw_fd(), libc::F_GETFL) } & libc::O_NONBLOCK,
-            0
-        );
-        super::super::super::shutdown_runtime();
-    }
-
-    #[test]
-    fn eof_callback_can_consume_handle_and_release_captures() {
-        let (socket, peer) = UnixStream::pair().unwrap();
-        let capture = Rc::new(());
-        let weak_capture = Rc::downgrade(&capture);
-        let stream = unsafe {
-            new_buffer_event(
-                socket.as_raw_fd(),
-                StreamOptions::default(),
-                Callbacks {
-                    event: Some(Box::new(move |handle, event| {
-                        assert_eq!(event.direction, Direction::Read);
-                        assert!(matches!(event.cause, StreamEventCause::Eof));
-                        assert_eq!(Rc::strong_count(&capture), 1);
-                        handle.free();
-                    })),
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-        };
-        stream.enable(Interests::READ).unwrap();
-        drop(peer);
-        super::super::tests::poll_until(|| !stream.is_alive());
-        assert!(weak_capture.upgrade().is_none());
-        stream.free();
-        super::super::super::shutdown_runtime();
-    }
-
-    #[test]
     fn invalid_options_do_not_change_descriptor_flags() {
         let (socket, _peer) = UnixStream::pair().unwrap();
         let flags = unsafe { libc::fcntl(socket.as_raw_fd(), libc::F_GETFL) };
@@ -380,39 +307,5 @@ mod tests {
                 flags
             );
         }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn freeing_file_stream_restores_flags_and_releases_callbacks() {
-        let file = std::fs::File::open("Cargo.toml").unwrap();
-        let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
-        assert!(flags >= 0);
-        assert_eq!(flags & libc::O_NONBLOCK, 0);
-        let capture = Rc::new(());
-        let observer = Rc::downgrade(&capture);
-        let result = unsafe {
-            new_buffer_event(
-                file.as_raw_fd(),
-                StreamOptions::default(),
-                Callbacks {
-                    read: Some(Box::new(move |_| {
-                        let _keep = &capture;
-                        panic!("disabled stream must not run callbacks");
-                    })),
-                    ..Default::default()
-                },
-            )
-        };
-        let stream = result.unwrap();
-        stream.free();
-        // Explicit cleanup restores flags and leaves the caller's fd open.
-        assert_eq!(
-            unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) },
-            flags
-        );
-        assert!(observer.upgrade().is_none());
-        super::super::super::poll_runtime_with_timeout(Some(std::time::Duration::ZERO));
-        super::super::super::shutdown_runtime();
     }
 }

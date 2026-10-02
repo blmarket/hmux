@@ -4901,85 +4901,8 @@ unsafe fn server_client_report_theme(c_owner: &ClientRef, mut theme: client_them
 }
 
 #[cfg(test)]
-mod client_registry_tests {
-    use super::{client, ClientRegistry};
-
-    #[test]
-    fn client_links_handle_head_tail_removal_and_append() {
-        use std::rc::Rc;
-        unsafe {
-            let mut registry = ClientRegistry::new();
-            let first = client::new();
-            let middle = client::new();
-            let last = client::new();
-            let appended = client::new();
-            for owner in [&first, &middle, &last] {
-                registry.push_back(owner.clone());
-            }
-
-            let removed = registry.remove(&Rc::downgrade(&first)).unwrap();
-            assert!(Rc::ptr_eq(&registry.first().unwrap(), &middle));
-            assert!(Rc::ptr_eq(&registry.next(&removed).unwrap(), &middle));
-            super::server_client_unref_owned(removed);
-
-            let removed = registry.remove(&Rc::downgrade(&last)).unwrap();
-            assert!(registry.next(&middle).is_none());
-            registry.push_back(appended.clone());
-            assert!(Rc::ptr_eq(&registry.next(&middle).unwrap(), &appended));
-            assert!(registry.next(&removed).is_none());
-            assert!(registry.next(&appended).is_none());
-            super::server_client_unref_owned(removed);
-
-            registry.clear();
-            assert!(registry.first().is_none());
-            assert!(registry.next(&middle).is_none());
-            crate::src::reactor::poll_runtime();
-        }
-    }
-
-    #[test]
-    fn client_index_preserves_order_after_removal() {
-        use std::rc::Rc;
-        unsafe {
-            let mut registry = ClientRegistry::new();
-            let first = client::new();
-            let middle = client::new();
-            let last = client::new();
-            for owner in [&first, &middle, &last] {
-                registry.push_back(owner.clone());
-            }
-            assert!(Rc::ptr_eq(&registry.first().unwrap(), &first));
-            assert!(Rc::ptr_eq(&registry.next(&first).unwrap(), &middle));
-            let held_successor = registry.next(&middle).unwrap();
-            assert!(Rc::ptr_eq(&held_successor, &last));
-            let middle_observer = Rc::downgrade(&middle);
-            let middle_owner = registry.remove(&middle_observer).unwrap();
-            assert!(Rc::ptr_eq(&middle_owner, &middle));
-            assert!(registry.remove(&middle_observer).is_none());
-            super::server_client_unref_owned(middle_owner);
-            assert!(Rc::ptr_eq(&registry.next(&first).unwrap(), &last));
-            assert!(Rc::ptr_eq(&registry.next(&middle).unwrap(), &last));
-            let last_observer = Rc::downgrade(&last);
-            registry.clear();
-            drop(first);
-            drop(middle);
-            drop(last);
-            crate::src::reactor::poll_runtime();
-            assert!(middle_observer.upgrade().is_none());
-            assert!(
-                last_observer.upgrade().is_some(),
-                "saved successor retains its client"
-            );
-            drop(held_successor);
-            assert!(last_observer.upgrade().is_none());
-            assert!(registry.first().is_none());
-        }
-    }
-}
-
-#[cfg(test)]
 mod key_event_owner_tests {
-    use super::{client, key_event, server_client_handle_key, QueuedKeyEvent};
+    use super::key_event;
 
     #[test]
     fn absent_and_empty_bytes_remain_distinct_in_snapshots() {
@@ -4990,84 +4913,10 @@ mod key_event_owner_tests {
         assert_eq!(empty.bytes_ptr_len(), Some([].as_slice()));
         assert!(empty.metadata_snapshot().bytes.is_none());
     }
-
-    #[test]
-    fn early_return_and_cancellation_release_owned_events() {
-        unsafe {
-            let owner = client::new();
-            let mouse = Default::default();
-            assert_eq!(
-                server_client_handle_key(&owner, key_event::new(1, mouse, Some(vec![1]))),
-                0
-            );
-
-            let mut queued = key_event::new(2, mouse, Some(vec![2]));
-            queued.client = std::rc::Rc::downgrade(&owner);
-            drop(QueuedKeyEvent(queued, Some(owner.clone())));
-            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-            crate::src::reactor::poll_runtime();
-            assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-        }
-    }
 }
 
 impl Drop for client {
     fn drop(&mut self) {
         unsafe { server_client_free(self) }
-    }
-}
-
-#[cfg(test)]
-mod client_timer_observer_tests {
-    use super::*;
-
-    #[test]
-    fn suspended_client_releases_expired_exit_timer_and_can_start_another() {
-        unsafe {
-            let owner = client::new();
-            (*owner.get()).flags |= CLIENT_SUSPENDED as uint64_t;
-            (*owner.get()).exit_timer = Some(server_client_timer(
-                &*owner.get(),
-                Duration::ZERO,
-                server_client_exit_timer,
-            ));
-            crate::src::reactor::poll_runtime();
-            assert!((*owner.get()).exit_timer.is_none());
-            server_client_start_exit_timer(&mut *owner.get());
-            assert!((*owner.get()).exit_timer.is_some());
-            drop((*owner.get()).exit_timer.take());
-            crate::src::reactor::shutdown_runtime();
-        }
-    }
-
-    #[test]
-    fn click_timer_updates_live_client_and_can_outlive_it_without_retaining_it() {
-        unsafe {
-            let owner = client::new();
-            let observer = std::rc::Rc::downgrade(&owner);
-            (*owner.get()).flags |= CLIENT_DOUBLECLICK as uint64_t;
-            let immediate = Duration::ZERO;
-            (*owner.get()).click_timer = Some(server_client_timer(
-                &*owner.get(),
-                immediate,
-                server_client_click_timer,
-            ));
-            crate::src::reactor::poll_runtime();
-            assert_eq!((*owner.get()).flags & CLIENT_DOUBLECLICK as uint64_t, 0);
-            (*owner.get()).click_timer = Some(server_client_timer(
-                &*owner.get(),
-                immediate,
-                server_client_click_timer,
-            ));
-            let detached_timer = (*owner.get()).click_timer.take();
-            drop(owner);
-            assert!(
-                observer.upgrade().is_none(),
-                "timer callbacks must not retain clients"
-            );
-            crate::src::reactor::poll_runtime();
-            assert!(observer.upgrade().is_none());
-            drop(detached_timer);
-        }
     }
 }

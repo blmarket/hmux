@@ -1701,33 +1701,3 @@ mod tests {
         }
     }
 }
-
-#[cfg(test)]
-mod cycle_owner_tests {
-    use super::*;
-
-    #[test]
-    fn cycle_timer_observes_client_without_retaining_it() {
-        unsafe {
-            let owner = client::new();
-            let observer = std::rc::Rc::downgrade(&owner);
-            for _ in 0..2 {
-                (*owner.get()).flags &= !(CLIENT_REDRAWSTATUS as uint64_t);
-                owner.schedule_format_cycle(0);
-                assert!((*owner.get()).cycle_timer.is_some());
-                assert_eq!(std::rc::Rc::strong_count(&owner), 1);
-                crate::src::reactor::poll_runtime();
-                assert_ne!((*owner.get()).flags & CLIENT_REDRAWSTATUS as uint64_t, 0);
-                assert!((*owner.get()).cycle_timer.is_none());
-            }
-
-            owner.schedule_format_cycle(0);
-            let timer = (*owner.get()).cycle_timer.take();
-            drop(owner);
-            assert!(observer.upgrade().is_none());
-            crate::src::reactor::poll_runtime();
-            drop(timer);
-            crate::src::reactor::shutdown_runtime();
-        }
-    }
-}

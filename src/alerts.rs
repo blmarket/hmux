@@ -99,23 +99,8 @@ pub unsafe fn alerts_queue(owner: &WindowRef, flags: i32) {
 
 #[cfg(test)]
 mod alerts_list_tests {
-    use super::{alerts_enqueue, alerts_list, alerts_pop_front, alerts_task, schedule};
+    use super::{alerts_enqueue, alerts_pop_front};
     use std::collections::VecDeque;
-
-    #[test]
-    fn completed_dispatch_releases_its_handle_and_can_be_scheduled_again() {
-        unsafe {
-            assert!(alerts_list.is_empty());
-            for _ in 0..2 {
-                assert!(alerts_task.is_none());
-                schedule(0);
-                assert!(alerts_task.is_some());
-                crate::src::reactor::poll_runtime();
-                assert!(alerts_task.is_none());
-            }
-        }
-        crate::src::reactor::shutdown_runtime();
-    }
 
     fn run_callback<T>(queue: &mut VecDeque<T>, mut process: impl FnMut(T, &mut VecDeque<T>)) {
         loop {

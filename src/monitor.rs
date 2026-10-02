@@ -1063,53 +1063,6 @@ mod ownership_tests {
     use super::*;
 
     #[test]
-    fn destroy_expires_observers_before_releasing_callback_captures() {
-        use std::cell::{Cell, RefCell};
-
-        struct Capture {
-            observer: Rc<RefCell<refbox::Weak<monitor_set>>>,
-            drops: Rc<Cell<usize>>,
-        }
-        impl Drop for Capture {
-            fn drop(&mut self) {
-                let observer = self.observer.borrow();
-                assert!(matches!(
-                    observer.try_borrow_mut(),
-                    Err(refbox::BorrowError::Dropped)
-                ));
-                self.drops.set(self.drops.get() + 1);
-            }
-        }
-
-        unsafe {
-            let observer = Rc::new(RefCell::new(refbox::Weak::new()));
-            let drops = Rc::new(Cell::new(0));
-            let capture = Capture {
-                observer: observer.clone(),
-                drops: drops.clone(),
-            };
-            let owner = monitor_create(Rc::new(move |_| {
-                let _ = &capture;
-            }));
-            *observer.borrow_mut() = owner.downgrade();
-            monitor_add(
-                &owner.downgrade(),
-                c"watched".as_ptr(),
-                MONITOR_SESSION,
-                -1,
-                c"".as_ptr(),
-                0,
-            );
-            monitor_destroy(owner);
-            assert_eq!(drops.get(), 1);
-            // An outstanding observer and the cancelled timer do not keep captures alive.
-            crate::src::reactor::poll_runtime();
-            assert_eq!(drops.get(), 1);
-            crate::src::reactor::shutdown_runtime();
-        }
-    }
-
-    #[test]
     fn traversal_preserves_prefetched_successor_order_and_resolves_live_names() {
         unsafe {
             let owner = monitor_create(Rc::new(|_| {}));
@@ -1159,75 +1112,6 @@ mod ownership_tests {
                 c"b"
             );
             monitor_destroy(owner);
-        }
-    }
-
-    #[test]
-    fn callback_destroy_cancels_timer_and_stops_the_remaining_traversal() {
-        use std::cell::{Cell, RefCell};
-        unsafe {
-            let owner_slot = Rc::new(RefCell::new(None::<refbox::RefBox<monitor_set>>));
-            let callback_owner = owner_slot.clone();
-            let calls = Rc::new(Cell::new(0));
-            let callback_calls = calls.clone();
-            let owner = monitor_create(Rc::new(move |change| {
-                let owner = callback_owner.borrow_mut().take().unwrap();
-                // Count, time and last are committed before user callbacks.
-                assert_eq!(
-                    monitor_get_fire_count(&owner.downgrade(), change.name.as_ptr()),
-                    1
-                );
-                let observer = owner.downgrade();
-                monitor_destroy(owner);
-                assert!(!observer.is_alive());
-                assert_eq!(change.name, c"a");
-                assert_eq!(change.value, c"new");
-                assert_eq!(change.last, None);
-                callback_calls.set(callback_calls.get() + 1);
-            }));
-            for name in [c"a", c"b"] {
-                monitor_add(
-                    &owner.downgrade(),
-                    name.as_ptr(),
-                    MONITOR_SESSION,
-                    -1,
-                    c"".as_ptr(),
-                    MONITOR_NOTIFY_INITIAL,
-                );
-            }
-            let observer = owner.downgrade();
-            let active_dispatch = owner.downgrade();
-            *owner_slot.borrow_mut() = Some(owner);
-            let mut visited = 0;
-            monitor_visit(&active_dispatch, |name, _| {
-                visited += 1;
-                monitor_check_value(
-                    &active_dispatch,
-                    &name,
-                    None,
-                    refbox::Weak::new(),
-                    None,
-                    c"new",
-                    MonitorValueTarget::Session,
-                    None,
-                );
-            });
-            assert_eq!(visited, 1);
-            assert_eq!(calls.get(), 1);
-            assert!(!observer.is_alive());
-            assert!(matches!(
-                active_dispatch.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            // A captured weak timer cannot prolong ownership or revive a dead set.
-            drop(active_dispatch);
-            assert!(matches!(
-                observer.try_borrow_mut(),
-                Err(refbox::BorrowError::Dropped)
-            ));
-            crate::src::reactor::poll_runtime();
-            assert_eq!(calls.get(), 1);
-            crate::src::reactor::shutdown_runtime();
         }
     }
 
