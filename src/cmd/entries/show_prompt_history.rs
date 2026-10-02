@@ -117,9 +117,7 @@ unsafe fn cmd_show_prompt_history_exec(
                 });
                 h = h.wrapping_add(1);
             }
-            cmdq_print(item_handle, |out| {
-                write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
-            });
+            cmdq_print(item_handle, |out| write_cstr(out, c"".as_ptr()));
             t = t.wrapping_add(1);
         }
     } else {
@@ -147,9 +145,7 @@ unsafe fn cmd_show_prompt_history_exec(
             });
             h = h.wrapping_add(1);
         }
-        cmdq_print(item_handle, |out| {
-            write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char)
-        });
+        cmdq_print(item_handle, |out| write_cstr(out, c"".as_ptr()));
     }
     CMD_RETURN_NORMAL
 }

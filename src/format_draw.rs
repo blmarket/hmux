@@ -917,15 +917,15 @@ pub unsafe fn format_draw(
     let mut current_block: u64;
     let mut current: C2RustUnnamed_39 = LEFT;
     let mut last: C2RustUnnamed_39 = LEFT;
-    let mut names: [*const ::core::ffi::c_char; 8] = [
-        b"LEFT\0" as *const u8 as *const ::core::ffi::c_char,
-        b"CENTRE\0" as *const u8 as *const ::core::ffi::c_char,
-        b"RIGHT\0" as *const u8 as *const ::core::ffi::c_char,
-        b"ABSOLUTE_CENTRE\0" as *const u8 as *const ::core::ffi::c_char,
-        b"LIST\0" as *const u8 as *const ::core::ffi::c_char,
-        b"LIST_LEFT\0" as *const u8 as *const ::core::ffi::c_char,
-        b"LIST_RIGHT\0" as *const u8 as *const ::core::ffi::c_char,
-        b"AFTER\0" as *const u8 as *const ::core::ffi::c_char,
+    let names: [&'static CStr; 8] = [
+        c"LEFT",
+        c"CENTRE",
+        c"RIGHT",
+        c"ABSOLUTE_CENTRE",
+        c"LIST",
+        c"LIST_LEFT",
+        c"LIST_RIGHT",
+        c"AFTER",
     ];
     let mut size: size_t = strlen(expanded);
     let mut os: *mut screen = (*octx).screen_ptr();
@@ -1347,8 +1347,8 @@ pub unsafe fn format_draw(
                         log_debug(format_args!(
                             "{}: change {} -> {}",
                             "format_draw",
-                            log_cstr((names[last as usize]) as *const _),
-                            log_cstr((names[current as usize]) as *const _)
+                            log_cstr(names[last as usize].as_ptr()),
+                            log_cstr(names[current as usize].as_ptr())
                         ));
                         last = current;
                     }
@@ -1396,7 +1396,7 @@ pub unsafe fn format_draw(
             log_debug(format_args!(
                 "{}: width {} is {}",
                 "format_draw",
-                log_cstr((names[i as usize]) as *const _),
+                log_cstr(names[i as usize].as_ptr()),
                 (width[i as usize]) as u32
             ));
             i = i.wrapping_add(1);
@@ -1415,7 +1415,7 @@ pub unsafe fn format_draw(
                 "format_draw",
                 (fr.type_0 as ::core::ffi::c_uint) as i32,
                 { fr.argument },
-                log_cstr((names[fr.index as usize]) as *const _),
+                log_cstr(names[fr.index as usize].as_ptr()),
                 { fr.start },
                 { fr.end }
             ));

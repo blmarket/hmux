@@ -19,8 +19,7 @@ use crate::src::shared::pane::{
 use crate::src::shared::posix_io::_PATH_BSHELL;
 use crate::src::shared::window::WINDOW_SIZE_LATEST;
 
-pub const _PATH_VI: [::core::ffi::c_char; 12] =
-    unsafe { ::core::mem::transmute::<[u8; 12], [::core::ffi::c_char; 12]>(*b"/usr/bin/vi\0") };
+pub const _PATH_VI: &std::ffi::CStr = c"/usr/bin/vi";
 
 static options_table_mode_keys_list: [&std::ffi::CStr; 2] = [c"emacs", c"vi"];
 static options_table_clock_mode_style_list: [&std::ffi::CStr; 4] =
@@ -79,11 +78,11 @@ static options_table_theme_list: [&std::ffi::CStr; 4] = [c"detect", c"terminal",
 static options_table_copy_mode_line_numbers_list: [&std::ffi::CStr; 5] =
     [c"off", c"default", c"absolute", c"relative", c"hybrid"];
 static options_table_status_format_default: [&std::ffi::CStr; 3] = [
-    unsafe { std::ffi::CStr::from_ptr(OPTIONS_TABLE_STATUS_FORMAT1.as_ptr()) },
-    unsafe { std::ffi::CStr::from_ptr(OPTIONS_TABLE_STATUS_FORMAT2.as_ptr()) },
-    unsafe { std::ffi::CStr::from_ptr(OPTIONS_TABLE_STATUS_FORMAT3.as_ptr()) },
+    OPTIONS_TABLE_STATUS_FORMAT1,
+    OPTIONS_TABLE_STATUS_FORMAT2,
+    OPTIONS_TABLE_STATUS_FORMAT3,
 ];
-pub static mut options_other_names: [options_name_map; 8] = [
+pub static options_other_names: [options_name_map; 8] = [
     options_name_map {
         from: c"display-panes-color",
         to: c"display-panes-colour",
@@ -114,10 +113,8 @@ pub static mut options_other_names: [options_name_map; 8] = [
     },
     options_name_map { from: c"", to: c"" },
 ];
-pub const TMUX_LOCK_CMD: [::core::ffi::c_char; 9] =
-    unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"lock -np\0") };
-pub const TMUX_TERM: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b"tmux-256color\0") };
+pub const TMUX_LOCK_CMD: &std::ffi::CStr = c"lock -np";
+pub const TMUX_TERM: &std::ffi::CStr = c"tmux-256color";
 pub const TMUX_MOUSE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub static options_table: [options_table_entry; 273] = [
         options_table_entry {
@@ -282,7 +279,7 @@ pub static options_table: [options_table_entry; 273] = [
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(unsafe { std::ffi::CStr::from_ptr(TMUX_TERM.as_ptr()) }),
+            default_str: Some(TMUX_TERM),
             default_num: 0,
             default_arr: None,
             separator: None,
@@ -299,7 +296,7 @@ pub static options_table: [options_table_entry; 273] = [
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(unsafe { std::ffi::CStr::from_ptr(_PATH_VI.as_ptr()) }),
+            default_str: Some(_PATH_VI),
             default_num: 0,
             default_arr: None,
             separator: None,
@@ -1116,7 +1113,7 @@ pub static options_table: [options_table_entry; 273] = [
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(unsafe { std::ffi::CStr::from_ptr(_PATH_BSHELL.as_ptr()) }),
+            default_str: Some(_PATH_BSHELL),
             default_num: 0,
             default_arr: None,
             separator: None,
@@ -1286,7 +1283,7 @@ pub static options_table: [options_table_entry; 273] = [
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(unsafe { std::ffi::CStr::from_ptr(TMUX_LOCK_CMD.as_ptr()) }),
+            default_str: Some(TMUX_LOCK_CMD),
             default_num: 0,
             default_arr: None,
             separator: None,

@@ -285,49 +285,26 @@ unsafe fn window_fire_pane_moved(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(
-        &mut ep,
-        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        Rc::clone(wp_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane".as_ptr(), Rc::clone(wp_owner));
+    event_payload_set_window(&mut ep, c"window".as_ptr(), std::rc::Rc::clone(new_w_owner));
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(new_w_owner),
-    );
-    event_payload_set_window(
-        &mut ep,
-        b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"old_window".as_ptr(),
         std::rc::Rc::clone(old_w_owner),
     );
     event_payload_set_window(
         &mut ep,
-        b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"new_window".as_ptr(),
         std::rc::Rc::clone(new_w_owner),
     );
     if old_idx != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(
-            &mut ep,
-            b"old_window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            old_idx,
-        );
+        event_payload_set_int(&mut ep, c"old_window_index".as_ptr(), old_idx);
     }
     if new_idx != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(
-            &mut ep,
-            b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            new_idx,
-        );
-        event_payload_set_int(
-            &mut ep,
-            b"new_window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            new_idx,
-        );
+        event_payload_set_int(&mut ep, c"window_index".as_ptr(), new_idx);
+        event_payload_set_int(&mut ep, c"new_window_index".as_ptr(), new_idx);
     }
-    events_fire(
-        b"pane-moved\0" as *const u8 as *const ::core::ffi::c_char,
-        ep,
-    );
+    events_fire(c"pane-moved".as_ptr(), ep);
 }
 
 unsafe fn window_fire_pane_mode_changed(
@@ -349,35 +326,23 @@ unsafe fn window_fire_pane_mode_changed(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(
-        &mut ep,
-        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(wp_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window".as_ptr(),
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if !current.is_null() {
-        event_payload_set_string(
-            &mut ep,
-            b"current_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, current),
-        );
+        event_payload_set_string(&mut ep, c"current_mode".as_ptr(), |out| {
+            write_cstr(out, current)
+        });
     }
     if !previous.is_null() {
-        event_payload_set_string(
-            &mut ep,
-            b"previous_mode\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, previous),
-        );
+        event_payload_set_string(&mut ep, c"previous_mode".as_ptr(), |out| {
+            write_cstr(out, previous)
+        });
     }
-    event_payload_set_int(
-        &mut ep,
-        b"mode_entered\0" as *const u8 as *const ::core::ffi::c_char,
-        entered,
-    );
+    event_payload_set_int(&mut ep, c"mode_entered".as_ptr(), entered);
     events_fire(name, ep);
 }
 
@@ -399,21 +364,15 @@ unsafe fn window_fire_pane_prompt(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(
-        &mut ep,
-        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(wp_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window".as_ptr(),
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
-    event_payload_set_string(
-        &mut ep,
-        b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| out.write_all(type_string.to_bytes()),
-    );
+    event_payload_set_string(&mut ep, c"prompt_type".as_ptr(), |out| {
+        out.write_all(type_string.to_bytes())
+    });
     events_fire(name, ep);
 }
 
@@ -949,10 +908,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     drop((*wp).sync_timer.take());
     drop((*wp).sb_auto_timer.take());
     window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
-    window_pane_remove_ref(
-        owner,
-        b"window_pane_destroy\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    window_pane_remove_ref(owner, c"window_pane_destroy".as_ptr());
 }
 
 unsafe fn window_pane_free(wp_value: &mut window_pane) {
@@ -1115,40 +1071,17 @@ unsafe fn window_pane_resize(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, pane_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(
-        &mut ep,
-        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(pane_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(pane_owner));
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window".as_ptr(),
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
-    event_payload_set_uint(
-        &mut ep,
-        b"width\0" as *const u8 as *const ::core::ffi::c_char,
-        sx,
-    );
-    event_payload_set_uint(
-        &mut ep,
-        b"height\0" as *const u8 as *const ::core::ffi::c_char,
-        sy,
-    );
-    event_payload_set_uint(
-        &mut ep,
-        b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
-        old_sx,
-    );
-    event_payload_set_uint(
-        &mut ep,
-        b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
-        old_sy,
-    );
-    events_fire(
-        b"pane-resized\0" as *const u8 as *const ::core::ffi::c_char,
-        ep,
-    );
+    event_payload_set_uint(&mut ep, c"width".as_ptr(), sx);
+    event_payload_set_uint(&mut ep, c"height".as_ptr(), sy);
+    event_payload_set_uint(&mut ep, c"old_width".as_ptr(), old_sx);
+    event_payload_set_uint(&mut ep, c"old_height".as_ptr(), old_sy);
+    events_fire(c"pane-resized".as_ptr(), ep);
 }
 
 unsafe fn window_pane_set_mode(
@@ -1228,14 +1161,14 @@ unsafe fn window_pane_set_mode(
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
-        b"pane-mode-entered\0" as *const u8 as *const ::core::ffi::c_char,
+        c"pane-mode-entered".as_ptr(),
         pane_owner,
         oname,
         name,
         1 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
-        b"pane-mode-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"pane-mode-changed".as_ptr(),
         pane_owner,
         oname,
         name,
@@ -1306,14 +1239,14 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
-        b"pane-mode-exited\0" as *const u8 as *const ::core::ffi::c_char,
+        c"pane-mode-exited".as_ptr(),
         pane_owner,
         p,
         name,
         0 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
-        b"pane-mode-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"pane-mode-changed".as_ptr(),
         pane_owner,
         p,
         name,
@@ -1420,11 +1353,7 @@ unsafe fn window_pane_set_prompt(
     (*wp).prompt_data = identity;
     (*wp).flags |= PANE_REDRAW;
     prompt_incremental_start(&prompt);
-    window_fire_pane_prompt(
-        b"pane-prompt-opened\0" as *const u8 as *const ::core::ffi::c_char,
-        pane_owner,
-        type_0,
-    );
+    window_fire_pane_prompt(c"pane-prompt-opened".as_ptr(), pane_owner, type_0);
 }
 
 unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -1442,11 +1371,7 @@ unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_pane>
         prompt_free(&prompt.downgrade());
         (*wp).flags |= PANE_REDRAW;
         if !(*wp).flags & PANE_DESTROYED != 0 {
-            window_fire_pane_prompt(
-                b"pane-prompt-closed\0" as *const u8 as *const ::core::ffi::c_char,
-                owner,
-                type_0,
-            );
+            window_fire_pane_prompt(c"pane-prompt-closed".as_ptr(), owner, type_0);
         }
     }
 }
@@ -2530,8 +2455,7 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
             let _ = (*wp).event.with_ptr(|event| unsafe {
                 bufferevent_write(
                     event,
-                    b"\x1B[?997;2n\0" as *const u8 as *const ::core::ffi::c_char
-                        as *const ::core::ffi::c_void,
+                    c"\x1B[?997;2n".as_ptr() as *const ::core::ffi::c_void,
                     9 as size_t,
                 )
             });
@@ -2545,8 +2469,7 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
             let _ = (*wp).event.with_ptr(|event| unsafe {
                 bufferevent_write(
                     event,
-                    b"\x1B[?997;1n\0" as *const u8 as *const ::core::ffi::c_char
-                        as *const ::core::ffi::c_void,
+                    c"\x1B[?997;1n".as_ptr() as *const ::core::ffi::c_void,
                     9 as size_t,
                 )
             });

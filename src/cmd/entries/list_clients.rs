@@ -23,14 +23,7 @@ use crate::src::shared::sort::*;
 use crate::src::shared::window::winlink;
 use crate::src::sort::{sort_get_clients, sort_order_from_string};
 
-pub const LIST_CLIENTS_TEMPLATE: [::core::ffi::c_char; 225] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 225],
-        [::core::ffi::c_char; 225],
-    >(
-        *b"#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?#{!=:#{client_uid},#{uid}},[user #{?client_user,#{client_user},#{client_uid},}] ,}#{?client_flags,(,}#{client_flags}#{?client_flags,),}\0",
-    )
-};
+pub const LIST_CLIENTS_TEMPLATE: &std::ffi::CStr = c"#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?#{!=:#{client_uid},#{uid}},[user #{?client_user,#{client_user},#{client_uid},}] ,}#{?client_flags,(,}#{client_flags}#{?client_flags,),}";
 pub static cmd_list_clients_entry: cmd_entry = {
     cmd_entry {
         name: c"list-clients",
@@ -114,11 +107,7 @@ unsafe fn cmd_list_clients_exec(
                 0 as ::core::ffi::c_int,
             );
             ft = &raw mut *ft_owner;
-            format_add(
-                ft,
-                b"line\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (i) as u32),
-            );
+            format_add(ft, c"line", |out| write!(out, "{}", (i) as u32));
             format_defaults(ft, Some(c), None, (refbox::Weak::new()).clone(), None);
             if !filter.is_null() {
                 let expanded = format_expand_cstring(ft, filter);

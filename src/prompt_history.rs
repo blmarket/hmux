@@ -34,10 +34,7 @@ thread_local! {
 }
 
 unsafe fn prompt_find_history_file() -> Option<CString> {
-    let history_file = options_get_string(
-        global_options,
-        b"history-file\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    let history_file = options_get_string(global_options, c"history-file");
     if history_file.as_bytes().is_empty() {
         return None;
     }
@@ -83,10 +80,7 @@ pub unsafe fn prompt_load_history() {
         "loading history from {}",
         log_bytes(history_file.as_bytes())
     ));
-    f = fopen(
-        history_file.as_ptr(),
-        b"r\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as *mut FILE;
+    f = fopen(history_file.as_ptr(), c"r".as_ptr()) as *mut FILE;
     if f.is_null() {
         log_debug(format_args!(
             "{}: {}",
@@ -113,10 +107,7 @@ pub unsafe fn prompt_save_history() {
         "saving history to {}",
         log_bytes(history_file.as_bytes())
     ));
-    f = fopen(
-        history_file.as_ptr(),
-        b"w\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as *mut FILE;
+    f = fopen(history_file.as_ptr(), c"w".as_ptr()) as *mut FILE;
     if f.is_null() {
         log_debug(format_args!(
             "{}: {}",

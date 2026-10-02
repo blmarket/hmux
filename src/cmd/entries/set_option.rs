@@ -161,34 +161,30 @@ unsafe fn cmd_set_hook_event_exec(
     if !(*target).session_handle().is_none() {
         event_payload_set_session(
             &mut ep,
-            b"session\0" as *const u8 as *const ::core::ffi::c_char,
+            c"session".as_ptr(),
             (*target).session_handle().expect("live session"),
         );
     }
     if !(*target).window_handle().is_none() {
         event_payload_set_window(
             &mut ep,
-            b"window\0" as *const u8 as *const ::core::ffi::c_char,
+            c"window".as_ptr(),
             std::rc::Rc::clone(((*target).window_handle().as_ref()).expect("live window")),
         );
     }
     if (*target).winlink_handle().is_alive() {
         event_payload_set_int(
             &mut ep,
-            b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
+            c"window_index".as_ptr(),
             ((*target).winlink_handle()).get_unchecked().idx,
         );
     } else if (*target).idx != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(
-            &mut ep,
-            b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            (*target).idx,
-        );
+        event_payload_set_int(&mut ep, c"window_index".as_ptr(), (*target).idx);
     }
     if !(*target).pane_handle().is_none() {
         event_payload_set_pane(
             &mut ep,
-            b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+            c"pane".as_ptr(),
             (*target).pane_handle().expect("live pane"),
         );
     }

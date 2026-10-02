@@ -102,12 +102,9 @@ unsafe fn cmd_switch_client_exec(
     };
     let mut uid: uid_t = 0;
     if !tflag.is_null()
-        && (*tflag
-            .offset(strcspn(tflag, b":.%\0" as *const u8 as *const ::core::ffi::c_char) as isize)
-            as ::core::ffi::c_int
+        && (*tflag.offset(strcspn(tflag, c":.%".as_ptr()) as isize) as ::core::ffi::c_int
             != '\0' as i32
-            || strcmp(tflag, b"=\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int)
+            || strcmp(tflag, c"=".as_ptr()) == 0 as ::core::ffi::c_int)
     {
         type_0 = CMD_FIND_PANE;
         flags = 0 as ::core::ffi::c_int;

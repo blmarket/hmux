@@ -59,9 +59,9 @@ unsafe fn cmd_unbind_key_exec(
             .map_or(std::ptr::null(), |value| value.as_ptr());
         if tablename.is_null() {
             if args_has(args, 'n' as i32 as u_char) != 0 {
-                tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
+                tablename = c"root".as_ptr();
             } else {
-                tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
+                tablename = c"prefix".as_ptr();
             }
         }
         if key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0 as ::core::ffi::c_int)
@@ -113,9 +113,9 @@ unsafe fn cmd_unbind_key_exec(
             return CMD_RETURN_ERROR;
         }
     } else if args_has(args, 'n' as i32 as u_char) != 0 {
-        tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
+        tablename = c"root".as_ptr();
     } else {
-        tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
+        tablename = c"prefix".as_ptr();
     }
     key_bindings_remove(std::ffi::CStr::from_ptr(tablename), key);
     CMD_RETURN_NORMAL

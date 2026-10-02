@@ -25,14 +25,7 @@ use crate::src::shared::sort::*;
 use crate::src::shared::window::winlink;
 use crate::src::sort::{sort_get_winlinks, sort_get_winlinks_session, sort_order_from_string};
 
-pub const LIST_WINDOWS_WITH_SESSION_TEMPLATE: [::core::ffi::c_char; 127] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 127],
-        [::core::ffi::c_char; 127],
-    >(
-        *b"#{session_name}:#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] \0",
-    )
-};
+pub const LIST_WINDOWS_WITH_SESSION_TEMPLATE: &std::ffi::CStr = c"#{session_name}:#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] ";
 pub static cmd_list_windows_entry: cmd_entry = {
     cmd_entry {
         name: c"list-windows",
@@ -109,8 +102,7 @@ unsafe fn cmd_list_windows_exec(
             &raw mut sort_crit,
         );
         if template.is_null() {
-            template = b"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}\0"
-                as *const u8 as *const ::core::ffi::c_char;
+            template = c"#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] [layout #{window_layout}] #{window_id}#{?window_active, (active),}".as_ptr();
         }
         links
     };
@@ -130,11 +122,7 @@ unsafe fn cmd_list_windows_exec(
             0 as ::core::ffi::c_int,
         );
         ft = &raw mut *ft_owner;
-        format_add(
-            ft,
-            b"line\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as u32),
-        );
+        format_add(ft, c"line", |out| write!(out, "{}", (n) as u32));
         format_defaults(ft, c.as_ref(), s.as_ref(), wl.clone(), None);
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);

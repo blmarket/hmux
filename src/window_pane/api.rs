@@ -461,7 +461,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let close = self.with_options_mut(|options| {
             let remain = options_get_number(options, c"remain-on-exit");
             if remain == 3 || remain == 4 {
-                crate::src::options::options_set_number(options, c"remain-on-exit".as_ptr(), 0);
+                crate::src::options::options_set_number(options, c"remain-on-exit", 0);
                 true
             } else {
                 false

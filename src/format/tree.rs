@@ -245,11 +245,11 @@ pub unsafe fn format_each(ft: *mut format_tree, mut cb: impl FnMut(&CStr, &CStr)
 }
 pub unsafe fn format_add(
     mut ft: *mut format_tree,
-    mut key: *const ::core::ffi::c_char,
+    key: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let value = format_message_with(write);
-    format_add_value(ft, CStr::from_ptr(key), value);
+    format_add_value(ft, key, value);
 }
 
 /// Insert literal text, copying the value into the format tree.
@@ -261,14 +261,10 @@ unsafe fn format_add_value(ft: *mut format_tree, key: &CStr, value: CString) {
     format_entry_set(ft, key, FormatEntryState::Text(value));
 }
 
-pub unsafe fn format_add_time(
-    ft: *mut format_tree,
-    key: *const ::core::ffi::c_char,
-    time: SystemTime,
-) {
+pub unsafe fn format_add_time(ft: *mut format_tree, key: &CStr, time: SystemTime) {
     format_entry_set(
         ft,
-        CStr::from_ptr(key),
+        key,
         FormatEntryState::Time(crate::src::shared::time::unix_seconds(time)),
     );
 }
@@ -326,7 +322,7 @@ mod tests {
             format_add_cstr(ft, c"owned", c"literal");
             assert_eq!(text_value(ft, c"owned").unwrap().as_c_str(), c"literal");
             let time = UNIX_EPOCH + Duration::from_secs(123);
-            format_add_time(ft, c"owned".as_ptr(), time);
+            format_add_time(ft, c"owned", time);
             assert!(matches!(
                 format_entry_get_value(ft, c"owned"),
                 Some(FormatValue::Time(123))
@@ -351,7 +347,7 @@ mod tests {
             }
             let entry = format_entry_tree_find(&(*ft).tree, &key).unwrap();
             // The writer finishes borrowing the old bytes before replacement.
-            format_add(ft, key.as_ptr(), |out| {
+            format_add(ft, &key, |out| {
                 out.write_all(entry.state.text().unwrap().to_bytes())?;
                 out.write_all(b"-next")
             });
@@ -563,7 +559,7 @@ mod tests {
                 panic!("merge must not evaluate callbacks")
             });
             let time = UNIX_EPOCH + Duration::from_secs(123);
-            format_add_time(source, c"time".as_ptr(), time);
+            format_add_time(source, c"time", time);
             format_merge(destination, source);
             assert_eq!(
                 text_value(destination, c"literal").unwrap().as_c_str(),

@@ -208,7 +208,7 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
             layout_print_cell(
                 tree.as_deref_mut()
                     .map_or(std::ptr::null_mut(), |root| root),
-                b"layout_set_even\0" as *const u8 as *const ::core::ffi::c_char,
+                c"layout_set_even".as_ptr(),
                 1,
             );
         }
@@ -271,16 +271,12 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
     let (layout_sx, layout_sy) = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
-        layout_print_cell(
-            root,
-            b"layout_set_even\0" as *const u8 as *const ::core::ffi::c_char,
-            1,
-        );
+        layout_print_cell(root, c"layout_set_even".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);
@@ -334,7 +330,7 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
             layout_print_cell(
                 tree.as_deref_mut()
                     .map_or(std::ptr::null_mut(), |root| root),
-                b"layout_set_main_h\0" as *const u8 as *const ::core::ffi::c_char,
+                c"layout_set_main_h".as_ptr(),
                 1,
             );
         }
@@ -344,8 +340,8 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
         }
         n = n.wrapping_sub(1);
         sy = window_size.1.wrapping_sub(1 as u_int);
-        let size_option = w_owner
-            .with_options_mut(|options| options_get_string(options, c"main-pane-height".as_ptr()));
+        let size_option =
+            w_owner.with_options_mut(|options| options_get_string(options, c"main-pane-height"));
         s = size_option.as_ptr();
         mainh = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -363,9 +359,8 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
             }
             otherh = PANE_MINIMUM as u_int;
         } else {
-            let size_option = w_owner.with_options_mut(|options| {
-                options_get_string(options, c"other-pane-height".as_ptr())
-            });
+            let size_option = w_owner
+                .with_options_mut(|options| options_get_string(options, c"other-pane-height"));
             s = size_option.as_ptr();
             otherh = match args_string_percentage_result(
                 (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -490,16 +485,12 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
     let (layout_sx, layout_sy) = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
-        layout_print_cell(
-            root,
-            b"layout_set_main_h\0" as *const u8 as *const ::core::ffi::c_char,
-            1,
-        );
+        layout_print_cell(root, c"layout_set_main_h".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);
@@ -526,7 +517,7 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
             layout_print_cell(
                 tree.as_deref_mut()
                     .map_or(std::ptr::null_mut(), |root| root),
-                b"layout_set_main_h_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
+                c"layout_set_main_h_mirrored".as_ptr(),
                 1,
             );
         }
@@ -536,8 +527,8 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
         }
         n = n.wrapping_sub(1);
         sy = window_size.1.wrapping_sub(1 as u_int);
-        let size_option = w_owner
-            .with_options_mut(|options| options_get_string(options, c"main-pane-height".as_ptr()));
+        let size_option =
+            w_owner.with_options_mut(|options| options_get_string(options, c"main-pane-height"));
         s = size_option.as_ptr();
         mainh = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -555,9 +546,8 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
             }
             otherh = PANE_MINIMUM as u_int;
         } else {
-            let size_option = w_owner.with_options_mut(|options| {
-                options_get_string(options, c"other-pane-height".as_ptr())
-            });
+            let size_option = w_owner
+                .with_options_mut(|options| options_get_string(options, c"other-pane-height"));
             s = size_option.as_ptr();
             otherh = match args_string_percentage_result(
                 (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -682,16 +672,12 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
     let (layout_sx, layout_sy) = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
-        layout_print_cell(
-            root,
-            b"layout_set_main_h_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
-            1,
-        );
+        layout_print_cell(root, c"layout_set_main_h_mirrored".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);
@@ -718,7 +704,7 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
             layout_print_cell(
                 tree.as_deref_mut()
                     .map_or(std::ptr::null_mut(), |root| root),
-                b"layout_set_main_v\0" as *const u8 as *const ::core::ffi::c_char,
+                c"layout_set_main_v".as_ptr(),
                 1,
             );
         }
@@ -728,8 +714,8 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
         }
         n = n.wrapping_sub(1);
         sx = window_size.0.wrapping_sub(1 as u_int);
-        let size_option = w_owner
-            .with_options_mut(|options| options_get_string(options, c"main-pane-width".as_ptr()));
+        let size_option =
+            w_owner.with_options_mut(|options| options_get_string(options, c"main-pane-width"));
         s = size_option.as_ptr();
         mainw = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -747,9 +733,8 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
             }
             otherw = PANE_MINIMUM as u_int;
         } else {
-            let size_option = w_owner.with_options_mut(|options| {
-                options_get_string(options, c"other-pane-width".as_ptr())
-            });
+            let size_option = w_owner
+                .with_options_mut(|options| options_get_string(options, c"other-pane-width"));
             s = size_option.as_ptr();
             otherw = match args_string_percentage_result(
                 (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -874,16 +859,12 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
     let (layout_sx, layout_sy) = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
-        layout_print_cell(
-            root,
-            b"layout_set_main_v\0" as *const u8 as *const ::core::ffi::c_char,
-            1,
-        );
+        layout_print_cell(root, c"layout_set_main_v".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);
@@ -910,7 +891,7 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
             layout_print_cell(
                 tree.as_deref_mut()
                     .map_or(std::ptr::null_mut(), |root| root),
-                b"layout_set_main_v_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
+                c"layout_set_main_v_mirrored".as_ptr(),
                 1,
             );
         }
@@ -920,8 +901,8 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
         }
         n = n.wrapping_sub(1);
         sx = window_size.0.wrapping_sub(1 as u_int);
-        let size_option = w_owner
-            .with_options_mut(|options| options_get_string(options, c"main-pane-width".as_ptr()));
+        let size_option =
+            w_owner.with_options_mut(|options| options_get_string(options, c"main-pane-width"));
         s = size_option.as_ptr();
         mainw = match args_string_percentage_result(
             (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -939,9 +920,8 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
             }
             otherw = PANE_MINIMUM as u_int;
         } else {
-            let size_option = w_owner.with_options_mut(|options| {
-                options_get_string(options, c"other-pane-width".as_ptr())
-            });
+            let size_option = w_owner
+                .with_options_mut(|options| options_get_string(options, c"other-pane-width"));
             s = size_option.as_ptr();
             otherw = match args_string_percentage_result(
                 (!s.is_null()).then(|| ::std::ffi::CStr::from_ptr(s)),
@@ -1066,16 +1046,12 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
     let (layout_sx, layout_sy) = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
-        layout_print_cell(
-            root,
-            b"layout_set_main_v_mirrored\0" as *const u8 as *const ::core::ffi::c_char,
-            1,
-        );
+        layout_print_cell(root, c"layout_set_main_v_mirrored".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);
@@ -1105,7 +1081,7 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
             layout_print_cell(
                 tree.as_deref_mut()
                     .map_or(std::ptr::null_mut(), |root| root),
-                b"layout_set_tiled\0" as *const u8 as *const ::core::ffi::c_char,
+                c"layout_set_tiled".as_ptr(),
                 1,
             );
         }
@@ -1284,16 +1260,12 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
     let (layout_sx, layout_sy) = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
-        layout_print_cell(
-            root,
-            b"layout_set_tiled\0" as *const u8 as *const ::core::ffi::c_char,
-            1,
-        );
+        layout_print_cell(root, c"layout_set_tiled".as_ptr(), 1);
         (root.g.sx, root.g.sy)
     };
     w_owner.set_layout_size(layout_sx, layout_sy);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);

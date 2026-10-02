@@ -77,14 +77,12 @@ mod tests {
                     .find(|entry| entry.name == Some(name))
                     .unwrap();
                 options_default(&mut *options, definition);
-                options_set_number(&mut *options, name.as_ptr(), 0);
+                options_set_number(&mut *options, name, 0);
             }
             (*window.get()).options = Some(options);
             assert_eq!(window.queue_alerts(WINDOW_ACTIVITY), None);
             assert_ne!(window.pending_alerts() & WINDOW_ACTIVITY, 0);
-            window.with_options_mut(|options| {
-                options_set_number(options, c"monitor-bell".as_ptr(), 1)
-            });
+            window.with_options_mut(|options| options_set_number(options, c"monitor-bell", 1));
             let count = Rc::strong_count(&window);
             assert_eq!(window.queue_alerts(WINDOW_BELL), Some(true));
             // Reentrant delivery can set another flag, but cannot claim another owner.

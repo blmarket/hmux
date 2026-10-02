@@ -520,7 +520,7 @@ unsafe fn file_write_impl(
         file_set_cmdq_wait(&transfer_owner, item_handle, cancel_cb);
     }
     let cf = &mut *transfer_owner.get();
-    if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
+    if strcmp(path, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDOUT_FILENO;
         if client_owner
@@ -535,9 +535,9 @@ unsafe fn file_write_impl(
         file_set_path(cf, file_get_path(client_owner, CStr::from_ptr(path)));
         if client_owner.is_none_or(|owner| owner.flags() & CLIENT_ATTACHED as uint64_t != 0) {
             if flags & O_APPEND != 0 {
-                mode = b"ab\0" as *const u8 as *const ::core::ffi::c_char;
+                mode = c"ab".as_ptr();
             } else {
-                mode = b"wb\0" as *const u8 as *const ::core::ffi::c_char;
+                mode = c"wb".as_ptr();
             }
             f = fopen(
                 cf.path
@@ -640,7 +640,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
     let cb = callback(Rc::downgrade(&transfer_owner));
     let cf = &mut *transfer_owner.get();
     cf.cb = cb;
-    if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
+    if strcmp(path, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
         file_set_path(cf, CString::new("-").unwrap());
         fd = STDIN_FILENO;
         if client_owner
@@ -658,7 +658,7 @@ pub(crate) unsafe fn file_read_with_cmdq_wait_init(
                 cf.path
                     .as_ref()
                     .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                b"rb\0" as *const u8 as *const ::core::ffi::c_char,
+                c"rb".as_ptr(),
             ) as *mut FILE;
             if f.is_null() {
                 cf.error = *__errno_location();
@@ -965,7 +965,7 @@ pub unsafe fn file_write_open(
     let mut find: client_file = client_file::empty();
     let mut error: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if msglen == ::core::mem::size_of::<msg_write_open>() as usize {
-        path = b"-\0" as *const u8 as *const ::core::ffi::c_char;
+        path = c"-".as_ptr();
     } else {
         path = imsg.data[::core::mem::size_of::<msg_write_open>()..]
             .as_ptr()
@@ -1175,7 +1175,7 @@ pub unsafe fn file_read_open(
     let mut find: client_file = client_file::empty();
     let mut error: ::core::ffi::c_int = 0;
     if msglen == ::core::mem::size_of::<msg_read_open>() as usize {
-        path = b"-\0" as *const u8 as *const ::core::ffi::c_char;
+        path = c"-".as_ptr();
     } else {
         path = imsg.data[::core::mem::size_of::<msg_read_open>()..]
             .as_ptr()

@@ -18,7 +18,7 @@ fn ordered_names_survive_updates_and_removal() {
         let mut pointers = Vec::new();
         for name in &names {
             let name = CString::new(name.as_slice()).unwrap();
-            let entry = options_set_string(oo, name.as_ptr(), 0, |out| out.write_all(b"value"));
+            let entry = options_set_string(oo, &name, 0, |out| out.write_all(b"value"));
             pointers.push(entry);
         }
         for (name, &entry) in names.iter().zip(&pointers) {
@@ -36,7 +36,7 @@ fn ordered_names_survive_updates_and_removal() {
                 Some((*entry).id())
             );
             assert_eq!(
-                options_set_string(oo, name.as_ptr(), 0, |out| { out.write_all(b"updated") }),
+                options_set_string(oo, &name, 0, |out| { out.write_all(b"updated") }),
                 entry
             );
         }
@@ -68,7 +68,7 @@ fn ordered_names_survive_updates_and_removal() {
         .map_or(std::ptr::null_mut(), |entry| entry)
         .is_null());
         // Repopulate so destruction also exercises nonempty storage.
-        options_set_string(oo, c"@again".as_ptr(), 0, |out| out.write_all(b"value"));
+        options_set_string(oo, c"@again", 0, |out| out.write_all(b"value"));
         options_free(oo_owner);
     }
 }
@@ -81,9 +81,7 @@ fn aliases_parent_fallback_and_shadowing() {
         let saved_global = std::mem::replace(&mut hmux::src::tmux::global_options, parent);
         let mut child_owner = options_create(Some(OptionsScope::GlobalServer));
         let child = &raw mut *child_owner;
-        let inherited = options_set_string(parent, c"@shared".as_ptr(), 0, |out| {
-            out.write_all(b"parent")
-        });
+        let inherited = options_set_string(parent, c"@shared", 0, |out| out.write_all(b"parent"));
         assert!(hmux::src::options::options_get_only_mut(
             &mut *(child),
             std::ffi::CStr::from_ptr(c"@shared".as_ptr())
@@ -94,8 +92,7 @@ fn aliases_parent_fallback_and_shadowing() {
             options_read_entry(&*child, c"@shared", |entry| entry.id()),
             Some((*inherited).id())
         );
-        let local =
-            options_set_string(child, c"@shared".as_ptr(), 0, |out| out.write_all(b"child"));
+        let local = options_set_string(child, c"@shared", 0, |out| out.write_all(b"child"));
         assert_ne!(local, inherited);
         assert_eq!(
             options_read_entry(&*child, c"@shared", |entry| entry.id()),
@@ -132,18 +129,18 @@ fn aliases_parent_fallback_and_shadowing() {
             .find(|oe| oe.name == Some(c"pane-border-status"))
             .unwrap();
         options_default(parent, numeric_definition);
-        options_set_number(parent, c"pane-border-status".as_ptr(), 2);
+        options_set_number(parent, c"pane-border-status", 2);
         assert_eq!(options_get_number_ref(&*child, c"pane-border-status"), 2);
-        let numeric = options_set_number(child, c"pane-border-status".as_ptr(), 1);
+        let numeric = options_set_number(child, c"pane-border-status", 1);
         assert_eq!(options_get_number_ref(&*child, c"pane-border-status"), 1);
         assert_eq!(options_get_number_ref(&*parent, c"pane-border-status"), 2);
         options_remove_or_default(numeric, null(), null_mut());
         assert_eq!(options_get_number_ref(&*child, c"pane-border-status"), 2);
-        options_set_string(child, c"display-panes-color".as_ptr(), 0, |out| {
+        options_set_string(child, c"display-panes-color", 0, |out| {
             out.write_all(b"red")
         });
         assert_eq!(
-            options_get_string(child, c"display-panes-colour".as_ptr()).as_c_str(),
+            options_get_string(child, c"display-panes-colour").as_c_str(),
             c"red"
         );
         options_free(child_owner);
@@ -165,10 +162,8 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
-        let entry = options_set_string(oo, c"@bytes".as_ptr(), 0, |out| {
-            write_cstr(out, c"\xff".as_ptr())
-        });
-        let name = options_name(&*(entry)).as_ptr();
+        let entry = options_set_string(oo, c"@bytes", 0, |out| write_cstr(out, c"\xff".as_ptr()));
+        let name = options_name(&*(entry));
         let previous = (*entry)
             .value
             .string_ptr()
@@ -250,7 +245,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())
             .is_null());
-        options_set_string(oo, empty_definition.name_ptr(), 1, |out| {
+        options_set_string(oo, empty_definition.name.unwrap(), 1, |out| {
             write_cstr(out, c"tail".as_ptr())
         });
         assert_eq!(

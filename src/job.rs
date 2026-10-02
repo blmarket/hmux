@@ -140,10 +140,9 @@ pub unsafe fn job_run(
         shell = _PATH_BSHELL.as_ptr();
     } else {
         shell_value = Some(if let Some(session) = s_owner {
-            session
-                .with_options_mut(|options| options_get_string(options, c"default-shell".as_ptr()))
+            session.with_options_mut(|options| options_get_string(options, c"default-shell"))
         } else {
-            options_get_string(global_s_options, c"default-shell".as_ptr())
+            options_get_string(global_s_options, c"default-shell")
         });
         shell = shell_value.as_ref().expect("shell snapshot").as_ptr();
         if checkshell(shell) == 0 {
@@ -182,12 +181,7 @@ pub unsafe fn job_run(
             log_debug(format_args!(
                 "{}: cwd={}, shell={}",
                 "job_run",
-                log_cstr(
-                    (cwd.map_or(
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
-                        CStr::as_ptr,
-                    )) as *const _
-                ),
+                log_cstr((cwd.map_or(c"".as_ptr(), CStr::as_ptr,)) as *const _),
                 log_cstr((shell) as *const _)
             ));
         } else {
@@ -195,12 +189,7 @@ pub unsafe fn job_run(
                 "{}: cmd={}, cwd={}, shell={}",
                 "job_run",
                 log_cstr((cmd.unwrap().as_ptr()) as *const _),
-                log_cstr(
-                    (cwd.map_or(
-                        b"\0" as *const u8 as *const ::core::ffi::c_char,
-                        CStr::as_ptr,
-                    )) as *const _
-                ),
+                log_cstr((cwd.map_or(c"".as_ptr(), CStr::as_ptr,)) as *const _),
                 log_cstr((shell) as *const _)
             ));
         }
@@ -222,30 +211,19 @@ pub unsafe fn job_run(
                 );
                 if let Some(cwd) = cwd {
                     if chdir(cwd.as_ptr()) == 0 as ::core::ffi::c_int {
-                        environ_set(
-                            env,
-                            b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
-                            0 as ::core::ffi::c_int,
-                            |out| write_cstr(out, cwd.as_ptr()),
-                        );
+                        environ_set(env, c"PWD".as_ptr(), 0 as ::core::ffi::c_int, |out| {
+                            write_cstr(out, cwd.as_ptr())
+                        });
                     } else {
                         home = find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
                         if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
-                            environ_set(
-                                env,
-                                b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
-                                0 as ::core::ffi::c_int,
-                                |out| write_cstr(out, home),
-                            );
-                        } else if chdir(b"/\0" as *const u8 as *const ::core::ffi::c_char)
-                            == 0 as ::core::ffi::c_int
-                        {
-                            environ_set(
-                                env,
-                                b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
-                                0 as ::core::ffi::c_int,
-                                |out| out.write_all(b"/"),
-                            );
+                            environ_set(env, c"PWD".as_ptr(), 0 as ::core::ffi::c_int, |out| {
+                                write_cstr(out, home)
+                            });
+                        } else if chdir(c"/".as_ptr()) == 0 as ::core::ffi::c_int {
+                            environ_set(env, c"PWD".as_ptr(), 0 as ::core::ffi::c_int, |out| {
+                                out.write_all(b"/")
+                            });
                         } else {
                             _exit(1 as ::core::ffi::c_int);
                         }
@@ -293,11 +271,7 @@ pub unsafe fn job_run(
                             && out[1 as ::core::ffi::c_int as usize] != STDERR_FILENO)
                             as ::core::ffi::c_int;
                     } else {
-                        nullfd = match hmux_rt::unix::open(
-                            CStr::from_ptr(_PATH_DEVNULL.as_ptr()),
-                            O_RDWR,
-                            0,
-                        ) {
+                        nullfd = match hmux_rt::unix::open(_PATH_DEVNULL, O_RDWR, 0) {
                             Ok(fd) => fd.into_raw_fd(),
                             Err(error) => crate::src::reactor::io_status(Err(error)),
                         };
@@ -324,16 +298,12 @@ pub unsafe fn job_run(
                 hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
                 if let Some(cmd) = cmd {
                     if flags & JOB_DEFAULTSHELL != 0 {
-                        setenv(
-                            b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
-                            shell,
-                            1 as ::core::ffi::c_int,
-                        );
+                        setenv(c"SHELL".as_ptr(), shell, 1 as ::core::ffi::c_int);
                     }
                     execl(
                         shell,
                         argv0.as_ptr(),
-                        b"-c\0" as *const u8 as *const ::core::ffi::c_char,
+                        c"-c".as_ptr(),
                         cmd.as_ptr(),
                         NULL as *mut ::core::ffi::c_char,
                     );

@@ -383,7 +383,7 @@ pub unsafe fn event_payload_add_formats(
     mut prefix: *const ::core::ffi::c_char,
 ) {
     if prefix.is_null() {
-        prefix = b"\0" as *const u8 as *const ::core::ffi::c_char;
+        prefix = c"".as_ptr();
     }
     let prefix = CStr::from_ptr(prefix).to_bytes();
     for epi in event_payload_items(ep) {
@@ -396,7 +396,7 @@ pub unsafe fn event_payload_add_formats(
             name_bytes.extend_from_slice(key_bytes);
             let name = CString::new(name_bytes).expect("C string parts contain no NUL");
             // format_add copies the key into its format entry before returning.
-            format_add(ft, name.as_ptr(), |out| {
+            format_add(ft, &name, |out| {
                 write_cstr(out, value.as_ptr().cast::<::core::ffi::c_char>())
             });
             let named = if epi.type_0() as ::core::ffi::c_uint
@@ -414,7 +414,7 @@ pub unsafe fn event_payload_add_formats(
                 let mut suffixed = name.as_bytes().to_vec();
                 suffixed.extend_from_slice(b"_name");
                 let suffixed = CString::new(suffixed).expect("C string parts contain no NUL");
-                format_add(ft, suffixed.as_ptr(), |out| write_cstr(out, named.as_ptr()));
+                format_add(ft, &suffixed, |out| write_cstr(out, named.as_ptr()));
             }
         }
     }

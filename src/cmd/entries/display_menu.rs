@@ -194,25 +194,19 @@ unsafe fn cmd_display_menu_get_popup_pos(
     let mut ft_owner = format_create_from_target(item_handle);
     ft = &raw mut *ft_owner;
     if (*event).m.valid != 0 {
-        format_add(
-            ft,
-            b"popup_mouse_x\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", { (*event).m.x }),
-        );
-        format_add(
-            ft,
-            b"popup_mouse_y\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", { (*event).m.y }),
-        );
+        format_add(ft, c"popup_mouse_x", |out| {
+            write!(out, "{}", { (*event).m.x })
+        });
+        format_add(ft, c"popup_mouse_y", |out| {
+            write!(out, "{}", { (*event).m.y })
+        });
     }
     let (last_x, last_y) = (*target)
         .window_handle()
         .expect("popup target window")
         .last_menu_position();
-    format_add(ft, c"popup_last_x".as_ptr(), |out| {
-        write!(out, "{}", last_x)
-    });
-    format_add(ft, c"popup_last_y".as_ptr(), |out| {
+    format_add(ft, c"popup_last_x", |out| write!(out, "{}", last_x));
+    format_add(ft, c"popup_last_y", |out| {
         write!(out, "{}", last_y.wrapping_add(h))
     });
     top = status_at_line(tc.as_ref().expect("live client"));
@@ -232,47 +226,15 @@ unsafe fn cmd_display_menu_get_popup_pos(
         if let Some((line, start)) =
             cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
         {
-            format_add(
-                ft,
-                b"popup_window_status_line_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", { start }),
-            );
+            format_add(ft, c"popup_window_status_line_x", |out| {
+                write!(out, "{}", { start })
+            });
             if position == 0 as u_int {
-                format_add(
-                    ft,
-                    b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", { line.wrapping_add(1 as u_int).wrapping_add(h) }),
-                );
+                format_add(ft, c"popup_window_status_line_y", |out| {
+                    write!(out, "{}", { line.wrapping_add(1 as u_int).wrapping_add(h) })
+                });
             } else {
-                format_add(
-                    ft,
-                    b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| {
-                        write!(
-                            out,
-                            "{}",
-                            (tc.as_ref()
-                                .expect("live client")
-                                .terminal_size()
-                                .1
-                                .wrapping_sub(lines)
-                                .wrapping_add(line)) as u32
-                        )
-                    },
-                );
-            }
-        }
-        if position == 0 as u_int {
-            format_add(
-                ft,
-                b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (lines.wrapping_add(h)) as u32),
-            );
-        } else {
-            format_add(
-                ft,
-                b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| {
+                format_add(ft, c"popup_window_status_line_y", |out| {
                     write!(
                         out,
                         "{}",
@@ -280,24 +242,34 @@ unsafe fn cmd_display_menu_get_popup_pos(
                             .expect("live client")
                             .terminal_size()
                             .1
-                            .wrapping_sub(lines)) as u32
+                            .wrapping_sub(lines)
+                            .wrapping_add(line)) as u32
                     )
-                },
-            );
+                });
+            }
+        }
+        if position == 0 as u_int {
+            format_add(ft, c"popup_status_line_y", |out| {
+                write!(out, "{}", (lines.wrapping_add(h)) as u32)
+            });
+        } else {
+            format_add(ft, c"popup_status_line_y", |out| {
+                write!(
+                    out,
+                    "{}",
+                    (tc.as_ref()
+                        .expect("live client")
+                        .terminal_size()
+                        .1
+                        .wrapping_sub(lines)) as u32
+                )
+            });
         }
     } else {
         top = 0 as ::core::ffi::c_int;
     }
-    format_add(
-        ft,
-        b"popup_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { w }),
-    );
-    format_add(
-        ft,
-        b"popup_height\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { h }),
-    );
+    format_add(ft, c"popup_width", |out| write!(out, "{}", { w }));
+    format_add(ft, c"popup_height", |out| write!(out, "{}", { h }));
     n = tc
         .as_ref()
         .expect("live client")
@@ -307,17 +279,13 @@ unsafe fn cmd_display_menu_get_popup_pos(
         / 2 as ::core::ffi::c_long
         - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-        );
+        format_add(ft, c"popup_centre_x", |out| {
+            write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+        });
     } else {
-        format_add(
-            ft,
-            b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_centre_x", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
     }
     n = tc
         .as_ref()
@@ -328,10 +296,36 @@ unsafe fn cmd_display_menu_get_popup_pos(
         .wrapping_div(2 as u_int)
         .wrapping_add(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
     if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| {
+        format_add(ft, c"popup_centre_y", |out| {
+            write!(out, "{}", {
+                tc.as_ref()
+                    .expect("live client")
+                    .terminal_size()
+                    .1
+                    .wrapping_sub(h)
+            })
+        });
+    } else {
+        format_add(ft, c"popup_centre_y", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
+    }
+    if (*event).m.valid != 0 {
+        n = (*event).m.x as ::core::ffi::c_long - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
+        if n < 0 as ::core::ffi::c_long {
+            format_add(ft, c"popup_mouse_centre_x", |out| {
+                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+            });
+        } else {
+            format_add(ft, c"popup_mouse_centre_x", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
+        }
+        n = (*event).m.y.wrapping_sub(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
+        if n + h as ::core::ffi::c_long
+            >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long
+        {
+            format_add(ft, c"popup_mouse_centre_y", |out| {
                 write!(out, "{}", {
                     tc.as_ref()
                         .expect("live client")
@@ -339,174 +333,94 @@ unsafe fn cmd_display_menu_get_popup_pos(
                         .1
                         .wrapping_sub(h)
                 })
-            },
-        );
-    } else {
-        format_add(
-            ft,
-            b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
-    }
-    if (*event).m.valid != 0 {
-        n = (*event).m.x as ::core::ffi::c_long - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-        if n < 0 as ::core::ffi::c_long {
-            format_add(
-                ft,
-                b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-            );
+            });
         } else {
-            format_add(
-                ft,
-                b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
-        }
-        n = (*event).m.y.wrapping_sub(h.wrapping_div(2 as u_int)) as ::core::ffi::c_long;
-        if n + h as ::core::ffi::c_long
-            >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long
-        {
-            format_add(
-                ft,
-                b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| {
-                    write!(out, "{}", {
-                        tc.as_ref()
-                            .expect("live client")
-                            .terminal_size()
-                            .1
-                            .wrapping_sub(h)
-                    })
-                },
-            );
-        } else {
-            format_add(
-                ft,
-                b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_centre_y", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
         }
         n = (*event).m.y as ::core::ffi::c_long + h as ::core::ffi::c_long;
         if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
-            format_add(
-                ft,
-                b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| {
-                    write!(out, "{}", {
-                        tc.as_ref()
-                            .expect("live client")
-                            .terminal_size()
-                            .1
-                            .wrapping_sub(1 as u_int)
-                    })
-                },
-            );
+            format_add(ft, c"popup_mouse_top", |out| {
+                write!(out, "{}", {
+                    tc.as_ref()
+                        .expect("live client")
+                        .terminal_size()
+                        .1
+                        .wrapping_sub(1 as u_int)
+                })
+            });
         } else {
-            format_add(
-                ft,
-                b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_top", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
         }
         n = (*event).m.y.wrapping_sub(h) as ::core::ffi::c_long;
         if n < 0 as ::core::ffi::c_long {
-            format_add(
-                ft,
-                b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-            );
+            format_add(ft, c"popup_mouse_bottom", |out| {
+                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+            });
         } else {
-            format_add(
-                ft,
-                b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_bottom", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
         }
     }
     let tty_window_view { ox, oy, .. } = tc.as_ref().expect("live client").terminal_view();
     let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
     n = ((top + pane_y) as u_int).wrapping_sub(oy).wrapping_add(h) as ::core::ffi::c_long;
     if n >= tc.as_ref().expect("live client").terminal_size().1 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| {
-                write!(out, "{}", {
-                    tc.as_ref()
-                        .expect("live client")
-                        .terminal_size()
-                        .1
-                        .wrapping_sub(h)
-                })
-            },
-        );
+        format_add(ft, c"popup_pane_top", |out| {
+            write!(out, "{}", {
+                tc.as_ref()
+                    .expect("live client")
+                    .terminal_size()
+                    .1
+                    .wrapping_sub(h)
+            })
+        });
     } else {
-        format_add(
-            ft,
-            b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_pane_top", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
     }
-    format_add(
-        ft,
-        b"popup_pane_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write!(
-                out,
-                "{}",
-                (((top + pane_y) as u_int)
-                    .wrapping_add(pane_height)
-                    .wrapping_sub(oy)) as u32
-            )
-        },
-    );
-    format_add(
-        ft,
-        b"popup_pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { (pane_x as u_int).wrapping_sub(ox) }),
-    );
+    format_add(ft, c"popup_pane_bottom", |out| {
+        write!(
+            out,
+            "{}",
+            (((top + pane_y) as u_int)
+                .wrapping_add(pane_height)
+                .wrapping_sub(oy)) as u32
+        )
+    });
+    format_add(ft, c"popup_pane_left", |out| {
+        write!(out, "{}", { (pane_x as u_int).wrapping_sub(ox) })
+    });
     n = pane_x as ::core::ffi::c_long + pane_width as ::core::ffi::c_long
         - ox as ::core::ffi::c_long
         - w as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-        );
+        format_add(ft, c"popup_pane_right", |out| {
+            write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+        });
     } else {
-        format_add(
-            ft,
-            b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_pane_right", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
     }
     xp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if xp.is_null()
-        || strcmp(xp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_centre_x}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"R\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_pane_right}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"P\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_pane_left}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"M\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_mouse_centre_x}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"L\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_last_x}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"W\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_window_status_line_x}\0" as *const u8 as *const ::core::ffi::c_char;
+    if xp.is_null() || strcmp(xp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_centre_x}".as_ptr();
+    } else if strcmp(xp, c"R".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_pane_right}".as_ptr();
+    } else if strcmp(xp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_pane_left}".as_ptr();
+    } else if strcmp(xp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_mouse_centre_x}".as_ptr();
+    } else if strcmp(xp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_last_x}".as_ptr();
+    } else if strcmp(xp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_window_status_line_x}".as_ptr();
     }
     let p = format_expand_cstring(ft, xp);
     n = strtol(
@@ -536,30 +450,18 @@ unsafe fn cmd_display_menu_get_popup_pos(
         { w }
     ));
     yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if yp.is_null()
-        || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_centre_y}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"P\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_pane_bottom}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"M\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_mouse_top}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"L\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_last_y}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"S\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_status_line_y}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"W\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_window_status_line_y}\0" as *const u8 as *const ::core::ffi::c_char;
+    if yp.is_null() || strcmp(yp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_centre_y}".as_ptr();
+    } else if strcmp(yp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_pane_bottom}".as_ptr();
+    } else if strcmp(yp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_mouse_top}".as_ptr();
+    } else if strcmp(yp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_last_y}".as_ptr();
+    } else if strcmp(yp, c"S".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_status_line_y}".as_ptr();
+    } else if strcmp(yp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_window_status_line_y}".as_ptr();
     }
     let p = format_expand_cstring(ft, yp);
     n = strtol(
@@ -661,27 +563,19 @@ unsafe fn cmd_display_menu_get_menu_pos(
         } else {
             mouse_y = (*event).m.y.wrapping_add(oy) as ::core::ffi::c_long;
         }
-        format_add(
-            ft,
-            b"popup_mouse_x\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (mouse_x) as ::core::ffi::c_long),
-        );
-        format_add(
-            ft,
-            b"popup_mouse_y\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (mouse_y) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_mouse_x", |out| {
+            write!(out, "{}", (mouse_x) as ::core::ffi::c_long)
+        });
+        format_add(ft, c"popup_mouse_y", |out| {
+            write!(out, "{}", (mouse_y) as ::core::ffi::c_long)
+        });
     }
-    format_add(
-        ft,
-        b"popup_last_x\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { window.last_menu_position().0 }),
-    );
-    format_add(
-        ft,
-        b"popup_last_y\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { window.last_menu_position().1.wrapping_add(h) }),
-    );
+    format_add(ft, c"popup_last_x", |out| {
+        write!(out, "{}", { window.last_menu_position().0 })
+    });
+    format_add(ft, c"popup_last_y", |out| {
+        write!(out, "{}", { window.last_menu_position().1.wrapping_add(h) })
+    });
     lines = status_line_size(tc.as_ref().expect("live client"));
     position = s
         .as_ref()
@@ -695,204 +589,136 @@ unsafe fn cmd_display_menu_get_menu_pos(
         if let Some((_line, start)) =
             cmd_display_menu_status_position(tc.as_ref().expect("live client"), lines, index)
         {
-            format_add(
-                ft,
-                b"popup_window_status_line_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", { start.wrapping_add(ox) }),
-            );
+            format_add(ft, c"popup_window_status_line_x", |out| {
+                write!(out, "{}", { start.wrapping_add(ox) })
+            });
             if position == 0 as u_int {
-                format_add(
-                    ft,
-                    b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", { h }),
-                );
+                format_add(ft, c"popup_window_status_line_y", |out| {
+                    write!(out, "{}", { h })
+                });
             } else {
-                format_add(
-                    ft,
-                    b"popup_window_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", { window.size().1 }),
-                );
+                format_add(ft, c"popup_window_status_line_y", |out| {
+                    write!(out, "{}", { window.size().1 })
+                });
             }
         }
         if position == 0 as u_int {
-            format_add(
-                ft,
-                b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", { h }),
-            );
+            format_add(ft, c"popup_status_line_y", |out| write!(out, "{}", { h }));
         } else {
-            format_add(
-                ft,
-                b"popup_status_line_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", { window.size().1 }),
-            );
+            format_add(ft, c"popup_status_line_y", |out| {
+                write!(out, "{}", { window.size().1 })
+            });
         }
     }
-    format_add(
-        ft,
-        b"popup_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { w }),
-    );
-    format_add(
-        ft,
-        b"popup_height\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { h }),
-    );
+    format_add(ft, c"popup_width", |out| write!(out, "{}", { w }));
+    format_add(ft, c"popup_height", |out| write!(out, "{}", { h }));
     n = (window.size().0 as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
         / 2 as ::core::ffi::c_long
         - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-        );
+        format_add(ft, c"popup_centre_x", |out| {
+            write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+        });
     } else {
-        format_add(
-            ft,
-            b"popup_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_centre_x", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
     }
     n = (window.size().1 as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
         / 2 as ::core::ffi::c_long
         + h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
     if n >= window.size().1 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (max_y) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_centre_y", |out| {
+            write!(out, "{}", (max_y) as ::core::ffi::c_long)
+        });
     } else {
-        format_add(
-            ft,
-            b"popup_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_centre_y", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
     }
     if (*event).m.valid != 0 {
         n = mouse_x - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
         if n < 0 as ::core::ffi::c_long {
-            format_add(
-                ft,
-                b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-            );
+            format_add(ft, c"popup_mouse_centre_x", |out| {
+                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+            });
         } else {
-            format_add(
-                ft,
-                b"popup_mouse_centre_x\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_centre_x", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
         }
         n = mouse_y - h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
         if n + h as ::core::ffi::c_long >= window.size().1 as ::core::ffi::c_long {
-            format_add(
-                ft,
-                b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (max_y) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_centre_y", |out| {
+                write!(out, "{}", (max_y) as ::core::ffi::c_long)
+            });
         } else {
-            format_add(
-                ft,
-                b"popup_mouse_centre_y\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_centre_y", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
         }
         n = mouse_y + h as ::core::ffi::c_long;
         if n >= window.size().1 as ::core::ffi::c_long {
-            format_add(
-                ft,
-                b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", { window.size().1.wrapping_sub(1 as u_int) }),
-            );
+            format_add(ft, c"popup_mouse_top", |out| {
+                write!(out, "{}", { window.size().1.wrapping_sub(1 as u_int) })
+            });
         } else {
-            format_add(
-                ft,
-                b"popup_mouse_top\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_top", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
         }
         n = mouse_y - h as ::core::ffi::c_long;
         if n < 0 as ::core::ffi::c_long {
-            format_add(
-                ft,
-                b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-            );
+            format_add(ft, c"popup_mouse_bottom", |out| {
+                write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+            });
         } else {
-            format_add(
-                ft,
-                b"popup_mouse_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-            );
+            format_add(ft, c"popup_mouse_bottom", |out| {
+                write!(out, "{}", (n) as ::core::ffi::c_long)
+            });
         }
     }
     let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
     n = (pane_y as u_int).wrapping_add(h) as ::core::ffi::c_long;
     if n >= window.size().1 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (max_y) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_pane_top", |out| {
+            write!(out, "{}", (max_y) as ::core::ffi::c_long)
+        });
     } else {
-        format_add(
-            ft,
-            b"popup_pane_top\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_pane_top", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
     }
-    format_add(
-        ft,
-        b"popup_pane_bottom\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { (pane_y as u_int).wrapping_add(pane_height) }),
-    );
-    format_add(
-        ft,
-        b"popup_pane_left\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (pane_x) as u32),
-    );
+    format_add(ft, c"popup_pane_bottom", |out| {
+        write!(out, "{}", { (pane_y as u_int).wrapping_add(pane_height) })
+    });
+    format_add(ft, c"popup_pane_left", |out| {
+        write!(out, "{}", (pane_x) as u32)
+    });
     n = pane_x as ::core::ffi::c_long + pane_width as ::core::ffi::c_long
         - w as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
-        format_add(
-            ft,
-            b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-        );
+        format_add(ft, c"popup_pane_right", |out| {
+            write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+        });
     } else {
-        format_add(
-            ft,
-            b"popup_pane_right\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (n) as ::core::ffi::c_long),
-        );
+        format_add(ft, c"popup_pane_right", |out| {
+            write!(out, "{}", (n) as ::core::ffi::c_long)
+        });
     }
     xp = args_get(&*(args), 'x' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if xp.is_null()
-        || strcmp(xp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_centre_x}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"R\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_pane_right}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"P\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_pane_left}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"M\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_mouse_centre_x}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"L\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_last_x}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(xp, b"W\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        xp = b"#{popup_window_status_line_x}\0" as *const u8 as *const ::core::ffi::c_char;
+    if xp.is_null() || strcmp(xp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_centre_x}".as_ptr();
+    } else if strcmp(xp, c"R".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_pane_right}".as_ptr();
+    } else if strcmp(xp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_pane_left}".as_ptr();
+    } else if strcmp(xp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_mouse_centre_x}".as_ptr();
+    } else if strcmp(xp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_last_x}".as_ptr();
+    } else if strcmp(xp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
+        xp = c"#{popup_window_status_line_x}".as_ptr();
     }
     let p = format_expand_cstring(ft, xp);
     n = strtol(
@@ -916,30 +742,18 @@ unsafe fn cmd_display_menu_get_menu_pos(
         { w }
     ));
     yp = args_get(&*(args), 'y' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    if yp.is_null()
-        || strcmp(yp, b"C\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_centre_y}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"P\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_pane_bottom}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"M\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_mouse_top}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"L\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_last_y}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"S\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_status_line_y}\0" as *const u8 as *const ::core::ffi::c_char;
-    } else if strcmp(yp, b"W\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        yp = b"#{popup_window_status_line_y}\0" as *const u8 as *const ::core::ffi::c_char;
+    if yp.is_null() || strcmp(yp, c"C".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_centre_y}".as_ptr();
+    } else if strcmp(yp, c"P".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_pane_bottom}".as_ptr();
+    } else if strcmp(yp, c"M".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_mouse_top}".as_ptr();
+    } else if strcmp(yp, c"L".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_last_y}".as_ptr();
+    } else if strcmp(yp, c"S".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_status_line_y}".as_ptr();
+    } else if strcmp(yp, c"W".as_ptr()) == 0 as ::core::ffi::c_int {
+        yp = c"#{popup_window_status_line_y}".as_ptr();
     }
     let p = format_expand_cstring(ft, yp);
     n = strtol(
@@ -1262,13 +1076,7 @@ unsafe fn cmd_display_popup_exec(
                             if count == 0 as u_int {
                                 shellcmd_session_value =
                                     Some(s.as_ref().expect("live session").with_options_mut(
-                                        |options| {
-                                            options_get_string(
-                                                options,
-                                                b"default-command\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
-                                            )
-                                        },
+                                        |options| options_get_string(options, c"default-command"),
                                     ));
                                 shellcmd = shellcmd_session_value
                                     .as_ref()
@@ -1285,13 +1093,7 @@ unsafe fn cmd_display_popup_exec(
                                 shellcmd = ::core::ptr::null::<::core::ffi::c_char>();
                                 shell_session_value =
                                     Some(s.as_ref().expect("live session").with_options_mut(
-                                        |options| {
-                                            options_get_string(
-                                                options,
-                                                b"default-shell\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
-                                            )
-                                        },
+                                        |options| options_get_string(options, c"default-shell"),
                                     ));
                                 shell = shell_session_value
                                     .as_ref()

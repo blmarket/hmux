@@ -544,7 +544,7 @@ mod tests {
             status_update_cache(&mut *session.get());
             let before = session.status_layout();
             session.with_options_mut(|options| {
-                crate::src::options::options_set_number(options, c"status".as_ptr(), 0);
+                crate::src::options::options_set_number(options, c"status", 0);
             });
             assert_eq!(
                 session.status_layout(),

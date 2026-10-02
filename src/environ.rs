@@ -261,61 +261,41 @@ pub unsafe fn environ_for_session(
         session.with_environment_mut(|source| environ_copy(source, &mut env));
     }
     if no_TERM == 0 {
-        let terminal = options_get_string(
-            global_options,
-            b"default-terminal\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        let terminal = options_get_string(global_options, c"default-terminal");
+        environ_set(&mut env, c"TERM".as_ptr(), 0 as ::core::ffi::c_int, |out| {
+            write_cstr(out, terminal.as_ptr())
+        });
         environ_set(
             &mut env,
-            b"TERM\0" as *const u8 as *const ::core::ffi::c_char,
+            c"TERM_PROGRAM".as_ptr(),
             0 as ::core::ffi::c_int,
-            |out| write_cstr(out, terminal.as_ptr()),
+            |out| write_cstr(out, c"tmux".as_ptr()),
         );
         environ_set(
             &mut env,
-            b"TERM_PROGRAM\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, b"tmux\0" as *const u8 as *const ::core::ffi::c_char),
-        );
-        environ_set(
-            &mut env,
-            b"TERM_PROGRAM_VERSION\0" as *const u8 as *const ::core::ffi::c_char,
+            c"TERM_PROGRAM_VERSION".as_ptr(),
             0 as ::core::ffi::c_int,
             |out| out.write_all(getversion().to_bytes()),
         );
         environ_set(
             &mut env,
-            b"COLORTERM\0" as *const u8 as *const ::core::ffi::c_char,
+            c"COLORTERM".as_ptr(),
             0 as ::core::ffi::c_int,
             |out| out.write_all(b"truecolor"),
         );
     }
-    environ_clear(
-        &mut env,
-        b"LISTEN_PID\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    environ_clear(
-        &mut env,
-        b"LISTEN_FDS\0" as *const u8 as *const ::core::ffi::c_char,
-    );
-    environ_clear(
-        &mut env,
-        b"LISTEN_FDNAMES\0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    environ_clear(&mut env, c"LISTEN_PID".as_ptr());
+    environ_clear(&mut env, c"LISTEN_FDS".as_ptr());
+    environ_clear(&mut env, c"LISTEN_FDNAMES".as_ptr());
     idx = s_owner.map_or(-1, |session| session.id() as i32);
-    environ_set(
-        &mut env,
-        b"TMUX\0" as *const u8 as *const ::core::ffi::c_char,
-        0 as ::core::ffi::c_int,
-        |out| {
-            write_cstr(out, socket_path)?;
-            write!(
-                out,
-                ",{},{}",
-                (getpid() as ::core::ffi::c_long) as ::core::ffi::c_long,
-                (idx) as i32
-            )
-        },
-    );
+    environ_set(&mut env, c"TMUX".as_ptr(), 0 as ::core::ffi::c_int, |out| {
+        write_cstr(out, socket_path)?;
+        write!(
+            out,
+            ",{},{}",
+            (getpid() as ::core::ffi::c_long) as ::core::ffi::c_long,
+            (idx) as i32
+        )
+    });
     env
 }

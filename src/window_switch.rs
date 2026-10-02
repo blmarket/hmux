@@ -92,9 +92,7 @@ pub type window_switch_type = ::core::ffi::c_uint;
 pub const WINDOW_SWITCH_TYPE_WINDOW: window_switch_type = 1;
 pub const WINDOW_SWITCH_TYPE_SESSION: window_switch_type = 0;
 
-pub const WINDOW_SWITCH_DEFAULT_COMMAND: [::core::ffi::c_char; 23] = unsafe {
-    ::core::mem::transmute::<[u8; 23], [::core::ffi::c_char; 23]>(*b"switch-client -Zt '%%'\0")
-};
+pub const WINDOW_SWITCH_DEFAULT_COMMAND: &std::ffi::CStr = c"switch-client -Zt '%%'";
 pub const WINDOW_SWITCH_DEFAULT_FORMAT: &CStr = c"#{?window_format,#{window_name} #[dim]#{session_name}:#{window_index}#{window_flags}#[default] #[dim]#{pane_current_command}#[default] #[dim]#{?#{!=:#{pane_title},#{host_short}},#{pane_title},}#[default],#{session_name} #[dim]#{session_windows} windows#[default] #{?session_attached,attached,#[dim]detached#[default]} #[dim]#{window_name}#[default]}";
 pub static window_switch_mode: window_mode = {
     window_mode {

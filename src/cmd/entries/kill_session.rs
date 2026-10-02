@@ -90,18 +90,14 @@ unsafe fn cmd_kill_session_exec(
             server_destroy_session(&session_owner);
             session_owner.destroy(
                 (1 as ::core::ffi::c_int) != 0,
-                std::ffi::CStr::from_ptr(
-                    b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
-                ),
+                std::ffi::CStr::from_ptr(c"cmd_kill_session_exec".as_ptr()),
             );
         }
     } else {
         server_destroy_session(&source);
         source.destroy(
             (1 as ::core::ffi::c_int) != 0,
-            std::ffi::CStr::from_ptr(
-                b"cmd_kill_session_exec\0" as *const u8 as *const ::core::ffi::c_char,
-            ),
+            std::ffi::CStr::from_ptr(c"cmd_kill_session_exec".as_ptr()),
         );
     }
     CMD_RETURN_NORMAL
@@ -128,9 +124,7 @@ unsafe fn cmd_kill_session_all(
             server_destroy_session(sloop_owner.as_ref().expect("registered session"));
             (sloop_owner.as_ref().expect("registered session")).destroy(
                 (1 as ::core::ffi::c_int) != 0,
-                std::ffi::CStr::from_ptr(
-                    b"cmd_kill_session_all\0" as *const u8 as *const ::core::ffi::c_char,
-                ),
+                std::ffi::CStr::from_ptr(c"cmd_kill_session_all".as_ptr()),
             );
         }
         sloop_owner = sessions.after(&name);

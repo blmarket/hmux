@@ -329,7 +329,7 @@ pub unsafe fn default_window_size(
         ) == 0
         {
             s_owner.with_options_mut(|options| {
-                let value = options_get_string(options, c"default-size".as_ptr());
+                let value = options_get_string(options, c"default-size");
                 if sscanf(value.as_ptr(), c"%ux%u".as_ptr(), sx, sy) != 2 {
                     *sx = 80;
                     *sy = 24;

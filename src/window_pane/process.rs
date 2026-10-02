@@ -154,11 +154,7 @@ pub(super) unsafe fn pipe_pane(
             if setpgid(0 as __pid_t, 0 as __pid_t) == -(1 as ::core::ffi::c_int) {
                 _exit(1 as ::core::ffi::c_int);
             }
-            null_fd = match hmux_rt::unix::open(
-                std::ffi::CStr::from_ptr(_PATH_DEVNULL.as_ptr()),
-                O_WRONLY,
-                0,
-            ) {
+            null_fd = match hmux_rt::unix::open(_PATH_DEVNULL, O_WRONLY, 0) {
                 Ok(fd) => fd.into_raw_fd(),
                 Err(error) => crate::src::reactor::io_status(Err(error)),
             };
@@ -207,8 +203,8 @@ pub(super) unsafe fn pipe_pane(
             hmux_rt::unix::close_from(STDERR_FILENO + 1 as ::core::ffi::c_int);
             execl(
                 _PATH_BSHELL.as_ptr(),
-                b"sh\0" as *const u8 as *const ::core::ffi::c_char,
-                b"-c\0" as *const u8 as *const ::core::ffi::c_char,
+                c"sh".as_ptr(),
+                c"-c".as_ptr(),
                 cmd.as_ptr(),
                 NULL as *mut ::core::ffi::c_char,
             );

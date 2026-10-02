@@ -1309,10 +1309,8 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
                 (*tdkx).template.as_ptr(),
                 ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
             );
-            copy[strcspn(
-                &raw mut copy as *mut ::core::ffi::c_char,
-                b"_\0" as *const u8 as *const ::core::ffi::c_char,
-            ) as usize] = ('0' as i32 as u_int).wrapping_add(j) as ::core::ffi::c_char;
+            copy[strcspn(&raw mut copy as *mut ::core::ffi::c_char, c"_".as_ptr()) as usize] =
+                ('0' as i32 as u_int).wrapping_add(j) as ::core::ffi::c_char;
             key = (*tdkx).key | tty_default_xterm_modifiers[j as usize];
             tty_keys_add(tty, &raw mut copy as *mut ::core::ffi::c_char, key);
             j = j.wrapping_add(1);
@@ -1578,7 +1576,7 @@ unsafe fn tty_keys_winsz(
     tmp[end.wrapping_sub(2 as size_t) as usize] = '\0' as i32 as ::core::ffi::c_char;
     if sscanf(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"8;%u;%u\0" as *const u8 as *const ::core::ffi::c_char,
+        c"8;%u;%u".as_ptr(),
         &raw mut sy,
         &raw mut sx,
     ) == 2 as ::core::ffi::c_int
@@ -1592,7 +1590,7 @@ unsafe fn tty_keys_winsz(
         return 0 as ::core::ffi::c_int;
     } else if sscanf(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"4;%u;%u\0" as *const u8 as *const ::core::ffi::c_char,
+        c"4;%u;%u".as_ptr(),
         &raw mut ypixel,
         &raw mut xpixel,
     ) == 2 as ::core::ffi::c_int
@@ -2200,16 +2198,10 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     terminal_client_owner.update_flags(0, CLIENT_FOCUSED as u64);
                     tty_keys_update_focus(terminal_client_owner);
-                    events_fire_client(
-                        b"client-focus-out\0" as *const u8 as *const ::core::ffi::c_char,
-                        terminal_client_owner.clone(),
-                    );
+                    events_fire_client(c"client-focus-out".as_ptr(), terminal_client_owner.clone());
                 } else if key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code {
                     terminal_client_owner.update_flags(CLIENT_FOCUSED as u64, 0);
-                    events_fire_client(
-                        b"client-focus-in\0" as *const u8 as *const ::core::ffi::c_char,
-                        terminal_client_owner.clone(),
-                    );
+                    events_fire_client(c"client-focus-in".as_ptr(), terminal_client_owner.clone());
                     tty_keys_update_focus(terminal_client_owner);
                 }
                 if let Some(event) = event {
@@ -2414,7 +2406,7 @@ unsafe fn tty_keys_extended_key(
     if *buf.add(end) as ::core::ffi::c_int == '~' as i32 {
         if sscanf(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"27;%u;%u\0" as *const u8 as *const ::core::ffi::c_char,
+            c"27;%u;%u".as_ptr(),
             &raw mut modifiers,
             &raw mut number,
         ) != 2 as ::core::ffi::c_int
@@ -2423,7 +2415,7 @@ unsafe fn tty_keys_extended_key(
         }
     } else if sscanf(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"%u;%u\0" as *const u8 as *const ::core::ffi::c_char,
+        c"%u;%u".as_ptr(),
         &raw mut number,
         &raw mut modifiers,
     ) != 2 as ::core::ffi::c_int
@@ -2868,10 +2860,7 @@ unsafe fn tty_keys_device_attributes(
     *size = (4 as u_int).wrapping_add(i) as size_t;
     cp = &raw mut tmp as *mut ::core::ffi::c_char;
     loop {
-        next = strsep(
-            &raw mut cp,
-            b";\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        next = strsep(&raw mut cp, c";".as_ptr());
         if next.is_null() {
             break;
         }
@@ -2902,31 +2891,27 @@ unsafe fn tty_keys_device_attributes(
                 p[i as usize] as ::core::ffi::c_int
             ));
             if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
-                tty_parse_client_features(
-                    terminal_client_owner,
-                    b"sixel\0" as *const u8 as *const ::core::ffi::c_char,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                tty_parse_client_features(terminal_client_owner, c"sixel".as_ptr(), c",".as_ptr());
             }
             if p[i as usize] as ::core::ffi::c_int == 21 as ::core::ffi::c_int {
                 tty_parse_client_features(
                     terminal_client_owner,
-                    b"margins\0" as *const u8 as *const ::core::ffi::c_char,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"margins".as_ptr(),
+                    c",".as_ptr(),
                 );
             }
             if p[i as usize] as ::core::ffi::c_int == 28 as ::core::ffi::c_int {
                 tty_parse_client_features(
                     terminal_client_owner,
-                    b"rectfill\0" as *const u8 as *const ::core::ffi::c_char,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"rectfill".as_ptr(),
+                    c",".as_ptr(),
                 );
             }
             if p[i as usize] as ::core::ffi::c_int == 52 as ::core::ffi::c_int {
                 tty_parse_client_features(
                     terminal_client_owner,
-                    b"clipboard\0" as *const u8 as *const ::core::ffi::c_char,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"clipboard".as_ptr(),
+                    c",".as_ptr(),
                 );
             }
             i = i.wrapping_add(1);
@@ -3001,11 +2986,7 @@ unsafe fn tty_keys_sync(
         || status == 2 as ::core::ffi::c_int
         || status == 3 as ::core::ffi::c_int
     {
-        tty_parse_client_features(
-            terminal_client_owner,
-            b"sync\0" as *const u8 as *const ::core::ffi::c_char,
-            b",\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_parse_client_features(terminal_client_owner, c"sync".as_ptr(), c",".as_ptr());
         tty_update_features(terminal_client_owner);
     }
     log_debug(format_args!(
@@ -3113,10 +3094,7 @@ unsafe fn tty_keys_device_attributes2(
     *size = (4 as u_int).wrapping_add(i) as size_t;
     cp = &raw mut tmp as *mut ::core::ffi::c_char;
     loop {
-        next = strsep(
-            &raw mut cp,
-            b";\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        next = strsep(&raw mut cp, c";".as_ptr());
         if next.is_null() {
             break;
         }
@@ -3135,22 +3113,13 @@ unsafe fn tty_keys_device_attributes2(
     }
     match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
         77 => {
-            tty_default_features(
-                terminal_client_owner,
-                b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_default_features(terminal_client_owner, c"mintty".as_ptr());
         }
         84 => {
-            tty_default_features(
-                terminal_client_owner,
-                b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_default_features(terminal_client_owner, c"tmux".as_ptr());
         }
         85 => {
-            tty_default_features(
-                terminal_client_owner,
-                b"rxvt-unicode\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_default_features(terminal_client_owner, c"rxvt-unicode".as_ptr());
         }
         _ => {}
     }
@@ -3234,84 +3203,60 @@ unsafe fn tty_keys_extended_device_attributes(
     tmp[i.wrapping_sub(1 as u_int) as usize] = '\0' as i32 as ::core::ffi::c_char;
     if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"iTerm2 \0" as *const u8 as *const ::core::ffi::c_char,
+        c"iTerm2 ".as_ptr(),
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"iTerm2\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"iTerm2".as_ptr());
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"tmux \0" as *const u8 as *const ::core::ffi::c_char,
+        c"tmux ".as_ptr(),
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"tmux\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"tmux".as_ptr());
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"XTerm(\0" as *const u8 as *const ::core::ffi::c_char,
+        c"XTerm(".as_ptr(),
         6 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"XTerm\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"XTerm".as_ptr());
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"mintty \0" as *const u8 as *const ::core::ffi::c_char,
+        c"mintty ".as_ptr(),
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"mintty\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"mintty".as_ptr());
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"foot(\0" as *const u8 as *const ::core::ffi::c_char,
+        c"foot(".as_ptr(),
         5 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"foot\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"foot".as_ptr());
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"WezTerm \0" as *const u8 as *const ::core::ffi::c_char,
+        c"WezTerm ".as_ptr(),
         7 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"WezTerm\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"WezTerm".as_ptr());
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"ghostty \0" as *const u8 as *const ::core::ffi::c_char,
+        c"ghostty ".as_ptr(),
         8 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"ghostty\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"ghostty".as_ptr());
     } else if strncmp(
         &raw mut tmp as *mut ::core::ffi::c_char,
-        b"Rio \0" as *const u8 as *const ::core::ffi::c_char,
+        c"Rio ".as_ptr(),
         4 as size_t,
     ) == 0 as ::core::ffi::c_int
     {
-        tty_default_features(
-            terminal_client_owner,
-            b"Rio\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        tty_default_features(terminal_client_owner, c"Rio".as_ptr());
     }
     log_debug(format_args!(
         "{}: received extended DA {}",

@@ -32,19 +32,9 @@ use crate::src::shared::options::{OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, UNIX_EPOCH};
 
-pub const SHOW_OPTIONS_TEMPLATE: [::core::ffi::c_char; 202] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 202],
-        [::core::ffi::c_char; 202],
-    >(
-        *b"#{?option_value_only,#{option_value},#{option_name}#{?option_has_array_key,[#{option_array_key}],}#{?option_is_parent,*,}#{?option_has_value, #{?option_is_string,#{q/a:option_value},#{option_value}},}}\0",
-    )
-};
-pub const SHOW_HOOKS_MONITOR_TEMPLATE: [::core::ffi::c_char; 61] = unsafe {
-    ::core::mem::transmute::<[u8; 61], [::core::ffi::c_char; 61]>(
-        *b"#{option_name}:#{hook_monitor_target}:#{hook_monitor_format}\0",
-    )
-};
+pub const SHOW_OPTIONS_TEMPLATE: &std::ffi::CStr = c"#{?option_value_only,#{option_value},#{option_name}#{?option_has_array_key,[#{option_array_key}],}#{?option_is_parent,*,}#{?option_has_value, #{?option_is_string,#{q/a:option_value},#{option_value}},}}";
+pub const SHOW_HOOKS_MONITOR_TEMPLATE: &std::ffi::CStr =
+    c"#{option_name}:#{hook_monitor_target}:#{hook_monitor_format}";
 pub static cmd_show_options_entry: cmd_entry = {
     cmd_entry {
         name: c"show-options",
@@ -322,12 +312,10 @@ unsafe fn cmd_show_options_print(
             CString::default()
         };
         let table = options_table_entry(entry);
-        format_add(ft, c"option_name".as_ptr(), |out| {
+        format_add(ft, c"option_name", |out| {
             write_cstr(out, entry.name.as_ptr())
         });
-        format_add(ft, c"option_value".as_ptr(), |out| {
-            write_cstr(out, value.as_ptr())
-        });
+        format_add(ft, c"option_value", |out| write_cstr(out, value.as_ptr()));
         for (name, value) in [
             (c"option_value_only", value_only as i32),
             (
@@ -348,9 +336,9 @@ unsafe fn cmd_show_options_print(
             (c"option_has_value", has_value as i32),
             (c"option_has_array_key", array_key.is_some() as i32),
         ] {
-            format_add(ft, name.as_ptr(), |out| write!(out, "{value}"));
+            format_add(ft, name, |out| write!(out, "{value}"));
         }
-        format_add(ft, c"option_array_key".as_ptr(), |out| {
+        format_add(ft, c"option_array_key", |out| {
             write_cstr(out, array_key.unwrap_or(c"").as_ptr())
         });
         if show_hooks {
@@ -366,18 +354,14 @@ unsafe fn cmd_show_options_print(
         format_free(ft_owner);
         return;
     }
-    let template = template
-        .as_deref()
-        .unwrap_or(CStr::from_ptr(SHOW_OPTIONS_TEMPLATE.as_ptr()));
+    let template = template.as_deref().unwrap_or(SHOW_OPTIONS_TEMPLATE);
     let line = format_expand_cstring(ft, template.as_ptr());
     format_free(ft_owner);
     cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
 }
 
 unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: time_t) {
-    format_add(ft, c"hook_fire_count".as_ptr(), |out| {
-        write!(out, "{count}")
-    });
+    format_add(ft, c"hook_fire_count", |out| write!(out, "{count}"));
     if time != 0 {
         let offset = Duration::from_secs(time.unsigned_abs());
         let timestamp = if time > 0 {
@@ -385,7 +369,7 @@ unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: tim
         } else {
             UNIX_EPOCH - offset
         };
-        format_add_time(ft, c"hook_fire_time".as_ptr(), timestamp);
+        format_add_time(ft, c"hook_fire_time", timestamp);
     }
 }
 
@@ -399,7 +383,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     let args = cmd_get_args_mut(self_0.get_mut_unchecked()).expect("show hook arguments");
     let template = args_get(args, b'F')
         .map(CStr::to_owned)
-        .unwrap_or_else(|| CStr::from_ptr(SHOW_HOOKS_MONITOR_TEMPLATE.as_ptr()).to_owned());
+        .unwrap_or_else(|| SHOW_HOOKS_MONITOR_TEMPLATE.to_owned());
     let mut ft_owner = format_create_from_target(item_handle);
     let ft = &raw mut *ft_owner;
     let print = scope.with_entry(name, |entry| {
@@ -417,18 +401,16 @@ unsafe fn cmd_show_hooks_print_monitor(
             MONITOR_ALL_WINDOWS => c"@*".to_owned(),
             _ => return false,
         };
-        format_add(ft, c"hook_monitor_target".as_ptr(), |out| {
+        format_add(ft, c"hook_monitor_target", |out| {
             write_cstr(out, target.as_ptr())
         });
-        format_add(ft, c"hook_monitor_format".as_ptr(), |out| {
+        format_add(ft, c"hook_monitor_format", |out| {
             write_cstr(out, monitor.format.as_ptr())
         });
-        format_add(ft, c"option_name".as_ptr(), |out| {
+        format_add(ft, c"option_name", |out| {
             write_cstr(out, entry.name.as_ptr())
         });
-        format_add(ft, c"option_value".as_ptr(), |out| {
-            write_cstr(out, value.as_ptr())
-        });
+        format_add(ft, c"option_value", |out| write_cstr(out, value.as_ptr()));
         for (name, value) in [
             (c"option_value_only", 0),
             (c"option_is_parent", 0),
@@ -439,9 +421,9 @@ unsafe fn cmd_show_hooks_print_monitor(
             (c"option_has_value", 1),
             (c"option_has_array_key", 0),
         ] {
-            format_add(ft, name.as_ptr(), |out| write!(out, "{value}"));
+            format_add(ft, name, |out| write!(out, "{value}"));
         }
-        format_add(ft, c"option_array_key".as_ptr(), |_| Ok(()));
+        format_add(ft, c"option_array_key", |_| Ok(()));
         show_hook_add_fire_formats(
             ft,
             hooks_monitor_get_fire_count(entry),

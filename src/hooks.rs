@@ -297,7 +297,7 @@ unsafe fn hooks_insert_event(
     let mut formats = format_create_owned(c, item_handle, FORMAT_NONE, FORMAT_NOJOBS);
     let ft = &raw mut *formats;
     event_payload_add_formats(ep, ft, c"hook_".as_ptr());
-    format_add(ft, c"hook".as_ptr(), |out| write_cstr(out, name));
+    format_add(ft, c"hook", |out| write_cstr(out, name));
     format_log_debug(ft, c"hooks_insert_event".as_ptr());
     let mut hd = hooks_data {
         name: CStr::from_ptr(name),
@@ -360,7 +360,7 @@ pub unsafe fn hooks_valid_event_name(mut name: *const ::core::ffi::c_char) -> ::
     if *name as ::core::ffi::c_int == '@' as i32 {
         return 1 as ::core::ffi::c_int;
     }
-    oe = options_search(name).map_or(std::ptr::null(), |entry| {
+    oe = options_search(CStr::from_ptr(name)).map_or(std::ptr::null(), |entry| {
         entry as *const crate::src::shared::options::options_table_entry
     });
     (!oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0) as ::core::ffi::c_int
@@ -390,9 +390,7 @@ pub unsafe fn hooks_run(
         expand: 0,
     };
     cmd_find_copy_state(&raw mut hd.fs, target);
-    format_add(&raw mut *hd.formats, c"hook".as_ptr(), |out| {
-        write_cstr(out, name)
-    });
+    format_add(&raw mut *hd.formats, c"hook", |out| write_cstr(out, name));
     format_log_debug(&raw mut *hd.formats, c"hooks_run".as_ptr());
     hooks_insert(item_handle, &raw mut hd);
     format_free(hd.formats);
@@ -459,7 +457,7 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     let mut ep = event_payload_create();
     event_payload_set_identity(
         &mut ep,
-        b"_hooks_monitor\0" as *const u8 as *const ::core::ffi::c_char,
+        c"_hooks_monitor".as_ptr(),
         crate::src::shared::events::EventPayloadIdentity::HookMonitor(generation),
     );
     cmd_find_clear_state(&raw mut fs, 0 as ::core::ffi::c_int);
@@ -498,17 +496,13 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
         out.write_all(change.value.to_bytes())
     });
     if let Some(last) = change.last {
-        event_payload_set_string(
-            &mut ep,
-            b"last\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(last.to_bytes()),
-        );
+        event_payload_set_string(&mut ep, c"last".as_ptr(), |out| {
+            out.write_all(last.to_bytes())
+        });
     } else {
-        event_payload_set_string(
-            &mut ep,
-            b"last\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
-        );
+        event_payload_set_string(&mut ep, c"last".as_ptr(), |out| {
+            write_cstr(out, c"".as_ptr())
+        });
     }
     if let Some(client) = client_owner.as_ref() {
         event_payload_set_client(&mut ep, client.clone());
@@ -516,41 +510,29 @@ unsafe fn hooks_monitor_cb(change: &monitor_change, fallback: &cmd_find_state, g
     if !s.is_none() {
         event_payload_set_session(
             &mut ep,
-            b"session\0" as *const u8 as *const ::core::ffi::c_char,
+            c"session".as_ptr(),
             s.clone().expect("live session"),
         );
     }
     if wl.is_alive() {
         if s.is_none() {
             if let Some(session_owner) = wl.get_unchecked().session.upgrade() {
-                event_payload_set_session(
-                    &mut ep,
-                    b"session\0" as *const u8 as *const ::core::ffi::c_char,
-                    session_owner.clone(),
-                );
+                event_payload_set_session(&mut ep, c"session".as_ptr(), session_owner.clone());
             }
         }
         event_payload_set_window(
             &mut ep,
-            b"window\0" as *const u8 as *const ::core::ffi::c_char,
+            c"window".as_ptr(),
             std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
         );
-        event_payload_set_int(
-            &mut ep,
-            b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-            wl.get_unchecked().idx,
-        );
+        event_payload_set_int(&mut ep, c"window_index".as_ptr(), wl.get_unchecked().idx);
     }
     if let Some(pane_owner_value) = pane_owner.as_ref() {
-        event_payload_set_pane(
-            &mut ep,
-            b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-            pane_owner_value.clone(),
-        );
+        event_payload_set_pane(&mut ep, c"pane".as_ptr(), pane_owner_value.clone());
         if !wl.is_alive() {
             event_payload_set_window(
                 &mut ep,
-                b"window\0" as *const u8 as *const ::core::ffi::c_char,
+                c"window".as_ptr(),
                 pane_owner_value
                     .window_observer()
                     .upgrade()
@@ -579,7 +561,7 @@ pub unsafe fn hooks_monitor_add(
     hooks_monitor_remove(scope, name);
     scope.with_local(|table| {
         if crate::src::options::options_get_only(table, CStr::from_ptr(name)).is_none() {
-            options_set_string(table, name, 0, |out| out.write_all(b""));
+            options_set_string(table, CStr::from_ptr(name), 0, |out| out.write_all(b""));
         }
     });
     let generation = NEXT_MONITOR

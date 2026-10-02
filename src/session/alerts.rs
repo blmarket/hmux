@@ -78,17 +78,10 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
             server_status_session(&session_owner);
         }
         if !(alerts_action_applies(wl.clone(), c"bell-action") == 0) {
-            events_fire_winlink(
-                b"alert-bell\0" as *const u8 as *const ::core::ffi::c_char,
-                wl.clone(),
-            );
+            events_fire_winlink(c"alert-bell".as_ptr(), wl.clone());
             if !((*s).flags & SESSION_ALERTED != 0) {
                 (*s).flags |= SESSION_ALERTED;
-                alerts_set_message(
-                    wl.clone(),
-                    b"Bell\0" as *const u8 as *const ::core::ffi::c_char,
-                    c"visual-bell",
-                );
+                alerts_set_message(wl.clone(), c"Bell".as_ptr(), c"visual-bell");
             }
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
@@ -125,17 +118,10 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 server_status_session(&session_owner);
             }
             if !(alerts_action_applies(wl.clone(), c"activity-action") == 0) {
-                events_fire_winlink(
-                    b"alert-activity\0" as *const u8 as *const ::core::ffi::c_char,
-                    wl.clone(),
-                );
+                events_fire_winlink(c"alert-activity".as_ptr(), wl.clone());
                 if !((*s).flags & SESSION_ALERTED != 0) {
                     (*s).flags |= SESSION_ALERTED;
-                    alerts_set_message(
-                        wl.clone(),
-                        b"Activity\0" as *const u8 as *const ::core::ffi::c_char,
-                        c"visual-activity",
-                    );
+                    alerts_set_message(wl.clone(), c"Activity".as_ptr(), c"visual-activity");
                 }
             }
         }
@@ -175,17 +161,10 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 server_status_session(&session_owner);
             }
             if !(alerts_action_applies(wl.clone(), c"silence-action") == 0) {
-                events_fire_winlink(
-                    b"alert-silence\0" as *const u8 as *const ::core::ffi::c_char,
-                    wl.clone(),
-                );
+                events_fire_winlink(c"alert-silence".as_ptr(), wl.clone());
                 if !((*s).flags & SESSION_ALERTED != 0) {
                     (*s).flags |= SESSION_ALERTED;
-                    alerts_set_message(
-                        wl.clone(),
-                        b"Silence\0" as *const u8 as *const ::core::ffi::c_char,
-                        c"visual-silence",
-                    );
+                    alerts_set_message(wl.clone(), c"Silence".as_ptr(), c"visual-silence");
                 }
             }
         }

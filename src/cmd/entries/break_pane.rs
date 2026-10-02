@@ -45,11 +45,7 @@ use crate::src::window::{winlink_find_by_index, winlink_find_by_window, winlink_
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::window_pane::WindowPane as _;
 
-pub const BREAK_PANE_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
-    ::core::mem::transmute::<[u8; 46], [::core::ffi::c_char; 46]>(
-        *b"#{session_name}:#{window_index}.#{pane_index}\0",
-    )
-};
+pub const BREAK_PANE_TEMPLATE: &std::ffi::CStr = c"#{session_name}:#{window_index}.#{pane_index}";
 use std::ffi::CStr;
 
 pub static cmd_break_pane_entry: cmd_entry = {
@@ -125,7 +121,7 @@ unsafe fn cmd_break_pane_float(
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);
@@ -212,7 +208,7 @@ unsafe fn cmd_break_pane_exec(
             if !name.is_null() {
                 source_window.rename(CStr::from_ptr(name), false);
                 source_window.with_options_mut(|options| {
-                    options_set_number(options, c"automatic-rename".as_ptr(), 0)
+                    options_set_number(options, c"automatic-rename", 0)
                 });
             }
             server_unlink_window(src_s.as_ref().expect("live session"), wl.clone());
@@ -299,7 +295,7 @@ unsafe fn cmd_break_pane_exec(
             pane_owner.refresh_palette();
             window.release(c"cmd_break_pane_exec");
             events_fire_window(
-                b"window-created\0" as *const u8 as *const ::core::ffi::c_char,
+                c"window-created".as_ptr(),
                 destination.upgrade().expect("live destination window"),
             );
             pane_owner.notify_moved(

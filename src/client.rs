@@ -207,7 +207,7 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
                 });
                 return &raw mut msg as *mut ::core::ffi::c_char;
             }
-            return b"detached\0" as *const u8 as *const ::core::ffi::c_char;
+            return c"detached".as_ptr();
         }
         2 => {
             if let Some(session) = client_exitsession.as_ref() {
@@ -218,15 +218,15 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
                 });
                 return &raw mut msg as *mut ::core::ffi::c_char;
             }
-            return b"detached and SIGHUP\0" as *const u8 as *const ::core::ffi::c_char;
+            return c"detached and SIGHUP".as_ptr();
         }
-        3 => return b"lost tty\0" as *const u8 as *const ::core::ffi::c_char,
-        4 => return b"terminated\0" as *const u8 as *const ::core::ffi::c_char,
+        3 => return c"lost tty".as_ptr(),
+        4 => return c"terminated".as_ptr(),
         5 => {
-            return b"server exited unexpectedly\0" as *const u8 as *const ::core::ffi::c_char;
+            return c"server exited unexpectedly".as_ptr();
         }
-        6 => return b"exited\0" as *const u8 as *const ::core::ffi::c_char,
-        7 => return b"server exited\0" as *const u8 as *const ::core::ffi::c_char,
+        6 => return c"exited".as_ptr(),
+        7 => return c"server exited".as_ptr(),
         8 => {
             // The message remains owned until client_main has printed the exit reason.
             return client_exitmessage
@@ -235,7 +235,7 @@ unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
         }
         _ => {}
     }
-    b"unknown reason\0" as *const u8 as *const ::core::ffi::c_char
+    c"unknown reason".as_ptr()
 }
 unsafe fn client_exit() {
     if file_write_left(&client_files) == 0 {
@@ -339,17 +339,14 @@ pub unsafe fn client_main(
         );
         cwd = find_cwd();
         if cwd.is_null() {
-            cwd = find_home_cstr().map_or(
-                b"/\0" as *const u8 as *const ::core::ffi::c_char,
-                CStr::as_ptr,
-            );
+            cwd = find_home_cstr().map_or(c"/".as_ptr(), CStr::as_ptr);
         }
         let ttynam =
             hmux_rt::unix::terminal_name(std::os::fd::BorrowedFd::borrow_raw(STDIN_FILENO))
                 .unwrap_or_default();
-        termname = getenv(b"TERM\0" as *const u8 as *const ::core::ffi::c_char);
+        termname = getenv(c"TERM".as_ptr());
         if termname.is_null() {
-            termname = b"\0" as *const u8 as *const ::core::ffi::c_char;
+            termname = c"".as_ptr();
         }
         if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
             fatal(|out| out.write_all(b"pledge failed"));
@@ -361,11 +358,7 @@ pub unsafe fn client_main(
             match tty_term_read_list(CStr::from_ptr(termname)) {
                 Ok(read_caps) => caps = read_caps,
                 Err(cause) => {
-                    fprintf(
-                        stderr,
-                        b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                        cause.as_ptr(),
-                    );
+                    fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
                     return 1 as ::core::ffi::c_int;
                 }
             }
@@ -381,7 +374,7 @@ pub unsafe fn client_main(
             {
                 fprintf(
                     stderr,
-                    b"tcgetattr failed: %s\n\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"tcgetattr failed: %s\n".as_ptr(),
                     strerror(*__errno_location()),
                 );
                 return 1 as ::core::ffi::c_int;
@@ -414,10 +407,7 @@ pub unsafe fn client_main(
                 > (MAX_IMSGSIZE as usize)
                     .wrapping_sub(::core::mem::size_of::<msg_command>() as usize)
             {
-                fprintf(
-                    stderr,
-                    b"command too long\n\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                fprintf(stderr, c"command too long\n".as_ptr());
                 return 1 as ::core::ffi::c_int;
             }
             const _: () = assert!(
@@ -434,10 +424,7 @@ pub unsafe fn client_main(
                 size,
             ) != 0 as ::core::ffi::c_int
             {
-                fprintf(
-                    stderr,
-                    b"command too long\n\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                fprintf(stderr, c"command too long\n".as_ptr());
                 return 1 as ::core::ffi::c_int;
             }
             if proc_send(
@@ -448,10 +435,7 @@ pub unsafe fn client_main(
                 data.len(),
             ) != 0 as ::core::ffi::c_int
             {
-                fprintf(
-                    stderr,
-                    b"failed to send command\n\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                fprintf(stderr, c"failed to send command\n".as_ptr());
                 return 1 as ::core::ffi::c_int;
             }
         } else if msg as ::core::ffi::c_uint
@@ -485,10 +469,7 @@ pub unsafe fn client_main(
             if client_exitreason as ::core::ffi::c_uint
                 != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                printf(
-                    b"[%s]\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    client_exit_message(),
-                );
+                printf(c"[%s]\n".as_ptr(), client_exit_message());
             }
             ppid = getppid() as pid_t;
             if client_exittype as ::core::ffi::c_uint
@@ -501,19 +482,16 @@ pub unsafe fn client_main(
             if client_exitreason as ::core::ffi::c_uint
                 != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                printf(
-                    b"%%exit %s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    client_exit_message(),
-                );
+                printf(c"%%exit %s\n".as_ptr(), client_exit_message());
             } else {
-                printf(b"%%exit\n\0" as *const u8 as *const ::core::ffi::c_char);
+                printf(c"%%exit\n".as_ptr());
             }
             fflush(stdout);
             if client_flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_WAITEXIT != 0 {
                 control_wait_exit();
             }
             if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
-                printf(b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char);
+                printf(c"\x1B\\".as_ptr());
                 fflush(stdout);
                 crate::src::shared::terminal::set_attributes(
                     STDOUT_FILENO,
@@ -524,11 +502,7 @@ pub unsafe fn client_main(
         } else if client_exitreason as ::core::ffi::c_uint
             != CLIENT_EXIT_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            fprintf(
-                stderr,
-                b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                client_exit_message(),
-            );
+            fprintf(stderr, c"%s\n".as_ptr(), client_exit_message());
         }
         setblocking(STDIN_FILENO, 1 as ::core::ffi::c_int);
         setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
@@ -669,11 +643,7 @@ unsafe fn client_exec(
         std::ffi::CStr::from_ptr(shell),
         client_flags & CLIENT_LOGIN as uint64_t != 0,
     );
-    setenv(
-        b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
-        shell,
-        1 as ::core::ffi::c_int,
-    );
+    setenv(c"SHELL".as_ptr(), shell, 1 as ::core::ffi::c_int);
     proc_clear_signals(client_proc, 1 as ::core::ffi::c_int);
     setblocking(STDIN_FILENO, 1 as ::core::ffi::c_int);
     setblocking(STDOUT_FILENO, 1 as ::core::ffi::c_int);
@@ -682,7 +652,7 @@ unsafe fn client_exec(
     execl(
         shell,
         argv0.as_ptr(),
-        b"-c\0" as *const u8 as *const ::core::ffi::c_char,
+        c"-c".as_ptr(),
         shellcmd,
         NULL as *mut ::core::ffi::c_char,
     );
@@ -876,8 +846,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             }
             fprintf(
                 stderr,
-                b"protocol version mismatch (client %d, server %u)\n\0" as *const u8
-                    as *const ::core::ffi::c_char,
+                c"protocol version mismatch (client %d, server %u)\n".as_ptr(),
                 PROTOCOL_VERSION,
                 imsg.hdr.peerid & 0xff as uint32_t,
             );
@@ -945,11 +914,7 @@ unsafe fn client_dispatch_wait(imsg: &mut imsg) {
             file_write_close(imsg);
         }
         MSG_STDERR | MSG_STDIN | MSG_STDOUT => {
-            fprintf(
-                stderr,
-                b"server version is too old for client\n\0" as *const u8
-                    as *const ::core::ffi::c_char,
-            );
+            fprintf(stderr, c"server version is too old for client\n".as_ptr());
             proc_exit(client_proc);
         }
         _ => {

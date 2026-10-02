@@ -429,8 +429,7 @@ pub static mut shell_command: *const ::core::ffi::c_char =
 unsafe fn usage(mut status: ::core::ffi::c_int) -> ! {
     fprintf(
         if status != 0 { stderr } else { stdout },
-        b"usage: %s [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        c"usage: %s [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n".as_ptr(),
         getprogname(),
     );
     exit(status);
@@ -438,7 +437,7 @@ unsafe fn usage(mut status: ::core::ffi::c_int) -> ! {
 unsafe fn getshell() -> *const ::core::ffi::c_char {
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
     let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    shell = getenv(b"SHELL\0" as *const u8 as *const ::core::ffi::c_char);
+    shell = getenv(c"SHELL".as_ptr());
     if checkshell(shell) != 0 {
         return shell;
     }
@@ -446,7 +445,7 @@ unsafe fn getshell() -> *const ::core::ffi::c_char {
     if !pw.is_null() && checkshell((*pw).pw_shell) != 0 {
         return (*pw).pw_shell;
     }
-    b"/bin/sh\0" as *const u8 as *const ::core::ffi::c_char
+    c"/bin/sh".as_ptr()
 }
 pub unsafe fn checkshell(mut shell: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     if shell.is_null() || *shell as ::core::ffi::c_int != '/' as i32 {
@@ -525,10 +524,7 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
     let mut copy = s.to_bytes_with_nul().to_vec();
     tmp = copy.as_mut_ptr().cast();
     loop {
-        next = strsep(
-            &raw mut tmp,
-            b":\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        next = strsep(&raw mut tmp, c":".as_ptr());
         if next.is_null() {
             break;
         }
@@ -728,7 +724,7 @@ pub unsafe fn find_cwd() -> *const ::core::ffi::c_char {
     {
         return ::core::ptr::null::<::core::ffi::c_char>();
     }
-    pwd = getenv(b"PWD\0" as *const u8 as *const ::core::ffi::c_char);
+    pwd = getenv(c"PWD".as_ptr());
     if pwd.is_null() || *pwd as ::core::ffi::c_int == '\0' as i32 {
         return &raw mut cwd as *mut ::core::ffi::c_char;
     }
@@ -760,7 +756,7 @@ pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
     if let Some(home) = HOME.get() {
         return Some(home.as_c_str());
     }
-    let mut home = getenv(b"HOME\0" as *const u8 as *const ::core::ffi::c_char);
+    let mut home = getenv(c"HOME".as_ptr());
     if home.is_null() || *home as ::core::ffi::c_int == '\0' as i32 {
         pw = getpwuid(getuid());
         if !pw.is_null() {
@@ -795,38 +791,27 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     let mut fflag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut flags: uint64_t = 0 as uint64_t;
     let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    if setlocale(
-        LC_CTYPE,
-        b"en_US.UTF-8\0" as *const u8 as *const ::core::ffi::c_char,
-    )
-    .is_null()
-        && setlocale(
-            LC_CTYPE,
-            b"C.UTF-8\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-        .is_null()
+    if setlocale(LC_CTYPE, c"en_US.UTF-8".as_ptr()).is_null()
+        && setlocale(LC_CTYPE, c"C.UTF-8".as_ptr()).is_null()
     {
-        if setlocale(LC_CTYPE, b"\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+        if setlocale(LC_CTYPE, c"".as_ptr()).is_null() {
             errx(
                 1 as ::core::ffi::c_int,
-                b"invalid LC_ALL, LC_CTYPE or LANG\0" as *const u8 as *const ::core::ffi::c_char,
+                c"invalid LC_ALL, LC_CTYPE or LANG".as_ptr(),
             );
         }
         s = nl_langinfo(CODESET as ::core::ffi::c_int as nl_item);
-        if strcasecmp(s, b"UTF-8\0" as *const u8 as *const ::core::ffi::c_char)
-            != 0 as ::core::ffi::c_int
-            && strcasecmp(s, b"UTF8\0" as *const u8 as *const ::core::ffi::c_char)
-                != 0 as ::core::ffi::c_int
+        if strcasecmp(s, c"UTF-8".as_ptr()) != 0 as ::core::ffi::c_int
+            && strcasecmp(s, c"UTF8".as_ptr()) != 0 as ::core::ffi::c_int
         {
             errx(
                 1 as ::core::ffi::c_int,
-                b"need UTF-8 locale (LC_CTYPE) but have %s\0" as *const u8
-                    as *const ::core::ffi::c_char,
+                c"need UTF-8 locale (LC_CTYPE) but have %s".as_ptr(),
                 s,
             );
         }
     }
-    setlocale(LC_TIME, b"\0" as *const u8 as *const ::core::ffi::c_char);
+    setlocale(LC_TIME, c"".as_ptr());
     tzset();
     if args.first().and_then(|arg| arg.as_bytes().first()) == Some(&b'-') {
         flags = CLIENT_LOGIN as uint64_t;
@@ -845,26 +830,22 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     if !cwd.is_null() {
         environ_set(
             global_environ.as_deref_mut().expect("environment"),
-            b"PWD\0" as *const u8 as *const ::core::ffi::c_char,
+            c"PWD".as_ptr(),
             0 as ::core::ffi::c_int,
             |out| write_cstr(out, cwd),
         );
     }
-    let mut config_paths = expand_paths(CStr::from_ptr(TMUX_CONF.as_ptr()), true);
+    let mut config_paths = expand_paths(TMUX_CONF, true);
     loop {
-        opt = BSDgetopt(
-            argc,
-            argv,
-            b"2c:CDdf:hlL:NqS:T:uUvV\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        opt = BSDgetopt(argc, argv, c"2c:CDdf:hlL:NqS:T:uUvV".as_ptr());
         if !(opt != -(1 as ::core::ffi::c_int)) {
             break;
         }
         match opt {
             50 => {
                 tty_parse_features(
-                    b"256\0" as *const u8 as *const ::core::ffi::c_char,
-                    b":,\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"256".as_ptr(),
+                    c":,".as_ptr(),
                     &raw mut feat,
                     ::core::ptr::null_mut::<::core::ffi::c_int>(),
                 );
@@ -894,10 +875,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
                 usage(0 as ::core::ffi::c_int);
             }
             86 => {
-                printf(
-                    b"tmux %s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    getversion().as_ptr(),
-                );
+                printf(c"tmux %s\n".as_ptr(), getversion().as_ptr());
                 exit(0 as ::core::ffi::c_int);
             }
             108 => {
@@ -916,7 +894,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
             84 => {
                 tty_parse_features(
                     BSDoptarg,
-                    b":,\0" as *const u8 as *const ::core::ffi::c_char,
+                    c":,".as_ptr(),
                     &raw mut feat,
                     ::core::ptr::null_mut::<::core::ffi::c_int>(),
                 );
@@ -943,32 +921,25 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     }
     ptm_fd = getptmfd();
     if ptm_fd == -(1 as ::core::ffi::c_int) {
-        err(
-            1 as ::core::ffi::c_int,
-            b"getptmfd\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        err(1 as ::core::ffi::c_int, c"getptmfd".as_ptr());
     }
     if 0 as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        err(
-            1 as ::core::ffi::c_int,
-            b"pledge\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        err(1 as ::core::ffi::c_int, c"pledge".as_ptr());
     }
-    if !getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+    if !getenv(c"TMUX".as_ptr()).is_null() {
         flags |= CLIENT_UTF8 as uint64_t;
     } else {
-        s = getenv(b"LC_ALL\0" as *const u8 as *const ::core::ffi::c_char);
+        s = getenv(c"LC_ALL".as_ptr());
         if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-            s = getenv(b"LC_CTYPE\0" as *const u8 as *const ::core::ffi::c_char);
+            s = getenv(c"LC_CTYPE".as_ptr());
         }
         if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-            s = getenv(b"LANG\0" as *const u8 as *const ::core::ffi::c_char);
+            s = getenv(c"LANG".as_ptr());
         }
         if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
-            s = b"\0" as *const u8 as *const ::core::ffi::c_char;
+            s = c"".as_ptr();
         }
-        if !strcasestr(s, b"UTF-8\0" as *const u8 as *const ::core::ffi::c_char).is_null()
-            || !strcasestr(s, b"UTF8\0" as *const u8 as *const ::core::ffi::c_char).is_null()
+        if !strcasestr(s, c"UTF-8".as_ptr()).is_null() || !strcasestr(s, c"UTF8".as_ptr()).is_null()
         {
             flags |= CLIENT_UTF8 as uint64_t;
         }
@@ -994,42 +965,39 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     }
     options_set_string(
         global_s_options,
-        b"default-shell\0" as *const u8 as *const ::core::ffi::c_char,
+        c"default-shell",
         0 as ::core::ffi::c_int,
         |out| write_cstr(out, getshell()),
     );
-    s = getenv(b"VISUAL\0" as *const u8 as *const ::core::ffi::c_char);
+    s = getenv(c"VISUAL".as_ptr());
     if !s.is_null() || {
-        s = getenv(b"EDITOR\0" as *const u8 as *const ::core::ffi::c_char);
+        s = getenv(c"EDITOR".as_ptr());
         !s.is_null()
     } {
-        options_set_string(
-            global_options,
-            b"editor\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, s),
-        );
+        options_set_string(global_options, c"editor", 0 as ::core::ffi::c_int, |out| {
+            write_cstr(out, s)
+        });
         if !strrchr(s, '/' as i32).is_null() {
             s = strrchr(s, '/' as i32).offset(1 as ::core::ffi::c_int as isize);
         }
-        if !strstr(s, b"vi\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+        if !strstr(s, c"vi".as_ptr()).is_null() {
             keys = MODEKEY_VI;
         } else {
             keys = MODEKEY_EMACS;
         }
         options_set_number(
             global_s_options,
-            b"status-keys\0" as *const u8 as *const ::core::ffi::c_char,
+            c"status-keys",
             keys as ::core::ffi::c_longlong,
         );
         options_set_number(
             global_w_options,
-            b"mode-keys\0" as *const u8 as *const ::core::ffi::c_char,
+            c"mode-keys",
             keys as ::core::ffi::c_longlong,
         );
     }
     if path.is_none() && label.is_none() {
-        s = getenv(b"TMUX\0" as *const u8 as *const ::core::ffi::c_char);
+        s = getenv(c"TMUX".as_ptr());
         if !s.is_null()
             && *s as ::core::ffi::c_int != '\0' as i32
             && *s as ::core::ffi::c_int != ',' as i32
@@ -1046,11 +1014,7 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         path = Some(match make_label(label) {
             Ok(path) => path,
             Err(cause) => {
-                fprintf(
-                    stderr,
-                    b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause.as_ptr(),
-                );
+                fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
                 drop(cause);
                 exit(1 as ::core::ffi::c_int);
             }
@@ -1065,11 +1029,8 @@ unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
         .collect();
     exit(client_main(&command_argv, flags, feat));
 }
-pub const TMUX_CONF: [::core::ffi::c_char; 85] = unsafe {
-    ::core::mem::transmute::<[u8; 85], [::core::ffi::c_char; 85]>(
-        *b"/etc/tmux.conf:~/.tmux.conf:$XDG_CONFIG_HOME/tmux/tmux.conf:~/.config/tmux/tmux.conf\0",
-    )
-};
+pub const TMUX_CONF: &std::ffi::CStr =
+    c"/etc/tmux.conf:~/.tmux.conf:$XDG_CONFIG_HOME/tmux/tmux.conf:~/.config/tmux/tmux.conf";
 pub fn main() {
     let args_strings: Vec<CString> = ::std::env::args_os()
         .map(|arg| {

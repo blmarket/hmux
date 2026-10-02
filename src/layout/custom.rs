@@ -352,8 +352,7 @@ pub unsafe fn layout_parse(
                 {
                     layout_set_static_cause(
                         pctx.cause.as_deref_mut(),
-                        b"empty/missing layout parse context\0" as *const u8
-                            as *const ::core::ffi::c_char,
+                        c"empty/missing layout parse context".as_ptr(),
                     );
                     current_block = 4277046812173491162;
                     break;
@@ -400,19 +399,14 @@ pub unsafe fn layout_parse(
                     && sy != 0 as u_int
                     && ((*lc).g.sx != sx || (*lc).g.sy != sy)
                 {
-                    layout_print_cell(
-                        lc,
-                        b"layout_parse\0" as *const u8 as *const ::core::ffi::c_char,
-                        0 as u_int,
-                    );
+                    layout_print_cell(lc, c"layout_parse".as_ptr(), 0 as u_int);
                     (*lc).g.sx = sx.wrapping_sub(1 as u_int);
                     (*lc).g.sy = sy.wrapping_sub(1 as u_int);
                 }
                 if layout_check(lc) == 0 {
                     layout_set_static_cause(
                         pctx.cause.as_deref_mut(),
-                        b"size mismatch after applying layout\0" as *const u8
-                            as *const ::core::ffi::c_char,
+                        c"size mismatch after applying layout".as_ptr(),
                     );
                 } else {
                     if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
@@ -471,7 +465,7 @@ pub unsafe fn layout_parse(
                     }
                     if pctx.version == 1 as int64_t {
                         events_fire_window(
-                            b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                            c"window-layout-changed".as_ptr(),
                             std::rc::Rc::clone(w_owner),
                         );
                     }
@@ -578,7 +572,7 @@ unsafe fn layout_construct_cell(
     }
     if sscanf(
         *layout,
-        b"%ux%u,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
+        c"%ux%u,%d,%d".as_ptr(),
         &raw mut sx,
         &raw mut sy,
         &raw mut xoff,
@@ -815,17 +809,12 @@ unsafe fn layout_construct(
         input = input.offset(1);
     }
     if *input as ::core::ffi::c_int != '{' as i32 {
-        if sscanf(
-            input,
-            b"%hx,%n\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut csum,
-            &raw mut n,
-        ) != 1 as ::core::ffi::c_int
+        if sscanf(input, c"%hx,%n".as_ptr(), &raw mut csum, &raw mut n) != 1 as ::core::ffi::c_int
             || n != 5 as ::core::ffi::c_int
         {
             layout_set_static_cause(
                 (*pctx).cause.as_deref_mut(),
-                b"malformed layout header\0" as *const u8 as *const ::core::ffi::c_char,
+                c"malformed layout header".as_ptr(),
             );
             return -(1 as ::core::ffi::c_int);
         }
@@ -835,23 +824,17 @@ unsafe fn layout_construct(
         {
             layout_set_static_cause(
                 (*pctx).cause.as_deref_mut(),
-                b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char,
+                c"invalid layout checksum".as_ptr(),
             );
             return -(1 as ::core::ffi::c_int);
         }
         (*pctx).root = layout_construct_v1(&raw mut input, 0 as u_int);
         if (*pctx).root.is_none() {
-            layout_set_static_cause(
-                (*pctx).cause.as_deref_mut(),
-                b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            layout_set_static_cause((*pctx).cause.as_deref_mut(), c"invalid layout".as_ptr());
             return -(1 as ::core::ffi::c_int);
         }
         if *input as ::core::ffi::c_int != '\0' as i32 {
-            layout_set_static_cause(
-                (*pctx).cause.as_deref_mut(),
-                b"trailing data\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            layout_set_static_cause((*pctx).cause.as_deref_mut(), c"trailing data".as_ptr());
             return -(1 as ::core::ffi::c_int);
         }
         (*pctx).version = 1 as int64_t;
@@ -863,24 +846,18 @@ unsafe fn layout_construct(
             return -(1 as ::core::ffi::c_int);
         }
         if (*pctx).version != 2 as int64_t {
-            layout_set_static_cause(
-                (*pctx).cause.as_deref_mut(),
-                b"version mismatch\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            layout_set_static_cause((*pctx).cause.as_deref_mut(), c"version mismatch".as_ptr());
             return -(1 as ::core::ffi::c_int);
         }
         if (*pctx).num_active > 1 as ::core::ffi::c_int {
             layout_set_static_cause(
                 (*pctx).cause.as_deref_mut(),
-                b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char,
+                c"more than one active pane".as_ptr(),
             );
             return -(1 as ::core::ffi::c_int);
         }
         if (*pctx).cctxs.is_empty() {
-            layout_set_static_cause(
-                (*pctx).cause.as_deref_mut(),
-                b"no panes\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            layout_set_static_cause((*pctx).cause.as_deref_mut(), c"no panes".as_ptr());
             return -(1 as ::core::ffi::c_int);
         }
         if layout_parse_ctx_check_indexes(pctx) == 0 {
@@ -942,7 +919,7 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
     {
         layout_set_static_cause(
             (*pctx).cause.as_deref_mut(),
-            b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char,
+            c"duplicate pane index".as_ptr(),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -960,7 +937,7 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
     {
         layout_set_static_cause(
             (*pctx).cause.as_deref_mut(),
-            b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char,
+            c"duplicate pane z-index".as_ptr(),
         );
         return 0 as ::core::ffi::c_int;
     }
@@ -978,7 +955,7 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
     {
         layout_set_static_cause(
             (*pctx).cause.as_deref_mut(),
-            b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char,
+            c"duplicate last pane index".as_ptr(),
         );
         return 0 as ::core::ffi::c_int;
     }

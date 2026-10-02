@@ -476,11 +476,7 @@ pub unsafe fn cmdq_merge_formats(
     let item = item_handle.get();
     if (*item).command_handle().is_alive() {
         let entry = cmd_get_entry(((*item).command_handle()).get_unchecked());
-        format_add(
-            ft,
-            b"command\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, entry.name.as_ptr()),
-        );
+        format_add(ft, c"command", |out| write_cstr(out, entry.name.as_ptr()));
     }
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
     let mut formats = state.formats.borrow_mut();
@@ -602,17 +598,15 @@ pub unsafe fn cmdq_insert_hook(
     }
     event_payload_set_identity(
         &mut ep,
-        b"_cmdq_item\0" as *const u8 as *const ::core::ffi::c_char,
+        c"_cmdq_item".as_ptr(),
         crate::src::shared::events::EventPayloadIdentity::QueueItem(std::rc::Rc::downgrade(
             item_handle,
         )),
     );
     let arguments = args_print_cstring(&*args_0);
-    event_payload_set_string(
-        &mut ep,
-        b"arguments\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, arguments.as_ptr()),
-    );
+    event_payload_set_string(&mut ep, c"arguments".as_ptr(), |out| {
+        write_cstr(out, arguments.as_ptr())
+    });
     i = 0 as u_int;
     while i < args_count(args_0) {
         xformat(&mut tmp, format_args!("argument_{}", i as u32));
@@ -874,11 +868,7 @@ unsafe fn cmdq_fire_command(
         ));
     }
     flags = (state.flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
-    cmdq_guard(
-        item_handle,
-        b"begin\0" as *const u8 as *const ::core::ffi::c_char,
-        flags,
-    );
+    cmdq_guard(item_handle, c"begin".as_ptr(), flags);
     if (*item).client.upgrade().is_none() {
         let context = cmd_find_client(
             Some(item_handle),
@@ -1004,17 +994,9 @@ unsafe fn cmdq_fire_command(
             fsp,
             |out| out.write_all(b"command-error"),
         );
-        cmdq_guard(
-            item_handle,
-            b"error\0" as *const u8 as *const ::core::ffi::c_char,
-            flags,
-        );
+        cmdq_guard(item_handle, c"error".as_ptr(), flags);
     } else {
-        cmdq_guard(
-            item_handle,
-            b"end\0" as *const u8 as *const ::core::ffi::c_char,
-            flags,
-        );
+        cmdq_guard(item_handle, c"end".as_ptr(), flags);
     }
     retval
 }

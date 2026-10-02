@@ -100,7 +100,7 @@ unsafe fn cmd_server_access_exec(
         None,
     );
     if args_has(args, 'g' as i32 as u_char) != 0 {
-        type_0 = b"group\0" as *const u8 as *const ::core::ffi::c_char;
+        type_0 = c"group".as_ptr();
         gr = getgrnam(arg.as_ptr());
         if !gr.is_null() {
             id = (*gr).gr_gid as id_t;
@@ -108,7 +108,7 @@ unsafe fn cmd_server_access_exec(
             flags |= SERVER_ACL_IS_GROUP;
         }
     } else {
-        type_0 = b"user\0" as *const u8 as *const ::core::ffi::c_char;
+        type_0 = c"user".as_ptr();
         pw = getpwnam(arg.as_ptr());
         if !pw.is_null() {
             id = (*pw).pw_uid as id_t;

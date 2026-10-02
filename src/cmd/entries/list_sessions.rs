@@ -22,14 +22,7 @@ use crate::src::shared::sort::*;
 use crate::src::shared::window::winlink;
 use crate::src::sort::{sort_get_sessions, sort_order_from_string};
 
-pub const LIST_SESSIONS_TEMPLATE: [::core::ffi::c_char; 175] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 175],
-        [::core::ffi::c_char; 175],
-    >(
-        *b"#{session_name}: #{session_windows} windows (created #{t:session_created})#{?session_grouped, (group ,}#{session_group}#{?session_grouped,),}#{?session_attached, (attached),}\0",
-    )
-};
+pub const LIST_SESSIONS_TEMPLATE: &std::ffi::CStr = c"#{session_name}: #{session_windows} windows (created #{t:session_created})#{?session_grouped, (group ,}#{session_group}#{?session_grouped,),}#{?session_attached, (attached),}";
 pub static cmd_list_sessions_entry: cmd_entry = {
     cmd_entry {
         name: c"list-sessions",
@@ -104,11 +97,7 @@ unsafe fn cmd_list_sessions_exec(
             0 as ::core::ffi::c_int,
         );
         ft = &raw mut *ft_owner;
-        format_add(
-            ft,
-            b"line\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", (i) as u32),
-        );
+        format_add(ft, c"line", |out| write!(out, "{}", (i) as u32));
         format_defaults(
             ft,
             c.as_ref(),

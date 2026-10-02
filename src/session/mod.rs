@@ -305,10 +305,7 @@ unsafe fn session_destroy(
     (*s).set_curw((refbox::Weak::new()).clone());
     let owner = sessions_remove(&mut sessions, s_owner).expect("registered session owner");
     if notify != 0 {
-        events_fire_session(
-            b"session-closed\0" as *const u8 as *const ::core::ffi::c_char,
-            std::rc::Rc::clone(s_owner),
-        );
+        events_fire_session(c"session-closed".as_ptr(), std::rc::Rc::clone(s_owner));
     }
     (*s).tio = None;
     (*s).tio = None;
@@ -321,10 +318,7 @@ unsafe fn session_destroy(
     crate::src::window::winlink_stack_clear(&mut (*s).lastw);
     while !crate::src::window::winlinks_is_empty(&(*s).windows) {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-        events_fire_winlink(
-            b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
-            wl.clone(),
-        );
+        events_fire_winlink(c"window-unlinked".as_ptr(), wl.clone());
         winlink_remove(&raw mut (*s).windows, wl.clone());
     }
     session_set_cwd(&mut *s, None);
@@ -428,10 +422,7 @@ unsafe fn session_attach(
     }
     wl.get_mut_unchecked().session = std::rc::Rc::downgrade(s_owner);
     winlink_set_window(wl.clone(), window_owner);
-    events_fire_winlink(
-        b"window-linked\0" as *const u8 as *const ::core::ffi::c_char,
-        wl.clone(),
-    );
+    events_fire_winlink(c"window-linked".as_ptr(), wl.clone());
     session_group_synchronize_from(s_owner);
     Ok(wl)
 }
@@ -453,10 +444,7 @@ unsafe fn session_detach(
         session_next(s_owner, 0 as ::core::ffi::c_int);
     }
     wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
-    events_fire_winlink(
-        b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
-        wl.clone(),
-    );
+    events_fire_winlink(c"window-unlinked".as_ptr(), wl.clone());
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_remove(&raw mut (*s).windows, wl.clone());
     session_group_synchronize_from(s_owner);
@@ -569,49 +557,38 @@ unsafe fn session_fire_window_changed(
     let mut ep = event_payload_create();
     cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_session(
-        &mut ep,
-        b"session\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(s_owner),
-    );
+    event_payload_set_session(&mut ep, c"session".as_ptr(), std::rc::Rc::clone(s_owner));
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window".as_ptr(),
         std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_window(
         &mut ep,
-        b"new_window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"new_window".as_ptr(),
         std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
+    event_payload_set_int(&mut ep, c"window_index".as_ptr(), wl.get_unchecked().idx);
     event_payload_set_int(
         &mut ep,
-        b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
-        wl.get_unchecked().idx,
-    );
-    event_payload_set_int(
-        &mut ep,
-        b"new_window_index\0" as *const u8 as *const ::core::ffi::c_char,
+        c"new_window_index".as_ptr(),
         wl.get_unchecked().idx,
     );
     if old.is_alive() {
         event_payload_set_window(
             &mut ep,
-            b"old_window\0" as *const u8 as *const ::core::ffi::c_char,
+            c"old_window".as_ptr(),
             std::rc::Rc::clone(
                 (old.get_unchecked().window_handle().as_ref()).expect("live window"),
             ),
         );
         event_payload_set_int(
             &mut ep,
-            b"old_window_index\0" as *const u8 as *const ::core::ffi::c_char,
+            c"old_window_index".as_ptr(),
             old.get_unchecked().idx,
         );
     }
-    events_fire(
-        b"session-window-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        ep,
-    );
+    events_fire(c"session-window-changed".as_ptr(), ep);
 }
 unsafe fn session_set_current(
     s_owner: &SessionRef,

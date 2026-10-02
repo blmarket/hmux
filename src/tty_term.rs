@@ -1211,9 +1211,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
     let mut offset: size_t = 0;
     o = crate::src::options::options_get_only_mut(
         &mut *(global_options),
-        std::ffi::CStr::from_ptr(
-            b"terminal-overrides\0" as *const u8 as *const ::core::ffi::c_char,
-        ),
+        std::ffi::CStr::from_ptr(c"terminal-overrides".as_ptr()),
     )
     .map_or(std::ptr::null_mut(), |entry| entry);
     let a_root = o;
@@ -1350,10 +1348,7 @@ pub unsafe fn tty_term_create(
     term = &raw mut *owner;
     i = 0 as u_int;
     while i < ncaps {
-        namelen = strcspn(
-            *caps.offset(i as isize),
-            b"=\0" as *const u8 as *const ::core::ffi::c_char,
-        ) as size_t;
+        namelen = strcspn(*caps.offset(i as isize), c"=".as_ptr()) as size_t;
         if !(namelen == 0 as size_t) {
             value = (*caps.offset(i as isize))
                 .add(namelen)
@@ -1403,7 +1398,7 @@ pub unsafe fn tty_term_create(
     }
     o = crate::src::options::options_get_only_mut(
         &mut *(global_options),
-        std::ffi::CStr::from_ptr(b"terminal-features\0" as *const u8 as *const ::core::ffi::c_char),
+        std::ffi::CStr::from_ptr(c"terminal-features".as_ptr()),
     )
     .map_or(std::ptr::null_mut(), |entry| entry);
     let a_root = o;
@@ -1429,11 +1424,7 @@ pub unsafe fn tty_term_create(
                 0 as ::core::ffi::c_int,
             ) == 0
         }) {
-            tty_parse_client_features(
-                client_owner,
-                s.add(offset),
-                b":\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_parse_client_features(client_owner, s.add(offset), c":".as_ptr());
         }
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
             crate::src::options::options_array_item(a_root, key.as_ptr())
@@ -1469,27 +1460,15 @@ pub unsafe fn tty_term_create(
     } else {
         s = tty_term_string(&*(term), TTYC_CLEAR).as_ptr();
         if tty_term_flag(term, TTYC_XT) != 0
-            || strncmp(
-                s,
-                b"\x1B[\0" as *const u8 as *const ::core::ffi::c_char,
-                2 as size_t,
-            ) == 0 as ::core::ffi::c_int
+            || strncmp(s, c"\x1B[".as_ptr(), 2 as size_t) == 0 as ::core::ffi::c_int
         {
             (*term).flags |= TERM_VT100LIKE;
-            tty_parse_client_features(
-                client_owner,
-                b"bpaste,focus,title\0" as *const u8 as *const ::core::ffi::c_char,
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_parse_client_features(client_owner, c"bpaste,focus,title".as_ptr(), c",".as_ptr());
         }
         if (tty_term_flag(term, TTYC_TC) != 0 || tty_term_has(term, TTYC_RGB) != 0)
             && (tty_term_has(term, TTYC_SETRGBF) == 0 || tty_term_has(term, TTYC_SETRGBB) == 0)
         {
-            tty_parse_client_features(
-                client_owner,
-                b"RGB\0" as *const u8 as *const ::core::ffi::c_char,
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_parse_client_features(client_owner, c"RGB".as_ptr(), c",".as_ptr());
         }
         let applied = tty_apply_features(term, client_owner.terminal_feature_mask());
         if applied.enable_utf8 {
@@ -1591,9 +1570,9 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
                     current_block_23 = 1856101646708284338;
                 } else {
                     if n != 0 {
-                        s = b"1\0" as *const u8 as *const ::core::ffi::c_char;
+                        s = c"1".as_ptr();
                     } else {
-                        s = b"0\0" as *const u8 as *const ::core::ffi::c_char;
+                        s = c"0".as_ptr();
                     }
                     current_block_23 = 14763689060501151050;
                 }

@@ -763,9 +763,9 @@ pub unsafe fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int
         ),
         log_cstr(
             (if force != 0 {
-                b"(force) \0" as *const u8 as *const ::core::ffi::c_char
+                c"(force) ".as_ptr()
             } else {
-                b"\0" as *const u8 as *const ::core::ffi::c_char
+                c"".as_ptr()
             }) as *const _
         ),
         (n) as u32
@@ -868,14 +868,8 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             tty_term_string(&*(terminal_term(tty)), TTYC_CNORM).as_ptr(),
         );
         if tty_term_has(terminal_term(tty), TTYC_KMOUS) != 0 {
-            tty_raw(
-                fd,
-                b"\x1B[?1000l\x1B[?1002l\x1B[?1003l\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            tty_raw(
-                fd,
-                b"\x1B[?1006l\x1B[?1005l\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_raw(fd, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l".as_ptr());
+            tty_raw(fd, c"\x1B[?1006l\x1B[?1005l".as_ptr());
         }
         if tty_term_has(terminal_term(tty), TTYC_DSBP) != 0 {
             tty_raw(
@@ -884,10 +878,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             );
         }
         if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
-            tty_raw(
-                fd,
-                b"\x1B[?7727l\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_raw(fd, c"\x1B[?7727l".as_ptr());
         }
         tty_raw(
             fd,
@@ -915,10 +906,7 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             );
         }
         if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
-            tty_raw(
-                fd,
-                b"\x1B[?2031l\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_raw(fd, c"\x1B[?2031l".as_ptr());
         }
         setblocking(fd, 1 as ::core::ffi::c_int);
     })(owner);

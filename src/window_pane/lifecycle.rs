@@ -104,20 +104,16 @@ unsafe fn server_fire_pane_exit(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(
-        &mut ep,
-        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(wp_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window".as_ptr(),
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         event_payload_set_int(
             &mut ep,
-            b"exit_status\0" as *const u8 as *const ::core::ffi::c_char,
+            c"exit_status".as_ptr(),
             (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int,
         );
     } else if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
@@ -125,15 +121,13 @@ unsafe fn server_fire_pane_exit(
         >> 1 as ::core::ffi::c_int
         > 0 as ::core::ffi::c_int
     {
-        event_payload_set_string(
-            &mut ep,
-            b"exit_signal\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, signame),
-        );
+        event_payload_set_string(&mut ep, c"exit_signal".as_ptr(), |out| {
+            write_cstr(out, signame)
+        });
     }
     event_payload_set_int(
         &mut ep,
-        b"exit_success\0" as *const u8 as *const ::core::ffi::c_char,
+        c"exit_success".as_ptr(),
         (status == 0 as ::core::ffi::c_int) as ::core::ffi::c_int,
     );
     events_fire(name, ep);
@@ -243,15 +237,10 @@ pub(super) unsafe fn finish_process(
             (*wp).flags |= PANE_STATUSDRAWN;
             (*wp).dead_time = SystemTime::now();
             if notify != 0 {
-                server_fire_pane_exit(
-                    b"pane-died\0" as *const u8 as *const ::core::ffi::c_char,
-                    pane_owner,
-                );
+                server_fire_pane_exit(c"pane-died".as_ptr(), pane_owner);
             }
             let format = pane_owner
-                .with_options_mut(|options| {
-                    options_get_string(options, c"remain-on-exit-format".as_ptr())
-                });
+                .with_options_mut(|options| options_get_string(options, c"remain-on-exit-format"));
             s = format.as_ptr();
             if *s as ::core::ffi::c_int != '\0' as i32 {
                 screen_write_start_pane(&mut ctx, pane_owner, &raw mut (*wp).base);
@@ -293,10 +282,7 @@ pub(super) unsafe fn finish_process(
         }
     }
     if notify != 0 {
-        server_fire_pane_exit(
-            b"pane-exited\0" as *const u8 as *const ::core::ffi::c_char,
-            pane_owner,
-        );
+        server_fire_pane_exit(c"pane-exited".as_ptr(), pane_owner);
     }
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);

@@ -333,9 +333,7 @@ unsafe fn cmd_source_file_exec(
         if let Some(expanded) = expanded.as_ref() {
             path = expanded.as_ptr();
         }
-        if strcmp(path, b"-\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        if strcmp(path, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
             cmd_source_file_add(&mut cdata, c"-");
         } else {
             let pattern = if *path as ::core::ffi::c_int == '/' as i32 {

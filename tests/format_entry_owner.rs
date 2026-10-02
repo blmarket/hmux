@@ -32,9 +32,9 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
 
         let mut ft_owner = format_create(None, None, 0, 0);
         let ft = &raw mut *ft_owner;
-        let key = b"zz_test_format_value\0".as_ptr().cast();
-        let expression = b"#{zz_test_format_value}\0".as_ptr().cast();
-        format_add_owned_cb(ft, std::ffi::CStr::from_ptr(key), callback);
+        let key = c"zz_test_format_value";
+        let expression = c"#{zz_test_format_value}".as_ptr();
+        format_add_owned_cb(ft, key, callback);
 
         for _ in 0..2 {
             let expanded = format_expand_cstring(ft, expression);
@@ -42,9 +42,7 @@ fn expansion_caches_callback_then_replaces_the_same_entry() {
         }
         assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);
 
-        format_add(ft, key, |out| {
-            write_cstr(out, b"replacement\0".as_ptr() as *const core::ffi::c_char)
-        });
+        format_add(ft, key, |out| write_cstr(out, c"replacement".as_ptr()));
         let expanded = format_expand_cstring(ft, expression);
         assert_eq!(expanded.as_bytes(), b"replacement");
         assert_eq!(CALLBACK_CALLS.load(Ordering::SeqCst), 1);

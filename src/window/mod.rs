@@ -292,25 +292,14 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, mut old_name: *const ::core::
     let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_window(
-        &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(w_owner),
-    );
-    event_payload_set_string(
-        &mut ep,
-        b"old_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, old_name),
-    );
-    event_payload_set_string(
-        &mut ep,
-        b"new_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, (*w).name.as_ptr().cast_mut()),
-    );
-    events_fire(
-        b"window-renamed\0" as *const u8 as *const ::core::ffi::c_char,
-        ep,
-    );
+    event_payload_set_window(&mut ep, c"window".as_ptr(), std::rc::Rc::clone(w_owner));
+    event_payload_set_string(&mut ep, c"old_name".as_ptr(), |out| {
+        write_cstr(out, old_name)
+    });
+    event_payload_set_string(&mut ep, c"new_name".as_ptr(), |out| {
+        write_cstr(out, (*w).name.as_ptr().cast_mut())
+    });
+    events_fire(c"window-renamed".as_ptr(), ep);
 }
 unsafe fn window_fire_pane_changed(
     window: &WindowRef,
@@ -742,43 +731,24 @@ unsafe fn window_find_string(
     } else if status == PANE_STATUS_BOTTOM {
         bottom = bottom.wrapping_sub(1);
     }
-    if strcasecmp(s, b"top\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-    {
+    if strcasecmp(s, c"top".as_ptr()) == 0 as ::core::ffi::c_int {
         y = top;
-    } else if strcasecmp(s, b"bottom\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    } else if strcasecmp(s, c"bottom".as_ptr()) == 0 as ::core::ffi::c_int {
         y = bottom;
-    } else if strcasecmp(s, b"left\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    } else if strcasecmp(s, c"left".as_ptr()) == 0 as ::core::ffi::c_int {
         x = 0 as u_int;
-    } else if strcasecmp(s, b"right\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    } else if strcasecmp(s, c"right".as_ptr()) == 0 as ::core::ffi::c_int {
         x = (*w).sx.wrapping_sub(1 as u_int);
-    } else if strcasecmp(s, b"top-left\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    } else if strcasecmp(s, c"top-left".as_ptr()) == 0 as ::core::ffi::c_int {
         x = 0 as u_int;
         y = top;
-    } else if strcasecmp(s, b"top-right\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    } else if strcasecmp(s, c"top-right".as_ptr()) == 0 as ::core::ffi::c_int {
         x = (*w).sx.wrapping_sub(1 as u_int);
         y = top;
-    } else if strcasecmp(
-        s,
-        b"bottom-left\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    } else if strcasecmp(s, c"bottom-left".as_ptr()) == 0 as ::core::ffi::c_int {
         x = 0 as u_int;
         y = bottom;
-    } else if strcasecmp(
-        s,
-        b"bottom-right\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    } else if strcasecmp(s, c"bottom-right".as_ptr()) == 0 as ::core::ffi::c_int {
         x = (*w).sx.wrapping_sub(1 as u_int);
         y = bottom;
     } else {

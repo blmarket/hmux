@@ -91,7 +91,7 @@ unsafe fn cmd_refresh_client_control_client_size(
     let mut y: u_int = 0;
     if sscanf(
         size,
-        b"@%u:%ux%u\0" as *const u8 as *const ::core::ffi::c_char,
+        c"@%u:%ux%u".as_ptr(),
         &raw mut w,
         &raw mut x,
         &raw mut y,
@@ -127,12 +127,7 @@ unsafe fn cmd_refresh_client_control_client_size(
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
-    if sscanf(
-        size,
-        b"@%u:\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut w,
-    ) == 1 as ::core::ffi::c_int
-    {
+    if sscanf(size, c"@%u:".as_ptr(), &raw mut w) == 1 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: client {} window @{}: no size",
             "cmd_refresh_client_control_client_size",
@@ -148,18 +143,8 @@ unsafe fn cmd_refresh_client_control_client_size(
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         return CMD_RETURN_NORMAL;
     }
-    if sscanf(
-        size,
-        b"%u,%u\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut x,
-        &raw mut y,
-    ) != 2 as ::core::ffi::c_int
-        && sscanf(
-            size,
-            b"%ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut x,
-            &raw mut y,
-        ) != 2 as ::core::ffi::c_int
+    if sscanf(size, c"%u,%u".as_ptr(), &raw mut x, &raw mut y) != 2 as ::core::ffi::c_int
+        && sscanf(size, c"%ux%u".as_ptr(), &raw mut x, &raw mut y) != 2 as ::core::ffi::c_int
     {
         cmdq_error(item_handle, |out| out.write_all(b"bad size argument"));
         return CMD_RETURN_ERROR;

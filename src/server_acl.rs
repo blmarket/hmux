@@ -164,7 +164,7 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell
                 if !pw.is_null() {
                     name = (*pw).pw_name;
                 } else {
-                    name = b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
+                    name = c"unknown".as_ptr();
                 }
                 type_0 = 'U' as i32 as ::core::ffi::c_char;
                 current_block_12 = 11050875288958768710;
@@ -174,7 +174,7 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell
             if !gr.is_null() {
                 name = (*gr).gr_name;
             } else {
-                name = b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
+                name = c"unknown".as_ptr();
             }
             type_0 = 'G' as i32 as ::core::ffi::c_char;
             current_block_12 = 11050875288958768710;

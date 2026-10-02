@@ -48,7 +48,7 @@ impl OptionsScope {
             self.with_local(|table| {
                 // Formatting this already-owned value cannot reenter the model;
                 // user string replacement retains its existing monitor.
-                options_set_string(table, name.as_ptr(), append as i32, |out| {
+                options_set_string(table, name, append as i32, |out| {
                     write_cstr(out, value.as_ptr())
                 });
             });
@@ -63,7 +63,7 @@ impl OptionsScope {
                 options_from_string(
                     table,
                     definition,
-                    name.as_ptr(),
+                    name,
                     value.map_or(std::ptr::null(), CStr::as_ptr),
                     append as i32,
                     &mut cause,

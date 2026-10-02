@@ -565,7 +565,7 @@ unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::
         });
     }
     input_key_write(
-        b"input_key_extended\0" as *const u8 as *const ::core::ffi::c_char,
+        c"input_key_extended".as_ptr(),
         bev,
         &raw mut tmp as *mut ::core::ffi::c_char,
         strlen(&raw mut tmp as *mut ::core::ffi::c_char),
@@ -585,9 +585,9 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
     log_debug(format_args!("{}: key in {:x}", "input_key_vt10x", key));
     if key as ::core::ffi::c_ulonglong & KEYC_META != 0 {
         input_key_write(
-            b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
+            c"input_key_vt10x".as_ptr(),
             bev,
-            b"\x1B\0" as *const u8 as *const ::core::ffi::c_char,
+            c"\x1B".as_ptr(),
             1 as size_t,
         );
     }
@@ -598,7 +598,7 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
     {
         utf8_to_data(key as utf8_char, &mut ud);
         input_key_write(
-            b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
+            c"input_key_vt10x".as_ptr(),
             bev,
             &raw mut ud.data as *mut u_char as *const ::core::ffi::c_char,
             ud.size as size_t,
@@ -626,7 +626,7 @@ unsafe fn input_key_vt10x(mut bev: *mut bufferevent, mut key: key_code) -> ::cor
     log_debug(format_args!("{}: key out {:x}", "input_key_vt10x", key));
     ud.data[0 as ::core::ffi::c_int as usize] = (key & 0x7f as key_code) as u_char;
     input_key_write(
-        b"input_key_vt10x\0" as *const u8 as *const ::core::ffi::c_char,
+        c"input_key_vt10x".as_ptr(),
         bev,
         (&raw mut ud.data as *mut u_char).offset(0 as ::core::ffi::c_int as isize) as *mut u_char
             as *const ::core::ffi::c_char,
@@ -680,7 +680,7 @@ pub unsafe fn input_key(
     if key as ::core::ffi::c_ulonglong & KEYC_LITERAL != 0 {
         ud.data[0 as ::core::ffi::c_int as usize] = key as u_char;
         input_key_write(
-            b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
+            c"input_key".as_ptr(),
             bev,
             (&raw mut ud.data as *mut u_char).offset(0 as ::core::ffi::c_int as isize)
                 as *mut u_char as *const ::core::ffi::c_char,
@@ -720,7 +720,7 @@ pub unsafe fn input_key(
                 != 255 as ::core::ffi::c_int
             {
                 input_key_write(
-                    b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"input_key".as_ptr(),
                     bev,
                     (&raw mut ud.data as *mut u_char).offset(0 as ::core::ffi::c_int as isize)
                         as *mut u_char as *const ::core::ffi::c_char,
@@ -752,7 +752,7 @@ pub unsafe fn input_key(
         {
             ud.data[0 as ::core::ffi::c_int as usize] = key as u_char;
             input_key_write(
-                b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
+                c"input_key".as_ptr(),
                 bev,
                 (&raw mut ud.data as *mut u_char).offset(0 as ::core::ffi::c_int as isize)
                     as *mut u_char as *const ::core::ffi::c_char,
@@ -767,7 +767,7 @@ pub unsafe fn input_key(
         {
             utf8_to_data(key as utf8_char, &mut ud);
             input_key_write(
-                b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
+                c"input_key".as_ptr(),
                 bev,
                 &raw mut ud.data as *mut u_char as *const ::core::ffi::c_char,
                 ud.size as size_t,
@@ -817,15 +817,10 @@ pub unsafe fn input_key(
         if key as ::core::ffi::c_ulonglong & KEYC_META != 0
             && !(key as ::core::ffi::c_ulonglong) & KEYC_IMPLIED_META != 0
         {
-            input_key_write(
-                b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
-                bev,
-                b"\x1B\0" as *const u8 as *const ::core::ffi::c_char,
-                1 as size_t,
-            );
+            input_key_write(c"input_key".as_ptr(), bev, c"\x1B".as_ptr(), 1 as size_t);
         }
         input_key_write(
-            b"input_key\0" as *const u8 as *const ::core::ffi::c_char,
+            c"input_key".as_ptr(),
             bev,
             (*ike).data.as_ptr(),
             (*ike).data.to_bytes().len(),

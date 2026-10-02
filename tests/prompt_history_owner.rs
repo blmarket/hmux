@@ -35,7 +35,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert!(prompt_history_get(PROMPT_TYPE_COMMAND, 0).is_none());
         assert!(prompt_history_get(255, 0).is_none());
 
-        options_set_number(options, c"prompt-history-limit".as_ptr(), 200);
+        options_set_number(options, c"prompt-history-limit", 200);
         prompt_add_history(c"\xff-first", PROMPT_TYPE_COMMAND);
         let first = prompt_history_get(PROMPT_TYPE_COMMAND, 0).unwrap();
         for n in 0..128 {
@@ -51,7 +51,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         assert_eq!(first.to_bytes(), b"\xff-first");
         drop(first);
-        options_set_number(options, c"prompt-history-limit".as_ptr(), 3);
+        options_set_number(options, c"prompt-history-limit", 3);
         for text in [c"one", c"two", c"three"] {
             prompt_add_history(text, PROMPT_TYPE_COMMAND);
         }
@@ -72,7 +72,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
 
         // A duplicate at the limit does not add a row, but reducing the
         // limit still prunes the oldest rows.
-        options_set_number(options, c"prompt-history-limit".as_ptr(), 2);
+        options_set_number(options, c"prompt-history-limit", 2);
         prompt_add_history(c"four", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 2);
         assert_eq!(
@@ -147,7 +147,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
 
         let path = std::env::temp_dir().join(format!("hmux-prompt-history-{}", std::process::id()));
         let path_string = CString::new(path.as_os_str().as_bytes()).unwrap();
-        options_set_string(options, c"history-file".as_ptr(), 0, |out| {
+        options_set_string(options, c"history-file", 0, |out| {
             write_cstr(out, path_string.as_ptr())
         });
         prompt_save_history();
@@ -189,7 +189,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
 
         prompt_history_clear(PROMPT_TYPE_COMMAND);
         prompt_history_clear(PROMPT_TYPE_SEARCH);
-        options_set_number(options, c"prompt-history-limit".as_ptr(), 10);
+        options_set_number(options, c"prompt-history-limit", 10);
         std::fs::write(
             &path,
             b"plain\nunknown:value\n:empty-prefix\ncommand:\nsearch:a:b\ncommand:first:second\n",
@@ -233,7 +233,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         assert_eq!(stale, [u32::MAX - 1, 0]);
         std::fs::remove_file(path).unwrap();
 
-        options_set_number(options, c"prompt-history-limit".as_ptr(), 0);
+        options_set_number(options, c"prompt-history-limit", 0);
         prompt_add_history(c"ignored", PROMPT_TYPE_COMMAND);
         assert_eq!(prompt_history_size(PROMPT_TYPE_COMMAND), 0);
         prompt_add_history(c"search", PROMPT_TYPE_SEARCH);

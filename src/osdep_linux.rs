@@ -18,10 +18,7 @@ pub(crate) unsafe fn osdep_get_name_cstring(fd: ::core::ffi::c_int) -> Option<CS
     let pgrp =
         hmux_rt::unix::terminal_foreground_group(std::os::fd::BorrowedFd::borrow_raw(fd)).ok()?;
     let path = CString::new(format!("/proc/{pgrp}/cmdline")).unwrap();
-    let f = fopen(
-        path.as_ptr(),
-        b"r\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as *mut FILE;
+    let f = fopen(path.as_ptr(), c"r".as_ptr()) as *mut FILE;
     if f.is_null() {
         return None;
     }

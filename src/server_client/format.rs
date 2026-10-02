@@ -48,9 +48,7 @@ pub(super) unsafe fn value(
             let session = owner.attached_session().upgrade();
             let default = session
                 .map(|session| {
-                    session.with_options_mut(|options| {
-                        options_get_string(options, c"key-table".as_ptr())
-                    })
+                    session.with_options_mut(|options| options_get_string(options, c"key-table"))
                 })
                 .filter(|name| !name.as_bytes().is_empty())
                 .unwrap_or_else(|| c"root".to_owned());

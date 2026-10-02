@@ -133,15 +133,10 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     }
 }
 
-pub const WINDOW_TREE_DEFAULT_COMMAND: [::core::ffi::c_char; 23] = unsafe {
-    ::core::mem::transmute::<[u8; 23], [::core::ffi::c_char; 23]>(*b"switch-client -Zt '%%'\0")
-};
+pub const WINDOW_TREE_DEFAULT_COMMAND: &std::ffi::CStr = c"switch-client -Zt '%%'";
 pub const WINDOW_TREE_DEFAULT_FORMAT: &CStr = c"#{?pane_format,#{?pane_marked,#[fg=thememagenta],}#{?pane_floating_flag,#[underscore],}#{pane_current_command}#[fg=themelightgrey]#{pane_flags}#{?#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}},: \"#{pane_title}\",},window_format,#{?window_marked_flag,#[fg=thememagenta],}#{window_name}#[fg=themelightgrey]#{window_flags}#{?#{&&:#{==:#{window_panes},1},#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}}},: \"#{pane_title}\",},#[fg=themelightgrey]#{session_windows} windows#{?session_grouped, (group #{session_group}: #{session_group_list}),}#{?session_attached, (attached),}}";
-pub const WINDOW_TREE_DEFAULT_KEY_FORMAT: [::core::ffi::c_char; 83] = unsafe {
-    ::core::mem::transmute::<[u8; 83], [::core::ffi::c_char; 83]>(
-        *b"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}\0",
-    )
-};
+pub const WINDOW_TREE_DEFAULT_KEY_FORMAT: &std::ffi::CStr =
+    c"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}";
 static window_tree_menu_items: [menu_item<'static>; 12] = [
     menu_item {
         name: c"Select",
@@ -1023,7 +1018,7 @@ unsafe fn window_tree_draw_session(
             window_tree_preview(&preview_pane, &mut *ctx, width, sy);
             preview_pane.release(c"tree window preview");
             let format = window.with_options_mut(|options| {
-                options_get_string(options, c"tree-mode-preview-format".as_ptr())
+                options_get_string(options, c"tree-mode-preview-format")
             });
             if !format.as_bytes().is_empty() {
                 let label = format_expand_cstring(ft, format.as_ptr());
@@ -1317,7 +1312,7 @@ unsafe fn window_tree_draw_window(
                         .upgrade()
                         .expect("live preview pane")
                         .with_options_mut(|options| {
-                            options_get_string(options, c"tree-mode-preview-format".as_ptr())
+                            options_get_string(options, c"tree-mode-preview-format")
                         });
                     if !format.as_bytes().is_empty() {
                         let label = format_expand_cstring(ft, format.as_ptr());
@@ -1720,11 +1715,7 @@ unsafe fn window_tree_get_key(
             _target_owners_4.pane.as_ref(),
         );
     }
-    format_add(
-        ft,
-        b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { line }),
-    );
+    format_add(ft, c"line", |out| write!(out, "{}", { line }));
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft_owner);

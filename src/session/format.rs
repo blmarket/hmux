@@ -132,7 +132,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
             if !alerted & wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
-                    b"#\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"#".as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
                 alerted |= WINLINK_ACTIVITY;
@@ -140,7 +140,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
             if !alerted & wl.get_unchecked().flags & WINLINK_BELL != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
-                    b"!\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"!".as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
                 alerted |= WINLINK_BELL;
@@ -148,7 +148,7 @@ unsafe fn format_cb_session_alert(mut ft: *mut format_tree) -> Option<CString> {
             if !alerted & wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
-                    b"~\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"~".as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
                 alerted |= WINLINK_SILENCE;
@@ -182,7 +182,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
             if *(&raw mut alerts as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
-                    b",\0" as *const u8 as *const ::core::ffi::c_char,
+                    c",".as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
             }
@@ -194,21 +194,21 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
             if wl.get_unchecked().flags & WINLINK_ACTIVITY != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
-                    b"#\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"#".as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
             }
             if wl.get_unchecked().flags & WINLINK_BELL != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
-                    b"!\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"!".as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
             }
             if wl.get_unchecked().flags & WINLINK_SILENCE != 0 {
                 strlcat(
                     &raw mut alerts as *mut ::core::ffi::c_char,
-                    b"~\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"~".as_ptr(),
                     ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
                 );
             }
@@ -243,7 +243,7 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         if *(&raw mut result as *mut ::core::ffi::c_char) as ::core::ffi::c_int != '\0' as i32 {
             strlcat(
                 &raw mut result as *mut ::core::ffi::c_char,
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
+                c",".as_ptr(),
                 ::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as size_t,
             );
         }

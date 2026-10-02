@@ -92,15 +92,10 @@ pub struct window_buffer_editdata {
     pub pb: PasteBufferRef,
 }
 
-pub const WINDOW_BUFFER_DEFAULT_COMMAND: [::core::ffi::c_char; 24] = unsafe {
-    ::core::mem::transmute::<[u8; 24], [::core::ffi::c_char; 24]>(*b"paste-buffer -p -b '%%'\0")
-};
+pub const WINDOW_BUFFER_DEFAULT_COMMAND: &std::ffi::CStr = c"paste-buffer -p -b '%%'";
 pub const WINDOW_BUFFER_DEFAULT_FORMAT: &CStr = c"#{t/p:buffer_created}: #{buffer_sample}";
-pub const WINDOW_BUFFER_DEFAULT_KEY_FORMAT: [::core::ffi::c_char; 83] = unsafe {
-    ::core::mem::transmute::<[u8; 83], [::core::ffi::c_char; 83]>(
-        *b"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}\0",
-    )
-};
+pub const WINDOW_BUFFER_DEFAULT_KEY_FORMAT: &std::ffi::CStr =
+    c"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}";
 static window_buffer_menu_items: [menu_item<'static>; 11] = [
     menu_item {
         name: c"Paste",
@@ -401,11 +396,7 @@ unsafe fn window_buffer_get_key(
     format_defaults(ft, None, None, (refbox::Weak::new()).clone(), None);
     format_defaults(ft, None, s.as_ref(), wl.clone(), pane_owner.as_ref());
     format_defaults_paste_buffer(&mut *ft, &pb);
-    format_add(
-        ft,
-        b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { line }),
-    );
+    format_add(ft, c"line", |out| write!(out, "{}", { line }));
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft_owner);
@@ -464,14 +455,14 @@ unsafe fn window_buffer_init(
             .to_owned()
     };
     let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
-        CStr::from_ptr(WINDOW_BUFFER_DEFAULT_KEY_FORMAT.as_ptr()).to_owned()
+        WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned()
     } else {
         args_get(&*(args), 'K' as i32 as u_char)
             .expect("argument is present")
             .to_owned()
     };
     let command = if args.is_null() || args_count(args) == 0 as u_int {
-        CStr::from_ptr(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr()).to_owned()
+        WINDOW_BUFFER_DEFAULT_COMMAND.to_owned()
     } else {
         args_string(&mut *(args), 0 as u_int)
             .expect("argument is present")

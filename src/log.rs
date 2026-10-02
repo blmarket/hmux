@@ -43,10 +43,7 @@ pub unsafe fn log_open(mut name: *const ::core::ffi::c_char) {
     path.extend_from_slice(pid.as_bytes());
     path.extend_from_slice(b".log");
     let path = CString::new(path).expect("log filename components contain no interior NUL");
-    let file = fopen(
-        path.as_ptr(),
-        b"a\0" as *const u8 as *const ::core::ffi::c_char,
-    ) as *mut FILE;
+    let file = fopen(path.as_ptr(), c"a".as_ptr()) as *mut FILE;
     let Some(file) = CFile::from_raw(file) else {
         return;
     };
@@ -116,7 +113,7 @@ unsafe fn log_write_escaped(message: &CStr, prefix: &CStr) {
         .unwrap_or_default();
     if fprintf(
         file,
-        b"%lld.%06d %s%s\n\0" as *const u8 as *const ::core::ffi::c_char,
+        c"%lld.%06d %s%s\n".as_ptr(),
         tv.as_secs() as ::core::ffi::c_longlong,
         tv.subsec_micros() as ::core::ffi::c_int,
         prefix.as_ptr(),
@@ -145,7 +142,7 @@ pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Resu
     if snprintf(
         &raw mut tmp as *mut ::core::ffi::c_char,
         ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
-        b"fatal: %s: \0" as *const u8 as *const ::core::ffi::c_char,
+        c"fatal: %s: ".as_ptr(),
         strerror(*__errno_location()),
     ) < 0 as ::core::ffi::c_int
     {
@@ -155,10 +152,7 @@ pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Resu
     exit(1 as ::core::ffi::c_int);
 }
 pub unsafe fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
-    log_message(
-        write,
-        b"fatal: \0" as *const u8 as *const ::core::ffi::c_char,
-    );
+    log_message(write, c"fatal: ".as_ptr());
     exit(1 as ::core::ffi::c_int);
 }
 

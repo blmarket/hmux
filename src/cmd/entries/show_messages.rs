@@ -21,11 +21,7 @@ use crate::src::tty_term::tty_term_descriptions;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::{tty_term_describe, tty_term_ncodes};
 
-pub const SHOW_MESSAGES_TEMPLATE: [::core::ffi::c_char; 37] = unsafe {
-    ::core::mem::transmute::<[u8; 37], [::core::ffi::c_char; 37]>(
-        *b"#{t/p:message_time}: #{message_text}\0",
-    )
-};
+pub const SHOW_MESSAGES_TEMPLATE: &std::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
 pub static cmd_show_messages_entry: cmd_entry = {
     cmd_entry {
         name: c"show-messages",
@@ -116,22 +112,12 @@ unsafe fn cmd_show_messages_exec(
     let mut ft_owner = format_create_from_target(item_handle);
     ft = &raw mut *ft_owner;
     for msg in message_log.iter_rev() {
-        format_add(
-            ft,
-            b"message_text\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, msg.msg.as_ptr()),
-        );
-        format_add(
-            ft,
-            b"message_number\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", { msg.msg_num }),
-        );
+        format_add(ft, c"message_text", |out| write_cstr(out, msg.msg.as_ptr()));
+        format_add(ft, c"message_number", |out| {
+            write!(out, "{}", { msg.msg_num })
+        });
         let msg_time = msg.msg_time;
-        format_add_time(
-            ft,
-            b"message_time\0" as *const u8 as *const ::core::ffi::c_char,
-            msg_time,
-        );
+        format_add_time(ft, c"message_time", msg_time);
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
         cmdq_print(item_handle, |out| write_cstr(out, s.as_ptr()));
     }

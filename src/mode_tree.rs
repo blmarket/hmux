@@ -1034,131 +1034,77 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                 0 as ::core::ffi::c_int,
             );
             if mti.key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
-                format_add(
-                    ft,
-                    b"mode_tree_key\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| {
-                        write_cstr(
-                            out,
-                            (mti.keystr)
-                                .as_ref()
-                                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                        )
-                    },
-                );
-            } else {
-                format_add(
-                    ft,
-                    b"mode_tree_key\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
-                );
-            }
-            format_add(
-                ft,
-                b"mode_tree_key_width\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (keylen) as i32),
-            );
-            format_add(
-                ft,
-                b"mode_tree_selected\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| {
-                    write!(
+                format_add(ft, c"mode_tree_key", |out| {
+                    write_cstr(
                         out,
-                        "{}",
-                        ((i == (*mtd).current) as ::core::ffi::c_int) as i32
+                        (mti.keystr)
+                            .as_ref()
+                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
                     )
-                },
-            );
-            if line.depth == 0 as u_int {
-                format_add(
-                    ft,
-                    b"mode_tree_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", (0 as ::core::ffi::c_int) as u32),
-                );
-                format_add(
-                    ft,
-                    b"mode_tree_branch\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| out.write_all(b"0"),
-                );
-                format_add(
-                    ft,
-                    b"mode_tree_parent_last\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| out.write_all(b"0"),
-                );
+                });
             } else {
-                format_add(
-                    ft,
-                    b"mode_tree_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| write!(out, "{}", (line.depth.wrapping_sub(1 as u_int)) as u32),
-                );
-                format_add(
-                    ft,
-                    b"mode_tree_branch\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| out.write_all(b"1"),
-                );
+                format_add(ft, c"mode_tree_key", |out| write_cstr(out, c"".as_ptr()));
+            }
+            format_add(ft, c"mode_tree_key_width", |out| {
+                write!(out, "{}", (keylen) as i32)
+            });
+            format_add(ft, c"mode_tree_selected", |out| {
+                write!(
+                    out,
+                    "{}",
+                    ((i == (*mtd).current) as ::core::ffi::c_int) as i32
+                )
+            });
+            if line.depth == 0 as u_int {
+                format_add(ft, c"mode_tree_repeat", |out| {
+                    write!(out, "{}", (0 as ::core::ffi::c_int) as u32)
+                });
+                format_add(ft, c"mode_tree_branch", |out| out.write_all(b"0"));
+                format_add(ft, c"mode_tree_parent_last", |out| out.write_all(b"0"));
+            } else {
+                format_add(ft, c"mode_tree_repeat", |out| {
+                    write!(out, "{}", (line.depth.wrapping_sub(1 as u_int)) as u32)
+                });
+                format_add(ft, c"mode_tree_branch", |out| out.write_all(b"1"));
                 if !mti.parent.is_empty()
                     && (&(*mtd).lines)[mti.parent.borrow().line as usize].last != 0
                 {
-                    format_add(
-                        ft,
-                        b"mode_tree_parent_last\0" as *const u8 as *const ::core::ffi::c_char,
-                        |out| out.write_all(b"1"),
-                    );
+                    format_add(ft, c"mode_tree_parent_last", |out| out.write_all(b"1"));
                 } else {
-                    format_add(
-                        ft,
-                        b"mode_tree_parent_last\0" as *const u8 as *const ::core::ffi::c_char,
-                        |out| out.write_all(b"0"),
-                    );
+                    format_add(ft, c"mode_tree_parent_last", |out| out.write_all(b"0"));
                 }
             }
             if mti.children.items.is_empty() {
-                format_add(
-                    ft,
-                    b"mode_tree_has_children\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| out.write_all(b"0"),
-                );
+                format_add(ft, c"mode_tree_has_children", |out| out.write_all(b"0"));
             } else {
-                format_add(
-                    ft,
-                    b"mode_tree_has_children\0" as *const u8 as *const ::core::ffi::c_char,
-                    |out| out.write_all(b"1"),
-                );
+                format_add(ft, c"mode_tree_has_children", |out| out.write_all(b"1"));
             }
-            format_add(
-                ft,
-                b"mode_tree_last\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (line.last) as i32),
-            );
-            format_add(
-                ft,
-                b"mode_tree_expanded\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (mti.expanded) as i32),
-            );
-            format_add(
-                ft,
-                b"mode_tree_flat\0" as *const u8 as *const ::core::ffi::c_char,
-                |out| write!(out, "{}", (line.flat) as i32),
-            );
+            format_add(ft, c"mode_tree_last", |out| {
+                write!(out, "{}", (line.last) as i32)
+            });
+            format_add(ft, c"mode_tree_expanded", |out| {
+                write!(out, "{}", (mti.expanded) as i32)
+            });
+            format_add(ft, c"mode_tree_flat", |out| {
+                write!(out, "{}", (line.flat) as i32)
+            });
             let prefix = format_expand_cstring(
                 ft,
-                b"#[fg=themelightgrey]#[bg=default]#[noacs]#{p/#{mode_tree_key_width}:#{?#{!=:#{mode_tree_key},},(#{mode_tree_key}),}}#{R:#{?mode_tree_parent_last,    ,#[acs]x#[fg=themelightgrey]#[bg=default]#[noacs]   },#{mode_tree_repeat}}#{?mode_tree_branch,#[acs]#{?mode_tree_last,mq,tq}+#[fg=themelightgrey]#[bg=default]#[noacs] ,}#{?mode_tree_has_children,#{?mode_tree_expanded,#[fg=themered]-#[fg=themelightgrey]#[bg=default]#[noacs] ,#[fg=themegreen]+#[fg=themelightgrey]#[bg=default]#[noacs] },#{?mode_tree_flat,,  }}\0"
-                    as *const u8 as *const ::core::ffi::c_char,
+                c"#[fg=themelightgrey]#[bg=default]#[noacs]#{p/#{mode_tree_key_width}:#{?#{!=:#{mode_tree_key},},(#{mode_tree_key}),}}#{R:#{?mode_tree_parent_last,    ,#[acs]x#[fg=themelightgrey]#[bg=default]#[noacs]   },#{mode_tree_repeat}}#{?mode_tree_branch,#[acs]#{?mode_tree_last,mq,tq}+#[fg=themelightgrey]#[bg=default]#[noacs] ,}#{?mode_tree_has_children,#{?mode_tree_expanded,#[fg=themered]-#[fg=themelightgrey]#[bg=default]#[noacs] ,#[fg=themegreen]+#[fg=themelightgrey]#[bg=default]#[noacs] },#{?mode_tree_flat,,  }}".as_ptr(),
             );
             prefix_width = format_width(prefix.as_ptr());
             if prefix_width > w {
                 prefix_width = w;
             }
             if mti.tagged != 0 {
-                tag = b"*\0" as *const u8 as *const ::core::ffi::c_char;
+                tag = c"*".as_ptr();
             } else {
-                tag = b"\0" as *const u8 as *const ::core::ffi::c_char;
+                tag = c"".as_ptr();
             }
             if !mti.text.is_none() {
-                separator = b"#[fg=themelightgrey]: #[default]\0" as *const u8
-                    as *const ::core::ffi::c_char;
+                separator = c"#[fg=themelightgrey]: #[default]".as_ptr();
             } else {
-                separator = b"\0" as *const u8 as *const ::core::ffi::c_char;
+                separator = c"".as_ptr();
             }
             let field_width = mti.align * *alignlen.as_mut_ptr().offset(line.depth as isize);
             let mut name = Vec::new();

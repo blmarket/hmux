@@ -228,7 +228,7 @@ unsafe fn cmd_resize_pane_exec(
                     .map_or(std::ptr::null(), |value| value.as_ptr());
                 if argval.is_null() {
                     if args_count(args) == 0 as u_int {
-                        argval = b"1\0" as *const u8 as *const ::core::ffi::c_char;
+                        argval = c"1".as_ptr();
                     } else {
                         argval = args_string(&mut *(args), 0 as u_int)
                             .map_or(std::ptr::null(), |value| value.as_ptr());
@@ -293,7 +293,7 @@ unsafe fn cmd_resize_pane_exec(
             None,
         );
         events_fire_window(
-            b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+            c"window-layout-changed".as_ptr(),
             wl.get_unchecked()
                 .window_handle()
                 .expect("resize window")

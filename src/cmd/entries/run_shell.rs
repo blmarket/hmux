@@ -216,7 +216,7 @@ unsafe fn cmd_run_shell_exec(
             i = 1 as u_int;
             while i < args_count(args) {
                 xformat(&mut key, format_args!("{}", i as u32));
-                format_add(ft, &raw mut key as *mut ::core::ffi::c_char, |out| {
+                format_add(ft, CStr::from_ptr(key.as_ptr()), |out| {
                     write_cstr(
                         out,
                         args_string(&mut *(args), i)

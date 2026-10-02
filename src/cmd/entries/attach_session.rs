@@ -107,9 +107,7 @@ pub unsafe fn cmd_attach_session(
         return CMD_RETURN_ERROR;
     }
     if !tflag.is_null()
-        && *tflag
-            .offset(strcspn(tflag, b":.\0" as *const u8 as *const ::core::ffi::c_char) as isize)
-            as ::core::ffi::c_int
+        && *tflag.offset(strcspn(tflag, c":.".as_ptr()) as isize) as ::core::ffi::c_int
             != '\0' as i32
     {
         type_0 = CMD_FIND_PANE;
@@ -283,10 +281,7 @@ pub unsafe fn cmd_attach_session(
         if !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
             c.as_ref().expect("live client").send_ready();
         }
-        events_fire_client(
-            b"client-attached\0" as *const u8 as *const ::core::ffi::c_char,
-            c.clone().expect("live client"),
-        );
+        events_fire_client(c"client-attached".as_ptr(), c.clone().expect("live client"));
         c.as_ref()
             .expect("live client")
             .update_flags(CLIENT_ATTACHED as uint64_t, 0);

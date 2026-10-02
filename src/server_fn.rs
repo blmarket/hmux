@@ -225,7 +225,7 @@ pub unsafe fn server_lock_client(client_owner: &ClientRef) {
         .attached_session()
         .upgrade()
         .expect("live session")
-        .with_options_mut(|options| options_get_string(options, c"lock-command".as_ptr()));
+        .with_options_mut(|options| options_get_string(options, c"lock-command"));
     client_owner.lock(&command);
 }
 
@@ -266,9 +266,7 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
         s = s_owner.clone();
     }
     recalculate_sizes();
-    owner.release(std::ffi::CStr::from_ptr(
-        b"server_kill_window\0" as *const u8 as *const ::core::ffi::c_char,
-    ));
+    owner.release(std::ffi::CStr::from_ptr(c"server_kill_window".as_ptr()));
 }
 pub unsafe fn server_renumber_session(s_owner: &SessionRef) {
     let s = Some(s_owner.clone());
@@ -397,18 +395,14 @@ unsafe fn server_destroy_session_group(s_owner: &SessionRef) {
         server_destroy_session(&source);
         (&source).destroy(
             (1 as ::core::ffi::c_int) != 0,
-            std::ffi::CStr::from_ptr(
-                b"server_destroy_session_group\0" as *const u8 as *const ::core::ffi::c_char,
-            ),
+            std::ffi::CStr::from_ptr(c"server_destroy_session_group".as_ptr()),
         );
     } else {
         for session_owner in crate::src::session::session_group_members(sg) {
             server_destroy_session(&session_owner);
             (&session_owner).destroy(
                 (1 as ::core::ffi::c_int) != 0,
-                std::ffi::CStr::from_ptr(
-                    b"server_destroy_session_group\0" as *const u8 as *const ::core::ffi::c_char,
-                ),
+                std::ffi::CStr::from_ptr(c"server_destroy_session_group".as_ptr()),
             );
         }
     };
@@ -552,10 +546,7 @@ pub unsafe fn server_check_unattached() {
                             server_destroy_session(s_owner.as_ref().expect("registered session"));
                             (s_owner.as_ref().expect("registered session")).destroy(
                                 (1 as ::core::ffi::c_int) != 0,
-                                std::ffi::CStr::from_ptr(
-                                    b"server_check_unattached\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                ),
+                                std::ffi::CStr::from_ptr(c"server_check_unattached".as_ptr()),
                             );
                         }
                     }
@@ -593,10 +584,7 @@ pub unsafe fn server_check_unattached() {
                             server_destroy_session(s_owner.as_ref().expect("registered session"));
                             (s_owner.as_ref().expect("registered session")).destroy(
                                 (1 as ::core::ffi::c_int) != 0,
-                                std::ffi::CStr::from_ptr(
-                                    b"server_check_unattached\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                ),
+                                std::ffi::CStr::from_ptr(c"server_check_unattached".as_ptr()),
                             );
                         }
                     }
@@ -634,10 +622,7 @@ pub unsafe fn server_check_unattached() {
                             server_destroy_session(s_owner.as_ref().expect("registered session"));
                             (s_owner.as_ref().expect("registered session")).destroy(
                                 (1 as ::core::ffi::c_int) != 0,
-                                std::ffi::CStr::from_ptr(
-                                    b"server_check_unattached\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                ),
+                                std::ffi::CStr::from_ptr(c"server_check_unattached".as_ptr()),
                             );
                         }
                     }

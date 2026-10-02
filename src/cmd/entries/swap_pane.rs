@@ -263,12 +263,12 @@ unsafe fn cmd_swap_pane_exec(
                 );
             }
             events_fire_window(
-                b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                c"window-layout-changed".as_ptr(),
                 Rc::clone(&src_window_owner),
             );
             if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
                 events_fire_window(
-                    b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"window-layout-changed".as_ptr(),
                     std::rc::Rc::clone(&(dst_window_owner)),
                 );
             }

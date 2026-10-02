@@ -2025,25 +2025,14 @@ unsafe fn input_fire_pane_title_changed(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(
-        &mut ep,
-        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(wp_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window".as_ptr(),
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
-    event_payload_set_string(
-        &mut ep,
-        b"new_title\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, title),
-    );
-    events_fire(
-        b"pane-title-changed\0" as *const u8 as *const ::core::ffi::c_char,
-        ep,
-    );
+    event_payload_set_string(&mut ep, c"new_title".as_ptr(), |out| write_cstr(out, title));
+    events_fire(c"pane-title-changed".as_ptr(), ep);
 }
 unsafe fn input_ground_timer_callback(ictx: *mut input_ctx) {
     log_debug(format_args!(
@@ -2275,10 +2264,7 @@ pub(super) unsafe fn input_parse_buffer(
     (&std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))).update_activity();
     if !(*wp).flags & PANE_ACTIVITY != 0 {
         (*wp).flags |= PANE_ACTIVITY;
-        events_fire_pane(
-            b"pane-activity\0" as *const u8 as *const ::core::ffi::c_char,
-            std::rc::Rc::clone(wp_owner),
-        );
+        events_fire_pane(c"pane-activity".as_ptr(), std::rc::Rc::clone(wp_owner));
     }
     (*wp).flags |= PANE_CHANGED;
     if !(*wp).modes.is_empty() {
@@ -2329,10 +2315,7 @@ unsafe fn input_split(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
     ip = (&raw mut (*ictx).param_list as *mut input_param).offset(0 as ::core::ffi::c_int as isize);
     ptr = &raw mut (*ictx).param_buf as *mut u_char as *mut ::core::ffi::c_char;
     loop {
-        out = strsep(
-            &raw mut ptr,
-            b";\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        out = strsep(&raw mut ptr, c";".as_ptr());
         if out.is_null() {
             break;
         }
@@ -2566,7 +2549,7 @@ unsafe fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi::c_int {
         7 => {
             if !wp.is_null() {
                 events_fire_pane(
-                    b"pane-bell\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"pane-bell".as_ptr(),
                     std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
                 );
                 alerts_queue(
@@ -4024,10 +4007,7 @@ unsafe fn input_csi_dispatch_sgr_colon(mut ictx: *mut input_ctx, mut i: u_int) {
     let mut copy = std::ffi::CStr::from_ptr(s).to_bytes_with_nul().to_vec();
     ptr = copy.as_mut_ptr().cast();
     loop {
-        out = strsep(
-            &raw mut ptr,
-            b":\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        out = strsep(&raw mut ptr, c":".as_ptr());
         if out.is_null() {
             break;
         }
@@ -4543,9 +4523,9 @@ unsafe fn input_exit_osc(mut ictx: *mut input_ctx) {
             (if (*ictx).input_end as ::core::ffi::c_uint
                 == INPUT_END_ST as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                b"ST\0" as *const u8 as *const ::core::ffi::c_char
+                c"ST".as_ptr()
             } else {
-                b"BEL\0" as *const u8 as *const ::core::ffi::c_char
+                c"BEL".as_ptr()
             }) as *const _
         )
     ));
@@ -4723,7 +4703,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
         }
     } else {
         window.with_options_mut(|options| {
-            options_set_number(options, c"automatic-rename".as_ptr(), 0);
+            options_set_number(options, c"automatic-rename", 0);
         });
         window.rename(&name, true);
     }
@@ -4790,9 +4770,9 @@ unsafe fn input_osc_colour_reply(
     (r, g, b) = colour_split_rgb(c);
     if end_type as ::core::ffi::c_uint == INPUT_END_BEL as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        end = b"\x07\0" as *const u8 as *const ::core::ffi::c_char;
+        end = c"\x07".as_ptr();
     } else {
-        end = b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char;
+        end = c"\x1B\\".as_ptr();
     }
     if n == 4 as u_int {
         input_reply(ictx, add, |out| {
@@ -4846,13 +4826,8 @@ unsafe fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
             bad = 1 as ::core::ffi::c_int;
             break;
         } else {
-            s = strsep(
-                &raw mut next,
-                b";\0" as *const u8 as *const ::core::ffi::c_char,
-            );
-            if strcmp(s, b"?\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-            {
+            s = strsep(&raw mut next, c";".as_ptr());
+            if strcmp(s, c"?".as_ptr()) == 0 as ::core::ffi::c_int {
                 c = (*ictx)
                     .palette
                     .with_mut(|palette| {
@@ -4916,17 +4891,13 @@ unsafe fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_cha
     let mut id: Option<std::ffi::CString> = None;
     start = p;
     loop {
-        end = strpbrk(start, b":;\0" as *const u8 as *const ::core::ffi::c_char);
+        end = strpbrk(start, c":;".as_ptr());
         if end.is_null() {
             current_block = 10886091980245723256;
             break;
         }
         if end.offset_from(start) as ::core::ffi::c_long >= 4 as ::core::ffi::c_long
-            && strncmp(
-                start,
-                b"id=\0" as *const u8 as *const ::core::ffi::c_char,
-                3 as size_t,
-            ) == 0 as ::core::ffi::c_int
+            && strncmp(start, c"id=".as_ptr(), 3 as size_t) == 0 as ::core::ffi::c_int
         {
             if id.is_some() {
                 current_block = 9416799868769213755;
@@ -5079,7 +5050,7 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         link: 0,
     };
     let mut c: ::core::ffi::c_int = 0;
-    if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
+    if strcmp(p, c"?".as_ptr()) == 0 as ::core::ffi::c_int {
         if wp.is_null() {
             return;
         }
@@ -5142,7 +5113,7 @@ unsafe fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
     let mut c: ::core::ffi::c_int = 0;
-    if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
+    if strcmp(p, c"?".as_ptr()) == 0 as ::core::ffi::c_int {
         if wp.is_null() {
             return;
         }
@@ -5196,7 +5167,7 @@ unsafe fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         .map_or(std::ptr::null_mut(), |pane| pane.get());
     let mut wp: *mut window_pane = input_pane;
     let mut c: ::core::ffi::c_int = 0;
-    if strcmp(p, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
+    if strcmp(p, c"?".as_ptr()) == 0 as ::core::ffi::c_int {
         if !wp.is_null() {
             c = (*(*ictx).ctx.screen_ptr()).ccolour;
             if c == -(1 as ::core::ffi::c_int) {
@@ -5313,47 +5284,31 @@ unsafe fn input_fire_command_event(
     if !fs.session_handle().is_none() {
         event_payload_set_session(
             &mut ep,
-            b"session\0" as *const u8 as *const ::core::ffi::c_char,
+            c"session".as_ptr(),
             fs.session_handle().expect("live session"),
         );
     }
     if fs.winlink_handle().is_alive() {
         event_payload_set_int(
             &mut ep,
-            b"window_index\0" as *const u8 as *const ::core::ffi::c_char,
+            c"window_index".as_ptr(),
             (fs.winlink_handle()).get_unchecked().idx,
         );
     }
     event_payload_set_window(
         &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window".as_ptr(),
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
-    event_payload_set_pane(
-        &mut ep,
-        b"pane\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(wp_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
     if (*wp).cmd_status != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(
-            &mut ep,
-            b"command_status\0" as *const u8 as *const ::core::ffi::c_char,
-            (*wp).cmd_status,
-        );
+        event_payload_set_int(&mut ep, c"command_status".as_ptr(), (*wp).cmd_status);
     }
     if tstart != 0 as time_t {
-        event_payload_set_time(
-            &mut ep,
-            b"command_start_time\0" as *const u8 as *const ::core::ffi::c_char,
-            tstart,
-        );
+        event_payload_set_time(&mut ep, c"command_start_time".as_ptr(), tstart);
     }
     if tend != 0 as time_t {
-        event_payload_set_time(
-            &mut ep,
-            b"command_end_time\0" as *const u8 as *const ::core::ffi::c_char,
-            tend,
-        );
+        event_payload_set_time(&mut ep, c"command_end_time".as_ptr(), tend);
     }
     if tstart != 0 as time_t {
         if (*wp).flags & PANE_CMDRUNNING != 0 {
@@ -5365,11 +5320,7 @@ unsafe fn input_fire_command_event(
             end = tstart;
         }
         end -= tstart;
-        event_payload_set_uint(
-            &mut ep,
-            b"command_duration\0" as *const u8 as *const ::core::ffi::c_char,
-            end as u_int,
-        );
+        event_payload_set_uint(&mut ep, c"command_duration".as_ptr(), end as u_int);
     }
     events_fire(name, ep);
 }
@@ -5396,7 +5347,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
             if !wp.is_null() {
                 (*wp).last_prompt_time = time(::core::ptr::null_mut::<time_t>());
                 events_fire_pane(
-                    b"pane-shell-prompt\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"pane-shell-prompt".as_ptr(),
                     std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
                 );
             }
@@ -5404,7 +5355,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
         80 => {
             if let Some(line) = line {
                 let gl = grid_get_line_mut(&mut *gd, line);
-                cp = strstr(p, b";k=s\0" as *const u8 as *const ::core::ffi::c_char);
+                cp = strstr(p, c";k=s".as_ptr());
                 if !cp.is_null()
                     && (*cp.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
                         == ';' as i32
@@ -5439,7 +5390,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
                 (*wp).cmd_status = -(1 as ::core::ffi::c_int);
                 input_fire_command_event(
                     input_pane_owner.as_ref().expect("live pane"),
-                    b"pane-command-started\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"pane-command-started".as_ptr(),
                 );
             }
         }
@@ -5451,7 +5402,7 @@ unsafe fn input_osc_133(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_c
                 (*wp).cmd_status = status;
                 input_fire_command_event(
                     input_pane_owner.as_ref().expect("live pane"),
-                    b"pane-command-finished\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"pane-command-finished".as_ptr(),
                 );
             }
             if let Some(line) = line {
@@ -5484,7 +5435,7 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
                     event,
                     buf.as_ptr().cast(),
                     buf.len(),
-                    b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"\x07".as_ptr(),
                     clip,
                 )
             });
@@ -5494,7 +5445,7 @@ unsafe fn input_osc_52_reply(mut ictx: *mut input_ctx, mut clip: ::core::ffi::c_
                     event,
                     buf.as_ptr().cast(),
                     buf.len(),
-                    b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"\x1B\\".as_ptr(),
                     clip,
                 )
             });
@@ -5514,8 +5465,7 @@ unsafe fn input_osc_52_parse(
 ) -> Option<Vec<u8>> {
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut len: size_t = 0;
-    let mut allow: *const ::core::ffi::c_char =
-        b"cpqs01234567\0" as *const u8 as *const ::core::ffi::c_char;
+    let mut allow: *const ::core::ffi::c_char = c"cpqs01234567".as_ptr();
     let mut i: u_int = 0;
     let mut j: u_int = 0 as u_int;
     if options_get_number(global_options, c"set-clipboard") != 2 as ::core::ffi::c_longlong {
@@ -5555,7 +5505,7 @@ unsafe fn input_osc_52_parse(
         ),
         log_cstr((clip) as *const _)
     ));
-    if strcmp(end, b"?\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
+    if strcmp(end, c"?".as_ptr()) == 0 as ::core::ffi::c_int {
         input_osc_52_reply(ictx, *clip);
         return None;
     }
@@ -5609,7 +5559,7 @@ unsafe fn input_osc_52(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         screen_write_setselection(&mut ctx, clip, &out);
         screen_write_stop(&mut ctx);
         events_fire_pane(
-            b"pane-set-clipboard\0" as *const u8 as *const ::core::ffi::c_char,
+            c"pane-set-clipboard".as_ptr(),
             std::rc::Rc::clone(input_pane_owner.as_ref().expect("live pane")),
         );
         paste_add_owned(None, out.into_boxed_slice());
@@ -5697,7 +5647,7 @@ pub unsafe fn input_reply_clipboard(
     }
     bufferevent_write(
         bev,
-        b"\x1B]52;\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
+        c"\x1B]52;".as_ptr() as *const ::core::ffi::c_void,
         5 as size_t,
     );
     if clip as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
@@ -5709,7 +5659,7 @@ pub unsafe fn input_reply_clipboard(
     }
     bufferevent_write(
         bev,
-        b";\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
+        c";".as_ptr() as *const ::core::ffi::c_void,
         1 as size_t,
     );
     if outlen != 0 as ::core::ffi::c_int {
@@ -5911,7 +5861,7 @@ unsafe fn input_request_clipboard_reply(ir: *mut input_request, cd: &input_reque
                 event,
                 cd.data.as_ptr().cast(),
                 cd.data.len(),
-                b"\x07\0" as *const u8 as *const ::core::ffi::c_char,
+                c"\x07".as_ptr(),
                 cd.clip,
             )
         });
@@ -5921,7 +5871,7 @@ unsafe fn input_request_clipboard_reply(ir: *mut input_request, cd: &input_reque
                 event,
                 cd.data.as_ptr().cast(),
                 cd.data.len(),
-                b"\x1B\\\0" as *const u8 as *const ::core::ffi::c_char,
+                c"\x1B\\".as_ptr(),
                 cd.clip,
             )
         });

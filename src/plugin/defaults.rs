@@ -17,7 +17,7 @@ pub(super) unsafe fn apply() {
             })
         });
         if unchanged {
-            options_set_string(options, name.as_ptr(), 0, |out| {
+            options_set_string(options, name, 0, |out| {
                 out.write_all(WINDOW_STATUS_FORMAT.to_bytes())
             });
         }

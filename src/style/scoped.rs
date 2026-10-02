@@ -163,9 +163,7 @@ mod tests {
                 entry.style.gc.fg, grid_default_cell.fg,
                 "cache resets before evaluating dynamic style text"
             );
-            options_set_string(child, c"@style".as_ptr(), 0, |out| {
-                out.write_all(b"fg=blue")
-            });
+            options_set_string(child, c"@style", 0, |out| out.write_all(b"fg=blue"));
             (*child).parent = Some(OptionsScope::GlobalSession);
             slot.set((parent, child, true));
         });
@@ -179,7 +177,7 @@ mod tests {
             let mut globals = options_create(None);
             global_options = &mut *globals;
             global_s_options = &mut *globals;
-            options_set_string(&mut *globals, c"@style".as_ptr(), 0, |out| {
+            options_set_string(&mut *globals, c"@style", 0, |out| {
                 out.write_all(b"fg=green")
             });
             options_get_only_mut(&mut globals, c"@style")
@@ -189,7 +187,7 @@ mod tests {
                 .fg = 321;
             let mut parent = options_create(None);
             global_w_options = &mut *parent;
-            options_set_string(&mut *parent, c"@style".as_ptr(), 0, |out| {
+            options_set_string(&mut *parent, c"@style", 0, |out| {
                 out.write_all(b"fg=#{zz_scoped_style}")
             });
             options_get_only_mut(&mut parent, c"@style")

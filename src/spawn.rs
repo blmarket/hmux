@@ -124,11 +124,9 @@ pub const SEEK_END: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 
 pub const IUTF8: ::core::ffi::c_int = 0o40000 as ::core::ffi::c_int;
 
-pub const _PATH_DEFPATH: [::core::ffi::c_char; 14] =
-    unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b"/usr/bin:/bin\0") };
+pub const _PATH_DEFPATH: &std::ffi::CStr = c"/usr/bin:/bin";
 
-pub const _PATH_TMP: [::core::ffi::c_char; 6] =
-    unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/tmp/\0") };
+pub const _PATH_TMP: &std::ffi::CStr = c"/tmp/";
 
 pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
     let session_owner = (*sc).s.upgrade().expect("spawn context session");
@@ -366,10 +364,7 @@ pub(crate) unsafe fn spawn_editor(
         if original_window.modal_pane().is_some() {
             return None;
         }
-        let editor_value = options_get_string(
-            global_options,
-            b"editor\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        let editor_value = options_get_string(global_options, c"editor");
         editor = editor_value.as_ptr();
         fd = mkstemp(&raw mut path as *mut ::core::ffi::c_char);
         if fd == -(1 as ::core::ffi::c_int) {

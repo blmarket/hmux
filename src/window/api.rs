@@ -715,7 +715,7 @@ impl Window for WindowRef {
         drop(window_replace_name(self, name));
         if explicit {
             self.with_options_mut(|options| {
-                crate::src::options::options_set_number(options, c"automatic-rename".as_ptr(), 0)
+                crate::src::options::options_set_number(options, c"automatic-rename", 0)
             });
         }
     }
@@ -1030,7 +1030,7 @@ impl Window for WindowRef {
         let state = &mut *self.get();
         crate::src::options::options_set_number(
             state.options.as_deref_mut().expect("live window options"),
-            c"window-size".as_ptr(),
+            c"window-size",
             crate::src::shared::window::WINDOW_SIZE_MANUAL as _,
         );
         state.manual_sx = sx;
@@ -1210,35 +1210,12 @@ unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut
     let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_window(
-        &mut ep,
-        b"window\0" as *const u8 as *const ::core::ffi::c_char,
-        std::rc::Rc::clone(w_owner),
-    );
-    event_payload_set_uint(
-        &mut ep,
-        b"width\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).sx,
-    );
-    event_payload_set_uint(
-        &mut ep,
-        b"height\0" as *const u8 as *const ::core::ffi::c_char,
-        (*w).sy,
-    );
-    event_payload_set_uint(
-        &mut ep,
-        b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
-        old_sx,
-    );
-    event_payload_set_uint(
-        &mut ep,
-        b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
-        old_sy,
-    );
-    events_fire(
-        b"window-resized\0" as *const u8 as *const ::core::ffi::c_char,
-        ep,
-    );
+    event_payload_set_window(&mut ep, c"window".as_ptr(), std::rc::Rc::clone(w_owner));
+    event_payload_set_uint(&mut ep, c"width".as_ptr(), (*w).sx);
+    event_payload_set_uint(&mut ep, c"height".as_ptr(), (*w).sy);
+    event_payload_set_uint(&mut ep, c"old_width".as_ptr(), old_sx);
+    event_payload_set_uint(&mut ep, c"old_height".as_ptr(), old_sy);
+    events_fire(c"window-resized".as_ptr(), ep);
 }
 unsafe fn resize_window(
     w_owner: &WindowRef,
@@ -1319,7 +1296,7 @@ unsafe fn resize_window(
     tty_update_window_offset(w_owner);
     server_redraw_window(w_owner);
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     resize_fire_window_resized(w_owner, old_sx, old_sy);
@@ -1393,12 +1370,9 @@ mod tests {
             crate::src::options::options_default(&mut *options, entry);
             (*owner.get()).options = Some(options);
             owner.with_options_mut(|options| {
-                crate::src::options::options_set_string(
-                    options,
-                    c"fill-character".as_ptr(),
-                    0,
-                    |out| out.write_all(b"#[fg=red]#{?is_inside,I,O}"),
-                );
+                crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
+                    out.write_all(b"#[fg=red]#{?is_inside,I,O}")
+                });
             });
             owner.refresh_fill_cells();
             let original = owner.fill_cell(true);
@@ -1420,12 +1394,9 @@ mod tests {
                 0
             );
             owner.with_options_mut(|options| {
-                crate::src::options::options_set_string(
-                    options,
-                    c"fill-character".as_ptr(),
-                    0,
-                    |out| out.write_all(b"#{?is_outside,X,Y}"),
-                );
+                crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
+                    out.write_all(b"#{?is_outside,X,Y}")
+                });
             });
             owner.refresh_fill_cells();
             assert_eq!(owner.fill_cell(true).data.data[0], b'Y');

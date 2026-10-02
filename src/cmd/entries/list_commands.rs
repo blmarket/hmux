@@ -18,14 +18,8 @@ use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 use std::ffi::CStr;
 
-pub const LIST_COMMANDS_TEMPLATE: [::core::ffi::c_char; 91] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 91],
-        [::core::ffi::c_char; 91],
-    >(
-        *b"#{command_list_name}#{?command_list_alias, (#{command_list_alias}),} #{command_list_usage}\0",
-    )
-};
+pub const LIST_COMMANDS_TEMPLATE: &std::ffi::CStr =
+    c"#{command_list_name}#{?command_list_alias, (#{command_list_alias}),} #{command_list_usage}";
 pub static cmd_list_commands_entry: cmd_entry = {
     cmd_entry {
         name: c"list-commands",
@@ -57,21 +51,15 @@ unsafe fn cmd_list_single_command(
     mut template: *const ::core::ffi::c_char,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
-    format_add(
-        ft,
-        b"command_list_name\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, entry.name.as_ptr()),
-    );
-    format_add(
-        ft,
-        b"command_list_alias\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, entry.alias.unwrap_or(c"").as_ptr()),
-    );
-    format_add(
-        ft,
-        b"command_list_usage\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, entry.usage.as_ptr()),
-    );
+    format_add(ft, c"command_list_name", |out| {
+        write_cstr(out, entry.name.as_ptr())
+    });
+    format_add(ft, c"command_list_alias", |out| {
+        write_cstr(out, entry.alias.unwrap_or(c"").as_ptr())
+    });
+    format_add(ft, c"command_list_usage", |out| {
+        write_cstr(out, entry.usage.as_ptr())
+    });
     let line = format_expand_cstring(ft, template);
     if !line.is_empty() {
         cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));

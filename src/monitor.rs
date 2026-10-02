@@ -766,19 +766,11 @@ unsafe fn monitor_parse_parts(value: &CStr) -> Option<ParsedMonitor> {
         type_0 = MONITOR_SESSION;
     } else {
         let target = CString::new(target_bytes).expect("monitor target contains no NUL");
-        if sscanf(
-            target.as_ptr(),
-            b"%%%d\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut id,
-        ) == 1 as ::core::ffi::c_int
+        if sscanf(target.as_ptr(), c"%%%d".as_ptr(), &raw mut id) == 1 as ::core::ffi::c_int
             && id >= 0 as ::core::ffi::c_int
         {
             type_0 = MONITOR_PANE;
-        } else if sscanf(
-            target.as_ptr(),
-            b"@%d\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut id,
-        ) == 1 as ::core::ffi::c_int
+        } else if sscanf(target.as_ptr(), c"@%d".as_ptr(), &raw mut id) == 1 as ::core::ffi::c_int
             && id >= 0 as ::core::ffi::c_int
         {
             type_0 = MONITOR_WINDOW;

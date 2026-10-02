@@ -19,11 +19,9 @@ pub const O_WRONLY: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
 
 pub const O_CREAT: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
 
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
+pub const _PATH_BSHELL: &std::ffi::CStr = c"/bin/sh";
 
-pub const _PATH_DEVNULL: [::core::ffi::c_char; 10] =
-    unsafe { ::core::mem::transmute::<[u8; 10], [::core::ffi::c_char; 10]>(*b"/dev/null\0") };
+pub const _PATH_DEVNULL: &std::ffi::CStr = c"/dev/null";
 
 pub const O_TRUNC: ::core::ffi::c_int = 0o1000 as ::core::ffi::c_int;
 

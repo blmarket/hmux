@@ -17,11 +17,8 @@ use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::sort::{sort_get_buffers, sort_order_from_string};
 
-pub const LIST_BUFFERS_TEMPLATE: [::core::ffi::c_char; 57] = unsafe {
-    ::core::mem::transmute::<[u8; 57], [::core::ffi::c_char; 57]>(
-        *b"#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"\0",
-    )
-};
+pub const LIST_BUFFERS_TEMPLATE: &std::ffi::CStr =
+    c"#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"";
 pub static cmd_list_buffers_entry: cmd_entry = {
     cmd_entry {
         name: c"list-buffers",

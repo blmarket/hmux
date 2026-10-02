@@ -119,16 +119,11 @@ impl Drop for window_client_itemdata {
     }
 }
 
-pub const WINDOW_CLIENT_DEFAULT_COMMAND: [::core::ffi::c_char; 22] = unsafe {
-    ::core::mem::transmute::<[u8; 22], [::core::ffi::c_char; 22]>(*b"detach-client -t '%%'\0")
-};
+pub const WINDOW_CLIENT_DEFAULT_COMMAND: &std::ffi::CStr = c"detach-client -t '%%'";
 pub const WINDOW_CLIENT_DEFAULT_FORMAT: &CStr =
     c"#[fg=themelightgrey]#{t/p:client_activity}: session #[default]#{session_name}";
-pub const WINDOW_CLIENT_DEFAULT_KEY_FORMAT: [::core::ffi::c_char; 83] = unsafe {
-    ::core::mem::transmute::<[u8; 83], [::core::ffi::c_char; 83]>(
-        *b"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}\0",
-    )
-};
+pub const WINDOW_CLIENT_DEFAULT_KEY_FORMAT: &std::ffi::CStr =
+    c"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}";
 const window_client_info_lines: [&CStr; 23] = [
     c"#[fg=themelightgrey]Client Name   #[#{E:tree-mode-border-style},acs]x#[default] #{client_name} #[fg=themelightgrey]#[fg=themelightgrey](PID #{client_pid})#[default]",
     c"#[fg=themelightgrey]Session       #[#{E:tree-mode-border-style},acs]x#[default] #{session_name}",
@@ -366,17 +361,9 @@ unsafe fn window_client_draw_info(
         & TERM_INVALIDMS
         != 0
     {
-        format_add(
-            ft,
-            b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
+        format_add(ft, c"clipboard_invalid", |out| out.write_all(b"1"));
     } else {
-        format_add(
-            ft,
-            b"clipboard_invalid\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
+        format_add(ft, c"clipboard_invalid", |out| out.write_all(b"0"));
     }
     screen_write_cursormove(
         &mut *ctx,
@@ -625,11 +612,7 @@ unsafe fn window_client_get_key(
         (refbox::Weak::new()).clone(),
         None,
     );
-    format_add(
-        ft,
-        b"line\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { line }),
-    );
+    format_add(ft, c"line", |out| write!(out, "{}", { line }));
     let expanded = format_expand_cstring(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(expanded.as_c_str()).unwrap_or(KEYC_UNKNOWN);
     format_free(ft_owner);

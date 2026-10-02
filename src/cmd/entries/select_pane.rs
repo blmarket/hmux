@@ -285,7 +285,7 @@ unsafe fn cmd_select_pane_exec(
         }
         if let Some(style) = args_get(arguments, b'P') {
             let invalid = original_pane.with_options_mut(|options| {
-                options_set_string(options, c"window-style".as_ptr(), 0, |out| {
+                options_set_string(options, c"window-style", 0, |out| {
                     write_cstr(out, style.as_ptr())
                 })
                 .is_null()
@@ -298,7 +298,7 @@ unsafe fn cmd_select_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             original_pane.with_options_mut(|options| {
-                options_set_string(options, c"window-active-style".as_ptr(), 0, |out| {
+                options_set_string(options, c"window-active-style", 0, |out| {
                     write_cstr(out, style.as_ptr())
                 })
                 .is_null()
@@ -307,7 +307,7 @@ unsafe fn cmd_select_pane_exec(
         }
         if args_has(arguments, b'g') != 0 {
             let style = original_pane
-                .with_options_mut(|options| options_get_string(options, c"window-style".as_ptr()));
+                .with_options_mut(|options| options_get_string(options, c"window-style"));
             cmdq_print(item_handle, |out| write_cstr(out, style.as_ptr()));
             return CMD_RETURN_NORMAL;
         }

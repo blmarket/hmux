@@ -85,25 +85,22 @@ pub unsafe fn layout_print_cell(
     }
     match (*lc).type_0 as ::core::ffi::c_uint {
         0 => {
-            type_0 = b"LEFTRIGHT\0" as *const u8 as *const ::core::ffi::c_char;
+            type_0 = c"LEFTRIGHT".as_ptr();
         }
         1 => {
-            type_0 = b"TOPBOTTOM\0" as *const u8 as *const ::core::ffi::c_char;
+            type_0 = c"TOPBOTTOM".as_ptr();
         }
         2 => {
-            type_0 = b"WINDOWPANE\0" as *const u8 as *const ::core::ffi::c_char;
+            type_0 = c"WINDOWPANE".as_ptr();
         }
         _ => {
-            type_0 = b"UNKNOWN\0" as *const u8 as *const ::core::ffi::c_char;
+            type_0 = c"UNKNOWN".as_ptr();
         }
     }
     log_debug(format_args!(
         "{}:{}{} type {} [parent {}] wp={} [{},{} {}x{}]",
         log_cstr((hdr) as *const _),
-        log_cstr_width(
-            (b" \0" as *const u8 as *const ::core::ffi::c_char) as *const _,
-            n as i32
-        ),
+        log_cstr_width((c" ".as_ptr()) as *const _, n as i32),
         log_pointer((lc) as *const ::core::ffi::c_void),
         log_cstr((type_0) as *const _),
         log_pointer(((*lc).parent) as *const ::core::ffi::c_void),

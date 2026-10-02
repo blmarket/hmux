@@ -47,8 +47,8 @@ unsafe fn cmd_find_window_exec(
     let wp = (*target).pane_handle();
     let mut s: *const ::core::ffi::c_char =
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut star: *const ::core::ffi::c_char = b"*\0" as *const u8 as *const ::core::ffi::c_char;
+    let mut suffix: *const ::core::ffi::c_char = c"".as_ptr();
+    let mut star: *const ::core::ffi::c_char = c"*".as_ptr();
 
     let mut C: ::core::ffi::c_int = 0;
     let mut N: ::core::ffi::c_int = 0;
@@ -57,14 +57,14 @@ unsafe fn cmd_find_window_exec(
     N = args_has(args, 'N' as i32 as u_char);
     T = args_has(args, 'T' as i32 as u_char);
     if args_has(args, 'r' as i32 as u_char) != 0 {
-        star = b"\0" as *const u8 as *const ::core::ffi::c_char;
+        star = c"".as_ptr();
     }
     if args_has(args, 'r' as i32 as u_char) != 0 && args_has(args, 'i' as i32 as u_char) != 0 {
-        suffix = b"/ri\0" as *const u8 as *const ::core::ffi::c_char;
+        suffix = c"/ri".as_ptr();
     } else if args_has(args, 'r' as i32 as u_char) != 0 {
-        suffix = b"/r\0" as *const u8 as *const ::core::ffi::c_char;
+        suffix = c"/r".as_ptr();
     } else if args_has(args, 'i' as i32 as u_char) != 0 {
-        suffix = b"/i\0" as *const u8 as *const ::core::ffi::c_char;
+        suffix = c"/i".as_ptr();
     }
     if C == 0 && N == 0 && T == 0 {
         T = 1 as ::core::ffi::c_int;

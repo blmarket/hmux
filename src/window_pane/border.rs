@@ -101,8 +101,7 @@ pub(super) unsafe fn make_status(
         session.current_winlink(),
         Some(pane),
     );
-    let value = pane
-        .with_options_mut(|options| options_get_string(options, c"pane-border-format".as_ptr()));
+    let value = pane.with_options_mut(|options| options_get_string(options, c"pane-border-format"));
     let expanded = format_expand_time_cstring(&mut *context, value.as_ptr());
     let mut cell = pane.border_style(client);
     let lines = pane.pane_lines();

@@ -92,20 +92,13 @@ const colour_theme_table: [C2RustUnnamed_36; 10] = [
         terminal_colour: 5 as ::core::ffi::c_int,
     },
 ];
-pub unsafe fn colour_theme_option(
-    mut n: u_int,
-    mut theme: client_theme,
-) -> *const ::core::ffi::c_char {
-    if n as usize
-        >= (::core::mem::size_of::<[C2RustUnnamed_36; 10]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_36>() as usize)
-    {
-        return ::core::ptr::null::<::core::ffi::c_char>();
-    }
-    if theme as ::core::ffi::c_uint == THEME_LIGHT as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return colour_theme_table[n as usize].light_option.as_ptr();
-    }
-    colour_theme_table[n as usize].dark_option.as_ptr()
+pub fn colour_theme_option(n: u_int, theme: client_theme) -> Option<&'static std::ffi::CStr> {
+    let entry = colour_theme_table.get(n as usize)?;
+    Some(if theme == THEME_LIGHT {
+        entry.light_option
+    } else {
+        entry.dark_option
+    })
 }
 pub unsafe fn colour_theme_terminal_colour(mut n: u_int) -> ::core::ffi::c_int {
     if n as usize
@@ -558,7 +551,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         }
         n = sscanf(
             s.offset(1 as ::core::ffi::c_int as isize),
-            b"%2hhx%2hhx%2hhx\0" as *const u8 as *const ::core::ffi::c_char,
+            c"%2hhx%2hhx%2hhx".as_ptr(),
             &raw mut r,
             &raw mut g,
             &raw mut b,
@@ -570,7 +563,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     }
     if strncasecmp(
         s,
-        b"colour\0" as *const u8 as *const ::core::ffi::c_char,
+        c"colour".as_ptr(),
         (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as size_t).wrapping_sub(1 as size_t),
     ) == 0 as ::core::ffi::c_int
     {
@@ -588,7 +581,7 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     }
     if strncasecmp(
         s,
-        b"color\0" as *const u8 as *const ::core::ffi::c_char,
+        c"color".as_ptr(),
         (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t).wrapping_sub(1 as size_t),
     ) == 0 as ::core::ffi::c_int
     {
@@ -604,14 +597,10 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         }
         return n | COLOUR_FLAG_256;
     }
-    if strcasecmp(s, b"default\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    if strcasecmp(s, c"default".as_ptr()) == 0 as ::core::ffi::c_int {
         return 8 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"terminal\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
+    if strcasecmp(s, c"terminal".as_ptr()) == 0 as ::core::ffi::c_int {
         return 9 as ::core::ffi::c_int;
     }
     i = 0 as u_int;
@@ -624,112 +613,83 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         }
         i = i.wrapping_add(1);
     }
-    if strcasecmp(s, b"black\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"0\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"black".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"0".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 0 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"red\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"1\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"red".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"1".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 1 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"green\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"2\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"green".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"2".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 2 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"yellow\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"3\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"yellow".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"3".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 3 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"blue\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"4\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"blue".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"4".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 4 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"magenta\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"5\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"magenta".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"5".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 5 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"cyan\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"6\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"cyan".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"6".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 6 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"white\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"7\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"white".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"7".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 7 as ::core::ffi::c_int;
     }
-    if strcasecmp(
-        s,
-        b"brightblack\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"90\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightblack".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"90".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 90 as ::core::ffi::c_int;
     }
-    if strcasecmp(s, b"brightred\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcmp(s, b"91\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightred".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"91".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 91 as ::core::ffi::c_int;
     }
-    if strcasecmp(
-        s,
-        b"brightgreen\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"92\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightgreen".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"92".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 92 as ::core::ffi::c_int;
     }
-    if strcasecmp(
-        s,
-        b"brightyellow\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"93\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightyellow".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"93".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 93 as ::core::ffi::c_int;
     }
-    if strcasecmp(
-        s,
-        b"brightblue\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"94\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightblue".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"94".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 94 as ::core::ffi::c_int;
     }
-    if strcasecmp(
-        s,
-        b"brightmagenta\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"95\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightmagenta".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"95".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 95 as ::core::ffi::c_int;
     }
-    if strcasecmp(
-        s,
-        b"brightcyan\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"96\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightcyan".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"96".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 96 as ::core::ffi::c_int;
     }
-    if strcasecmp(
-        s,
-        b"brightwhite\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-        || strcmp(s, b"97\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
+    if strcasecmp(s, c"brightwhite".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(s, c"97".as_ptr()) == 0 as ::core::ffi::c_int
     {
         return 97 as ::core::ffi::c_int;
     }
@@ -3576,16 +3536,8 @@ unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     let mut c: ::core::ffi::c_int = 0;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if strncasecmp(
-        name,
-        b"grey\0" as *const u8 as *const ::core::ffi::c_char,
-        4 as size_t,
-    ) == 0 as ::core::ffi::c_int
-        || strncasecmp(
-            name,
-            b"gray\0" as *const u8 as *const ::core::ffi::c_char,
-            4 as size_t,
-        ) == 0 as ::core::ffi::c_int
+    if strncasecmp(name, c"grey".as_ptr(), 4 as size_t) == 0 as ::core::ffi::c_int
+        || strncasecmp(name, c"gray".as_ptr(), 4 as size_t) == 0 as ::core::ffi::c_int
     {
         if *name.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32 {
             return 0xbebebe as ::core::ffi::c_int | COLOUR_FLAG_RGB;
@@ -3631,7 +3583,7 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     if len == 12 as size_t
         && sscanf(
             p,
-            b"rgb:%02x/%02x/%02x\0" as *const u8 as *const ::core::ffi::c_char,
+            c"rgb:%02x/%02x/%02x".as_ptr(),
             &raw mut r,
             &raw mut g,
             &raw mut b,
@@ -3639,24 +3591,19 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         || len == 7 as size_t
             && sscanf(
                 p,
-                b"#%02x%02x%02x\0" as *const u8 as *const ::core::ffi::c_char,
+                c"#%02x%02x%02x".as_ptr(),
                 &raw mut r,
                 &raw mut g,
                 &raw mut b,
             ) == 3 as ::core::ffi::c_int
-        || sscanf(
-            p,
-            b"%d,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut r,
-            &raw mut g,
-            &raw mut b,
-        ) == 3 as ::core::ffi::c_int
+        || sscanf(p, c"%d,%d,%d".as_ptr(), &raw mut r, &raw mut g, &raw mut b)
+            == 3 as ::core::ffi::c_int
     {
         colour = colour_join_rgb(r as u_char, g as u_char, b as u_char);
     } else if len == 18 as size_t
         && sscanf(
             p,
-            b"rgb:%04x/%04x/%04x\0" as *const u8 as *const ::core::ffi::c_char,
+            c"rgb:%04x/%04x/%04x".as_ptr(),
             &raw mut r,
             &raw mut g,
             &raw mut b,
@@ -3664,7 +3611,7 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         || len == 13 as size_t
             && sscanf(
                 p,
-                b"#%04x%04x%04x\0" as *const u8 as *const ::core::ffi::c_char,
+                c"#%04x%04x%04x".as_ptr(),
                 &raw mut r,
                 &raw mut g,
                 &raw mut b,
@@ -3677,7 +3624,7 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         );
     } else if (sscanf(
         p,
-        b"cmyk:%lf/%lf/%lf/%lf\0" as *const u8 as *const ::core::ffi::c_char,
+        c"cmyk:%lf/%lf/%lf/%lf".as_ptr(),
         &raw mut c,
         &raw mut m,
         &raw mut y,
@@ -3685,7 +3632,7 @@ unsafe fn colour_parseX11_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     ) == 4 as ::core::ffi::c_int
         || sscanf(
             p,
-            b"cmy:%lf/%lf/%lf\0" as *const u8 as *const ::core::ffi::c_char,
+            c"cmy:%lf/%lf/%lf".as_ptr(),
             &raw mut c,
             &raw mut m,
             &raw mut y,

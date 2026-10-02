@@ -43,8 +43,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::window::{window, winlink};
 
-pub const _PATH_DEV: [::core::ffi::c_char; 6] =
-    unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/dev/\0") };
+pub const _PATH_DEV: &std::ffi::CStr = c"/dev/";
 const cmd_find_window_table: &[(&CStr, &CStr)] = &[
     (c"{start}", c"^"),
     (c"{last}", c"!"),
@@ -419,9 +418,7 @@ unsafe fn cmd_find_get_window_with_session(
         }
     }
     if exact == 0 {
-        if strcmp(window, b"!\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        if strcmp(window, c"!".as_ptr()) == 0 as ::core::ffi::c_int {
             let session = (*fs).session_handle().expect("window target session");
             (*fs).set_wl(crate::src::session::Session::last_winlink(&session));
             if !(*fs).winlink_handle().is_alive() {
@@ -430,9 +427,7 @@ unsafe fn cmd_find_get_window_with_session(
             (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
             (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
             return 0 as ::core::ffi::c_int;
-        } else if strcmp(window, b"^\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(window, c"^".as_ptr()) == 0 as ::core::ffi::c_int {
             (*fs).set_wl(
                 ((*fs)
                     .session_handle()
@@ -446,9 +441,7 @@ unsafe fn cmd_find_get_window_with_session(
             (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
             (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
             return 0 as ::core::ffi::c_int;
-        } else if strcmp(window, b"$\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(window, c"$".as_ptr()) == 0 as ::core::ffi::c_int {
             (*fs).set_wl(
                 ((*fs)
                     .session_handle()
@@ -679,7 +672,7 @@ unsafe fn cmd_find_get_pane_with_window(
         }
         return 0 as ::core::ffi::c_int;
     }
-    if strcmp(pane, b"!\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int {
+    if strcmp(pane, c"!".as_ptr()) == 0 as ::core::ffi::c_int {
         let window = (*fs).window_handle().expect("target window");
         (*fs).wp = window
             .last_active_pane()
@@ -690,11 +683,7 @@ unsafe fn cmd_find_get_pane_with_window(
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
-    } else if strcmp(
-        pane,
-        b"{up-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    } else if strcmp(pane, c"{up-of}".as_ptr()) == 0 as ::core::ffi::c_int {
         let window_owner = (*fs).w.upgrade().expect("target window");
         let active = window_owner.active_pane();
         let selected = active.as_ref().and_then(|pane| pane.neighbor_up());
@@ -705,11 +694,7 @@ unsafe fn cmd_find_get_pane_with_window(
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
-    } else if strcmp(
-        pane,
-        b"{down-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    } else if strcmp(pane, c"{down-of}".as_ptr()) == 0 as ::core::ffi::c_int {
         let window_owner = (*fs).w.upgrade().expect("target window");
         let active = window_owner.active_pane();
         let selected = active.as_ref().and_then(|pane| pane.neighbor_down());
@@ -720,11 +705,7 @@ unsafe fn cmd_find_get_pane_with_window(
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
-    } else if strcmp(
-        pane,
-        b"{left-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    } else if strcmp(pane, c"{left-of}".as_ptr()) == 0 as ::core::ffi::c_int {
         let window_owner = (*fs).w.upgrade().expect("target window");
         let active = window_owner.active_pane();
         let selected = active.as_ref().and_then(|pane| pane.neighbor_left());
@@ -735,11 +716,7 @@ unsafe fn cmd_find_get_pane_with_window(
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
-    } else if strcmp(
-        pane,
-        b"{right-of}\0" as *const u8 as *const ::core::ffi::c_char,
-    ) == 0 as ::core::ffi::c_int
-    {
+    } else if strcmp(pane, c"{right-of}".as_ptr()) == 0 as ::core::ffi::c_int {
         let window_owner = (*fs).w.upgrade().expect("target window");
         let active = window_owner.active_pane();
         let selected = active.as_ref().and_then(|pane| pane.neighbor_right());
@@ -929,10 +906,7 @@ pub unsafe fn cmd_find_from_session(
     );
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
     (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(
-        b"cmd_find_from_session\0" as *const u8 as *const ::core::ffi::c_char,
-        fs,
-    );
+    cmd_find_log_state(c"cmd_find_from_session".as_ptr(), fs);
 }
 pub unsafe fn cmd_find_from_winlink(
     mut fs: *mut cmd_find_state,
@@ -947,10 +921,7 @@ pub unsafe fn cmd_find_from_winlink(
         (((wl.get_unchecked().window_handle().as_ref()).expect("live window")).active_pane())
             .as_ref(),
     );
-    cmd_find_log_state(
-        b"cmd_find_from_winlink\0" as *const u8 as *const ::core::ffi::c_char,
-        fs,
-    );
+    cmd_find_log_state(c"cmd_find_from_winlink".as_ptr(), fs);
 }
 pub unsafe fn cmd_find_from_session_window(
     mut fs: *mut cmd_find_state,
@@ -966,10 +937,7 @@ pub unsafe fn cmd_find_from_session_window(
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(
-        b"cmd_find_from_session_window\0" as *const u8 as *const ::core::ffi::c_char,
-        fs,
-    );
+    cmd_find_log_state(c"cmd_find_from_session_window".as_ptr(), fs);
     0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_window(
@@ -988,10 +956,7 @@ pub unsafe fn cmd_find_from_window(
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(
-        b"cmd_find_from_window\0" as *const u8 as *const ::core::ffi::c_char,
-        fs,
-    );
+    cmd_find_log_state(c"cmd_find_from_window".as_ptr(), fs);
     0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_winlink_pane(
@@ -1006,10 +971,7 @@ pub unsafe fn cmd_find_from_winlink_pane(
     (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
     (*fs).set_wp(Some(wp_owner));
-    cmd_find_log_state(
-        b"cmd_find_from_winlink_pane\0" as *const u8 as *const ::core::ffi::c_char,
-        fs,
-    );
+    cmd_find_log_state(c"cmd_find_from_winlink_pane".as_ptr(), fs);
 }
 pub unsafe fn cmd_find_from_pane(
     fs: *mut cmd_find_state,
@@ -1049,10 +1011,7 @@ pub unsafe fn cmd_find_from_nothing(
     (*fs).idx = ((*fs).winlink_handle()).get_unchecked().idx;
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
     (*fs).set_wp(((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref());
-    cmd_find_log_state(
-        b"cmd_find_from_nothing\0" as *const u8 as *const ::core::ffi::c_char,
-        fs,
-    );
+    cmd_find_log_state(c"cmd_find_from_nothing".as_ptr(), fs);
     0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_mouse(
@@ -1078,10 +1037,7 @@ pub unsafe fn cmd_find_from_mouse(
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-    cmd_find_log_state(
-        b"cmd_find_from_mouse\0" as *const u8 as *const ::core::ffi::c_char,
-        fs,
-    );
+    cmd_find_log_state(c"cmd_find_from_mouse".as_ptr(), fs);
     0 as ::core::ffi::c_int
 }
 pub unsafe fn cmd_find_from_client(
@@ -1144,10 +1100,7 @@ pub unsafe fn cmd_find_from_client(
             .clone(),
         );
         (*fs).set_w(((*fs).winlink_handle()).get_unchecked().window_handle());
-        cmd_find_log_state(
-            b"cmd_find_from_client\0" as *const u8 as *const ::core::ffi::c_char,
-            fs,
-        );
+        cmd_find_log_state(c"cmd_find_from_client".as_ptr(), fs);
         return 0 as ::core::ffi::c_int;
     }
     cmd_find_clear_state(fs, flags);
@@ -1167,10 +1120,7 @@ pub unsafe fn cmd_find_from_client(
             (*fs).set_wp(
                 ((((*fs).window_handle().as_ref()).expect("live window")).active_pane()).as_ref(),
             );
-            cmd_find_log_state(
-                b"cmd_find_from_client\0" as *const u8 as *const ::core::ffi::c_char,
-                fs,
-            );
+            cmd_find_log_state(c"cmd_find_from_client".as_ptr(), fs);
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -1213,65 +1163,65 @@ pub unsafe fn cmd_find_target(
         flags |= CMD_FIND_QUIET;
     }
     if type_0 as ::core::ffi::c_uint == CMD_FIND_PANE as ::core::ffi::c_int as ::core::ffi::c_uint {
-        s = b"pane\0" as *const u8 as *const ::core::ffi::c_char;
+        s = c"pane".as_ptr();
     } else if type_0 as ::core::ffi::c_uint
         == CMD_FIND_WINDOW as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        s = b"window\0" as *const u8 as *const ::core::ffi::c_char;
+        s = c"window".as_ptr();
     } else if type_0 as ::core::ffi::c_uint
         == CMD_FIND_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        s = b"session\0" as *const u8 as *const ::core::ffi::c_char;
+        s = c"session".as_ptr();
     } else {
-        s = b"unknown\0" as *const u8 as *const ::core::ffi::c_char;
+        s = c"unknown".as_ptr();
     }
     *(&raw mut tmp as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     if flags & CMD_FIND_PREFER_UNATTACHED != 0 {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"PREFER_UNATTACHED,\0" as *const u8 as *const ::core::ffi::c_char,
+            c"PREFER_UNATTACHED,".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
     if flags & CMD_FIND_QUIET != 0 {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"QUIET,\0" as *const u8 as *const ::core::ffi::c_char,
+            c"QUIET,".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
     if flags & CMD_FIND_WINDOW_INDEX != 0 {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"WINDOW_INDEX,\0" as *const u8 as *const ::core::ffi::c_char,
+            c"WINDOW_INDEX,".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
     if flags & CMD_FIND_DEFAULT_MARKED != 0 {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"DEFAULT_MARKED,\0" as *const u8 as *const ::core::ffi::c_char,
+            c"DEFAULT_MARKED,".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
     if flags & CMD_FIND_EXACT_SESSION != 0 {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"EXACT_SESSION,\0" as *const u8 as *const ::core::ffi::c_char,
+            c"EXACT_SESSION,".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
     if flags & CMD_FIND_EXACT_WINDOW != 0 {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"EXACT_WINDOW,\0" as *const u8 as *const ::core::ffi::c_char,
+            c"EXACT_WINDOW,".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
     if flags & CMD_FIND_CANFAIL != 0 {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"CANFAIL,\0" as *const u8 as *const ::core::ffi::c_char,
+            c"CANFAIL,".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
@@ -1281,7 +1231,7 @@ pub unsafe fn cmd_find_target(
     } else {
         strlcat(
             &raw mut tmp as *mut ::core::ffi::c_char,
-            b"NONE\0" as *const u8 as *const ::core::ffi::c_char,
+            c"NONE".as_ptr(),
             ::core::mem::size_of::<[::core::ffi::c_char; 256]>() as size_t,
         );
     }
@@ -1290,7 +1240,7 @@ pub unsafe fn cmd_find_target(
         "cmd_find_target",
         log_cstr(
             (if target.is_null() {
-                b"none\0" as *const u8 as *const ::core::ffi::c_char
+                c"none".as_ptr()
             } else {
                 target
             }) as *const _
@@ -1338,16 +1288,9 @@ pub unsafe fn cmd_find_target(
         }
         if target.is_null() || *target as ::core::ffi::c_int == '\0' as i32 {
             current_block = 6284300254771030961;
-        } else if strcmp(target, b"@\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(
-                target,
-                b"{active}\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                target,
-                b"{current}\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(target, c"@".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(target, c"{active}".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(target, c"{current}".as_ptr()) == 0 as ::core::ffi::c_int
         {
             c = queue_client_ptr;
             if c.is_none()
@@ -1398,12 +1341,8 @@ pub unsafe fn cmd_find_target(
                 );
                 current_block = 15319680530019787978;
             }
-        } else if strcmp(target, b"=\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(
-                target,
-                b"{mouse}\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(target, c"=".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(target, c"{mouse}".as_ptr()) == 0 as ::core::ffi::c_int
         {
             m = &raw mut queue_event.m;
             let mut current_block_56: u64;
@@ -1466,12 +1405,8 @@ pub unsafe fn cmd_find_target(
             } else {
                 current_block = 15319680530019787978;
             }
-        } else if strcmp(target, b"~\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcmp(
-                target,
-                b"{marked}\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(target, c"~".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(target, c"{marked}".as_ptr()) == 0 as ::core::ffi::c_int
         {
             if server_check_marked() == 0 {
                 if !flags & CMD_FIND_QUIET != 0 {
@@ -1570,46 +1505,40 @@ pub unsafe fn cmd_find_target(
                     log_cstr((target) as *const _),
                     log_cstr(
                         (if session.is_null() {
-                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                            c"".as_ptr()
                         } else {
-                            b"session \0" as *const u8 as *const ::core::ffi::c_char
+                            c"session ".as_ptr()
                         }) as *const _
                     ),
                     log_cstr(
                         (if session.is_null() {
-                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                            c"".as_ptr()
                         } else {
                             session
                         }) as *const _
                     ),
                     log_cstr(
                         (if window.is_null() {
-                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                            c"".as_ptr()
                         } else {
-                            b"window \0" as *const u8 as *const ::core::ffi::c_char
+                            c"window ".as_ptr()
                         }) as *const _
                     ),
                     log_cstr(
                         (if window.is_null() {
-                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                            c"".as_ptr()
                         } else {
                             window
                         }) as *const _
                     ),
                     log_cstr(
                         (if pane.is_null() {
-                            b"\0" as *const u8 as *const ::core::ffi::c_char
+                            c"".as_ptr()
                         } else {
-                            b"pane \0" as *const u8 as *const ::core::ffi::c_char
+                            c"pane ".as_ptr()
                         }) as *const _
                     ),
-                    log_cstr(
-                        (if pane.is_null() {
-                            b"\0" as *const u8 as *const ::core::ffi::c_char
-                        } else {
-                            pane
-                        }) as *const _
-                    )
+                    log_cstr((if pane.is_null() { c"".as_ptr() } else { pane }) as *const _)
                 ));
             }
             if !pane.is_null() && flags & CMD_FIND_WINDOW_INDEX != 0 {
@@ -1754,10 +1683,7 @@ pub unsafe fn cmd_find_target(
                         (*fs).idx = -(1 as ::core::ffi::c_int);
                     }
                 }
-                cmd_find_log_state(
-                    b"cmd_find_target\0" as *const u8 as *const ::core::ffi::c_char,
-                    fs,
-                );
+                cmd_find_log_state(c"cmd_find_target".as_ptr(), fs);
                 drop(copy_owned);
                 return 0 as ::core::ffi::c_int;
             }

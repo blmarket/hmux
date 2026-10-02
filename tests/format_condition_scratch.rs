@@ -27,8 +27,8 @@ fn conditionals_expand_true_false_fallback_and_nested_branches() {
 
         let mut tree_owner = format_create(None, None, 0, 0);
         let tree = &raw mut *tree_owner;
-        format_add(tree, c"yes".as_ptr(), |out| write_cstr(out, c"1".as_ptr()));
-        format_add(tree, c"no".as_ptr(), |out| write_cstr(out, c"0".as_ptr()));
+        format_add(tree, c"yes", |out| write_cstr(out, c"1".as_ptr()));
+        format_add(tree, c"no", |out| write_cstr(out, c"0".as_ptr()));
 
         for (expression, expected) in [
             (

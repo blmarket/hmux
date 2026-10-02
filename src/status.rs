@@ -583,39 +583,24 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let (message, ignore_styles) = c_owner.status_message_text();
     if ignore_styles {
         let msg = status_message_escape(message.as_deref().unwrap_or(c""));
-        format_add(
-            ft,
-            b"message\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, msg.as_ptr()),
-        );
+        format_add(ft, c"message", |out| write_cstr(out, msg.as_ptr()));
     } else {
-        format_add(
-            ft,
-            b"message\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| {
-                write_cstr(
-                    out,
-                    (message)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
-            },
-        );
+        format_add(ft, c"message", |out| {
+            write_cstr(
+                out,
+                (message)
+                    .as_ref()
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
+            )
+        });
     }
-    format_add(
-        ft,
-        b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { 0 as ::core::ffi::c_int }),
-    );
+    format_add(ft, c"command_prompt", |out| {
+        write!(out, "{}", { 0 as ::core::ffi::c_int })
+    });
     msgfmt_session_value = Some(
         s.as_ref()
             .expect("live session")
-            .with_options_mut(|options| {
-                options_get_string(
-                    options,
-                    b"message-format\0" as *const u8 as *const ::core::ffi::c_char,
-                )
-            }),
+            .with_options_mut(|options| options_get_string(options, c"message-format")),
     );
     msgfmt = msgfmt_session_value
         .as_ref()

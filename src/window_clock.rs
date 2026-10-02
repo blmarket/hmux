@@ -804,27 +804,27 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             strftime(
                 &raw mut tim as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                b"%l:%M:%S \0" as *const u8 as *const ::core::ffi::c_char,
+                c"%l:%M:%S ".as_ptr(),
                 localtime(&raw mut t),
             );
         } else {
             strftime(
                 &raw mut tim as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                b"%l:%M \0" as *const u8 as *const ::core::ffi::c_char,
+                c"%l:%M ".as_ptr(),
                 localtime(&raw mut t),
             );
         }
         if (*tm).tm_hour >= 12 as ::core::ffi::c_int {
             strlcat(
                 &raw mut tim as *mut ::core::ffi::c_char,
-                b"PM\0" as *const u8 as *const ::core::ffi::c_char,
+                c"PM".as_ptr(),
                 ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
             );
         } else {
             strlcat(
                 &raw mut tim as *mut ::core::ffi::c_char,
-                b"AM\0" as *const u8 as *const ::core::ffi::c_char,
+                c"AM".as_ptr(),
                 ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
             );
         }
@@ -832,14 +832,14 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         strftime(
             &raw mut tim as *mut ::core::ffi::c_char,
             ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            b"%H:%M:%S\0" as *const u8 as *const ::core::ffi::c_char,
+            c"%H:%M:%S".as_ptr(),
             tm,
         );
     } else {
         strftime(
             &raw mut tim as *mut ::core::ffi::c_char,
             ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            b"%H:%M\0" as *const u8 as *const ::core::ffi::c_char,
+            c"%H:%M".as_ptr(),
             tm,
         );
     }

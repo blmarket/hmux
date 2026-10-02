@@ -131,7 +131,7 @@ pub unsafe fn load_cfg(
     let state;
 
     log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
-    f = fopen(path, b"rb\0" as *const u8 as *const ::core::ffi::c_char) as *mut FILE;
+    f = fopen(path, c"rb".as_ptr()) as *mut FILE;
     if f.is_null() {
         if *__errno_location() == ENOENT && flags & CMD_PARSE_QUIET != 0 {
             return 0 as ::core::ffi::c_int;
@@ -390,9 +390,7 @@ mod tests {
                 write_cstr(out, c"first".as_ptr())?;
                 write!(out, ":{}", (7u32) as u32)
             });
-            cfg_add_cause(|out| {
-                write_cstr(out, b"second\xff\0".as_ptr().cast::<::core::ffi::c_char>())
-            });
+            cfg_add_cause(|out| write_cstr(out, c"second\xff".as_ptr()));
         }
 
         let mut actual = Vec::new();

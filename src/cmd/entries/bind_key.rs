@@ -78,9 +78,9 @@ unsafe fn cmd_bind_key_exec(
         tablename = args_get(&*(args), 'T' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
     } else if args_has(args, 'n' as i32 as u_char) != 0 {
-        tablename = b"root\0" as *const u8 as *const ::core::ffi::c_char;
+        tablename = c"root".as_ptr();
     } else {
-        tablename = b"prefix\0" as *const u8 as *const ::core::ffi::c_char;
+        tablename = c"prefix".as_ptr();
     }
     repeat = args_has(args, 'r' as i32 as u_char);
     if count == 1 as u_int {

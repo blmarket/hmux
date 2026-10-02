@@ -303,8 +303,7 @@ pub unsafe fn tty_feature_present(
 ) -> ::core::ffi::c_int {
     let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     let mut i: u_int = 0;
-    if strcmp(name, b"utf8\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-    {
+    if strcmp(name, c"utf8".as_ptr()) == 0 as ::core::ffi::c_int {
         return utf8 as ::core::ffi::c_int;
     }
     i = 0 as u_int;
@@ -319,12 +318,7 @@ pub unsafe fn tty_feature_present(
             i = i.wrapping_add(1);
         }
     }
-    if tf.is_null()
-        || strcmp(
-            name,
-            b"ignorefkeys\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-    {
+    if tf.is_null() || strcmp(name, c"ignorefkeys".as_ptr()) == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
     if (*tf).flags != 0 as ::core::ffi::c_int && (*term).flags & (*tf).flags != (*tf).flags {
@@ -508,11 +502,7 @@ pub unsafe fn tty_default_features(owner: &ClientRef, mut name: *const ::core::f
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
         if !(strcmp(table[i as usize].name.as_ptr(), name) != 0 as ::core::ffi::c_int) {
-            tty_parse_client_features(
-                owner,
-                table[i as usize].features.as_ptr(),
-                b",\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            tty_parse_client_features(owner, table[i as usize].features.as_ptr(), c",".as_ptr());
         }
         i = i.wrapping_add(1);
     }

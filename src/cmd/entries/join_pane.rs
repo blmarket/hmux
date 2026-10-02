@@ -128,142 +128,68 @@ unsafe fn cmd_join_pane_place(
         {
             border = 0 as ::core::ffi::c_int;
         }
-        if strcmp(
-            position,
-            b"top-left\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        if strcmp(position, c"top-left".as_ptr()) == 0 as ::core::ffi::c_int {
             xoff = border;
             yoff = border;
-        } else if strcmp(
-            position,
-            b"top-centre\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"top-center\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"top-centre".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"top-center".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = (wx - px) / 2 as ::core::ffi::c_int;
             yoff = border;
-        } else if strcmp(
-            position,
-            b"top-right\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"top-right".as_ptr()) == 0 as ::core::ffi::c_int {
             xoff = wx - px - border;
             yoff = border;
-        } else if strcmp(
-            position,
-            b"centre-left\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"center-left\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"centre-left".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"center-left".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = border;
             yoff = (wy - py) / 2 as ::core::ffi::c_int;
-        } else if strcmp(
-            position,
-            b"centre\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"center\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"centre".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"center".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = (wx - px) / 2 as ::core::ffi::c_int;
             yoff = (wy - py) / 2 as ::core::ffi::c_int;
-        } else if strcmp(
-            position,
-            b"centre-right\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"center-right\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"centre-right".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"center-right".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = wx - px - border;
             yoff = (wy - py) / 2 as ::core::ffi::c_int;
-        } else if strcmp(
-            position,
-            b"bottom-left\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"bottom-left".as_ptr()) == 0 as ::core::ffi::c_int {
             xoff = border;
             yoff = wy - py - border;
-        } else if strcmp(
-            position,
-            b"bottom-centre\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"bottom-center\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"bottom-centre".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"bottom-center".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = (wx - px) / 2 as ::core::ffi::c_int;
             yoff = wy - py - border;
-        } else if strcmp(
-            position,
-            b"bottom-right\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"bottom-right".as_ptr()) == 0 as ::core::ffi::c_int {
             xoff = wx - px - border;
             yoff = wy - py - border;
-        } else if strcmp(
-            position,
-            b"top-left-centre\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"top-left-center\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"top-left-centre".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"top-left-center".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = wx / 4 as ::core::ffi::c_int - px / 2 as ::core::ffi::c_int;
             yoff = wy / 4 as ::core::ffi::c_int - py / 2 as ::core::ffi::c_int;
-        } else if strcmp(
-            position,
-            b"top-right-centre\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"top-right-center\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"top-right-centre".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"top-right-center".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = 3 as ::core::ffi::c_int * wx / 4 as ::core::ffi::c_int
                 - px / 2 as ::core::ffi::c_int;
             yoff = wy / 4 as ::core::ffi::c_int - py / 2 as ::core::ffi::c_int;
-        } else if strcmp(
-            position,
-            b"bottom-left-centre\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"bottom-left-center\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"bottom-left-centre".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"bottom-left-center".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = wx / 4 as ::core::ffi::c_int - px / 2 as ::core::ffi::c_int;
             yoff = 3 as ::core::ffi::c_int * wy / 4 as ::core::ffi::c_int
                 - py / 2 as ::core::ffi::c_int;
-        } else if strcmp(
-            position,
-            b"bottom-right-centre\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-            || strcmp(
-                position,
-                b"bottom-right-center\0" as *const u8 as *const ::core::ffi::c_char,
-            ) == 0 as ::core::ffi::c_int
+        } else if strcmp(position, c"bottom-right-centre".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcmp(position, c"bottom-right-center".as_ptr()) == 0 as ::core::ffi::c_int
         {
             xoff = 3 as ::core::ffi::c_int * wx / 4 as ::core::ffi::c_int
                 - px / 2 as ::core::ffi::c_int;
             yoff = 3 as ::core::ffi::c_int * wy / 4 as ::core::ffi::c_int
                 - py / 2 as ::core::ffi::c_int;
-        } else if strcmp(
-            position,
-            b"front\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"front".as_ptr()) == 0 as ::core::ffi::c_int {
             assert!(
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
@@ -273,11 +199,7 @@ unsafe fn cmd_join_pane_place(
             window_owner
                 .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                 .push_front(std::rc::Rc::downgrade(wp_owner));
-        } else if strcmp(
-            position,
-            b"back\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"back".as_ptr()) == 0 as ::core::ffi::c_int {
             assert!(
                 window_owner
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
@@ -309,11 +231,7 @@ unsafe fn cmd_join_pane_place(
                     .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
                     .push_back(std::rc::Rc::downgrade(wp_owner));
             }
-        } else if strcmp(
-            position,
-            b"forward\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"forward".as_ptr()) == 0 as ::core::ffi::c_int {
             owp = window_owner.step_pane(
                 crate::src::window::PaneOrder::Stacking,
                 Some(&std::rc::Rc::downgrade(wp_owner)),
@@ -333,11 +251,7 @@ unsafe fn cmd_join_pane_place(
                         std::rc::Rc::downgrade(wp_owner),
                     );
             }
-        } else if strcmp(
-            position,
-            b"backward\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"backward".as_ptr()) == 0 as ::core::ffi::c_int {
             owp = window_owner.step_pane(
                 crate::src::window::PaneOrder::Stacking,
                 Some(&std::rc::Rc::downgrade(wp_owner)),
@@ -357,11 +271,7 @@ unsafe fn cmd_join_pane_place(
                         std::rc::Rc::downgrade(wp_owner),
                     );
             }
-        } else if strcmp(
-            position,
-            b"forward-loop\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"forward-loop".as_ptr()) == 0 as ::core::ffi::c_int {
             owp = window_owner.step_pane(
                 crate::src::window::PaneOrder::Stacking,
                 Some(&std::rc::Rc::downgrade(wp_owner)),
@@ -407,11 +317,7 @@ unsafe fn cmd_join_pane_place(
                         .push_back(std::rc::Rc::downgrade(wp_owner));
                 }
             }
-        } else if strcmp(
-            position,
-            b"backward-loop\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        } else if strcmp(position, c"backward-loop".as_ptr()) == 0 as ::core::ffi::c_int {
             owp = window_owner.step_pane(
                 crate::src::window::PaneOrder::Stacking,
                 Some(&std::rc::Rc::downgrade(wp_owner)),
@@ -465,7 +371,7 @@ unsafe fn cmd_join_pane_place(
         }
         window_owner.invalidate_scene();
         events_fire_window(
-            b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+            c"window-layout-changed".as_ptr(),
             std::rc::Rc::clone(&window_owner),
         );
         server_redraw_window(&window_owner);
@@ -587,7 +493,7 @@ unsafe fn cmd_join_pane_move(
                 argval = args_get(&*(args), flag as u_char)
                     .map_or(std::ptr::null(), |value| value.as_ptr());
                 if argval.is_null() {
-                    argval = b"1\0" as *const u8 as *const ::core::ffi::c_char;
+                    argval = c"1".as_ptr();
                 }
                 adjust = strtonum(
                     argval,
@@ -835,7 +741,7 @@ unsafe fn cmd_join_pane_zindex(
         }
         window_owner.invalidate_scene();
         events_fire_window(
-            b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+            c"window-layout-changed".as_ptr(),
             std::rc::Rc::clone(&window_owner),
         );
         server_redraw_window(&window_owner);
@@ -880,7 +786,7 @@ unsafe fn cmd_join_pane_tile(
     layout_fix_panes(w_owner, None);
     w_owner.invalidate_scene();
     events_fire_window(
-        b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+        c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
     );
     server_redraw_window(w_owner);

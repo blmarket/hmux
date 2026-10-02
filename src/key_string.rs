@@ -5565,11 +5565,7 @@ fn key_string_search_table(input: &CStr) -> key_code {
                 return entry.key;
             }
         }
-        if sscanf(
-            input.as_ptr(),
-            b"User%u\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut user,
-        ) == 1 as ::core::ffi::c_int
+        if sscanf(input.as_ptr(), c"User%u".as_ptr(), &raw mut user) == 1 as ::core::ffi::c_int
             && user <= KEYC_NUSER as u_int
         {
             return (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(user as ::core::ffi::c_ulong)
@@ -5609,7 +5605,7 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
     let parsed = unsafe {
         sscanf(
             key_string_cstr_suffix(input, 2).as_ptr(),
-            b"%x\0" as *const u8 as *const ::core::ffi::c_char,
+            c"%x".as_ptr(),
             &raw mut value,
         )
     };
@@ -5643,20 +5639,10 @@ fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
 /// locale-sensitive libc/table operations require a NUL-terminated view.
 fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
     let bytes = input.to_bytes();
-    if unsafe {
-        strcasecmp(
-            input.as_ptr(),
-            b"None\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-    } {
+    if unsafe { strcasecmp(input.as_ptr(), c"None".as_ptr()) == 0 as ::core::ffi::c_int } {
         return KEYC_NONE as ::core::ffi::c_ulong as key_code;
     }
-    if unsafe {
-        strcasecmp(
-            input.as_ptr(),
-            b"Any\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-    } {
+    if unsafe { strcasecmp(input.as_ptr(), c"Any".as_ptr()) == 0 as ::core::ffi::c_int } {
         return KEYC_ANY as ::core::ffi::c_ulong as key_code;
     }
     if bytes.starts_with(b"0x") {

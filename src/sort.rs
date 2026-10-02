@@ -180,54 +180,32 @@ pub unsafe fn sort_next_order(sort_crit: *mut sort_criteria) {
 }
 pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> sort_order {
     if !order.is_null() {
-        if strcasecmp(
-            order,
-            b"activity\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        if strcasecmp(order, c"activity".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_ACTIVITY;
         }
-        if strcasecmp(
-            order,
-            b"creation\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        if strcasecmp(order, c"creation".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_CREATION;
         }
-        if strcasecmp(order, b"index\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcasecmp(order, b"key\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
+        if strcasecmp(order, c"index".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcasecmp(order, c"key".as_ptr()) == 0 as ::core::ffi::c_int
         {
             return SORT_INDEX;
         }
-        if strcasecmp(
-            order,
-            b"modifier\0" as *const u8 as *const ::core::ffi::c_char,
-        ) == 0 as ::core::ffi::c_int
-        {
+        if strcasecmp(order, c"modifier".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_MODIFIER;
         }
-        if strcasecmp(order, b"name\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-            || strcasecmp(order, b"title\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
+        if strcasecmp(order, c"name".as_ptr()) == 0 as ::core::ffi::c_int
+            || strcasecmp(order, c"title".as_ptr()) == 0 as ::core::ffi::c_int
         {
             return SORT_NAME;
         }
-        if strcasecmp(order, b"order\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        if strcasecmp(order, c"order".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_ORDER;
         }
-        if strcasecmp(order, b"size\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        if strcasecmp(order, c"size".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_SIZE;
         }
-        if strcasecmp(order, b"z\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
+        if strcasecmp(order, c"z".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_Z;
         }
     }
@@ -235,28 +213,28 @@ pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> s
 }
 pub unsafe fn sort_order_to_string(mut order: sort_order) -> *const ::core::ffi::c_char {
     if order as ::core::ffi::c_uint == SORT_ACTIVITY as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"activity\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"activity".as_ptr();
     }
     if order as ::core::ffi::c_uint == SORT_CREATION as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"creation\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"creation".as_ptr();
     }
     if order as ::core::ffi::c_uint == SORT_INDEX as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"index\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"index".as_ptr();
     }
     if order as ::core::ffi::c_uint == SORT_MODIFIER as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"modifier\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"modifier".as_ptr();
     }
     if order as ::core::ffi::c_uint == SORT_NAME as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"name\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"name".as_ptr();
     }
     if order as ::core::ffi::c_uint == SORT_ORDER as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"order\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"order".as_ptr();
     }
     if order as ::core::ffi::c_uint == SORT_SIZE as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"size\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"size".as_ptr();
     }
     if order as ::core::ffi::c_uint == SORT_Z as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return b"z\0" as *const u8 as *const ::core::ffi::c_char;
+        return c"z".as_ptr();
     }
     ::core::ptr::null::<::core::ffi::c_char>()
 }

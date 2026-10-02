@@ -63,18 +63,11 @@ pub(crate) unsafe fn window_render_fill_cell(
         (refbox::Weak::new()).clone(),
         w_owner.active_pane().as_ref(),
     );
-    format_add(
-        ft,
-        b"is_inside\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (inside) as i32),
-    );
-    format_add(
-        ft,
-        b"is_outside\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", { (!inside) as ::core::ffi::c_int }),
-    );
-    let value =
-        w_owner.with_options_mut(|options| options_get_string(options, c"fill-character".as_ptr()));
+    format_add(ft, c"is_inside", |out| write!(out, "{}", (inside) as i32));
+    format_add(ft, c"is_outside", |out| {
+        write!(out, "{}", { (!inside) as ::core::ffi::c_int })
+    });
+    let value = w_owner.with_options_mut(|options| options_get_string(options, c"fill-character"));
     let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft_owner);
     screen_init(&mut s, 1 as u_int, 1 as u_int, 0 as u_int);

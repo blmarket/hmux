@@ -39,14 +39,7 @@ use crate::src::text::utf8::utf8_cstrwidth;
 use crate::src::tmux::global_s_options;
 use std::ffi::{CStr, CString};
 
-pub const LIST_KEYS_TEMPLATE: [::core::ffi::c_char; 250] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 250],
-        [::core::ffi::c_char; 250],
-    >(
-        *b"#{?notes_only,#{key_prefix} #{p|#{key_string_width}:key_string} #{?key_note,#{key_note},#{key_command}},bind-key #{?key_has_repeat,#{?key_repeat,-r,  },} -T #{p|#{key_table_width}:key_table} #{p|#{key_string_width}:#{q|a:key_string}} #{key_command}}\0",
-    )
-};
+pub const LIST_KEYS_TEMPLATE: &std::ffi::CStr = c"#{?notes_only,#{key_prefix} #{p|#{key_string_width}:key_string} #{?key_note,#{key_note},#{key_command}},bind-key #{?key_has_repeat,#{?key_repeat,-r,  },} -T #{p|#{key_table_width}:key_table} #{p|#{key_string_width}:#{q|a:key_string}} #{key_command}}";
 pub static cmd_list_keys_entry: cmd_entry = {
     cmd_entry {
         name: c"list-keys",
@@ -134,75 +127,45 @@ unsafe fn cmd_list_keys_format_add_key_binding(
     prefix: &CStr,
 ) {
     if bd.flags & KEY_BINDING_REPEAT != 0 {
-        format_add(
-            ft,
-            b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
+        format_add(ft, c"key_repeat", |out| out.write_all(b"1"));
     } else {
-        format_add(
-            ft,
-            b"key_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
+        format_add(ft, c"key_repeat", |out| out.write_all(b"0"));
     }
     if bd.note.is_some() {
-        format_add(
-            ft,
-            b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| {
-                write_cstr(
-                    out,
-                    bd.note
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
-            },
-        );
-    } else {
-        format_add(
-            ft,
-            b"key_note\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write_cstr(out, b"\0" as *const u8 as *const ::core::ffi::c_char),
-        );
-    }
-    let key_string = key_string_format(bd.key, false);
-    format_add(
-        ft,
-        b"key_prefix\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
-            write_cstr(
-                out, // format_add copies the bytes synchronously; this pointer cannot escape.
-                prefix.as_ptr(),
-            )
-        },
-    );
-    format_add(
-        ft,
-        b"key_table\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| {
+        format_add(ft, c"key_note", |out| {
             write_cstr(
                 out,
-                bd.tablename
+                bd.note
                     .as_ref()
-                    .map_or(::core::ptr::null(), |s| s.as_ptr()),
+                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
             )
-        },
-    );
-    format_add(
-        ft,
-        b"key_string\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, key_string.as_ptr()),
-    );
+        });
+    } else {
+        format_add(ft, c"key_note", |out| write_cstr(out, c"".as_ptr()));
+    }
+    let key_string = key_string_format(bd.key, false);
+    format_add(ft, c"key_prefix", |out| {
+        write_cstr(
+            out, // format_add copies the bytes synchronously; this pointer cannot escape.
+            prefix.as_ptr(),
+        )
+    });
+    format_add(ft, c"key_table", |out| {
+        write_cstr(
+            out,
+            bd.tablename
+                .as_ref()
+                .map_or(::core::ptr::null(), |s| s.as_ptr()),
+        )
+    });
+    format_add(ft, c"key_string", |out| {
+        write_cstr(out, key_string.as_ptr())
+    });
     let command = cmd_list_print_cstring(
         &bd.cmdlist().borrow(),
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
-    format_add(
-        ft,
-        b"key_command\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, command.as_ptr()),
-    );
+    format_add(ft, c"key_command", |out| write_cstr(out, command.as_ptr()));
 }
 unsafe fn cmd_list_keys_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -308,26 +271,18 @@ unsafe fn cmd_list_keys_exec(
     );
     ft = &raw mut *ft_owner;
     format_defaults(ft, tc.as_ref(), None, (refbox::Weak::new()).clone(), None);
-    format_add(
-        ft,
-        b"notes_only\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (notes_only) as i32),
-    );
-    format_add(
-        ft,
-        b"key_has_repeat\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (key_bindings_has_repeat(&bindings)) as i32),
-    );
-    format_add(
-        ft,
-        b"key_string_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (cmd_list_keys_get_width(&bindings)) as u32),
-    );
-    format_add(
-        ft,
-        b"key_table_width\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write!(out, "{}", (cmd_list_keys_get_table_width(&bindings)) as u32),
-    );
+    format_add(ft, c"notes_only", |out| {
+        write!(out, "{}", (notes_only) as i32)
+    });
+    format_add(ft, c"key_has_repeat", |out| {
+        write!(out, "{}", (key_bindings_has_repeat(&bindings)) as i32)
+    });
+    format_add(ft, c"key_string_width", |out| {
+        write!(out, "{}", (cmd_list_keys_get_width(&bindings)) as u32)
+    });
+    format_add(ft, c"key_table_width", |out| {
+        write!(out, "{}", (cmd_list_keys_get_table_width(&bindings)) as u32)
+    });
     for &bd in &bindings {
         cmd_list_keys_format_add_key_binding(ft, bd, &prefix);
         let line = format_expand_cstring(ft, template);

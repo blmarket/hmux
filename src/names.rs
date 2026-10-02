@@ -75,10 +75,7 @@ unsafe fn format_window_name(owner: &WindowRef) -> CString {
     format_defaults_window(&mut *context, Some(owner));
     format_defaults_pane(&mut *context, &owner.active_pane().expect("active pane"));
     let format = owner.with_options_mut(|options| {
-        crate::src::options::options_get_string_optional(
-            options,
-            c"automatic-rename-format".as_ptr(),
-        )
+        crate::src::options::options_get_string_optional(options, c"automatic-rename-format")
     });
     let name = format_expand_cstring(
         &mut *context,
@@ -97,11 +94,10 @@ pub unsafe fn parse_window_name_cstring(in_0: &CStr) -> CString {
     if *name as ::core::ffi::c_int == '"' as i32 {
         name = name.offset(1);
     }
-    *name.offset(strcspn(name, b"\"\0" as *const u8 as *const ::core::ffi::c_char) as isize) =
-        '\0' as i32 as ::core::ffi::c_char;
+    *name.offset(strcspn(name, c"\"".as_ptr()) as isize) = '\0' as i32 as ::core::ffi::c_char;
     if strncmp(
         name,
-        b"exec \0" as *const u8 as *const ::core::ffi::c_char,
+        c"exec ".as_ptr(),
         (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t).wrapping_sub(1 as size_t),
     ) == 0 as ::core::ffi::c_int
     {

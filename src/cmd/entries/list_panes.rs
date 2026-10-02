@@ -158,16 +158,13 @@ unsafe fn cmd_list_panes_window(
     if template.is_null() {
         match type_0 {
             0 => {
-                template = b"#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}\0"
-                    as *const u8 as *const ::core::ffi::c_char;
+                template = c"#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}".as_ptr();
             }
             1 => {
-                template = b"#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}\0"
-                    as *const u8 as *const ::core::ffi::c_char;
+                template = c"#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}".as_ptr();
             }
             2 => {
-                template = b"#{session_name}:#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}\0"
-                    as *const u8 as *const ::core::ffi::c_char;
+                template = c"#{session_name}:#{window_index}.#{pane_index}: [#{pane_width}x#{pane_height}#{?pane_floating_flag, #{pane_x}#,#{pane_y}#,#{pane_z}}] [history #{history_size}/#{history_limit}, #{history_bytes} bytes] #{pane_id}#{?pane_active, (active),}#{?pane_dead, (dead),}".as_ptr();
             }
             _ => {}
         }
@@ -193,11 +190,7 @@ unsafe fn cmd_list_panes_window(
             0 as ::core::ffi::c_int,
         );
         ft = &raw mut *ft_owner;
-        format_add(
-            ft,
-            b"line\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| write!(out, "{}", { n }),
-        );
+        format_add(ft, c"line", |out| write!(out, "{}", { n }));
         format_defaults(ft, c.as_ref(), Some(s_owner), wl.clone(), Some(pane));
         if !filter.is_null() {
             let expanded = format_expand_cstring(ft, filter);

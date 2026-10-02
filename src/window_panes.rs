@@ -1170,7 +1170,7 @@ unsafe fn window_panes_draw_format(
         .window_observer()
         .upgrade()
         .expect("live display-panes window")
-        .with_options_mut(|options| options_get_string(options, c"display-panes-format".as_ptr()));
+        .with_options_mut(|options| options_get_string(options, c"display-panes-format"));
     if format.as_bytes().is_empty() {
         if let Some(owner) = session_owner {
             drop(owner);
@@ -1333,9 +1333,9 @@ unsafe fn window_panes_draw_number(
         .is_some_and(|active| Rc::ptr_eq(active, wp_owner));
     window.release(c"display-panes active pane");
     if active {
-        name = b"display-panes-active-colour\0" as *const u8 as *const ::core::ffi::c_char;
+        name = c"display-panes-active-colour".as_ptr();
     } else {
-        name = b"display-panes-colour\0" as *const u8 as *const ::core::ffi::c_char;
+        name = c"display-panes-colour".as_ptr();
     }
     let mut ft_owner = format_create_defaults(None, None, s.as_ref(), wl.clone(), Some(wp_owner));
     ft = &raw mut *ft_owner;
@@ -1362,7 +1362,7 @@ unsafe fn window_panes_draw_number(
         .upgrade()
         .expect("live display-panes window")
         .with_options_mut(|options| {
-            !options_get_string(options, c"display-panes-format".as_ptr())
+            !options_get_string(options, c"display-panes-format")
                 .as_bytes()
                 .is_empty()
         })

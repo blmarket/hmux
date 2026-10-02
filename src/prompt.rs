@@ -117,9 +117,9 @@ pub unsafe fn prompt_set_options(pd: &mut prompt_create_data<'_>, session: Optio
     };
     let read_string = |key: &CStr| {
         if let Some(session) = session {
-            session.with_options_mut(|options| options_get_string(options, key.as_ptr()))
+            session.with_options_mut(|options| options_get_string(options, key))
         } else {
-            options_get_string(global_s_options, key.as_ptr())
+            options_get_string(global_s_options, key)
         }
     };
     let read_number = |key: &'static CStr| {
@@ -488,43 +488,21 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     }
     let ft = &raw mut *owner;
     let tmp = utf8_tocstr_cstring(&pr.buffer);
-    format_add(
-        ft,
-        b"prompt_input\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, tmp.as_ptr()),
-    );
-    format_add(
-        ft,
-        b"prompt_flags\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| prompt_write_flags(out, pr.flags),
-    );
-    format_add(
-        ft,
-        b"prompt_type\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| out.write_all(prompt_type_string(pr.type_0).to_bytes()),
-    );
+    format_add(ft, c"prompt_input", |out| write_cstr(out, tmp.as_ptr()));
+    format_add(ft, c"prompt_flags", |out| prompt_write_flags(out, pr.flags));
+    format_add(ft, c"prompt_type", |out| {
+        out.write_all(prompt_type_string(pr.type_0).to_bytes())
+    });
     if pr.flags & PROMPT_COMMANDMODE != 0 {
-        format_add(
-            ft,
-            b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"1"),
-        );
+        format_add(ft, c"command_prompt", |out| out.write_all(b"1"));
     } else {
-        format_add(
-            ft,
-            b"command_prompt\0" as *const u8 as *const ::core::ffi::c_char,
-            |out| out.write_all(b"0"),
-        );
+        format_add(ft, c"command_prompt", |out| out.write_all(b"0"));
     }
     owner
 }
 unsafe fn prompt_expand1(pr: &prompt, mut ft: *mut format_tree) -> CString {
     let prompt = format_expand_time_cstring(ft, pr.string.as_ptr());
-    format_add(
-        ft,
-        b"message\0" as *const u8 as *const ::core::ffi::c_char,
-        |out| write_cstr(out, prompt.as_ptr()),
-    );
+    format_add(ft, c"message", |out| write_cstr(out, prompt.as_ptr()));
     format_expand_time_cstring(ft, pr.message_format.as_ptr())
 }
 unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: *mut format_tree) {
@@ -1639,7 +1617,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
     }
     o = crate::src::options::options_get_only_mut(
         &mut *(global_options),
-        std::ffi::CStr::from_ptr(b"command-alias\0" as *const u8 as *const ::core::ffi::c_char),
+        c"command-alias",
     )
     .map_or(std::ptr::null_mut(), |entry| entry);
     if !o.is_null() {

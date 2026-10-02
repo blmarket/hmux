@@ -900,10 +900,7 @@ unsafe fn redraw_build_cells<'a>(
             > SIZE_MAX.wrapping_div((*bctx).sx as ::core::ffi::c_ulong)
     {
         fatalx(|out| {
-            write_cstr(
-                out,
-                b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
-            )?;
+            write_cstr(out, c"redraw_build_cells".as_ptr())?;
             out.write_all(b": too many cells")
         });
     }
@@ -911,10 +908,7 @@ unsafe fn redraw_build_cells<'a>(
     if ncells > cells.len() {
         if cells.try_reserve_exact(ncells - cells.len()).is_err() {
             fatalx(|out| {
-                write_cstr(
-                    out,
-                    b"redraw_build_cells\0" as *const u8 as *const ::core::ffi::c_char,
-                )?;
+                write_cstr(out, c"redraw_build_cells".as_ptr())?;
                 out.write_all(b": too many cells")
             });
         }

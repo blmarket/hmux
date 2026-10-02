@@ -766,11 +766,7 @@ unsafe fn control_error(
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    cmdq_guard(
-        item_handle,
-        b"begin\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
-    );
+    cmdq_guard(item_handle, c"begin".as_ptr(), 1 as ::core::ffi::c_int);
     control_write(&c.clone().expect("live client"), |out| {
         out.write_all(b"parse error: ")?;
         write_cstr(
@@ -780,11 +776,7 @@ unsafe fn control_error(
                 .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
         )
     });
-    cmdq_guard(
-        item_handle,
-        b"error\0" as *const u8 as *const ::core::ffi::c_char,
-        1 as ::core::ffi::c_int,
-    );
+    cmdq_guard(item_handle, c"error".as_ptr(), 1 as ::core::ffi::c_int);
     CMD_RETURN_NORMAL
 }
 unsafe fn control_error_callback(owner: &ClientRef) {
@@ -1016,7 +1008,7 @@ unsafe fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>
     ));
     evbuffer_add(
         &mut message,
-        b"\n\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
+        c"\n".as_ptr() as *const ::core::ffi::c_void,
         1 as size_t,
     );
     let stream = {

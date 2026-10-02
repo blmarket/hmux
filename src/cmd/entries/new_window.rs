@@ -41,11 +41,7 @@ use crate::src::window::{
 };
 use std::ffi::{CStr, CString};
 
-pub const NEW_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
-    ::core::mem::transmute::<[u8; 46], [::core::ffi::c_char; 46]>(
-        *b"#{session_name}:#{window_index}.#{pane_index}\0",
-    )
-};
+pub const NEW_WINDOW_TEMPLATE: &std::ffi::CStr = c"#{session_name}:#{window_index}.#{pane_index}";
 pub static cmd_new_window_entry: cmd_entry = {
     cmd_entry {
         name: c"new-window",

@@ -51,11 +51,7 @@ use crate::src::window::Window;
 
 use crate::src::window_pane::WindowPane as _;
 
-pub const SPLIT_WINDOW_TEMPLATE: [::core::ffi::c_char; 46] = unsafe {
-    ::core::mem::transmute::<[u8; 46], [::core::ffi::c_char; 46]>(
-        *b"#{session_name}:#{window_index}.#{pane_index}\0",
-    )
-};
+pub const SPLIT_WINDOW_TEMPLATE: &std::ffi::CStr = c"#{session_name}:#{window_index}.#{pane_index}";
 pub static cmd_new_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"new-pane",
@@ -266,10 +262,9 @@ unsafe fn cmd_split_window_exec(
         if value.is_null() {
             lines = original_window.pane_border_lines();
         } else {
-            oe = options_search(b"pane-border-lines\0" as *const u8 as *const ::core::ffi::c_char)
-                .map_or(std::ptr::null(), |entry| {
-                    entry as *const crate::src::shared::options::options_table_entry
-                });
+            oe = options_search(c"pane-border-lines").map_or(std::ptr::null(), |entry| {
+                entry as *const crate::src::shared::options::options_table_entry
+            });
             lines = options_find_choice(oe, value, &raw mut choice_cause) as pane_lines;
             if let Some(cause) = choice_cause.as_ref() {
                 cmdq_error(item_handle, |out| {
@@ -332,12 +327,9 @@ unsafe fn cmd_split_window_exec(
                 .map_or(std::ptr::null(), |value| value.as_ptr());
             if !style.is_null() {
                 if new_pane.with_options_mut(|options| {
-                    options_set_string(
-                        options,
-                        b"window-style\0" as *const u8 as *const ::core::ffi::c_char,
-                        0 as ::core::ffi::c_int,
-                        |out| write_cstr(out, style),
-                    )
+                    options_set_string(options, c"window-style", 0 as ::core::ffi::c_int, |out| {
+                        write_cstr(out, style)
+                    })
                     .is_null()
                 }) {
                     cmdq_error(item_handle, |out| {
@@ -349,7 +341,7 @@ unsafe fn cmd_split_window_exec(
                     new_pane.with_options_mut(|options| {
                         options_set_string(
                             options,
-                            b"window-active-style\0" as *const u8 as *const ::core::ffi::c_char,
+                            c"window-active-style",
                             0 as ::core::ffi::c_int,
                             |out| write_cstr(out, style),
                         )
@@ -370,8 +362,7 @@ unsafe fn cmd_split_window_exec(
                         if new_pane.with_options_mut(|options| {
                             options_set_string(
                                 options,
-                                b"pane-active-border-style\0" as *const u8
-                                    as *const ::core::ffi::c_char,
+                                c"pane-active-border-style",
                                 0 as ::core::ffi::c_int,
                                 |out| write_cstr(out, style),
                             )
@@ -397,8 +388,7 @@ unsafe fn cmd_split_window_exec(
                                 if new_pane.with_options_mut(|options| {
                                     options_set_string(
                                         options,
-                                        b"pane-border-style\0" as *const u8
-                                            as *const ::core::ffi::c_char,
+                                        c"pane-border-style",
                                         0 as ::core::ffi::c_int,
                                         |out| write_cstr(out, style),
                                     )
@@ -422,8 +412,7 @@ unsafe fn cmd_split_window_exec(
                                         new_pane.with_options_mut(|options| {
                                             options_set_number(
                                                 options,
-                                                b"pane-border-lines\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
+                                                c"pane-border-lines",
                                                 lines as ::core::ffi::c_longlong,
                                             )
                                         });
@@ -434,8 +423,7 @@ unsafe fn cmd_split_window_exec(
                                         new_pane.with_options_mut(|options| {
                                             options_set_number(
                                                 options,
-                                                b"remain-on-exit\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
+                                                c"remain-on-exit",
                                                 3 as ::core::ffi::c_longlong,
                                             )
                                         });
@@ -443,8 +431,7 @@ unsafe fn cmd_split_window_exec(
                                             new_pane.with_options_mut(|options| {
                                                 options_set_string(
                                                     options,
-                                                    b"remain-on-exit-format\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
+                                                    c"remain-on-exit-format",
                                                     0 as ::core::ffi::c_int,
                                                     |out| {
                                                         write_cstr(
@@ -479,12 +466,12 @@ unsafe fn cmd_split_window_exec(
                                         event_payload_set_target(&mut ep, &fs);
                                         event_payload_set_pane(
                                             &mut ep,
-                                            b"pane\0" as *const u8 as *const ::core::ffi::c_char,
+                                            c"pane".as_ptr(),
                                             std::rc::Rc::clone(new_pane),
                                         );
                                         event_payload_set_window(
                                             &mut ep,
-                                            b"window\0" as *const u8 as *const ::core::ffi::c_char,
+                                            c"window".as_ptr(),
                                             new_pane
                                                 .window_observer()
                                                 .upgrade()
@@ -492,15 +479,10 @@ unsafe fn cmd_split_window_exec(
                                         );
                                         event_payload_set_string(
                                             &mut ep,
-                                            b"new_title\0" as *const u8
-                                                as *const ::core::ffi::c_char,
+                                            c"new_title".as_ptr(),
                                             |out| write_cstr(out, title.as_ptr()),
                                         );
-                                        events_fire(
-                                            b"pane-title-changed\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            ep,
-                                        );
+                                        events_fire(c"pane-title-changed".as_ptr(), ep);
                                     }
                                     if input != 0 {
                                         match new_pane.start_input(item_handle) {

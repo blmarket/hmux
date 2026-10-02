@@ -215,13 +215,13 @@ unsafe fn cmd_capture_pane_grid(wp: &window_pane) -> Vec<u8> {
             snprintf(
                 &raw mut p as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
-                b"-\0" as *const u8 as *const ::core::ffi::c_char,
+                c"-".as_ptr(),
             );
         } else {
             snprintf(
                 &raw mut p as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 11]>() as size_t,
-                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
+                c"%u".as_ptr(),
                 yy.wrapping_sub(gd.hsize),
             );
         }
@@ -287,7 +287,7 @@ unsafe fn cmd_capture_pane_pending(args: *mut args, wp: &mut window_pane) -> Vec
                 snprintf(
                     &raw mut tmp as *mut ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 5]>() as size_t,
-                    b"\\%03hho\0" as *const u8 as *const ::core::ffi::c_char,
+                    c"\\%03hho".as_ptr(),
                     *line.offset(i as isize) as ::core::ffi::c_int,
                 );
             }
@@ -437,7 +437,7 @@ unsafe fn cmd_capture_pane_history(
                 n = snprintf(
                     &raw mut b as *mut ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    b"%d \0" as *const u8 as *const ::core::ffi::c_char,
+                    c"%d ".as_ptr(),
                     n,
                 );
                 if n >= 0 as ::core::ffi::c_int {
@@ -451,7 +451,7 @@ unsafe fn cmd_capture_pane_history(
                 n = snprintf(
                     &raw mut b as *mut ::core::ffi::c_char,
                     ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    b"%llu \0" as *const u8 as *const ::core::ffi::c_char,
+                    c"%llu ".as_ptr(),
                     grid_line_time(gl) as ::core::ffi::c_ulonglong,
                 );
                 if n >= 0 as ::core::ffi::c_int {

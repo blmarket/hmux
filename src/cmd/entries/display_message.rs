@@ -34,14 +34,7 @@ use crate::src::status::status_message_set;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
-pub const DISPLAY_MESSAGE_TEMPLATE: [::core::ffi::c_char; 96] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 96],
-        [::core::ffi::c_char; 96],
-    >(
-        *b"[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)\0",
-    )
-};
+pub const DISPLAY_MESSAGE_TEMPLATE: &std::ffi::CStr = c"[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)";
 pub static cmd_display_message_entry: cmd_entry = {
     cmd_entry {
         name: c"display-message",
@@ -135,7 +128,7 @@ unsafe fn cmd_display_message_exec(
             .map_or(std::ptr::null(), |value| value.as_ptr());
     }
     if args_has(args, 'j' as i32 as u_char) != 0 && template.is_null() {
-        template = b"\0" as *const u8 as *const ::core::ffi::c_char;
+        template = c"".as_ptr();
     } else if template.is_null() {
         template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
     }

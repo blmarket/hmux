@@ -148,7 +148,7 @@ pub unsafe fn screen_set_default_cursor(s: &mut screen, mut oo: *mut options) {
     style_apply(
         &raw mut gc,
         oo,
-        b"cursor-colour\0" as *const u8 as *const ::core::ffi::c_char,
+        c"cursor-colour".as_ptr(),
         ::core::ptr::null_mut::<format_tree>(),
     );
     s.default_ccolour = gc.fg;
@@ -742,7 +742,7 @@ pub unsafe fn screen_print(
             n = snprintf(
                 buf.add(last),
                 len.wrapping_sub(last),
-                b"%.4d \"\0" as *const u8 as *const ::core::ffi::c_char,
+                c"%.4d \"".as_ptr(),
                 y,
             );
             if n <= 0 as ::core::ffi::c_int || n as u_int as size_t >= len.wrapping_sub(last) {

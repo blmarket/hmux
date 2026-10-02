@@ -53,9 +53,7 @@ use crate::src::tmux::{check_name, clean_name_cstring, global_s_options};
 use crate::src::window::winlinks_minmax;
 use std::ffi::{CStr, CString};
 
-pub const NEW_SESSION_TEMPLATE: [::core::ffi::c_char; 17] = unsafe {
-    ::core::mem::transmute::<[u8; 17], [::core::ffi::c_char; 17]>(*b"#{session_name}:\0")
-};
+pub const NEW_SESSION_TEMPLATE: &std::ffi::CStr = c"#{session_name}:";
 pub static cmd_new_session_entry: cmd_entry = {
     cmd_entry {
         name: c"new-session",
@@ -410,11 +408,7 @@ unsafe fn cmd_new_session_exec(
                                     if args_has(args, 'x' as i32 as u_char) != 0 {
                                         tmp = args_get(&*(args), 'x' as i32 as u_char)
                                             .map_or(std::ptr::null(), |value| value.as_ptr());
-                                        if strcmp(
-                                            tmp,
-                                            b"-\0" as *const u8 as *const ::core::ffi::c_char,
-                                        ) == 0 as ::core::ffi::c_int
-                                        {
+                                        if strcmp(tmp, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
                                             if let Some(c_value) = c.as_ref() {
                                                 dsx = c_value.terminal_size().0;
                                             } else {
@@ -451,11 +445,8 @@ unsafe fn cmd_new_session_exec(
                                                     .map_or(std::ptr::null(), |value| {
                                                         value.as_ptr()
                                                     });
-                                                if strcmp(
-                                                    tmp,
-                                                    b"-\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
-                                                ) == 0 as ::core::ffi::c_int
+                                                if strcmp(tmp, c"-".as_ptr())
+                                                    == 0 as ::core::ffi::c_int
                                                 {
                                                     if let Some(c_value) = c.as_ref() {
                                                         dsy = c_value.terminal_size().1;
@@ -510,14 +501,12 @@ unsafe fn cmd_new_session_exec(
                                                     } else {
                                                         let default_size = options_get_string(
                                                             global_s_options,
-                                                            b"default-size\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
+                                                            c"default-size",
                                                         );
                                                         tmp = default_size.as_ptr();
                                                         if sscanf(
                                                             tmp,
-                                                            b"%ux%u\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
+                                                            c"%ux%u".as_ptr(),
                                                             &raw mut sx,
                                                             &raw mut sy,
                                                         ) != 2 as ::core::ffi::c_int
@@ -559,8 +548,7 @@ unsafe fn cmd_new_session_exec(
                                                             &mut **oo
                                                                 .as_mut()
                                                                 .expect("new session options"),
-                                                            b"default-size\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
+                                                            c"default-size",
                                                             0 as ::core::ffi::c_int,
                                                             |out| {
                                                                 write!(
@@ -627,9 +615,7 @@ unsafe fn cmd_new_session_exec(
                                                         s.clone().expect("live session").destroy(
                                                             (0 as ::core::ffi::c_int) != 0,
                                                             std::ffi::CStr::from_ptr(
-                                                                b"cmd_new_session_exec\0"
-                                                                    as *const u8
-                                                                    as *const ::core::ffi::c_char,
+                                                                c"cmd_new_session_exec".as_ptr(),
                                                             ),
                                                         );
                                                         cmdq_error(item_handle, |out| {
@@ -681,8 +667,7 @@ unsafe fn cmd_new_session_exec(
                                                                 );
                                                         }
                                                         events_fire_session(
-                                                            b"session-created\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
+                                                            c"session-created".as_ptr(),
                                                             s.clone().expect("live session"),
                                                         );
                                                         if detached == 0 {

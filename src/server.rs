@@ -288,11 +288,7 @@ pub(crate) unsafe fn server_start(
         let owner = ClientRef::create(fd);
         c = Some(owner.clone());
     } else {
-        options_set_number(
-            global_options,
-            b"exit-empty\0" as *const u8 as *const ::core::ffi::c_char,
-            0 as ::core::ffi::c_longlong,
-        );
+        options_set_number(global_options, c"exit-empty", 0 as ::core::ffi::c_longlong);
     }
     if lockfd.is_some() {
         if let Some(path) = lockfile.take() {
@@ -304,11 +300,7 @@ pub(crate) unsafe fn server_start(
         if let Some(c_value) = c.as_ref() {
             c_value.exit_with_message(cause, Some(1));
         } else {
-            fprintf(
-                stderr,
-                b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
-                cause.as_ptr(),
-            );
+            fprintf(stderr, c"%s\n".as_ptr(), cause.as_ptr());
             crate::src::proc::proc_free(process_owner);
             server_proc = std::ptr::null_mut();
             crate::src::plugin::shutdown();
@@ -397,9 +389,7 @@ unsafe fn server_send_exit() {
         let name = s.as_ref().expect("live session").name().into_bytes();
         (s_owner.as_ref().expect("registered session")).destroy(
             (1 as ::core::ffi::c_int) != 0,
-            std::ffi::CStr::from_ptr(
-                b"server_send_exit\0" as *const u8 as *const ::core::ffi::c_char,
-            ),
+            std::ffi::CStr::from_ptr(c"server_send_exit".as_ptr()),
         );
         s_owner = sessions.after(&name);
         s = s_owner.clone();
