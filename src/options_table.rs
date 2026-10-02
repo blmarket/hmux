@@ -1,8 +1,8 @@
 use crate::src::shared::abi::*;
 use crate::src::shared::alerts::{ALERT_ANY, ALERT_OTHER, VISUAL_OFF};
 use crate::src::shared::input::INPUT_BUF_DEFAULT_SIZE;
-use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::key::*;
+use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX};
 use crate::src::shared::options::options_name_map;

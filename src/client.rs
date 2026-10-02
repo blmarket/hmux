@@ -48,10 +48,10 @@ use crate::src::tmux::{
     shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
+use hmux_rt::Runtime as _;
 use std::ffi::{CStr, CString, OsStr};
 use std::fs::OpenOptions;
 use std::io;
-use hmux_rt::Runtime as _;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;

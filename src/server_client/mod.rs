@@ -1047,9 +1047,9 @@ unsafe fn server_client_attached_lost(c_owner: &ClientRef) {
                         .get_unchecked()
                         .window_handle()
                         .is_none_or(|current| !std::rc::Rc::ptr_eq(current, &window_owner)))
-                    && found.as_ref().is_none_or(|owner| {
-                        (*loop_0).activity_time > (*owner.get()).activity_time
-                    })
+                    && found
+                        .as_ref()
+                        .is_none_or(|owner| (*loop_0).activity_time > (*owner.get()).activity_time)
                 {
                     found = registry_loop_0_owner.clone();
                 }
@@ -1617,11 +1617,9 @@ unsafe fn server_client_check_mouse(
             && y >= (*m).statusat as u_int
             && y < ((*m).statusat as u_int).wrapping_add((*m).statuslines)
         {
-            if let Some(sr) = status_get_range(
-                client_owner,
-                x,
-                y.wrapping_sub((*m).statusat as u_int),
-            ) {
+            if let Some(sr) =
+                status_get_range(client_owner, x, y.wrapping_sub((*m).statusat as u_int))
+            {
                 match sr.type_0 as ::core::ffi::c_uint {
                     0 => return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code,
                     1 => {
@@ -1894,8 +1892,11 @@ unsafe fn server_client_check_mouse(
                 log_debug(format_args!("click timer started"));
                 let timeout = Duration::from_millis(KEYC_CLICK_TIMEOUT as u64);
                 drop((*c).click_timer.take());
-                (*c).click_timer =
-                    Some(server_client_timer(client_owner, timeout, server_client_click_timer));
+                (*c).click_timer = Some(server_client_timer(
+                    client_owner,
+                    timeout,
+                    server_client_click_timer,
+                ));
             }
         }
         key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
@@ -3160,9 +3161,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                 } else {
                     cx = cx.wrapping_sub(ox);
                     cy = cy.wrapping_sub(oy);
-                    if status_at_line(client_owner)
-                        == 0 as ::core::ffi::c_int
-                    {
+                    if status_at_line(client_owner) == 0 as ::core::ffi::c_int {
                         cy = cy.wrapping_add(status_line_size(client_owner));
                     }
                 }
@@ -3226,9 +3225,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
                             cursor = 0 as ::core::ffi::c_int;
                         }
                     }
-                    if status_at_line(client_owner)
-                        == 0 as ::core::ffi::c_int
-                    {
+                    if status_at_line(client_owner) == 0 as ::core::ffi::c_int {
                         cy = cy.wrapping_add(status_line_size(client_owner));
                     }
                 }
@@ -3330,7 +3327,11 @@ unsafe fn server_client_start_exit_timer(owner: &ClientRef) {
     let c = &mut *owner.get();
     let timeout = Duration::from_secs(10);
     if c.exit_timer.is_none() {
-        c.exit_timer = Some(server_client_timer(owner, timeout, server_client_exit_timer));
+        c.exit_timer = Some(server_client_timer(
+            owner,
+            timeout,
+            server_client_exit_timer,
+        ));
     }
 }
 unsafe fn server_client_exit_timer(owner: &ClientRef) {

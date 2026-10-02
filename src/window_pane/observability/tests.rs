@@ -67,10 +67,7 @@ fn weak_observation_expires_on_destruction_and_cannot_follow_reused_id() {
         window_pane_tree_insert(&mut all_window_panes, replacement.clone());
         assert!(observed.process().is_err());
         assert_eq!(resolve(PaneId(71)).unwrap().output_revision().unwrap(), 0);
-        drop(window_pane_tree_remove(
-            &mut all_window_panes,
-            &replacement,
-        ));
+        drop(window_pane_tree_remove(&mut all_window_panes, &replacement));
         // Drop cannot retain pane storage: these observations only hold Weak.
         assert_eq!(Rc::strong_count(&owner), 1);
         drop(observed);

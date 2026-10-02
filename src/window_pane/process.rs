@@ -113,13 +113,7 @@ pub(super) unsafe fn pipe_pane(
         0 as ::core::ffi::c_int,
     );
     ft = &raw mut *ft_owner;
-    format_defaults(
-        ft,
-        tc.as_ref(),
-        s.as_ref(),
-        wl.clone(),
-        Some(pane_owner),
-    );
+    format_defaults(ft, tc.as_ref(), s.as_ref(), wl.clone(), Some(pane_owner));
     let cmd = format_expand_time_cstring(
         ft,
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr()),

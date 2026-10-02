@@ -5056,8 +5056,7 @@ unsafe fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_ch
         }
         c = window_pane_get_fg_control_client(input_pane_owner.as_ref().expect("live pane"));
         if c == -(1 as ::core::ffi::c_int) {
-            defaults =
-                tty_default_colours(input_pane_owner.as_ref().expect("live pane")).0;
+            defaults = tty_default_colours(input_pane_owner.as_ref().expect("live pane")).0;
             if defaults.fg == 8 as ::core::ffi::c_int || defaults.fg == 9 as ::core::ffi::c_int {
                 c = window_pane_get_fg(input_pane_owner.as_ref().expect("live pane"));
             } else {
