@@ -1,6 +1,6 @@
 //! FD passing is part of ordinary I/O, including one-way adapters.
 use hmux_rt::stream::{Reader, Writer};
-use hmux_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio};
+use hmux_rt::{AsyncRead, AsyncWrite, Runtime, mio};
 use std::future::{Future, poll_fn};
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
@@ -18,9 +18,7 @@ fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
 }
 
 fn ready<T>(runtime: &mut mio::Runtime, future: impl Future<Output = T>) -> T {
-    let timeout = runtime
-        .handle()
-        .sleep_until(Instant::now() + Duration::from_secs(5));
+    let timeout = mio::Sleep::new(Instant::now() + Duration::from_secs(5));
     // PTY delivery can require kernel worker scheduling. Wait for readiness
     // with a real deadline instead of exhausting a fixed number of busy polls.
     runtime
@@ -49,19 +47,18 @@ fn pair() -> (UnixStream, UnixStream) {
     (left, right)
 }
 
-fn streams(runtime: &mio::Runtime) -> (mio::Io, mio::Io) {
+fn streams() -> (mio::Io, mio::Io) {
     let (left, right) = pair();
-    let handle = runtime.handle();
     (
-        handle.io(left.into()).unwrap(),
-        handle.io(right.into()).unwrap(),
+        mio::Io::new(left.into()).unwrap(),
+        mio::Io::new(right.into()).unwrap(),
     )
 }
 
 #[test]
 fn vectored_transfer_returns_an_owned_fd_and_eof() {
     let mut runtime = mio::Runtime::new().unwrap();
-    let (sender, receiver) = streams(&runtime);
+    let (sender, receiver) = streams();
     let sender = Writer::from_io(sender);
     let receiver = Reader::from_io(receiver);
     let (fd, mut peer) = pair();
@@ -97,7 +94,7 @@ fn vectored_transfer_returns_an_owned_fd_and_eof() {
 #[test]
 fn cancelled_read_preserves_fd_and_chunk_reader_returns_it() {
     let mut runtime = mio::Runtime::new().unwrap();
-    let (sender, receiver) = streams(&runtime);
+    let (sender, receiver) = streams();
     let mut receiver = Reader::from_io(receiver);
     let mut pending = Box::pin(receiver.read_chunk(8));
     assert!(poll(pending.as_mut()).is_pending());
@@ -144,8 +141,8 @@ fn partial_write_transfers_fd_once_and_cancelled_write_transfers_nothing() {
         },
         0
     );
-    let sender = runtime.handle().io(sender.into()).unwrap();
-    let receiver = runtime.handle().io(receiver.into()).unwrap();
+    let sender = mio::Io::new(sender.into()).unwrap();
+    let receiver = mio::Io::new(receiver.into()).unwrap();
     let payload: Vec<_> = (0..256 * 1024).map(|i| i as u8).collect();
     let (fd, mut peer) = pair();
     let mut written = ready(
@@ -210,7 +207,7 @@ fn excess_and_truncated_fds_are_rejected_and_closed() {
     // three force truncation. Both cases must close every received descriptor.
     for count in [2, 3] {
         let (sender, receiver) = pair();
-        let receiver = runtime.handle().io(receiver.into()).unwrap();
+        let receiver = mio::Io::new(receiver.into()).unwrap();
         let (fd, mut peer) = pair();
         let mut control = Control {
             bytes: [0; CONTROL_SIZE],
@@ -251,7 +248,7 @@ fn excess_and_truncated_fds_are_rejected_and_closed() {
 #[test]
 fn consecutive_single_fd_writes_remain_readable() {
     let mut runtime = mio::Runtime::new().unwrap();
-    let (sender, receiver) = streams(&runtime);
+    let (sender, receiver) = streams();
     let (first, mut first_peer) = pair();
     let (second, mut second_peer) = pair();
     for (byte, fd) in [(b"a", &first), (b"b", &second)] {
@@ -282,7 +279,7 @@ fn consecutive_single_fd_writes_remain_readable() {
 #[test]
 fn invalid_writes_and_empty_reads_do_not_consume_data_or_fds() {
     let mut runtime = mio::Runtime::new().unwrap();
-    let (sender, receiver) = streams(&runtime);
+    let (sender, receiver) = streams();
     let (fd, mut peer) = pair();
     for buffers in [&[][..], &[IoSlice::new(b"")][..]] {
         let error = ready(&mut runtime, sender.write(buffers, Some(fd.as_fd()))).unwrap_err();
@@ -311,7 +308,7 @@ fn invalid_writes_and_empty_reads_do_not_consume_data_or_fds() {
 #[test]
 fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
     let mut runtime = mio::Runtime::new().unwrap();
-    let (sender, receiver) = streams(&runtime);
+    let (sender, receiver) = streams();
     drop(receiver);
     let (fd, mut peer) = pair();
     assert_eq!(
@@ -331,7 +328,7 @@ fn disconnected_socket_reports_error_and_shutdown_invalidates_pending_read() {
     drop(fd);
     assert_eq!(peer.read(&mut [0]).unwrap(), 0);
 
-    let (_sender, receiver) = streams(&runtime);
+    let (_sender, receiver) = streams();
     let mut bytes = [0];
     let mut pending = pin!(receiver.read(&mut bytes));
     assert!(poll(pending.as_mut()).is_pending());
@@ -405,8 +402,8 @@ fn pipes_and_ptys_use_the_same_traits_and_reject_fds_before_writing() {
     let mut runtime = mio::Runtime::new().unwrap();
     let fd = std::fs::File::open("/dev/null").unwrap();
     for (writer, reader) in [pipe(), pty()] {
-        let writer = Writer::new(&runtime.handle(), writer).unwrap();
-        let reader = Reader::new(&runtime.handle(), reader).unwrap();
+        let writer = Writer::new(writer).unwrap();
+        let reader = Reader::new(reader).unwrap();
         for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {
             // Rejection must not wait for writable readiness either.
             assert!(

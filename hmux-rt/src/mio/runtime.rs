@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::io;
-use std::os::fd::{OwnedFd, RawFd};
+use std::os::fd::RawFd;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::task::{ContextBuilder, LocalWake, LocalWaker, Poll, Waker};
@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use super::readiness::IoState;
 use super::signals::SignalState;
-use super::{Io, Listener, Signals, Sleep};
 
 // Bound each turn so a self-waking task cannot monopolize the host thread.
 const MAX_POLLS_PER_TURN: usize = 128;
@@ -212,7 +211,8 @@ thread_local! {
 }
 
 impl Handle {
-    /// Clone the handle registered during runtime initialization on this thread.
+    /// Clone the current handle on this thread. Runtime initialization registers
+    /// the default; [`Runtime::enter`] temporarily selects another runtime.
     /// Looking up a handle neither creates nor drives a runtime.
     ///
     /// # Panics
@@ -231,10 +231,6 @@ impl Handle {
 
 impl crate::Handle for Handle {
     type Task = Task;
-    type Io = Io;
-    type Listener = Listener;
-    type Signals = Signals;
-    type Sleep = Sleep;
 
     fn spawn<F>(&self, future: F) -> io::Result<Task>
     where
@@ -257,19 +253,6 @@ impl crate::Handle for Handle {
         self.core.pending_tasks.set(pending);
         state.enqueue();
         Ok(Task { state })
-    }
-
-    fn io(&self, fd: OwnedFd) -> io::Result<Io> {
-        Io::new(&self.core, fd)
-    }
-    fn listener(&self, listener: std::os::unix::net::UnixListener) -> io::Result<Listener> {
-        Ok(Listener::new(Io::new(&self.core, listener.into())?))
-    }
-    fn signals(&self, set: &[std::ffi::c_int]) -> io::Result<Signals> {
-        Signals::new(&self.core, set)
-    }
-    fn sleep_until(&self, deadline: Instant) -> Sleep {
-        Sleep::new(&self.core, deadline)
     }
 }
 
@@ -331,6 +314,26 @@ impl crate::Runtime for Runtime {
 }
 
 impl Runtime {
+    /// Run a closure with this runtime's handle as [`Handle::current`].
+    /// Use this to construct resources for an independent synchronous driver.
+    /// The previous handle is restored when the closure returns or unwinds.
+    pub fn enter<T>(&self, f: impl FnOnce() -> T) -> T {
+        struct Restore(Option<Handle>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                HANDLE.with(|handle| {
+                    *handle.borrow_mut() = self.0.take().filter(|old| old.core.alive.get());
+                });
+            }
+        }
+        let _restore = Restore(HANDLE.with(|handle| {
+            handle.borrow_mut().replace(Handle {
+                core: self.core.clone(),
+            })
+        }));
+        f()
+    }
+
     /// Whether a runtime has registered its handle on this thread.
     /// Remains true during shutdown cleanup, until that handle is cleared.
     pub fn is_initialized() -> bool {
@@ -555,7 +558,7 @@ mod tests {
         let handle = runtime.handle();
         for _ in 0..10_000 {
             drop(handle.spawn(async {}).unwrap());
-            let mut sleep = handle.sleep_until(Instant::now() + Duration::from_secs(3600));
+            let mut sleep = crate::mio::Sleep::new(Instant::now() + Duration::from_secs(3600));
             assert!(
                 Pin::new(&mut sleep)
                     .poll(&mut Context::from_waker(Waker::noop()))
@@ -573,7 +576,7 @@ mod tests {
         let mut runtime = Runtime::new().unwrap();
         let handle = runtime.handle();
         let deadline = Instant::now() + Duration::from_millis(10);
-        let timer = Rc::new(RefCell::new(handle.sleep_until(deadline)));
+        let timer = Rc::new(RefCell::new(crate::mio::Sleep::new(deadline)));
         let first_timer = timer.clone();
         let first = handle
             .spawn(std::future::poll_fn(move |context| {

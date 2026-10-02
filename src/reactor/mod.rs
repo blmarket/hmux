@@ -9,7 +9,7 @@ mod streams;
 mod tasks;
 mod timers;
 pub use buffer::*;
-use hmux_rt::{Handle as _, Runtime as _};
+use hmux_rt::Runtime as _;
 use std::cell::RefCell;
 use std::os::fd::BorrowedFd;
 use std::time::Duration;
@@ -35,7 +35,7 @@ fn ensure_runtime() {
 pub(crate) fn io(fd: BorrowedFd<'_>) -> std::io::Result<hmux_rt::mio::Io> {
     // Retain the open file description through callback cancellation.
     let lease = fd.try_clone_to_owned()?;
-    hmux_rt::mio::Handle::current().io(lease)
+    hmux_rt::mio::Io::new(lease)
 }
 /// Translate an owned I/O error at the remaining C-style callback boundary.
 pub(crate) fn io_status(result: std::io::Result<()>) -> i32 {

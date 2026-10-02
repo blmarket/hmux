@@ -1,4 +1,4 @@
-use hmux_rt::{AsyncAccept, AsyncRead, Handle, Runtime, mio};
+use hmux_rt::{AsyncAccept, AsyncRead, Runtime, mio};
 use std::future::Future;
 use std::io::{self, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
@@ -49,7 +49,7 @@ fn cancelled_accept_preserves_connections_and_accepts_configure_owned_sockets() 
     let mut runtime = mio::Runtime::new().unwrap();
     let (path, socket) = SocketPath::bind();
     socket.set_nonblocking(true).unwrap();
-    let listener = runtime.handle().listener(socket).unwrap();
+    let listener = mio::Listener::new(socket).unwrap();
     let mut pending = Box::pin(listener.accept());
     assert!(
         pending
@@ -74,7 +74,7 @@ fn cancelled_accept_preserves_connections_and_accepts_configure_owned_sockets() 
             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
             0
         );
-        let source = runtime.handle().io(fd).unwrap();
+        let source = mio::Io::new(fd).unwrap();
         let mut byte = [0];
         assert_eq!(
             complete(&mut runtime, source.read(&mut byte))
@@ -92,7 +92,7 @@ fn accepts_have_one_waiter_and_runtime_shutdown_closes_the_listener() {
     let (_path, socket) = SocketPath::bind();
     socket.set_nonblocking(true).unwrap();
     let raw = socket.as_raw_fd();
-    let listener = runtime.handle().listener(socket).unwrap();
+    let listener = mio::Listener::new(socket).unwrap();
     let mut first = Box::pin(listener.accept());
     let mut cx = Context::from_waker(Waker::noop());
     assert!(first.as_mut().poll(&mut cx).is_pending());
@@ -107,10 +107,10 @@ fn accepts_have_one_waiter_and_runtime_shutdown_closes_the_listener() {
 
 #[test]
 fn blocking_listener_is_rejected_and_closed() {
-    let runtime = mio::Runtime::new().unwrap();
+    let _runtime = mio::Runtime::new().unwrap();
     let (_path, socket) = SocketPath::bind();
     let raw = socket.as_raw_fd();
-    assert!(matches!(runtime.handle().listener(socket),
+    assert!(matches!(mio::Listener::new(socket),
         Err(e) if e.kind() == io::ErrorKind::InvalidInput));
     // SAFETY: F_GETFD only queries this descriptor number.
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);

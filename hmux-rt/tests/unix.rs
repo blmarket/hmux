@@ -10,14 +10,12 @@ fn borrowed_driver_waits_for_io_and_timers_without_retaining_its_future() {
     let (reader, writer) = unix::socket_pair().unwrap();
     unix::set_nonblocking(reader.as_fd(), true).unwrap();
     unix::set_nonblocking(writer.as_fd(), true).unwrap();
-    let reader = runtime.handle().io(reader).unwrap();
-    let writer = runtime.handle().io(writer).unwrap();
-    let handle = runtime.handle();
+    let reader = mio::Io::new(reader).unwrap();
+    let writer = mio::Io::new(writer).unwrap();
     let _task = runtime
         .handle()
         .spawn(async move {
-            handle
-                .sleep_until(Instant::now() + Duration::from_millis(5))
+            mio::Sleep::new(Instant::now() + Duration::from_millis(5))
                 .await
                 .unwrap();
             writer
@@ -54,10 +52,7 @@ fn shutdown_write_preserves_incoming_data_and_close_consumes_ownership() {
     assert!(!unix::set_nonblocking(socket.as_fd(), true).unwrap());
     let mut peer = UnixStream::from(peer);
     let mut runtime = mio::Runtime::new().unwrap();
-    let source = runtime
-        .handle()
-        .io(socket.as_fd().try_clone_to_owned().unwrap())
-        .unwrap();
+    let source = mio::Io::new(socket.as_fd().try_clone_to_owned().unwrap()).unwrap();
     runtime
         .block_on(source.write(&[IoSlice::new(b"input")], None))
         .unwrap()

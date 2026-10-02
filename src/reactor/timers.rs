@@ -18,7 +18,7 @@ impl Timer {
         // Preserve the existing behavior: an overflowing deadline is expired.
         let deadline = now.checked_add(delay).unwrap_or(now);
         let handle = hmux_rt::mio::Handle::current();
-        let sleep = handle.sleep_until(deadline);
+        let sleep = hmux_rt::mio::Sleep::new(deadline);
         let task = handle.spawn(async move {
             sleep.await.expect("timer wait failed");
             callback();

@@ -3,7 +3,7 @@
 use std::io::{self, IoSlice};
 use std::os::fd::{BorrowedFd, OwnedFd};
 
-use crate::{AsyncRead, AsyncWrite, Handle, Received};
+use crate::{AsyncRead, AsyncWrite, Received, mio};
 
 /// An async reader for a byte-stream descriptor, such as a socket, pipe, or
 /// regular file. Datagram and message-oriented descriptors are not supported.
@@ -23,16 +23,22 @@ pub struct Reader<I: AsyncRead> {
     source: I,
 }
 
-impl<I: AsyncRead> Reader<I> {
-    /// Take ownership of a byte stream through [`Handle::io`].
+impl Reader<mio::Io> {
+    /// Take ownership of a byte stream on the current runtime.
     ///
     /// The descriptor's flags are not changed. Registration errors close the
     /// descriptor and are returned to the caller.
-    pub fn new<H: Handle<Io = I>>(handle: &H, fd: OwnedFd) -> io::Result<Self> {
-        let source = handle.io(fd)?;
+    ///
+    /// # Panics
+    /// Panics if no runtime is initialized on this thread.
+    #[track_caller]
+    pub fn new(fd: OwnedFd) -> io::Result<Self> {
+        let source = mio::Io::new(fd)?;
         Ok(Self { source })
     }
+}
 
+impl<I: AsyncRead> Reader<I> {
     /// Restrict an existing reader to read-only access without registering again.
     pub fn from_io(source: I) -> Self {
         Self { source }
@@ -82,16 +88,22 @@ pub struct Writer<I: AsyncWrite> {
     source: I,
 }
 
-impl<I: AsyncWrite> Writer<I> {
-    /// Take ownership of a writable byte stream through [`Handle::io`], without
+impl Writer<mio::Io> {
+    /// Take ownership of a writable byte stream on the current runtime, without
     /// changing flags. Construction errors close the descriptor. Regular-file
     /// writes may block the runtime thread.
-    pub fn new<H: Handle<Io = I>>(handle: &H, fd: OwnedFd) -> io::Result<Self> {
+    ///
+    /// # Panics
+    /// Panics if no runtime is initialized on this thread.
+    #[track_caller]
+    pub fn new(fd: OwnedFd) -> io::Result<Self> {
         Ok(Self {
-            source: handle.io(fd)?,
+            source: mio::Io::new(fd)?,
         })
     }
+}
 
+impl<I: AsyncWrite> Writer<I> {
     /// Restrict an existing writer to write-only access without registering again.
     pub fn from_io(source: I) -> Self {
         Self { source }

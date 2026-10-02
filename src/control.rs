@@ -856,7 +856,7 @@ pub unsafe fn control_all_done(c: &ClientRef) -> ::core::ffi::c_int {
         == 0 as size_t) as ::core::ffi::c_int
 }
 pub unsafe fn control_wait_exit() {
-    use hmux_rt::{AsyncRead as _, Handle as _, Runtime as _};
+    use hmux_rt::{AsyncRead as _, Runtime as _};
     use std::os::fd::AsFd;
     let stdin = std::io::stdin();
     let fd = stdin.as_fd();
@@ -865,7 +865,7 @@ pub unsafe fn control_wait_exit() {
     };
     let result = (|| -> std::io::Result<()> {
         let mut runtime = hmux_rt::mio::Runtime::new()?;
-        let source = runtime.handle().io(fd.try_clone_to_owned()?)?;
+        let source = runtime.enter(|| hmux_rt::mio::Io::new(fd.try_clone_to_owned()?))?;
         runtime.block_on(async {
             let mut buffer = evbuffer_new();
             loop {

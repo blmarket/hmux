@@ -11,7 +11,7 @@ use mio::unix::SourceFd;
 use crate::Received;
 
 use super::fd_passing;
-use super::runtime::{Core, invalid};
+use super::runtime::{Core, Handle, invalid};
 #[derive(Clone, Copy)]
 pub(super) enum Direction {
     Read,
@@ -220,7 +220,17 @@ pub struct Io {
 }
 
 impl Io {
-    pub(crate) fn new(core: &Rc<Core>, fd: OwnedFd) -> io::Result<Self> {
+    /// Take ownership of a byte-stream descriptor on the current runtime.
+    /// Non-file descriptors must be nonblocking; no flags are changed.
+    /// Regular files bypass the readiness poller and may block the runtime
+    /// thread. Construction errors close the descriptor.
+    ///
+    /// # Panics
+    /// Panics if no runtime is initialized on this thread.
+    #[track_caller]
+    pub fn new(fd: OwnedFd) -> io::Result<Self> {
+        let handle = Handle::current();
+        let core = &handle.core;
         core.check()?;
         let raw = fd.as_raw_fd();
         if core.fds.borrow().contains_key(&raw) {
@@ -469,7 +479,7 @@ impl<F> Drop for Operation<'_, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Handle as _, Runtime as _};
+    use crate::Runtime as _;
     use std::io::Write;
     use std::os::unix::net::UnixStream;
     use std::task::Waker;
@@ -479,7 +489,7 @@ mod tests {
     fn unregistered_operation_cannot_wait_and_releases_its_waiter() {
         let mut runtime = super::super::Runtime::new().unwrap();
         let file = std::fs::File::open(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")).unwrap();
-        let source = runtime.handle().io(file.into()).unwrap();
+        let source = super::Io::new(file.into()).unwrap();
         let mut operation = source.read_with(|| Err::<(), _>(io::ErrorKind::WouldBlock.into()));
         assert!(
             matches!(poll(&mut operation), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Unsupported)
@@ -499,7 +509,7 @@ mod tests {
         let mut runtime = super::super::Runtime::new().unwrap();
         let (mut writer, reader) = UnixStream::pair().unwrap();
         reader.set_nonblocking(true).unwrap();
-        let source = runtime.handle().io(reader.into()).unwrap();
+        let source = super::Io::new(reader.into()).unwrap();
         writer.write_all(b"first").unwrap();
         runtime.poll(Some(Duration::ZERO)).unwrap();
         let old = source.state.read.generation.get();
@@ -535,7 +545,7 @@ mod tests {
     fn interrupted_operations_yield_keep_the_waiter_and_return_errors() {
         let mut runtime = super::super::Runtime::new().unwrap();
         let (_writer, fd) = pair();
-        let source = runtime.handle().io(fd).unwrap();
+        let source = super::Io::new(fd).unwrap();
         tick(&mut runtime);
         let calls = Cell::new(0);
         let mut operation = source.write_with(|| {

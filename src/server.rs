@@ -44,7 +44,6 @@ use crate::src::tty::tty_create_log;
 use crate::src::window::{windows, Window as _};
 use crate::src::window_pane::WindowPane as _;
 use hmux_rt::AsyncAccept as _;
-use hmux_rt::Handle as _;
 use std::time::{Duration, SystemTime};
 
 use std::ffi::{CStr, CString, OsStr};
@@ -501,7 +500,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
     };
     if timeout == 0 as ::core::ffi::c_int {
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let source = hmux_rt::mio::Handle::current().listener(socket.try_clone()?)?;
+            let source = hmux_rt::mio::Listener::new(socket.try_clone()?)?;
             Ok(async move {
                 let accepted = source.accept().await;
                 unsafe { server_accept(accepted) };
@@ -512,7 +511,7 @@ pub unsafe fn server_add_accept(mut timeout: ::core::ffi::c_int) {
         let now = std::time::Instant::now();
         let deadline = now.checked_add(tv).unwrap_or(now);
         crate::src::reactor::task_start(&mut server_accept_task, move || {
-            let wait = hmux_rt::mio::Handle::current().sleep_until(deadline);
+            let wait = hmux_rt::mio::Sleep::new(deadline);
             Ok(async move {
                 wait.await.expect("accept backoff wait");
                 unsafe { server_add_accept(0) };

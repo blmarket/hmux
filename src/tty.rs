@@ -166,7 +166,7 @@ pub unsafe fn tty_create_log() {
         &mut name,
         format_args!("tmux-out-{}.log", getpid() as ::core::ffi::c_long),
     );
-    use hmux_rt::{Handle as _, Runtime as _};
+    use hmux_rt::Runtime as _;
     tty_log = (|| -> std::io::Result<_> {
         let file = hmux_rt::unix::open(
             CStr::from_ptr(name.as_ptr()),
@@ -174,7 +174,7 @@ pub unsafe fn tty_create_log() {
             0o644,
         )?;
         let runtime = hmux_rt::mio::Runtime::new()?;
-        let source = runtime.handle().io(file)?;
+        let source = runtime.enter(|| hmux_rt::mio::Io::new(file))?;
         Ok((runtime, source))
     })()
     .ok();
@@ -992,7 +992,7 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
     tty_invalidate(owner);
 }
 pub(crate) unsafe fn tty_raw(fd: i32, text: *const ::core::ffi::c_char) {
-    use hmux_rt::{Handle as _, Runtime as _};
+    use hmux_rt::Runtime as _;
     use std::future::{poll_fn, Future};
     use std::pin::pin;
     use std::task::Poll;
@@ -1008,10 +1008,12 @@ pub(crate) unsafe fn tty_raw(fd: i32, text: *const ::core::ffi::c_char) {
     // an independent driver so it never reenters the application's runtime.
     let _ = (|| -> std::io::Result<()> {
         let mut runtime = hmux_rt::mio::Runtime::new()?;
-        let source = runtime.handle().io(borrowed.try_clone_to_owned()?)?;
-        let stop = runtime
-            .handle()
-            .sleep_until(std::time::Instant::now() + Duration::from_micros(500));
+        let (source, stop) = runtime.enter(|| -> std::io::Result<_> {
+            let source = hmux_rt::mio::Io::new(borrowed.try_clone_to_owned()?)?;
+            let stop =
+                hmux_rt::mio::Sleep::new(std::time::Instant::now() + Duration::from_micros(500));
+            Ok((source, stop))
+        })?;
         runtime.block_on(async {
             let mut stop = pin!(stop);
             let send = async {

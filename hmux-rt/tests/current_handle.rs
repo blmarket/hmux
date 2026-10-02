@@ -1,13 +1,97 @@
 #![feature(local_waker)]
 
-use hmux_rt::{Handle as _, Runtime as _, mio};
+use hmux_rt::{AsyncRead as _, Handle as _, Runtime as _, mio};
 use std::cell::Cell;
 use std::future::Future;
-use std::io;
+use std::io::{self, Write};
+use std::os::unix::net::UnixStream;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{ContextBuilder, LocalWake, LocalWaker, Waker};
 use std::time::{Duration, Instant};
+
+#[test]
+fn constructors_work_while_the_runtime_is_borrowed() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (reader, mut writer) = UnixStream::pair().unwrap();
+    reader.set_nonblocking(true).unwrap();
+    writer.write_all(b"x").unwrap();
+    runtime
+        .block_on(async {
+            let source = mio::Io::new(reader.into()).unwrap();
+            let mut bytes = [0; 1];
+            assert_eq!(source.read(&mut bytes).await.unwrap().bytes, 1);
+            assert_eq!(bytes, *b"x");
+            mio::Sleep::new(Instant::now() + Duration::from_millis(5))
+                .await
+                .unwrap();
+        })
+        .unwrap();
+}
+
+#[test]
+fn entering_an_independent_runtime_binds_resources_and_restores_the_default() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let mut independent = mio::Runtime::new().unwrap();
+    let (reader, mut writer) = UnixStream::pair().unwrap();
+    reader.set_nonblocking(true).unwrap();
+    let (source, wait) = independent.enter(|| {
+        (
+            mio::Io::new(reader.into()).unwrap(),
+            mio::Sleep::new(Instant::now() + Duration::from_millis(5)),
+        )
+    });
+    let called = Rc::new(Cell::new(false));
+    let observed = called.clone();
+    let _task = mio::Handle::current()
+        .spawn(async move { observed.set(true) })
+        .unwrap();
+    writer.write_all(b"x").unwrap();
+    independent
+        .block_on(async {
+            let mut bytes = [0; 1];
+            assert_eq!(source.read(&mut bytes).await.unwrap().bytes, 1);
+            wait.await.unwrap();
+        })
+        .unwrap();
+    assert!(!called.get());
+    drop(independent);
+    runtime.poll(Some(Duration::ZERO)).unwrap();
+    assert!(called.get());
+}
+
+#[test]
+fn nested_runtime_scopes_restore_the_previous_handle_after_unwinding() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let mut independent = mio::Runtime::new().unwrap();
+    let called = Rc::new(Cell::new(false));
+    let observed = called.clone();
+    let _task = independent.enter(|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime.enter(|| panic!("scope panic"));
+        }));
+        assert!(result.is_err());
+        mio::Handle::current()
+            .spawn(async move { observed.set(true) })
+            .unwrap()
+    });
+    runtime.poll(Some(Duration::ZERO)).unwrap();
+    assert!(!called.get());
+    independent.poll(Some(Duration::ZERO)).unwrap();
+    assert!(called.get());
+
+    // The default is restored after leaving the outer scope as well.
+    drop(independent);
+    called.set(false);
+    let observed = called.clone();
+    let _task = mio::Handle::current()
+        .spawn(async move { observed.set(true) })
+        .unwrap();
+    runtime.poll(Some(Duration::ZERO)).unwrap();
+    assert!(called.get());
+    drop(runtime);
+    assert!(!mio::Runtime::is_initialized());
+}
 
 #[test]
 #[should_panic(expected = "runtime initialized")]
@@ -108,9 +192,7 @@ fn current_handle_remains_accessible_during_runtime_cleanup() {
 
     let runtime = mio::Runtime::new().unwrap();
     let dropped = Rc::new(Cell::new(false));
-    let mut sleep = runtime
-        .handle()
-        .sleep_until(Instant::now() + Duration::from_secs(3600));
+    let mut sleep = mio::Sleep::new(Instant::now() + Duration::from_secs(3600));
     {
         let wake = LocalWaker::from(Rc::new(Wake(dropped.clone())));
         let mut context = ContextBuilder::from_waker(Waker::noop())

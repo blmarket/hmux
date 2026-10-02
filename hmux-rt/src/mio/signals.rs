@@ -15,7 +15,7 @@ use std::task::{Context, Poll};
 
 use super::Io;
 use super::readiness::Direction;
-use super::runtime::{Core, invalid};
+use super::runtime::{Core, Handle, invalid};
 
 static CLAIMED: LazyLock<Mutex<HashSet<c_int>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
@@ -69,7 +69,15 @@ pub struct Signals {
 }
 
 impl Signals {
-    pub(crate) fn new(core: &Rc<Core>, set: &[c_int]) -> io::Result<Self> {
+    /// Subscribe to a nonempty set of distinct, valid, catchable signal numbers
+    /// on the current runtime.
+    ///
+    /// # Panics
+    /// Panics if no runtime is initialized on this thread.
+    #[track_caller]
+    pub fn new(set: &[c_int]) -> io::Result<Self> {
+        let handle = Handle::current();
+        let core = &handle.core;
         core.check()?;
         let unique = set.iter().copied().collect::<BTreeSet<_>>();
         if set.is_empty()
@@ -91,7 +99,7 @@ impl Signals {
         let (reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
         writer.set_nonblocking(true)?;
-        let source = Io::new(core, reader.into())?;
+        let source = Io::new(reader.into())?;
         let writer = Arc::new(OwnedFd::from(writer));
         let mut resources = Resources {
             io: source,

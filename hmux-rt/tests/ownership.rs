@@ -21,7 +21,7 @@ fn cancelled_reads_preserve_input_and_partial_reads_need_no_new_edge() {
     let mut rt = mio::Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = Rc::new(rt.handle().io(fd.into()).unwrap());
+    let source = Rc::new(mio::Io::new(fd.into()).unwrap());
     let s = source.clone();
     let cancelled = rt
         .handle()
@@ -55,7 +55,7 @@ fn concurrent_reads_share_one_waiter_and_cancellation_releases_it() {
     let mut rt = mio::Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = rt.handle().io(fd.into()).unwrap();
+    let source = mio::Io::new(fd.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
     let mut first_buffer = [0; 1];
     let mut wait = Box::pin(source.read(&mut first_buffer));
@@ -76,15 +76,14 @@ fn concurrent_reads_share_one_waiter_and_cancellation_releases_it() {
 }
 
 #[test]
-fn stale_runtime_handle_rejects_io_and_closes_fd() {
+fn io_after_runtime_shutdown_panics_and_closes_fd() {
     let rt = mio::Runtime::new().unwrap();
-    let handle = rt.handle();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
     fd.set_nonblocking(true).unwrap();
     let raw = fd.as_raw_fd();
     drop(rt);
-    assert!(matches!(handle.io(fd.into()), Err(e) if e.kind() == io::ErrorKind::BrokenPipe));
+    assert!(std::panic::catch_unwind(|| mio::Io::new(fd.into())).is_err());
     assert_closed(raw);
     assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
 }
@@ -95,7 +94,7 @@ fn registered_descriptor_closes_on_runtime_shutdown_and_invalidates_pending_wait
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = rt.handle().io(fd.into()).unwrap();
+    let source = mio::Io::new(fd.into()).unwrap();
     let mut bytes = [0; 1];
     let mut wait = pin!(source.read(&mut bytes));
     assert!(
@@ -117,7 +116,7 @@ fn registered_descriptor_closes_on_drop() {
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
     fd.set_nonblocking(true).unwrap();
-    let source = rt.handle().io(fd.into()).unwrap();
+    let source = mio::Io::new(fd.into()).unwrap();
     drop(source);
     assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
     // A deregistration attempted after close would report an error here.
@@ -126,10 +125,10 @@ fn registered_descriptor_closes_on_drop() {
 
 #[test]
 fn rejected_descriptor_is_closed() {
-    let rt = mio::Runtime::new().unwrap();
+    let _rt = mio::Runtime::new().unwrap();
     let (mut peer, fd) = UnixStream::pair().unwrap();
     peer.set_nonblocking(true).unwrap();
-    assert!(matches!(rt.handle().io(fd.into()), Err(e) if e.kind() == io::ErrorKind::InvalidInput));
+    assert!(matches!(mio::Io::new(fd.into()), Err(e) if e.kind() == io::ErrorKind::InvalidInput));
     assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
 }
 
@@ -146,7 +145,7 @@ fn immediate_device_supports_io_and_closes() {
         .open("/dev/null")
         .unwrap();
     let raw = fd.as_raw_fd();
-    let source = rt.handle().io(fd.into()).unwrap();
+    let source = mio::Io::new(fd.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
     assert!(matches!(
         pin!(source.write(&[IoSlice::new(b"discard")], None)).poll(&mut context),
@@ -179,7 +178,7 @@ fn regular_file_io_preserves_offsets_eof_and_runtime_ownership() {
     let raw = file.as_raw_fd();
     let rt = mio::Runtime::new().unwrap();
     // Regular files do not need O_NONBLOCK, which cannot prevent disk waits.
-    let source = rt.handle().io(file.into()).unwrap();
+    let source = mio::Io::new(file.into()).unwrap();
     let mut context = Context::from_waker(Waker::noop());
     let fd = std::fs::File::open("/dev/null").unwrap();
     for buffers in [&[][..], &[IoSlice::new(b"rejected")][..]] {

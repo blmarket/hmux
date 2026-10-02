@@ -1,5 +1,6 @@
 use std::io;
 use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::unix::net::UnixListener;
 
 use super::Io;
 
@@ -9,8 +10,16 @@ pub struct Listener {
 }
 
 impl Listener {
-    pub(super) fn new(source: Io) -> Self {
-        Self { source }
+    /// Take ownership of a nonblocking Unix stream listener on the current
+    /// runtime. No descriptor flags are changed; construction errors close it.
+    ///
+    /// # Panics
+    /// Panics if no runtime is initialized on this thread.
+    #[track_caller]
+    pub fn new(listener: UnixListener) -> io::Result<Self> {
+        Ok(Self {
+            source: Io::new(listener.into())?,
+        })
     }
 }
 

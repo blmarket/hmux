@@ -93,7 +93,7 @@ fn readiness_wakers_can_schedule_while_the_owner_is_borrowed() {
         .local_waker(&wake)
         .build();
     let (mut writer, fd) = pair();
-    let source = runtime.borrow().handle().io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     let mut bytes = [0; 1];
     let mut read = std::pin::pin!(source.read(&mut bytes));
     assert!(read.as_mut().poll(&mut context).is_pending());
@@ -159,7 +159,7 @@ fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
 
     let (mut writer, fd) = pair();
     writer.set_nonblocking(true).unwrap();
-    let source = handle.io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     let spy = Dropped(count.clone());
     let task = handle
         .spawn(async move {
@@ -178,13 +178,12 @@ fn cancellation_drops_unpolled_and_parked_futures_without_driving() {
 #[test]
 fn dropping_io_deregisters_before_closing_the_fd() {
     let mut runtime = mio::Runtime::new().unwrap();
-    let handle = runtime.handle();
     let (mut writer, fd) = pair();
     let raw = fd.as_raw_fd();
     // Keep the open file description alive so closing the registered fd alone
     // cannot remove its kernel registration on epoll.
     let retained = fd.try_clone().unwrap();
-    let source = handle.io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     drop(source);
     // SAFETY: F_GETFD only queries the descriptor number.
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
@@ -199,7 +198,7 @@ fn dropping_io_deregisters_before_closing_the_fd() {
     // SAFETY: fcntl returned a new descriptor with no other owner.
     let fd = unsafe { OwnedFd::from_raw_fd(duplicate) };
     assert_eq!(fd.as_raw_fd(), raw);
-    let source = handle.io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     writer.write_all(b"new").unwrap();
     tick(&mut runtime);
     assert!(matches!(poll(&mut read_bytes(&source, 3)), Poll::Ready(Ok(bytes)) if bytes == b"new"));
@@ -318,7 +317,7 @@ fn timers_wake_in_deadline_and_insertion_order() {
     let deadline = Instant::now() + Duration::from_millis(15);
     let mut tasks = Vec::new();
     for i in 0..4 {
-        let wait = runtime.handle().sleep_until(deadline);
+        let wait = mio::Sleep::new(deadline);
         let seen = seen.clone();
         tasks.push(
             runtime
@@ -352,7 +351,7 @@ fn read_bytes(
 fn partial_reads_retain_readiness_across_a_pause() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = runtime.handle().io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     let mut wait = read_bytes(&source, 2);
     assert!(poll(&mut wait).is_pending());
     writer.write_all(b"first").unwrap();
@@ -374,7 +373,7 @@ fn partial_reads_retain_readiness_across_a_pause() {
 fn directional_waiter_conflicts_cancellation_and_wouldblock() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (mut writer, fd) = pair();
-    let source = runtime.handle().io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     let mut first = read_bytes(&source, 1);
     assert!(poll(&mut first).is_pending());
     assert!(
@@ -410,7 +409,7 @@ fn kernel_readiness_is_serviced_despite_a_self_waking_task() {
         }))
         .unwrap();
     let (mut writer, fd) = pair();
-    let source = runtime.handle().io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     let done = Rc::new(Cell::new(false));
     let mark = done.clone();
     let _reader = runtime
@@ -435,10 +434,10 @@ fn runtime_drop_releases_resources_and_invalidates_old_leaves() {
     let handle = runtime.handle();
     let (mut writer, fd) = pair();
     writer.set_nonblocking(true).unwrap();
-    let source = handle.io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     let mut read = read_bytes(&source, 1);
     assert!(poll(&mut read).is_pending());
-    let mut sleep = handle.sleep_until(Instant::now());
+    let mut sleep = mio::Sleep::new(Instant::now());
     drop(runtime);
     assert_eq!(writer.read(&mut [0; 1]).unwrap(), 0);
     assert!(
@@ -468,7 +467,7 @@ fn panic_poisons_runtime_and_resets_drive_state() {
 fn descriptor_eof_is_explicit() {
     let mut runtime = mio::Runtime::new().unwrap();
     let (writer, fd) = pair();
-    let source = runtime.handle().io(fd).unwrap();
+    let source = mio::Io::new(fd).unwrap();
     drop(writer);
     tick(&mut runtime);
     assert!(matches!(

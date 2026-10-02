@@ -95,7 +95,7 @@ pub fn connect(path: &Path) -> io::Result<OwnedFd> {
 
 /// Create a nonblocking listener with an explicit backlog. Path permissions and
 /// stale-path removal are application policy; inherited listeners can be imported
-/// directly through Handle::listener instead.
+/// directly through [`crate::mio::Listener::new`] instead.
 pub fn listen(path: &Path, backlog: libc::c_int) -> io::Result<UnixListener> {
     let listener = UnixListener::bind(path)?;
     // SAFETY: listener owns a valid listening socket.

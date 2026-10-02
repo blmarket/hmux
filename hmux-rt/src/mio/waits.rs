@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-use super::runtime::{Core, invalid};
+use super::runtime::{Core, Handle, invalid};
 
 /// Cancellation-safe absolute monotonic deadline wait.
 pub struct Sleep {
@@ -15,9 +15,15 @@ pub struct Sleep {
 }
 
 impl Sleep {
-    pub(crate) fn new(core: &Rc<Core>, deadline: Instant) -> Self {
+    /// Wait for an absolute monotonic deadline on the current runtime.
+    /// Dropping the wait cancels it.
+    ///
+    /// # Panics
+    /// Panics if no runtime is initialized on this thread.
+    #[track_caller]
+    pub fn new(deadline: Instant) -> Self {
         Self {
-            core: Rc::downgrade(core),
+            core: Rc::downgrade(&Handle::current().core),
             deadline,
             key: None,
         }

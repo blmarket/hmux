@@ -24,8 +24,8 @@ pub use crate::src::shared::signal::{
     SIG_DFL,
 };
 use crate::src::tmux::{getversion, socket_path};
+use hmux_rt::Signals as _;
 use hmux_rt::{AsyncRead as _, AsyncWrite as _};
-use hmux_rt::{Handle as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
@@ -179,13 +179,11 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
                         {
                             // This resource shortage is transient but not a
                             // readiness transition. Retry without a busy loop.
-                            use hmux_rt::Handle as _;
-                            hmux_rt::mio::Handle::current()
-                                .sleep_until(
-                                    std::time::Instant::now() + std::time::Duration::from_millis(1),
-                                )
-                                .await
-                                .ok();
+                            hmux_rt::mio::Sleep::new(
+                                std::time::Instant::now() + std::time::Duration::from_millis(1),
+                            )
+                            .await
+                            .ok();
                         }
                         _ => {
                             proc_disconnect(peer);
@@ -363,7 +361,7 @@ pub unsafe fn proc_set_signals(
     sigaction(SIGTTOU, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
     crate::src::reactor::task_start(&mut (*tp).signal_task, move || {
-        let mut signals = hmux_rt::mio::Handle::current().signals(&[
+        let mut signals = hmux_rt::mio::Signals::new(&[
             SIGINT, SIGHUP, SIGCHLD, SIGCONT, SIGTERM, SIGUSR1, SIGUSR2, SIGWINCH,
         ])?;
         Ok(async move {

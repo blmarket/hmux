@@ -10,7 +10,7 @@ use std::ffi::c_int;
 use std::future::Future;
 use std::io::{self, IoSlice};
 use std::os::fd::{BorrowedFd, OwnedFd};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Owns and drives the runtime. Polling borrows the owner through callback
 /// execution, so the owner cannot be dropped until polling returns.
@@ -36,43 +36,12 @@ pub trait Handle: Clone + 'static {
     /// Owns a spawned future; dropping it cancels the work.
     type Task: 'static;
 
-    /// Owned descriptor supporting byte-stream I/O and optional FD passing.
-    type Io: AsyncRead + AsyncWrite + 'static;
-
-    /// Owns a Unix stream listener and its pending accepts.
-    type Listener: AsyncAccept + 'static;
-
-    /// Signal subscription.
-    type Signals: Signals + 'static;
-
-    /// Monotonic deadline wait.
-    type Sleep: Future<Output = io::Result<()>> + 'static;
-
     /// Schedule a local-waker future, without polling it inline. Ordinary Waker
     /// notifications are inert. The returned task
     /// owns the future and must be retained until completion or cancellation.
     fn spawn<F>(&self, future: F) -> io::Result<Self::Task>
     where
         F: Future<Output = ()> + 'static;
-
-    /// Take ownership of a descriptor for byte-stream I/O.
-    /// Files, pipes, PTYs, and Unix stream sockets use the same interface.
-    /// Unix streams support FD passing; ordinary descriptors return no FDs on
-    /// reads and reject writes carrying FDs with `Unsupported` before writing.
-    /// Non-file descriptors must be nonblocking. Regular files may perform
-    /// synchronous I/O on the runtime thread; they bypass the readiness poller.
-    /// No flags are changed. Construction errors close the fd.
-    fn io(&self, fd: OwnedFd) -> io::Result<Self::Io>;
-
-    /// Take ownership of a nonblocking Unix stream listener.
-    /// Construction errors close the listener; no descriptor flags are changed.
-    fn listener(&self, listener: std::os::unix::net::UnixListener) -> io::Result<Self::Listener>;
-
-    /// Subscribe to a nonempty set of valid, catchable signal numbers.
-    fn signals(&self, set: &[c_int]) -> io::Result<Self::Signals>;
-
-    /// Wait for one absolute monotonic deadline; drop cancels the wait.
-    fn sleep_until(&self, deadline: Instant) -> Self::Sleep;
 }
 
 /// A listener whose operations return owned, nonblocking, close-on-exec sockets.
